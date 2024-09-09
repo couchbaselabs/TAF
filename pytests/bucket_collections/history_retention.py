@@ -397,6 +397,14 @@ class DocHistoryRetention(ClusterSetup):
                 self.assertEqual(bucket_created, exp_outcome,
                                  "Unexpected outcome for %s:%s"
                                  % (b_type, storage_type))
+                if bucket_created is True:
+                    self.log.info("Creating clients for new bucket: {}".format(bucket.name))
+                    CollectionBase.create_sdk_clients(
+                        self.cluster,
+                        self.task_manager.number_of_threads,
+                        self.cluster.master,
+                        [bucket],
+                        self.sdk_compression)
                 if bucket_created is False:
                     # Cannot run docs_ops since bucket creation has failed
                     self.log.info("Validating error reason")
@@ -632,6 +640,7 @@ class DocHistoryRetention(ClusterSetup):
         for _, scope in bucket.scopes.items():
             self.__set_history_retention_for_scope(bucket, scope, "false")
 
+        self.sleep(60, "Wait before running data ops")
         self.run_data_ops_on_individual_collection(bucket)
 
         self.log.info("Re-enabling history retention")
@@ -642,6 +651,7 @@ class DocHistoryRetention(ClusterSetup):
         for _, scope in bucket.scopes.items():
             self.__set_history_retention_for_scope(bucket, scope, "true")
 
+        self.sleep(60, "Wait before running data ops")
         self.run_data_ops_on_individual_collection(bucket)
 
     def test_default_collection_retention_value(self):

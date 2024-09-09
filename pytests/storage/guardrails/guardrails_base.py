@@ -168,8 +168,8 @@ class GuardrailsBase(StorageBase):
         clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
-                bucket, [self.cluster.master], clients_per_bucket,
-                compression_settings=self.sdk_compression)
+                self.cluster, bucket, [self.cluster.master],
+                clients_per_bucket, compression_settings=self.sdk_compression)
 
 
     def tearDown(self):

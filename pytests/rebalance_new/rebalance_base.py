@@ -143,6 +143,7 @@ class RebalanceBaseTest(BaseTestCase):
                 self.log.info("Creating SDK clients for client_pool")
                 for bucket in self.cluster.buckets:
                     self.cluster.sdk_client_pool.create_clients(
+                        self.cluster,
                         bucket,
                         [self.cluster.master],
                         self.sdk_pool_capacity,
@@ -192,6 +193,7 @@ class RebalanceBaseTest(BaseTestCase):
         clients_per_bucket = int(ceil(max_clients / bucket_count))
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
+                self.cluster,
                 bucket,
                 [self.cluster.master],
                 clients_per_bucket,

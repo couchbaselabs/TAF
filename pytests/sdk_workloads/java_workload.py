@@ -116,7 +116,7 @@ class JavaSDKWorkload(BaseTestCase, OPD):
                             self.cluster.master.rest_password,
                             str(self.cluster.master.memcached_port))
             self.cluster.sdk_client_pool.create_clients(
-                bucket.name, server, req_clients_per_bucket)
+                self.cluster, bucket, [server], req_clients_per_bucket)
             bucket.clients = self.cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
         self.sleep(1, "Wait for SDK client pool to warmup")
 

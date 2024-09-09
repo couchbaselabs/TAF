@@ -591,7 +591,8 @@ class UpgradeTests(UpgradeBase):
             clients_per_bucket = int(ceil(max_clients / bucket_count))
             for bucket in self.cluster.buckets:
                 self.cluster.sdk_client_pool.create_clients(
-                    bucket, [self.cluster.master], clients_per_bucket,
+                    self.cluster, bucket, [self.cluster.master],
+                    clients_per_bucket,
                     compression_settings=self.sdk_compression)
 
         if not doc_loading_spec:
