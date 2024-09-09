@@ -291,10 +291,10 @@ class KafkaConnectUtil(object):
             self.is_kafka_connect_running()
             response = self.create_connector(
                 connector_name, connector_config)
-            time.sleep(10)
             if not response:
                 self.log.error("Unable to deploy connectors")
                 return False
+            time.sleep(10)
             connector_status = (
                 self.get_connector_status(connector_name))
             while connector_status["connector"]["state"] != "RUNNING":

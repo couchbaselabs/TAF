@@ -239,3 +239,30 @@ class MSKUtils(object):
                 self.log.error("Kafka resource cleanup failed.")
                 return False
             return True
+
+    def deploy_connector(self, connector_name, connector_config):
+        """
+        This method uses KafkaConnectUtil's deploy_connector method for
+        deploying connectors. After deploying the connector, it also checks
+        whether the topics that were supposed to be created by the connector
+        is actually created or not.
+        :param connector_name:
+        :param connector_config:
+        :return:
+        """
+        result = self.connect_cluster_apis.deploy_connector(
+            connector_name, connector_config)
+        if not result:
+            return result
+        topic_prefix = connector_config["topic.prefix"]
+        actual_topics_created = (
+            self.kafka_cluster_util.list_all_topics_by_topic_prefix(
+                topic_prefix))
+        expected_topics = [f"{topic_prefix}.{collection_name}"
+                           for collection_name in connector_config[
+                               "collection.include.list"].split(",")]
+        all_topics_created = True
+        for topic in expected_topics:
+            if topic not in actual_topics_created:
+                all_topics_created = False
+        return all_topics_created

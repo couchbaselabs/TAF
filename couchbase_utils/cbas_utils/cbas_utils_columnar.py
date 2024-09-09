@@ -4182,6 +4182,38 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 kafka_link_objs -= {self.get_link_obj(
                     cluster, CBASHelper.format_name(link_name))}
 
+        confluent_links = list()
+        aws_kafka_links = list()
+        kafka_types = list()
+
+        for link in kafka_link_objs:
+            if link.kafka_type == "confluent":
+                confluent_links.append(link)
+                if link.kafka_type not in kafka_types:
+                    kafka_types.append("confluent")
+            elif link.kafka_type == "aws_kafka":
+                aws_kafka_links.append(link)
+                if link.kafka_type not in kafka_types:
+                    kafka_types.append("aws_kafka")
+
+        # These variables are needed to consume links and kafka topics in
+        # round robin fashion.
+        confluent_counter = 0
+        aws_kafka_counter = 0
+        kafka_topics = copy.deepcopy(dataset_spec["kafka_topics"])
+        if not dataset_spec["data_source"]:
+            datasources = ["mongo", "postgresql", "mysql"]
+        else:
+            datasources = dataset_spec["data_source"]
+
+        def check_kafka_topics_dict_is_empty(kafka_topic_dict):
+            empty = True
+            for _, x in kafka_topic_dict.items():
+                for _, y in x.items():
+                    if y:
+                        empty = False
+            return empty
+
         num_of_ds_on_external_db = dataset_spec.get("num_of_ds_on_external_db", 0)
         for i in range(0, num_of_ds_on_external_db):
             database = None
@@ -4232,30 +4264,43 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 storage_format = dataset_spec[
                     "storage_format"]
 
-            link = random.choice(list(kafka_link_objs))
-            retry = 0
-            while retry < 100:
-                if not dataset_spec["data_source"]:
-                    datasource = random.choice(
-                        ["mongo", "postgresql", "mysql"])
-                else:
-                    datasource = dataset_spec["data_source"][
-                        i % len(dataset_spec["data_source"])]
-                if dataset_spec["kafka_topics"][link.kafka_type][
-                    datasource]:
-                    kafka_topic_name = random.choice(
-                        dataset_spec["kafka_topics"][link.kafka_type][
-                            datasource])
-                    break
-                else:
-                    retry += 1
+            # Logic to consume kafka links and topics in round robin fashion.
+            kafka_type = kafka_types[i % len(kafka_types)]
+            selected_topic = None
+
+            if check_kafka_topics_dict_is_empty(kafka_topics):
+                kafka_topics = copy.deepcopy(dataset_spec["kafka_topics"])
+
+            if kafka_type == "confluent":
+                link = confluent_links[confluent_counter % len(confluent_links)]
+                topic_counter = confluent_counter
+                confluent_counter += 1
+                while True:
+                    datasource = datasources[topic_counter % len(datasources)]
+                    if kafka_topics[link.kafka_type][datasource]:
+                        selected_topic = kafka_topics[link.kafka_type][
+                            datasource].pop()
+                    topic_counter += 1
+                    if selected_topic:
+                        break
+            elif kafka_type == "aws_kafka":
+                link = aws_kafka_links[aws_kafka_counter % len(aws_kafka_links)]
+                topic_counter = aws_kafka_counter
+                aws_kafka_counter += 1
+                while True:
+                    datasource = datasources[topic_counter % len(datasources)]
+                    if kafka_topics[link.kafka_type][datasource]:
+                        selected_topic = kafka_topics[link.kafka_type][
+                            datasource].pop()
+                    topic_counter += 1
+                    if selected_topic:
+                        break
 
             dataset_obj = Standalone_Dataset(
                 name=name, data_source=datasource, primary_key=random.choice(
                     dataset_spec["primary_key"]),
                 dataverse_name=dataverse.name, database_name=database.name,
-                link_name=link.name,
-                kafka_topic_name=kafka_topic_name,
+                link_name=link.name, kafka_topic_name=selected_topic,
                 storage_format=storage_format)
 
             if not self.create_standalone_collection_using_links(
@@ -4263,8 +4308,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     ddl_format=creation_method, if_not_exists=False,
                     dataverse_name=dataverse.name, database_name=database.name,
                     primary_key=dataset_obj.primary_key,
-                    link_name=link.name,
-                    external_collection=kafka_topic_name,
+                    link_name=link.name, external_collection=selected_topic,
                     storage_format=storage_format):
                 self.log.error("Failed to create dataset {}".format(name))
                 results.append(False)

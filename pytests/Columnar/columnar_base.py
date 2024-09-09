@@ -346,6 +346,7 @@ class ColumnarBaseTest(BaseTestCase):
         columnar_spec["external_dataset"][
             "num_of_external_datasets"] = self.input.param(
             "num_external_collections", 0)
+        columnar_spec["external_dataset"]["external_dataset_properties"] = []
         for file_format in external_collection_file_formats:
             prop = {
                 "external_container_name": self.s3_source_bucket,

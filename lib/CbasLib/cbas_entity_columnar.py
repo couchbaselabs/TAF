@@ -417,7 +417,8 @@ class CBAS_UDF(object):
                     CBASHelper.unformat_name(entity.name),
                     entity.arity
                 ])
-        self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+        self.full_name = CBASHelper.format_name(
+            self.database_name, self.dataverse_name, self.name)
 
     def __str__(self):
         return self.name
