@@ -7,8 +7,7 @@ from FtsLib.FtsOperations import FtsHelper
 from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
 from bucket_collections.collections_base import CollectionBase
-
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class volume(CollectionBase):

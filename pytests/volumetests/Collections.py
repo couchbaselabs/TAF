@@ -14,11 +14,11 @@ from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
 from BucketLib.BucketOperations import BucketHelper
-from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
 from bucket_collections.collections_base import CollectionBase
 from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class volume(CollectionBase):

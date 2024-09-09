@@ -27,7 +27,6 @@ from membase.api.rest_client import RestConnection
 from TestInput import TestInputSingleton
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
 from sdk_client3 import SDKClientPool
 
@@ -36,6 +35,8 @@ from sdk_exceptions import SDKException
 from basetestcase import BaseTestCase
 from cbas_utils.cbas_utils_v2 import CbasUtil, CBASRebalanceUtil
 import traceback
+
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class volume(BaseTestCase):
@@ -389,9 +390,7 @@ class volume(BaseTestCase):
                 pass
             target_node = random.choice(cluster_kv_nodes)
             remote = RemoteMachineShellConnection(target_node)
-            error_sim = CouchbaseError(self.log,
-                                       remote,
-                                       node=target_node)
+            error_sim = CouchbaseError(self.log, remote, node=target_node)
             error_to_simulate = "stop_memcached"
             # Induce the error condition
             error_sim.create(error_to_simulate)

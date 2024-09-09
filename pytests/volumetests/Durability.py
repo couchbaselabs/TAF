@@ -6,9 +6,9 @@ from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 import random
 from BucketLib.BucketOperations import BucketHelper
-from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
 from couchbase_helper.documentgenerator import doc_generator
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 from sdk_exceptions import SDKException
 
@@ -248,9 +248,7 @@ class volume(BaseTestCase):
     def stop_process(self):
         target_node = self.servers[2]
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log,
-                                   remote,
-                                   node=target_node)
+        error_sim = CouchbaseError(self.log, remote, node=target_node)
         error_to_simulate = "stop_memcached"
         # Induce the error condition
         error_sim.create(error_to_simulate)
