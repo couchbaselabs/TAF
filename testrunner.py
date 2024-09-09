@@ -11,11 +11,11 @@ import unittest
 from os.path import splitext
 from pprint import pprint
 
-from shell_util.shell_conn import ShellConnection
-
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
             "connections", "constants", "py_constants"] + sys.path
+
+from shell_util.shell_conn import ShellConnection
 from TestInput import TestInputParser, TestInputSingleton
 from framework_lib.framework import HelperLib, Parameters
 from framework_lib.xunit import XUnitTestResult
