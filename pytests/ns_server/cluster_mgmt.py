@@ -103,6 +103,6 @@ class ClusterManagement(CollectionBase):
             self.cluster, add_nodes, out_nodes, services=self.services_in)
 
         self.log.info("Wait for doc_loading to complete")
-        self.bucket_util.validate_doc_loading_results(load_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster, load_task)
         self.assertTrue(reb_result, "Node rebalance task failed")
         self.assertTrue(load_task.result, "Doc loading failed")
