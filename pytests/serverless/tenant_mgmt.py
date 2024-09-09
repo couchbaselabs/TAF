@@ -12,8 +12,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
 from error_simulation.cb_error import CouchbaseError
-from remote.remote_util import RemoteMachineShellConnection
 from pytests.bucket_collections.collections_base import CollectionBase
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class TenantManagementOnPrem(ServerlessOnPremBaseTest):

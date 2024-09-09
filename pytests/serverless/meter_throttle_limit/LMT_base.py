@@ -3,7 +3,6 @@ import copy
 import re
 
 from cb_tools.mc_stat import McStat
-from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import doc_generator
 
 from BucketLib.bucket import Bucket
@@ -11,11 +10,10 @@ from membase.api.rest_client import RestConnection
 from StatsLib.StatsOperations import StatsHelper
 from sdk_exceptions import SDKException
 from cb_constants.CBServer import CbServer
-from java.util import HashMap
-from couchbase.test.docgen import DRConstants
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
 from constants.sdk_constants.java_client import SDKConstants
 from cb_tools.cbstats import Cbstats
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 # LMT == LIMITING METERING THROTTLING

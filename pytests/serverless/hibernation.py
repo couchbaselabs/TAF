@@ -1,18 +1,15 @@
-from basetestcase import ClusterSetup
-from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.cbas_utils.cbas_utils import CBASRebalanceUtil, CbasUtil
 from pytests.bucket_collections.collections_base import CollectionBase
 from pytests.serverless.serverless_onprem_basetest import \
     ServerlessOnPremBaseTest
 from Jython_tasks.task import ConcurrentFailoverTask
-from BucketLib.bucket import TravelSample, Bucket
-from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from cb_constants import CbServer
 
 import json
 import time
 from common_lib import sleep
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class Hibernation(ServerlessOnPremBaseTest):

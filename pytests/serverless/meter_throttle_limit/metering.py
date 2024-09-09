@@ -4,7 +4,6 @@ import threading
 
 from cb_constants import DocLoading
 from cb_tools.mc_stat import Mcthrottle
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from LMT_base import LMT
 from reactor.util.function import Tuples
@@ -13,6 +12,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from cb_tools.cbstats import Cbstats
 from cb_tools.cbepctl import Cbepctl
 from BucketLib.BucketOperations import BucketHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class ServerlessMetering(LMT):

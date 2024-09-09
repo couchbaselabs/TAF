@@ -3,7 +3,8 @@ import threading
 
 from LMT_base import LMT
 from error_simulation.cb_error import CouchbaseError
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
+
 
 class ServerlessMetering(LMT):
     def setUp(self):
