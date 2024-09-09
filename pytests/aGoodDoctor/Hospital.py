@@ -16,6 +16,7 @@ from cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
 from elasticsearch import EsClient
 from bucket_utils.bucket_ready_functions import CollectionUtils
+from shell_util.remote_connection import RemoteMachineShellConnection
 from workloads import default, nimbus, vector_load, quartz1, quartz2, quartz3,\
     quartz5, quartz4, quartz6
 try:
@@ -26,7 +27,6 @@ from membase.api.rest_client import RestConnection
 from n1ql import DoctorN1QL
 from n1ql import QueryLoad
 from opd import OPD
-from remote.remote_util import RemoteMachineShellConnection
 from xdcr import DoctorXDCR
 
 

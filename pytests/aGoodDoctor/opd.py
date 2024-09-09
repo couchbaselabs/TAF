@@ -7,9 +7,9 @@ import subprocess
 import json
 from BucketLib.bucket import Bucket
 import os
-from remote.remote_util import RemoteMachineShellConnection
 import random
 from BucketLib.BucketOperations import BucketHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 from membase.api.rest_client import RestConnection
 from cb_tools.cbstats import Cbstats

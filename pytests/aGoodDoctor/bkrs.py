@@ -4,9 +4,9 @@ Created on 29-Sep-2021
 @author: riteshagarwal
 '''
 import time
-from remote.remote_util import RemoteMachineShellConnection
 import os
 from global_vars import logger
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class DoctorBKRS():
