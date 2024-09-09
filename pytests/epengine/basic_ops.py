@@ -95,8 +95,8 @@ class basic_ops(ClusterSetup):
         if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
+                self.cluster,
                 self.cluster.buckets[0],
-                [self.cluster.master],
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 
