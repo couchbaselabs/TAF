@@ -5,11 +5,12 @@ import re
 from pytests.basetestcase import ClusterSetup
 from pytests.bucket_collections.collections_base import CollectionBase
 from constants.platform_constants import os_constants
-from remote.remote_util import RemoteMachineShellConnection
 from security_utils.security_utils import SecurityUtils
 from membase.api.rest_client import RestConnection
 from cb_constants import CbServer
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from shell_util.remote_connection import RemoteMachineShellConnection
+
 
 class InternalUserPassword(ClusterSetup):
     def setUp(self):
@@ -72,8 +73,7 @@ class InternalUserPassword(ClusterSetup):
                 self.sleep(5, "Wait for failover to start")
 
     def set_low_rotation_interval(self, interval):
-
-        #enable diag/eval on non local host
+        # enable diag/eval on non local host
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()

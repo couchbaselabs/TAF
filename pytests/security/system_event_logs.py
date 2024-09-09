@@ -7,7 +7,7 @@ from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from SystemEventLogLib.security_events import SecurityEvents
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from membase.api.rest_client import RestConnection
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class SystemEventLogs(ClusterSetup):

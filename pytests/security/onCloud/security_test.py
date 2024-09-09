@@ -9,7 +9,7 @@ from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from TestInput import TestInputSingleton
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class ServerInfo:

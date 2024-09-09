@@ -2,11 +2,11 @@ import json
 from pytests.basetestcase import ClusterSetup
 from pytests.bucket_collections.collections_base import CollectionBase
 from constants.platform_constants import os_constants
-from remote.remote_util import RemoteMachineShellConnection
 from security_utils.security_utils import SecurityUtils
 from membase.api.rest_client import RestConnection
 from cb_constants import CbServer
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class PasswordHashImp(ClusterSetup):
