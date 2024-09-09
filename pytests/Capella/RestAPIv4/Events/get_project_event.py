@@ -94,7 +94,6 @@ class GetProjectEvent(GetProject):
                 }
             }
         ]
-
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
@@ -118,10 +117,8 @@ class GetProjectEvent(GetProject):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
                     organization, project, event)
-
             self.capellaAPI.cluster_ops_apis.project_events_endpoint = \
                 "/v4/organizations/{}/projects/{}/events"
-
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -131,35 +128,11 @@ class GetProjectEvent(GetProject):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
-            }
-            if not any(element in [
-                 "organizationOwner", "projectOwner",
-                 "projectManager", "projectViewer",
-                 "projectDataReader", "projectDataReaderWriter"
-            ] for element in self.api_keys[role]["roles"]):
-                testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "httpStatusCode": 403,
-                    "message": "Access Denied."
-                }
-                testcase["expected_status_code"] = 403
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, False)
-
         failures = list()
-        for testcase in testcases:
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+        ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
@@ -170,14 +143,12 @@ class GetProjectEvent(GetProject):
                 result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
                     self.organisation_id, self.project_id, self.event_id,
                     header)
-
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         self.log.debug(
@@ -282,7 +253,6 @@ class GetProjectEvent(GetProject):
                 result = self.capellaAPI.cluster_ops_apis.fetch_project_event_info(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["eventID"], **kwarg)
-
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
