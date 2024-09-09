@@ -6,11 +6,11 @@ Created on 13-May-2020
 from cbas.cbas_base import CBASBaseTest
 import random, json, copy, time, os
 from threading import Thread
-from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
+from remote.remote_util import RemoteUtilHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils import CBASRebalanceUtil
-from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
+from collections_helper.collections_spec_constants import MetaCrudParams
 from security_utils.security_utils import SecurityUtils
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main

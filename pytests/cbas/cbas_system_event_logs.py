@@ -5,12 +5,13 @@ Created on 7-December-2021
 
 import random
 from cbas.cbas_base import CBASBaseTest
-from cbas_utils.cbas_utils import CBASRebalanceUtil, FlushToDiskTask
+from cbas_utils.cbas_utils import CBASRebalanceUtil
 import copy
-from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
+from remote.remote_util import RemoteUtilHelper
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from CbasLib.CBASOperations import CBASHelper
 from BucketLib.bucket import Bucket
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CBASSystemEventLogs(CBASBaseTest):

@@ -13,10 +13,10 @@ from security.rbac_base import RbacBase
 from Jython_tasks.task import RunQueriesTask
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from BucketLib.bucket import TravelSample
-from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from CbasLib.CBASOperations import CBASHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CBASCBO(CBASBaseTest):

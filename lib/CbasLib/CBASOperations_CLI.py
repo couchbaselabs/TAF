@@ -6,7 +6,8 @@ Created on Nov 14, 2017
 
 import json
 from ClusterLib.ClusterOperations_Rest import ClusterHelper as ClusterHelperRest
-from remote.remote_util import RemoteMachineShellConnection
+
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CBASHelper(ClusterHelperRest):

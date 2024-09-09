@@ -2,8 +2,8 @@ import time
 import random
 from cbas_base import *
 from rbac_utils.Rbac_ready_functions import RbacUtils
-from remote.remote_util import RemoteMachineShellConnection
 from couchbase_utils.cbas_utils.cbas_utils import CBASRebalanceUtil
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CBASErrorValidator(CBASBaseTest):

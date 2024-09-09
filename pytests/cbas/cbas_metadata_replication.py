@@ -8,7 +8,7 @@ import copy
 
 from cbas.cbas_base import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MetadataReplication(CBASBaseTest):

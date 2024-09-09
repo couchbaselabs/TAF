@@ -27,7 +27,7 @@ from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_on_prem import Dataverse, CBAS_Scope, Link, Dataset, \
     CBAS_Collection, Synonym, CBAS_Index
-from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
+from remote.remote_util import RemoteMachineHelper
 from common_lib import sleep
 from sdk_exceptions import SDKException
 from collections_helper.collections_spec_constants import MetaCrudParams
@@ -35,6 +35,7 @@ from Jython_tasks.task import Task, RunQueriesTask
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
 from py_constants import CbServer
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class BaseUtil(object):

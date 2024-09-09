@@ -25,17 +25,17 @@ from CbasLib.cbas_entity_columnar import (
     Database, Dataverse, Remote_Link, External_Link, Kafka_Link,
     Remote_Dataset, External_Dataset, Standalone_Dataset, Synonym,
     CBAS_Index, DatabaseUser, ColumnarRole)
-from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
+from remote.remote_util import RemoteMachineHelper
 from common_lib import sleep
 from queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
 from py_constants import CbServer
+from shell_util.remote_connection import RemoteMachineShellConnection
 from sirius_client_framework.multiple_database_config import ColumnarLoader, CouchbaseLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_constants import SiriusCodes
 from Jython_tasks.sirius_task import WorkLoadTask
-from Jython_tasks.task_manager import TaskManager
 
 
 class BaseUtil(object):

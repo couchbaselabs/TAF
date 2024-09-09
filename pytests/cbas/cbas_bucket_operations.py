@@ -2,13 +2,13 @@ import random
 
 from BucketLib.BucketOperations import BucketHelper
 from memcached.helper.data_helper import MemcachedClientHelper
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import DocumentGenerator
 from CbasLib.CBASOperations import CBASHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CBASBucketOperations(CBASBaseTest):

@@ -6,7 +6,8 @@ from cbas.cbas_base import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from couchbase_helper.tuq_helper import N1QLHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils
-from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
+from remote.remote_util import RemoteUtilHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 rbac_users_created = {}
 

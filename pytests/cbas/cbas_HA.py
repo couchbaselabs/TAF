@@ -10,9 +10,9 @@ from cb_constants import CbServer
 from cbas_utils.cbas_utils import CBASRebalanceUtil, FlushToDiskTask
 import copy
 from rbac_utils.Rbac_ready_functions import RbacUtils
-from remote.remote_util import RemoteMachineShellConnection
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 rbac_users_created = {}
 
