@@ -161,6 +161,56 @@ class AutoFailoverBaseTest(ClusterSetup):
                                  - self.nodes_out:self.nodes_init]
         self.get_vbucket_info_from_failover_nodes()
 
+    def apply_io_throttling(self, read_limit, write_limit, device="/dev/xvda"):
+        override_content = "[Service]\nIOReadBandwidthMax={0} {1}\nIOWriteBandwidthMax={0} {2}\n".format(
+            device, read_limit, write_limit)
+        commands = [
+            "mkdir -p /etc/systemd/system/couchbase-server.service.d",
+            "echo '{0}' | tee /etc/systemd/system/couchbase-server.service.d/override.conf".format(
+                override_content),
+            "systemctl daemon-reload",
+            "systemctl restart couchbase-server.service",
+            "ls -l /etc/systemd/system/couchbase-server.service.d"
+        ]
+        for node in self.server_to_fail:
+            shell = RemoteMachineShellConnection(node)
+            try:
+                for command in commands:
+                    self.log.info("Executing command: {0}".format(command))
+                    output, error = shell.execute_command(command)
+                    self.log.debug("Output: {0}".format(output))
+                    self.log.debug("Error: {0}".format(error))
+                    if command.startswith("echo"):
+                        # Check if the file was created
+                        check_file = "ls -l /etc/systemd/system/couchbase-server.service.d/override.conf"
+                        self.log.debug("Checking file: {0}".format(check_file))
+                        check_output, check_error = shell.execute_command(check_file)
+                        self.log.debug("Check Output: {0}".format(check_output))
+                        self.log.debug("Check Error: {0}".format(check_error))
+            finally:
+                shell.disconnect()
+
+    def remove_io_throttling(self, device="/dev/xvda"):
+        commands = [
+            "rm -f /etc/systemd/system/couchbase-server.service.d/override.conf",
+            "systemctl daemon-reload",
+            "systemctl restart couchbase-server.service"
+        ]
+        for node in self.server_to_fail:
+            self.log.info("Processing node: {0}".format(node.ip))
+            shell = RemoteMachineShellConnection(node)
+            try:
+                for command in commands:
+                    self.log.info("Executing command: {0}".format(command))
+                    output, error = shell.execute_command(command)
+                    self.log.debug("Output: {0}".format(output))
+                    self.log.debug("Error: {0}".format(error))
+            except Exception as e:
+                self.log.error("Failed to execute command: {0}. Error: "
+                               "1}".format(command, e))
+            finally:
+                shell.disconnect()
+
     def tearDown(self):
         self.log.info("============AutoFailoverBaseTest teardown============")
         if self.range_scan_task is not None:
