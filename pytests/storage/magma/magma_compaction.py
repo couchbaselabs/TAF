@@ -5,8 +5,8 @@ from cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaCompactionTests(MagmaBaseTest):
@@ -137,7 +137,7 @@ class MagmaCompactionTests(MagmaBaseTest):
             shell = RemoteMachineShellConnection(self.cluster.master)
             cbstats = Cbstats(self.cluster.master)
             self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
-                                                   name)
+                                                       name)
             mem_item_count = 0
             # Stopping persistence on Node-x
             self.log.debug("Stopping persistence on Node-{}"

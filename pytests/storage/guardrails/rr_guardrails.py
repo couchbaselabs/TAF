@@ -5,10 +5,10 @@ import time
 from cb_constants import CbServer, DocLoading
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.BucketOperations import BucketHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.guardrails.guardrails_base import GuardrailsBase
 
 

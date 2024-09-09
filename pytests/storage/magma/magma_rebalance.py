@@ -1,5 +1,4 @@
 from math import ceil
-import os
 import threading
 import time
 
@@ -8,10 +7,9 @@ from cb_constants.CBServer import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from magma_base import MagmaBaseTest
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
-from upgrade_lib.upgrade_helper import CbServerUpgrade
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaRebalance(MagmaBaseTest):

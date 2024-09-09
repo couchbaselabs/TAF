@@ -13,9 +13,9 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaDiskFull(MagmaBaseTest):

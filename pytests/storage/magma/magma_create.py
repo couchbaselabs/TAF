@@ -2,7 +2,7 @@ import copy
 import threading
 
 from magma_basic_crud import BasicCrudTests
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class BasicCreateTests(BasicCrudTests):

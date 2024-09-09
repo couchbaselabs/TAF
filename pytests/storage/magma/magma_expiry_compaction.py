@@ -33,8 +33,8 @@ from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaExpiryTests(MagmaBaseTest):

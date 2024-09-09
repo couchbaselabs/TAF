@@ -4,8 +4,8 @@ import time
 
 from cb_constants.CBServer import CbServer
 from magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class KVStoreTests(MagmaBaseTest):

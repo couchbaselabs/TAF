@@ -9,8 +9,8 @@ from sdk_exceptions import SDKException
 import math
 
 from index_utils.plasma_stats_util import PlasmaStatsUtil
+from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.storage_base import StorageBase
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from gsiLib.gsiHelper import GsiHelper
 
 

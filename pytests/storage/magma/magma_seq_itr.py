@@ -8,11 +8,11 @@ import copy
 import json
 import time
 
+from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.magma.magma_base import MagmaBaseTest
 from dcp_utils.dcp_ready_functions import DCPUtils
 from BucketLib.BucketOperations import BucketHelper
 from cb_constants import CbServer
-from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 

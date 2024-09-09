@@ -7,8 +7,8 @@ import json
 
 from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
+from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.storage_base import StorageBase
 from storage_utils.magma_utils import MagmaUtils
 

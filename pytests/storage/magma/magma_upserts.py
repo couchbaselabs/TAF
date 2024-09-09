@@ -5,8 +5,8 @@ import json as Json
 
 from cb_constants.CBServer import CbServer
 from magma_basic_crud import BasicCrudTests
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class BasicUpsertTests(BasicCrudTests):
@@ -329,7 +329,7 @@ class BasicUpsertTests(BasicCrudTests):
                         ".format(count+1, time_end - time.time(), _res))
                         if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
                             break
-    
+
                     self.assertIs(
                         _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
                         False, msg.format("update", count+1, _res,

@@ -7,10 +7,10 @@ from cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaFlushBucketTests(MagmaBaseTest):

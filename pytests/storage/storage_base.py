@@ -12,10 +12,10 @@ from cb_constants import DocLoading
 from cb_constants.CBServer import CbServer
 from couchbase_helper.documentgenerator import doc_generator, SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from sdk_constants.java_client import SDKConstants
 from Jython_tasks.task import PrintBucketStats
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class StorageBase(BaseTestCase):

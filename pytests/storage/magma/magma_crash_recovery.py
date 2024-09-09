@@ -13,9 +13,9 @@ from cb_constants.CBServer import CbServer
 from TestInput import TestInputSingleton
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaCrashTests(MagmaBaseTest):
@@ -46,8 +46,7 @@ class MagmaCrashTests(MagmaBaseTest):
     def kill_magma_check_wal_file_size(self):
         nIter = 200
         while nIter > 0:
-            shell = RemoteMachineShellConnection(
-                self.cluster.master)
+            shell = RemoteMachineShellConnection(self.cluster.master)
             shell.kill_memcached()
             self.sleep(10, "sleep of 5s so that memcached can restart")
 
