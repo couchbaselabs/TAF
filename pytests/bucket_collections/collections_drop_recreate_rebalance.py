@@ -1,6 +1,5 @@
 import threading
 import time
-import json
 
 from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
@@ -8,7 +7,7 @@ from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.tuq_helper import N1QLHelper
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 from table_view import TableView
 

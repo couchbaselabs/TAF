@@ -6,10 +6,10 @@ from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_exceptions import SDKException
 from cb_constants import CbServer
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class AutoFailoverTests(AutoFailoverBaseTest):

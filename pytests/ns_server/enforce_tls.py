@@ -2,10 +2,10 @@ from BucketLib.bucket import TravelSample
 from cb_constants import CbServer
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from pytests.bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class EnforceTls(CollectionBase):

@@ -3,8 +3,8 @@ from cb_constants import DocLoading
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from rebalance_base import RebalanceBaseTest
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class RebalanceStartStopTests(RebalanceBaseTest):

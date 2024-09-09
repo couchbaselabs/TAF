@@ -7,10 +7,10 @@ from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 
 from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from bucket_utils.bucket_ready_functions import BucketUtils
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CollectionsNetworkSplit(CollectionBase):

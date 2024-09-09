@@ -4,8 +4,8 @@ import time
 from TestInput import TestInputSingleton
 from global_vars import logger
 from cb_constants import CbServer
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from StatsLib.StatsOperations import StatsHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class ServerInfo:

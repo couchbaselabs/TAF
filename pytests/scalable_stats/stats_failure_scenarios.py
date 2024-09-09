@@ -2,9 +2,8 @@ from BucketLib.bucket import TravelSample, BeerSample
 from StatsLib.StatsOperations import StatsHelper
 from bucket_collections.collections_base import CollectionBase
 from error_simulation.cb_error import CouchbaseError
-from remote.remote_util import RemoteMachineShellConnection
 from crash_test.constants import signum
-import json
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class StatsFailureScenarios(CollectionBase):

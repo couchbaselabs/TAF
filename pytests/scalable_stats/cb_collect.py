@@ -9,7 +9,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CbCollectInfoTests(CollectionBase):

@@ -18,8 +18,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from gsiLib.gsiHelper import GsiHelper
 from membase.api.rest_client import RestConnection
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient, SDKClientPool
+from shell_util.remote_connection import RemoteMachineShellConnection
 from upgrade.upgrade_base import UpgradeBase
 
 
