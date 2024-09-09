@@ -1,13 +1,14 @@
+import unittest
+from threading import Thread
+from datetime import datetime
+
 from dcp_base import DCPBase
 from dcp_new.constants import *
 from dcp_bin_client import *
 from mc_bin_client import MemcachedClient as McdClient
 from memcached.helper.data_helper import MemcachedClientHelper
-import unittest
 from memcacheConstants import *
-from threading import Thread
-from remote.remote_util import RemoteMachineShellConnection
-from datetime import datetime
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class DcpTestCase(DCPBase):

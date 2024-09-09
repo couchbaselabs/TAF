@@ -9,7 +9,6 @@ from TestInput import TestInputSingleton
 from couchbase_helper.tuq_generators import JsonGenerator
 from membase.api.rest_client import RestConnection
 from EventingLib.EventingOperations_Rest import EventingHelper
-from remote.remote_util import RemoteMachineShellConnection
 from basetestcase import BaseTestCase
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator

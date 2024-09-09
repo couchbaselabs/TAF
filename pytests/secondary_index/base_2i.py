@@ -7,7 +7,7 @@ from newtuq import QueryTests
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.query_definitions import SQLDefinitionGenerator
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class BaseSecondaryIndexingTests(QueryTests):
@@ -1009,9 +1009,9 @@ class BaseSecondaryIndexingTests(QueryTests):
     def reboot_node(self, node):
         self.log.info("Rebooting node '{0}'....".format(node.ip))
         shell = RemoteMachineShellConnection(node)
-        if shell.extract_remote_info().type.lower() == 'windows':
+        if shell.info.type.lower() == 'windows':
             o, r = shell.execute_command("shutdown -r -f -t 0")
-        elif shell.extract_remote_info().type.lower() == 'linux':
+        elif shell.info.type.lower() == 'linux':
             o, r = shell.execute_command("reboot")
         shell.log_command_output(o, r)
         shell.disconnect()

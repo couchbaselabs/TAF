@@ -1,11 +1,11 @@
 from dcp_new.dcp_base import DCPBase
 from dcp_new.constants import *
-from remote.remote_util import RemoteMachineShellConnection
-from membase.api.rest_client import RestConnection
 from cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 import json
 from threading import Thread
+
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class DcpTestCase(DCPBase):

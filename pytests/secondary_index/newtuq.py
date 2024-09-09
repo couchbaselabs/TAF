@@ -5,10 +5,10 @@ from cb_constants import CbServer
 from gsiLib.gsiHelper import GsiHelper
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.tuq_generators import JsonGenerator
-from remote.remote_util import RemoteMachineShellConnection
 from basetestcase import BaseTestCase
 from couchbase_helper.tuq_helper import N1QLHelper
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class QueryTests(BaseTestCase):

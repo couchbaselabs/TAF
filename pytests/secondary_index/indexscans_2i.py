@@ -6,7 +6,7 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_helper.query_definitions import QueryDefinition, \
     FULL_SCAN_TEMPLATE, SIMPLE_INDEX, FULL_SCAN, NO_ORDERBY_GROUPBY
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
