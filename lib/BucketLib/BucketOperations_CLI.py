@@ -4,9 +4,9 @@ Created on Sep 27, 2017
 @author: riteshagarwal
 """
 from cb_tools.cb_cli import CbCli
-from remote.remote_util import RemoteMachineShellConnection
 from BucketOperations_Rest import BucketHelper as BucketHelperRest
 from bucket import Bucket
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class BucketHelper(BucketHelperRest):

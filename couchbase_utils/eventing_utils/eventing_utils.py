@@ -5,8 +5,8 @@ from common_lib import sleep
 from global_vars import logger
 from membase.api.rest_client import RestConnection
 from EventingLib.EventingOperations_Rest import EventingHelper
-from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class EventingUtils:

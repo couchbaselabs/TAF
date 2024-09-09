@@ -3,8 +3,8 @@ from datetime import datetime
 
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux
-from remote.remote_util import RemoteMachineShellConnection
 from global_vars import logger
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class audit:

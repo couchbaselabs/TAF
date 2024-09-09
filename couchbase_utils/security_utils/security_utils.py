@@ -10,8 +10,8 @@ import copy
 import json
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.security_utils.x509main import x509main
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class SecurityUtils():

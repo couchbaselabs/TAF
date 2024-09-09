@@ -13,8 +13,8 @@ from membase.api.rest_client import RestConnection
 
 from shutil import copyfile
 
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputServer
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class x509main:
@@ -105,7 +105,7 @@ class x509main:
     # Get the install path for different operating systems
     def _get_install_path(self, host):
         shell = RemoteMachineShellConnection(host)
-        os_type = shell.extract_remote_info().distribution_type
+        os_type = shell.info.distribution_type
         self.log.info("OS type is {0}".format(os_type))
         if os_type == 'windows':
             install_path = x509main.WININSTALLPATH

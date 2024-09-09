@@ -1,9 +1,9 @@
 import logging
 
 from TestInput import TestInputServer
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 log = logging.getLogger("x509")
-from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 import http.client as httplib2
 import base64

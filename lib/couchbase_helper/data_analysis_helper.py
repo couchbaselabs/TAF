@@ -3,9 +3,9 @@ import uuid
 
 from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
-from remote.remote_util import RemoteMachineShellConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 # constants used in this file only
 DELETED_ITEMS_FAILURE_ANALYSIS_FORMAT = \
@@ -514,8 +514,6 @@ class DataCollector(object):
             if mode == "disk" and data_path is None:
                 rest = RestConnection(server)
                 data_path = rest.get_data_path()
-            headerInfo = []
-            bucketMap = {}
             if server.ip == "127.0.0.1":
                 headerInfo, bucketMap = self.get_local_data_map_using_cbtransfer(
                     server, buckets, data_path=data_path, userId=userId,

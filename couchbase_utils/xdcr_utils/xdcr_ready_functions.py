@@ -6,12 +6,12 @@ from common_lib import sleep
 from global_vars import logger
 from custom_exceptions.exception import XDCRException
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_utils.bucket_ready_functions import BucketUtils
-from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
+from cluster_utils.cluster_ready_functions import ClusterUtils
 
 from TestInput import TestInputSingleton
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class TOPOLOGY:
@@ -310,8 +310,7 @@ class XDCRUtils:
                          + '/goxdcr.log*'
 
         shell = RemoteMachineShellConnection(server)
-        info = shell.extract_remote_info().type.lower()
-        if info == "windows":
+        if shell.info.type.lower() == "windows":
             matches = []
             if print_matches:
                 matches, err = shell.execute_command("grep \"{0}\" {1}".

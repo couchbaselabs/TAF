@@ -5,11 +5,11 @@ import os
 import importlib
 import copy
 from couchbase_utils.cb_tools.cbimport import CbImport
-from remote.remote_util import RemoteMachineShellConnection
 from global_vars import logger
 from bucket_collections.collections_base import CollectionBase
 from awsLib.s3_data_helper import perform_S3_operation
 from sdk_client3 import SDKClientPool
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class TPCHUtil(object):

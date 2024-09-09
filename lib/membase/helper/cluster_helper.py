@@ -8,10 +8,10 @@ from global_vars import logger
 import global_vars
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
-from remote.remote_util import RemoteMachineShellConnection
 from mc_bin_client import MemcachedClient
 from membase.helper.rebalance_helper import RebalanceHelper
 import memcacheConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class ClusterOperationHelper(object):

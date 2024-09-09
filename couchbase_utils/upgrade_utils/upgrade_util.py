@@ -5,8 +5,8 @@ from cb_constants import CbServer
 from global_vars import cluster_util
 from membase.api.rest_client import RestConnection
 from scripts.old_install import InstallerJob
+from shell_util.remote_connection import RemoteMachineShellConnection
 from upgrade_lib.couchbase import features
-from remote.remote_util import RemoteMachineShellConnection
 from testconstants import CB_REPO, CB_RELEASE_BUILDS, CB_VERSION_NAME
 import global_vars
 

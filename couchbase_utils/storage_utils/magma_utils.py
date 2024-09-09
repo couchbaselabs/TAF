@@ -7,7 +7,7 @@ import os
 
 from cb_tools.cbstats import Cbstats
 from global_vars import logger
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaUtils:
