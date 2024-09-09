@@ -32,14 +32,16 @@ class SiriusSetup(object):
 
     @staticmethod
     def start_java_loader(taf_path, port=8080):
+        doc_loader_path = f"{taf_path}/DocLoader"
+        """
         print("Building Loader")
         fp = open("logs/sirius_build.log", "w")
-        doc_loader_path = f"{taf_path}/DocLoader"
         cmd = ["/bin/sh", "-c",
                f"cd {doc_loader_path} ; mvn clean compile package"]
         process = Popen(cmd, stdout=fp, stderr=fp)
         process.communicate()
         fp.close()
+        """
 
         print(f"Starting Sirius Java client on port '{port}'")
         fp = open("logs/sirius_run.log", "w")
