@@ -10,8 +10,8 @@ from queue import Queue
 from membase.helper.cluster_helper import ClusterOperationHelper
 from columnarbasetest import ColumnarBaseTest
 from py_constants import CbServer
-from remote.remote_util import RemoteMachineShellConnection
 from couchbase_utils.cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CopyToKV(ColumnarOnPremBase):

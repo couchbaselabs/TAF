@@ -6,8 +6,6 @@ Created on June 04, 2024
 
 import copy
 
-from TestInput import TestInputServer
-from remote.remote_util import RemoteMachineShellConnection
 from pytests.Capella.RestAPIv4.PrivateEndpoints.\
     get_private_endpoint_service_status import GetPrivateEndpointService
 
@@ -226,7 +224,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
-                             type(combination[0]), type(combination[1]), 
+                             type(combination[0]), type(combination[1]),
                              type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
