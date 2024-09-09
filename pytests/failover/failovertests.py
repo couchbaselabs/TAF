@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import copy
-import json
 
 from cb_constants import DocLoading
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
