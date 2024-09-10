@@ -80,10 +80,8 @@ class GetOrganization(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_organization_info(
                     self.organisation_id)
-
             self.capellaAPI.org_ops_apis.organization_endpoint = \
                 "/v4/organizations"
-
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.organisation_id)
 
@@ -94,34 +92,12 @@ class GetOrganization(APIBase):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
-            }
-            if not any(element in ["organizationOwner", "organizationMember",
-                                   "projectCreator", "projectViewer",
-                                   "projectDataReaderWriter", "projectManager",
-                                   "projectOwner", "projectDataReader"] for
-                       element in self.api_keys[role]["roles"]):
-                testcase["expected_status_code"] = 403,
-                testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
-                }
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, None)
-
         failures = list()
-        for testcase in testcases:
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "organizationMember", "projectCreator",
+            "projectViewer", "projectDataReaderWriter", "projectManager",
+            "projectOwner", "projectDataReader"
+        ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
@@ -131,15 +107,13 @@ class GetOrganization(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_organization_info(
                     self.organisation_id, header)
-
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.organisation_id)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         organization_id_values = [
@@ -154,7 +128,6 @@ class GetOrganization(APIBase):
             {self.organisation_id},
             None
         ]
-
         testcases = list()
         for val in organization_id_values:
             testcase = {
@@ -202,7 +175,6 @@ class GetOrganization(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_organization_info(
                     testcase["organizationID"], **kwarg)
-
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_result, self.organisation_id)
 

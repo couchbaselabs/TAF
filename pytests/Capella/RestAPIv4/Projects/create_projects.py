@@ -95,28 +95,10 @@ class CreateProject(GetProject):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"]
-            }
-            if not any(element in ["organizationOwner", "projectCreator"] for
-                       element in self.api_keys[role]["roles"]):
-                testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
-                }
-                testcase["expected_status_code"] = 403
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, None)
-
         failures = list()
-        for testcase in testcases:
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectCreator"
+        ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
@@ -144,8 +126,7 @@ class CreateProject(GetProject):
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}"
@@ -214,7 +195,6 @@ class CreateProject(GetProject):
                 result = self.capellaAPI.org_ops_apis.create_project(
                     testcase["organizationID"], self.prefix + "CREATE",
                     **kwarg)
-
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
@@ -236,11 +216,9 @@ class CreateProject(GetProject):
 
     def test_payload(self):
         testcases = list()
-
         for key in self.expected_res:
             if key in ["audit", "id"]:
                 continue
-
             values = [
                 "", 1, 0, 100000, -1, 123.123, self.generate_random_string(),
                 self.generate_random_string(500, special_characters=False),
@@ -309,7 +287,6 @@ class CreateProject(GetProject):
                 result = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, testcase["name"],
                     testcase["description"])
-
             if self.validate_testcase(result, [201], testcase, failures,
                                       payloadTest=True):
                 project_id = result.json()["id"]
