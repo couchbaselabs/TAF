@@ -78,7 +78,7 @@ class UpgradeTests(UpgradeBase):
             int(self.thread_to_use / len(self.cluster.buckets))
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
-                bucket, [self.cluster.master], clients_per_bucket,
+                self.cluster, bucket, req_clients=clients_per_bucket,
                 compression_settings=self.sdk_compression)
 
         # Client based scope/collection crud tests
@@ -1507,7 +1507,7 @@ class UpgradeTests(UpgradeBase):
         clients_per_bucket = int(self.thread_to_use / len(self.cluster.buckets))
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
-                bucket, [self.cluster.master], clients_per_bucket,
+                self.cluster, bucket, req_clients=clients_per_bucket,
                 compression_settings=self.sdk_compression)
 
         self.log.info("Loading data into the new bucket...")
