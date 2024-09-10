@@ -237,8 +237,7 @@ class CbCollectInfoTests(CollectionBase):
         nodes_in_cluster = self.__get_server_nodes()
 
         for bucket in self.cluster.buckets:
-            self.cluster.sdk_client_pool.create_clients(bucket,
-                                                        [self.cluster.master])
+            self.cluster.sdk_client_pool.create_clients(self.cluster, bucket)
 
         # Value in MB
         max_size_threshold = self.input.param("max_threshold", 1024)

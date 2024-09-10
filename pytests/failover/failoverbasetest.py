@@ -111,9 +111,8 @@ class FailoverBaseTest(BaseTestCase):
             self.log.info("Creating SDK clients for client_pool")
             for bucket in self.cluster.buckets:
                 self.cluster.sdk_client_pool.create_clients(
-                    bucket,
-                    [self.cluster.master],
-                    self.sdk_pool_capacity,
+                    self.cluster, bucket,
+                    req_clients=self.sdk_pool_capacity,
                     compression_settings=self.sdk_compression)
 
         self.cluster_util.print_cluster_stats(self.cluster)

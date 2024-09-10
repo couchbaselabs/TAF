@@ -546,7 +546,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         bucket = self.cluster.buckets[0]
         self.cluster.sdk_client_pool.create_clients(
-            bucket=bucket, servers=bucket.servers, req_clients=1)
+            self.cluster, bucket=bucket, req_clients=1)
 
         doc_gen = doc_generator(self.key, 0, self.num_items)
         loading_task = self.task.async_continuous_doc_ops(

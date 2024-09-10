@@ -38,8 +38,7 @@ class OutOfOrderReturns(ClusterSetup):
         if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
-                self.bucket,
-                self.cluster.nodes_in_cluster,
+                self.cluster, self.bucket,
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 

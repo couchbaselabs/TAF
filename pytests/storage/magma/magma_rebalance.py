@@ -52,10 +52,8 @@ class MagmaRebalance(MagmaBaseTest):
         clients_per_bucket = int(ceil(max_clients / bucket_count))
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
-                self.cluster,
-                bucket,
-                [self.cluster.master],
-                clients_per_bucket,
+                self.cluster, bucket,
+                req_clients=clients_per_bucket,
                 compression_settings=self.sdk_compression)
 
     def tearDown(self):
