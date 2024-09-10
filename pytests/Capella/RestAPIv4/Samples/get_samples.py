@@ -12,8 +12,6 @@ class GetSample(GetCluster):
 
     def setUp(self, nomenclature="Samples_Get"):
         GetCluster.setUp(self, nomenclature)
-
-        # Initialize params and create a sample bucket.
         self.expected_res = {
             "name": self.input.param("sample_bucket", "travel-sample"),
             "type": "couchbase",
@@ -169,10 +167,8 @@ class GetSample(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                     org, proj, clus, samp)
-
             self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
-
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
 
@@ -183,47 +179,15 @@ class GetSample(GetCluster):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
-        resp = self.capellaAPI.org_ops_apis.create_project(
-            organizationId=self.organisation_id,
-            name=self.generate_random_string(prefix=self.prefix),
-            description=self.generate_random_string(100))
-        if resp.status_code == 201:
-            other_project_id = resp.json()["id"]
-        else:
-            self.fail("Error while creating project")
-
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
-            }
-            if not any(element in ["organizationOwner", "projectDataReader",
-                                   "projectOwner", "projectDataReaderWriter",
-                                   "projectViewer", "projectManager"] for
-                       element in self.api_keys[role]["roles"]):
-                testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "httpStatusCode": 403,
-                    "message": "Access Denied."
-                }
-                testcase["expected_status_code"] = 403
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id)
-
         failures = list()
-        for testcase in testcases:
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectDataReader", "projectOwner",
+            "projectDataReaderWriter", "projectViewer", "projectManager"
+        ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, other_project_id)
+                                 self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.sample_bucket_id, header)
@@ -232,21 +196,13 @@ class GetSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.sample_bucket_id, header)
-
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
-
-        resp = self.capellaAPI.org_ops_apis.delete_project(
-            self.organisation_id, other_project_id)
-        if resp.status_code != 204:
-            failures.append("Error while deleting project {}"
-                            .format(other_project_id))
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Sa"
@@ -367,7 +323,6 @@ class GetSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["sampleID"], **kwarg)
-
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.sample_bucket_id)
 
