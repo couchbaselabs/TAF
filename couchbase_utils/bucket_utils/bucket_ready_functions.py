@@ -3677,7 +3677,7 @@ class BucketUtils(ScopeUtils):
                 exception = failed_doc["error"]
                 key_value = {key: failed_doc}
                 for ex in task_info["ignore_exceptions"]:
-                    if str(exception).find(ex) != -1:
+                    if SDKException.check_if_exception_exists(ex, exception):
                         bucket \
                             .scopes[scope] \
                             .collections[collection].num_items -= 1
@@ -3706,17 +3706,19 @@ class BucketUtils(ScopeUtils):
 
                 dict_key = "unwanted"
                 for ex in task_info["retry_exceptions"]:
-                    if str(exception).find(ex) != -1:
+                    if SDKException.check_if_exception_exists(ex, exception):
                         dict_key = "retried"
                         break
                 if result["status"] \
                         or (ambiguous_state
-                            and SDKException.DocumentExistsException
-                            in result["error"]
+                            and SDKException.check_if_exception_exists(
+                                SDKException.DocumentExistsException,
+                                result["error"])
                             and task_info["op_type"] in ["create", "update"]) \
                         or (ambiguous_state
-                            and SDKException.DocumentNotFoundException
-                            in result["error"]
+                            and SDKException.check_if_exception_exists(
+                                SDKException.DocumentNotFoundException,
+                                result["error"])
                             and task_info["op_type"] == "delete"):
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:

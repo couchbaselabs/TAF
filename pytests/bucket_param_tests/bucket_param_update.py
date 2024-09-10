@@ -153,8 +153,7 @@ class BucketParamTest(ClusterSetup):
 
     def load_docs(self, doc_ops, start_doc_for_insert, doc_count, doc_update,
                   doc_create, doc_delete, suppress_error_table=False,
-                  ignore_exceptions=[], retry_exceptions=[],
-                  load_using="default_loader"):
+                  ignore_exceptions=[], retry_exceptions=[]):
         tasks_info = dict()
         if "create" in doc_ops:
             # Start doc create task in parallel with replica_update
@@ -167,7 +166,7 @@ class BucketParamTest(ClusterSetup):
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions,
                 suppress_error_table=suppress_error_table,
-                load_using=load_using))
+                load_using=self.load_docs_using))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
         if "update" in doc_ops:
@@ -181,7 +180,7 @@ class BucketParamTest(ClusterSetup):
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions,
                 suppress_error_table=suppress_error_table,
-                load_using=load_using))
+                load_using=self.load_docs_using))
         if "delete" in doc_ops:
             # Start doc update task in parallel with replica_update
             tasks_info.update(self.bucket_util._async_load_all_buckets(
@@ -193,7 +192,7 @@ class BucketParamTest(ClusterSetup):
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions,
                 suppress_error_table=suppress_error_table,
-                load_using=load_using))
+                load_using=self.load_docs_using))
             doc_count -= (doc_delete.end - doc_delete.start)
 
         return tasks_info, doc_count, start_doc_for_insert
