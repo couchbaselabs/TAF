@@ -61,8 +61,8 @@ class MagmaKVTests(MagmaBaseTest):
         for bucket in buckets_in_cluster:
             if "new_bucket" in bucket.name:
                 self.cluster.sdk_client_pool.create_clients(
-                    bucket, [self.cluster.master],
-                    clients_per_bucket,
+                    self.cluster, bucket,
+                    req_clients=clients_per_bucket,
                     compression_settings=self.sdk_compression)
 
         self.log.info("Loading data into all buckets...")
@@ -105,8 +105,8 @@ class MagmaKVTests(MagmaBaseTest):
         for bucket in buckets_in_cluster:
             if "new_bucket" in bucket.name:
                 self.cluster.sdk_client_pool.create_clients(
-                    bucket, [self.cluster.master],
-                    clients_per_bucket,
+                    self.cluster, bucket,
+                    req_clients=clients_per_bucket,
                     compression_settings=self.sdk_compression)
 
         self.log.info("Loading data into all buckets...")

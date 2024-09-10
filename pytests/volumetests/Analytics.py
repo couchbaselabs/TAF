@@ -335,9 +335,8 @@ class volume(BaseTestCase):
             clients_per_bucket = int(ceil(max_clients / bucket_count))
             for bucket in self.cluster.buckets:
                 self.cluster.sdk_client_pool.create_clients(
-                    bucket,
-                    [cluster.master],
-                    clients_per_bucket,
+                    self.cluster, bucket,
+                    req_clients=clients_per_bucket,
                     compression_settings=self.sdk_compression)
 
         # TODO: remove this once the bug is fixed

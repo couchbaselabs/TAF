@@ -31,8 +31,8 @@ class PlasmaBaseTest(StorageBase):
         clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
-                bucket, [self.cluster.master],
-                clients_per_bucket,
+                self.cluster, bucket,
+                req_clients=clients_per_bucket,
                 compression_settings=self.sdk_compression)
         self.initial_load()
         self.indexUtil = IndexUtils(server_task=self.task)
