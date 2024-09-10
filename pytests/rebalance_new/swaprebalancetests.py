@@ -1,12 +1,13 @@
 import datetime
 
 from cb_constants import DocLoading
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from custom_exceptions.exception import RebalanceFailedException
 from BucketLib.BucketOperations import BucketHelper
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_exceptions import SDKException
 from rebalance_new import rebalance_base
 from rebalance_new.rebalance_base import RebalanceBaseTest
@@ -22,9 +23,10 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.log.info("=== SwapRebalanceBase setup started for test #%s %s ==="
                       % (self.case_number, self._testMethodName))
         self.cluster_run = False
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        self.reb_util = RebalanceUtil(self.cluster.master)
         if len(set([server.ip for server in self.servers])) == 1:
-            ip = self.rest.get_nodes_self().ip
+            ip = self.cluster_util.get_nodes_self(self.cluster.master).ip
             for server in self.servers:
                 server.ip = ip
             self.cluster_run = True
@@ -94,7 +96,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         msg = "%s: %s %s" % (datetime.datetime.now(),
                              self._testMethodName,
                              progress)
-        RestConnection(self.servers[0]).log_client_error(msg)
+        ClusterRestAPI(self.servers[0]).log_client_error(msg)
 
     def validate_docs(self):
         self.log.info("Validating docs")
@@ -140,17 +142,16 @@ class SwapRebalanceBase(RebalanceBaseTest):
         new_swap_servers = \
             self.servers[self.nodes_init:self.nodes_init + self.num_swap]
         for server in new_swap_servers:
-            otp_node = self.rest.add_node(self.creds.rest_username,
-                                          self.creds.rest_password,
-                                          server.ip,
-                                          server.port)
+            otp_node = self.rest.add_node(server.ip,
+                                          self.creds.rest_username,
+                                          self.creds.rest_password)
             msg = "Unable to add node %s to the cluster"
             self.assertTrue(otp_node, msg % server.ip)
             self.cluster.nodes_in_cluster.append(server)
             self.cluster.kv_nodes.append(server)
 
         if self.swap_orchestrator:
-            self.rest = RestConnection(new_swap_servers[0])
+            self.rest = ClusterRestAPI(new_swap_servers[0])
             self.cluster.master = new_swap_servers[0]
 
         if self.test_abort_snapshot:
@@ -174,8 +175,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
         self.log.info("Swap Rebalance phase")
         self.rest.rebalance(
-            otpNodes=[node.id for node in self.rest.node_statuses()],
-            ejectedNodes=opt_nodes_ids)
+            known_nodes=[node.id for node in self.cluster_util.get_nodes(
+                self.cluster.master)],
+            eject_nodes=opt_nodes_ids)
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios during rebalance")
@@ -203,7 +205,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 self.log.info("STOP/START Swap Rebalance phase during %s%%"
                               % expected_progress)
                 while True:
-                    progress = self.rest._rebalance_progress()
+                    _, progress = \
+                        self.cluster_util.get_rebalance_status_and_progress()
                     if progress < 0:
                         self.log.error("Rebalance progress code : {0}"
                                        .format(progress))
@@ -219,16 +222,17 @@ class SwapRebalanceBase(RebalanceBaseTest):
                                         msg="Unable to stop rebalance")
                         self.sleep(20)
                         self.rest.rebalance(
-                            otpNodes=[node.id
-                                      for node in self.rest.node_statuses()],
-                            ejectedNodes=opt_nodes_ids)
+                            known_nodes=[node.id for node in
+                                         self.cluster_util.get_nodes(
+                                             self.cluster.master)],
+                            eject_nodes=opt_nodes_ids)
                         break
                     elif retry > 100:
                         break
                     else:
                         retry += 1
                         self.sleep(1)
-        self.assertTrue(self.rest.monitorRebalance(),
+        self.assertTrue(self.reb_util.monitor_rebalance(),
                         msg="Rebalance operation failed after adding node {0}"
                         .format(opt_nodes_ids))
         status, _ = self.cluster_util.find_orchestrator(self.cluster)
@@ -279,21 +283,22 @@ class SwapRebalanceBase(RebalanceBaseTest):
         new_swap_servers = self.servers[self.nodes_init:
                                         self.nodes_init+self.num_swap]
         for server in new_swap_servers:
-            otp_node = self.rest.add_node(self.creds.rest_username,
-                                          self.creds.rest_password,
-                                          server.ip,
-                                          server.port)
+            otp_node = self.rest.add_node(server.ip,
+                                          self.creds.rest_username,
+                                          self.creds.rest_password)
             msg = "Unable to add node %s to the cluster"
             self.assertTrue(otp_node, msg % server.ip)
 
         if self.swap_orchestrator:
-            self.rest = RestConnection(new_swap_servers[0])
+            self.rest = ClusterRestAPI(new_swap_servers[0])
+            self.reb_util = RebalanceUtil(new_swap_servers[0])
             self.cluster.master = new_swap_servers[0]
 
         self.log.info("SWAP REBALANCE PHASE")
         self.rest.rebalance(
-            otpNodes=[node.id for node in self.rest.node_statuses()],
-            ejectedNodes=opt_nodes_ids)
+            known_nodes=[node.id for node in
+                         self.cluster_util.get_nodes(self.cluster.master)],
+            eject_nodes=opt_nodes_ids)
         self.sleep(10, "Rebalance should start")
         self.log.info("Fail Swap Rebalance PHASE @ {0}"
                       .format(self.percentage_progress))
@@ -340,7 +345,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 bucket, servers=[self.cluster.master], wait_time=600)
         # we expect that rebalance will be failed
         try:
-            self.rest.monitorRebalance()
+            self.reb_util.monitor_rebalance()
         except RebalanceFailedException:
             # retry rebalance if it failed
             self.log.warn("Rebalance failed but it's expected")
@@ -348,15 +353,15 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.assertFalse(
                 self.cluster_util.is_cluster_rebalanced(self.rest),
                 msg="cluster need rebalance")
-            known_nodes = self.rest.node_statuses()
+            known_nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.log.info("Nodes are still in cluster: %s"
                           % ([(node.ip, node.port) for node in known_nodes]))
             ejected_nodes = list(set(opt_nodes_ids)
                                  & set([node.id for node in known_nodes]))
-            self.rest.rebalance(otpNodes=[node.id for node in known_nodes],
-                                ejectedNodes=ejected_nodes)
+            self.rest.rebalance(known_nodes=[node.id for node in known_nodes],
+                                eject_nodes=ejected_nodes)
             self.sleep(10, "Wait for rebalance to start")
-            self.assertTrue(self.rest.monitorRebalance(),
+            self.assertTrue(self.reb_util.monitor_rebalance(),
                             msg="Rebalance failed after adding node {0}"
                             .format(to_eject_nodes))
         else:
@@ -420,18 +425,19 @@ class SwapRebalanceBase(RebalanceBaseTest):
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
             if self.durability_level not in [None, "None", "NONE"]:
-                self.rest.fail_over(node)
+                self.rest.perform_hard_failover(node)
             else:
-                self.rest.fail_over(node, graceful=True)
-            self.assertTrue(self.rest.monitorRebalance(),
+                self.rest.perform_graceful_failover(node)
+            self.assertTrue(self.reb_util.monitor_rebalance(),
                             msg="Rebalance failed after failover of node {0}"
                             .format(node))
 
         self.rest.rebalance(
-            otpNodes=[node.id for node in self.rest.node_statuses()],
-            ejectedNodes=opt_nodes_ids)
+            known_nodes=[node.id for node in
+                         self.cluster_util.get_nodes(self.cluster.master)],
+            eject_nodes=opt_nodes_ids)
 
-        self.assertTrue(self.rest.monitorRebalance(),
+        self.assertTrue(self.reb_util.monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(opt_nodes_ids))
 
@@ -441,21 +447,21 @@ class SwapRebalanceBase(RebalanceBaseTest):
              if node.ip not in ejected_ips]
 
         # Make rest connection with node part of cluster
-        self.rest = RestConnection(self.cluster.nodes_in_cluster[0])
+        self.rest = ClusterRestAPI(self.cluster.nodes_in_cluster[0])
         self.cluster.master = self.cluster.nodes_in_cluster[0]
 
         msg = "Unable to add node %s to the cluster"
         for server in to_eject_nodes:
-            otp_node = self.rest.add_node(self.creds.rest_username,
-                                          self.creds.rest_password,
-                                          server.ip, server.port)
+            otp_node = self.rest.add_node(server.ip,
+                                          self.creds.rest_username,
+                                          self.creds.rest_password)
             self.assertTrue(otp_node, msg % server.ip)
 
-        self.rest.rebalance(
-            otpNodes=[node.id for node in self.rest.node_statuses()],
-            ejectedNodes=[])
+        self.rest.rebalance(known_nodes=[node.id for node in
+                                         self.cluster_util.get_nodes(
+                                             self.cluster.master)])
 
-        self.assertTrue(self.rest.monitorRebalance(),
+        self.assertTrue(self.reb_util.monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(to_eject_nodes))
 
@@ -495,32 +501,31 @@ class SwapRebalanceBase(RebalanceBaseTest):
         for node in opt_nodes_ids:
             self.log.info("Failover node %s and rebalance afterwards" % node)
             if self.durability_level not in [None, "None", "NONE"]:
-                self.rest.fail_over(node)
+                self.rest.perform_hard_failover(node)
             else:
-                self.rest.fail_over(node, graceful=True)
-            self.assertTrue(self.rest.monitorRebalance(),
+                self.rest.perform_graceful_failover(node)
+            self.assertTrue(self.reb_util.monitor_rebalance(),
                             msg="Rebalance failed after failover of node {0}"
                             .format(node))
 
         new_swap_servers = \
             self.servers[self.nodes_init:self.nodes_init+self.failover_factor]
         for server in new_swap_servers:
-            otp_node = self.rest.add_node(self.creds.rest_username,
-                                          self.creds.rest_password,
-                                          server.ip,
-                                          server.port)
+            otp_node = self.rest.add_node(server.ip,
+                                          self.creds.rest_username,
+                                          self.creds.rest_password)
             msg = "Unable to add node %s to the cluster"
             self.assertTrue(otp_node, msg % server.ip)
 
         if self.fail_orchestrator:
-            self.rest = RestConnection(new_swap_servers[0])
+            self.rest = ClusterRestAPI(new_swap_servers[0])
             self.cluster.master = new_swap_servers[0]
 
         self.rest.rebalance(
-            otpNodes=[node.id for node in self.rest.node_statuses()],
-            ejectedNodes=opt_nodes_ids)
+            known_nodes=[node.id for node in self.cluster_util.get_nodes(self.cluster.master)],
+            eject_nodes=opt_nodes_ids)
 
-        self.assertTrue(self.rest.monitorRebalance(),
+        self.assertTrue(self.reb_util.monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(new_swap_servers))
 
