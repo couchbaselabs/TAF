@@ -277,7 +277,7 @@ if [ "$?" -eq 0 ]; then
 
   cat $WORKSPACE/testexec.$$.ini
   # Find free port on this machine to use for this run
-  sirius_port=49152 ; INCR=1 ; while [ -n "$(ss -tan4H "sport = $sirius_port")" ]; do sirius_port=$((sirius_port+INCR)) ; done
+  sirius_port=49152 ; while [ "$(ss -tulpn | grep LISTEN | grep $sirius_port | wc -l)" -ne 0 ]; do sirius_port=$((sirius_port+1)) ; done
   echo "Will use $sirius_port for starting sirius"
   export PATH=/usr/local/go/bin:$PATH
 
