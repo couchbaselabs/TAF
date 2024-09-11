@@ -6865,7 +6865,7 @@ class CbasUtil(CBOUtil):
                 partition_ids.append(int(partition["partitionId"]))
 
             for partition in response["partitionsTopology"]["partitions"]:
-                if len(partition["replicas"]) == expected_num:
+                if int(partition["id"]) in partition_ids:
                     if len(partition["replicas"]) == expected_num:
                         replica_num_matched = replica_num_matched and True
                     else:
