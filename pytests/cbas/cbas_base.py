@@ -330,6 +330,9 @@ class CBASBaseTest(BaseTestCase):
                 if not rest.update_autofailover_settings(True, 300):
                     self.fail("Enabling Auto-Failover failed")
 
+                for server in self.input.servers:
+                    self.set_ports_for_server(server, "ssl")
+
                 if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
                     self.fail("Analytics service Failed to recover")
 
