@@ -349,13 +349,16 @@ class CBASBaseTest(BaseTestCase):
                 if not rest.update_autofailover_settings(True, 300):
                     self.fail("Enabling Auto-Failover failed")
 
+                for server in self.input.servers:
+                    self.set_ports_for_server(server, "ssl")
+
                 if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
                     self.fail("Analytics service Failed to recover")
 
             if self.input.param("analytics_loggers", None):
                 """
-                This flag is used for setting analytics internal log levels. 
-                These logs are helpful while dubugging issues as they 
+                This flag is used for setting analytics internal log levels.
+                These logs are helpful while dubugging issues as they
                 provide a deeper insight into working on CBAS service.
                 This flag can be used to set one or more logger for analytics.
                 logger_name_1:level-logger_name_2:level-......
