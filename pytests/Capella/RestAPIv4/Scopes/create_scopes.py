@@ -11,8 +11,6 @@ class CreateScope(GetScope):
 
     def setUp(self, nomenclature="Scopes_Create"):
         GetScope.setUp(self, nomenclature)
-
-        # Initialize scope params.
         self.scopes = list()
 
     def tearDown(self):
@@ -142,10 +140,8 @@ class CreateScope(GetScope):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_scope(
                     org, proj, clus, buck, scope_name)
-
             self.capellaAPI.cluster_ops_apis.scope_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes"
-
             if self.validate_testcase(result, [201], testcase, failures):
                 self.scopes.append(scope_name)
 
@@ -156,44 +152,14 @@ class CreateScope(GetScope):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
-        resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
-        if resp.status_code == 201:
-            other_project_id = resp.json()["id"]
-        else:
-            self.fail("Error while creating project")
-
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
-            }
-            if not any(element in ["organizationOwner",
-                                   "projectOwner", "projectManager"] for
-                       element in self.api_keys[role]["roles"]):
-                testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "httpStatusCode": 403,
-                    "message": "Access Denied."
-                }
-                testcase["expected_status_code"] = 403
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id)
-
         failures = list()
-        for testcase in testcases:
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectOwner", "projectManager"
+        ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, other_project_id)
+                                 self.project_id, self.other_project_id)
             scope_name = self.generate_random_string(5, False, self.prefix)
             result = self.capellaAPI.cluster_ops_apis.create_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
@@ -203,10 +169,8 @@ class CreateScope(GetScope):
                 result = self.capellaAPI.cluster_ops_apis.create_scope(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id, scope_name, header)
-
             if self.validate_testcase(result, [201], testcase, failures):
                 self.scopes.append(scope_name)
-
             if len(self.scopes) == 1000:
                 self.log.warning("Reached 1000 Scopes, flushing all.")
                 self.update_auth_with_api_token(self.curr_owner_key)
@@ -216,18 +180,10 @@ class CreateScope(GetScope):
                     self.fail("Scopes flushing operation could not be "
                               "completed successfully.")
 
-        self.update_auth_with_api_token(self.curr_owner_key)
-        resp = self.capellaAPI.org_ops_apis.delete_project(
-            self.organisation_id, other_project_id)
-        if resp.status_code != 204:
-            failures.append("Error while deleting project {}"
-                            .format(other_project_id))
-
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Bu"
@@ -342,10 +298,8 @@ class CreateScope(GetScope):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"],
                     testcase["scopeName"], **kwarg)
-
             if self.validate_testcase(result, [201], testcase, failures):
                 self.scopes.append(scope_name)
-
             if len(self.scopes) == 1000:
                 self.log.warning("Reached 1000 Scopes, flushing all of them.")
                 self.update_auth_with_api_token(self.curr_owner_key)
@@ -393,8 +347,8 @@ class CreateScope(GetScope):
                 res = self.capellaAPI.cluster_ops_apis.create_scope(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id, testcase["name"])
-
-            if self.validate_testcase(res, [201], testcase, failures):
+            if self.validate_testcase(res, [201], testcase, failures,
+                                      payloadTest=True):
                 self.scopes.append(testcase["name"])
 
         if failures:
