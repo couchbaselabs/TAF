@@ -51,8 +51,13 @@ class CbImport(CbCmdBase):
             else:
                 key = "#{0}#".format(key_custom_generator)
 
+        if CbServer.use_https:
+            hostname = "https://localhost"
+        else:
+            hostname = "http://localhost"
+
         cmd = "%s csv --cluster %s:%s -u %s -p %s -b %s -d file://%s -g key::%s" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, hostname, self.port,
                  self.username, self.password, bucket, file_path, key)
 
         if infer_types:
