@@ -141,10 +141,10 @@ skip_mem_info=""
 if [ "$server_type" = "CAPELLA_LOCAL" ]; then
   skip_mem_info=" -m "
   installParameters="install_tasks=uninstall-install,h=true"
-else
-    if [ "$server_type" = "ELIXIR_ONPREM" ]; then
-        installParameters="cluster_profile=serverless"
-    fi
+elif [ "$server_type" = "ON_PREM_PROVISIONED" ]; then
+  installParameters="cluster_profile=provisioned"
+elif [ "$server_type" = "ELIXIR_ONPREM" ]; then
+  installParameters="cluster_profile=serverless"
 fi
 
 parallel=true
