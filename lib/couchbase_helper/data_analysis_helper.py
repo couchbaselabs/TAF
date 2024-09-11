@@ -470,9 +470,7 @@ class DataAnalyzer(object):
             return ""
         if type == "int":
             return int(val)
-        elif type == "long":
-            return long(val)
-        elif type == "float":
+        elif type in ["long", "float"]:
             return float(val)
         elif type == "string":
             return val
