@@ -31,61 +31,92 @@ class APIBase(CouchbaseBaseTest):
         self.organisation_id = self.input.capella.get("tenant_id")
         self.invalid_UUID = "00000000-0000-0000-0000-000000000000"
         self.prefix = "Automated_v4API_test_"
-        self.project_id = None
+        self.project_id = self.input.capella.get("project", None)
         self.count = 0
-
         self.capellaAPI = CapellaAPI(
             "https://" + self.url, "", "", self.user, self.passwd, "")
         self.columnarAPI = ColumnarAPIs("https://" + self.url, "", "", "")
-        self.create_v2_control_plane_api_key()
-
-        # create the first V4 API KEY WITH organizationOwner role, which will
-        # be used to perform further V4 api operations
-        resp = self.capellaAPI.org_ops_apis.create_api_key(
-            self.organisation_id, self.prefix + "OrgOwnerKey-1",
-            ["organizationOwner"], self.prefix, 1)
-        if resp.status_code == 201:
-            self.org_owner_key1 = resp.json()
-            self.org_owner_key1["blockTime"] = time.time()
-            self.org_owner_key1["retryAfter"] = 0
+        if isinstance(self.organisation_id, dict):
+            self.organisation_id = self.organisation_id["id"]
+            self.v2_control_plane_api_access_key = self.capella[
+                "tenant_id"]["v2key"]
+            self.org_owner_key1 = self.capella["tenant_id"]["key1"]
+            self.org_owner_key2 = self.capella["tenant_id"]["key2"]
+            self.curr_owner_key = self.org_owner_key1
+            self.other_project_id = self.capella["tenant_id"]["otherProj"]
+            self.api_keys = self.capella["tenant_id"]["apiKeys"]
         else:
-            self.log.fail("!!!...Error while creating first OrgOwner v4 API "
-                          "key...!!!")
+            self.capella["tenant_id"] = {
+                "id": self.organisation_id
+            }
+            self.create_v2_control_plane_api_key()
 
-        # Create another API key with Org Owner Privileges to tap out for
-        # one another at time of Rate Limiting.
-        resp = self.capellaAPI.org_ops_apis.create_api_key(
-            self.organisation_id, self.prefix + "OrgOwnerKey-2",
-            ["organizationOwner"], self.prefix, 1)
-        if resp.status_code == 201:
-            self.org_owner_key2 = resp.json()
-            self.org_owner_key2["blockTime"] = time.time()
-            self.org_owner_key2["retryAfter"] = 0
-        else:
-            self.log.fail("!!!...Error while creating second OrgOwner v4 API "
-                          "key...!!!")
-
-        # update the token for capellaAPI object, so that is it being used
-        # for api auth.
-        self.curr_owner_key = self.org_owner_key1
-        self.update_auth_with_api_token(self.curr_owner_key)
-        self.api_keys = dict()
-
-        # Create a wrapper project to be used for all the projects :
-        # IF not already present.
-        if TestInputSingleton.input.capella.get("project", None):
-            self.project_id = TestInputSingleton.input.capella.get("project")
-        else:
-            res = self.capellaAPI.org_ops_apis.create_project(
-                self.organisation_id, self.prefix + "WRAPPER")
-            if res.status_code != 201:
-                self.log.error(res.content)
-                self.tearDown()
-                self.fail("!!!..Project creation failed...!!!")
+            # create the first V4 API KEY WITH organizationOwner role, which
+            # will be used to perform further V4 api operations
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.organisation_id, self.prefix + "OrgOwnerKey-1",
+                ["organizationOwner"], self.prefix, 1)
+            if resp.status_code == 201:
+                self.org_owner_key1 = resp.json()
+                self.org_owner_key1["blockTime"] = time.time()
+                self.org_owner_key1["retryAfter"] = 0
+                self.capella["tenant_id"]["key1"] = self.org_owner_key1
             else:
-                self.log.info("Project Creation Successful")
-                self.project_id = res.json()["id"]
-                self.capella["project"] = self.project_id
+                self.fail("!!!...Error while creating first OrgOwner v4 "
+                          "API key...!!!")
+
+            # Create another API key with Org Owner Privileges to tap out for
+            # one another at time of Rate Limiting.
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.organisation_id, self.prefix + "OrgOwnerKey-2",
+                ["organizationOwner"], self.prefix, 1)
+            if resp.status_code == 201:
+                self.org_owner_key2 = resp.json()
+                self.org_owner_key2["blockTime"] = time.time()
+                self.org_owner_key2["retryAfter"] = 0
+                self.capella["tenant_id"]["key2"] = self.org_owner_key2
+            else:
+                self.fail("!!!...Error while creating second OrgOwner v4 "
+                          "API key...!!!")
+
+            # update the token for capellaAPI object, so that is it being used
+            # for api auth.
+            self.curr_owner_key = self.org_owner_key1
+            self.update_auth_with_api_token(self.curr_owner_key)
+
+            # Create a wrapper project to be used for all the projects,
+            # IF not already present.
+            if TestInputSingleton.input.capella.get("project", None):
+                self.project_id = TestInputSingleton.input.capella.get(
+                    "project")
+            else:
+                res = self.capellaAPI.org_ops_apis.create_project(
+                    self.organisation_id, self.prefix + "WRAPPER")
+                if res.status_code != 201:
+                    self.log.error(res.content)
+                    self.tearDown()
+                    self.fail("!!!..Project creation failed...!!!")
+                else:
+                    self.log.info("Project Creation Successful")
+                    self.project_id = res.json()["id"]
+                    self.capella["project"] = self.project_id
+
+            # Create a residual project used for auth verification tests.
+            resp = self.capellaAPI.org_ops_apis.create_project(
+                self.organisation_id, "Auth_Project")
+            if resp.status_code == 201:
+                self.other_project_id = resp.json()["id"]
+                self.capella["tenant_id"]["otherProj"] = self.other_project_id
+            else:
+                self.fail(
+                    "Error while creating project: {}".format(resp.content))
+
+            # Create security related API keys, 256 to be exact.
+            self.api_keys = dict()
+            self.api_keys.update(
+                self.create_api_keys_for_all_combinations_of_roles(
+                    [self.project_id]))
+            self.capella["tenant_id"]["apiKeys"] = self.api_keys
 
         # Templates for cluster configurations across Computes and CSPs.
         self.cluster_templates = {
@@ -505,37 +536,48 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("Cluster destroyed successfully.")
             self.cluster_id = None
 
-            # Delete the project that was created.
+            # Delete all the security related API Keys created and stored in
+            # the tenant DICT during initial SETUP run
+            self.log.info("Deleting {} API keys".format(len(self.api_keys)))
+            self.delete_api_keys(self.api_keys)
+
+            # Delete the projects that were created.
             self.log.info("Deleting Project: {}".format(self.project_id))
-            if self.delete_projects(self.organisation_id, [self.project_id],
-                                    self.curr_owner_key):
+            if self.delete_projects(
+                    self.organisation_id,
+                    [self.project_id, self.other_project_id],
+                    self.curr_owner_key):
                 self.log.error("Error while deleting project.")
             else:
                 self.log.info("Project deleted successfully")
                 self.project_id = None
 
-        # Delete organizationOwner API keys
-        self.log.info("Deleting the first OrgOwner API key")
-        resp = self.capellaAPI.org_ops_apis.delete_api_key(
-            self.organisation_id, self.org_owner_key1["id"])
-        if resp.status_code != 204:
-            self.log.error("Error while deleting the first OrgOwner API key")
-            self.log.error(resp)
+            # Delete organizationOwner API keys
+            self.log.info("Deleting the first OrgOwner API key")
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(
+                self.organisation_id, self.org_owner_key1["id"])
+            if resp.status_code != 204:
+                self.log.error("Error while deleting the first OrgOwner key")
+                self.log.error(resp.content)
 
-        self.update_auth_with_api_token(self.org_owner_key2)
-        self.log.info("Deleting the second OrgOwner API key")
-        resp = self.capellaAPI.org_ops_apis.delete_api_key(
-            self.organisation_id, self.org_owner_key2["id"])
-        if resp.status_code != 204:
-            self.log.error("Error while deleting the second OrgOwner API key")
-            self.log.error(resp)
+            self.update_auth_with_api_token(self.org_owner_key2)
+            self.log.info("Deleting the second OrgOwner API key")
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(
+                self.organisation_id, self.org_owner_key2["id"])
+            if resp.status_code != 204:
+                self.log.error("Error while deleting the second OrgOwner key")
+                self.log.error(resp.content)
 
-        if hasattr(self, "v2_control_plane_api_access_key"):
-            response = self.capellaAPI.delete_control_plane_api_key(
-                self.organisation_id, self.v2_control_plane_api_access_key)
-            if response.status_code != 204:
-                self.log.error("Error while deleting V2 control plane API key")
-                self.log.error("{}".format(response.content))
+            if hasattr(self, "v2_control_plane_api_access_key"):
+                response = self.capellaAPI.delete_control_plane_api_key(
+                    self.organisation_id, self.v2_control_plane_api_access_key)
+                if response.status_code != 204:
+                    self.log.error("Error while deleting V2 control plane key")
+                    self.log.error(response.content)
+        if "multi_project_1" in self.api_keys:
+            del self.api_keys["multi_project_1"]
+        if "multi_project_2" in self.api_keys:
+            del self.api_keys["multi_project_2"]
         super(APIBase, self).tearDown()
 
     def create_v2_control_plane_api_key(self):
@@ -546,6 +588,8 @@ class APIBase(CouchbaseBaseTest):
         if response.status_code == 201:
             response = response.json()
             self.v2_control_plane_api_access_key = response["id"]
+            self.capella["tenant_id"]["v2key"] = \
+                self.v2_control_plane_api_access_key
             self.update_auth_with_api_token(response)
         else:
             self.log.error("Error while creating V2 control plane API key")
@@ -652,16 +696,13 @@ class APIBase(CouchbaseBaseTest):
                     o_roles.append("organizationMember")
 
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id, self.prefix, o_roles,
-                self.generate_random_string(50, prefix=self.prefix),
-                0.5, ["0.0.0.0/0"], resource)
+                self.organisation_id, self.prefix + "security", o_roles,
+                "", 0.5, ["0.0.0.0/0"], resource)
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id, self.prefix, o_roles,
-                    self.generate_random_string(50, prefix=self.prefix),
-                    0.5, ["0.0.0.0/0"], resource)
-
+                    self.organisation_id, self.prefix + "security", o_roles,
+                    "", 0.5, ["0.0.0.0/0"], resource)
             if resp.status_code == 201:
                 api_key_dict["-".join(role_combination)] = {
                     "id": resp.json()["id"],
@@ -672,19 +713,18 @@ class APIBase(CouchbaseBaseTest):
                 try:
                     resp = resp.json()
                     if 'errorType' in resp:
-                        self.log.error("Error received - \n Message - {} \n "
-                                       "Error Type - {}".format(
-                                        resp["message"], resp["errorType"]))
+                        self.log.error("Error Message - {}, Error Type - {}"
+                                       .format(resp["message"], resp["errorType"]))
                     else:
-                        self.log.error("Error received - \n Message - {}"
-                                       .format(resp["message"]))
+                        self.log.error("Error Message - {}".format(resp["message"]))
                 except (Exception,):
                     self.log.error("Error received - {}".format(resp.content))
                 # In order to delete the created keys.
                 self.api_keys = api_key_dict
                 self.fail("Error while generating API keys for role {}".format(
                     "-".join(role_combination)))
-        self.log.info("API keys created for all combination of roles")
+        self.log.info("{} API keys created, for all combination of roles"
+                      .format(len(api_key_dict)))
         return api_key_dict
 
     def delete_api_keys(self, api_key_dict):
@@ -738,16 +778,44 @@ class APIBase(CouchbaseBaseTest):
         self.capellaAPI.cluster_ops_apis.bearer_token = keyObj["token"]
         self.columnarAPI.bearer_token = keyObj["token"]
 
-    """
-    Method makes parallel api calls.
-    param num_of_calls_per_api (int) Number of API calls per API to be made.
-    param apis_to_call (list(list)) List of lists, where inner list is of
-    format [api_function_call, function_args]
-    param api_key_dict dict API keys to be used while making API calls
-    """
+    def v4_RBAC_injection_init(self, allowed_roles,
+                               expected_failure_code=None,
+                               expected_failure_error=None):
+        testcases = []
+        for role in self.api_keys:
+            testcase = {
+                "description": "Calling API with {} role".format(role),
+                "token": self.api_keys[role]["token"]
+            }
+            if expected_failure_code:
+                testcase["expected_status_code"] = expected_failure_code
+                testcase["expected_error"] = expected_failure_error
+            if not any(element in allowed_roles for
+                       element in self.api_keys[role]["roles"]):
+                testcase["expected_error"] = {
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
+                    "message": "Access Denied.",
+                    "httpStatusCode": 403
+                }
+                testcase["expected_status_code"] = 403
+            testcases.append(testcase)
+        self.auth_test_extension(testcases, self.other_project_id,
+                                 expected_failure_code, expected_failure_error)
+        return testcases
+
     def make_parallel_api_calls(
             self, num_of_calls_per_api=100, apis_to_call=[],
             api_key_dict={}, batch_size=10, wait_time=0):
+        """
+        Method makes parallel api calls.
+        param num_of_calls_per_api (int) Number of API calls per API to be made.
+        param apis_to_call (list(list)) List of lists, where inner list is of
+        format [api_function_call, function_args]
+        param api_key_dict dict API keys to be used while making API calls
+        """
         results = dict()
         for role in api_key_dict:
             api_key_dict[role].update({"role": role})
@@ -1095,13 +1163,19 @@ class APIBase(CouchbaseBaseTest):
             del self.api_keys["organizationOwner_new"]
         elif "revoke_key" in testcase:
             self.update_auth_with_api_token(self.curr_owner_key)
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.organisation_id, "Revoked_Key", ["organizationOwner"])
+            if resp.status_code == 201:
+                self.api_keys["revoked_key"] = resp.json()
+            else:
+                self.fail("Error while creating API key for organization "
+                          "owner for revoking later")
             resp = self.capellaAPI.org_ops_apis.delete_api_key(
-                organizationId=self.organisation_id,
-                accessKey=self.api_keys["organizationOwner"]["id"])
+                self.organisation_id, self.api_keys["revoked_key"]["id"])
             if resp.status_code != 204:
                 failures.append(testcase["description"])
-            self.update_auth_with_api_token(self.api_keys["organizationOwner"])
-            del self.api_keys["organizationOwner"]
+            self.update_auth_with_api_token(self.api_keys["revoked_key"])
+            del self.api_keys["revoked_key"]
         elif "userpwd" in testcase:
             basic = base64.b64encode("{}:{}".format(
                 self.user, self.passwd).encode()).decode()
@@ -1533,11 +1607,11 @@ class APIBase(CouchbaseBaseTest):
         self.update_auth_with_api_token(token)
         for project_id in project_ids:
             resp = self.capellaAPI.org_ops_apis.delete_project(
-                organizationId=org_id, projectId=project_id)
+                org_id, project_id)
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.org_ops_apis.delete_project(
-                    organizationId=org_id, projectId=project_id)
+                    org_id, project_id)
             if resp.status_code != 204:
                 self.log.error("Error while deleting project {}, Error: {}"
                                .format(project_id, resp.content))

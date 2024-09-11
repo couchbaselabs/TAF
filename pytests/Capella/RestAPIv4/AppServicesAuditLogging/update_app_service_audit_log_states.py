@@ -334,7 +334,8 @@ class PutAuditLog(GetAuditLog):
                        update_app_svc_audit_log_state(
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, testcase["auditEnabled"]))
-            self.validate_testcase(res, [204], testcase, failures)
+            self.validate_testcase(res, [204], testcase, failures,
+                                   payloadTest=True)
 
         if failures:
             for fail in failures:

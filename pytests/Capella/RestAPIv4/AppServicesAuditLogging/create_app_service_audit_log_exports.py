@@ -354,7 +354,8 @@ class PostAuditLogExports(GetAuditLogExports):
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.app_service_id, testcase["start"], testcase["end"]
                        ))
-            self.validate_testcase(res, [202], testcase, failures)
+            self.validate_testcase(res, [202], testcase, failures,
+                                   payloadTest=True)
 
         if failures:
             for fail in failures:
