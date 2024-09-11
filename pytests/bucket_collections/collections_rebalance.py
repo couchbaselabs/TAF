@@ -1,5 +1,4 @@
 import time
-from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from cb_constants import CbServer

@@ -1,15 +1,12 @@
 import copy
 import random
-import traceback
 from random import choice
 from time import time
 
 from BucketLib.bucket import Bucket
-import threading
-from custom_exceptions.exception import FailoverFailedException
 from sdk_client3 import SDKClient
 from cb_constants import CbServer, DocLoading
-from Jython_tasks.task import ConcurrentFailoverTask, NodeFailureTask
+from Jython_tasks.task import ConcurrentFailoverTask
 from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
