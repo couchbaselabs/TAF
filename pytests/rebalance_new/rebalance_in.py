@@ -2,11 +2,13 @@ import time
 
 import Jython_tasks.task as jython_tasks
 from cb_constants import DocLoading
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from rebalance_new import rebalance_base
 from rebalance_new.rebalance_base import RebalanceBaseTest
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -341,14 +343,15 @@ class RebalanceInTests(RebalanceBaseTest):
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.cluster.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.cluster.buckets, path=None)
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
         self.nodes = self.cluster_util.get_nodes(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         # Mark Node for failover
-        success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
+        success_failed_over = self.rest.perform_hard_failover(chosen[0].id)
         # Mark Node for full recovery
         if success_failed_over:
-            self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType="full")
+            self.rest.set_recovery_type(otp_node=chosen[0].id,
+                                        recovery_type="full")
         rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
@@ -396,11 +399,10 @@ class RebalanceInTests(RebalanceBaseTest):
         match the curr_items_total.
         Once all nodes have been rebalanced in the test is finished.
         """
-
-        fail_over = self.input.param("fail_over", False)
+        tasks = list()
+        reb_util = RebalanceUtil(self.cluster)
         self.gen_update = self.get_doc_generator(0, self.num_items)
         std = self.std_vbucket_dist or 1.0
-        tasks = []
         for bucket in self.cluster.buckets:
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, self.gen_update, "update", 0,
@@ -412,8 +414,6 @@ class RebalanceInTests(RebalanceBaseTest):
                 load_using=self.load_docs_using))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-        servs_in = [self.cluster.servers[i + self.nodes_init]
-                    for i in range(self.nodes_in)]
         self.sleep(20)
         for bucket in self.cluster.buckets:
             current_items = self.bucket_util.get_buckets_item_count(
@@ -426,28 +426,29 @@ class RebalanceInTests(RebalanceBaseTest):
             timeout=self.wait_timeout)
         self.sleep(20)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.cluster.buckets)
-        prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.cluster.buckets)
+        _ = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.cluster.buckets)
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.cluster.buckets, path=None)
-        self.rest = RestConnection(self.cluster.master)
-        self.nodes = self.cluster_util.get_nodes(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
-        self.rest = RestConnection(self.cluster.master)
-        self.rest.add_node(self.cluster.master.rest_username,
-                           self.cluster.master.rest_password,
-                           self.cluster.servers[self.nodes_init].ip,
-                           self.cluster.servers[self.nodes_init].port)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        self.rest.add_node(self.cluster.servers[self.nodes_init].ip,
+                           self.cluster.master.rest_username,
+                           self.cluster.master.rest_password)
         # Mark Node for failover
-        self.rest.fail_over(chosen[0].id, graceful=fail_over)
-        if fail_over:
-            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
+        if self.input.param("fail_over", False):
+            self.rest.perform_graceful_failover(chosen[0].id)
+            self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True),
                             msg="Graceful Failover Failed")
-        self.nodes = self.rest.node_statuses()
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                            ejectedNodes=[chosen[0].id])
-        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
+        else:
+            self.rest.perform_hard_failover(chosen[0].id)
+        self.nodes = self.cluster_util.get_nodes(self.cluster.master,
+                                                 inactive_added=True,
+                                                 inactive_failed=True)
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
+                            eject_nodes=[chosen[0].id])
+        self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True),
                         msg="Rebalance Failed")
-        self.sleep(60)
+        self.sleep(5)
         # Verification
         new_server_list = self.cluster_util.add_remove_servers(
             self.cluster, self.cluster.servers[:self.nodes_init],
@@ -601,26 +602,30 @@ class RebalanceInTests(RebalanceBaseTest):
         and then verify that there has been no data loss, sum(curr_items)
         match the curr_items_total
         """
-
+        bucket_name = self.cluster.buckets[0]
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
         self.sleep(5)
-        rest_cons = [RestConnection(self.cluster.servers[i]) for i in range(self.nodes_init)]
-        result = []
+        rand_keys = list()
+        rest_cons = list()
+        b_rest_cons = list()
+        for i in range(self.nodes_init):
+            rest_cons.append(ClusterRestAPI(self.cluster.servers[i]))
+            b_rest_cons.append(BucketRestApi(self.cluster.servers[i]))
         num_iter = 0
-        # get random keys for each node during rebalancing
-        while rest_cons[0]._rebalance_progress_status() == 'running' and num_iter < 100:
-            temp_result = []
-            self.log.info("getting random keys for all nodes in cluster....")
-            for rest in rest_cons:
-                result.append(rest.get_random_key('default'))
+        # get random keys for each node during rebalance
+        while (self.cluster_util.get_rebalance_status_and_progress()[0]
+               == "running") and num_iter < 100:
+            temp_result = list()
+            self.log.info("Getting random keys for all nodes in cluster....")
+            for i, rest in enumerate(rest_cons):
+                rand_keys.append(b_rest_cons[i].get_random_key(bucket_name))
                 self.sleep(1)
-                temp_result.append(rest.get_random_key('default'))
+                temp_result.append(b_rest_cons[i].get_random_key(bucket_name))
 
-            if tuple(temp_result) == tuple(result):
-                self.log.exception("random keys are not changed")
-            else:
-                result = temp_result
+            if tuple(temp_result) == tuple(rand_keys):
+                self.fail("Random keys are not changed")
+            rand_keys = temp_result
             num_iter += 1
 
         self.task.jython_task_manager.get_task_result(rebalance)
@@ -631,9 +636,9 @@ class RebalanceInTests(RebalanceBaseTest):
                 self.cluster, bucket.name)
             self.num_items = current_items
         # get random keys for new added nodes
-        rest_cons = [RestConnection(self.cluster.servers[i]) for i in range(self.nodes_init + self.nodes_in)]
-        for rest in rest_cons:
-            result = rest.get_random_key('default')
+        for rest in [BucketRestApi(self.cluster.servers[i])
+                     for i in range(self.nodes_init, self.nodes_in)]:
+            rest.get_random_key(bucket_name)
         self.bucket_util.verify_cluster_stats(self.cluster, self.num_items,
                                               timeout=self.wait_timeout)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)

@@ -5155,13 +5155,12 @@ class BucketUtils(ScopeUtils):
     def verify_items_count(self, cluster, bucket, num_attempt=3, timeout=2,
                            num_zone=1):
         # get the #of buckets from rest
-        rest = RestConnection(cluster.master)
         vbucket_active_sum = 0
         vbucket_replica_sum = 0
         vbucket_pending_sum = 0
         all_server_stats = []
         stats_received = True
-        nodes = rest.get_nodes()
+        nodes = global_vars.cluster_util.get_nodes(cluster.master)
         cbstat = Cbstats(cluster.master)
         bucket_helper = BucketHelper(cluster.master)
         active_vbucket_differ_count = len(nodes)
