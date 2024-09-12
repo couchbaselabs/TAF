@@ -1,9 +1,10 @@
 from bucket_collections.collections_base import CollectionBase
 from cb_constants import DocLoading
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest
+from rebalance_utils.rebalance_util import RebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -86,11 +87,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         The oder of add/remove nodes looks like:
         self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
         """
-        rest = RestConnection(self.cluster.master)
+        rest = ClusterRestAPI(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster.master)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
                                                      timeout=1200)
-        self.log.info("Current nodes : {0}".format([node.id for node in rest.node_statuses()]))
+        self.log.info("Current nodes : {0}".format([node.id for node in self.cluster_util.get_nodes(self.cluster.master)]))
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
@@ -114,8 +116,10 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
-                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
-                self.assertTrue(stopped, msg="Unable to stop rebalance")
+
+                self.assertTrue(
+                    reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
+                    msg="Unable to stop rebalance")
             self.task_manager.get_task_result(rebalance)
             if self.cluster_util.is_cluster_rebalanced(rest):
                 self.validate_docs()
@@ -147,11 +151,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             The oder of add/remove nodes looks like:
             self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
             """
-        rest = RestConnection(self.cluster.master)
+        rest = ClusterRestAPI(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster.master)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
                                                      timeout=1200)
-        self.log.info("Current nodes : {0}".format([node.id for node in rest.node_statuses()]))
+        self.log.info("Current nodes : {0}".format([node.id for node in self.cluster_util.get_nodes(self.cluster.master)]))
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
@@ -179,8 +184,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
-                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
-                self.assertTrue(stopped, msg="Unable to stop rebalance")
+                self.assertTrue(
+                    reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
+                    msg="Unable to stop rebalance")
                 # Trigger cb_collect with rebalance stopped and doc_ops running
                 self.cbcollect_info(trigger=True, validate=True)
                 if self.withMutationOps:
@@ -220,11 +226,12 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             The oder of add/remove nodes looks like:
             self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
             """
-        rest = RestConnection(self.cluster.master)
+        rest = ClusterRestAPI(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster.master)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
                                                      timeout=1200)
-        self.log.info("Current nodes : {0}".format([node.id for node in rest.node_statuses()]))
+        self.log.info("Current nodes : {0}".format([node.id for node in self.cluster_util.get_nodes_self(self.cluster.master)]))
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
@@ -248,8 +255,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
-                stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
-                self.assertTrue(stopped, msg="Unable to stop rebalance")
+                self.assertTrue(
+                    reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
+                    msg="Unable to stop rebalance")
                 if self.withMutationOps:
                     cont_load_task = \
                         CollectionBase.start_history_retention_data_load(self)
@@ -304,16 +312,20 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats,
                                                          prev_failover_stats)
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         _ = list(set(self.servers[:self.nodes_init] + self.servs_in)
                  - set(self.servs_out))
         for node in self.servs_in:
-            self.rest.add_node(self.cluster.master.rest_username,
-                               self.cluster.master.rest_password,
-                               node.ip, node.port)
+            self.rest.add_node(node.ip,
+                               self.cluster.master.rest_username,
+                               self.cluster.master.rest_password)
         # Mark Node for failover
-        self.rest.fail_over(chosen[0].id, graceful=fail_over)
+        if fail_over:
+            self.rest.perform_graceful_failover(chosen[0].id)
+        else:
+            self.rest.perform_hard_failover(chosen[0].id)
 
         # Doc_mutation after failing over the nodes
         cont_load_task = CollectionBase.start_history_retention_data_load(self)
@@ -324,23 +336,23 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.task.async_rebalance(self.cluster, self.servs_in, self.servs_out)
         expected_progress = 50
-        rest = RestConnection(self.cluster.master)
+        rest = ClusterRestAPI(self.cluster.master)
         reached = self.cluster_util.rebalance_reached(self.cluster, expected_progress)
         self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                         .format(expected_progress))
         if not self.cluster_util.is_cluster_rebalanced(rest):
             self.log.info("Stop the rebalance")
-            stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
-            self.assertTrue(stopped, msg="Unable to stop rebalance")
+            self.assertTrue(
+                reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
+                msg="Unable to stop rebalance")
 
         # Trigger cbcollect with halted failover
         self.cbcollect_info(trigger=True, validate=True)
 
         self.shuffle_nodes_between_zones_and_rebalance()
         self.cluster_util.print_cluster_stats(self.cluster)
-        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
-                                                    inactive_added=True,
-                                                    inactive_failed=True)
+        self.cluster_util.update_cluster_nodes_service_list(
+            self.cluster, inactive_added=True, inactive_failed=True)
         self.validate_docs()
         self.sleep(30)
         if self.verify_unacked_bytes:

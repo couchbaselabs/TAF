@@ -51,7 +51,7 @@ class RebalanceUtil(object):
     def stop_rebalance(self, wait_timeout=10):
         status, content = self.cluster_rest.stop_rebalance()
         if status:
-            for i in range(wait_timeout):
+            for i in range(int(wait_timeout)):
                 if self.get_rebalance_status() == 'running':
                     self.log.warn(f"Rebalance not stopped after {i+1} sec")
                     sleep(1)
