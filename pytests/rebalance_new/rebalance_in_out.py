@@ -187,7 +187,6 @@ class RebalanceInOutTests(RebalanceBaseTest):
         We then remove and add back two nodes at a time and so on until we have reached the point
         where we are adding back and removing at least half of the nodes.
         """
-        fail_over = self.input.param("fail_over", False)
         gen = self.get_doc_generator(0, self.num_items)
 
         if self.atomicity:
@@ -238,7 +237,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
                                username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
         # Mark Node for failover
-        if fail_over:
+        if self.input.param("fail_over", False):
             self.rest.perform_graceful_failover([chosen[0].id])
         else:
             self.rest.perform_hard_failover([chosen[0].id])

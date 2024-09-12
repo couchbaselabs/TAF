@@ -291,7 +291,9 @@ class RebalanceBaseTest(BaseTestCase):
                     - set([node for node in self.cluster_util.get_nodes_in_zone(self.cluster.master, zones[i])]))
                 self.cluster_util.shuffle_nodes_in_zones(
                     self.cluster.master, node_in_zone, zones[0], zones[i])
-        cluster_nodes = self.cluster_util.get_nodes(self.servers[0])
+        cluster_nodes = self.cluster_util.get_nodes(self.servers[0],
+                                                    inactive_added=True,
+                                                    inactive_failed=True)
         known_nodes = [node.id for node in cluster_nodes]
         nodes_to_remove = [node.id for node in cluster_nodes
                            if node.ip in [t.ip for t in to_remove]]
