@@ -210,9 +210,6 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 # elif service == CbServer.Services.INDEX:
                 #     if node_count[CbServer.Services.INDEX] > 1:
                 #         is_safe = True
-                else:
-                    if node_count[service] > 1:
-                        is_safe = True
             else:
                 # All other services require at least 2 nodes to FO
                 if node_count[service] > 1:
@@ -239,7 +236,6 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         if num_unreachable_nodes > max_allowed_unreachable_nodes:
             return 0
         # End of quorum check
-
         node_count = dict()
         node_count[CbServer.Services.KV] = len(self.cluster.kv_nodes)
         node_count[CbServer.Services.INDEX] = len(self.cluster.index_nodes)
