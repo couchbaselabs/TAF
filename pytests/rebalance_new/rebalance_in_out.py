@@ -1,9 +1,9 @@
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
-from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
 from BucketLib.BucketOperations import BucketHelper
 from rebalance_new import rebalance_base
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_exceptions import SDKException
 
 
@@ -29,6 +29,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         # Shuffle the nodes if zone > 1 is specified.
+        prev_failover_stats = prev_vbucket_stats = None
+        disk_active_dataset = disk_replica_dataset = None
         if self.zone > 1:
             self.shuffle_nodes_between_zones_and_rebalance()
             self.cluster_util.print_cluster_stats(self.cluster)
@@ -79,14 +81,15 @@ class RebalanceInOutTests(RebalanceBaseTest):
             new_failover_stats = self.bucket_util.compare_failovers_logs(
                 self.cluster, prev_failover_stats, result_nodes,
                 self.cluster.buckets)
-            new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(self.cluster, prev_vbucket_stats, result_nodes, self.cluster.buckets,
-                                                            perNode=False)
+            new_vbucket_stats = self.bucket_util.compare_vbucket_seqnos(
+                self.cluster, prev_vbucket_stats, result_nodes,
+                self.cluster.buckets, perNode=False)
             self.bucket_util.compare_vbucketseq_failoverlogs(new_vbucket_stats, new_failover_stats)
             self.sleep(30)
-            self.bucket_util.data_analysis_active_replica_all(disk_active_dataset, disk_replica_dataset, result_nodes, self.cluster.buckets,
-                                                  path=None)
+            self.bucket_util.data_analysis_active_replica_all(
+                disk_active_dataset, disk_replica_dataset, result_nodes,
+                self.cluster.buckets, path=None)
             self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
-        #self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0, total_vbuckets=self.cluster.vbuckets)
 
     def test_rebalance_in_out_with_failover_addback_recovery(self):
         """
@@ -102,6 +105,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         We then remove and add back two nodes at a time and so on until we have reached the point
         where we are adding back and removing at least half of the nodes.
         """
+        tasks_info = None
         recovery_type = self.input.param("recoveryType", "full")
         gen = self.get_doc_generator(0, self.num_items)
 
@@ -114,8 +118,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
 
-        servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
-        servs_out = self.cluster.servers[self.nodes_init - self.nodes_out:self.nodes_init]
+        servs_in = self.cluster.servers[self.nodes_init
+                                        :self.nodes_init + self.nodes_in]
+        servs_out = self.cluster.servers[self.nodes_init - self.nodes_out
+                                         :self.nodes_init]
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
@@ -130,7 +136,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster,
                 timeout=self.wait_timeout)
-        # Update replica value before performing rebalance in/out as given in conf file
+        # Update replica value before performing rebalance in/out as in conf
         if self.replica_to_update:
             bucket_helper = BucketHelper(self.cluster.master)
             self.log.info("Updating replica count of bucket to {0}"
@@ -141,29 +147,31 @@ class RebalanceInOutTests(RebalanceBaseTest):
 
 #             self.cluster.buckets[0].replicaNumber = self.replica_to_update
 
-        self.sleep(20)
-
+        self.sleep(20, "Wait before get_vb_seqnos")
         prev_vbucket_stats = self.bucket_util.get_vbucket_seqnos(self.cluster.servers[:self.nodes_init], self.cluster.buckets)
         prev_failover_stats = self.bucket_util.get_failovers_logs(self.cluster.servers[:self.nodes_init], self.cluster.buckets)
-        disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
-            self.cluster.servers[:self.nodes_init], self.cluster.buckets, path=None)
+        _, _ = self.bucket_util.get_and_compare_active_replica_data_set_all(
+            self.cluster.servers[:self.nodes_init], self.cluster.buckets)
 
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
         self.nodes = self.cluster.nodes_in_cluster
 
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
 
         for node in servs_in:
-            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password, node.ip, node.port)
+            self.rest.add_node(node.ip,
+                               self.cluster.master.rest_username,
+                               self.cluster.master.rest_password)
 
         # Mark Node for failover
         self.sleep(30)
-        success_failed_over = self.rest.fail_over(chosen[0].id, graceful=False)
+        success_failed_over = self.rest.perform_hard_failover(chosen[0].id)
 
         # Mark Node for full recovery
         if success_failed_over:
-            self.rest.set_recovery_type(otpNode=chosen[0].id, recoveryType=recovery_type)
+            self.rest.set_recovery_type(otp_node=chosen[0].id,
+                                        recovery_type=recovery_type)
         self.sleep(30)
         try:
             self.shuffle_nodes_between_zones_and_rebalance(servs_out)
@@ -187,6 +195,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         We then remove and add back two nodes at a time and so on until we have reached the point
         where we are adding back and removing at least half of the nodes.
         """
+        tasks_info = None
         gen = self.get_doc_generator(0, self.num_items)
 
         if self.atomicity:
@@ -233,7 +242,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
         result_nodes = [node for node in result_nodes if node.ip != chosen[0].ip]
         for node in servs_in:
-            self.rest.add_node(host_name=f"{node.ip}:{node.port}",
+            self.rest.add_node(host_name=node.ip,
                                username=self.cluster.master.rest_username,
                                password=self.cluster.master.rest_password)
         # Mark Node for failover
@@ -280,7 +289,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
 
-        for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
+        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
             # CRUDs while rebalance is running in parallel
             tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
@@ -322,10 +331,12 @@ class RebalanceInOutTests(RebalanceBaseTest):
         We then remove and add back two nodes at a time and so on until we have reached the point
         where we are adding back and removing at least half of the nodes.
         """
-        self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
+        self.add_remove_servers_and_rebalance(
+            self.cluster.servers[self.nodes_init:self.num_servers], [])
         gen = self.get_doc_generator(0, self.num_items)
         batch_size = 50
-        for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
+        tasks_info = None
+        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
             if self.atomicity:
                 self._load_all_buckets_atomicty(gen, "rebalance_only_update")
             else:
@@ -335,8 +346,10 @@ class RebalanceInOutTests(RebalanceBaseTest):
                     load_using=self.load_docs_using)
             compact_tasks = []
             for bucket in self.cluster.buckets:
-                compact_tasks.append(self.task.async_compact_bucket(self.cluster.master, bucket))
-            self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
+                compact_tasks.append(self.task.async_compact_bucket(
+                    self.cluster.master, bucket))
+            self.add_remove_servers_and_rebalance(
+                [], self.cluster.servers[i:self.num_servers])
             self.sleep(10)
             if not self.atomicity:
                 for task in tasks_info:
@@ -437,7 +450,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
         gen_delete = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
-        for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
+        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
                 batch_size=1, timeout_secs=60,
@@ -482,8 +495,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
-        gen_delete = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
-        for i in reversed(range(self.num_servers)[self.num_servers / 2:]):
+        gen_delete = self.get_doc_generator(int(self.num_items/2) + 2000,
+                                            self.num_items)
+        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
                 durability=self.durability_level,
@@ -549,15 +563,12 @@ class RebalanceInOutTests(RebalanceBaseTest):
                           .format(self.replica_to_update))
             bucket_helper.change_bucket_props(
                 self.cluster.buckets[0], replicaNumber=self.replica_to_update)
-#             self.cluster.buckets[0].replicaNumber = self.replica_to_update
-        rest = RestConnection(self.cluster.master)
         if not self.atomicity:
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
-        self.log.info("current nodes : {0}".format([node.id for node in rest.node_statuses()]))
+        self.log.info("current nodes : {0}".format([node.id for node in self.cluster_util.get_nodes(self.cluster.master)]))
         self.log.info("adding nodes {0} to cluster".format(servs_in))
         self.log.info("removing nodes {0} from cluster".format(servs_out))
-        result_nodes = set(servs_init + servs_in) - set(servs_out)
         self.add_remove_servers_and_rebalance(servs_in, servs_out)
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(self.cluster, self.num_items,
@@ -600,9 +611,6 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                 def_bucket, replicaNumber=self.replica_to_update)
             self.cluster.buckets[0].replicaNumber = self.replica_to_update
 
-        # Rest connection to add/rebalance/monitor nodes
-        rest = RestConnection(master)
-
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
@@ -626,9 +634,9 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
 
-        if self.swap_orchestrator:
-            rest = RestConnection(servs_in[0])
-            master = servs_in[0]
+        # Rest connection to add/rebalance/monitor nodes
+        rest = ClusterRestAPI(servs_in[0] if self.swap_orchestrator
+                              else master)
 
         self.log.info("IN/OUT REBALANCE PHASE")
         rebalance_task = self.task.async_rebalance(self.cluster,
@@ -647,7 +655,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                 self.log.info("STOP/START SWAP REBALANCE PHASE WITH PROGRESS {0}%"
                               .format(expected_progress))
                 while True:
-                    progress = rest._rebalance_progress()
+                    progress = self.cluster_util.get_rebalance_status_and_progress(self.cluster)[0]
                     if progress < 0:
                         self.log.error("rebalance progress code : {0}"
                                        .format(progress))
@@ -677,7 +685,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         if not rebalance_task.result:
             self.fail("Rebalance Failed")
 
-        self.assertTrue(rest.monitorRebalance(),
+        self.assertTrue(RebalanceUtil(self.cluster).monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
 
@@ -726,10 +734,6 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             master_node_cb_stat.vbucket_seqno(def_bucket.name)
         master_node_cb_stat.disconnect()
         """
-
-        # Rest connection to add/rebalance/monitor nodes
-        rest = RestConnection(master)
-
         # Start the swap rebalance
         current_nodes = RebalanceHelper.getOtpNodeIds(master)
         self.log.info("current nodes : {0}".format(current_nodes))
@@ -742,9 +746,9 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             try:
                 status, content = self.cluster_util.find_orchestrator(
                     self.cluster, node=master)
-                self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
-                                .format(status, content))
-            except:
+                self.assertTrue(
+                    status, msg=f"Find Orchestrator failed {status}:{content}")
+            except Exception:
                 pass
             toBeEjectedNodes[0] = self.cluster.master
 
@@ -753,7 +757,6 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                           .format(node))
 
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
-
         for bucket in self.cluster.buckets:
             durability_req = (bucket.replicaNumber + 1)/2 + 1
             self.assertTrue(durability_req >= len(current_nodes) - len(toBeEjectedNodes) + len(servs_in),
@@ -769,10 +772,9 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         self.cluster.nodes_in_cluster = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(toBeEjectedNodes))
 
         if self.swap_orchestrator:
-            rest = RestConnection(self.cluster.nodes_in_cluster[0])
             self.cluster.master = self.cluster.nodes_in_cluster[0]
 
-        self.assertTrue(rest.monitorRebalance(),
+        self.assertTrue(RebalanceUtil(self.cluster).monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
 
@@ -794,7 +796,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         # Add back first ejected node back into the cluster
         self.task.rebalance(self.cluster, toBeEjectedNodes, [])
         self.sleep(10, "wait for rebalance to start")
-        self.assertTrue(rest.monitorRebalance(),
+        self.assertTrue(RebalanceUtil(self.cluster).monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(toBeEjectedNodes))
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
