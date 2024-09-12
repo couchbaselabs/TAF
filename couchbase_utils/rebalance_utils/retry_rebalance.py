@@ -1,23 +1,20 @@
-import json
 from cb_constants import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from global_vars import logger
-from membase.api.rest_client import RestConnection
 from common_lib import sleep
+from rebalance_utils.rebalance_util import RebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class RetryRebalanceUtil:
-
     def __init__(self):
         self.test_log = logger.get("test")
-
         if CbServer.use_https:
             self.prefix = "-k https"
             self.port_to_use = 18091
         else:
             self.prefix = "http"
             self.port_to_use = 8091
-
 
     def induce_rebalance_test_condition(self, servers, test_failure_condition,
                                         bucket_name="default",
@@ -94,11 +91,12 @@ class RetryRebalanceUtil:
             shell.disconnect()
 
     def check_retry_rebalance_succeeded(self, server):
-        rest = RestConnection(server)
+        rest = ClusterRestAPI(server)
+        reb_util = RebalanceUtil(server)
         attempts_remaining = retry_rebalance = retry_after_secs = None
         for i in range(10):
             self.test_log.info("Getting stats : try {0}".format(i))
-            result = json.loads(rest.get_pending_rebalance_info())
+            _, result = rest.pending_retry_rebalance()
             self.test_log.info(result)
             if "retry_after_secs" in result:
                 retry_after_secs = result["retry_after_secs"]
@@ -106,30 +104,30 @@ class RetryRebalanceUtil:
                 retry_rebalance = result["retry_rebalance"]
                 break
             sleep(5)
-        self.test_log.debug("Attempts remaining: {0}, Retry rebalance: {1}"
-                       .format(attempts_remaining, retry_rebalance))
+        self.test_log.debug(f"Attempts remaining: {attempts_remaining}, "
+                            f"Retry rebalance: {retry_rebalance}")
         while attempts_remaining:
             # wait for the afterTimePeriod for the failed rebalance to restart
             sleep(retry_after_secs,
                        message="Waiting for the afterTimePeriod to complete")
             try:
-                result = rest.monitorRebalance()
+                result = reb_util.monitor_rebalance()
                 msg = "monitoring rebalance {0}"
                 self.test_log.debug(msg.format(result))
             except Exception:
-                result = json.loads(rest.get_pending_rebalance_info())
+                _, result = rest.pending_retry_rebalance()
                 self.test_log.debug(result)
                 try:
                     attempts_remaining = result["attempts_remaining"]
                     retry_rebalance = result["retry_rebalance"]
                     retry_after_secs = result["retry_after_secs"]
                 except KeyError:
-                    self.test_log.error("Retrying of rebalance still did not help. "
-                              "All the retries exhausted...")
+                    self.test_log.error("Failure in retrying of rebalance. "
+                                        "All the retries exhausted...")
                     return False
-                self.test_log.info("Attempts remaining: {0}, Retry rebalance: {1}"
-                              .format(attempts_remaining, retry_rebalance))
+                self.test_log.info(f"Attempts remaining: {attempts_remaining}, "
+                                   f"Retry rebalance: {retry_rebalance}")
             else:
-                self.test_log.info("Retry rebalanced fixed the rebalance failure")
+                self.test_log.info("Retry rebalance fixed the failure")
                 break
         return True
