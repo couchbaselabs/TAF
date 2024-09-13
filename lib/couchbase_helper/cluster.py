@@ -100,7 +100,7 @@ class ServerTasks(object):
         self.jython_task_manager.schedule(_task)
         return _task
 
-    def async_range_scan(self, cluster, task_manager,
+    def async_range_scan(self, cluster, task_manager, rc_conn_list,
                          range_scan_collections,
                          items_per_collection,
                          include_prefix_scan=True,
@@ -110,6 +110,7 @@ class ServerTasks(object):
                          expect_range_scan_failure=True):
         self.log.debug("Continuous range scan started")
         task = jython_tasks.ContinuousRangeScan(cluster, task_manager,
+                                                rc_conn_list,
                                                 items_per_collection,
                                                 range_scan_collections=
                                                 range_scan_collections,

@@ -2223,7 +2223,7 @@ class ContinuousRangeScan(Task):
     # and doc count on the collections then starting range scan for the given
     # collections using RangeScanOnCollection task
 
-    def __init__(self,  cluster, task_manager,
+    def __init__(self,  cluster, task_manager, rc_conn_list,
                  items, range_scan_collections,
                  parallel_task=8, buckets=None,
                  include_prefix_scan=True, include_range_scan=True,
@@ -2237,6 +2237,7 @@ class ContinuousRangeScan(Task):
         self.cluster = cluster
         self.stop_task = False
         self.fail_map = []
+        self.rc_conn_list = rc_conn_list
         self.skip_scopes = skip_scopes
         self.parallel_task = parallel_task
         self.task_manager = task_manager
@@ -2317,7 +2318,7 @@ class ContinuousRangeScan(Task):
                 self.create_range_scan_terms()
             self.log.debug("Collections selected for range scan %s" %
                            self.range_scan_collections)
-            if self.cluster.sdk_client_pool is None:
+            if self.rc_conn_list is None:
                 self.log.debug("SDK pool not found creating clients" %
                                self.range_scan_collections)
                 client_for_collection_list = list()
@@ -2334,7 +2335,7 @@ class ContinuousRangeScan(Task):
                                     self.cluster, bucket,
                                     scope=scope, collection=collection))
             else:
-                client_for_collection_list = self.cluster.sdk_client_pool
+                client_for_collection_list = self.rc_conn_list
             parallel_scan_task = {key: None for key in
                                   range(self.parallel_task)}
             run_parallel_tasks = True

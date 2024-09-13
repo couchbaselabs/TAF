@@ -397,7 +397,7 @@ class CollectionBase(ClusterSetup):
     @staticmethod
     def range_scan_load_setup(test_obj):
         key_size = 8
-        sdk_list = []
+        rc_conn_list = []
         include_prefix_scan = True
         include_range_scan = True
         timeout = 60
@@ -461,7 +461,7 @@ class CollectionBase(ClusterSetup):
                         bucket]['scopes'][scope]['collections']:
                         for t_bucket in test_obj.cluster.buckets:
                             if t_bucket.name == bucket:
-                                sdk_list.append(SDKClient(
+                                rc_conn_list.append(SDKClient(
                                     test_obj.cluster,
                                     t_bucket, scope=scope, collection=collection))
                                 collections_created.append(collection)
@@ -472,12 +472,12 @@ class CollectionBase(ClusterSetup):
                     test_obj.spec_name)
             items_per_collection = doc_loading_spec[
                 MetaConstants.NUM_ITEMS_PER_COLLECTION]
-
             # starting parallel range scans task
             # teardown is handled in teardown method of this class
             test_obj.range_scan_task = test_obj.task.async_range_scan(
                 test_obj.cluster, test_obj.task.jython_task_manager,
-                sdk_list, collections_created, items_per_collection,
+                rc_conn_list,
+                collections_created, items_per_collection,
                 key_size=key_size, include_range_scan=include_range_scan,
                 include_prefix_scan=include_prefix_scan, timeout=timeout,
                 expect_exceptions=expect_exceptions,
