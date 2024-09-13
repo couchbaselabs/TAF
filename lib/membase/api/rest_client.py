@@ -3757,42 +3757,6 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
-    # Calls to add aws bucket to analytics for compute storage separation
-    def configure_compute_storage_separation_for_analytics(
-            self, aws_access_key, aws_secret_key, aws_bucket_name,
-            aws_bucket_region):
-        headers = {'Content-Type': "application/x-www-form-urlencoded"}
-
-        self.log.info("Adding aws access key")
-        url_access_key = "http://{}:8091/_metakv/cbas/debug/settings/" \
-                         "blob_storage_access_key_id".format(self.ip)
-        status, _, _ = self._http_request(
-            url_access_key, 'PUT',
-            urllib.parse.urlencode({'value': aws_access_key}), headers=headers)
-        if not status:
-            return False
-
-        self.log.info("Adding aws secret key")
-        url_secret_key = "http://{}:8091/_metakv/cbas/debug/settings/" \
-                         "blob_storage_secret_access_key".format(self.ip)
-        status, _, _ = self._http_request(
-            url_secret_key, 'PUT',
-            urllib.parse.urlencode({'value': aws_secret_key}), headers=headers)
-        if not status:
-            return False
-
-        self.log.info("Adding aws bucket config to analytics")
-        url = 'http://{}:8091/settings/analytics'.format(self.ip)
-        data = {'blobStorageRegion': aws_bucket_region,
-                'blobStoragePrefix': '',
-                'blobStorageBucket': aws_bucket_name,
-                'blobStorageScheme': 's3'}
-        status, _, _ = self._http_request(
-            url, 'POST', urllib.parse.urlencode(data), headers=headers)
-        if not status:
-            return False
-        return True
-
     def get_saml_settings(self):
         """
         Returns current saml settings as JSON

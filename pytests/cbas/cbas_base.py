@@ -80,15 +80,25 @@ class CBASBaseTest(BaseTestCase):
         self.num_of_clusters = self.input.param('num_of_clusters', 1)
 
         """
+        For columnar on-prem tests
+        """
+        if self.input.param("runtype", "default") == "onprem-columnar":
+            self.analytics_compute_storage_separation = True
+
+        """
         Since BaseTestCase will initialize at least one cluster, we need to
         modify the initialized cluster server property to correctly reflect the
         servers in that cluster.
         """
-        start = 0
-        end = self.nodes_init[0]
         cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
-        # Instead of cluster.servers , use cluster.nodes_in_cluster
-        cluster.servers = self.servers[start:end]
+        if self.analytics_compute_storage_separation:
+            cluster.servers = [
+                server for server in self.servers if server.type == "default"]
+        else:
+            start = 0
+            end = self.nodes_init[0]
+            # Instead of cluster.servers , use cluster.nodes_in_cluster
+            cluster.servers = self.servers[start:end]
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
@@ -106,28 +116,35 @@ class CBASBaseTest(BaseTestCase):
         initialize only total clusters required - 1.
         """
         """
-        In case of On-Prem columnar tests, make sure to specify analytics 
-        cluster services first in conf file followed by services for remote 
-        cluster i.e. services_init=kv:cbas-cbas(analytics cluster)|
-        kv:n1ql:index-kv:n1ql:index(remote cluster), this is required so 
-        that we don't set compute storage separation for remote cluster. 
+        In case of On-Prem columnar tests, make sure to specify remote 
+        cluster services first in conf file followed by services for analytics 
+        cluster i.e. services_init=kv:n1ql:index-kv:n1ql:index(remote 
+        cluster)|kv:cbas-cbas(analytics cluster), this is required since we 
+        initialize the first cluster in onPrem_basetestcase file. The 
+        analytics cluster will be initialised below with or without compute 
+        storage separation based on runtype parameter. 
+        In order to setup analytics cluster with compute storage separation, 
+        the runtype should be passed as onprem-columnar 
         """
         cluster_name_format = "C%s"
         for i in range(1, self.num_of_clusters):
             # Construct dict of mem. quota percent / mb per service
             mem_quota_percent = dict()
-            reset_analytics_compute_storage_separation = False
+
             if self.analytics_compute_storage_separation:
-                self.analytics_compute_storage_separation = False
                 # Construct dict of mem. quota percent per service
-                mem_quota_percent[CbServer.Services.KV] = 90
-                reset_analytics_compute_storage_separation = True
-            start = end
-            end += self.nodes_init[i]
+                mem_quota_percent[CbServer.Services.CBAS] = 80
+                mem_quota_percent[CbServer.Services.KV] = 10
+                servers = [
+                    server for server in self.servers if server.type == "columnar"]
+            else:
+                start = end
+                end += self.nodes_init[i]
+                servers = self.servers[start:end]
             cluster_name = cluster_name_format % str(i+1)
             cluster = CBCluster(
                 name=cluster_name,
-                servers=self.servers[start:end])
+                servers=servers)
             self.cb_clusters[cluster_name] = cluster
             cluster.kv_nodes.append(cluster.master)
 
@@ -136,8 +153,6 @@ class CBASBaseTest(BaseTestCase):
                 services_mem_quota_percent=mem_quota_percent
             )
             cluster.master.services = self.services_init[i][0].replace(":", ",")
-            if reset_analytics_compute_storage_separation:
-                self.analytics_compute_storage_separation = True
 
             if "cbas" in cluster.master.services:
                 cluster.cbas_nodes.append(cluster.master)
@@ -165,7 +180,8 @@ class CBASBaseTest(BaseTestCase):
             self.set_ports_for_server(server, "ssl")
         CbServer.use_https = True
 
-        self.available_servers = self.servers[end:]
+        if not self.analytics_compute_storage_separation:
+            self.available_servers = self.servers[end:]
 
         """
         KV infra to be created per cluster.
@@ -345,6 +361,9 @@ class CBASBaseTest(BaseTestCase):
                 self.log.info("Enabling Auto-Failover")
                 if not rest.update_autofailover_settings(True, 300):
                     self.fail("Enabling Auto-Failover failed")
+
+                for server in self.input.servers:
+                    self.set_ports_for_server(server, "ssl")
 
                 if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
                     self.fail("Analytics service Failed to recover")

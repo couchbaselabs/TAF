@@ -68,7 +68,7 @@ class NodeUtils(object):
         for node in cluster.servers:
             rest = ClusterRestAPI(node)
             version = rest.cluster_info()[1]["implementationVersion"][:3]
-            if float(version) >= 7.6:
+            if float(version) >= 7.6 or node.type == "columnar":
                 status, _ = rest.reset_node()
                 if not status:
                     raise Exception(f"Reset node {node.ip} failed")

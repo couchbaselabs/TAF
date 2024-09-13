@@ -1,7 +1,7 @@
 from TestInput import TestInputSingleton
 
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
-if runtype == "columnar":
+if runtype in ["columnar", "onprem-columnar"]:
     from cbas_utils.cbas_utils_columnar import (
         CbasUtil as utils,
         FlushToDiskTask as flushtodisktask,

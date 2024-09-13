@@ -271,17 +271,19 @@ class ClusterUtils:
         :param servers: List of TestInputServer objects
         :return str: Profile_type for the cluster node
         """
-        profiles = []
+        profiles = list()
         for server in servers:
             rest = ClusterRestAPI(server)
             result = rest.cluster_info()[1]
             version = rest.node_details()[1]["version"][:5]
-            if not ClusterRun.is_enabled and version < '7.5.0':
+            if (server.type != "columnar" and not ClusterRun.is_enabled and
+                    version < '7.5.0'):
                 profiles.append("default")
             else:
                 profiles.append(result["configProfile"])
-        if len(list(set(profiles))) > 1:
-            raise Exception("Profile type mismatch")
+            if profiles[-1] != server.type:
+                raise Exception(f"Profile type mismatch for server "
+                                f"{server.ip}")
         return profiles[0]
 
     # Returns the highest version, highest build and

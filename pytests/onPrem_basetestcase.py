@@ -17,6 +17,7 @@ from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_constants.ClusterRun import ClusterRun
 from cb_constants.CBServer import CbServer
+from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from constants.platform_constants import os_constants
@@ -106,8 +107,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.input.param("kv_storage_limit", 100000)
 
         # To enable analytics compute storage separation
-        self.analytics_compute_storage_separation = self.input.param(
-            "analytics_compute_storage_separation", False)
+        self.analytics_compute_storage_separation = False
 
         self.node_utils.cleanup_pcaps(self.servers)
         self.collect_pcaps = self.input.param("collect_pcaps", False)
@@ -444,8 +444,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.aws_bucket_region = self.input.param("aws_bucket_region", None)
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
-        if (self.analytics_compute_storage_separation and
-                CbServer.cluster_profile == "columnar"):
+        if self.analytics_compute_storage_separation:
             self.s3_obj = S3(self.aws_access_key, self.aws_secret_key,
                              region=self.aws_bucket_region)
             for i in range(5):
@@ -465,10 +464,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if not self.aws_bucket_created:
                 self.fail("Unable to create S3 bucket.")
             self.log.info("Adding aws bucket credentials to analytics")
-            rest = RestConnection(self.cluster.master)
-            status = rest.configure_compute_storage_separation_for_analytics(
-                self.aws_access_key, self.aws_secret_key,
-                self.aws_bucket_name, self.aws_bucket_region)
+            status = self.configure_compute_storage_separation_for_analytics(
+                server=cluster.master, aws_access_key=self.aws_access_key,
+                aws_secret_key=self.aws_secret_key,
+                aws_bucket_name=self.aws_bucket_name,
+                aws_bucket_region=self.aws_bucket_region)
             if not status:
                 self.fail("Failed to put aws credentials to analytics, "
                           "request error")
@@ -627,8 +627,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # delete aws bucket that was created for compute storage separation
         if (self.analytics_compute_storage_separation and
-                CbServer.cluster_profile == "columnar"
-                and self.aws_bucket_created):
+                self.aws_bucket_created):
             for cluster_name, cluster in self.cb_clusters.items():
                 self.log.info("Resetting cluster nodes")
                 self.node_utils.reset_cluster_nodes(self.cluster_util,
@@ -1137,6 +1136,42 @@ class OnPremBaseTest(CouchbaseBaseTest):
         for server in self.input.servers:
             self.set_ports_for_server(server, "non_ssl")
         super(OnPremBaseTest, self).handle_setup_exception(exception_obj)
+
+    def configure_compute_storage_separation_for_analytics(
+            self, server, aws_access_key, aws_secret_key, aws_bucket_name,
+            aws_bucket_region):
+        """
+        Method to add aws bucket to analytics for compute storage separation
+        :param server:
+        :param aws_access_key:
+        :param aws_secret_key:
+        :param aws_bucket_name:
+        :param aws_bucket_region:
+        :return:
+        """
+        rest = AnalyticsRestAPI(server)
+
+        status, content = rest.set_blob_storage_access_key_id(
+            access_key_id=aws_access_key)
+        if not status:
+            self.log.error(str(content))
+            return False
+
+        status, content = rest.set_blob_storage_secret_access_key(
+            secret_access_key=aws_secret_key)
+        if not status:
+            self.log.error(str(content))
+            return False
+
+        self.log.info("Adding aws bucket config to analytics")
+        status, content = rest.update_analytics_settings(
+            blob_storage_bucket=aws_bucket_name,
+            blob_storage_region=aws_bucket_region, blob_storage_prefix="",
+            blob_storage_scheme="s3")
+        if not status:
+            self.log.error(str(content))
+            return False
+        return True
 
 
 class ClusterSetup(OnPremBaseTest):
