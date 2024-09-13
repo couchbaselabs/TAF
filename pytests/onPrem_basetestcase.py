@@ -161,10 +161,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 tem_cluster = CBCluster(name=cluster_name, servers=nodes,
                                         vbuckets=num_vb)
                 self.cb_clusters[cluster_name] = tem_cluster
-                for server in self.cb_clusters[cluster_name].servers:
+                for index, server in enumerate(
+                        self.cb_clusters[cluster_name].servers):
                     status, result = ClusterRestAPI(server).cluster_details()
                     if status:
                         self.cb_clusters[cluster_name].master = server
+                        # Swap servers to avoid failures within the test
+                        self.cb_clusters[cluster_name].servers[0], \
+                            self.cb_clusters[cluster_name].servers[index] = \
+                            self.cb_clusters[cluster_name].servers[index], \
+                                self.cb_clusters[cluster_name].servers[0]
                         break
                 counter_index += 1
         else:
@@ -173,10 +179,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
                                                        servers=self.servers,
                                                        vbuckets=num_vb)
-            for server in self.cb_clusters[cluster_name].servers:
+            for index, server in enumerate(
+                    self.cb_clusters[cluster_name].servers):
                 status, result = ClusterRestAPI(server).cluster_details()
                 if status:
                     self.cb_clusters[cluster_name].master = server
+                    # Swap servers to avoid failures within the test
+                    self.cb_clusters[cluster_name].servers[0], \
+                        self.cb_clusters[cluster_name].servers[index] = \
+                        self.cb_clusters[cluster_name].servers[index], \
+                            self.cb_clusters[cluster_name].servers[0]
                     break
 
         # Fetch the profile_type from the master node
