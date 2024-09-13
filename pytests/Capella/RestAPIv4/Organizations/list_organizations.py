@@ -102,7 +102,7 @@ class ListOrganization(APIBase):
             "organizationOwner", "organizationMember", "projectCreator",
             "projectViewer", "projectDataReaderWriter", "projectManager",
             "projectOwner", "projectDataReader"
-        ]):
+        ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)

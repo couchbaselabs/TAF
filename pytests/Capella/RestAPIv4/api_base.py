@@ -41,10 +41,13 @@ class APIBase(CouchbaseBaseTest):
             self.v2_control_plane_api_access_key = self.capella[
                 "tenant_id"]["v2key"]
             self.org_owner_key1 = self.capella["tenant_id"]["key1"]
+            self.log.info(self.org_owner_key1)
             self.org_owner_key2 = self.capella["tenant_id"]["key2"]
+            self.log.info(self.org_owner_key2)
             self.curr_owner_key = self.org_owner_key1
             self.other_project_id = self.capella["tenant_id"]["otherProj"]
             self.api_keys = self.capella["tenant_id"]["apiKeys"]
+            self.update_auth_with_api_token(self.curr_owner_key)
         else:
             self.capella["tenant_id"] = {
                 "id": self.organisation_id
@@ -778,7 +781,7 @@ class APIBase(CouchbaseBaseTest):
         self.capellaAPI.cluster_ops_apis.bearer_token = keyObj["token"]
         self.columnarAPI.bearer_token = keyObj["token"]
 
-    def v4_RBAC_injection_init(self, allowed_roles,
+    def v4_RBAC_injection_init(self, allowed_roles, other_proj=True,
                                expected_failure_code=None,
                                expected_failure_error=None):
         testcases = []
@@ -802,8 +805,13 @@ class APIBase(CouchbaseBaseTest):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases, self.other_project_id,
-                                 expected_failure_code, expected_failure_error)
+        if other_proj:
+            self.auth_test_extension(testcases, self.other_project_id,
+                                     expected_failure_code,
+                                     expected_failure_error)
+        else:
+            self.auth_test_extension(testcases, None, expected_failure_code,
+                                     expected_failure_error)
         return testcases
 
     def make_parallel_api_calls(
