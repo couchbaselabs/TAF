@@ -96,7 +96,7 @@ class MagmaExpiryTests(MagmaBaseTest):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
             load_using=self.load_docs_using)
-        self.task.jython_task_manager.get_task_result(tasks_info.keys()[0])
+        self.task.jython_task_manager.get_task_result(list(tasks_info.keys())[0])
         self.sleep(20)
         self.client = SDKClient(self.cluster, self.cluster.buckets[0],
                                 scope=CbServer.default_scope,

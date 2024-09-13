@@ -1,4 +1,4 @@
-from magma_base import MagmaBaseTest
+from storage.magma.magma_base import MagmaBaseTest
 
 
 class MagmaKVTests(MagmaBaseTest):
@@ -56,14 +56,15 @@ class MagmaKVTests(MagmaBaseTest):
         self.sleep(30, "Wait for newly created bucktes to get reflected")
         buckets_in_cluster = self.bucket_util.get_all_buckets(self.cluster)
 
-        self.log.info("Creating SDK clients for the new buckets")
-        clients_per_bucket = 1
-        for bucket in buckets_in_cluster:
-            if "new_bucket" in bucket.name:
-                self.cluster.sdk_client_pool.create_clients(
-                    self.cluster, bucket,
-                    req_clients=clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        if self.load_docs_using == "default_loader":
+            self.log.info("Creating SDK clients for the new buckets")
+            clients_per_bucket = 1
+            for bucket in buckets_in_cluster:
+                if "new_bucket" in bucket.name:
+                    self.cluster.sdk_client_pool.create_clients(
+                        self.cluster, bucket,
+                        req_clients=clients_per_bucket,
+                        compression_settings=self.sdk_compression)
 
         self.log.info("Loading data into all buckets...")
         self.key = "new_docs"
@@ -100,14 +101,15 @@ class MagmaKVTests(MagmaBaseTest):
         self.bucket_util.print_bucket_stats(self.cluster)
         buckets_in_cluster = self.bucket_util.get_all_buckets(self.cluster)
 
-        self.log.info("Creating SDK clients for the new buckets")
-        clients_per_bucket = 1
-        for bucket in buckets_in_cluster:
-            if "new_bucket" in bucket.name:
-                self.cluster.sdk_client_pool.create_clients(
-                    self.cluster, bucket,
-                    req_clients=clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        if self.load_docs_using == "default_loader":
+            self.log.info("Creating SDK clients for the new buckets")
+            clients_per_bucket = 1
+            for bucket in buckets_in_cluster:
+                if "new_bucket" in bucket.name:
+                    self.cluster.sdk_client_pool.create_clients(
+                        self.cluster, bucket,
+                        req_clients=clients_per_bucket,
+                        compression_settings=self.sdk_compression)
 
         self.log.info("Loading data into all buckets...")
         self.key = "new_test_docs"

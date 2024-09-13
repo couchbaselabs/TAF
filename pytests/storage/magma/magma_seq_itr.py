@@ -117,7 +117,7 @@ class DCPSeqItr(MagmaBaseTest):
             [self.cluster.buckets[0]], 1, 1, 1)
         scope_dict = collections[self.cluster.buckets[0].name]["scopes"]
         scope_name = scope_dict.keys()[0]
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        collection_name = list(scope_dict[scope_name]["collections"].keys())[0]
 
         '''
          --- Doc ops in given collection(random collection)

@@ -1,7 +1,8 @@
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from constants.platform_constants import os_constants
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -111,7 +112,8 @@ class MagmaRecovery(BaseTestCase):
                     bucket_name=bucket_name)
         self.bucket_util.print_bucket_stats(self.second_cluster)
 
-        data_path = RestConnection(self.first_cluster_master).get_data_path()
+        _, content = ClusterRestAPI(self.first_cluster_master).node_details()
+        data_path = content["storage"]["hdd"][0]["path"]
 
         if not self.include_single_bucket:
             buckets_to_recover = self.second_cluster.buckets
@@ -162,11 +164,11 @@ class MagmaRecovery(BaseTestCase):
             shell = RemoteMachineShellConnection(server)
             if self.encryption_level == "strict":
                 recovery_cmd = '{0}cbdatarecovery -c https://{1}:18091 -u {2} -p {3} -d {4}'.format(
-                    shell.return_bin_path_based_on_os(shell.return_os_type()),
+                    os_constants.Linux.COUCHBASE_BIN_PATH,
                     self.second_cluster_master.ip, self.username, self.password, data_path)
             else:
                 recovery_cmd = '{0}cbdatarecovery -c {1} -u {2} -p {3} -d {4}'.format(
-                    shell.return_bin_path_based_on_os(shell.return_os_type()),
+                    os_constants.Linux.COUCHBASE_BIN_PATH,
                     self.second_cluster_master.ip, self.username, self.password, data_path)
             if self.include_single_bucket:
                 recovery_cmd += ' --include-data {}'.format(self.bucket_to_include)
