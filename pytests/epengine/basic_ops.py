@@ -422,8 +422,7 @@ class basic_ops(ClusterSetup):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout,
-                load_using=self.load_docs_using)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
         # check if all the documents(250) are loaded with default timeout
@@ -445,8 +444,7 @@ class basic_ops(ClusterSetup):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout,
-                load_using=self.load_docs_using)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
             if self.doc_size > 20:
                 if len(task.fail.keys()) == 0:
@@ -478,8 +476,7 @@ class basic_ops(ClusterSetup):
                     persist_to=self.persist_to,
                     durability=self.durability_level,
                     compression=self.sdk_compression,
-                    timeout_secs=self.sdk_timeout,
-                    load_using=self.load_docs_using)
+                    timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(task)
                 if len(task.fail.keys()) != 1:
                     self.log_failure("Large docs inserted for keys: %s"
