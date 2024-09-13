@@ -1347,7 +1347,7 @@ class CollectionUtils(DocLoaderUtils):
         collection_name = collection_spec.get("name")
         CollectionUtils.log.debug("Creating Collection %s:%s:%s"
                                   % (bucket.name, scope_name, collection_name))
-        status, content = BucketHelper(node).create_collection(bucket,
+        status, content = BucketHelper(node).create_collection(bucket.name,
                                                                scope_name,
                                                                collection_spec,
                                                                session=session)
