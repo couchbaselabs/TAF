@@ -4997,6 +4997,40 @@ class RemoteMachineShellConnection:
               (str(self.port), allow, username, password)
         o, e = self.execute_command(cmd)
 
+    def enable_slow_disk(self, timeout, userId="Administrator",
+                         password="password"):
+        diag_eval_command = (
+            "curl -w '\\n' -u {0}:{1} localhost:8091/diag/eval -d "
+            "'Time = {2}, CfgKey = failover_on_data_disk_non_responsiveness, "
+            "Value = [{{CfgKey, [{{enabled, true}}, {{timePeriod, Time}}]}}], "
+            "ns_config:update_key(auto_failover_cfg, fun(Old) -> "
+            "misc:update_proplist(Old, Value) end)'"
+        ).format(userId, password, timeout)
+        output, error = self.execute_command(diag_eval_command)
+        return output, error
+
+    def disable_slow_disk(self, userId="Administrator", password="password"):
+        diag_eval_command = (
+            "curl -w '\\n' -u {0}:{1} localhost:8091/diag/eval -d "
+            "'CfgKey = failover_on_data_disk_non_responsiveness, "
+            "ns_config:update_key(auto_failover_cfg, fun(Old) -> "
+            "proplists:delete(CfgKey, Old) end)'"
+        ).format(userId, password)
+        output, error = self.execute_command(diag_eval_command)
+        return output, error
+
+    def validate_slow_disk_setting(self, user_id="Administrator",
+                                   password="password"):
+        diag_eval_command = (
+            "curl -w '\\n' -u {0}:{1} localhost:8091/diag/eval -d "
+            "'CfgKey = failover_on_data_disk_non_responsiveness, "
+            "proplists:get_value(CfgKey, auto_failover:get_cfg()).'"
+        ).format(user_id, password)
+
+        output, error = self.execute_command(diag_eval_command)
+        return output, error
+
+
     def give_directory_permissions_to_couchbase(self, location):
         """
         Change the directory permission of the location mentioned
