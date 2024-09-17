@@ -592,7 +592,7 @@ class CollectionBase(ClusterSetup):
         if hasattr(test_obj, "upgrade_chain") and \
                     float(test_obj.upgrade_chain[0][:3]) < 7.6:
             for bucket in test_obj.cluster.buckets:
-                for coll in bucket.scopes[CbServer.system_scope].collections:
+                for coll in list(bucket.scopes[CbServer.system_scope].collections):
                     bucket.scopes[CbServer.system_scope].collections.pop(coll)
                 bucket.scopes.pop(CbServer.system_scope)
 
@@ -636,6 +636,7 @@ class CollectionBase(ClusterSetup):
         test_obj.log.info("Load docs using spec file %s" % data_spec_name)
         doc_loading_spec = \
             test_obj.bucket_util.get_crud_template_from_package(data_spec_name)
+        ops_rate = test_obj.ops_rate if hasattr(test_obj, "ops_rate") else None
         # Process params to over_ride values if required
         CollectionBase.over_ride_doc_loading_template_params(
             test_obj, doc_loading_spec)
@@ -650,7 +651,8 @@ class CollectionBase(ClusterSetup):
                 mutation_num=0,
                 batch_size=test_obj.batch_size,
                 process_concurrency=test_obj.process_concurrency,
-                load_using=test_obj.load_docs_using)
+                load_using=test_obj.load_docs_using,
+                ops_rate=ops_rate)
         if doc_loading_task.result is False:
             test_obj.fail("Initial doc_loading failed")
 

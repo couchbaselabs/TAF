@@ -1,5 +1,5 @@
-from ldap_user import LdapUser
-from internal_user import InternalUser
+from security.ldap_user import LdapUser
+from security.internal_user import InternalUser
 import urllib
 import json
 

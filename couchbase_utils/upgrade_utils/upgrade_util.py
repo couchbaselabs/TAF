@@ -6,9 +6,13 @@ from global_vars import cluster_util
 from membase.api.rest_client import RestConnection
 from scripts.old_install import InstallerJob
 from shell_util.remote_connection import RemoteMachineShellConnection
+from ssh_util.install_util.constants.build import BuildUrl
 from upgrade_lib.couchbase import features
 from testconstants import CB_REPO, CB_RELEASE_BUILDS, CB_VERSION_NAME
 import global_vars
+from ssh_util.install_util.install_lib.node_helper import NodeInstaller, NodeInstallInfo
+from ssh_util.install_util.install_lib.helper import InstallHelper
+from ssh_util.install_util.install import start_and_wait_for_threads, print_install_status
 
 
 class CbServerUpgrade(object):
@@ -16,6 +20,10 @@ class CbServerUpgrade(object):
         self.log = logger
         self.product = product
         self.installer = InstallerJob()
+        self.helper = InstallHelper(logger)
+
+        self.install_tasks = ["populate_build_url", "check_url_status", "download_build",
+                              "uninstall", "install", "init_cluster"]
 
     @staticmethod
     def get_supported_features(cluster_version):
@@ -134,3 +142,49 @@ class CbServerUpgrade(object):
                 self.log.critical(
                     "Cluster reported (/pools/default) balanced=false")
                 return
+
+    def new_install_version_on_all_nodes(self, nodes, version,
+                                         edition="enterprise",
+                                         cluster_profile=None,
+                                         install_tasks=None):
+
+        self.log.info("Installing using ssh_util install method")
+
+        if install_tasks is None:
+            install_tasks = self.install_tasks
+
+        for server in nodes:
+            server.install_status = "not_started"
+
+        self.log.info("Node health check")
+        if not self.helper.check_server_state(nodes):
+            return 1
+
+        # Populate valid couchbase version and validate the input version
+        try:
+            self.helper.populate_cb_server_versions()
+        except Exception as e:
+            self.log.warning("Error while reading couchbase version: {}".format(e))
+        if version[:3] not in BuildUrl.CB_VERSION_NAME.keys():
+            self.log.critical("Version '{}' not yet supported".format(version[:3]))
+            return 1
+
+        node_helpers = list()
+        for node in nodes:
+            server_info = RemoteMachineShellConnection.get_info_for_server(node)
+            node_helpers.append(NodeInstallInfo(
+                                node, server_info,
+                                self.helper.get_os(server_info),
+                                version, edition))
+
+        self.log.info("Starting install tasks")
+        install_server_threads = \
+                [NodeInstaller(self.log, node_helper, install_tasks)
+                                for node_helper in node_helpers]
+        okay = start_and_wait_for_threads(install_server_threads, 300)
+        if not okay:
+            self.log.info("Install tasks failed")
+        else:
+            self.log.info(f"Install tasks: {self.install_tasks} completed")
+
+        print_install_status(install_server_threads, self.log)

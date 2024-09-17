@@ -134,7 +134,8 @@ class ServerTasks(object):
                                       print_ops_rate=True,
                                       start_task=True,
                                       track_failures=True,
-                                      load_using="default_loader"):
+                                      load_using="default_loader",
+                                      ops_rate=None):
         self.log.debug("Initializing mutation task for given spec")
         task_manager = task_manager or self.jython_task_manager
         task = MutateDocsFromSpecTask(
@@ -143,7 +144,8 @@ class ServerTasks(object):
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
             track_failures=track_failures,
-            load_using=load_using)
+            load_using=load_using,
+            ops_rate=ops_rate)
         if start_task:
             task_manager.add_new_task(task)
         return task

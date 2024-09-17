@@ -1,5 +1,5 @@
 from shell_util.remote_connection import RemoteMachineShellConnection
-from user_base_abc import UserBase
+from security.user_base_abc import UserBase
 
 
 class LdapUser(UserBase):

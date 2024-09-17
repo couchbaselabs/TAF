@@ -745,8 +745,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 index_path=server.index_path,
                 cbas_path=server.cbas_path)
             self.assertTrue(status, f"Initialize node failed: {content}")
-            if cluster.master != server:
-                continue
+
             init_port = port or server.port or '8091'
             assigned_services = services
             init_tasks.append(

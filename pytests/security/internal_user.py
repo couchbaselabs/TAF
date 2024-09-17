@@ -1,5 +1,5 @@
 from global_vars import logger
-from user_base_abc import UserBase
+from security.user_base_abc import UserBase
 from membase.api.rest_client import RestConnection
 
 

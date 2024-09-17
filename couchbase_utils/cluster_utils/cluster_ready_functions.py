@@ -13,6 +13,7 @@ from copy import deepcopy
 from datetime import datetime,timedelta
 from threading import Lock
 
+from cb_server_rest_util.index.index_api import IndexRestAPI
 from py_constants import CbServer, constants, ClusterRun
 from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
@@ -973,8 +974,8 @@ class ClusterUtils:
         count = 0
         while count < 7:
             cluster_details, json_parsed = cluster_rest.cluster_details()
-            node_statuses, node_statuses = cluster_rest.get_node_statuses()
-            if cluster_details and node_statuses:
+            node_details, node_statuses = cluster_rest.get_node_statuses()
+            if cluster_details and node_details:
                 break
             count += 1
             time.sleep(5)
@@ -1002,8 +1003,9 @@ class ClusterUtils:
 
                 for _, node_status in node_statuses.items():
                     if node.id == node_status["otpNode"]:
-                        if 'gracefulFailoverPossible' in node_status.keys():
-                            node.gracefulFailoverPossible = node_status['gracefulFailoverPossible']
+                        if 'gracefulFailoverPossible' in node_status.keys() and \
+                                node_status['gracefulFailoverPossible'] == "true":
+                            node.gracefulFailoverPossible = True
                         else:
                             node.gracefulFailoverPossible = False
                         break
@@ -1346,6 +1348,15 @@ class ClusterUtils:
             if server.ip == node.ip:
                 target_node = server
         return target_node
+
+    @staticmethod
+    def fetch_data_path(server):
+        _, content = ClusterRestAPI(server).node_details()
+        data_path = content["storage"]["hdd"][0]["path"]
+        if "c:/Program Files" in data_path:
+            data_path = data_path.replace("c:/Program Files",
+                                           "/cygdrive/c/Program\ Files")
+        return data_path
 
     @staticmethod
     def add_remove_servers(cluster, server_list=[],
@@ -1704,7 +1715,7 @@ class ClusterUtils:
             for port in list(port_map.keys()):
                 addresses = shell.get_port_recvq(port)
                 for address in addresses:
-                    expected_address = "127.0.0.1:" + port + '\n'
+                    expected_address = "127.0.0.1:" + port
                     if address != expected_address:
                         self.log.error(" On Server {0} Expected {1} Actual {2}".
                                        format(server.ip, expected_address, address))
@@ -1717,11 +1728,11 @@ class ClusterUtils:
                     continue
                 addresses = shell.get_port_recvq(ssl_port)
                 for address in addresses:
-                    expected_address = ["*:" + ssl_port + '\n',
-                                        "0.0.0.0:" + ssl_port + '\n']
+                    expected_address = ["*:" + ssl_port,
+                                        "0.0.0.0:" + ssl_port]
                     if address not in expected_address:
                         self.log.error("Server {0} Expected {1} Actual {2}".
-                                       format(server, expected_address, address))
+                                       format(server, expected_address[1], address))
                         shell.disconnect()
                         return False
             shell.disconnect()

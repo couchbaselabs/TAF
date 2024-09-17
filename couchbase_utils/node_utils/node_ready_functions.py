@@ -162,21 +162,21 @@ class NodeUtils(object):
 
     def __reset_node(self, cluster_util, cluster, node, crash_warning=False):
         shell = RemoteMachineShellConnection(node)
-        rest = RestConnection(node)
+        rest = ClusterRestAPI(node)
         try:
             if '.com' in node.ip or ':' in node.ip:
-                _ = rest.update_autofailover_settings(False, 120)
+                _, _ = rest.update_auto_failover_settings("false", 120)
                 cli = CouchbaseCLI(node, node.rest_username,
                                    node.rest_password)
                 output, err, result = cli.set_address_family("ipv6")
                 if not result:
                     raise Exception("Addr family was not changed to ipv6")
-                _ = rest.update_autofailover_settings(True, 120)
+                _, _ = rest.update_auto_failover_settings("true", 120)
             else:
                 # Start node
-                data_path = rest.get_data_path()
+                data_path = cluster_util.fetch_data_path(node)
                 core_path = \
-                    str(rest.get_data_path()).split("data")[0] + "crash/"
+                    str(data_path).split("data")[0] + "crash/"
                 if not os.path.isdir(core_path):
                     core_path = "/opt/couchbase/var/lib/couchbase/crash/"
 

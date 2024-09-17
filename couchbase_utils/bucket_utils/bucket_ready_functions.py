@@ -293,7 +293,8 @@ class DocLoaderUtils(object):
                                      async_load=False,
                                      process_concurrency=1,
                                      print_ops_rate=True,
-                                     load_using="default_loader"):
+                                     load_using="default_loader",
+                                     ops_rate=None):
         """
         Will load(only Creates) all given collections under all bucket objects.
         :param task_manager: TaskManager object used for task management
@@ -320,7 +321,8 @@ class DocLoaderUtils(object):
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
             load_using=load_using,
-            start_task=True)
+            start_task=True,
+            ops_rate=ops_rate)
         if not async_load:
             task_manager.jython_task_manager.get_task_result(task)
         return task
@@ -862,7 +864,8 @@ class DocLoaderUtils(object):
                                validate_task=True,
                                process_concurrency=1,
                                print_ops_rate=True,
-                               load_using="default_loader"):
+                               load_using="default_loader",
+                               ops_rate=None):
         """
         :param task_manager: TaskManager object used for task management
         :param cluster: Cluster object to fetch master node
@@ -895,7 +898,8 @@ class DocLoaderUtils(object):
             async_load=async_load,
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
-            load_using=load_using)
+            load_using=load_using,
+            ops_rate=ops_rate)
         if not async_load and validate_task:
             DocLoaderUtils.validate_doc_loading_results(cluster,
                                                         doc_loading_task)
@@ -2462,9 +2466,9 @@ class BucketUtils(ScopeUtils):
 
         # Fetch and define RAM quota for buckets
         if Bucket.ramQuotaMB not in buckets_spec:
-            node_info = rest_conn.get_nodes_self()
-            if node_info.memoryQuota and int(node_info.memoryQuota) > 0:
-                ram_available = node_info.memoryQuota
+            _, node_info = rest_conn.node_details()
+            if node_info["memoryQuota"] and int(node_info["memoryQuota"]) > 0:
+                ram_available = node_info["memoryQuota"]
                 ram_available -= total_ram_requested_explicitly
                 buckets_spec[Bucket.ramQuotaMB] = \
                     int(ram_available / req_num_buckets)
@@ -2644,7 +2648,7 @@ class BucketUtils(ScopeUtils):
                 bucket_names_ref[task.thread_name] = bucket_name
         else:
             # On Prem case
-            rest_conn = RestConnection(cluster.master)
+            rest_conn = ClusterRestAPI(cluster.master)
             if CbServer.cluster_profile == "serverless":
                 self.specs_for_serverless(buckets_spec)
             buckets_spec = BucketUtils.expand_buckets_spec(

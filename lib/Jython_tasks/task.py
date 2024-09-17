@@ -4937,7 +4937,7 @@ class BucketCreateFromSpecTask(Task):
         self.bucket_spec = bucket_spec
         self.bucket_spec["name"] = bucket_name
         self.retries = 0
-        self.rest = RestConnection(self.servers[0])
+        self.rest = ClusterRestAPI(self.servers[0])
         self.bucket_helper = BucketHelper(self.servers[0])
         # Used to store the Created Bucket() object, for appending into
         # bucket_utils.buckets list
@@ -5097,7 +5097,8 @@ class MutateDocsFromSpecTask(Task):
                  process_concurrency=1,
                  print_ops_rate=True,
                  track_failures=True,
-                 load_using="default_loader"):
+                 load_using="default_loader",
+                 ops_rate=None):
         super(MutateDocsFromSpecTask, self).__init__(
             "MutateDocsFromSpecTask_%s" % time.time())
         self.cluster = cluster
@@ -5107,6 +5108,7 @@ class MutateDocsFromSpecTask(Task):
         self.batch_size = batch_size
         self.print_ops_rate = print_ops_rate
         self.load_using = load_using
+        self.ops_rate = ops_rate
 
         self.result = True
         self.load_gen_tasks = list()
@@ -5288,7 +5290,8 @@ class MutateDocsFromSpecTask(Task):
                 exp=op_data["doc_ttl"],
                 timeout=op_data["sdk_timeout"],
                 process_concurrency=self.process_concurrency,
-                iterations=iterations)
+                iterations=iterations,
+                ops=self.ops_rate)
             load_task.create_doc_load_task()
             self.load_gen_tasks.append(load_task)
         elif self.load_using == "sirius_go_sdk":

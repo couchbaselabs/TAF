@@ -6,6 +6,10 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from rebalance_utils.rebalance_util import RebalanceUtil
 import testconstants
 from StatsLib.StatsOperations import StatsHelper
 from bucket_collections.collections_base import CollectionBase
@@ -125,7 +129,8 @@ class UpgradeTests(UpgradeBase):
                                                     self.cluster.buckets,
                                                     collection_load_spec,
                                                     mutation_num=1,
-                                                    batch_size=500)
+                                                    batch_size=500,
+                                                    load_using=self.load_docs_using)
         if collection_task.result is False:
             self.log_failure("Collection task failed")
             return
@@ -148,7 +153,8 @@ class UpgradeTests(UpgradeBase):
                                                     self.cluster.buckets,
                                                     collection_load_spec,
                                                     mutation_num=1,
-                                                    batch_size=500)
+                                                    batch_size=500,
+                                                    load_using=self.load_docs_using)
         if collection_task.result is False:
             self.log_failure("Drop scope/collection failed")
             return
@@ -264,7 +270,9 @@ class UpgradeTests(UpgradeBase):
                             mutation_num=0,
                             async_load=True,
                             batch_size=500,
-                            process_concurrency=4)
+                            process_concurrency=4,
+                            load_using=self.load_docs_using,
+                            ops_rate=self.ops_rate)
 
                 ### The upgrade procedure starts ###
                 self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
@@ -328,7 +336,9 @@ class UpgradeTests(UpgradeBase):
                     mutation_num=0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
-                    validate_task=True)
+                    validate_task=True,
+                    load_using=self.load_docs_using,
+                    ops_rate=self.ops_rate)
 
                 if sync_write_task.result is False:
                     self.log_failure("SyncWrite failed during upgrade")
@@ -431,7 +441,7 @@ class UpgradeTests(UpgradeBase):
                 elif self.migration_procedure == "randomize_method":
                     self.log.info("Installing the version {0} on the spare node".format(
                                                                     self.upgrade_version))
-                    self.upgrade_helper.install_version_on_nodes(
+                    self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
                     migration_methods = ["swap_rebalance", "failover_recovery"]
                     nodes_to_migrate = self.cluster.nodes_in_cluster
@@ -442,7 +452,7 @@ class UpgradeTests(UpgradeBase):
                 elif self.migration_procedure == "swap_rebalance_batch":
                     self.log.info("Installing the version {0} on the spare node".format(
                                                                     self.upgrade_version))
-                    self.upgrade_helper.install_version_on_nodes(
+                    self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
                     nodes_to_migrate = self.cluster.nodes_in_cluster
                     self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
@@ -573,7 +583,9 @@ class UpgradeTests(UpgradeBase):
                 mutation_num=0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                validate_task=True)
+                load_using=self.load_docs_using,
+                validate_task=True,
+                ops_rate=self.ops_rate)
 
             if sync_write_task.result is True:
                 self.log.info("SyncWrite and CollectionOps task succeeded")
@@ -652,7 +664,9 @@ class UpgradeTests(UpgradeBase):
                 mutation_num=0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                validate_task=True)
+                validate_task=True,
+                load_using=self.load_docs_using,
+                ops_rate=self.ops_rate)
 
             if sync_write_task.result is True:
                 self.log.info("SyncWrite task succeeded")
@@ -685,7 +699,9 @@ class UpgradeTests(UpgradeBase):
                 mutation_num=0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                validate_task=True)
+                validate_task=True,
+                load_using=self.load_docs_using,
+                ops_rate=self.ops_rate)
 
             if sync_write_task.result is True:
                 self.log.info("SyncWrite task succeeded")
@@ -1159,7 +1175,9 @@ class UpgradeTests(UpgradeBase):
             upsert_spec,
             mutation_num=0,
             batch_size=self.batch_size,
-            process_concurrency=self.process_concurrency)
+            process_concurrency=self.process_concurrency,
+            load_using=self.load_docs_using,
+            ops_rate=self.ops_rate)
 
         ### Fetching fragmentation value after upserting data ###
         if upsert_task.result is True:
@@ -1278,7 +1296,7 @@ class UpgradeTests(UpgradeBase):
             rebalance_tasks = ["rebalance_in", "rebalance_out", "swap_rebalance",
                                "failover_delta", "failover_full", "replica_update"]
         else:
-            rebalance_tasks.append(self.rebalance_op)
+            rebalance_tasks = self.rebalance_op.split(":")
 
         for reb_task in rebalance_tasks:
             self.sleep(120, "Sleeping before starting the next rebalance task")
@@ -1288,29 +1306,30 @@ class UpgradeTests(UpgradeBase):
                                                                  async_load=True)
 
             if reb_task == "rebalance_in":
-                self.upgrade_helper.install_version_on_nodes(
+                self.upgrade_helper.new_install_version_on_all_nodes(
                     [self.spare_node], self.upgrade_version)
 
-                rest = RestConnection(self.cluster.master)
-                services = rest.get_nodes_services()
+                rest = ClusterRestAPI(self.cluster.master)
+                services = self.cluster_util.get_nodes_services(self.cluster.master)
                 self.log.info("Services on orchestrator node : {}".format(services))
                 services_on_master = services[(self.cluster.master.ip + ":"
                                                + str(self.cluster.master.port))]
 
-                rest.add_node(self.creds.rest_username,
-                        self.creds.rest_password,
-                        self.spare_node.ip,
-                        self.spare_node.port,
-                        services=services_on_master)
-                otp_nodes = [node.id for node in rest.node_statuses()]
+                rest.add_node(self.spare_node.ip,
+                            self.creds.rest_username,
+                            self.creds.rest_password,
+                            services=services_on_master)
+                otp_nodes = [node.id for node in \
+                             self.cluster_util.get_nodes(self.cluster.master)]
 
                 # Validate orchestrator selection
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
                 self.log.info("Rebalance starting...")
                 self.log.info("Rebalancing-in the node {0}".format(self.spare_node.ip))
-                rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
-                rebalance_result = rest.monitorRebalance()
+                rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+                self.sleep(10, "Wait before fetching rebalance stats")
+                rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance()
 
                 if(rebalance_result):
                     self.log.info("Rebalance-in passed successfully")
@@ -1322,18 +1341,20 @@ class UpgradeTests(UpgradeBase):
 
             elif(reb_task == "rebalance_out"):
 
-                rest = RestConnection(self.cluster.master)
+                rest = ClusterRestAPI(self.cluster.master)
 
-                nodes = rest.node_statuses()
+                nodes = self.cluster_util.get_nodes(self.cluster.master)
                 for node in nodes:
                     if node.ip == self.spare_node.ip:
                         eject_node = node
                         break
-                otp_nodes = [node.id for node in rest.node_statuses()]
+                otp_nodes = [node.id for node in \
+                             self.cluster_util.get_nodes(self.cluster.master)]
                 self.log.info("Rebalance-out starting...")
                 self.log.info("Rebalancing out the node {0}".format(eject_node.ip))
-                rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[eject_node.id])
-                rebalance_passed = rest.monitorRebalance()
+                rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_node.id])
+                self.sleep(10, "Wait before fetching rebalance stats")
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
                 if rebalance_passed:
                     self.log.info("Rebalance-out of the node successful")
@@ -1343,12 +1364,13 @@ class UpgradeTests(UpgradeBase):
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
             elif reb_task == "swap_rebalance":
-                self.upgrade_helper.install_version_on_nodes(
-                    [self.spare_node], self.upgrade_version)
+                self.upgrade_helper.new_install_version_on_all_nodes(
+                        nodes=[self.spare_node], version=self.upgrade_version,
+                        cluster_profile=self.cluster_profile)
 
-                rest = RestConnection(self.cluster.master)
-                cluster_nodes = rest.node_statuses()
-                services = rest.get_nodes_services()
+                rest = ClusterRestAPI(self.cluster.master)
+                cluster_nodes = self.cluster_util.get_nodes(self.cluster.master)
+                services = self.cluster_util.get_nodes_services(self.cluster.master)
                 services_on_target_node = services[
                     (self.cluster.master.ip + ":"
                      + str(self.cluster.master.port))]
@@ -1371,22 +1393,23 @@ class UpgradeTests(UpgradeBase):
                     self.log.info("Swap Rebalance failed")
 
             elif(reb_task == "failover_delta"):
-                rest = RestConnection(self.cluster.master)
-                nodes = rest.node_statuses()
+                rest = ClusterRestAPI(self.cluster.master)
+                nodes = self.cluster_util.get_nodes(self.cluster.master)
                 for node in nodes:
                     if node.ip != self.cluster.master.ip:
                         otp_node = node
                         break
 
                 self.log.info("Failing over the node {0}".format(otp_node.ip))
-                failover_task = rest.fail_over(otp_node.id, graceful=True)
+                failover_task, _ = rest.perform_graceful_failover(otp_node.id)
 
                 if(failover_task):
                     self.log.info("Graceful Failover of the node successful")
                 else:
                     self.log.info("Failover failed")
 
-                rebalance_passed = rest.monitorRebalance()
+                self.sleep(10, "Wait before fetching rebalance stats")
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
                 if(rebalance_passed):
                     self.log.info("Failover rebalance passed")
@@ -1395,17 +1418,18 @@ class UpgradeTests(UpgradeBase):
                 # Validate orchestrator selection
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-                rest.set_recovery_type(otp_node.id,
-                                recoveryType="delta")
+                rest.set_failover_recovery_type(otp_node.id, "delta")
 
                 # Validate orchestrator selection
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
                 delta_recovery_buckets = [bucket.name for bucket in self.cluster.buckets]
                 self.log.info("Rebalance starting...")
-                rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
-                        deltaRecoveryBuckets=delta_recovery_buckets)
-                rebalance_passed = rest.monitorRebalance()
+                rest.rebalance(known_nodes=[node.id for node in \
+                                    self.cluster_util.get_nodes(self.cluster.master)],
+                               delta_recovery_buckets=delta_recovery_buckets)
+                self.sleep(10, "Wait before fetching rebalance stats")
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
                 if(rebalance_passed):
                     self.log.info("Rebalance after recovery completed")
@@ -1415,22 +1439,23 @@ class UpgradeTests(UpgradeBase):
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
             elif(reb_task == "failover_full"):
-                rest = RestConnection(self.cluster.master)
-                nodes = rest.node_statuses()
+                rest = ClusterRestAPI(self.cluster.master)
+                nodes = self.cluster_util.get_nodes(self.cluster.master)
                 for node in nodes:
                     if node.ip != self.cluster.master.ip:
                         otp_node = node
                         break
 
                 self.log.info("Failing over the node {0}".format(otp_node.ip))
-                failover_task = rest.fail_over(otp_node.id, graceful=False)
+                failover_task, _ = rest.perform_hard_failover(otp_node.id)
 
                 if(failover_task):
                     self.log.info("Hard Failover of the node successful")
                 else:
                     self.log.info("Failover failed")
 
-                rebalance_passed = rest.monitorRebalance()
+                self.sleep(10, "Wait before fetching rebalance stats")
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
                 if(rebalance_passed):
                     self.log.info("Failover rebalance passed")
@@ -1439,14 +1464,16 @@ class UpgradeTests(UpgradeBase):
                 # Validate orchestrator selection
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-                rest.set_recovery_type(otp_node.id, recoveryType="full")
+                rest.set_failover_recovery_type(otp_node.id, "full")
 
                 # Validate orchestrator selection
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
                 self.log.info("Rebalance starting...")
-                rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()])
-                rebalance_passed = rest.monitorRebalance()
+                rest.rebalance(known_nodes=[node.id for node in \
+                                self.cluster_util.get_nodes(self.cluster.master)])
+                self.sleep(10, "Wait before fetching rebalance stats")
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
                 if(rebalance_passed):
                     self.log.info("Rebalance after recovery completed")
@@ -1510,15 +1537,21 @@ class UpgradeTests(UpgradeBase):
             if bucket.name == "new-bucket":
                 new_bucket = bucket
 
-        self.cluster.sdk_client_pool.shutdown()
-        self.cluster.sdk_client_pool = SDKClientPool()
         self.log.info("Creating required SDK clients for the new bucket")
         clients_per_bucket = int(self.thread_to_use / len(self.cluster.buckets))
-        for bucket in self.cluster.buckets:
-            self.cluster.sdk_client_pool.create_clients(
-                self.cluster, bucket,
-                req_clients=clients_per_bucket,
-                compression_settings=self.sdk_compression)
+        if self.load_docs_using == "default_loader":
+            self.cluster.sdk_client_pool.shutdown()
+            self.cluster.sdk_client_pool = SDKClientPool()
+            for bucket in self.cluster.buckets:
+                self.cluster.sdk_client_pool.create_clients(
+                    self.cluster, bucket,
+                    req_clients=clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=clients_per_bucket)
 
         self.log.info("Loading data into the new bucket...")
         new_bucket_load = self.bucket_util.get_crud_template_from_package(
@@ -1534,7 +1567,9 @@ class UpgradeTests(UpgradeBase):
                                 mutation_num=0,
                                 async_load=False,
                                 batch_size=self.batch_size,
-                                process_concurrency=self.process_concurrency)
+                                process_concurrency=self.process_concurrency,
+                                load_using=self.load_docs_using,
+                                ops_rate=self.ops_rate)
 
         if data_load_task.result is True:
             self.log.info("Data load for the new bucket complete")
@@ -1589,13 +1624,12 @@ class UpgradeTests(UpgradeBase):
 
         self.log.info("Installing the version {0} on the spare node".format(
                                                         self.upgrade_version))
-        self.upgrade_helper.install_version_on_nodes(
+        self.upgrade_helper.new_install_version_on_all_nodes(
             [self.spare_node], self.upgrade_version)
 
         nodes_to_replace = self.cluster.nodes_in_cluster
 
-        rest = RestConnection(self.cluster.master)
-        services = rest.get_nodes_services()
+        services = self.cluster_util.get_nodes_services(self.cluster.master)
         services_on_target_node = services[
                 (self.cluster.master.ip + ":" + str(self.cluster.master.port))]
 
@@ -1626,14 +1660,13 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Swap rebalance of all nodes iteratively")
         self.log.info("Installing the version {0} on the spare node".format(
                                                     self.upgrade_version))
-        self.upgrade_helper.install_version_on_nodes(
+        self.upgrade_helper.new_install_version_on_all_nodes(
             [self.spare_node], self.upgrade_version)
 
         cluster_nodes = self.cluster.nodes_in_cluster
 
         for node in cluster_nodes:
-            rest = RestConnection(node)
-            services = rest.get_nodes_services()
+            services = self.cluster_util.get_nodes_services(self.cluster.master)
             services_on_node = services[(node.ip + ":" + str(node.port))]
 
             self.log.info("Swap rebalance starting...")
@@ -1661,26 +1694,28 @@ class UpgradeTests(UpgradeBase):
 
     def failover_recovery_all_nodes(self):
         self.PrintStep("Starting Failover/Recovery of all nodes post upgrade")
-        rest = RestConnection(self.cluster.master)
-        nodes = rest.node_statuses()
+        rest = ClusterRestAPI(self.cluster.master)
+        nodes = self.cluster_util.get_nodes(self.cluster.master)
 
         for otp_node in nodes:
 
             self.log.info("Failing over the node {0}".format(otp_node.ip))
-            failover_task = rest.fail_over(otp_node.id, graceful=True)
+            failover_task, _ = rest.perform_graceful_failover(otp_node.id)
+            self.assertTrue(failover_task, "Graceful Failover of node failed")
 
-            rebalance_passed = rest.monitorRebalance()
+            self.sleep(10, "Wait before fetching rebalance stats")
+            rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
             if rebalance_passed:
                 self.cluster_util.print_cluster_stats(self.cluster)
 
-            rest.set_recovery_type(otp_node.id,
-                                    recoveryType="full")
+            rest.set_failover_recovery_type(otp_node.id, "full")
 
             self.log.info("Rebalance starting...")
-            rest.rebalance(
-                otpNodes=[node.id for node in rest.node_statuses()])
-            rebalance_passed = rest.monitorRebalance()
+            rest.rebalance(known_nodes=[node.id for node in \
+                            self.cluster_util.get_nodes(self.cluster.master)])
+            self.sleep(10, "Wait before fetching rebalance stats")
+            rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
             self.log.info("Performing data load during failover rebalance")
             self.load_during_rebalance(self.sub_data_spec)
 
@@ -1691,7 +1726,7 @@ class UpgradeTests(UpgradeBase):
 
     def verify_storage_key_for_migration(self, bucket, storage_backend):
         bucket_helper = BucketHelper(self.cluster.master)
-        bucket_stats = bucket_helper.get_bucket_json(bucket)
+        bucket_stats = bucket_helper.get_buckets_json(bucket.name)
         for node in bucket_stats['nodes']:
             if 'storageBackend' not in node or \
                 ('storageBackend' in node and node['storageBackend'] != storage_backend):
@@ -1704,7 +1739,7 @@ class UpgradeTests(UpgradeBase):
     def validate_mixed_storage_during_migration(self, migrated_node):
         bucket_helper = BucketHelper(self.cluster.master)
         for bucket in self.cluster.buckets:
-            bucket_stats = bucket_helper.get_bucket_json(bucket.name)
+            bucket_stats = bucket_helper.get_buckets_json(bucket.name)
             for node in bucket_stats['nodes']:
                 if migrated_node.ip == node['hostname'][:-5]:
                     if 'storageBackend' not in node:
@@ -1737,7 +1772,8 @@ class UpgradeTests(UpgradeBase):
             mutation_num=0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            validate_task=True)
+            validate_task=True,
+            load_using=self.load_docs_using)
 
         if sync_write_task.result is True:
             self.log.info("SyncWrite and collectionOps task succeeded during migration")
@@ -1747,8 +1783,8 @@ class UpgradeTests(UpgradeBase):
     def migrate_node_random(self, node, method):
         self.log.info("Procedure selected for migration of {0} : {1}".format(node.ip, method))
         if method == "swap_rebalance":
-            rest = RestConnection(node)
-            services = rest.get_nodes_services()
+            rest = ClusterRestAPI(node)
+            services = self.cluster_util.get_nodes_services(self.cluster.master)
             services_on_node = services[(node.ip + ":" + str(node.port))]
 
             self.log.info("Swap rebalance starting...")
@@ -1772,25 +1808,29 @@ class UpgradeTests(UpgradeBase):
                 self.log.info("Swap rebalance of node {0} failed".format(node.ip))
 
         else:
-            rest = RestConnection(node)
+            rest = ClusterRestAPI(node)
             otp_node = None
-            nodes = rest.node_statuses()
+            nodes = self.cluster_util.get_nodes(self.cluster.master)
             for n in nodes:
                 if n.ip == node.ip:
                     otp_node = n
             self.log.info("Failing over the node {0}".format(otp_node.ip))
-            failover_task = rest.fail_over(otp_node.id, graceful=True)
+            failover_task, _ = rest.perform_graceful_failover(otp_node.id)
+            self.assertTrue(failover_task, "Graceful Failover of node failed")
 
-            rebalance_passed = rest.monitorRebalance()
+            self.sleep(10, "Wait before fetching rebalance stats")
+            rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
             if rebalance_passed:
                 self.cluster_util.print_cluster_stats(self.cluster)
 
-            rest.set_recovery_type(otp_node.id, recoveryType="full")
+            rest.set_failover_recovery_type(otp_node.id, "full")
 
             self.log.info("Rebalance starting...")
-            rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()])
-            rebalance_passed = rest.monitorRebalance()
+            rest.rebalance(known_nodes=[node.id for node in \
+                           self.cluster_util.get_nodes(self.cluster.master)])
+            self.sleep(10, "Wait before fetching rebalance stats")
+            rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
             self.log.info("Performing data load during failover rebalance")
             self.load_during_rebalance(self.sub_data_spec)
@@ -1801,9 +1841,6 @@ class UpgradeTests(UpgradeBase):
                 self.validate_mixed_storage_during_migration(otp_node)
 
     def swap_rebalance_batch_migrate(self, nodes):
-        rest = RestConnection(nodes[0])
-        services = rest.get_nodes_services()
-        services_on_node = services[(nodes[0].ip + ":" + str(nodes[0].port))]
         spare_node_list = self.spare_nodes[:2]
         print("Spare node list", spare_node_list)
 
