@@ -4825,9 +4825,11 @@ class CbasUtil(CBOUtil):
                 if not self.drop_link(cluster, lnk):
                     self.log.error("Unable to drop Link {0}".format(lnk))
 
-            for dv in self.get_dataverses(cluster, retry).remove("Default"):
-                if not self.drop_dataverse(cluster, dv):
-                    self.log.error("Unable to drop Dataverse {0}".format(dv))
+            dataverses = self.get_dataverses(cluster, retry).remove("Default")
+            if dataverses:
+                for dv in dataverses:
+                    if not self.drop_dataverse(cluster, dv):
+                        self.log.error("Unable to drop Dataverse {0}".format(dv))
         except Exception as e:
             self.log.info(e.message)
 
