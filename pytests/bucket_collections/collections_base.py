@@ -610,12 +610,12 @@ class CollectionBase(ClusterSetup):
             cluster = test_obj.cluster
 
         # Init sdk_client_pool if not initialized before
-        if test_obj.cluster.sdk_client_pool is None:
-            test_obj.cluster.sdk_client_pool = SDKClientPool()
+        if cluster.sdk_client_pool is None:
+            cluster.sdk_client_pool = SDKClientPool()
 
         test_obj.log.info("Creating required SDK clients for client_pool")
         CollectionBase.create_sdk_clients(
-            test_obj.cluster,
+            cluster,
             test_obj.task_manager.number_of_threads,
             cluster.master,
             cluster.buckets,

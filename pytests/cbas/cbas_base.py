@@ -15,6 +15,7 @@ from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
 from tpch_utils.tpch_utils import TPCHUtil
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from sdk_client3 import SDKClient
 
 
 class CBASBaseTest(BaseTestCase):
@@ -146,6 +147,9 @@ class CBASBaseTest(BaseTestCase):
                 name=cluster_name,
                 servers=servers)
             self.cb_clusters[cluster_name] = cluster
+            if self.use_https:
+                SDKClient.enable_tls_in_env(cluster)
+            SDKClient.singleton_env_build(cluster)
             cluster.kv_nodes.append(cluster.master)
 
             self.initialize_cluster(
