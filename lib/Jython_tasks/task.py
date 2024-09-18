@@ -7709,7 +7709,11 @@ class NodeInitializeTask(Task):
                 "maxParallelReplicaIndexers",
                 str(self.maxParallelReplicaIndexers).lower())
 
-        rest.establish_credentials(username, password, self.port)
+        rest.initialize_cluster(self.server.ip, username, password,
+                                data_path=self.server.data_path,
+                                index_path=self.server.index_path,
+                                cbas_path=self.server.cbas_path,
+                                eventing_path=self.server.eventing_path)
         self.server.port = self.port
         try:
             rest = ClusterRestAPI(self.server)

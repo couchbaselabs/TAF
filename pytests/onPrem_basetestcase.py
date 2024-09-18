@@ -726,20 +726,21 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if not server.index_path:
                 server.index_path = server.data_path
             if not server.cbas_path:
-                server.cbas_path = str([server.data_path])
+                server.cbas_path = server.data_path
             if not server.eventing_path:
                 server.eventing_path = server.data_path
-            for path in set([_f for _f in [server.data_path, server.index_path]
-                             if _f]):
-                for cmd in ("rm -rf {0}/*".format(path),
-                            "chown -R couchbase:couchbase {0}".format(path)):
-                    ssh_sessions[server.ip].execute_command(cmd)
-                rest = ClusterRestAPI(server)
-                rest.initialize_node(rest.username, rest.password,
-                                     data_path=server.data_path,
-                                     index_path=server.index_path,
-                                     cbas_path=server.cbas_path)
-
+            ssh_sessions[server.ip].execute_command(
+                f"mkdir -p {server.data_path} {server.cbas_path} "
+                f"{server.eventing_path} {server.index_path} ; "
+                f"chown -R couchbase:couchbase {server.data_path} {server.cbas_path} "
+                f"{server.eventing_path} {server.index_path}")
+            rest = ClusterRestAPI(server)
+            status, content = rest.initialize_node(
+                rest.username, rest.password,
+                data_path=server.data_path,
+                index_path=server.index_path,
+                cbas_path=server.cbas_path)
+            self.assertTrue(status, f"Initialize node failed: {content}")
             if cluster.master != server:
                 continue
             init_port = port or server.port or '8091'
