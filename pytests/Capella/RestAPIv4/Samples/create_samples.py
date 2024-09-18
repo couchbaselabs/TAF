@@ -118,7 +118,7 @@ class CreateSample(GetCluster):
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.info("Wait for data load to complete")
                 time.sleep(10)
-                sample_id = result.json()
+                sample_id = result.json()['bucketId']
                 self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     sample_id)
@@ -149,7 +149,7 @@ class CreateSample(GetCluster):
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.info("Wait for data load to complete")
                 time.sleep(10)
-                sample_id = result.json()
+                sample_id = result.json()['bucketId']
                 self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     sample_id)
@@ -249,7 +249,7 @@ class CreateSample(GetCluster):
             if self.validate_testcase(result, [201], testcase, failures):
                 self.log.info("Wait for data load to complete")
                 time.sleep(10)
-                sample_id = result.json()
+                sample_id = result.json()['bucketId']
                 self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     sample_id)
