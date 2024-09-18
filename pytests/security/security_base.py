@@ -90,7 +90,7 @@ class SecurityBase(CouchbaseBaseTest):
 
         self.cluster_id = self.input.capella.get("cluster_id", None)
         if self.cluster_id is None:
-            self.create_cluster(self.prefix + "Cluster", self.server_version)
+            self.create_cluster(self.prefix + "Cluster", self.server_version, self.provider)
         self.instance_id = self.input.capella.get("instance_id", None)
         if self.instance_id is None:
             self.create_columnar_cluster(self.prefix + "Columnar-Cluster")
@@ -333,7 +333,7 @@ class SecurityBase(CouchbaseBaseTest):
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
         single_node = TestInputSingleton.input.param("single_node", False)
         if single_node:
-            payload = self.get_single_node_cluster_payload()
+            payload = self.get_single_node_cluster_payload(provider)
             payload["serverVersion"] = TestInputSingleton.input.param("server_version", "7.6")
             resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
             subnet = resp.json()["cidr"]["suggestedBlock"]
@@ -578,37 +578,105 @@ class SecurityBase(CouchbaseBaseTest):
         elif cloud_provider == "GCP":
             return cluster_payloads["GCP"]
 
-    def get_single_node_cluster_payload(self):
-        payload = {
+    def get_single_node_cluster_payload(self, provider):
+        payload_AWS = {
+            "name":self.prefix + "Cluster",
+            "description":"",
+            "projectId":self.project_id,
+            "provider":"aws",
+            "region":"us-east-1",
+            "plan":"Developer Pro",
+            "supportTimezone":"PT",
+            "serverVersion":"7.6",
+            "cidr":"",
+            "deploymentType":"single",
+            "serviceGroupsTemplate":"singleA",
+            "serviceGroups":[
+                {
+                    "key":"dataWithAny2",
+                    "compute":"m6g.xlarge",
+                    "storage": {
+                        "key":"gp3",
+                        "sizeInGb":50,
+                        "iops":3000,
+                        "autoScalingEnabled":True
+                    },
+                    "services":["kv","index","n1ql"],
+                    "nodes":1
+                }
+            ],
+            "availabilityZones":{"key":"single"},
+            "enablePrivateDNSResolution":False
+        }
+
+        payload_Azure = {
             "name": self.prefix + "Cluster",
             "description": "",
             "projectId": self.project_id,
-            "provider": "aws",
-            "region": "us-east-1",
+            "provider": "azure",
+            "region": "eastus",
             "plan": "Developer Pro",
             "supportTimezone": "PT",
             "serverVersion": "7.6",
             "cidr": "",
             "deploymentType": "single",
             "serviceGroupsTemplate": "singleA",
-            "serviceGroups":[{
-                "key": "dataWithAny2",
-                "compute": "m6g.xlarge",
-                "storage": {
-                    "key": "gp3",
-                    "sizeInGb": 50,
-                    "iops": 3000
-                },
-            "services":["kv", "index", "n1ql", "fts", "eventing", "cbas"],
-                "nodes": 1
-            }],
-            "availabilityZones":{
-                "key": "single",
-                "zones": ["use1-az5"]
-            }
+            "serviceGroups": [
+                {
+                    "key": "dataWithAny2",
+                    "compute": "Standard_D4s_v5",
+                    "storage": {
+                        "key": "P6",
+                        "sizeInGb": 64,
+                        "iops": 240,
+                        "autoScalingEnabled": False
+                    },
+                    "services": ["kv", "index", "n1ql", "fts", "eventing", "cbas"],
+                    "nodes": 1
+                }
+            ],
+            "availabilityZones": {
+                "key": "single"
+            },
+            "enablePrivateDNSResolution": False
         }
 
-        return payload
+        payload_GCP = {
+            "name": self.prefix + "Cluster",
+            "description": "",
+            "projectId": self.project_id,
+            "provider": "gcp",
+            "region": "us-east1",
+            "plan": "Developer Pro",
+            "supportTimezone": "PT",
+            "serverVersion": "7.6",
+            "cidr": "",
+            "deploymentType": "single",
+            "serviceGroupsTemplate": "singleA",
+            "serviceGroups": [
+                {
+                    "key": "dataWithAny2",
+                    "compute": "n2-standard-4",
+                    "storage": {
+                        "key": "pd-ssd",
+                        "sizeInGb": 50,
+                        "autoScalingEnabled": True
+                    },
+                    "services": ["kv", "index", "n1ql", "fts", "eventing", "cbas"],
+                    "nodes": 1
+                }
+            ],
+             "availabilityZones": {"key": "single"}, "enablePrivateDNSResolution": False
+        }
+
+        if provider.lower() == "aws":
+            return payload_AWS
+        elif provider.lower() == "azure":
+            return payload_Azure
+        elif provider.lower() == "gcp":
+            return payload_GCP
+
+        return payload_AWS
 
     def get_custom_ami_payload(self):
         payload = {
