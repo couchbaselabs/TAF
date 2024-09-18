@@ -2260,6 +2260,11 @@ class ClusterUtils:
             return True
         return False
 
+    @staticmethod
+    def get_spare_nodes(cluster):
+        cluster_nodes = set(ClusterUtils.get_nodes_in_cluster(cluster))
+        return list(set(cluster.servers).difference(cluster_nodes))
+
     def get_nodes_in_zone(self, server, zone_name):
         server_group = ServerGroupsAPI(server)
         status, zone_info = server_group.get_server_groups_info()
