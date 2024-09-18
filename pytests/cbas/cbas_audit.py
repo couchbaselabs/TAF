@@ -241,7 +241,9 @@ class CBASAuditLogs(CBASBaseTest):
         self.audit_obj.setAuditFeatureDisabled(str(self.audit_id))
 
         self.log.info("Update configuration node parameters: storageBuffercacheSize")
-        node_configuration_map = {"storageBuffercacheSize": 1}
+        node_configuration_map = {
+            "storageBuffercacheSize": CBASAuditLogs.actual_node_parameter_dict[
+                                          "storageBuffercacheSize"] - 10}
         status, _, _ = self.cbas_util.update_node_parameter_configuration_on_cbas(
             self.cluster, node_configuration_map)
         self.assertTrue(
@@ -290,7 +292,9 @@ class CBASAuditLogs(CBASBaseTest):
             status, msg="Incorrect status for service configuration PUT request")
 
         self.log.info("Update node configuration service parameters: storageBuffercacheSize")
-        node_configuration_map = {"storageBuffercacheSize": 1}
+        node_configuration_map = {
+            "storageBuffercacheSize": CBASAuditLogs.actual_node_parameter_dict[
+                                          "storageBuffercacheSize"] - 10}
         status, _, _ = self.cbas_util.update_node_parameter_configuration_on_cbas(
             self.cluster, node_configuration_map)
         self.assertTrue(
