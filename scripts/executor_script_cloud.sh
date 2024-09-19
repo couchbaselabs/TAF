@@ -1,5 +1,37 @@
 #!/bin/bash
 
+setup_test_infra_repo_for_installation() {
+  git clone https://github.com/couchbaselabs/test_infra_runner --depth 1
+  cd test_infra_runner/
+  git submodule update --init --force --remote
+  pyenv local $PYENV_VERSION
+  python -m pip install `cat requirements.txt  | grep -v "#" | grep -v couchbase | xargs`
+  cd -
+}
+
+populate_ini() {
+  cd test_infra_runner
+  set -x
+  python scripts/populateIni.py $skip_mem_info \
+    -s ${servers} $internal_servers_param \
+    -d ${addPoolServerId} \
+    -a ${addPoolServers} \
+    -i $WORKSPACE/${iniFile} \
+    -p ${os} \
+    -o $WORKSPACE/testexec.$$.ini \
+    -k '{'${UPDATE_INI_VALUES}'}' \
+    --keyValue "${cluster_info}"
+  set +x
+  cd -
+}
+
+do_install() {
+  cd test_infra_runner
+  python scripts/new_install.py -i $WORKSPACE/testexec.$$.ini -p $install_params
+  status=$?
+  cd -
+}
+
 ## cherrypick the gerrit request if it was defined
 if [ "$cherrypick" != "None" ]; then
    sh -c "$cherrypick"
@@ -114,14 +146,7 @@ else
 fi
 
 touch $WORKSPACE/testexec.$$.ini
-python scripts/populateIni.py $skip_mem_info \
-  -s ${servers} $internal_servers_param \
-  -d ${addPoolServerId} \
-  -a ${addPoolServers} \
-  -i ${iniFile} \
-  -p ${os} \
-  -o testexec.$$.ini \
-  --keyValue "${cluster_info}"
+populate_ini
 
 parallel=true
 if [ "$server_type" = "CAPELLA_LOCAL" ]; then
@@ -142,12 +167,8 @@ echo extra install is $extraInstall
 timedatectl
 if [ ${skip_install} == false ]; then
   if [ "$os" = "windows" ] ; then
-    docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
-        testrunner:install python3 scripts/new_install.py \
-        -i testexec.$$.ini \
-        -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
-      status=$?
+    export install_params="timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}"
+    do_install
   else
       # To handle nonroot user
       echo sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
@@ -167,29 +188,18 @@ if [ ${skip_install} == false ]; then
       fi
 
       if [ "$component" = "os_certify" ]; then
-        new_install_params="timeout=7200,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
+        export install_params="timeout=7200,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
       else
-        new_install_params="force_reinstall=False,timeout=2000,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
+        export install_params="force_reinstall=False,timeout=2000,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
       fi
-
       # Install requirements for this venv
-      set -x
-      docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
-        testrunner:install python3 scripts/new_install.py \
-        -i testexec.$$.ini \
-        -p $new_install_params
-      status=$?
-      set +x
+      do_install
   fi
 fi
 
 if [ "$?" -eq 0 ]; then
-
   if [ "$server_type" = "CAPELLA_LOCAL" ] && [ ${skip_install} == false ]; then
-
     ############# LOCAL CAPELLA SETUP ####################
-
     git clone https://github.com/couchbaselabs/productivitynautomation
 
     export ANSIBLE_CONFIG=$PWD/productivitynautomation/ansible_setup/.ansible.cfg
@@ -235,11 +245,8 @@ if [ "$?" -eq 0 ]; then
     	echo "sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' $WORKSPACE/testexec.$$.ini"
     	sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' $WORKSPACE/testexec.$$.ini
     fi
-
     #popd
-
     ############# END LOCAL CAPELLA SETUP ####################
-
   fi
 
   if [ ${skip_install} == true ]; then
