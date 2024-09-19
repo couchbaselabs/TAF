@@ -6,7 +6,6 @@ Created on 04-Jun-2021
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
 from cluster_utils.cluster_ready_functions import CBCluster
-from membase.api.rest_client import RestConnection
 from cb_constants import CbServer
 from cbas_utils.cbas_utils import CbasUtil
 from bucket_collections.collections_base import CollectionBase
@@ -16,6 +15,7 @@ from security_utils.security_utils import SecurityUtils
 from tpch_utils.tpch_utils import TPCHUtil
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from sdk_client3 import SDKClient
+from cb_server_rest_util.rest_client import RestConnection
 
 
 class CBASBaseTest(BaseTestCase):
@@ -92,14 +92,9 @@ class CBASBaseTest(BaseTestCase):
         servers in that cluster.
         """
         cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
-        if self.analytics_compute_storage_separation:
-            cluster.servers = [
-                server for server in self.servers if server.type == "default"]
-        else:
-            start = 0
-            end = self.nodes_init[0]
-            # Instead of cluster.servers , use cluster.nodes_in_cluster
-            cluster.servers = self.servers[start:end]
+        cluster.servers = [
+            server for server in self.servers if server.type == "default"]
+
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
@@ -136,12 +131,9 @@ class CBASBaseTest(BaseTestCase):
                 # Construct dict of mem. quota percent per service
                 mem_quota_percent[CbServer.Services.CBAS] = 80
                 mem_quota_percent[CbServer.Services.KV] = 10
-                servers = [
-                    server for server in self.servers if server.type == "columnar"]
-            else:
-                start = end
-                end += self.nodes_init[i]
-                servers = self.servers[start:end]
+
+            servers = [
+                server for server in self.servers if server.type == "columnar"]
             cluster_name = cluster_name_format % str(i+1)
             cluster = CBCluster(
                 name=cluster_name,
@@ -175,17 +167,19 @@ class CBASBaseTest(BaseTestCase):
                 if not status:
                     self.fail(msg)
             self.modify_cluster_settings(cluster)
-            RestConnection(cluster.master).set_internalSetting(
+            cluster.rest = RestConnection(cluster.master)
+            cluster.rest.activate_service_api(["cbas", "security"])
+            # Set this unconditionally
+            status, content = cluster.rest.cluster.set_internal_settings(
                 "magmaMinMemoryQuota", 256)
+            if not status:
+                self.fail(str(content))
 
         # Enforce tls on nodes of all clusters
         self.enable_tls_on_nodes()
         for server in self.servers:
             self.set_ports_for_server(server, "ssl")
         CbServer.use_https = True
-
-        if not self.analytics_compute_storage_separation:
-            self.available_servers = self.servers[end:]
 
         """
         KV infra to be created per cluster.
@@ -245,9 +239,8 @@ class CBASBaseTest(BaseTestCase):
         # Add nodes to the cluster as per node_init param.
         for i, (cluster_name, cluster) in enumerate(self.cb_clusters.items()):
 
-            cluster.rest = RestConnection(cluster.master)
             cluster_services = self.cluster_util.get_services_map(cluster)
-            cluster_info = cluster.rest.get_nodes_self()
+            cluster_info = self.cluster_util.get_nodes_self(cluster.master)
 
             for service in cluster_services:
                 if service != "n1ql":
@@ -257,46 +250,42 @@ class CBASBaseTest(BaseTestCase):
 
             j = 1
             for server in cluster.servers:
-                if server.ip != cluster.master.ip:
-                    server.services = self.services_init[i][j].replace(":", ",")
-                    j += 1
-                    if "cbas" in server.services:
-                        cluster.cbas_nodes.append(server)
-                    if "kv" in server.services:
-                        cluster.kv_nodes.append(server)
-                    rest = RestConnection(server)
-                    rest.set_data_path(
-                        data_path=server.data_path,
-                        index_path=server.index_path,
-                        cbas_path=server.cbas_path)
-                    if self.set_default_cbas_memory:
-                        self.log.info(
-                            "Setting the min possible memory quota so that adding "
-                            "more nodes to the cluster wouldn't be a problem.")
-                        cluster.rest.set_service_mem_quota(
-                            {
-                                CbServer.Settings.KV_MEM_QUOTA:
-                                    CbServer.Settings.MinRAMQuota.KV,
-                                CbServer.Settings.FTS_MEM_QUOTA:
-                                    CbServer.Settings.MinRAMQuota.FTS,
-                                CbServer.Settings.INDEX_MEM_QUOTA:
-                                    CbServer.Settings.MinRAMQuota.INDEX
-                            })
+                # This check ensures that only the number of nodes that are
+                # mentioned in node_init param are added to the cluster.
+                if j <= self.nodes_init[i]:
+                    if server.ip != cluster.master.ip:
+                        server.services = self.services_init[i][j].replace(":", ",")
+                        j += 1
+                        if self.set_default_cbas_memory:
+                            self.log.info(
+                                "Setting the min possible memory quota so that adding "
+                                "more nodes to the cluster wouldn't be a problem.")
+                            cluster.rest.cluster.configure_memory(
+                                {
+                                    CbServer.Settings.KV_MEM_QUOTA:
+                                        CbServer.Settings.MinRAMQuota.KV,
+                                    CbServer.Settings.FTS_MEM_QUOTA:
+                                        CbServer.Settings.MinRAMQuota.FTS,
+                                    CbServer.Settings.INDEX_MEM_QUOTA:
+                                        CbServer.Settings.MinRAMQuota.INDEX
+                                })
 
-                        self.log.info("Setting %d memory quota for CBAS" % CbServer.Settings.MinRAMQuota.CBAS)
-                        cluster.cbas_memory_quota = CbServer.Settings.MinRAMQuota.CBAS
-                        cluster.rest.set_service_mem_quota(
-                            {
-                                CbServer.Settings.CBAS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.CBAS
-                            })
-                    else:
-                        self.set_memory_for_services(
-                            cluster, server, server.services)
+                            self.log.info("Setting %d memory quota for CBAS" % CbServer.Settings.MinRAMQuota.CBAS)
+                            cluster.cbas_memory_quota = CbServer.Settings.MinRAMQuota.CBAS
+                            cluster.rest.cluster.configure_memory(
+                                {
+                                    CbServer.Settings.CBAS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.CBAS
+                                })
+                        else:
+                            self.set_memory_for_services(
+                                cluster, server, server.services)
 
             if cluster.servers[1:]:
                 self.task.rebalance(
-                    cluster, cluster.servers[1:], [],
-                    services=[server.services for server in cluster.servers[1:]])
+                    cluster, cluster.servers[1:self.nodes_init[i]], [],
+                    services=[
+                        server.services for server in cluster.servers[
+                                                      1:self.nodes_init[i]]])
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
@@ -320,9 +309,9 @@ class CBASBaseTest(BaseTestCase):
                         break
 
             if "cbas" in cluster.master.services:
-                self.cbas_util.cleanup_cbas(cluster, retry=1)
+                self.cbas_util.cleanup_cbas(cluster)
 
-            cluster.otpNodes = cluster.rest.node_statuses()
+            cluster.otpNodes = self.cluster_util.get_otp_nodes(cluster.master)
 
             if self.multiple_ca:
                 cluster.x509 = x509main(
@@ -337,8 +326,7 @@ class CBASBaseTest(BaseTestCase):
                     servers, cluster.x509, upload_root_certs=True,
                     upload_node_certs=True, upload_client_certs=True)
                 payload = "name=cbadminbucket&roles=admin&password=password"
-                rest = RestConnection(cluster.master)
-                rest.add_set_builtin_user("cbadminbucket", payload)
+                cluster.rest.security.create_local_user("cbadminbucket", payload)
 
             # Wait for analytics service to be up.
             if hasattr(cluster, "cbas_cc_node"):
@@ -349,10 +337,11 @@ class CBASBaseTest(BaseTestCase):
             if self.input.param("n2n_encryption", False):
 
                 self.security_util = SecurityUtils(self.log)
-
-                rest = RestConnection(cluster.master)
                 self.log.info("Disabling Auto-Failover")
-                if not rest.update_autofailover_settings(False, 120):
+                status, content = cluster.rest.cluster.update_auto_failover_settings(
+                    "false", 120)
+                if not status:
+                    self.log.error(str(content))
                     self.fail("Disabling Auto-Failover failed")
 
                 self.log.info("Setting node to node encryption level to {0}".format(
@@ -363,7 +352,10 @@ class CBASBaseTest(BaseTestCase):
 
                 CbServer.use_https = True
                 self.log.info("Enabling Auto-Failover")
-                if not rest.update_autofailover_settings(True, 300):
+                status, content = cluster.rest.cluster.update_auto_failover_settings(
+                    "true", 300)
+                if not status:
+                    self.log.error(str(content))
                     self.fail("Enabling Auto-Failover failed")
 
                 for server in self.input.servers:
@@ -453,10 +445,11 @@ class CBASBaseTest(BaseTestCase):
     def tearDown(self):
         if self.input.param("n2n_encryption", False):
             for i, (cluster_name, cluster) in enumerate(self.cb_clusters.items()):
-                rest = RestConnection(cluster.master)
                 self.log.info("Disabling Auto-Failover")
-                if not rest.update_autofailover_settings(
-                        False, 120, False):
+                status, content = cluster.rest.cluster.update_auto_failover_settings(
+                    "false", 120, fo_on_disk_issue="false")
+                if not status:
+                    self.log.error(str(content))
                     self.fail("Disabling Auto-Failover failed")
 
                 self.log.info("Disabling node to node encryption")
@@ -464,8 +457,9 @@ class CBASBaseTest(BaseTestCase):
                 CbServer.use_https = True
 
                 self.log.info("Enabling Auto-Failover")
-                if not rest.update_autofailover_settings(
-                        True, 300, False):
+                status, content = cluster.rest.cluster.update_auto_failover_settings(
+                    "true", 120, fo_on_disk_issue="false")
+                if not status:
                     self.fail("Enabling Auto-Failover failed")
                 # Waiting for CBAS to recover so that it can be removed successfully during
                 # teardown.
@@ -488,11 +482,10 @@ class CBASBaseTest(BaseTestCase):
                 services.remove("n1ql")
             # Get all services that are already running in cluster
             cluster_services = self.cluster_util.get_services_map(cluster)
-            cluster_info = cluster.rest.get_nodes_self()
-            rest = RestConnection(server)
+            cluster_info = self.cluster_util.get_nodes_self(cluster.master)
             memory_quota_available = 0
             while memory_quota_available == 0:
-                info = rest.get_nodes_self()
+                info = self.cluster_util.get_nodes_self(server)
                 self.log.debug("Info from server - {0}".format(info.__dict__))
                 memory_quota_available = info.mcdMemoryReserved
                 if memory_quota_available:
@@ -538,7 +531,7 @@ class CBASBaseTest(BaseTestCase):
                                             "Setting {0} memory quota for {1}"
                                             .format(memory_quota_available,
                                                     service))
-                                        cluster.rest.set_service_mem_quota(
+                                        cluster.rest.cluster.configure_memory(
                                             {property_name: memory_quota_available})
                                         self.service_mem_dict[service][2] = memory_quota_available
                             elif memory_quota_available >= \
@@ -546,7 +539,7 @@ class CBASBaseTest(BaseTestCase):
                                 self.log.info(
                                     "Setting {0} memory quota for {1}"
                                     .format(memory_quota_available, service))
-                                cluster.rest.set_service_mem_quota(
+                                cluster.rest.cluster.configure_memory(
                                     {property_name: memory_quota_available})
                                 self.service_mem_dict[service][
                                     2] = memory_quota_available
@@ -569,14 +562,14 @@ class CBASBaseTest(BaseTestCase):
                                 self.log.info(
                                     "Setting {0} memory quota for {1}".format(
                                         memory_quota_available, service))
-                                cluster.rest.set_service_mem_quota(
+                                cluster.rest.cluster.configure_memory(
                                     {property_name: memory_quota_available})
                                 self.service_mem_dict[service][2] = memory_quota_available
                         else:
                             self.log.info(
                                 "Setting {0} memory quota for {1}".format(
                                     memory_quota_available, service))
-                            cluster.rest.set_service_mem_quota(
+                            cluster.rest.cluster.configure_memory(
                                 {property_name: memory_quota_available})
                             self.service_mem_dict[service][2] = memory_quota_available
                     else:
@@ -609,7 +602,7 @@ class CBASBaseTest(BaseTestCase):
                         self.log.info(
                             "Setting {0} memory quota for {1}".format(
                                 memory_quota, service))
-                        cluster.rest.set_service_mem_quota(
+                        cluster.rest.cluster.configure_memory(
                             {self.service_mem_dict[service][0]: memory_quota})
                         self.service_mem_dict[service][2] = memory_quota
                         memory_quota_available -= memory_quota
@@ -625,13 +618,13 @@ class CBASBaseTest(BaseTestCase):
                                 self.log.info(
                                     "Setting {0} memory quota for CBAS".format(
                                         memory_quota_available))
-                                cluster.rest.set_service_mem_quota(
+                                cluster.rest.cluster.configure_memory(
                                     {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
                         else:
                             self.log.info(
                                 "Setting {0} memory quota for CBAS".format(
                                     memory_quota_available))
-                            cluster.rest.set_service_mem_quota(
+                            cluster.rest.cluster.configure_memory(
                                 {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
                         self.service_mem_dict[CbServer.Services.CBAS][2] \
                             = memory_quota_available
@@ -757,7 +750,7 @@ class CBASBaseTest(BaseTestCase):
                 bucket_spec[Bucket.historyRetentionBytes] = int(self.bucket_dedup_retention_bytes)
         if "bucket_size" in self.input.test_params:
             if self.bucket_size == "auto":
-                cluster_info = cluster.rest.get_nodes_self()
+                cluster_info = self.cluster_util.get_nodes_self(cluster.master)
                 kv_quota = cluster_info.__getattribute__(CbServer.Settings.KV_MEM_QUOTA)
                 self.bucket_size = int((kv_quota // bucket_spec[
                     MetaConstants.NUM_BUCKETS]) * 0.9)

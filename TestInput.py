@@ -384,6 +384,8 @@ class TestInputParser:
                         server.index_port = config.get(section, option)
                     if option == 'fts_port':
                         server.fts_port = config.get(section, option)
+                    if option == 'profile':
+                        server.type = config.get(section, option)
                 break
         return server
 
