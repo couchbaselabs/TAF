@@ -4,14 +4,13 @@ Created on June 04, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.PrivateEndpoints.\
-    get_private_endpoint_service_status import GetPrivateEndpointService
+from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
-class PostAssociate(GetPrivateEndpointService):
+class PostAssociate(GetCluster):
 
     def setUp(self, nomenclature="PrivateEndpoints_POST"):
-        GetPrivateEndpointService.setUp(self, nomenclature)
+        GetCluster.setUp(self, nomenclature)
         self.endpoint_id = "vpce-079a0245094731925"
         if (self.input.param("cluster_template", "AWS_r5_xlarge") ==
                 "Azure_E4s_v5"):
@@ -36,7 +35,7 @@ class PostAssociate(GetPrivateEndpointService):
             }
 
     def tearDown(self):
-        super(GetPrivateEndpointService, self).tearDown()
+        super(PostAssociate, self).tearDown()
 
     def test_api_path(self):
         testcases = [

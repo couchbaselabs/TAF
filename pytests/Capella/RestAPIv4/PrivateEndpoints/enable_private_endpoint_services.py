@@ -4,14 +4,13 @@ Created on June 04, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.PrivateEndpoints.\
-    get_private_endpoint_service_status import GetPrivateEndpointService
+from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
-class PostPrivateEndpointService(GetPrivateEndpointService):
+class PostPrivateEndpointService(GetCluster):
 
     def setUp(self, nomenclature="PrivateEndpoints_POST"):
-        GetPrivateEndpointService.setUp(self, nomenclature)
+        GetCluster.setUp(self, nomenclature)
 
     def tearDown(self):
         super(PostPrivateEndpointService, self).tearDown()
@@ -19,7 +18,15 @@ class PostPrivateEndpointService(GetPrivateEndpointService):
     def test_api_path(self):
         testcases = [
             {
-                "description": "Send call with valid path params"
+                "description": "Send call with valid path params",
+                "expected_status_code": 500,
+                "expected_error": {
+                    "code": 500,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 500,
+                    "message": "Private endpoint already enabled"
+                }
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService",
@@ -122,7 +129,13 @@ class PostPrivateEndpointService(GetPrivateEndpointService):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ]):
+        ], True, 500, {
+            "code": 500,
+            "hint": "Please review your request and ensure that all "
+                    "required parameters are correctly provided.",
+            "httpStatusCode": 500,
+            "message": "Private endpoint already enabled"
+        }):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
@@ -159,7 +172,15 @@ class PostPrivateEndpointService(GetPrivateEndpointService):
                         str(combination[2])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
-                "clusterID": combination[2]
+                "clusterID": combination[2],
+                "expected_status_code": 500,
+                "expected_error": {
+                    "code": 500,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 500,
+                    "message": "Private endpoint already enabled"
+                }
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and

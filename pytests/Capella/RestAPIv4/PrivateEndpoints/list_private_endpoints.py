@@ -4,14 +4,13 @@ Created on June 04, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.PrivateEndpoints.\
-    get_private_endpoint_service_status import GetPrivateEndpointService
+from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
-class ListEndpoints(GetPrivateEndpointService):
+class ListEndpoints(GetCluster):
 
     def setUp(self, nomenclature="PrivateEndpoints_GET"):
-        GetPrivateEndpointService.setUp(self, nomenclature)
+        GetCluster.setUp(self, nomenclature)
         self.expected_res = {
             "endpoints": [
                 {
@@ -22,7 +21,7 @@ class ListEndpoints(GetPrivateEndpointService):
         }
 
     def tearDown(self):
-        super(GetPrivateEndpointService, self).tearDown()
+        super(ListEndpoints, self).tearDown()
 
     def test_api_path(self):
         testcases = [

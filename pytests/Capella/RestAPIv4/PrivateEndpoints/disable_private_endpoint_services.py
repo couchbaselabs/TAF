@@ -4,14 +4,13 @@ Created on June 04, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.PrivateEndpoints.\
-    get_private_endpoint_service_status import GetPrivateEndpointService
+from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
-class DeletePrivateEndpointService(GetPrivateEndpointService):
+class DeletePrivateEndpointService(GetCluster):
 
     def setUp(self, nomenclature="PrivateEndpoints_DELETE"):
-        GetPrivateEndpointService.setUp(self, nomenclature)
+        GetCluster.setUp(self, nomenclature)
 
     def tearDown(self):
         super(DeletePrivateEndpointService, self).tearDown()

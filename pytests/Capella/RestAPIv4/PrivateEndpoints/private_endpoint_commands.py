@@ -6,14 +6,13 @@ Created on June 04, 2024
 
 import copy
 import re
-from pytests.Capella.RestAPIv4.PrivateEndpoints.\
-    get_private_endpoint_service_status import GetPrivateEndpointService
+from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
-class PostEndpointCommand(GetPrivateEndpointService):
+class PostEndpointCommand(GetCluster):
 
     def setUp(self, nomenclature="PrivateEndpointCommands_POST"):
-        GetPrivateEndpointService.setUp(self, nomenclature)
+        GetCluster.setUp(self, nomenclature)
         self.expected_res = {
             "vpcID": self.input.param("vpcId", "mockValue"),
             "subnetIDs": ["mockValue"],
@@ -26,7 +25,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
             }
 
     def tearDown(self):
-        super(GetPrivateEndpointService, self).tearDown()
+        super(PostEndpointCommand, self).tearDown()
 
     def test_api_path(self):
         testcases = [
