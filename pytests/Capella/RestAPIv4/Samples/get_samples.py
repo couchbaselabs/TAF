@@ -34,6 +34,7 @@ class GetSample(GetCluster):
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_res["name"])
         if res.status_code != 201:
+            self.log.error(res.content)
             self.tearDown()
             self.fail("!!!...Sample Bucket creation failed...!!!")
         self.expected_res["id"] = res.json()["bucketId"]

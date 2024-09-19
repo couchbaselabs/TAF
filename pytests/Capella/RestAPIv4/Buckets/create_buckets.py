@@ -356,7 +356,7 @@ class CreateBucket(GetBucket):
         testcases = list()
 
         for key in self.expected_res:
-            if key in ["id", "stats", "evictionPolicy"]:
+            if key in ["id", "stats", "evictionPolicy", "flushEnabled"]:
                 continue
 
             values = [

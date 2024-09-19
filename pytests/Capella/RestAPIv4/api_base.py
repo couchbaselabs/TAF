@@ -41,9 +41,7 @@ class APIBase(CouchbaseBaseTest):
             self.v2_control_plane_api_access_key = self.capella[
                 "tenant_id"]["v2key"]
             self.org_owner_key1 = self.capella["tenant_id"]["key1"]
-            self.log.info(self.org_owner_key1)
             self.org_owner_key2 = self.capella["tenant_id"]["key2"]
-            self.log.info(self.org_owner_key2)
             self.curr_owner_key = self.org_owner_key1
             self.other_project_id = self.capella["tenant_id"]["otherProj"]
             self.api_keys = self.capella["tenant_id"]["apiKeys"]
@@ -89,6 +87,7 @@ class APIBase(CouchbaseBaseTest):
 
             # Create a wrapper project to be used for all the projects,
             # IF not already present.
+            self.log.info("Creating the functional-test required project...")
             if TestInputSingleton.input.capella.get("project", None):
                 self.project_id = TestInputSingleton.input.capella.get(
                     "project")
@@ -105,6 +104,7 @@ class APIBase(CouchbaseBaseTest):
                     self.capella["project"] = self.project_id
 
             # Create a residual project used for auth verification tests.
+            self.log.info("Creating the security-test required project...")
             resp = self.capellaAPI.org_ops_apis.create_project(
                 self.organisation_id, "Auth_Project")
             if resp.status_code == 201:
