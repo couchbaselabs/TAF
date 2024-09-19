@@ -23,6 +23,7 @@ class GetBucket(GetCluster):
             "durabilityLevel": "none",
             "replicas": 1,
             "flush": True,
+            "flushEnabled": True,
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
             "priority": 0,
