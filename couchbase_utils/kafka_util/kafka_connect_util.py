@@ -26,36 +26,67 @@ class ConnectorConfigTemplate(object):
         where the data is to be fetched
         """
         debezium = {
-            "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
-            "capture.mode": "change_streams_update_full",
-            "mongodb.ssl.enabled": "false",
-            "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-            "value.converter.schemas.enable": "false",
-            "key.converter.schemas.enable": "false",
-            "key.converter": "org.apache.kafka.connect.json.JsonConverter",
-            "offset.flush.interval.ms": "10000",
-            "topic.creation.default.partitions": "-1",
-            "topic.creation.default.replication.factor": "-1",
+            "cdc": {
+                "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
+                "capture.mode": "change_streams_update_full",
+                "mongodb.ssl.enabled": "false",
+                "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+                "value.converter.schemas.enable": "false",
+                "key.converter.schemas.enable": "false",
+                "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+                "offset.flush.interval.ms": "10000",
+                "topic.creation.default.partitions": "32",
+                "topic.creation.default.replication.factor": "-1",
 
-            "topic.prefix": "",
-            "collection.include.list": "",
-            "mongodb.connection.string": "",
+                "topic.prefix": "",
+                "collection.include.list": "",
+                "mongodb.connection.string": "",
+            },
+            "non-cdc": {
+                "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
+                "capture.mode": "change_streams_update_full",
+                "mongodb.ssl.enabled": "false",
+                "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+                "value.converter.schemas.enable": "false",
+                "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+                "key.converter.schemas.enable": "false",
+                "offset.flush.interval.ms": "10000",
+                "topic.creation.default.partitions": "32",
+                "topic.creation.default.replication.factor": "-1",
+
+                "transforms": "ExtractDocument,ExtractId,ConvertToJson",
+                "transforms.ConvertToJson.type": "io.debezium.connector.mongodb.smt.BsonToJsonConverter",
+                "transforms.ExtractId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
+                "transforms.ExtractId.field": "id",
+                "transforms.ExtractDocument.type": "org.apache.kafka.connect.transforms.ExtractField$Value",
+                "transforms.ExtractDocument.field": "after",
+
+                "mongodb.connection.string": "",
+                "collection.include.list": "",
+                "topic.prefix": "",
+            }
         }
 
 
 class KafkaConnectUtil(object):
 
-    def __init__(self, connect_server_hostname):
-        self.api_request = APIRequests(connect_server_hostname, "dummy", "dummy")
+    CONFLUENT_NON_CDC_PORT = 8082
+    CONFLUENT_CDC_PORT = 8083
+    AWS_MSK_CDC_PORT = 8084
+    AWS_MSK_NON_CDC_PORT = 8085
+
+
+    def __init__(self):
 
         self.connector_endpoint = "/connectors"
         self.connector_plugins = "/connector-plugins"
 
         self.log = logging.getLogger(__name__)
 
+    @staticmethod
     def generate_mongo_connector_config(
-            self, mongo_connection_str, mongo_collections, topic_prefix,
-            src_connector="debezium", partitions=None):
+            mongo_connection_str, mongo_collections, topic_prefix,
+            src_connector="debezium", partitions=None, cdc_enabled=False):
         """
         Method to generate mongo connector configurations
         :param mongo_connection_str <str> Connection string to connect to mongo
@@ -65,9 +96,16 @@ class KafkaConnectUtil(object):
         by the connector
         :param src_connector <str> Name of the source connector provider.
         Currently following are supported - debezium
+        :param partitions <int> Number of partition per topic.
+        :param cdc_enabled <bool> If True, then generate connector config
+        to stream cdc data, otherwise generate config to stream non-cdc data.
         """
         if src_connector.lower() == "debezium":
-            config = ConnectorConfigTemplate.MongoConfigs.debezium
+            if cdc_enabled:
+                config = ConnectorConfigTemplate.MongoConfigs.debezium["cdc"]
+            else:
+                config = ConnectorConfigTemplate.MongoConfigs.debezium[
+                    "non-cdc"]
         config["topic.prefix"] = topic_prefix
         config["mongodb.connection.string"] = mongo_connection_str
         config["collection.include.list"] = ",".join(mongo_collections)
@@ -76,12 +114,19 @@ class KafkaConnectUtil(object):
             config["topic.creation.default.partitions"] = partitions
         return config
 
-    def is_kafka_connect_running(self):
+    def format_connect_cluster_hostname(self, connect_cluster_hostname):
+        return f"http://{connect_cluster_hostname}"
+
+    def is_kafka_connect_running(self, connect_server_hostname):
         """
         Method verifies whether kafka connect cluster is running.
+        :param connect_server_hostname: <str> Format ip:port
         """
         self.log.debug("Checking if Kafka Connect Cluster is running")
-        response = self.api_request.api_get("")
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_get("")
         if response.status_code == 200:
             return True
         else:
@@ -90,15 +135,18 @@ class KafkaConnectUtil(object):
                 "0}, Error: {1}".format(
                     response.status_code, response.content))
 
-    def list_all_active_connectors(self, get_connector_status=False,
-                                   get_connector_info=False):
+    def list_all_active_connectors(
+            self, connect_server_hostname, get_connector_status=False,
+            get_connector_info=False):
         """
         Method lists all the active connectors
 
-        param get_connector_status <boolean> Retrieves additional state
+        :param connect_server_hostname: <str> Format ip:port
+
+        :param get_connector_status: <boolean> Retrieves additional state
         information for each of the connectors returned in the API call.
 
-        param get_connector_info <boolean> Returns metadata of each of the
+        :param get_connector_info: <boolean> Returns metadata of each of the
         connectors such as the configuration, task information, and type of connector
 
         returns <list/dict> If both flags are false, then it will return list
@@ -106,13 +154,18 @@ class KafkaConnectUtil(object):
         """
         self.log.debug("Fetching all active connectors deployed on Kafka "
                        "Connect Cluster")
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
         if get_connector_status and get_connector_info:
             query_str = "?expand=status&expand=info"
         elif get_connector_status:
             query_str = "?expand=status"
         elif get_connector_info:
             query_str = "?expand=info"
-        response = self.api_request.api_get(
+        else:
+            query_str = ""
+        response = api_request.api_get(
             self.connector_endpoint + query_str)
         if response.status_code == 200:
             return response.json()
@@ -121,21 +174,26 @@ class KafkaConnectUtil(object):
                 "Listing active connectors failed. Response Code: {0}, "
                 "Error: {1}".format(response.status_code, response.content))
 
-    def create_connector(self, connector_name, connector_config):
+    def create_connector(self, connect_server_hostname, connector_name,
+                         connector_config):
         """
         Create a new connector, returning the current connector info if
         successful. Return 409 (Conflict) if rebalance is in process, or if
         the connector already exists.
+        param connect_server_hostname <str> Format ip:port
         param connector_name <str> name of the connector
         param connector_config <dict> config for the connector
         """
         self.log.debug("Creating connector {0} with config {1}".format(
             connector_name, connector_config))
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
         config = {
             "name": connector_name,
             "config": connector_config
         }
-        response = self.api_request.api_post(self.connector_endpoint, config)
+        response = api_request.api_post(self.connector_endpoint, config)
         if response.status_code == 201:
             return response.json()
         else:
@@ -143,13 +201,16 @@ class KafkaConnectUtil(object):
                 "Creating connector failed. Response Code: {0}, Error: {"
                 "1}".format(response.status_code, response.content))
 
-    def get_connector_info(self, connector_name):
+    def get_connector_info(self, connect_server_hostname, connector_name):
         """
         Get information about the connector.
         param connector_name <str> name of the connector
         """
         self.log.debug("Fetching info for {} connector".format(connector_name))
-        response = self.api_request.api_get(
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_get(
             self.connector_endpoint + "/{0}".format(connector_name))
         if response.status_code == 200:
             return response.json()
@@ -159,14 +220,18 @@ class KafkaConnectUtil(object):
                 "Error: {2}".format(connector_name, response.status_code,
                                     response.content))
 
-    def get_connector_configuration(self, connector_name):
+    def get_connector_configuration(self, connect_server_hostname,
+                                    connector_name):
         """
         Get the configuration for the connector.
         param connector_name <str> name of the connector
         """
         self.log.debug("Fetching configuration for {} connector".format(
             connector_name))
-        response = self.api_request.api_get(
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_get(
             self.connector_endpoint + "/{0}/config".format(connector_name))
         if response.status_code == 200:
             return response.json()
@@ -176,7 +241,8 @@ class KafkaConnectUtil(object):
                 "Code: {1}, Error: {2}".format(
                     connector_name, response.status_code, response.content))
 
-    def update_connector_config(self, connector_name, connector_config):
+    def update_connector_config(self, connect_server_hostname,
+                                connector_name, connector_config):
         """
         Create a new connector using the given configuration, or update the
         configuration for an existing connector. Returns information about
@@ -187,7 +253,10 @@ class KafkaConnectUtil(object):
         """
         self.log.debug("Updating connector {0} with config {1}".format(
             connector_name, connector_config))
-        response = self.api_request.api_put(
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_put(
             self.connector_endpoint + "/{0}/config".format(connector_name),
             connector_config)
         if response.status_code == 201:
@@ -198,7 +267,7 @@ class KafkaConnectUtil(object):
                 "1}, Error: {2}".format(
                     connector_name, response.status_code, response.content))
 
-    def get_connector_status(self, connector_name):
+    def get_connector_status(self, connect_server_hostname, connector_name):
         """
         Gets the current status of the connector, including:
         1. Whether it is running or restarting, or if it has failed or paused
@@ -210,7 +279,10 @@ class KafkaConnectUtil(object):
         """
         self.log.debug("Fetching status for {} connector".format(
             connector_name))
-        response = self.api_request.api_get(
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_get(
             self.connector_endpoint + "/{0}/status".format(connector_name))
         if response.status_code == 200:
             return response.json()
@@ -220,14 +292,18 @@ class KafkaConnectUtil(object):
                 "Code: {1}, Error: {2}".format(
                     connector_name, response.status_code, response.content))
 
-    def list_all_connector_tasks(self, connector_name):
+    def list_all_connector_tasks(self, connect_server_hostname,
+                                 connector_name):
         """
         Get a list of tasks currently running for the connector.
         param connector_name <str> name of the connector
         """
         self.log.debug("Fetching all tasks for {} connector".format(
             connector_name))
-        response = self.api_request.api_get(
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_get(
             self.connector_endpoint + "/{0}/tasks".format(connector_name))
         if response.status_code == 200:
             return response.json()
@@ -237,7 +313,8 @@ class KafkaConnectUtil(object):
                 "Code: {1}, Error: {2}".format(
                     connector_name, response.status_code, response.content))
 
-    def list_all_connector_topics(self, connector_name):
+    def list_all_connector_topics(self, connect_server_hostname,
+                                  connector_name):
         """
         The set of topic names the connector has been using since its creation
         or since the last time its set of active topics was reset.
@@ -245,7 +322,10 @@ class KafkaConnectUtil(object):
         """
         self.log.debug("Fetching all topics for {} connector".format(
             connector_name))
-        response = self.api_request.api_get(
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_get(
             self.connector_endpoint + "/{0}/topics".format(connector_name))
         if response.status_code == 200:
             return response.json()
@@ -255,7 +335,7 @@ class KafkaConnectUtil(object):
                 "Code: {1}, Error: {2}".format(
                     connector_name, response.status_code, response.content))
 
-    def delete_connector(self, connector_name):
+    def delete_connector(self, connect_server_hostname, connector_name):
         """
         Delete a connector, halting all tasks and deleting its configuration.
         Return 409 (Conflict) if rebalance is in process.
@@ -263,7 +343,10 @@ class KafkaConnectUtil(object):
         """
         self.log.debug("Deleting {} connector".format(
             connector_name))
-        response = self.api_request.api_del(
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_del(
             self.connector_endpoint + "/{0}/".format(connector_name))
         if response.status_code == 204:
             return True
@@ -273,8 +356,11 @@ class KafkaConnectUtil(object):
                 "Code: {1}, Error: {2}".format(
                     connector_name, response.status_code, response.content))
 
-    def list_all_connector_plugins_installed(self):
-        response = self.api_request.api_get(self.connector_plugins)
+    def list_all_connector_plugins_installed(self, connect_server_hostname):
+        api_request = APIRequests(
+            self.format_connect_cluster_hostname(connect_server_hostname),
+            "dummy", "dummy")
+        response = api_request.api_get(self.connector_plugins)
         if response.status_code == 200:
             return response.json()
         else:
@@ -283,20 +369,23 @@ class KafkaConnectUtil(object):
                 "Code: {0}, Error: {1}".format(
                     response.status_code, response.content))
 
-    def deploy_connector(self, connector_name, connector_config):
+    # Do not use this method directly, instead use the ones available in
+    # confluent or msk util.
+    def deploy_connector(self, connect_server_hostname, connector_name,
+                         connector_config):
         """
         Deploys a connector on Kafka connect cluster.
         """
         try:
-            self.is_kafka_connect_running()
+            self.is_kafka_connect_running(connect_server_hostname)
             response = self.create_connector(
-                connector_name, connector_config)
+                connect_server_hostname, connector_name, connector_config)
             if not response:
                 self.log.error("Unable to deploy connectors")
                 return False
             time.sleep(10)
-            connector_status = (
-                self.get_connector_status(connector_name))
+            connector_status = self.get_connector_status(
+                connect_server_hostname, connector_name)
             while connector_status["connector"]["state"] != "RUNNING":
                 if connector_status["connector"]["state"] == "FAILED":
                     raise Exception("Connector failed to deploy, current "
@@ -306,7 +395,8 @@ class KafkaConnectUtil(object):
                     "RUNNING state".format(
                         connector_status["connector"]["state"]))
                 time.sleep(10)
-                connector_status = self.get_connector_status(connector_name)
+                connector_status = self.get_connector_status(
+                    connect_server_hostname, connector_name)
             return True
         except Exception as err:
             self.log.error(str(err))

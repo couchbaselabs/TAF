@@ -444,7 +444,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.aws_bucket_region = self.input.param("aws_bucket_region", None)
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
-        if self.analytics_compute_storage_separation:
+        if (self.analytics_compute_storage_separation or
+                CbServer.cluster_profile == "columnar"):
             self.s3_obj = S3(self.aws_access_key, self.aws_secret_key,
                              region=self.aws_bucket_region)
             for i in range(5):

@@ -492,15 +492,9 @@ class ConfluentUtils(object):
         }
     }
 
-    def __init__(self, cloud_access_key, cloud_secret_key,
-                 connect_cluster_hostname):
+    def __init__(self, cloud_access_key, cloud_secret_key):
         self.cloud_access_key = cloud_access_key
         self.cloud_secret_key = cloud_secret_key
-
-        self.connect_cluster_hostname = (
-            f"http://{connect_cluster_hostname}:8083")
-        self.connect_cluster_apis = KafkaConnectUtil(
-            self.connect_cluster_hostname)
 
         self.confluent_apis = ConfluentCloudAPIs(
             self.cloud_access_key, self.cloud_secret_key)
@@ -647,29 +641,35 @@ class ConfluentUtils(object):
             self.log.error(str(err))
             return None
 
-    def cleanup_kafka_resources(self, kafka_cluster_obj):
+    def cleanup_kafka_resources(
+            self, connect_server_hostname, connector_names, topic_prefix,
+            cluster_access_key=None):
         self.log.info("Deleting all the deployed connectors")
         failed_connector_deletions = list()
-        for connector in kafka_cluster_obj.connectors:
+        for connector in connector_names:
             try:
-                self.connect_cluster_apis.delete_connector(connector)
+                KafkaConnectUtil().delete_connector(
+                    connect_server_hostname=connect_server_hostname,
+                    connector_name=connector)
             except Exception as err:
                 self.log.error(str(err))
                 failed_connector_deletions.append(connector)
         topic_delete_status = False
         self.log.info("Deleting all the topics")
         try:
-            self.kafka_cluster_util.delete_topic_by_topic_prefix(
-                kafka_cluster_obj.topic_prefix)
-            topic_delete_status = True
+            topic_delete_status = self.kafka_cluster_util.delete_topic_by_topic_prefix(topic_prefix)
         except Exception as err:
             self.log.error(str(err))
         finally:
-            try:
-                key_deletion_status = self.confluent_apis.delete_api_key(
-                    kafka_cluster_obj.cluster_access_key)
-            except Exception as err:
-                self.log.error(str(err))
+            if cluster_access_key:
+                try:
+                    key_deletion_status = self.confluent_apis.delete_api_key(
+                        cluster_access_key)
+                except Exception as err:
+                    self.log.error(str(err))
+                    key_deletion_status = False
+            else:
+                key_deletion_status = True
 
         if failed_connector_deletions or (not topic_delete_status) or (
                 not key_deletion_status):
@@ -677,7 +677,8 @@ class ConfluentUtils(object):
             return False
         return True
 
-    def deploy_connector(self, connector_name, connector_config):
+    def deploy_connector(self, connector_name, connector_config,
+                         connect_server_hostname):
         """
         This method uses KafkaConnectUtil's deploy_connector method for
         deploying connectors. After deploying the connector, it also checks
@@ -687,8 +688,8 @@ class ConfluentUtils(object):
         :param connector_config:
         :return:
         """
-        result = self.connect_cluster_apis.deploy_connector(
-            connector_name, connector_config)
+        result = KafkaConnectUtil().deploy_connector(
+            connect_server_hostname, connector_name, connector_config)
         if not result:
             return result
         topic_prefix = connector_config["topic.prefix"]

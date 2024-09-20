@@ -61,7 +61,7 @@ spec = {
         "no_of_kafka_links": 0,
         # Accepted values are random or any string.
         "name_key": "random",
-        # Accepted values are "mongo", "dynamo", "cassandra"
+        # Accepted values are MONGODB, MYSQLDB, POSTGRESQL
         "database_type": [],
         # External database connection details
         "external_database_details": {},
@@ -248,7 +248,7 @@ spec = {
         # {field_name: field_type}
         "primary_key": [{"name": "string", "email": "string"}],
         # Source from where data will be ingested into dataset.
-        # Accepted Values - mongo, dynamo, cassandra
+        # Accepted Values - MONGODB, MYSQLDB, POSTGRESQL
         "data_source": [],
         # This is only for local datasets. Accepted values are -
         # None - Dataset storage will default to row or column based

@@ -10,7 +10,8 @@ This utility is for interacting with AWS MSK service.
 from awsLib.S3 import MSK
 from copy import deepcopy
 from global_vars import logger
-from couchbase_utils.kafka_util.common_utils import KafkaCluster, KafkaClusterUtils
+from couchbase_utils.kafka_util.common_utils import (
+    KafkaCluster, KafkaClusterUtils)
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
 
 
@@ -74,15 +75,10 @@ class MSKUtils(object):
         }
     }
 
-    def __init__(self, connect_cluster_hostname,
-                 access_key, secret_key, region, session_token=None):
+    def __init__(self, access_key, secret_key, region, session_token=None):
         self.log = logger.get("test")
 
         self.region = region
-        self.connect_cluster_hostname = (
-            f"http://{connect_cluster_hostname}:8084")
-        self.connect_cluster_apis = KafkaConnectUtil(
-            self.connect_cluster_hostname)
 
         self.msk_lib = MSK(access_key, secret_key, region, session_token)
 
@@ -217,21 +213,22 @@ class MSKUtils(object):
             self.log.error(str(err))
             return None
 
-    def cleanup_kafka_resources(self, kafka_cluster_obj):
+    def cleanup_kafka_resources(
+            self, connect_server_hostname, connector_names, topic_prefix):
         self.log.info("Deleting all the deployed connectors")
         failed_connector_deletions = list()
-        for connector in kafka_cluster_obj.connectors:
+        for connector in connector_names:
             try:
-                self.connect_cluster_apis.delete_connector(connector)
+                KafkaConnectUtil().delete_connector(
+                    connect_server_hostname=connect_server_hostname,
+                    connector_name=connector)
             except Exception as err:
                 self.log.error(str(err))
                 failed_connector_deletions.append(connector)
         topic_delete_status = False
         self.log.info("Deleting all the topics")
         try:
-            self.kafka_cluster_util.delete_topic_by_topic_prefix(
-                kafka_cluster_obj.topic_prefix)
-            topic_delete_status = True
+            topic_delete_status = self.kafka_cluster_util.delete_topic_by_topic_prefix(topic_prefix)
         except Exception as err:
             self.log.error(str(err))
         finally:
@@ -240,7 +237,8 @@ class MSKUtils(object):
                 return False
             return True
 
-    def deploy_connector(self, connector_name, connector_config):
+    def deploy_connector(self, connector_name, connector_config,
+                         connect_server_hostname):
         """
         This method uses KafkaConnectUtil's deploy_connector method for
         deploying connectors. After deploying the connector, it also checks
@@ -250,8 +248,8 @@ class MSKUtils(object):
         :param connector_config:
         :return:
         """
-        result = self.connect_cluster_apis.deploy_connector(
-            connector_name, connector_config)
+        result = KafkaConnectUtil().deploy_connector(
+            connect_server_hostname, connector_name, connector_config)
         if not result:
             return result
         topic_prefix = connector_config["topic.prefix"]

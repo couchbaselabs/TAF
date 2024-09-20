@@ -130,7 +130,7 @@ class KafkaClusterUtils(object):
         try:
             self.log.debug("Listing all topics")
             response = self.client.list_topics(timeout=timeout)
-            return response.topics.keys()
+            return list(response.topics.keys())
         except KafkaException as err:
             raise Exception(err.args[0].str())
 
@@ -216,5 +216,4 @@ class KafkaClusterUtils(object):
         topics = self.list_all_topics_by_topic_prefix(topic_prefix)
         if topics:
             self.delete_topics(topics)
-
-
+        return True

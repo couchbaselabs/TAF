@@ -4792,16 +4792,25 @@ class CbasUtil(CBOUtil):
         self.task.jython_task_manager.add_new_task(links_task)
         return links_task
 
-    def cleanup_cbas(self, cluster, retry=10):
+    def cleanup_cbas(self, cluster, retry=1):
         """
         Drops all Dataverses, Datasets, Indexes, UDFs, Synonyms and Links
         """
         try:
+            # Drop all UDFs
+            for udf in self.get_udfs(cluster, retry):
+                if not self.drop_udf(cluster, udf[1], udf[0], udf[2]):
+                    self.log.error("Unable to drop UDF {0}".format(udf[1]))
+
             # Drop all indexes
             for idx in self.get_indexes(cluster, retry):
                 idx = idx.split(".")
                 if not self.drop_cbas_index(cluster, idx[-1], ".".join(idx[:-1])):
                     self.log.error("Unable to drop Index {0}".format(idx))
+
+            for syn in self.get_synonyms(cluster, retry):
+                if not self.drop_analytics_synonym(cluster, syn):
+                    self.log.error("Unable to drop Synonym {0}".format(syn))
 
             # Disconnect all links
             links = [".".join(l["scope"].split("/") + [l["name"]]) for l in self.get_link_info(
@@ -4809,14 +4818,6 @@ class CbasUtil(CBOUtil):
             for lnk in links:
                 if not self.disconnect_link(cluster, lnk):
                     self.log.error("Unable to disconnect Link {0}".format(lnk))
-
-            for syn in self.get_synonyms(cluster, retry):
-                if not self.drop_analytics_synonym(cluster, syn):
-                    self.log.error("Unable to drop Synonym {0}".format(syn))
-
-            for udf in self.get_udfs(cluster, retry):
-                if not self.drop_udf(cluster, udf[1], udf[0], udf[2]):
-                    self.log.error("Unable to drop UDF {0}".format(udf[1]))
 
             for ds in self.get_datasets(cluster, retry):
                 if not self.drop_dataset(cluster, ds):

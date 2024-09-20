@@ -267,11 +267,11 @@ class ColumnarBaseTest(BaseTestCase):
     :param external_collection_file_formats <list> List of external 
     collection file formats. Accepted values are json, csv, tsv, parquet and avro.
     :param external_dbs <list> List of external databases from where the 
-    data has to be ingested. Accepted values are mongo, postgresql and mysql.
+    data has to be ingested. Accepted values are MONGODB, MYSQLDB, POSTGRESQL.
     :param kafka_topics <dict> Should be in below format
     kafka_topics = {
-            "confluent": {"mongo": [], "postgresql": [], "mysql": []},
-            "aws_kafka": {"mongo": [], "postgresql": [], "mysql": []}
+            "confluent": {"MONGODB": [], "POSTGRESQL": [], "MYSQLDB": []},
+            "aws_kafka": {"MONGODB": [], "POSTGRESQL": [], "MYSQLDB": []}
         }
     """
     def populate_columnar_infra_spec(

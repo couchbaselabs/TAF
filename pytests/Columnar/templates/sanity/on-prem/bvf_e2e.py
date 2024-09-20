@@ -98,7 +98,7 @@ spec = {
         # dataverses where the link will not be created.
         "exclude_dataverses": [],
 
-        # Accepted values are "mongo", "dynamo", "rds"
+        # Accepted values are MONGODB, MYSQLDB, POSTGRESQL
         "database_type": [],
         # External database connection details
         # Dict format - {
@@ -344,7 +344,7 @@ spec = {
         # {field_name: field_type}
         "primary_key": [{"id": "string"}],
         # Source from where data will be ingested into dataset.
-        # Accepted Values - mongo, postgresql, mysql
+        # Accepted Values - MONGODB, MYSQLDB, POSTGRESQL
         "data_source": [],
         # This is only for local datasets. Accepted values are -
         # None - Dataset storage will default to row or column based
@@ -356,14 +356,21 @@ spec = {
         # Kafka topic from where the data will be read.
         # Formet -
         # "kafka_topics": {
-        #    "confluent": {"mongo":[list of topics],"postgresql":[],
-        #    "mysql":[] },
-        #    "aws_kafka": {"mongo":[list of topics],"postgresql":[],
-        #             "mysql":[] }
+        #    "confluent": {"MONGODB":[list of topic_info],"POSTGRESQL":[],
+        #    "MYSQLDB":[] },
+        #    "aws_kafka": {"MONGODB":[list of topic_info],"POSTGRESQL":[],
+        #             "MYSQLDB":[] }
+        # }
+        # topic_info = {
+        # "topic_name":
+        # "key_serialization_type":
+        # "value_serialization_type":
+        # "cdc_enabled":
+        # "source_connector":
         # }
         "kafka_topics": {
-            "confluent": {"mongo": [], "postgresql": [], "mysql": []},
-            "aws_kafka": {"mongo": [], "postgresql": [], "mysql": []}
+            "confluent": {"MONGODB": [], "POSTGRESQL": [], "MYSQLDB": []},
+            "aws_kafka": {"MONGODB": [], "POSTGRESQL": [], "MYSQLDB": []}
         }
     },
 

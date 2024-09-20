@@ -61,7 +61,7 @@ class AWSKafka(ColumnarBaseTest):
         if not self.reuse_topic:
             self.kafka_connect_utils = KafkaConnectUtil(self.connect_cluster_hostname)
             connector_config = self.kafka_connect_utils.generate_mongo_connector_config(
-                self.mongo_connection_str, self.mongo_collections, self.topic_prefix)
+                self.mongo_connection_str, self.mongo_collections, self.topic_prefix, cdc_enabled=True)
 
             self.kafka_connect_utils.deploy_connector(self.connector_name, connector_config)
             self.aws_kafka_obj.connectors[self.connector_name] = connector_config

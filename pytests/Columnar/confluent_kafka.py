@@ -86,7 +86,7 @@ class ConfluentKafka(ColumnarBaseTest):
         if not self.reuse_topic:
             self.kafka_connect_utils = KafkaConnectUtil(self.connect_cluster_hostname)
             connector_config = self.kafka_connect_utils.generate_mongo_connector_config(
-                self.mongo_connection_string, [self.mongo_collections], self.topic_prefix
+                self.mongo_connection_string, [self.mongo_collections], self.topic_prefix, cdc_enabled=True
             )
             if self.serialization_type == "AVRO" or self.serialization_type == "PROTOBUF":
                 connector_config["key.converter.schema.registry.url"] = self.schema_registry_url

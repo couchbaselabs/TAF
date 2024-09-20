@@ -3751,8 +3751,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, collection_name, dataverse_name=None, database_name=None,
             if_not_exists=True, primary_key={}, subquery="", link_name=None,
             external_collection=None, ddl_format="random",
-            compress_dataset=False, storage_format=None,
-            kafka_connector_details=None):
+            compress_dataset=False, storage_format=None, cdc_enabled=False,
+            key_serialization_type=None, value_serialization_type=None,
+            cdc_source=None, cdc_source_connector=None):
         """
         :param collection_name <str> Name of the collection to be created.
         :param dataverse_name <str> Name of the dataverse under which the
@@ -3808,12 +3809,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             cmd += " AS {0}".format(subquery)
 
         if link_name and external_collection:
-            if kafka_connector_details:
-                cmd += " ON `{0}` AT {1}".format(external_collection, link_name)
-            else:
-                cmd += " ON `{0}` AT {1}".format(external_collection, link_name)
+            cmd += " ON `{0}` AT {1}".format(external_collection, link_name)
 
-        if compress_dataset or storage_format or kafka_connector_details:
+        if compress_dataset or storage_format or cdc_enabled:
             with_params = dict()
 
             if compress_dataset:
@@ -3822,8 +3820,22 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if storage_format:
                 with_params["storage-format"] = {"format": storage_format}
 
-            if kafka_connector_details:
-                with_params.update(kafka_connector_details)
+            if cdc_enabled:
+                cdc_source_details = {
+                    "kafka-sink": "true",
+                    "keySerializationType": (
+                        key_serialization_type if key_serialization_type else "JSON"),
+                    "valueSerializationType": (
+                        value_serialization_type if value_serialization_type else "JSON"),
+                    "cdcEnabled": "true",
+                    "cdcDetails": {
+                        "cdcSource": (cdc_source if cdc_source else "MONGODB"),
+                        "cdcSourceConnector": (
+                            cdc_source_connector if cdc_source_connector else "DEBEZIUM")
+                    }
+                }
+
+                with_params.update(cdc_source_details)
 
             cmd += " with " + json.dumps(with_params)
 
@@ -3834,8 +3846,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, cluster, collection_name, ddl_format="random",
             if_not_exists=True, dataverse_name=None, database_name=None,
             primary_key={}, subquery="", compress_dataset=False,
-            storage_format=None, kafka_connector_details=None,
-            validate_error_msg=False, expected_error=None,
+            storage_format=None, validate_error_msg=False, expected_error=None,
             expected_error_code=None, username=None, password=None,
             timeout=300, analytics_timeout=300):
         """
@@ -3872,7 +3883,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         cmd = self.generate_standalone_create_DDL(
             collection_name, dataverse_name, database_name, if_not_exists,
             primary_key, subquery, None, None, ddl_format, compress_dataset,
-            storage_format, kafka_connector_details)
+            storage_format)
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -3891,12 +3902,15 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, cluster, collection_name, ddl_format="random",
             if_not_exists=True, dataverse_name=None, database_name=None,
             primary_key={}, link_name=None, external_collection=None,
-            compress_dataset=False, storage_format=None,
-            kafka_connector_details=None, validate_error_msg=False,
-            expected_error=None, expected_error_code=None, username=None,
-            password=None, timeout=300, analytics_timeout=300):
+            compress_dataset=False, storage_format=None, cdc_enabled=False,
+            key_serialization_type=None, value_serialization_type=None,
+            cdc_source=None, cdc_source_connector=None,
+            validate_error_msg=False, expected_error=None,
+            expected_error_code=None, username=None, password=None,
+            timeout=300, analytics_timeout=300):
         """
         Creates a standalone collection.
+        :param cluster
         :param collection_name str Name of the collection to be created.
         :param ddl_format str DDL format to be used. Accepted values are
         DATASET, ANALYTICS COLLECTION, COLLECTION or random
@@ -3905,6 +3919,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         the create statement will pass without creating a new dataset.
         :param dataverse_name str Name of the dataverse under which the
         collection has to be created.
+        :param database_name
         :param primary_key dict Contains field name and field type to be
         used as primary key. If empty then auto generated UUID will be used
         as primary key.
@@ -3914,6 +3929,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         collection on external databases like mongo, dynamo, cassandra etc
         :param compress_dataset bool, use to set compression policy for
         dataset.
+        :param storage_format
         :param with_clause str, use to set other conditions apart from
         compress dataset, can be of format { "merge-policy": {"name": <>,
         "parameters": {"max-mergable-component-size": <>,
@@ -3929,9 +3945,15 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         :return True/False
         """
         cmd = self.generate_standalone_create_DDL(
-            collection_name, dataverse_name, database_name, if_not_exists,
-            primary_key, "", link_name, external_collection, ddl_format,
-            compress_dataset, storage_format, kafka_connector_details)
+            collection_name=collection_name, dataverse_name=dataverse_name,
+            database_name=database_name,if_not_exists=if_not_exists,
+            primary_key=primary_key, subquery="", link_name=link_name,
+            external_collection=external_collection, ddl_format=ddl_format,
+            compress_dataset=compress_dataset, storage_format=storage_format,
+            cdc_enabled=cdc_enabled,
+            key_serialization_type=key_serialization_type,
+            value_serialization_type=value_serialization_type,
+            cdc_source=cdc_source, cdc_source_connector=cdc_source_connector)
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -4197,7 +4219,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     kafka_types.append("aws_kafka")
 
         # These variables are needed to consume links and kafka topics in
-        # round robin fashion.
+        # round-robin fashion.
         confluent_counter = 0
         aws_kafka_counter = 0
         kafka_topics = copy.deepcopy(dataset_spec["kafka_topics"])
@@ -4264,7 +4286,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 storage_format = dataset_spec[
                     "storage_format"]
 
-            # Logic to consume kafka links and topics in round robin fashion.
+            # Logic to consume kafka links and topics in round-robin fashion.
             kafka_type = kafka_types[i % len(kafka_types)]
             selected_topic = None
 
@@ -4297,19 +4319,30 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                         break
 
             dataset_obj = Standalone_Dataset(
-                name=name, data_source=datasource, primary_key=random.choice(
-                    dataset_spec["primary_key"]),
+                name=name, data_source=datasource,
+                primary_key=random.choice(dataset_spec["primary_key"]),
                 dataverse_name=dataverse.name, database_name=database.name,
-                link_name=link.name, kafka_topic_name=selected_topic,
-                storage_format=storage_format)
+                link_name=link.name, storage_format=storage_format,
+                kafka_topic_name=selected_topic["topic_name"],
+                num_of_items=selected_topic.get("num_items", 0),
+                cdc_enabled=selected_topic["cdc_enabled"],
+                key_serialization_type=selected_topic["key_serialization_type"],
+                value_serialization_type=selected_topic["value_serialization_type"],
+                cdc_source_connector=selected_topic["source_connector"])
 
             if not self.create_standalone_collection_using_links(
                     cluster=cluster, collection_name=name,
                     ddl_format=creation_method, if_not_exists=False,
                     dataverse_name=dataverse.name, database_name=database.name,
                     primary_key=dataset_obj.primary_key,
-                    link_name=link.name, external_collection=selected_topic,
-                    storage_format=storage_format):
+                    link_name=link.name, storage_format=storage_format,
+                    external_collection=dataset_obj.kafka_topic_name,
+                    cdc_enabled=dataset_obj.cdc_enabled,
+                    key_serialization_type=dataset_obj.key_serialization_type,
+                    value_serialization_type=dataset_obj.value_serialization_type,
+                    cdc_source=dataset_obj.data_source,
+                    cdc_source_connector=dataset_obj.cdc_source_connector,
+            ):
                 self.log.error("Failed to create dataset {}".format(name))
                 results.append(False)
             else:
@@ -6497,7 +6530,7 @@ class CbasUtil(CBOUtil):
         self.task.jython_task_manager.add_new_task(links_task)
         return links_task
 
-    def cleanup_cbas(self, cluster):
+    def cleanup_cbas(self, cluster, retry=10):
         """
         This method will delete all the analytics entities on the specified
         cluster

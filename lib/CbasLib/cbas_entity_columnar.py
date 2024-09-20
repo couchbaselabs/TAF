@@ -275,19 +275,22 @@ class Standalone_Dataset(Dataset):
     def __init__(self, name, data_source, primary_key,
                  dataverse_name="Dafault", database_name="Default",
                  link_name=None, kafka_topic_name=None,
-                 dataset_properties={}, num_of_items=0, storage_format="row"):
+                 dataset_properties={}, num_of_items=0, storage_format="row",
+                 cdc_enabled=False, key_serialization_type=None,
+                 value_serialization_type=None, cdc_source_connector=None
+                 ):
         """
         :param name <str> name of the dataset
         :param primary_key <dict> dict of field_name:field_type to be used
         as primary key.
         :param dataverse_name <str> dataverse where the dataset is present.
         :param data_source <str> Source from where data will be ingested
-        into dataset. Accepted Values - mongo, dynamo, cassandra, s3, gcp,
+        into dataset. Accepted Values - MONGODB, MYSQLDB, POSTGRESQL, s3, gcp,
         azure, shadow_dataset, crud(if standalone collection is used only for
         insert, upsert and delete)
         :param link_name <str> Fully qualified name of the kafka link.
-        :param kafka_topic_name <str> Name of the kafka topic from where the data
-        is to be ingested.
+        :param kafka_topic_obj <obj> Object of the kafka topic from where the
+        data is to be ingested.
         :param dataset_properties <dict> valid only for dataset with
         dataset_source as external
         :param num_of_items <int> expected number of items in dataset.
@@ -300,13 +303,19 @@ class Standalone_Dataset(Dataset):
         self.primary_key = primary_key
         self.link_name = CBASHelper.format_name(link_name)
         self.data_source = data_source.lower() if data_source else None
+        self.dataset_properties = {}
 
-        if self.data_source in ["s3", "azure", "gcp"]:
-            self.dataset_properties = dataset_properties
-        else:
-            self.dataset_properties = {}
-            if self.data_source in ["mongo", "postgresql", "mysql"]:
+        if self.data_source:
+
+            if self.data_source in ["s3", "azure", "gcp"]:
+                self.dataset_properties = dataset_properties
+            elif self.data_source.upper() in ["MONGODB", "MYSQLDB", "POSTGRESQL"]:
                 self.kafka_topic_name = kafka_topic_name
+                self.cdc_enabled = cdc_enabled
+                self.key_serialization_type = key_serialization_type.upper()
+                self.value_serialization_type = value_serialization_type.upper()
+                self.cdc_source_connector = cdc_source_connector.upper()
+                self.data_source = self.data_source.upper()
 
 
 class Synonym(object):
