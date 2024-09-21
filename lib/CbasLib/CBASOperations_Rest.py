@@ -10,7 +10,7 @@ import requests
 
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
-from constants.cb_constants.CBServer import CbServer
+from cb_constants import CbServer
 
 
 class CBASHelper(RestConnection):
