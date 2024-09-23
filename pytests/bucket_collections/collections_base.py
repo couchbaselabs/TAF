@@ -1,6 +1,7 @@
 from math import ceil
 from random import sample
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
@@ -176,7 +177,7 @@ class CollectionBase(ClusterSetup):
 
     @staticmethod
     def create_sdk_clients(cluster, num_threads, servers_to_connect,
-                           buckets, sdk_compression):
+                           buckets, sdk_compression, load_using):
         # Fetch num_collections per bucket. Used for 'req_clients' calc
         cols_in_bucket = dict()
         for bucket in buckets:
@@ -197,10 +198,16 @@ class CollectionBase(ClusterSetup):
                 # Work around to hitting the following error on serverless config
                 # Memcached error #50: RATE_LIMITED_MAX_CONNECTIONS
                 req_clients = min(req_clients, 10)
-            cluster.sdk_client_pool.create_clients(
-                cluster, bucket=bucket, servers=[servers_to_connect],
-                req_clients=req_clients,
-                compression_settings=sdk_compression)
+            if load_using == "default_loader":
+                cluster.sdk_client_pool.create_clients(
+                    cluster, bucket=bucket, servers=[servers_to_connect],
+                    req_clients=req_clients,
+                    compression_settings=sdk_compression)
+            elif load_using == "sirius_java_sdk":
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    servers_to_connect, servers_to_connect.rest_username,
+                    servers_to_connect.rest_password,
+                    bucket.name, req_clients=req_clients)
 
     @staticmethod
     def setup_collection_history_settings(test_obj):
@@ -600,7 +607,8 @@ class CollectionBase(ClusterSetup):
 
     @staticmethod
     def create_clients_for_sdk_pool(test_obj, cluster=None):
-        if test_obj.load_docs_using != "default_loader":
+        if test_obj.load_docs_using not in ["default_loader",
+                                            "sirius_java_sdk"]:
             test_obj.log.warning(
                 "Skipping SDKClientPool creation since "
                 f"load_docs_using='{test_obj.load_docs_using}'")
@@ -610,8 +618,9 @@ class CollectionBase(ClusterSetup):
             cluster = test_obj.cluster
 
         # Init sdk_client_pool if not initialized before
-        if cluster.sdk_client_pool is None:
-            cluster.sdk_client_pool = SDKClientPool()
+        if test_obj.load_docs_using == "default_loader":
+            if cluster.sdk_client_pool is None:
+                cluster.sdk_client_pool = SDKClientPool()
 
         test_obj.log.info("Creating required SDK clients for client_pool")
         CollectionBase.create_sdk_clients(
@@ -619,7 +628,8 @@ class CollectionBase(ClusterSetup):
             test_obj.task_manager.number_of_threads,
             cluster.master,
             cluster.buckets,
-            test_obj.sdk_compression)
+            test_obj.sdk_compression,
+            test_obj.load_docs_using)
 
     @staticmethod
     def load_data_from_spec_file(test_obj, data_spec_name, validate_docs=True):

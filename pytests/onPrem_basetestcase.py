@@ -236,9 +236,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             shell.disconnect()
 
             # SDKClientPool object for creating generic clients across tasks
-            if self.load_docs_using == "default_loader" \
-                    and self.sdk_client_pool is True:
-                cluster.sdk_client_pool = SDKClientPool()
+            if self.sdk_client_pool is True:
+                if self.load_docs_using == "default_loader":
+                    cluster.sdk_client_pool = SDKClientPool()
+                elif self.load_docs_using == "sirius_java_sdk":
+                    # cluster.sdk_client_pool is still None in this case
+                    pass
 
         self.log_setup_status("OnPremBaseTest", "started")
         self.nebula = self.input.param("nebula", False)

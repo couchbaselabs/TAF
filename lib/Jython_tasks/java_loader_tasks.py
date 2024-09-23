@@ -286,6 +286,27 @@ class SiriusCouchbaseLoader(object):
             result = result[:-1] + ']'
         return result
 
+    @staticmethod
+    def create_clients_in_pool(server, username, password, bucket_name,
+                               req_clients=1):
+        api = f"{SiriusSetup.sirius_url}/create_clients"
+        data = {
+            "server_ip": server.ip,
+            "server_port": server.port,
+            "username": username,
+            "password": password,
+            "bucket_name": bucket_name,
+            "req_clients": req_clients
+        }
+        data = SiriusCouchbaseLoader.__flatten_param_to_str(data)
+        response = requests.post(api, data,
+                                 headers=SiriusCouchbaseLoader.get_headers(),
+                                 timeout=10)
+        json_response = None
+        if response.ok:
+            json_response = response.json()
+        return response.ok, json_response
+
     def create_doc_load_task(self):
         key_type = "RandomKey"
         value_type = "SimpleValue"
