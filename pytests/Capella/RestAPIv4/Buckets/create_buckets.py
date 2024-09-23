@@ -15,7 +15,6 @@ class CreateBucket(GetBucket):
         GetBucket.setUp(self, nomenclature)
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.curr_owner_key)
         super(CreateBucket, self).tearDown()
 
     def test_api_path(self):
@@ -204,6 +203,7 @@ class CreateBucket(GetBucket):
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
                                     self.cluster_id, self.buckets)
+            self.log.debug("Bucket cleanup successful")
 
         if failures:
             for fail in failures:
@@ -345,6 +345,7 @@ class CreateBucket(GetBucket):
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
                                     self.cluster_id, self.buckets)
+                self.log.debug("Bucket cleanup successful")
 
         if failures:
             for fail in failures:
@@ -601,7 +602,6 @@ class CreateBucket(GetBucket):
                     testcase["durabilityLevel"], testcase['replicas'],
                     testcase['flush'], testcase['timeToLiveInSeconds'],
                     testcase['priority'])
-
             if self.validate_testcase(result, [201], testcase, failures):
                 self.buckets.append(result.json()['id'])
             if len(self.buckets) >= 10:
@@ -609,6 +609,7 @@ class CreateBucket(GetBucket):
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
                                     self.cluster_id, self.buckets)
+            self.log.debug("Bucket cleanup successful")
 
         if failures:
             for fail in failures:

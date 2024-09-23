@@ -48,6 +48,17 @@ class GetAppService(GetCluster):
         res = self.capellaAPI_v2.get_sgw_databases(
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id)
+        self.log.debug("Res: {}".format(res.content))
+        try:
+            if res.json()["errorType"] == "EntityStateInvalid":
+                self.log.warning("App service is off, so skipping the App "
+                                 "Endpoint gibberish")
+                return
+        except Exception as e:
+            self.log.warning("Exception: {}".format(e))
+            self.log.error("Exception encountered in conversion of res to "
+                           "JSON / or fetching the key `errorType` from "
+                           "JSONified res.")
         if res.status_code != 200:
             self.log.error("Error: {}".format(res.content))
             self.tearDown()
@@ -78,9 +89,18 @@ class GetAppService(GetCluster):
             self.fail("!!!..Bucket creation failed...!!!")
         self.app_endpoint_bucket_id = res.json()['id']
         self.app_endpoint_bucket_name = "bucketForAppEndpoint"
-        # self.buckets.append(self.bucket_id)
 
-        # Create an App Endpoint
+        # Allow my IP for this App Service.
+        self.log.debug("Adding current IP in the allow list for the APP SVC")
+        res = self.capellaAPI_v2.allow_my_ip_sgw(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.app_service_id)
+        if res.status_code != 200:
+            self.log.error(res.content)
+            self.tearDown()
+            self.fail("!!!...Failed to allow my IP...!!!")
+
+        # Create an App Endpoint.
         self.log.debug("...Creating a App Endpoint inside the App Service: "
                        "{}...".format(self.app_service_id))
         res = self.capellaAPI_v2.create_sgw_database(

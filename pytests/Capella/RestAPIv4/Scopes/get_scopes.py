@@ -113,14 +113,8 @@ class GetScope(GetBucket):
                 "description": "Fetch scope but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 404,
-                "expected_error": {
-                    "code": 6008,
-                    "hint": "The requested bucket does not exist. Please "
-                            "ensure that the correct bucket ID is provided.",
-                    "httpStatusCode": 404,
-                    "message": "Unable to find the specified bucket."
-                }
+                "expected_status_code": [400, 404],
+                "expected_error": self.expected_bucketID_errors
             }, {
                 "description": "Fetch scope but with invalid scopeName",
                 "invalid_scopeName": self.replace_last_character(

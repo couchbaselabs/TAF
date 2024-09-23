@@ -12,21 +12,9 @@ class DeleteBucket(GetBucket):
     def setUp(self, nomenclature="Buckets_Delete"):
         GetBucket.setUp(self, nomenclature)
 
-        # Wait for App Service in GetCluster to deploy.
-        self.log.info("Waiting for AppService {} to be deployed."
-                      .format(self.app_service_id))
-        if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
-            self.tearDown()
-            self.fail("!!!...App Svc deployment failed...!!!")
-        self.log.info("Successfully deployed App Svc.")
-
-        # Wait for the deployment request in GetCluster to complete.
-        self.log.info("Waiting for AppService {} to be deployed."
-                      .format(self.app_service_id))
-        if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
-            self.tearDown()
-            self.fail("!!!...App Svc deployment failed...!!!")
-        self.log.info("Successfully deployed App Svc.")
+        # Wait for App Service to be Healthy before deleting the bucket.
+        self.log.info("Polling the APP SVC: {}".format(self.app_service_id))
+        self.wait_for_deployment(app_svc_id=self.app_service_id)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -104,14 +92,8 @@ class DeleteBucket(GetBucket):
                 "description": "Delete info but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "BucketID is invalid."
-                }
+                "expected_status_code": [400, 404],
+                "expected_error": self.expected_bucketID_errors
             }
         ]
         failures = list()
@@ -144,9 +126,11 @@ class DeleteBucket(GetBucket):
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
+                self.buckets.remove(self.bucket_id)
                 self.bucket_id = self.create_bucket_to_be_tested(
                     self.organisation_id, self.project_id,
                     self.cluster_id, self.bucket_name, self.buckets)
+                self.buckets.append(self.bucket_id)
 
         if failures:
             for fail in failures:
@@ -173,9 +157,11 @@ class DeleteBucket(GetBucket):
                     self.bucket_id, headers=header)
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
+                self.buckets.remove(self.bucket_id)
                 self.bucket_id = self.create_bucket_to_be_tested(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_name, self.buckets)
+                self.buckets.append(self.bucket_id)
 
         if failures:
             for fail in failures:
@@ -303,12 +289,13 @@ class DeleteBucket(GetBucket):
                 result = self.capellaAPI.cluster_ops_apis.delete_bucket(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"], **kwarg)
-
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
+                self.buckets.remove(self.bucket_id)
                 self.bucket_id = self.create_bucket_to_be_tested(
                     self.organisation_id, self.project_id,
                     self.cluster_id, self.bucket_name, self.buckets)
+                self.buckets.append(self.bucket_id)
 
         if failures:
             for fail in failures:

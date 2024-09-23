@@ -13,10 +13,9 @@ class GetBucket(GetCluster):
         GetCluster.setUp(self, nomenclature)
 
         # Initialise bucket params and create a bucket.
-        self.bucket_name = self.generate_random_string(
-            5, False, self.prefix + nomenclature)
+        self.bucket_name = self.prefix + nomenclature
         self.expected_res = {
-            "name": self.bucket_name,
+            "name": self.bucket_name + self.input.param("storageBackend", "magma"),
             "type": "couchbase",
             "storageBackend": self.input.param("storageBackend", "magma"),
             "bucketConflictResolution": "seqno",
@@ -34,6 +33,21 @@ class GetBucket(GetCluster):
                 "memoryUsedInMib": None
             }
         }
+        self.expected_bucketID_errors = [
+            {
+                "code": 6008,
+                "hint": "The requested bucket does not exist. Please ensure "
+                        "that the correct bucket ID is provided.",
+                "httpStatusCode": 404,
+                "message": "Unable to find the specified bucket."
+            }, {
+                "code": 400,
+                "hint": "Please review your request and ensure that all "
+                        "required parameters are correctly provided.",
+                "httpStatusCode": 400,
+                "message": "BucketID is invalid."
+            }
+        ]
         if self.input.param("storageBackend", "magma") == "couchstore":
             self.expected_res["memoryAllocationInMb"] = 100
         else:
@@ -67,7 +81,8 @@ class GetBucket(GetCluster):
         if self.delete_buckets(self.organisation_id, self.project_id,
                                self.cluster_id, self.buckets):
             self.log.error("Error while deleting buckets.")
-        self.log.info("Successfully deleted buckets.")
+        else:
+            self.log.info("Successfully deleted buckets.")
 
         super(GetBucket, self).tearDown()
 
@@ -143,14 +158,8 @@ class GetBucket(GetCluster):
                 "description": "Fetch info but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "BucketID is invalid."
-                }
+                "expected_status_code": [400, 404],
+                "expected_error": self.expected_bucketID_errors
             }
         ]
         failures = list()

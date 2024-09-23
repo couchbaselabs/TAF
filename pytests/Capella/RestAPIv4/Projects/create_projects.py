@@ -87,6 +87,7 @@ class CreateProject(GetProject):
                 if res.status_code != 204:
                     self.fail("Failure while deleting project: {}"
                               .format(project_id))
+                self.log.debug("Project CleanUp Successful.")
 
         if failures:
             for fail in failures:
@@ -122,6 +123,7 @@ class CreateProject(GetProject):
                 if res.status_code != 204:
                     self.fail("Failure while deleting project: {}"
                               .format(project_id))
+                self.log.debug("Project CleanUp Successful.")
 
         if failures:
             for fail in failures:
@@ -207,6 +209,7 @@ class CreateProject(GetProject):
                 if res.status_code != 204:
                     self.fail("Failure while deleting project: {}"
                               .format(project_id))
+                self.log.debug("Project CleanUp Successful.")
 
         if failures:
             for fail in failures:
@@ -300,6 +303,7 @@ class CreateProject(GetProject):
                 if res.status_code != 204:
                     self.fail("Failure while deleting project: {}"
                               .format(project_id))
+                self.log.debug("Project CleanUp Successful.")
 
         if failures:
             for fail in failures:

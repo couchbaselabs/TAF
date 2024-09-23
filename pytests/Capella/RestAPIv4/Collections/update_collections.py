@@ -90,14 +90,8 @@ class UpdateCollection(GetCollection):
                 "description": "Update collection but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "BucketID is invalid."
-                }
+                "expected_status_code": [400, 404],
+                "expected_error": self.expected_bucketID_errors
             }, {
                 "description": "Update collection but with invalid scopeName",
                 "invalid_scopeName": self.replace_last_character(

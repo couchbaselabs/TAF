@@ -87,11 +87,11 @@ class APIBase(CouchbaseBaseTest):
 
             # Create a wrapper project to be used for all the projects,
             # IF not already present.
-            self.log.info("Creating the functional-test required project...")
             if TestInputSingleton.input.capella.get("project", None):
                 self.project_id = TestInputSingleton.input.capella.get(
                     "project")
             else:
+                self.log.info("Creating the functional-test required project")
                 res = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, self.prefix + "WRAPPER")
                 if res.status_code != 201:
@@ -104,7 +104,7 @@ class APIBase(CouchbaseBaseTest):
                     self.capella["project"] = self.project_id
 
             # Create a residual project used for auth verification tests.
-            self.log.info("Creating the security-test required project...")
+            self.log.info("Creating the security-test required project")
             resp = self.capellaAPI.org_ops_apis.create_project(
                 self.organisation_id, "Auth_Project")
             if resp.status_code == 201:
@@ -545,14 +545,13 @@ class APIBase(CouchbaseBaseTest):
             self.delete_api_keys(self.api_keys)
 
             # Delete the projects that were created.
-            self.log.info("Deleting Project: {}".format(self.project_id))
             if self.delete_projects(
                     self.organisation_id,
                     [self.project_id, self.other_project_id],
                     self.curr_owner_key):
-                self.log.error("Error while deleting project.")
+                self.log.error("Error while deleting projects.")
             else:
-                self.log.info("Project deleted successfully")
+                self.log.info("Projects deleted successfully")
                 self.project_id = None
 
             # Delete organizationOwner API keys
@@ -1236,11 +1235,18 @@ class APIBase(CouchbaseBaseTest):
 
         # Acceptor for expected error codes.
         if ("expected_status_code" in testcase and
-                "expected_error" in testcase and
-                testcase["expected_status_code"] == result.status_code):
-            self.log.debug("This test expected the code: {}, with error: {}"
-                           .format(testcase["expected_status_code"],
-                                   testcase["expected_error"]))
+                "expected_error" in testcase):
+            if isinstance(testcase["expected_status_code"], list):
+                for code in testcase["expected_status_code"]:
+                    if code == result.status_code:
+                        self.log.debug("The test expected one of the "
+                                       "following error responses to the "
+                                       "user: {}".format(
+                                        testcase["expected_error"]))
+            elif result.status_code == testcase["expected_status_code"]:
+                self.log.debug("This test expected the code: {}, with error: "
+                               "{}".format(testcase["expected_status_code"],
+                                           testcase["expected_error"]))
             return False
 
         if result.status_code in success_codes:
@@ -1508,7 +1514,7 @@ class APIBase(CouchbaseBaseTest):
                     while self.columnarAPI.fetch_analytics_cluster_info(
                             self.organisation_id, self.project_id,
                             instance).status_code != 404:
-                        self.log.info("...Waiting further...")
+                        self.log.debug("...Waiting further...")
                         time.sleep(2)
                     self.log.info("Instance {} deleted".format(instance))
                     instances.remove(instance)
@@ -1823,7 +1829,7 @@ class APIBase(CouchbaseBaseTest):
 
         instance_deletion_failed = False
         for instance in instances:
-            self.log.info("Deleting instance {}".format(instance))
+            self.log.debug("Deleting instance {}".format(instance))
             res = self.columnarAPI.delete_analytics_cluster(
                 self.organisation_id, self.project_id, instance)
             if res.status_code == 429:
@@ -1835,6 +1841,6 @@ class APIBase(CouchbaseBaseTest):
                                .format(instance, res.content))
                 instance_deletion_failed = True
             else:
-                self.log.info("Instance delete request successful.")
+                self.log.debug("Instance delete request successful.")
 
         return instance_deletion_failed
