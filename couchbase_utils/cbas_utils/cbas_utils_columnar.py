@@ -4278,6 +4278,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     "ANALYTICS COLLECTION"]
                 creation_method = random.choice(
                     dataset_spec["creation_methods"])
+            else:
+                creation_method = random.choice(
+                    dataset_spec["creation_methods"])
 
             if dataset_spec["storage_format"] == "mixed":
                 storage_format = random.choice(
@@ -6991,6 +6994,95 @@ class CbasUtil(CBOUtil):
                 return False
             else:
                 return True
+    
+    def perform_metadata_validation_for_all_entities(
+            self, cluster, entities_dict={}):
+        self.log.info("Performing metadata validation for all columnar "
+                      "entities")
+
+        links_in_metadata = self.get_all_links_from_metadata(
+            cluster)
+        if entities_dict:
+            actual_links = entities_dict.get("links", [])
+        else:
+            actual_links = [link.name for
+                            link in self.get_all_link_objs()]
+        for link in actual_links:
+            if link not in links_in_metadata:
+                return False, f"Link {link} is not present in Metadata"
+
+        databases_in_metadata = self.get_all_databases_from_metadata(
+            cluster)
+        if entities_dict:
+            actual_databases = entities_dict.get("databases", [])
+        else:
+            actual_databases = [database_name for database_name in
+                                self.databases]
+        for database in actual_databases:
+            if database not in databases_in_metadata:
+                return False, f"Database {database} is not present in Metadata"
+
+        dataverses_in_metadata = self.get_all_dataverses_from_metadata(
+            cluster)
+        if entities_dict:
+            actual_dataverses = entities_dict.get("dataverses", [])
+        else:
+            actual_dataverses = [
+                self.unformat_name(dataverse.full_name)
+                for dataverse in self.get_all_dataverse_obj()]
+        for dataverse in actual_dataverses:
+            if dataverse not in dataverses_in_metadata:
+                return False, f"Dataverse {dataverse} is not present in Metadata"
+
+        datasets_in_metadata = self.get_all_datasets_from_metadata(
+            cluster)
+        if entities_dict:
+            actual_datasets = entities_dict.get("datasets", [])
+        else:
+            actual_datasets = [
+                self.unformat_name(dataset_obj.full_name)
+                for dataset_obj in self.get_all_dataset_objs()]
+        for dataset in actual_datasets:
+            if dataset not in datasets_in_metadata:
+                return False, f"Dataset {dataset} is not present in Metadata"
+
+        indexes_in_metadata = self.get_all_indexes_from_metadata(
+            cluster)
+        if entities_dict:
+            actual_indexes = entities_dict.get("indexes", [])
+        else:
+            actual_indexes = [
+                self.unformat_name(index_obj.full_name)
+                for index_obj in self.get_all_index_objs()]
+        for index in actual_indexes:
+            if index not in indexes_in_metadata:
+                return False, f"Index {index} is not present in Metadata"
+
+        synonyms_in_metadata = self.get_all_synonyms_from_metadata(
+            cluster)
+        if entities_dict:
+            actual_synonyms = entities_dict.get("synonyms", [])
+        else:
+            actual_synonyms = [
+                self.unformat_name(synonym_obj.full_name)
+                for synonym_obj in self.get_all_synonym_objs()]
+        for synonym in actual_synonyms:
+            if synonym not in synonyms_in_metadata:
+                return False, f"Synonym {synonym} is not present in Metadata"
+
+        udfs_in_metadata = [udf[0] for udf in self.get_all_udfs_from_metadata(
+            cluster)]
+        if entities_dict:
+            actual_udfs = entities_dict.get("udfs", [])
+        else:
+            actual_udfs = [
+                self.unformat_name(udf_obj.full_name)
+                for udf_obj in self.get_all_udf_objs()]
+        for udf in actual_udfs:
+            if udf not in udfs_in_metadata:
+                return False, f"UDF {udf} is not present in Metadata"
+
+        return True, None
 
 
 class FlushToDiskTask(object):

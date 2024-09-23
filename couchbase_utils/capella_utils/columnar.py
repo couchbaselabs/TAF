@@ -861,6 +861,7 @@ class ColumnarUtils:
                                     backup_id, timeout=3600):
         start_time = time.time()
         backup_state = None
+        not_found_count = 0
         while backup_state != "complete" and time.time() < start_time + timeout:
             backup_info = self.get_backup_info(
                 pod=pod, tenant=tenant, project_id=project_id,
@@ -868,10 +869,16 @@ class ColumnarUtils:
             if not backup_info:
                 self.log.error(
                     f"Backup with backup id: {backup_id}, Not found")
-            backup_state = backup_info["progress"]["status"]
-            self.log.info(
-                f"Waiting for backup to be completed, current state: {backup_state}")
-            time.sleep(60)
+                if not_found_count > 10:
+                    self.fail(f"Backup with backup id: {backup_id}, Not found")
+                else:
+                    not_found_count += 1
+                    time.sleep(60)
+            else:
+                backup_state = backup_info["progress"]["status"]
+                self.log.info(
+                    f"Waiting for backup to be completed, current state: {backup_state}")
+                time.sleep(60)
         if backup_state != "complete":
             self.log.error(
                 f"Failed to create backup with timeout of {timeout}")
@@ -967,7 +974,7 @@ class ColumnarUtils:
             timeout=3600):
         start_time = time.time()
         job_state = None
-        while job_state != "complete" and time.time() < start_time + timeout:
+        while job_state != "completed" and time.time() < start_time + timeout:
             job_info = self.get_maintenance_job_status(
                 pod=pod, tenant=tenant, project_id=project_id,
                 instance=instance, maintenance_job_id=maintenance_job_id)
@@ -979,7 +986,7 @@ class ColumnarUtils:
                 f"Waiting for maintenance job to be completed, current state:"
                 f" {job_state}")
             time.sleep(60)
-        if job_state != "complete":
+        if job_state != "completed":
             self.log.error(
                 f"Failed to complete maintenance job with timeout of"
                 f" {timeout}")
