@@ -442,6 +442,10 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         elif provider == "azure":
             self.provider = "hostedAzure"
             self.package = "Enterprise"
+        version = self.input.capella.get("server_version", None)
+        if version:
+            version = version.split(".")
+            version = ".".join((version[0], version[1]))
         self.capella_cluster_config = CapellaUtils.get_cluster_config(
             description="Amazing Cloud",
             single_az=False,
@@ -449,7 +453,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             region=self.region,
             timezone=Cluster.Timezone.PT,
             plan=self.package,
-            version=self.input.capella.get("server_version", None),
+            version=version,
             cluster_name="taf_cluster")
 
         services = self.input.param("services", "data")
