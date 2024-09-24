@@ -331,7 +331,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         self.log.info("Loading data into remote couchbase collection")
         for remote_bucket in self.remote_cluster.buckets:
             for scope_name, scope in remote_bucket.scopes.items():
-                if scope_name != "_system":
+                if scope_name != "_system" and scope != "_mobile":
                     for collection_name, collection in (
                             scope.collections.items()):
                         self.log.info(
@@ -455,6 +455,8 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
             remote_cluster=self.remote_cluster,
             external_collection_file_formats=["json", "csv", "tsv", "avro",
                                               "parquet"],
+            path_on_external_container="level_{level_no:int}_folder_{"
+                                       "folder_no:int}",
             aws_kafka_cluster_details=aws_kafka_cluster_details,
             confluent_kafka_cluster_details=confluent_kafka_cluster_details,
             external_dbs=["MONGODB"],

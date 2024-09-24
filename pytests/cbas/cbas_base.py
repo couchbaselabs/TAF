@@ -139,9 +139,6 @@ class CBASBaseTest(BaseTestCase):
                 name=cluster_name,
                 servers=servers)
             self.cb_clusters[cluster_name] = cluster
-            if self.use_https:
-                SDKClient.enable_tls_in_env(cluster)
-            SDKClient.singleton_env_build(cluster)
             cluster.kv_nodes.append(cluster.master)
 
             self.initialize_cluster(
@@ -252,7 +249,7 @@ class CBASBaseTest(BaseTestCase):
             for server in cluster.servers:
                 # This check ensures that only the number of nodes that are
                 # mentioned in node_init param are added to the cluster.
-                if j <= self.nodes_init[i]:
+                if j < self.nodes_init[i]:
                     if server.ip != cluster.master.ip:
                         server.services = self.services_init[i][j].replace(":", ",")
                         j += 1

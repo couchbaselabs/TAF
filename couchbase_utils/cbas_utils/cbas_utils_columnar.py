@@ -6203,14 +6203,17 @@ class CbasUtil(CBOUtil):
                                                         300)):
                     self.log.error("Failed to connect link {0}".format(
                         link.name))
+                    results.append(False)
                 else:
                     self.log.info("Successfully connected link {0}".format(
                         link.name))
+                    results.append(True)
+        return results
 
     def disconnect_links(self, cluster, cbas_spec):
         """
-                Connect all links present
-                """
+        Connect all links present
+        """
         # Connect link only when remote links or kafka links are present,
         # Local link is connected by default and external links are not
         # required to be connected.
@@ -6227,9 +6230,12 @@ class CbasUtil(CBOUtil):
                                                         300)):
                     self.log.error("Failed to connect link {0}".format(
                         link.name))
+                    results.append(False)
                 else:
                     self.log.info("Successfully connected link {0}".format(
                         link.name))
+                    results.append(True)
+        return results
 
     def create_cbas_infra_from_spec(
             self, cluster, cbas_spec, bucket_util,

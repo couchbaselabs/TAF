@@ -276,7 +276,8 @@ class ColumnarBaseTest(BaseTestCase):
     """
     def populate_columnar_infra_spec(
             self, columnar_spec, remote_cluster=None,
-            external_collection_file_formats=[], aws_kafka_cluster_details=[],
+            external_collection_file_formats=[],
+            path_on_external_container=None, aws_kafka_cluster_details=[],
             confluent_kafka_cluster_details=[], external_dbs=[],
             kafka_topics={}):
 
@@ -351,7 +352,7 @@ class ColumnarBaseTest(BaseTestCase):
             prop = {
                 "external_container_name": self.s3_source_bucket,
                 "region": self.aws_region,
-                "path_on_external_container": "level_{level_no:int}_folder_{folder_no:int}"
+                "path_on_external_container": path_on_external_container
             }
 
             if file_format == "json":

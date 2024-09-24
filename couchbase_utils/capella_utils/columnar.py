@@ -857,6 +857,21 @@ class ColumnarUtils:
                            f"{instance.instance_id}")
             return None
 
+    def delete_backup(self, pod, tenant, project_id, instance,
+                      backup_id):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.delete_backup(
+            tenant_id=tenant.id, project_id=project_id,
+            instance_id=instance.instance_id, backup_id=backup_id)
+        if resp.status_code == 202:
+            return resp.json()
+        else:
+            self.log.error(f"Unable to delete backup for columnar cluster "
+                           f"{instance.instance_id}")
+            return None
+
     def wait_for_backup_to_complete(self, pod, tenant, project_id, instance,
                                     backup_id, timeout=3600):
         start_time = time.time()
@@ -995,3 +1010,48 @@ class ColumnarUtils:
             self.log.info("Successfully completed maintenance job in {} "
                           "seconds".format(time.time() - start_time))
             return True
+
+    def wait_for_instance_to_be_healthy(self, pod, tenant, instance,
+                                        timeout=3600):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        start_time = time.time()
+        state = None
+        while state != "healthy" and time.time() < start_time + timeout:
+            resp = columnar_api.get_specific_columnar_instance(
+                tenant.id, tenant.project_id, instance.instance_id)
+            if resp.status_code != 200:
+                self.log.error(
+                    "Unable to fetch details for Columnar cluster {0} with ID "
+                    "{1}".format(instance.name, instance.instance_id))
+                continue
+            state = json.loads(resp.content)["data"]["state"]
+            self.log.info("Cluster %s state: %s" % (
+                instance.instance_id, state))
+            if state == "healthy":
+                break
+            else:
+                time.sleep(10)
+        if state == "healthy":
+            return True
+        else:
+            return False
+
+    def create_schedule_backup(
+            self, pod, tenant, project_id, instance, interval, retention,
+            start_time):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.schedule_backup_create_update(
+            tenant_id=tenant.id, project_id=project_id,
+            instance_id=instance.instance_id, interval=interval,
+            retention=retention, start_time=start_time)
+        if resp.status_code != 204:
+            self.log.error(
+                "Failed to create scheduled backup with status code : "
+                "{}".format(resp.status_code))
+            return False
+        return True
+

@@ -1,26 +1,33 @@
+import time
+
+from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
+from Columnar.columnar_base import ColumnarBaseTest
+from Columnar.mini_volume_code_template import MiniVolume
 from datetime import datetime, timezone, timedelta
 
-from Columnar.columnar_base import ColumnarBaseTest
-from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
-import time
-from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
-from Columnar.mini_volume_code_template import MiniVolume
+# External Database loader related imports
+from Jython_tasks.sirius_task import CouchbaseUtil
+from sirius_client_framework.sirius_constants import SiriusCodes
 
 
 class BackupRestore(ColumnarBaseTest):
     def setUp(self):
         super(BackupRestore, self).setUp()
-        self.cluster = self.tenant.columnar_instances[0]
+        self.columnar_cluster = self.tenant.columnar_instances[0]
 
         self.no_of_docs = self.input.param("no_of_docs", 1000)
-        self.remote_cluster = None
+
+        if len(self.tenant.clusters) > 0:
+            self.remote_cluster = self.tenant.clusters[0]
+            self.couchbase_doc_loader = CouchbaseUtil(
+                task_manager=self.task_manager,
+                hostname=self.remote_cluster.master.ip,
+                username=self.remote_cluster.master.rest_username,
+                password=self.remote_cluster.master.rest_password,
+            )
 
         if not self.columnar_spec_name:
-            self.columnar_spec_name = "regressions.copy_to_s3"
-
-        self.columnar_spec = self.cbas_util.get_columnar_spec(
-            self.columnar_spec_name)
-        self.columnarAPI = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
+            self.columnar_spec_name = "full_template"
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -33,381 +40,359 @@ class BackupRestore(ColumnarBaseTest):
         if hasattr(self, "mini_volume"):
             self.mini_volume.stop_process()
             self.mini_volume.stop_crud_on_data_sources()
-        if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
-            self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
+        if hasattr(self, "remote_cluster"):
+            self.delete_all_buckets_from_capella_cluster(
+                self.tenant, self.remote_cluster)
 
         # delete all created backups
-        backups = self.get_backup_from_backup_lists()
+        backups = self.columnar_utils.list_backups(
+            pod=self.pod, tenant=self.tenant,
+            project_id=self.tenant.project_id, instance=self.columnar_cluster)
         for backup in backups:
-            self.columnarAPI.delete_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                           backup["data"]["id"])
+            self.columnar_utils.delete_backup(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster, backup_id=backup["data"]["id"])
 
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.cluster, self.columnar_spec):
+                self.columnar_cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
 
         super(ColumnarBaseTest, self).tearDown()
-        self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
-
-    def remote_cluster_setup(self):
-        for key in self.cb_clusters:
-            self.remote_cluster = self.cb_clusters[key]
-            break
-        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
-                                                                               self.tenant.project_id,
-                                                                               self.remote_cluster.id, "0.0.0.0/0")
-        if resp.status_code == 201 or resp.status_code == 422:
-            self.log.info("Added allowed IP 0.0.0.0/0")
-        else:
-            self.fail("Failed to add allowed IP")
-        remote_cluster_certificate_request = (
-            self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant.id, self.tenant.project_id,
-                                                                     self.remote_cluster.id))
-        if remote_cluster_certificate_request.status_code == 200:
-            self.remote_cluster_certificate = (remote_cluster_certificate_request.json()["certificate"])
-        else:
-            self.fail("Failed to get cluster certificate")
-
-        # creating bucket scope and collections for remote collection
-        no_of_remote_buckets = self.input.param("no_of_remote_bucket", 1)
-        self.create_bucket_scopes_collections_in_capella_cluster(
-            self.tenant, self.remote_cluster, no_of_remote_buckets,
-            bucket_ram_quota=1024)
-
-    def base_infra_setup(self, primary_key=None):
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param("no_of_databases", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param("no_of_scopes", 1)
-        self.columnar_spec["synonym"]["no_of_synonyms"] = self.input.param(
-            "synonym", 0)
-        self.columnar_spec["index"]["no_of_indexes"] = self.input.param(
-            "index", 0)
-        self.columnar_spec["remote_link"]["no_of_remote_links"] = self.input.param(
-            "no_of_remote_links", 0)
-        if self.columnar_spec["remote_link"]["no_of_remote_links"] != 0:
-            self.remote_cluster_setup()
-            remote_link_properties = list()
-            remote_link_properties.append(
-                {"type": "couchbase", "hostname": str(self.remote_cluster.srv),
-                 "username": self.remote_cluster.username,
-                 "password": self.remote_cluster.password,
-                 "encryption": "full",
-                 "certificate": self.remote_cluster_certificate}
-            )
-            self.columnar_spec["remote_link"]["properties"] = remote_link_properties
-            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("no_of_remote_coll", 1)
-
-        self.columnar_spec["external_link"]["no_of_external_links"] = self.input.param(
-            "no_of_external_links", 0)
-
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
-        self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("no_of_external_coll", 0)
-        if self.columnar_spec["external_dataset"]["num_of_external_datasets"]:
-            external_dataset_properties = [{
-                "external_container_name": self.s3_source_bucket,
-                "path_on_external_container": None,
-                "file_format": self.input.param("file_format", "json"),
-                "include": ["*.{0}".format(self.input.param("file_format", "json"))],
-                "exclude": None,
-                "region": self.aws_region,
-                "object_construction_def": None,
-                "redact_warning": None,
-                "header": None,
-                "null_string": None,
-                "parse_json_string": 0,
-                "convert_decimal_to_double": 0,
-                "timezone": ""
-            }]
-            self.columnar_spec["external_dataset"][
-                "external_dataset_properties"] = external_dataset_properties
-
-        self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "no_of_standalone_coll", 0)
-        if primary_key is not None:
-            self.columnar_spec["standalone_dataset"]["primary_key"] = primary_key
-        else:
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
-
-        if not hasattr(self, "remote_cluster"):
-            remote_cluster = None
-        else:
-            remote_cluster = [self.remote_cluster]
-        result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.columnar_spec, self.bucket_util, False, remote_clusters=remote_cluster)
-        if not result:
-            self.fail(msg)
-
-    def get_backup_from_backup_lists(self, backup_id=None):
-        """
-        Returns backup info for a backup id
-        Returns all backups for instance if backup_id is None
-        Parameters:
-            backup_id: Optional, fetch the backup info for backup_id
-        """
-        resp = self.columnarAPI.list_backups(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
-        backup_list = resp.json()["data"]
-        if not backup_id:
-            return backup_list
-        else:
-            for backup in backup_list:
-                if backup["data"]["id"] == backup_id:
-                    return backup["data"]
-        return -1
-
-    def get_restore_from_restore_list(self, backup_id, restore_id=None):
-        """
-        Returns restore info for a restore id
-        Returns all restore for instance if restore is None
-        Parameters:
-            backup_id: fetch the backup info for backup_id
-            restore_id: Optional, only provide when to fetch specific restore
-        """
-        resp = self.columnarAPI.list_restores(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
-        restore_list = resp.json()["data"]
-        if not restore_id:
-            return restore_list
-        else:
-            for restore in restore_list:
-                if restore["data"]["id"] == restore_id:
-                    return restore["data"]
-        return -1
+        self.log_setup_status(self.__class__.__name__, "Finished",
+                              stage="Teardown")
 
     def dataset_count(self):
         items_in_datasets = {}
         datasets = self.cbas_util.get_all_dataset_objs()
         for dataset in datasets:
-            items_in_datasets[dataset.full_name] = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
-                                                                                                dataset.full_name)
+            items_in_datasets[
+                dataset.full_name] = self.cbas_util.get_num_items_in_cbas_dataset(
+                self.columnar_cluster, dataset.full_name)
         return items_in_datasets
 
-    def validate_entities_after_restore(self):
-        links = set([link.name for link in self.cbas_util.get_all_link_objs()])
-        datasets = set([dataset.full_name for dataset in self.cbas_util.get_all_dataset_objs()])
-        indexes = set([index.full_name for index in self.cbas_util.get_all_index_objs()])
-        synonyms = set([synonyms.full_name for synonyms in self.cbas_util.get_all_synonym_objs()])
-        metadata_links = set(self.cbas_util.get_all_links_from_metadata(self.cluster))
-        metadata_datasets = set(self.cbas_util.get_all_datasets_from_metadata(self.cluster))
-        metadata_indexes = set(self.cbas_util.get_all_indexes_from_metadata(self.cluster))
-        metadata_synonyms = set(self.cbas_util.get_all_synonyms_from_metadata(self.cluster))
-        # match entities from TAF object and from columnar metadata
-        self.log.info("Link entity matched") if links == metadata_links else self.fail("Link entity mismatch")
-        self.log.info("Dataset entity matched") if datasets == metadata_datasets else self.fail("Dataset entity "
-                                                                                                "mismatch")
-        self.log.info("Index entity matched") if indexes == metadata_indexes else self.fail("Index entity mismatch")
-        self.log.info("Synonyms entity matched") if synonyms == metadata_synonyms else self.fail("Synonyms entity "
-                                                                                                 "mismatch")
-
-    def wait_for_backup_complete(self, backup_id, timeout=3600):
-        start_time = time.time()
-        backup_state = None
-        while backup_state != "complete" and time.time() < start_time + timeout:
-            backup_state = self.get_backup_from_backup_lists(backup_id)
-            if backup_state == -1:
-                self.fail("Backup with backup id: {0}, Not found".format(backup_id))
-            backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
-            self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
-            time.sleep(60)
-        if backup_state != "complete":
-            self.fail("Failed to create backup with timeout of {}".format(timeout))
+    def create_backup_wait_for_complete(self, retention=0, timeout=3600):
+        self.log.info("Starting backup")
+        resp = self.columnar_utils.create_backup(
+            pod=self.pod, tenant=self.tenant,
+            project_id=self.tenant.project_id,
+            instance=self.columnar_cluster, retention_time=retention)
+        if resp is None:
+            self.fail("Unable to schedule backup")
         else:
-            self.log.info("Successfully created backup in {} seconds".format(time.time() - start_time))
-            return True
+            backup_id = resp["id"]
 
-    def create_backup_wait_for_complete(self, retention=None, timeout=3600):
-        if retention:
-            resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                                  retention)
-        else:
-            resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
-        backup_id = resp.json()["id"]
         self.log.info("Backup Id: {}".format(backup_id))
-
-        # wait for backup to complete
-        self.wait_for_backup_complete(backup_id, timeout)
+        if not self.columnar_utils.wait_for_backup_to_complete(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster,
+                backup_id=backup_id, timeout=timeout):
+            self.fail("Backup failed.")
         return backup_id
 
     def restore_wait_for_complete(self, backup_id, timeout=3600):
-        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                               backup_id)
-        restore_id = resp.json()["id"]
-        start_time = time.time()
-        self.log.info("Restore Id: {}".format(restore_id))
-        restore_state = None
-        while restore_state != "complete" and time.time() < start_time + timeout:
-            restore_state = self.get_restore_from_restore_list(backup_id, restore_id)["status"]
-            if restore_state == -1:
-                self.fail("Restore id: {0} not found for backup id: {1}".format(restore_id, backup_id))
-            self.log.info("Waiting for restore to complete, current status {0}".format(restore_state))
-            time.sleep(60)
-        if restore_state != "complete":
-            self.fail("Fail to restore backup with timeout of {}".format(timeout))
+        self.log.info("Restoring backup")
+        resp = self.columnar_utils.restore_backup(
+            pod=self.pod, tenant=self.tenant,
+            project_id=self.tenant.project_id, instance=self.columnar_cluster,
+            backup_id=backup_id)
+
+        if resp is None:
+            self.fail("Unable to start restore")
         else:
-            self.log.info("Successfully restored backup in {} seconds".format(time.time() - start_time))
+            restore_id = resp["id"]
+
+        if not self.columnar_utils.wait_for_restore_to_complete(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster,
+                restore_id=restore_id, timeout=timeout):
+            self.fail("Unable to restore backup taken before the upgrade.")
 
     def scale_columnar_cluster(self, nodes, timeout=3600):
-        start_time = time.time()
-        status = None
-        resp = self.columnarAPI.update_columnar_instance(self.tenant.id,
-                                                         self.tenant.project_id,
-                                                         self.cluster.instance_id,
-                                                         self.cluster.name, '', nodes)
-        if resp.status_code != 202:
-            self.fail("Failed to scale cluster")
-            # check for nodes in the cluster
-        while status != "healthy" and start_time + timeout > time.time():
-            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
-                                                                   self.tenant.project_id,
-                                                                   self.cluster.instance_id)
-            resp = resp.json()
-            status = resp["data"]["state"]
-            time.sleep(30)
-        if time.time() > start_time + timeout:
-            self.log.error("Cluster state is {} after 15 minutes".format(status))
+        self.log.info("Scaling columnar cluster")
+        if not self.columnar_utils.scale_instance(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster,
+                nodes=nodes):
+            self.fail("Unable to initiate cluster scale operation")
 
-        while start_time + timeout > time.time():
-            rest = ClusterRestAPI(self.cluster.master)
-            status, content = rest.cluster_details()
-            if not status:
-                self.log.error("Error while fetching pools/default using "
-                               "connection string")
+        if not self.columnar_utils.wait_for_instance_scaling_operation(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster, timeout=timeout,
+                verify_with_backend_cluster=True,
+                expected_num_of_nodes=nodes):
+            self.fail("Scaling operation failed")
 
-            current_nodes = len(content["nodes"])
-            if current_nodes == nodes:
-                return True
-            self.log.info("Waiting for server map to get updated")
-            time.sleep(20)
-        return False
+    def load_data_to_source(self, remote_start, remote_end):
+        if hasattr(self, "remote_cluster"):
+            for remote_bucket in self.remote_cluster.buckets:
+                for scope_name, scope in remote_bucket.scopes.items():
+                    if scope_name != "_system" and scope != "_mobile":
+                        for collection_name, collection in (
+                                scope.collections.items()):
+                            self.log.info(
+                                f"Loading docs in {remote_bucket.name}."
+                                f"{scope_name}.{collection_name}")
+                            cb_doc_loading_task = self.couchbase_doc_loader.load_docs_in_couchbase_collection(
+                                bucket=remote_bucket.name, scope=scope_name,
+                                collection=collection_name, start=remote_start,
+                                end=remote_end,
+                                doc_template=SiriusCodes.Templates.PRODUCT,
+                                doc_size=self.doc_size, sdk_batch_size=1000
+                            )
+                            if not cb_doc_loading_task.result:
+                                self.fail(
+                                    f"Failed to load docs in couchbase collection "
+                                    f"{remote_bucket.name}.{scope_name}.{collection_name}")
+                            else:
+                                collection.num_items = cb_doc_loading_task.success_count
 
-    def load_data_to_source(self, remote_start, remote_end, standalone_start, standalone_end):
-        if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
-            for bucket in self.remote_cluster.buckets:
-                if bucket.name != "_default":
-                    for scope in bucket.scopes:
-                        if scope != "_system" and scope != "_mobile":
-                            for collection in bucket.scopes[scope].collections:
-                                self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, collection,
-                                                                                       bucket.name, scope,
-                                                                                       "couchbases://" + self.remote_cluster.srv,
-                                                                                       remote_start, remote_end,
-                                                                                       doc_size=self.doc_size,
-                                                                                       username=self.remote_cluster.username,
-                                                                                       password=self.remote_cluster.password)
-        standalone_collections = self.cbas_util.get_all_dataset_objs("standalone")
+        standalone_collections = self.cbas_util.get_all_dataset_objs(
+            "standalone")
         for collection in standalone_collections:
-            self.cbas_util.load_doc_to_standalone_collection(self.cluster, collection.name, collection.dataverse_name,
-                                                             collection.database_name, self.no_of_docs, self.doc_size)
-
-    def wait_for_instance_to_be_healthy(self, timeout=600):
-        status = None
-        start_time = time.time()
-        while status != "healthy" and time.time() < start_time + timeout:
-            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
-                                                                   self.tenant.project_id,
-                                                                   self.cluster.instance_id)
-            resp = resp.json()
-            status = resp["data"]["state"]
-            self.log.info("Instance state: {}".format(status))
-            time.sleep(30)
-        if status != "healthy":
-            self.fail("Instance failed to be healthy")
-        else:
-            self.log.info("Instance is in healthy state")
+            if not self.cbas_util.load_doc_to_standalone_collection(
+                    self.columnar_cluster, collection.name,
+                    collection.dataverse_name, collection.database_name,
+                    self.no_of_docs, self.doc_size):
+                self.fail(f"Failed to insert docs into standalone collection "
+                          f"{collection.full_name}")
 
     def test_backup_restore(self):
-        self.base_infra_setup()
-        self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
+        # creating bucket scope and collections for remote collection
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster,
+            self.input.param("no_of_remote_bucket", 1))
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"])
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"name": "string", "email": "string"}]
+        self.columnar_spec["index"]["indexed_fields"] = ["price:double"]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
+        self.load_data_to_source(0, self.no_of_docs)
+
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
-            self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
+            if not self.cbas_util.wait_for_ingestion_complete(
+                    self.columnar_cluster, collection.full_name,
+                    collection.num_of_items):
+                self.fail(
+                    f"FAILED: Initial ingestion into {collection.full_name}.")
+
         dataset_count = self.dataset_count()
-        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
-        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
+
+        result = self.cbas_util.disconnect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while disconnecting link")
+
+        result = self.cbas_util.connect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while connecting link")
+
         backup_id = self.create_backup_wait_for_complete()
+
         dataset_count_after_backup = self.dataset_count()
         if dataset_count != dataset_count_after_backup:
             self.fail("Data missing after backup")
 
         # restore from backup
         self.restore_wait_for_complete(backup_id)
-        self.wait_for_instance_to_be_healthy()
-        self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
-        self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=300)
+
+        if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                pod=self.pod, tenant=self.tenant,
+                instance=self.columnar_cluster):
+            self.fail("Cluster is not is healthy state")
+
+        if not self.columnar_utils.allow_ip_on_instance(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster):
+            self.fail("Unable to set Allowed IP post restoring backup")
+
+        if not self.cbas_util.wait_for_cbas_to_recover(
+                self.columnar_cluster, timeout=600):
+            self.fail("Columnar cluster unable to recover after restoring "
+                      "backup.")
 
         # validate data after restore
         dataset_count_after_restore = self.dataset_count()
         if dataset_count != dataset_count_after_restore:
             self.fail("Data mismatch after restore")
-        self.validate_entities_after_restore()
-        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
+
+        status, error = self.cbas_util.perform_metadata_validation_for_all_entities(
+            self.columnar_cluster)
+        if not status:
+            self.fail(error)
+
+        result = self.cbas_util.connect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while connecting link")
 
     def test_backup_restore_with_scaling(self):
-        scale_stage = self.input.param("scale_stage")
-        scale_nodes = self.input.param("scale_nodes")
-        self.base_infra_setup()
-        self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
+        # creating bucket scope and collections for remote collection
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster,
+            self.input.param("no_of_remote_bucket", 1))
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"])
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"name": "string", "email": "string"}]
+        self.columnar_spec["index"]["indexed_fields"] = ["price:double"]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
+        self.load_data_to_source(0, self.no_of_docs)
+
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
-            self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
+            if not self.cbas_util.wait_for_ingestion_complete(
+                    self.columnar_cluster, collection.full_name,
+                    collection.num_of_items):
+                self.fail(
+                    f"FAILED: Initial ingestion into {collection.full_name}.")
+
         dataset_count = self.dataset_count()
-        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
-        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
+
+        result = self.cbas_util.disconnect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while disconnecting link")
+
+        result = self.cbas_util.connect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while connecting link")
+
+        scale_stage = self.input.param("scale_stage")
+        scale_nodes = self.input.param("scale_nodes")
+
         if scale_stage == "before_backup":
             self.scale_columnar_cluster(scale_nodes)
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
-            self.wait_for_instance_to_be_healthy()
+            if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                    pod=self.pod, tenant=self.tenant,
+                    instance=self.columnar_cluster):
+                self.fail("Cluster is not is healthy state")
 
         if scale_stage == "during_backup":
-            resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
-            backup_id = resp.json()["id"]
+            resp = self.columnar_utils.create_backup(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster)
+            if resp is None:
+                self.fail("Unable to schedule backup")
+            else:
+                backup_id = resp["id"]
+
             self.log.info("Backup Id: {}".format(backup_id))
             backup_state = None
             while not backup_state == "pending":
-                backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
-                if backup_state == -1:
-                    self.fail("Backup with backup id: {0}, Not found".format(backup_id))
+                backup_info = self.columnar_utils.get_backup_info(
+                    pod=self.pod, tenant=self.tenant,
+                    project_id=self.tenant.project_id,
+                    instance=self.columnar_cluster, backup_id=backup_id
+                )
+                if not backup_info:
+                    self.fail("Backup with backup id: {0}, Not found".format(
+                        backup_id))
+
+                backup_state = backup_info["progress"]["status"]
             self.scale_columnar_cluster(scale_nodes)
             while backup_state != "complete":
-                backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
-                if backup_state == -1:
-                    self.fail("Backup with backup id: {0}, Not found".format(backup_id))
-                backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
-                self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
+                backup_info = self.columnar_utils.get_backup_info(
+                    pod=self.pod, tenant=self.tenant,
+                    project_id=self.tenant.project_id,
+                    instance=self.columnar_cluster, backup_id=backup_id
+                )
+                if not backup_info:
+                    self.fail("Backup with backup id: {0}, Not found".format(
+                        backup_id))
+
+                backup_state = backup_info["progress"]["status"]
+                self.log.info("Waiting for backup to be completed, current "
+                              "state: {}".format(backup_state))
                 time.sleep(20)
             self.restore_wait_for_complete(backup_id)
-            self.wait_for_instance_to_be_healthy()
+            if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                    pod=self.pod, tenant=self.tenant,
+                    instance=self.columnar_cluster):
+                self.fail("Cluster is not is healthy state")
 
         if scale_stage == "after_backup" or scale_stage == "before_resume":
             backup_id = self.create_backup_wait_for_complete()
             self.scale_columnar_cluster(scale_nodes)
             self.restore_wait_for_complete(backup_id)
-            self.wait_for_instance_to_be_healthy()
+            if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                    pod=self.pod, tenant=self.tenant,
+                    instance=self.columnar_cluster):
+                self.fail("Cluster is not is healthy state")
 
         if scale_stage == "after_resume":
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
-            self.wait_for_instance_to_be_healthy()
+            if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                    pod=self.pod, tenant=self.tenant,
+                    instance=self.columnar_cluster):
+                self.fail("Cluster is not is healthy state")
             if not self.columnar_utils.allow_ip_on_instance(
-                    self.pod, self.tenant, self.tenant.project_id,
-                    self.cluster):
-                self.fail("Fail to allow IP on instance")
+                    pod=self.pod, tenant=self.tenant,
+                    project_id=self.tenant.project_id,
+                    instance=self.columnar_cluster):
+                self.fail("Unable to set Allowed IP post restoring backup")
             self.scale_columnar_cluster(scale_nodes)
             time.sleep(120)
 
-        if not self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster):
+        if not self.columnar_utils.allow_ip_on_instance(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster):
             self.fail("Fail to allow IP on instance")
-        self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=300)
-        self.validate_entities_after_restore()
+
+        if not self.cbas_util.wait_for_cbas_to_recover(
+                self.columnar_cluster, timeout=600):
+            self.fail("Columnar cluster unable to recover after restoring "
+                      "backup.")
+
+        status, error = self.cbas_util.perform_metadata_validation_for_all_entities(
+            self.columnar_cluster)
+        if not status:
+            self.fail(error)
+
         doc_count_after_restore = self.dataset_count()
         if dataset_count != doc_count_after_restore:
             self.fail("Dataset data count mismatch")
-        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
+
+        result = self.cbas_util.connect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while connecting link")
 
     def test_backup_retention_time(self):
         backup_time = self.input.param("backup_retention_time", 168)
@@ -415,58 +400,158 @@ class BackupRestore(ColumnarBaseTest):
             backup_id = self.create_backup_wait_for_complete(backup_time)
         else:
             backup_id = self.create_backup_wait_for_complete()
-        backup_info = self.get_backup_from_backup_lists(backup_id)
+
+        backup_info = self.columnar_utils.get_backup_info(
+            pod=self.pod, tenant=self.tenant,
+            project_id=self.tenant.project_id,
+            instance=self.columnar_cluster, backup_id=backup_id
+        )
+        if not backup_info:
+            self.fail("Backup with backup id: {0}, Not found".format(
+                backup_id))
+
         if backup_info["retention"] != backup_time:
             self.fail("Backup retention time mismatch, expected {}, actual {}".
                       format(backup_time, backup_info["retention"]))
 
     def test_schedule_backup(self):
-        self.base_infra_setup()
+        # creating bucket scope and collections for remote collection
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster,
+            self.input.param("no_of_remote_bucket", 1))
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"])
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"name": "string", "email": "string"}]
+        self.columnar_spec["index"]["indexed_fields"] = ["price:double"]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
         backup_interval = self.input.param("backup_interval", 24)
         retention = self.input.param("backup_retention", 24)
-        self.load_data_to_source(0, self.no_of_docs, 0, self.no_of_docs)
-        self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
-        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
-        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
+
+        self.load_data_to_source(0, self.no_of_docs)
+
+        if not self.cbas_util.wait_for_data_ingestion_in_the_collections(
+                self.cluster):
+            self.fail("Ingestion into analytics collections failed")
+
+        result = self.cbas_util.disconnect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while disconnecting link")
+
+        result = self.cbas_util.connect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while connecting link")
+
         current_utc_time = datetime.now(timezone.utc)
         current_utc_time = current_utc_time.replace(minute=30, second=0, microsecond=0)
         new_utc_time = current_utc_time + timedelta(hours=backup_interval)
         # Format the UTC time as a string in the desired format
         formatted_utc_time = current_utc_time.strftime("%Y-%m-%dT%H:%M:%SZ")
         formatted_new_utc_time = new_utc_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-        resp = self.columnarAPI.schedule_backup_create_update(self.tenant.id, self.tenant.project_id,
-                                                              self.cluster.instance_id,
-                                                              backup_interval, retention, formatted_utc_time)
-        if resp.status_code != 204:
-            self.fail("Failed to create scheduled backup with status code : {}".format(resp.status_code))
+
+        if not self.columnar_utils.create_schedule_backup(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster, interval=backup_interval,
+                retention=retention, start_time=formatted_utc_time):
+            self.fail("Creating scheduled backup failed.")
+
         time.sleep(60)
         override_token = self.capella["override_token"]
         dataset_count = self.dataset_count()
-        columnar_internal = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user,
-                                        self.tenant.pwd, override_token)
-        resp = columnar_internal.set_trigger_time_for_scheduled_backup(formatted_new_utc_time,
-                                                                       [self.cluster.instance_id])
+
+        columnar_internal = ColumnarAPI(
+            self.pod.url_public, '', '', self.tenant.user,
+            self.tenant.pwd, override_token)
+        resp = columnar_internal.set_trigger_time_for_scheduled_backup(
+            formatted_new_utc_time, [self.cluster.instance_id])
         if resp.status_code == 202:
             self.log.info("Applied sudo time to trigger backup")
         else:
             self.fail("Failed to apply time to trigger backup")
         time.sleep(60)
-        backup = self.get_backup_from_backup_lists()[0]
-        self.wait_for_backup_complete(backup["data"]["id"])
-        self.restore_wait_for_complete(backup["data"]["id"])
-        self.wait_for_instance_to_be_healthy()
-        self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
-        self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=300)
+
+        backup = self.columnar_utils.list_backups(
+            pod=self.pod, tenant=self.tenant,
+            project_id=self.tenant.project_id, instance=self.columnar_cluster)[0]
+
+        backup_id = backup["data"]["id"]
+        self.log.info("Backup Id: {}".format(backup_id))
+        if not self.columnar_utils.wait_for_backup_to_complete(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster,
+                backup_id=backup_id, timeout=3600):
+            self.fail("Backup failed.")
+
+        self.restore_wait_for_complete(backup_id)
+
+        if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                pod=self.pod, tenant=self.tenant,
+                instance=self.columnar_cluster):
+            self.fail("Cluster is not is healthy state")
+
+        if not self.columnar_utils.allow_ip_on_instance(
+                pod=self.pod, tenant=self.tenant,
+                project_id=self.tenant.project_id,
+                instance=self.columnar_cluster):
+            self.fail("Unable to set Allowed IP post restoring backup")
+
+        if not self.cbas_util.wait_for_cbas_to_recover(
+                self.columnar_cluster, timeout=600):
+            self.fail("Columnar cluster unable to recover after restoring "
+                      "backup.")
+
         dataset_count_after_restore = self.dataset_count()
         if dataset_count != dataset_count_after_restore:
             self.fail("Data mismatch after restore")
-        self.validate_entities_after_restore()
-        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
+
+        status, error = self.cbas_util.perform_metadata_validation_for_all_entities(
+            self.columnar_cluster)
+        if not status:
+            self.fail(error)
+
+        result = self.cbas_util.connect_links(
+            self.columnar_cluster, self.columnar_spec)
+        if not all(result):
+            self.fail("Error while connecting link")
 
     def test_mini_volume_backup_restore(self):
-        primary_key = [{"id": "string"}]
+        # creating bucket scope and collections for remote collection
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster,
+            self.input.param("no_of_remote_bucket", 1))
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"])
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"id": "string"}]
+        self.columnar_spec["index"]["indexed_fields"] = ["price:double"]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
         backup_timeout = self.input.param("backup_timeout", 7200)
-        self.base_infra_setup(primary_key)
         self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
         self.mini_volume.calculate_volume_per_source()
         for i in range(1, 5):
@@ -477,20 +562,56 @@ class BackupRestore(ColumnarBaseTest):
             self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
             self.mini_volume.stop_process()
             self.mini_volume.stop_crud_on_data_sources()
-            self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
+
+            if not self.cbas_util.wait_for_data_ingestion_in_the_collections(
+                    self.cluster):
+                self.fail("Ingestion into analytics collections failed")
+
             count_before_backup = self.dataset_count()
-            self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
-            self.cbas_util.connect_links(self.cluster, self.columnar_spec)
+
+            result = self.cbas_util.disconnect_links(
+                self.columnar_cluster, self.columnar_spec)
+            if not all(result):
+                self.fail("Error while disconnecting link")
+
+            result = self.cbas_util.connect_links(
+                self.columnar_cluster, self.columnar_spec)
+            if not all(result):
+                self.fail("Error while connecting link")
+
             backup_id = self.create_backup_wait_for_complete(timeout=backup_timeout)
+
             self.restore_wait_for_complete(backup_id, timeout=backup_timeout)
-            self.wait_for_instance_to_be_healthy(timeout=3600)
-            self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
-            self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=900)
+
+            if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                    pod=self.pod, tenant=self.tenant,
+                    instance=self.columnar_cluster):
+                self.fail("Cluster is not is healthy state")
+
+            if not self.columnar_utils.allow_ip_on_instance(
+                    pod=self.pod, tenant=self.tenant,
+                    project_id=self.tenant.project_id,
+                    instance=self.columnar_cluster):
+                self.fail("Unable to set Allowed IP post restoring backup")
+
+            if not self.cbas_util.wait_for_cbas_to_recover(
+                    self.columnar_cluster, timeout=600):
+                self.fail("Columnar cluster unable to recover after restoring "
+                          "backup.")
+
             dataset_count_after_restore = self.dataset_count()
             if count_before_backup != dataset_count_after_restore:
                 self.fail("Data mismatch after restore")
-            self.validate_entities_after_restore()
-            self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
+
+            status, error = self.cbas_util.perform_metadata_validation_for_all_entities(
+                self.columnar_cluster)
+            if not status:
+                self.fail(error)
+
+            result = self.cbas_util.connect_links(
+                self.columnar_cluster, self.columnar_spec)
+            if not all(result):
+                self.fail("Error while connecting link")
 
         # A successful run
         self.log.info("Mini-Volume for backup-restore finished")
