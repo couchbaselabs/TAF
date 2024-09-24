@@ -17,6 +17,7 @@ from TestInput import TestInputSingleton
 # from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.cb_basetest import CouchbaseBaseTest
 
+
 class SecurityBase(CouchbaseBaseTest):
     cidr = "10.0.0.0"
 
@@ -35,6 +36,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         self.count = 0
         self.server_version = self.input.capella.get("server_version", "7.6")
+        self.internal_token = self.input.capella.get("internal_token")
         self.provider = self.input.param("provider", AWS.__str__).lower()
         self.num_nodes = {
             "data": self.input.param("kv_nodes", 3),
@@ -80,7 +82,9 @@ class SecurityBase(CouchbaseBaseTest):
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
         self.capellaAPIv2 = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
                                          self.user, self.passwd)
-        self.columnarAPI = ColumnarAPI("https://" + self.url, '',  '', self.user, self.passwd, '')
+        self.capellaAPI_internal = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
+                                                self.user, self.passwd, TOKEN_FOR_INTERNAL_SUPPORT=self.internal_token)
+        self.columnarAPI = ColumnarAPI("https://" + self.url, '', '', self.user, self.passwd, '')
         self.create_initial_v4_api_keys()
         self.create_different_organization_roles()
         self.create_api_keys_for_different_roles()
@@ -171,7 +175,7 @@ class SecurityBase(CouchbaseBaseTest):
             cluster_ids.append(cluster["id"])
             if cluster["currentState"] == "healthy":
                 self.log.info("Deleting cluster from project with cluster id: {}".format(
-                                                                                cluster["id"]))
+                    cluster["id"]))
                 delete_resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
                                                                               self.project_id,
                                                                               cluster["id"])
@@ -272,13 +276,13 @@ class SecurityBase(CouchbaseBaseTest):
 
     def get_columnar_cluster_nodes(self, instance_id):
         resp = self.columnarAPI.get_specific_columnar_instance(self.tenant_id,
-                                                                   self.project_id,
-                                                                   instance_id)
+                                                               self.project_id,
+                                                               instance_id)
         if resp.status_code != 200:
             self.log.error("Unable to fetch details for columnar cluster {}." \
-                            " Returned status code : {}. Error: {}".
-                            format(instance_id, resp.status_code,
-                                    resp.content))
+                           " Returned status code : {}. Error: {}".
+                           format(instance_id, resp.status_code,
+                                  resp.content))
         srv = json.loads(resp.content)["data"]["config"]["endpoint"]
         cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(srv)
         proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
@@ -435,8 +439,8 @@ class SecurityBase(CouchbaseBaseTest):
 
         self.log.info("Deleting cluster with id: {}".format(self.cluster_id))
         resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
-                                                           self.project_id,
-                                                           self.cluster_id)
+                                                               self.project_id,
+                                                               self.cluster_id)
 
         if resp.status_code != 202:
             self.fail("Cluster deletion failed in SecurityBase TearDown. Reason; {}".format(
@@ -500,12 +504,12 @@ class SecurityBase(CouchbaseBaseTest):
             "region": "us-east-1",
             "nodes": 1,
             "instanceTypes": {
-                "vcpus":"4vCPUs",
-                "memory":"16GB"
+                "vcpus": "4vCPUs",
+                "memory": "16GB"
             },
             "package": {
-                "key":"Developer Pro",
-                "timezone":"PT"
+                "key": "Developer Pro",
+                "timezone": "PT"
             },
             "availabilityZone": "single"
         }
@@ -514,66 +518,66 @@ class SecurityBase(CouchbaseBaseTest):
 
     def get_cluster_payload(self, cloud_provider):
         cluster_payloads = {
-                "AWS": {
-                    "name": self.prefix + "Cluster",
-                    "description": "Security Cluster v4",
-                    "cloudProvider": {
-                        "type": self.provider,
-                        "region": "us-east-1",
-                        "cidr": "10.7.22.0/23"
-                    },
-                    "couchbaseServer": {
-                        "version": self.server_version
-                    },
-                    "serviceGroups": self.get_service_groups("aws"),
-                    "availability": {
-                        "type": "multi"
-                    },
-                    "support": {
-                        "plan": "developer pro",
-                        "timezone": "PT"
-                    }
+            "AWS": {
+                "name": self.prefix + "Cluster",
+                "description": "Security Cluster v4",
+                "cloudProvider": {
+                    "type": self.provider,
+                    "region": "us-east-1",
+                    "cidr": "10.7.22.0/23"
                 },
-                "Azure": {
-                    "name": "Azure-Test-Cluster-V4-Koushal",
-                    "description": "My first test azure cluster.",
-                    "cloudProvider": {
-                        "type": "azure",
-                        "region": "eastus",
-                        "cidr": "10.1.35.0/23"
-                    },
-                    "couchbaseServer": {
-                        "version": self.server_version
-                    },
-                    "serviceGroups": self.get_service_groups("azure"),
-                    "availability": {
-                        "type": "single"
-                    },
-                    "support": {
-                        "plan": "basic",
-                        "timezone": "ET"
-                    }
+                "couchbaseServer": {
+                    "version": self.server_version
                 },
-                "GCP": {
-                    "name": "GCP-Test-Cluster-V4-Koushal",
-                    "description": "My first test gcp cluster.",
-                    "cloudProvider": {
-                        "type": "gcp",
-                        "region": "us-east1",
-                        "cidr": "10.9.82.0/23"
-                    },
-                    "couchbaseServer": {
-                        "version": self.server_version
-                    },
-                    "serviceGroups": self.get_service_groups("gcp"),
-                    "availability": {
-                        "type": "single"
-                    },
-                    "support": {
-                        "plan": "basic",
-                        "timezone": "ET"
-                    }
+                "serviceGroups": self.get_service_groups("aws"),
+                "availability": {
+                    "type": "multi"
+                },
+                "support": {
+                    "plan": "developer pro",
+                    "timezone": "PT"
                 }
+            },
+            "Azure": {
+                "name": "Azure-Test-Cluster-V4-Koushal",
+                "description": "My first test azure cluster.",
+                "cloudProvider": {
+                    "type": "azure",
+                    "region": "eastus",
+                    "cidr": "10.1.35.0/23"
+                },
+                "couchbaseServer": {
+                    "version": self.server_version
+                },
+                "serviceGroups": self.get_service_groups("azure"),
+                "availability": {
+                    "type": "single"
+                },
+                "support": {
+                    "plan": "basic",
+                    "timezone": "ET"
+                }
+            },
+            "GCP": {
+                "name": "GCP-Test-Cluster-V4-Koushal",
+                "description": "My first test gcp cluster.",
+                "cloudProvider": {
+                    "type": "gcp",
+                    "region": "us-east1",
+                    "cidr": "10.9.82.0/23"
+                },
+                "couchbaseServer": {
+                    "version": self.server_version
+                },
+                "serviceGroups": self.get_service_groups("gcp"),
+                "availability": {
+                    "type": "single"
+                },
+                "support": {
+                    "plan": "basic",
+                    "timezone": "ET"
+                }
+            }
         }
 
         if cloud_provider.lower() == "aws":
@@ -585,33 +589,33 @@ class SecurityBase(CouchbaseBaseTest):
 
     def get_single_node_cluster_payload(self, provider):
         payload_AWS = {
-            "name":self.prefix + "Cluster",
-            "description":"",
-            "projectId":self.project_id,
-            "provider":"aws",
-            "region":"us-east-1",
-            "plan":"Developer Pro",
-            "supportTimezone":"PT",
-            "serverVersion":"7.6",
-            "cidr":"",
-            "deploymentType":"single",
-            "serviceGroupsTemplate":"singleA",
-            "serviceGroups":[
+            "name": self.prefix + "Cluster",
+            "description": "",
+            "projectId": self.project_id,
+            "provider": "aws",
+            "region": "us-east-1",
+            "plan": "Developer Pro",
+            "supportTimezone": "PT",
+            "serverVersion": "7.6",
+            "cidr": "",
+            "deploymentType": "single",
+            "serviceGroupsTemplate": "singleA",
+            "serviceGroups": [
                 {
-                    "key":"dataWithAny2",
-                    "compute":"m6g.xlarge",
+                    "key": "dataWithAny2",
+                    "compute": "m6g.xlarge",
                     "storage": {
-                        "key":"gp3",
-                        "sizeInGb":50,
-                        "iops":3000,
-                        "autoScalingEnabled":True
+                        "key": "gp3",
+                        "sizeInGb": 50,
+                        "iops": 3000,
+                        "autoScalingEnabled": True
                     },
-                    "services":["kv","index","n1ql"],
-                    "nodes":1
+                    "services": ["kv", "index", "n1ql"],
+                    "nodes": 1
                 }
             ],
-            "availabilityZones":{"key":"single"},
-            "enablePrivateDNSResolution":False
+            "availabilityZones": {"key": "single"},
+            "enablePrivateDNSResolution": False
         }
 
         payload_Azure = {
@@ -671,7 +675,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "nodes": 1
                 }
             ],
-             "availabilityZones": {"key": "single"}, "enablePrivateDNSResolution": False
+            "availabilityZones": {"key": "single"}, "enablePrivateDNSResolution": False
         }
 
         if provider.lower() == "aws":
@@ -696,12 +700,12 @@ class SecurityBase(CouchbaseBaseTest):
             'specs': [
                 {
                     'count': 3,
-                     'services': [
-                         {'type': 'kv'}
-                     ],
-                     'compute': {
-                         'type': 'm5.xlarge'
-                     },
+                    'services': [
+                        {'type': 'kv'}
+                    ],
+                    'compute': {
+                        'type': 'm5.xlarge'
+                    },
                     'disk': {
                         'type': 'gp3',
                         'sizeInGb': 50,
@@ -710,7 +714,7 @@ class SecurityBase(CouchbaseBaseTest):
                     'diskAutoScaling': {
                         'enabled': True
                     }
-                 }
+                }
             ],
             'provider': 'hostedAWS',
             'name': 'Security_API_Test_',
@@ -731,12 +735,12 @@ class SecurityBase(CouchbaseBaseTest):
                        .format(status))
             if status in ["deploymentFailed", "scaleFailed", "upgradeFailed", "rebalanceFailed",
                           "peeringFailed", "destroyFailed", "offline", "turningOffFailed",
-                         "turningOnFailed"]:
+                          "turningOnFailed"]:
                 self.fail("FAIL. Cluster status is -{}".format(status))
             cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                                                                                self.tenant_id,
-                                                                                self.project_id,
-                                                                                cluster_id)
+                self.tenant_id,
+                self.project_id,
+                cluster_id)
             cluster_ready_resp = cluster_ready_resp.json()
             status = cluster_ready_resp["currentState"]
 
@@ -766,17 +770,16 @@ class SecurityBase(CouchbaseBaseTest):
         for user in self.test_users:
             if self.test_users[user]["role"] != "cloudManager":
                 resp = self.capellaAPI.org_ops_apis.create_api_key(
-                                            self.tenant_id,
-                                            self.test_users[user]["role"],
-                                            organizationRoles=[self.test_users[user]["role"]],
-                                            expiry=1)
+                    self.tenant_id,
+                    self.test_users[user]["role"],
+                    organizationRoles=[self.test_users[user]["role"]],
+                    expiry=1)
 
                 if resp.status_code == 201:
                     self.log.info("Created API Keys for role {}".format(self.test_users[user]["role"]))
                     resp = resp.json()
                     self.test_users[user]["token"] = resp['token']
                     self.test_users[user]["id"] = resp["id"]
-
 
                     self.api_keys.append(resp["id"])
 
@@ -809,13 +812,13 @@ class SecurityBase(CouchbaseBaseTest):
         self.test_users = {}
         roles = ["organizationOwner", "projectCreator", "organizationMember", "cloudManager"]
         setup_capella_api = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
-                                       self.user, self.passwd)
+                                         self.user, self.passwd)
 
         num = 1
         for role in roles:
             _, domain = self.user.split('@')
-            username = "couchbase-security+"+ self.generate_random_string(9, False) \
-                                                                          + "@" + domain
+            username = "couchbase-security+" + self.generate_random_string(9, False) \
+                       + "@" + domain
             name = "Test_User_" + str(num)
             self.log.info("Creating user {} with role {}".format(username, role))
             create_user_resp = setup_capella_api.create_user(self.tenant_id,
@@ -902,8 +905,8 @@ class SecurityBase(CouchbaseBaseTest):
             if resp.status_code != 401:
                 error = "Test failed for invalid auth value: {}. " \
                         "Expected status code: {}, Returned status code: {}". \
-                        format(cbc_api_request_headers[header],
-                               401, resp.status_code)
+                    format(cbc_api_request_headers["Authorization"],
+                           401, resp.status_code)
                 self.log.error(error)
                 return False, error
 
@@ -924,15 +927,15 @@ class SecurityBase(CouchbaseBaseTest):
                 if resp.status_code != 404:
                     error = "Test failed for invalid tenant id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
-                            format(tenant_ids[tenant_id], 404, resp.status_code)
+                        format(tenant_ids[tenant_id], 404, resp.status_code)
                     self.log.error(error)
                     return False, error
             else:
                 if resp.status_code != expected_success_code:
                     error = "Test failed for valid tenant id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
-                            format(tenant_ids[tenant_id], expected_success_code,
-                                   resp.status_code)
+                        format(tenant_ids[tenant_id], expected_success_code,
+                               resp.status_code)
                     self.log.error(error)
                     return False, error
 
@@ -942,8 +945,8 @@ class SecurityBase(CouchbaseBaseTest):
         return True, None
 
     def test_project_ids(self, test_method=None, test_method_args=None, project_id_arg=None,
-                        expected_success_code=None, on_success_callback=None,
-                        include_different_project=True):
+                         expected_success_code=None, on_success_callback=None,
+                         include_different_project=True):
 
         project_ids = {
             'valid_project_id': self.project_id,
@@ -952,8 +955,8 @@ class SecurityBase(CouchbaseBaseTest):
 
         if include_different_project:
             resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id,
-                                                "security-test-project{}"
-                                                .format(random.randint(1, 100000)))
+                                                               "security-test-project{}"
+                                                               .format(random.randint(1, 100000)))
             if resp.status_code != 201:
                 self.fail("Failed to create new project. Error: {}. Status code: {}".
                           format(resp.content, resp.status_code))
@@ -965,20 +968,20 @@ class SecurityBase(CouchbaseBaseTest):
             resp = test_method(**test_method_args)
 
             if project_id == "invalid_project_id" or \
-                project_id == "different_project_id":
+                    project_id == "different_project_id":
 
                 if resp.status_code != 404:
                     error = "Test failed for invalid project id: {}. " \
-                                "Expected status code: {}, Returned status code: {}". \
-                                format(project_ids[project_id], 404, resp.status_code)
+                            "Expected status code: {}, Returned status code: {}". \
+                        format(project_ids[project_id], 404, resp.status_code)
                     self.log.error(error)
                     return False, error
             else:
                 if resp.status_code != expected_success_code:
                     error = "Test failed for valid project id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
-                            format(project_ids[project_id], expected_success_code,
-                                   resp.status_code)
+                        format(project_ids[project_id], expected_success_code,
+                               resp.status_code)
                     self.log.error(error)
                     return False, error
 
@@ -1009,8 +1012,8 @@ class SecurityBase(CouchbaseBaseTest):
                                               self.test_users[user]["password"])
             elif api_type == "columnar":
                 capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
-                                            self.test_users[user]["mailid"],
-                                            self.test_users[user]["password"])
+                                             self.test_users[user]["mailid"],
+                                             self.test_users[user]["password"])
 
             if hasattr(capellaAPIrole, test_method_name):
                 test_method = getattr(capellaAPIrole, test_method_name)
@@ -1019,7 +1022,7 @@ class SecurityBase(CouchbaseBaseTest):
                 if self.test_users[user]["role"] == "organizationOwner":
                     if resp.status_code != expected_success_code:
                         error = "Test failed for role: {}. " \
-                            "Expected status code: {}, Returned status code: {}". \
+                                "Expected status code: {}, Returned status code: {}". \
                             format(self.test_users[user]["role"], expected_success_code,
                                    resp.status_code)
                         self.log.error(error)
@@ -1031,7 +1034,7 @@ class SecurityBase(CouchbaseBaseTest):
                 else:
                     if resp.status_code != 403:
                         error = "Test failed for role: {}. " \
-                            "Expected status code: {}, Returned status code: {}". \
+                                "Expected status code: {}, Returned status code: {}". \
                             format(self.test_users[user]["role"], 403,
                                    resp.status_code)
                         self.log.error(error)
@@ -1062,7 +1065,7 @@ class SecurityBase(CouchbaseBaseTest):
             resp = self.capellaAPIv2.add_user_to_project(self.tenant_id, json.dumps(payload))
             if resp.status_code != 200:
                 return False, "Failed to add user {} to project {}. Error: {}". \
-                          format(user["name"], self.project_id, resp.content)
+                    format(user["name"], self.project_id, resp.content)
 
             if api_type == "provisioned":
                 capellaAPIrole = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
@@ -1070,8 +1073,8 @@ class SecurityBase(CouchbaseBaseTest):
                                               user["password"])
             elif api_type == "columnar":
                 capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
-                                            self.test_users[user]["mailid"],
-                                            self.test_users[user]["password"])
+                                             self.test_users[user]["mailid"],
+                                             self.test_users[user]["password"])
             if hasattr(capellaAPIrole, test_method_name):
                 test_method = getattr(capellaAPIrole, test_method_name)
                 resp = test_method(**test_method_args)
@@ -1079,7 +1082,7 @@ class SecurityBase(CouchbaseBaseTest):
                 if role in valid_project_roles:
                     if resp.status_code != expected_success_code:
                         error = "Test failed for role: {}. " \
-                            "Expected status code: {}, Returned status code: {}". \
+                                "Expected status code: {}, Returned status code: {}". \
                             format(role, expected_success_code,
                                    resp.status_code)
                         self.log.error(error)
@@ -1091,7 +1094,7 @@ class SecurityBase(CouchbaseBaseTest):
                 else:
                     if resp.status_code != 403:
                         error = "Test failed for role: {}. " \
-                            "Expected status code: {}, Returned status code: {}". \
+                                "Expected status code: {}, Returned status code: {}". \
                             format(role, 403,
                                    resp.status_code)
                         self.log.error(error)
@@ -1103,6 +1106,6 @@ class SecurityBase(CouchbaseBaseTest):
                                                               self.project_id)
             if resp.status_code != 204:
                 return False, "Failed to remove user {} from project {}. Error: {}". \
-                          format(user["name"], self.project_id, resp.content)
+                    format(user["name"], self.project_id, resp.content)
 
         return True, None

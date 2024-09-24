@@ -1151,7 +1151,7 @@ class SecurityTest(SecurityBase):
         if not result:
             self.fail("Auth test failed. Error: {}".format(error))
 
-        # Test withd different tenant ids
+        # Test with different tenant ids
         test_method_args = {
             'project_id': self.project_id,
             'cluster_id': self.cluster_id,
