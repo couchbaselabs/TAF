@@ -2618,6 +2618,15 @@ class RestConnection(newRC):
         else:
             return None
 
+    def get_node_services(self):
+        api = self.baseUrl + "pools/default/nodeServices/"
+        status, content, _ = self._http_request(api)
+        json_parsed = json.loads(content)
+        if status:
+            return json_parsed
+        else:
+            return None
+
     def flush_bucket(self, bucket="default"):
         if isinstance(bucket, Bucket):
             bucket_name = bucket.name

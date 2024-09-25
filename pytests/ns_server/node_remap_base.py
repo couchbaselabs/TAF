@@ -30,8 +30,9 @@ class NodeRemapBase(BaseTestCase):
         self.large_docs = self.input.param("large_docs", False)
         self.alternate_address = self.input.param("alternate_address", False)
         self.alternate_ip = self.input.param("alternate_ip", "10.142.181.104")
+        self.set_autofailover = self.input.param("set_autofailover", True)
+        self.disable_af_config_remap = self.input.param("disable_af_config_remap", True)
         self.use_config_remap = self.input.param("use_config_remap", False)
-        self.regenerate_bucket_uuid = self.input.param("regenerate_bucket_uuid", True)
         self.spec_name = self.input.param("spec_name", "cluster_clone.single_bucket")
 
         nodes_in = self.cluster.servers[1:self.nodes_init]
@@ -68,6 +69,15 @@ class NodeRemapBase(BaseTestCase):
             if status:
                 self.log.info("Alternate IP set {} => {}".format(self.cluster.master.ip,
                                                                  self.alternate_ip))
+
+        if self.set_autofailover:
+            self.assertTrue(RestConnection(self.cluster.master).\
+                            update_autofailover_settings(True, 120),
+                            "Failure when enabling auto-failover")
+        else:
+            self.assertTrue(RestConnection(self.cluster.master).\
+                            update_autofailover_settings(False, 120),
+                            "Failure when disabling auto-failover")
 
         bucket_helper = BucketHelper(self.cluster.master)
         bucket_helper.update_memcached_settings(
@@ -121,11 +131,6 @@ class NodeRemapBase(BaseTestCase):
                         source_node.ip, dest_node.ip)
             self.log.info("{} => {}".format(source_node.ip, dest_node.ip))
 
-        if self.alternate_address:
-            new_alternate_ip = ".".join(self.alternate_ip.split(".")[:3]) + \
-                "." + str(int(self.alternate_ip.split(".")[-1]) + 1)
-            remap_args += " --remap {} {}".format(self.alternate_ip, new_alternate_ip)
-
         if not self.use_config_remap:
             script_cmd = "/opt/couchbase/bin/node_remap --initargs " \
                         "/opt/couchbase/var/lib/couchbase/initargs" \
@@ -137,8 +142,9 @@ class NodeRemapBase(BaseTestCase):
                         "/opt/couchbase/bin/config_remap --initargs-path " \
                         "/opt/couchbase/var/lib/couchbase/initargs --output-path {0}{1}" \
                         " --regenerate-cookie --regenerate-cluster-uuid" \
+                        " --remove-alternate-addresses" \
                         .format(output_dir, remap_args)
-            if self.regenerate_bucket_uuid:
-                script_cmd += " --regenerate-bucket-uuids"
+            if self.disable_af_config_remap:
+                script_cmd += " --disable-auto-failover"
 
         return script_cmd

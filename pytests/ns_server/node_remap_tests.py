@@ -495,6 +495,22 @@ class NodeRemapTests(NodeRemapBase):
 
         self.validate_sequence_numbers()
 
+        # Validate that auto-failover is disabled
+        af_settings = RestConnection(self.dest_cluster.master).\
+                            get_autofailover_settings()
+        if not self.use_config_remap or \
+            (self.use_config_remap and self.disable_af_config_remap):
+            self.assertFalse(af_settings.enabled, "Auto-failover was not disabled")
+        elif self.use_config_remap and not self.disable_af_config_remap:
+            self.assertTrue(af_settings.enabled, "Auto-failover was disabled")
+
+        # Validate that alternate addresses are removed
+        content = RestConnection(self.dest_cluster.master).get_node_services()
+        for node in content["nodesExt"]:
+            self.assertTrue("alternateAddresses" not in node,
+                            "Alternate address not removed for {}".\
+                                format(node["hostname"]))
+
         # Validate number of indexes
         if len(self.dest_cluster.index_nodes) > 0:
             sdk_client = SDKClient([self.dest_cluster.index_nodes[0]], None)
@@ -597,6 +613,7 @@ class NodeRemapTests(NodeRemapBase):
                                     replica=replica)
 
         # Rebalance-in a new node
+        self.sleep(60, "Wait before rebalancing-in")
         spare_node = self.cluster.servers[self.nodes_init*2]
         rebalance_passed = self.task.rebalance(self.dest_cluster,
                                 to_add=[spare_node], to_remove=[],
@@ -607,6 +624,7 @@ class NodeRemapTests(NodeRemapBase):
         self.cluster_util.print_cluster_stats(self.dest_cluster)
 
         # Rebalance-out a node
+        self.sleep(60, "Wait before rebalancing-out")
         node_to_remove = self.dest_servers[1]
         rebalance_passed = self.task.rebalance(self.dest_cluster,
                                 to_add=[], to_remove=[node_to_remove],
@@ -617,6 +635,7 @@ class NodeRemapTests(NodeRemapBase):
         spare_node = node_to_remove
 
         # Swap rebalance of nodes
+        self.sleep(60, "Wait before swap rebalance")
         node_to_remove = self.dest_cluster.index_nodes[0]
         services = RestConnection(self.dest_cluster.master).get_nodes_services()
         services_on_target_node = services[(node_to_remove.ip + ":"
