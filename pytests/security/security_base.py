@@ -34,7 +34,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.prefix = "Security_API_Test_"
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         self.count = 0
-        self.server_version = self.input.capella.get("server_version", "7.2")
+        self.server_version = self.input.capella.get("server_version", "7.6")
         self.provider = self.input.param("provider", AWS.__str__).lower()
         self.num_nodes = {
             "data": self.input.param("kv_nodes", 3),
@@ -571,11 +571,11 @@ class SecurityBase(CouchbaseBaseTest):
                 }
         }
 
-        if cloud_provider == "AWS":
+        if cloud_provider.lower() == "aws":
             return cluster_payloads["AWS"]
-        elif cloud_provider == "Azure":
+        elif cloud_provider.lower() == "azure":
             return cluster_payloads["Azure"]
-        elif cloud_provider == "GCP":
+        elif cloud_provider.lower() == "gcp":
             return cluster_payloads["GCP"]
 
     def get_single_node_cluster_payload(self, provider):

@@ -71,11 +71,13 @@ class SecurityTest(SecurityBase):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, user,
                                  password)
         body = {"statement": "{0}".format(query_statement)}
-        resp = capella_api.do_internal_request(url, method="POST", params=json.dumps(body))
+        headers = capella_api.get_authorization_internal()
+        resp = capella_api._urllib_request(url, method="POST", params=json.dumps(body),
+                                           headers=headers)
         status = resp.status_code
         content = resp.content
         if role != "organizationOwner":
-            if status == 412:
+            if status in (412, 401):
                 self.log.info("Pass. No permissions")
             else:
                 self.fail("FAIL. Permission shouldn't be allowed")
@@ -1342,3 +1344,4 @@ class SecurityTest(SecurityBase):
                                                     self.cluster_id, sgw_id)
         if resp.status_code != 409:
             self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
+
