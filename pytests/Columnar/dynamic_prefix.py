@@ -15,10 +15,12 @@ class DynamicPrefix(ColumnarBaseTest):
             self.input.param("skip_item_count_check", False)
 
         if not self.columnar_spec_name:
-            self.columnar_spec_name = "sanity.S3_external_datasets"
+            self.columnar_spec_name = "full_template"
 
-        self.columnar_spec = self.cbas_util.get_columnar_spec(
-            self.columnar_spec_name)
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            external_collection_file_formats=[self.input.param("file_format")])
 
         self.doc_count_per_format = {
             "json": 7800000, "parquet": 7800000,
@@ -50,14 +52,6 @@ class DynamicPrefix(ColumnarBaseTest):
                 "expected_error": "Duplicate field name 'level_no'"
             }
         ]
-
-        self.columnar_spec["external_link"]["properties"] = [{
-             "type": "s3",
-             "region": self.aws_region,
-             "accessKeyId": self.aws_access_key,
-             "secretAccessKey": self.aws_secret_key,
-             "serviceEndpoint": None
-        }]
 
         failed_testcases = list()
         for testcase in testcases:
@@ -108,29 +102,10 @@ class DynamicPrefix(ColumnarBaseTest):
 
     def test_create_query_external_collections_with_mismatch_in_actual_and_expected_path(self):
         # Update columnar spec based on conf file params
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
-
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
-
-        self.columnar_spec["external_dataset"]["num_of_external_datasets"] \
-            = self.input.param("num_of_external_datasets", 1)
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["external_dataset"][
             "external_dataset_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["file_format"] = file_format
         dataset_properties["include"] = "*.{0}".format(file_format)
-        dataset_properties["region"] = self.aws_region
         dataset_properties["path_on_external_container"] = (
             self.input.param("path_on_external_container",
                              "level_{level-no:int}_folder_{folder-no:int}"))
@@ -175,31 +150,10 @@ class DynamicPrefix(ColumnarBaseTest):
 
     def test_create_query_external_collections_with_dynamic_prefixes_with_diff_path_formats(self):
         # Update columnar spec based on conf file params
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
-
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
-
-        self.columnar_spec["external_dataset"]["num_of_external_datasets"] \
-            = self.input.param("num_of_external_datasets", 1)
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["external_dataset"][
             "external_dataset_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["file_format"] = file_format
         dataset_properties["include"] = "*.{0}".format(file_format)
-        dataset_properties["region"] = self.aws_region
         dataset_properties["path_on_external_container"] = (
             self.input.param("path_on_external_container",
                              "level_{level_no:int}_folder_{folder_no:int}"))
