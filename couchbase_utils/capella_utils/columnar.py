@@ -1055,3 +1055,19 @@ class ColumnarUtils:
             return False
         return True
 
+    def create_schedule_on_off(
+            self, pod, tenant, project_id, instance, days, timezone):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.schedule_on_off(
+            tenant_id=tenant.id, project_id=project_id,
+            instance_id=instance.instance_id, days=days,
+            timezone=timezone)
+        if resp.status_code != 200:
+            self.log.error(
+                "Failed to create scheduled on-off with status code : "
+                "{}".format(resp.status_code))
+            return False
+        return True
+

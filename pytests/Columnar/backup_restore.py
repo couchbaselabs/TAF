@@ -165,7 +165,7 @@ class BackupRestore(ColumnarBaseTest):
         # creating bucket scope and collections for remote collection
         self.create_bucket_scopes_collections_in_capella_cluster(
             self.tenant, self.remote_cluster,
-            self.input.param("no_of_remote_bucket", 1))
+            self.input.param("num_buckets", 1))
 
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
@@ -249,7 +249,7 @@ class BackupRestore(ColumnarBaseTest):
         # creating bucket scope and collections for remote collection
         self.create_bucket_scopes_collections_in_capella_cluster(
             self.tenant, self.remote_cluster,
-            self.input.param("no_of_remote_bucket", 1))
+            self.input.param("num_buckets", 1))
 
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
@@ -418,7 +418,7 @@ class BackupRestore(ColumnarBaseTest):
         # creating bucket scope and collections for remote collection
         self.create_bucket_scopes_collections_in_capella_cluster(
             self.tenant, self.remote_cluster,
-            self.input.param("no_of_remote_bucket", 1))
+            self.input.param("num_buckets", 1))
 
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
@@ -533,7 +533,7 @@ class BackupRestore(ColumnarBaseTest):
         # creating bucket scope and collections for remote collection
         self.create_bucket_scopes_collections_in_capella_cluster(
             self.tenant, self.remote_cluster,
-            self.input.param("no_of_remote_bucket", 1))
+            self.input.param("num_buckets", 1))
 
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
