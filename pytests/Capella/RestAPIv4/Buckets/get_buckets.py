@@ -78,11 +78,8 @@ class GetBucket(GetCluster):
         self.update_auth_with_api_token(self.curr_owner_key)
 
         # Delete the buckets that were created.
-        if self.delete_buckets(self.organisation_id, self.project_id,
-                               self.cluster_id, self.buckets):
-            self.log.error("Error while deleting buckets.")
-        else:
-            self.log.info("Successfully deleted buckets.")
+        self.delete_buckets(self.buckets)
+        self.log.info("Successfully deleted buckets.")
 
         super(GetBucket, self).tearDown()
 

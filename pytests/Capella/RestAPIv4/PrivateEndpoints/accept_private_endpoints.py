@@ -155,7 +155,7 @@ class PostAssociate(GetCluster):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ]):
+        ], self.expected_code, self.expected_err):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
@@ -199,15 +199,8 @@ class PostAssociate(GetCluster):
                 "projectID": combination[1],
                 "clusterID": combination[2],
                 "endpointID": combination[3],
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
-                },
-                "expected_status_code": 400
+                "expected_error": self.expected_err,
+                "expected_status_code": self.expected_code
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and

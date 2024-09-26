@@ -24,6 +24,20 @@ class DeleteProject(APIBase):
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
+
+        # Delete the created Test Subject
+        self.log.debug("Deleting test subject -> Project: {}"
+                       .format(self.project_id))
+        res = self.capellaAPI.org_ops_apis.delete_project(
+            self.organisation_id, self.test_subject_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.org_ops_apis.delete_project(
+                self.organisation_id, self.test_subject_id)
+        if res.status_code != 204:
+            self.fail("Error: {}".format(res.content))
+        self.log.info("Test Subject deleted successfully.")
+
         super(DeleteProject, self).tearDown()
 
     def test_api_path(self):
@@ -125,7 +139,8 @@ class DeleteProject(APIBase):
         successful deletion a new project doesn't have the same access config.
         """
         failures = list()
-        for testcase in self.v4_RBAC_injection_init(["organizationOwner"]):
+        for testcase in self.v4_RBAC_injection_init(["organizationOwner"],
+                                                    None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,

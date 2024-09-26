@@ -196,13 +196,9 @@ class CreateBucket(GetBucket):
                     self.expected_res['flush'],
                     self.expected_res['timeToLiveInSeconds'],
                     self.expected_res['priority'], headers=header)
-            if self.validate_testcase(result, [201], testcase, failures):
-                self.buckets.append(result.json()['id'])
-            if len(self.buckets) >= 10:
-                self.log.warning("Bucket limit for cluster reached, flushing "
-                                 "all current buckets.")
-                self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.buckets)
+            self.validate_testcase(result, [201], testcase, failures)
+            if res.status_code == 201:
+                self.delete_buckets([result.json()['id']])
             self.log.debug("Bucket cleanup successful")
 
         if failures:
@@ -337,14 +333,9 @@ class CreateBucket(GetBucket):
                     self.expected_res['flush'],
                     self.expected_res['timeToLiveInSeconds'],
                     self.expected_res['priority'], **kwarg)
-
-            if self.validate_testcase(result, [201], testcase, failures):
-                self.buckets.append(result.json()['id'])
-            if len(self.buckets) >= 10:
-                self.log.warning("Bucket limit for cluster reached, flushing "
-                                 "all current buckets.")
-                self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.buckets)
+            self.validate_testcase(result, [201], testcase, failures)
+            if res.status_code == 201:
+                self.delete_buckets([result.json()['id']])
                 self.log.debug("Bucket cleanup successful")
 
         if failures:
@@ -602,13 +593,9 @@ class CreateBucket(GetBucket):
                     testcase["durabilityLevel"], testcase['replicas'],
                     testcase['flush'], testcase['timeToLiveInSeconds'],
                     testcase['priority'])
-            if self.validate_testcase(result, [201], testcase, failures):
-                self.buckets.append(result.json()['id'])
-            if len(self.buckets) >= 10:
-                self.log.warning("Bucket limit for cluster reached, flushing "
-                                 "all current buckets.")
-                self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.buckets)
+            self.validate_testcase(result, [201], testcase, failures)
+            if res.status_code == 201:
+                self.delete_buckets([result.json()['id']])
             self.log.debug("Bucket cleanup successful")
 
         if failures:

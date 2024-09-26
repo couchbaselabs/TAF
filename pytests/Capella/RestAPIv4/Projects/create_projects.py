@@ -78,6 +78,7 @@ class CreateProject(GetProject):
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
+                self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
                 if res.status_code == 429:
@@ -85,8 +86,7 @@ class CreateProject(GetProject):
                     res = self.capellaAPI.org_ops_apis.delete_project(
                         self.organisation_id, project_id)
                 if res.status_code != 204:
-                    self.fail("Failure while deleting project: {}"
-                              .format(project_id))
+                    self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")
 
         if failures:
@@ -114,6 +114,7 @@ class CreateProject(GetProject):
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
+                self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
                 if res.status_code == 429:
@@ -121,8 +122,7 @@ class CreateProject(GetProject):
                     res = self.capellaAPI.org_ops_apis.delete_project(
                         self.organisation_id, project_id)
                 if res.status_code != 204:
-                    self.fail("Failure while deleting project: {}"
-                              .format(project_id))
+                    self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")
 
         if failures:
@@ -200,6 +200,7 @@ class CreateProject(GetProject):
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
+                self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
                 if res.status_code == 429:
@@ -207,8 +208,7 @@ class CreateProject(GetProject):
                     res = self.capellaAPI.org_ops_apis.delete_project(
                         self.organisation_id, project_id)
                 if res.status_code != 204:
-                    self.fail("Failure while deleting project: {}"
-                              .format(project_id))
+                    self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")
 
         if failures:
@@ -294,6 +294,7 @@ class CreateProject(GetProject):
                                       payloadTest=True):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
+                self.log.info("Deleting Project: {}".format(project_id))
                 res = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, project_id)
                 if res.status_code == 429:
@@ -301,8 +302,7 @@ class CreateProject(GetProject):
                     res = self.capellaAPI.org_ops_apis.delete_project(
                         self.organisation_id, project_id)
                 if res.status_code != 204:
-                    self.fail("Failure while deleting project: {}"
-                              .format(project_id))
+                    self.fail("Error: {}".format(res.content))
                 self.log.debug("Project CleanUp Successful.")
 
         if failures:

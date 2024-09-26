@@ -93,7 +93,6 @@ class PostUnassociate(PostAssociate):
                 "expected_status_code": self.expected_code
             }
         ]
-
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
@@ -135,7 +134,7 @@ class PostUnassociate(PostAssociate):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager"
-        ]):
+        ], self.expected_code, self.expected_err):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
@@ -179,15 +178,8 @@ class PostUnassociate(PostAssociate):
                 "projectID": combination[1],
                 "clusterID": combination[2],
                 "endpointID": combination[3],
-                "expected_status_code": 500,
-                "expected_error": {
-                    "code": 500,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 500,
-                    "message": "The VpcEndpointService Id '{}' does not exist"
-                               .format(self.endpoint_id)
-                }
+                "expected_status_code": self.expected_code,
+                "expected_error": self.expected_err
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and

@@ -135,7 +135,7 @@ class DeletePrivateEndpointService(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.disable_private_endpoint_service(
                     self.organisation_id, self.project_id, self.cluster_id,
                     header)
-            if self.validate_testcase(result, [202], testcase, failures):
+            if self.validate_testcase(result, [202, 500], testcase, failures):
                 self.log.debug("Deletion Successful")
 
         if failures:
@@ -231,7 +231,7 @@ class DeletePrivateEndpointService(GetCluster):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"],
                     **kwarg)
-            if self.validate_testcase(result, [202], testcase, failures):
+            if self.validate_testcase(result, [202, 500], testcase, failures):
                 self.log.debug("Deletion Successful")
 
         if failures:

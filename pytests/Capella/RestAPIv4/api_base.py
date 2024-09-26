@@ -478,7 +478,7 @@ class APIBase(CouchbaseBaseTest):
         if (TestInputSingleton.input.test_params["case_number"] ==
                 TestInputSingleton.input.test_params["no_of_test_identified"]):
             # Wait of cluster to be in a stable state
-            self.log.info("Polling CLUSTER: {}.".format(
+            self.log.info("Polling CLUSTER: {}".format(
                 self.capella["clusters"]["cluster_id"]))
             start_time = time.time()
             while not self.validate_onoff_state(["healthy"]):
@@ -490,7 +490,7 @@ class APIBase(CouchbaseBaseTest):
             if self.capella["clusters"]["app_id"] and not isinstance(
                     self.capella["clusters"]["app_id"], bool):
                 # Wait for app_service to be in a stable state.
-                self.log.info("Polling APP SERVICE: {}.".format(
+                self.log.info("Polling APP SERVICE: {}".format(
                     self.capella["clusters"]["app_id"]))
                 start_time = time.time()
                 while not self.validate_onoff_state(
@@ -502,7 +502,7 @@ class APIBase(CouchbaseBaseTest):
                     self.log.info("...Waiting further...")
 
                 # Delete App Service
-                self.log.info("Deleting App Service: {}.".format(
+                self.log.info("Deleting App Service: {}".format(
                     self.capella["clusters"]["app_id"]))
                 res = self.capellaAPI.cluster_ops_apis.delete_appservice(
                     self.organisation_id, self.project_id, self.cluster_id,
@@ -1230,7 +1230,9 @@ class APIBase(CouchbaseBaseTest):
 
         # Condition is for Sample Buckets delete testcases.
         if ("content" in result and "code" in result.content and
-                result.json()["code"] == 600 and 6008 in success_codes):
+                result.json()["code"] == 6008 and 6008 in success_codes):
+            self.log.info("This is an expected error handler for Sample "
+                          "Buckets Test Cases. The test has passed!")
             return True
 
         # Acceptor for expected error codes.
@@ -1620,6 +1622,7 @@ class APIBase(CouchbaseBaseTest):
 
         self.update_auth_with_api_token(token)
         for project_id in project_ids:
+            self.log.debug("Deleting Project: {}".format(project_id))
             resp = self.capellaAPI.org_ops_apis.delete_project(
                 org_id, project_id)
             if resp.status_code == 429:
@@ -1627,8 +1630,7 @@ class APIBase(CouchbaseBaseTest):
                 resp = self.capellaAPI.org_ops_apis.delete_project(
                     org_id, project_id)
             if resp.status_code != 204:
-                self.log.error("Error while deleting project {}, Error: {}"
-                               .format(project_id, resp.content))
+                self.log.error("Error: {}".format(resp.content))
                 project_deletion_failed = project_deletion_failed or True
         return project_deletion_failed
 
@@ -1684,28 +1686,23 @@ class APIBase(CouchbaseBaseTest):
         self.log.error(resp.content)
         self.fail("!!!...New bucket creation failed...!!!")
 
-    def delete_buckets(self, org_id, proj_id, clus_id, bucket_ids):
-        bucket_deletion_failed = False
+    def delete_buckets(self, buckets):
         self.update_auth_with_api_token(self.curr_owner_key)
-        for bucket_id in bucket_ids:
+        for bucket in buckets:
+            self.log.debug("Deleting the bucket: {}".format(bucket))
             resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                org_id, proj_id, clus_id, bucket_id)
+                self.organisation_id, self.project_id, self.cluster_id, bucket)
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                    org_id, proj_id, clus_id, bucket_id)
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    bucket)
             if resp.status_code != 204:
-                self.log.error("Error while deleting bucket {}".format(
-                    bucket_id))
-                bucket_deletion_failed = bucket_deletion_failed or True
-            else:
-                bucket_ids.remove(bucket_id)
+                self.fail("Error: {}".format(resp.content))
 
             # Wait for cluster to rebalance (if it is).
-            self.wait_for_deployment(clus_id)
+            self.wait_for_deployment(self.cluster_id)
             self.log.debug("Cluster state healthy.")
-
-        return bucket_deletion_failed
 
     def create_scope_to_be_tested(self, org_id, proj_id, clus_id, buck_id):
         self.update_auth_with_api_token(self.curr_owner_key)
