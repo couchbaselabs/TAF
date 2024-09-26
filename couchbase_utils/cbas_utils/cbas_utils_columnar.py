@@ -6274,19 +6274,24 @@ class CbasUtil(CBOUtil):
 
             return True, ""
 
-        if not self.create_database_from_spec(cluster, cbas_spec):
+        if cbas_spec["database"].get("no_of_databases", 0) > 0 and not \
+                self.create_database_from_spec(cluster, cbas_spec):
             return False, "Failed at create database"
 
-        if not self.create_dataverse_from_spec(cluster, cbas_spec):
+        if cbas_spec["dataverse"].get("no_of_dataverses", 0) > 0 and not \
+                self.create_dataverse_from_spec(cluster, cbas_spec):
             return False, "Failed at create dataverse"
 
-        if not self.create_remote_link_from_spec(cluster, cbas_spec):
+        if cbas_spec["remote_link"].get("no_of_remote_links", 0) > 0 and not \
+                self.create_remote_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create remote link from spec"
 
-        if not self.create_external_link_from_spec(cluster, cbas_spec):
+        if cbas_spec["external_link"].get("no_of_external_links", 0) > 0 and \
+                not self.create_external_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create external link from spec"
 
-        if not self.create_kafka_link_from_spec(cluster, cbas_spec):
+        if cbas_spec["kafka_link"].get("no_of_kafka_links", 0) > 0 and not \
+                self.create_kafka_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create kafka link from spec"
 
         if connect_link_before_creating_ds:
@@ -6294,15 +6299,21 @@ class CbasUtil(CBOUtil):
             if not status:
                 return status, error
 
-        if not self.create_remote_dataset_from_spec(
-                cluster, remote_clusters, cbas_spec, bucket_util):
+        if cbas_spec["remote_dataset"].get("num_of_remote_datasets", 0) > 0 \
+                and not self.create_remote_dataset_from_spec(
+            cluster, remote_clusters, cbas_spec, bucket_util):
             return False, "Failed at create remote dataset from spec"
-        if not self.create_external_dataset_from_spec(cluster, cbas_spec):
+        if cbas_spec["external_dataset"].get("num_of_external_datasets", 0) \
+                > 0 and not self.create_external_dataset_from_spec(
+            cluster, cbas_spec):
             return False, "Failed at create external dataset from spec"
-        if not self.create_standalone_dataset_from_spec(cluster, cbas_spec):
+        if cbas_spec["standalone_dataset"].get("num_of_standalone_coll", 0) \
+                > 0 and not self.create_standalone_dataset_from_spec(
+            cluster, cbas_spec):
             return False, "Failed at create standalone collection from spec"
-        if not self.create_standalone_collection_for_kafka_topics_from_spec(
-                cluster, cbas_spec):
+        if cbas_spec["kafka_dataset"].get("num_of_ds_on_external_db", 0) \
+                > 0 and not self.create_standalone_collection_for_kafka_topics_from_spec(
+            cluster, cbas_spec):
             return False, "Failed at create standalone collection from spec"
 
         if not connect_link_before_creating_ds:
@@ -6334,11 +6345,13 @@ class CbasUtil(CBOUtil):
                 return False, "Failed at wait for ingestion"
 
         self.log.info("Creating Synonyms based on CBAS Spec")
-        if not self.create_synonym_from_spec(cluster, cbas_spec):
+        if cbas_spec["synonym"].get("no_of_synonyms", 0) > 0 and not \
+                self.create_synonym_from_spec(cluster, cbas_spec):
             return False, "Could not create synonym"
 
         self.log.info("Creating Indexes based on CBAS Spec")
-        if not self.create_index_from_spec(cluster, cbas_spec):
+        if cbas_spec["index"].get("no_of_indexes") > 0 and not \
+                self.create_index_from_spec(cluster, cbas_spec):
             return False, "Failed at create index from spec"
 
         return True, "Success"

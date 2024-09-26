@@ -1,7 +1,6 @@
 from queue import Queue
 
 from Columnar.columnar_base import ColumnarBaseTest
-from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
 # External Database loader related imports
 from Jython_tasks.sirius_task import CouchbaseUtil
@@ -23,9 +22,6 @@ class RemoteLinksDatasets(ColumnarBaseTest):
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
-
-        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.tenant.user,
-                                     self.tenant.pwd, '')
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
