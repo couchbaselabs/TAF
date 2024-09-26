@@ -16,10 +16,10 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         super(CopyIntoStandaloneCollectionFromS3, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.instance = self.tenant.columnar_instances[0]
+        self.columnar_cluster = self.tenant.columnar_instances[0]
 
         if not self.columnar_spec_name:
-            self.columnar_spec_name = "sanity.copy_into_standalone_collection_from_s3"
+            self.columnar_spec_name = "full_template"
 
         self.columnar_spec = self.cbas_util.get_columnar_spec(
             self.columnar_spec_name)
@@ -46,7 +46,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.instance, self.columnar_spec):
+                self.columnar_cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
         super(CopyIntoStandaloneCollectionFromS3, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
@@ -110,7 +110,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
+            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -121,7 +121,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for standalone_coll in datasets:
             jobs.put((self.cbas_util.copy_from_external_resource_into_standalone_collection,
                       {
-                          "cluster": self.instance, "collection_name": standalone_coll.name,
+                          "cluster": self.columnar_cluster, "collection_name": standalone_coll.name,
                           "aws_bucket_name": standalone_coll.dataset_properties["external_container_name"],
                           "external_link_name": standalone_coll.link_name,
                           "dataverse_name": standalone_coll.dataverse_name,
@@ -153,7 +153,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.instance, "dataset_name": dataset.full_name,
+                {"cluster": self.columnar_cluster, "dataset_name": dataset.full_name,
                  "timeout": 3600, "analytics_timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -167,7 +167,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.instance,
+                {"cluster": self.columnar_cluster,
                  "statement": query.format(dataset.full_name)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -236,7 +236,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
+            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -245,7 +245,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.instance, standalone_coll.name,
+                        self.columnar_cluster, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,
@@ -269,7 +269,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.instance, "dataset_name": dataset.full_name,
+                {"cluster": self.columnar_cluster, "dataset_name": dataset.full_name,
                  "timeout": 3600, "analytics_timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -288,7 +288,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.instance,
+                {"cluster": self.columnar_cluster,
                  "statement": query.format(dataset.full_name)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -346,7 +346,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
+            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -355,7 +355,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.instance, standalone_coll.name,
+                        self.columnar_cluster, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,
@@ -403,7 +403,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         dataset_properties["region"] = self.aws_region
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
+            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -412,7 +412,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.instance, standalone_coll.name,
+                        self.columnar_cluster, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,
@@ -461,7 +461,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         dataset_properties["include"] = "*.{0}".format(file_format)
         dataset_properties["region"] = self.aws_region
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
+            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
@@ -470,7 +470,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for standalone_coll in datasets:
             jobs.put((self.cbas_util.copy_from_external_resource_into_standalone_collection,
                       {
-                          "cluster": self.instance, "collection_name": standalone_coll.name,
+                          "cluster": self.columnar_cluster, "collection_name": standalone_coll.name,
                           "aws_bucket_name": standalone_coll.dataset_properties["external_container_name"],
                           "external_link_name": standalone_coll.link_name,
                           "dataverse_name": standalone_coll.dataverse_name,
@@ -495,7 +495,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         external_links = self.cbas_util.get_all_link_objs("external")
         self.log.info("Disconnecting external links")
         for link in external_links:
-            if not self.cbas_util.drop_link(self.instance, link.full_name):
+            if not self.cbas_util.drop_link(self.columnar_cluster, link.full_name):
                 self.fail("Fail to delete link while copy from s3")
         jobs.join()
         if not all(results):
@@ -530,7 +530,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         dataset_properties["file_format"] = "null"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
+            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -539,7 +539,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.instance, standalone_coll.name,
+                        self.columnar_cluster, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,

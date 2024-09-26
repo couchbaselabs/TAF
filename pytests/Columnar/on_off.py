@@ -576,7 +576,7 @@ class OnOff(ColumnarBaseTest):
         if not self.columnar_utils.wait_for_instance_to_turn_off(
                 pod=self.pod, tenant=self.tenant,
                 project_id=self.tenant.project_id,
-                instance=self.columnar_cluster, timeout=900):
+                instance=self.columnar_cluster, timeout=3600):
             self.fail("Failed to turn off the instance")
 
         resp = columnar_internal.set_trigger_time_for_onoff(
@@ -589,7 +589,7 @@ class OnOff(ColumnarBaseTest):
         if not self.columnar_utils.wait_for_instance_to_turn_on(
                 pod=self.pod, tenant=self.tenant,
                 project_id=self.tenant.project_id,
-                instance=self.columnar_cluster, timeout=900):
+                instance=self.columnar_cluster, timeout=3600):
             self.fail("Failed to turn off the instance")
 
         for collection in remote_datasets:

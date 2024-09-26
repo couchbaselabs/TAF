@@ -56,7 +56,7 @@ class RemoteLinksDatasets(ColumnarBaseTest):
                         cb_doc_loading_task = self.couchbase_doc_loader.load_docs_in_couchbase_collection(
                             bucket=remote_bucket.name, scope=scope_name,
                             collection=collection_name, start=start,
-                            end=end, 
+                            end=end,
                             doc_template=SiriusCodes.Templates.PRODUCT,
                             doc_size=self.doc_size, sdk_batch_size=1000
                         )
@@ -65,7 +65,8 @@ class RemoteLinksDatasets(ColumnarBaseTest):
                                 f"Failed to load docs in couchbase collection "
                                 f"{remote_bucket.name}.{scope_name}.{collection_name}")
                         else:
-                            collection.num_items = cb_doc_loading_task.success_count
+                            collection.num_items = (
+                                start + cb_doc_loading_task.success_count)
 
     def test_create_connect_disconnect_query_drop_remote_links_and_datasets(self):
         # creating bucket scope and collections for remote collection
@@ -137,10 +138,10 @@ class RemoteLinksDatasets(ColumnarBaseTest):
 
         remote_link_properties = self.columnar_spec["remote_link"]["properties"]
         remote_link_properties[0]["encryption"] = "half"
+        del(remote_link_properties[0]["certificate"])
         self.cbas_util.alter_link_properties(self.columnar_cluster, remote_link_properties[0])
 
-        self.load_doc_to_remote_collections(self.bucket_name, self.scope_name,
-                                            self.collection_name, 0, self.initial_doc_count)
+        self.load_doc_to_remote_collections(0, self.initial_doc_count)
 
         for link in remote_links:
             if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
