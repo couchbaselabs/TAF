@@ -826,7 +826,8 @@ class ColumnarUtils:
             if resp.status_code == 200:
                 info = resp.json()
                 backups.extend(info["data"])
-                if info["cursor"]["pages"]["last"] > page:
+                if ("last" in info["cursor"]["pages"]) and (
+                        info["cursor"]["pages"]["last"] > page):
                     page += 1
                 else:
                     break

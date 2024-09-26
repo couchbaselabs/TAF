@@ -185,6 +185,8 @@ class BackupRestore(ColumnarBaseTest):
 
         self.load_data_to_source(0, self.no_of_docs)
 
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
@@ -268,6 +270,8 @@ class BackupRestore(ColumnarBaseTest):
             self.fail(msg)
 
         self.load_data_to_source(0, self.no_of_docs)
+
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
 
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
@@ -440,6 +444,8 @@ class BackupRestore(ColumnarBaseTest):
         retention = self.input.param("backup_retention", 24)
 
         self.load_data_to_source(0, self.no_of_docs)
+
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
 
         if not self.cbas_util.wait_for_data_ingestion_in_the_collections(
                 self.cluster):
