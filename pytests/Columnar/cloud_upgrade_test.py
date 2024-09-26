@@ -507,6 +507,17 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
             doc_count_for_datasets_before_upgrade[
                 dataset.full_name] = dataset.num_of_items
 
+        # Disconnecting all kafka and remote links so that the data is
+        # persisted before backup.
+        # https://jira.issues.couchbase.com/browse/AV-82641
+        self.log.info("Disconnecting all kafka and remote links before "
+                      "backup so that the data is persisted")
+        for link in self.cbas_util.get_all_link_objs(
+                "couchbase") + self.cbas_util.get_all_link_objs("kafka"):
+            if not self.cbas_util.disconnect_link(
+                    self.columnar_cluster, link.name):
+                self.fail(f"Error while disconnecting link {link.name}")
+
         if not self.columnar_utils.turn_off_instance(
                 pod=self.pod, tenant=self.tenant,
                 project_id=self.tenant.project_id,
@@ -523,17 +534,6 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
             self.columnar_cluster, cbas_entities_before_upgrade)
         if not status:
             self.fail(error)
-
-        # Disconnecting all kafka and remote links so that the data is
-        # persisted before backup.
-        # https://jira.issues.couchbase.com/browse/AV-82641
-        self.log.info("Disconnecting all kafka and remote links before "
-                      "backup so that the data is persisted")
-        for link in self.cbas_util.get_all_link_objs(
-                "couchbase") + self.cbas_util.get_all_link_objs("kafka"):
-            if not self.cbas_util.disconnect_link(
-                    self.columnar_cluster, link.name):
-                self.fail(f"Error while disconnecting link {link.name}")
 
         self.validate_data_in_datasets()
 
@@ -629,16 +629,6 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        # Disconnecting all kafka and remote links so that the data is
-        # persisted before backup.
-        self.log.info("Disconnecting all kafka and remote links before "
-                      "backup so that the data is persisted")
-        for link in self.cbas_util.get_all_link_objs(
-                "couchbase") + self.cbas_util.get_all_link_objs("kafka"):
-            if not self.cbas_util.disconnect_link(
-                    self.columnar_cluster, link.name):
-                self.fail(f"Error while disconnecting link {link.name}")
-
         self.validate_data_in_datasets()
 
         self.log.info("Scaling-up columnar cluster after upgrade")
@@ -655,6 +645,16 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                 project_id=self.tenant.project_id,
                 instance=self.columnar_cluster):
             self.fail("Scaling operation before upgrade failed")
+
+        # Disconnecting all kafka and remote links so that the data is
+        # persisted before backup.
+        self.log.info("Disconnecting all kafka and remote links before "
+                      "backup so that the data is persisted")
+        for link in self.cbas_util.get_all_link_objs(
+                "couchbase") + self.cbas_util.get_all_link_objs("kafka"):
+            if not self.cbas_util.disconnect_link(
+                    self.columnar_cluster, link.name):
+                self.fail(f"Error while disconnecting link {link.name}")
 
         self.log.info("Starting backup after upgrade")
         resp = self.columnar_utils.create_backup(
