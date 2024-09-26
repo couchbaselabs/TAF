@@ -21,9 +21,6 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
 
-        self.columnar_spec = self.cbas_util.get_columnar_spec(
-            self.columnar_spec_name)
-
         self.doc_count_per_format = {
             "json": 7920000, "parquet": 7920000,
             "csv": 7920000, "tsv": 7920000, "avro": 7920000}
@@ -52,62 +49,25 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def test_create_copyinto_query_using_path_drop_standalone_collection(self):
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
-
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
-        self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 1)
         file_format = self.input.param("file_format", "json")
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            external_collection_file_formats=[file_format],
+            path_on_external_container="level_1_folder_1")
+
         if file_format == "parquet":
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"`name=id`": "string",
-                                                                        "`name=product_name`": "string"}]
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [
+                {"`name=id`": "string", "`name=product_name`": "string"}]
         else:
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [
+                {"id": "string", "product_name": "string"}]
 
-        file_format = self.input.param("file_format", "json")
-        dataset_properties = self.columnar_spec["standalone_dataset"][
-            "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["file_format"] = file_format
-        dataset_properties["path_on_external_container"] = "level_1_folder_1"
-        use_include = self.input.param("use_include", False)
-        if use_include:
-            dataset_properties["file_format"] = self.files_to_use_in_include[file_format][0]
-        else:
-            dataset_properties["include"] = "*.{0}".format(file_format)
-        dataset_properties["region"] = self.aws_region
+        self.columnar_spec["standalone_dataset"][
+            "standalone_collection_properties"] = self.columnar_spec[
+            "external_dataset"]["external_dataset_properties"]
 
-        if file_format in ["csv", "tsv"]:
-            dataset_properties["object_construction_def"] = (
-                "id string,product_name string,product_link string,"
-                "product_features string,product_specs string,"
-                "product_image_links string,product_reviews string,"
-                "product_category string, price double,avg_rating double,"
-                "num_sold int,upload_date string,weight double,quantity int,"
-                "seller_name string,seller_location string,"
-                "seller_verified boolean,template_name string,mutated int,"
-                "padding string")
-            dataset_properties["header"] = True
-            dataset_properties["redact_warning"] = False
-            dataset_properties["null_string"] = None
-
-        elif file_format == "parquet":
-            dataset_properties["parse_json_string"] = 1
-            dataset_properties["convert_decimal_to_double"] = 1
-            dataset_properties["timezone"] = "GMT"
+        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
@@ -179,61 +139,33 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
                 self.fail("Doc count mismatch. Expected - 1000, Actual - {0}".format(len(result[3])))
 
     def test_create_copyinto_query_drop_standalone_collection(self):
-        # Update columnar spec based on conf file params
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
+        file_format = self.input.param("file_format", "json")
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            external_collection_file_formats=[file_format])
 
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
+        if file_format == "parquet":
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [
+                {"`name=id`": "string", "`name=product_name`": "string"}]
+        else:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [
+                {"id": "string", "product_name": "string"}]
 
         self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 1)
-        file_format = self.input.param("file_format", "json")
-        if file_format == "parquet":
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"`name=id`": "string",
-                                                                        "`name=product_name`": "string"}]
-        else:
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
+            "standalone_collection_properties"] = self.columnar_spec[
+            "external_dataset"]["external_dataset_properties"]
+
+        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["file_format"] = file_format
+
         use_include = self.input.param("use_include", False)
         if use_include:
             dataset_properties["include"] = self.files_to_use_in_include[file_format][0]
         else:
             dataset_properties["include"] = "*.{0}".format(file_format)
-        dataset_properties["region"] = self.aws_region
-
-        if file_format in ["csv", "tsv"]:
-            dataset_properties["object_construction_def"] = (
-                "id string,product_name string,product_link string,"
-                "product_features string,product_specs string,"
-                "product_image_links string,product_reviews string,"
-                "product_category string, price double,avg_rating double,"
-                "num_sold int,upload_date string,weight double,quantity int,"
-                "seller_name string,seller_location string,"
-                "seller_verified boolean,template_name string,mutated int,"
-                "padding string")
-            dataset_properties["header"] = True
-            dataset_properties["redact_warning"] = False
-            dataset_properties["null_string"] = None
-
-        elif file_format == "parquet":
-            dataset_properties["parse_json_string"] = 1
-            dataset_properties["convert_decimal_to_double"] = 1
-            dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
@@ -300,40 +232,23 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
                 self.fail("Doc count mismatch. Expected - 1000, Actual - {0}".format(len(result[3])))
 
     def test_create_copyinto_query_missing_typedef_drop_standalone_collection(self):
-        # Update columnar spec based on conf file params
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
+        file_format = self.input.param("file_format", "json")
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            external_collection_file_formats=[file_format])
 
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"id": "string", "product_name": "string"}]
 
         self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
+            "standalone_collection_properties"] = self.columnar_spec[
+            "external_dataset"]["external_dataset_properties"]
 
-        file_format = self.input.param("file_format", "json")
+        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["file_format"] = file_format
-        use_include = self.input.param("use_include", False)
-        if use_include:
-            dataset_properties["include"] = self.files_to_use_in_include[file_format][0]
-        else:
-            dataset_properties["include"] = "*.{0}".format(file_format)
-        dataset_properties["region"] = self.aws_region
-
         if file_format in ["csv", "tsv"]:
             dataset_properties["object_construction_def"] = None
             dataset_properties["header"] = True
@@ -376,31 +291,20 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
                           "standalone collection".format(standalone_coll.full_name))
 
     def test_create_copyinto_query_missing_with_clause_drop_standalone_collection(self):
-        # Update columnar spec based on conf file params
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
+        file_format = self.input.param("file_format", "json")
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            external_collection_file_formats=[file_format])
 
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"id": "string", "product_name": "string"}]
 
         self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
-        dataset_properties = self.columnar_spec["standalone_dataset"][
-            "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["region"] = self.aws_region
+            "standalone_collection_properties"] = self.columnar_spec[
+            "external_dataset"]["external_dataset_properties"]
+
+        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
@@ -433,37 +337,26 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
                           "standalone collection".format(standalone_coll.full_name))
 
     def test_create_copyinto_query_drop_link(self):
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
-
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
-        self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
-
         file_format = self.input.param("file_format", "json")
-        dataset_properties = self.columnar_spec["standalone_dataset"][
-            "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["file_format"] = file_format
-        dataset_properties["include"] = "*.{0}".format(file_format)
-        dataset_properties["region"] = self.aws_region
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            external_collection_file_formats=[file_format])
+
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"id": "string", "product_name": "string"}]
+
+        self.columnar_spec["standalone_dataset"][
+            "standalone_collection_properties"] = self.columnar_spec[
+            "external_dataset"]["external_dataset_properties"]
+
+        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
+
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
         jobs = Queue()
         results = []
@@ -493,7 +386,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.log.info("Sleeping 15 seconds, waiting all copy statement to execute")
         time.sleep(5)
         external_links = self.cbas_util.get_all_link_objs("external")
-        self.log.info("Disconnecting external links")
+        self.log.info("Dropping external links")
         for link in external_links:
             if not self.cbas_util.drop_link(self.columnar_cluster, link.full_name):
                 self.fail("Fail to delete link while copy from s3")
@@ -502,31 +395,23 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             self.fail("Copy to statement failed after link disconnect")
 
     def test_create_copyinto_query_incorrect_file_format_clause_drop_standalone_collection(self):
-        # Update columnar spec based on conf file params
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
+        file_format = self.input.param("file_format", "json")
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            external_collection_file_formats=[file_format])
 
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"id": "string", "product_name": "string"}]
 
         self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
+            "standalone_collection_properties"] = self.columnar_spec[
+            "external_dataset"]["external_dataset_properties"]
+
+        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.s3_source_bucket
-        dataset_properties["region"] = self.aws_region
         dataset_properties["file_format"] = "null"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(

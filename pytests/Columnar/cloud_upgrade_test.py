@@ -377,6 +377,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         return columnar_entities
 
     def validate_data_in_datasets(self):
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
         self.log.info("Validating doc count in Analytics collections")
         for dataset in self.cbas_util.get_all_dataset_objs(
                 "remote") + self.cbas_util.get_all_dataset_objs(
@@ -555,12 +556,12 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         # start parallel query here
         # start parallel doc loading
 
-        self.log.info("Scaling-up columnar cluster before upgrade")
+        self.log.info("Scaling-down columnar cluster before upgrade")
         if not self.columnar_utils.scale_instance(
                 pod=self.pod, tenant=self.tenant,
                 project_id=self.tenant.project_id,
                 instance=self.columnar_cluster,
-                nodes=self.input.param("num_nodes_in_columnar_instance") * 2):
+                nodes=self.input.param("num_nodes_in_columnar_instance") / 2):
             self.fail("Unable to initiate cluster scale operation before "
                       "upgrade")
 
@@ -640,7 +641,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
 
         self.validate_data_in_datasets()
 
-        self.log.info("Scaling-down columnar cluster after upgrade")
+        self.log.info("Scaling-up columnar cluster after upgrade")
         if not self.columnar_utils.scale_instance(
                 pod=self.pod, tenant=self.tenant,
                 project_id=self.tenant.project_id,

@@ -277,7 +277,7 @@ class ColumnarBaseTest(BaseTestCase):
     def populate_columnar_infra_spec(
             self, columnar_spec, remote_cluster=None,
             external_collection_file_formats=[],
-            path_on_external_container=None, aws_kafka_cluster_details=[],
+            path_on_external_container="", aws_kafka_cluster_details=[],
             confluent_kafka_cluster_details=[], external_dbs=[],
             kafka_topics={}):
 
