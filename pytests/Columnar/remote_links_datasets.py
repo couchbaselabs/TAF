@@ -94,19 +94,13 @@ class RemoteLinksDatasets(ColumnarBaseTest):
             if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
                 self.fail("Failed to connect link")
 
-        jobs = Queue()
-        results = []
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
         for dataset in remote_datasets:
-            jobs.put((
-                self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.columnar_cluster, "dataset_name": dataset.full_name,
-                 "timeout": 3600, "analytics_timeout": 3600}))
-        self.cbas_util.run_jobs_in_parallel(
-            jobs, results, self.sdk_clients_per_user, async_run=False)
-        for result in results:
-            if result != self.initial_doc_count:
-                self.fail("Doc count mismatch. Expected - {0}, Actual - {"
-                          "1}".format(self.initial_doc_count, result))
+            if not self.cbas_util.wait_for_ingestion_complete(
+                self.columnar_cluster, dataset.full_name,
+                    dataset.num_of_items):
+                self.fail("Doc count mismatch.")
 
         for link in remote_links:
             if not self.cbas_util.disconnect_link(self.columnar_cluster, link.full_name):
@@ -152,13 +146,15 @@ class RemoteLinksDatasets(ColumnarBaseTest):
             if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
                 self.fail("Failed to connect link")
 
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
         jobs = Queue()
         results = []
         for dataset in remote_datasets:
             jobs.put((
                 self.cbas_util.wait_for_ingestion_complete,
                 {"cluster": self.columnar_cluster, "dataset_name": dataset.full_name,
-                 "num_items": self.initial_doc_count, "timeout": 3600}))
+                 "num_items": dataset.num_of_items, "timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -195,6 +191,8 @@ class RemoteLinksDatasets(ColumnarBaseTest):
             if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
                 self.fail("Failed to connect link")
 
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
         capella_cluster_config = self.capella_cluster_config
         capella_cluster_config["specs"][0]["count"] += 2
         capella_cluster_config["specs"][0]["services"] = [{"type": "kv"}]
@@ -214,15 +212,14 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         results = []
         for dataset in remote_datasets:
             jobs.put((
-                self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.columnar_cluster, "dataset_name": dataset.full_name,
-                 "timeout": 3600, "analytics_timeout": 3600}))
+                self.cbas_util.wait_for_ingestion_complete,
+                {"cluster": self.columnar_cluster,
+                 "dataset_name": dataset.full_name,
+                 "num_items": dataset.num_of_items, "timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
-        for result in results:
-            if result != self.initial_doc_count:
-                self.fail("Doc count mismatch. Expected - {0}, Actual - {"
-                          "1}".format(self.initial_doc_count, result))
+        if not all(results):
+            self.fail("Data ingestion did not complete for all datasets")
 
         for link in remote_links:
             if not self.cbas_util.disconnect_link(self.columnar_cluster, link.full_name):
@@ -255,19 +252,20 @@ class RemoteLinksDatasets(ColumnarBaseTest):
             if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
                 self.fail("Failed to connect link")
 
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
         jobs = Queue()
         results = []
         for dataset in remote_datasets:
             jobs.put((
-                self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.columnar_cluster, "dataset_name": dataset.full_name,
-                 "timeout": 3600, "analytics_timeout": 3600}))
+                self.cbas_util.wait_for_ingestion_complete,
+                {"cluster": self.columnar_cluster,
+                 "dataset_name": dataset.full_name,
+                 "num_items": dataset.num_of_items, "timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
-        for result in results:
-            if result != self.initial_doc_count:
-                self.fail("Doc count mismatch. Expected - {0}, Actual - {"
-                          "1}".format(self.initial_doc_count, result))
+        if not all(results):
+            self.fail("Data ingestion did not complete for all datasets")
 
         if not self.columnar_utils.turn_off_instance(
                 pod=self.pod, tenant=self.tenant,
@@ -285,11 +283,20 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         self.load_doc_to_remote_collections(
             self.initial_doc_count, self.initial_doc_count * 2)
 
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
+        jobs = Queue()
+        results = []
         for dataset in remote_datasets:
-            if not self.cbas_util.wait_for_ingestion_complete(
-                    self.columnar_cluster, dataset.full_name,
-                    self.initial_doc_count * 2):
-                self.fail("Doc count mismatch.")
+            jobs.put((
+                self.cbas_util.wait_for_ingestion_complete,
+                {"cluster": self.columnar_cluster,
+                 "dataset_name": dataset.full_name,
+                 "num_items": dataset.num_of_items, "timeout": 3600}))
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+        if not all(results):
+            self.fail("Data ingestion did not complete for all datasets")
 
         for link in remote_links:
             if not self.cbas_util.disconnect_link(self.columnar_cluster, link.full_name):
