@@ -960,7 +960,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                         self.log.info("Test creating remote collection")
                         remote_coll_obj = self.columnar_cbas_utils.create_remote_dataset_obj(
                             self.columnar_cluster,
-                            self.remote_cluster.buckets[0],
+                            self.remote_cluster.buckets[0].name,
                             "_default",
                             "_default",
                             remote_link,
@@ -3157,7 +3157,7 @@ class ColumnarRBAC(ColumnarBaseTest):
             if not result:
                 self.log.error("Failed to delete user {}".format(db_user.id))
 
-        if hasattr(self, "remote_cluster"):
+        if hasattr(self, "remote_cluster") and self.remote_cluster:
             self.delete_all_buckets_from_capella_cluster(
                 self.tenant, self.remote_cluster)
         super(ColumnarBaseTest, self).tearDown()
