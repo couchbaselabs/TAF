@@ -151,7 +151,7 @@ class CopyToS3(ColumnarBaseTest):
                     self.columnar_cluster, self.columnar_spec):
                 self.fail("Error while deleting cbas entities")
 
-        if hasattr(self, "remote_cluster"):
+        if hasattr(self, "remote_cluster") and self.remote_cluster:
             self.delete_all_buckets_from_capella_cluster(
                 self.tenant, self.remote_cluster)
 
