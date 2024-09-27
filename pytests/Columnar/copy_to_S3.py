@@ -35,6 +35,7 @@ class CopyToS3(ColumnarBaseTest):
     def setUp(self):
         super(CopyToS3, self).setUp()
         self.columnar_cluster = self.tenant.columnar_instances[0]
+        self.remote_cluster = None
         if len(self.tenant.clusters) > 0:
             self.remote_cluster = self.tenant.clusters[0]
             self.couchbase_doc_loader = CouchbaseUtil(

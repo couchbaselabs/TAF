@@ -51,6 +51,7 @@ class ColumnarRBAC(ColumnarBaseTest):
     def setUp(self):
         super(ColumnarRBAC, self).setUp()
         self.columnar_cluster = self.tenant.columnar_instances[0]
+        self.remote_cluster = None
         if len(self.tenant.clusters) > 0:
             self.remote_cluster = self.tenant.clusters[0]
             self.couchbase_doc_loader = CouchbaseUtil(

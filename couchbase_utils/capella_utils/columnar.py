@@ -634,13 +634,13 @@ class ColumnarUtils:
         start_time = time.time()
         end_time = start_time + timeout
         # First wait for turn-off job to get picked up by control plane
-        while status != 'turning_off' and time.time() < end_time:
+        while status != 'turning_off' and status != 'turned_off' and time.time() < end_time:
             resp = self.get_instance_info(pod, tenant, project_id,
                                           instance.instance_id)
             status = resp["data"]["state"]
             self.log.info("Waiting for instance to be in turning off state")
             time.sleep(30)
-        if status != 'turning_off':
+        if status != 'turning_off' and status != 'turned_off':
             self.log.error("Instance turn-off was not initiated by control "
                            "place even after {} seconds".format(timeout))
             return False
