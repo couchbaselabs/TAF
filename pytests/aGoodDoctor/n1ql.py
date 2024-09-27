@@ -465,10 +465,11 @@ class DoctorN1QL():
                 k += 1
             i += 1
 
-    def drop_indexes(self):
-        for index, details in self.indexes.items():
-            build_query = "DROP INDEX %s on `%s`" % (index, details[4])
-            self.execute_statement_on_n1ql(details[1], build_query)
+    def drop_indexes(self, cluster):
+        for bucket in cluster.buckets:
+            for index, details in bucket.indexes.items():
+                build_query = "DROP INDEX %s on `%s`" % (index, details[4])
+                execute_statement_on_n1ql(details[1], build_query)
 
     def log_index_stats(self, cluster, print_duration=300):
         st_time = time.time()

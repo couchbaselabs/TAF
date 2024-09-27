@@ -309,6 +309,10 @@ class Murphy(BaseTestCase, OPD):
                                              storageMode=storageModeGSI) \
             if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true',
                                                                           storageMode=storageModeGSI)
+            self.gsi_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+            enableInMemoryCompression = self.input.param("enableInMemoryCompression", True)
+            if not enableInMemoryCompression:
+                self.gsi_rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": enableInMemoryCompression})
             self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
@@ -553,7 +557,7 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
-        self.sleep(1200, "Running steady state query workload.")
+        self.sleep(self.input.param("steady_state_workload_sleep", 120))
         
         if self.val_type == "siftBigANN":
             self.mutate_sift = True
@@ -562,7 +566,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.PrintStep("Running Query workload during mutations")
             self.restart_query_load(self.cluster, 0)
-            self.sleep(1200, "Query workload Post mutations")
+            self.sleep(self.input.param("steady_state_workload_sleep", 120))
             self.check_index_pending_mutations()
 
     def test_rebalance(self):
