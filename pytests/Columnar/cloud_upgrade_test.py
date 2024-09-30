@@ -11,9 +11,9 @@ from Columnar.columnar_base import ColumnarBaseTest
 from datetime import datetime, timedelta
 
 # Kafka related imports
-from couchbase_utils.kafka_util.msk_utils import MSKUtils
 from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
+from couchbase_utils.kafka_util.msk_utils import MSKUtils
 
 # External Database loader related imports
 from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
@@ -150,29 +150,41 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         delete_msk_dlq_topic = self.msk_util.kafka_cluster_util.delete_topic_by_topic_prefix(
                 self.kafka_topic_prefix)
 
-        msk_cleanup_for_cdc = self.msk_util.cleanup_kafka_resources(
-            self.kafka_connect_hostname_cdc_msk, [self.cdc_connector_name],
-            self.kafka_topic_prefix + "_cdc"
-            )
+        if hasattr(self, "cdc_connector_name"):
+            msk_cleanup_for_cdc = self.msk_util.cleanup_kafka_resources(
+                self.kafka_connect_hostname_cdc_msk, [self.cdc_connector_name],
+                self.kafka_topic_prefix + "_cdc"
+                )
+        else:
+            msk_cleanup_for_cdc = True
 
-        msk_cleanup_for_non_cdc = self.msk_util.cleanup_kafka_resources(
-            self.kafka_connect_hostname_non_cdc_msk, [self.non_cdc_connector_name],
-            self.kafka_topic_prefix + "_non_cdc"
-        )
+        if hasattr(self, "non_cdc_connector_name"):
+            msk_cleanup_for_non_cdc = self.msk_util.cleanup_kafka_resources(
+                self.kafka_connect_hostname_non_cdc_msk, [self.non_cdc_connector_name],
+                self.kafka_topic_prefix + "_non_cdc"
+            )
+        else:
+            msk_cleanup_for_non_cdc = True
 
         delete_confluent_dlq_topic = self.confluent_util.kafka_cluster_util.delete_topic_by_topic_prefix(
                 self.kafka_topic_prefix)
 
-        confluent_cleanup_for_cdc = self.confluent_util.cleanup_kafka_resources(
-            self.kafka_connect_hostname_cdc_confluent,
-            [self.cdc_connector_name], self.kafka_topic_prefix + "_cdc")
+        if hasattr(self, "cdc_connector_name"):
+            confluent_cleanup_for_cdc = self.confluent_util.cleanup_kafka_resources(
+                self.kafka_connect_hostname_cdc_confluent,
+                [self.cdc_connector_name], self.kafka_topic_prefix + "_cdc")
+        else:
+            confluent_cleanup_for_cdc = True
 
-        confluent_cleanup_for_non_cdc = (
-            self.confluent_util.cleanup_kafka_resources(
-                self.kafka_connect_hostname_non_cdc_confluent,
-                [self.non_cdc_connector_name],
-                self.kafka_topic_prefix + "_non_cdc",
-                self.confluent_cluster_obj.cluster_access_key))
+        if hasattr(self, "non_cdc_connector_name"):
+            confluent_cleanup_for_non_cdc = (
+                self.confluent_util.cleanup_kafka_resources(
+                    self.kafka_connect_hostname_non_cdc_confluent,
+                    [self.non_cdc_connector_name],
+                    self.kafka_topic_prefix + "_non_cdc",
+                    self.confluent_cluster_obj.cluster_access_key))
+        else:
+            confluent_cleanup_for_non_cdc = True
 
         mongo_collections_deleted = True
         for mongo_coll, _ in self.mongo_collections.items():
@@ -561,7 +573,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                 pod=self.pod, tenant=self.tenant,
                 project_id=self.tenant.project_id,
                 instance=self.columnar_cluster,
-                nodes=self.input.param("num_nodes_in_columnar_instance") / 2):
+                nodes=self.input.param("num_nodes_in_columnar_instance") // 2):
             self.fail("Unable to initiate cluster scale operation before "
                       "upgrade")
 
@@ -648,6 +660,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
 
         # Disconnecting all kafka and remote links so that the data is
         # persisted before backup.
+        self.sleep(60, "Waiting post scaling before disconnecting links.")
         self.log.info("Disconnecting all kafka and remote links before "
                       "backup so that the data is persisted")
         for link in self.cbas_util.get_all_link_objs(
