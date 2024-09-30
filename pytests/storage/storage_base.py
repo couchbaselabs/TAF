@@ -283,6 +283,16 @@ class StorageBase(BaseTestCase):
             for bucket in self.cluster.buckets:
                 self.bucket_util.set_throttle_n_storage_limit(bucket, throttle_limit=self.kv_throttling_limit)
 
+        # Validate that the fragmentation value has been set
+        for bucket in self.cluster.buckets:
+            bucket_helper = BucketHelper(self.cluster.master)
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
+                bucket_stats = bucket_helper.get_bucket_json(bucket.name)
+                self.assertEqual(int(bucket_stats["autoCompactionSettings"] \
+                                                ["magmaFragmentationPercentage"]),
+                                                self.fragmentation,
+                                                "Frag val does not match")
+
     def find_nodes_with_service(self, service_type, nodes_list):
         filter_list = list()
         for node in nodes_list:

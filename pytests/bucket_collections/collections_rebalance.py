@@ -1,6 +1,7 @@
 import time
 
 from BucketLib.BucketOperations import BucketHelper
+from BucketLib.bucket import Bucket
 from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
@@ -87,6 +88,17 @@ class CollectionsRebalance(CollectionBase):
         self.allowed_hosts = self.input.param("allowed_hosts", False)
         self.update_max_ttl = self.input.param("update_max_ttl", False)
         self.remaining_docs = self.input.param("remaining_docs", 0)
+
+        # Validate that the fragmentation value has been set
+        if self.fragmentation is not None:
+            for bucket in self.cluster.buckets:
+                bucket_helper = BucketHelper(self.cluster.master)
+                if bucket.storageBackend == Bucket.StorageBackend.magma:
+                    bucket_stats = bucket_helper.get_bucket_json(bucket.name)
+                    self.assertEqual(int(bucket_stats["autoCompactionSettings"] \
+                                                    ["magmaFragmentationPercentage"]),
+                                                    self.fragmentation,
+                                                    "Frag val does not match")
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)

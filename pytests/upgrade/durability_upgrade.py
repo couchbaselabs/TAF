@@ -1681,7 +1681,7 @@ class UpgradeTests(UpgradeBase):
 
     def verify_storage_key_for_migration(self, bucket, storage_backend):
         bucket_helper = BucketHelper(self.cluster.master)
-        bucket_stats = bucket_helper.get_bucket_json(bucket)
+        bucket_stats = bucket_helper.get_bucket_json(bucket.name)
         for node in bucket_stats['nodes']:
             if 'storageBackend' not in node or \
                 ('storageBackend' in node and node['storageBackend'] != storage_backend):

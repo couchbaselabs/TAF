@@ -1,3 +1,4 @@
+from BucketLib.BucketOperations import BucketHelper
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
 import Jython_tasks.task as jython_tasks
@@ -81,6 +82,7 @@ class UpgradeBase(BaseTestCase):
         self.collection_spec = self.input.param("collection_spec","collections_magma")
         self.load_large_docs = self.input.param("load_large_docs", False)
         self.collection_operations = self.input.param("collection_operations", True)
+        self.fragmentation = self.input.param("fragmentation", None)
         ####
         self.rebalance_op = self.input.param("rebalance_op", "all")
         self.dur_level = self.input.param("dur_level", "default")
@@ -244,6 +246,17 @@ class UpgradeBase(BaseTestCase):
             CollectionBase.deploy_buckets_from_spec_file(self)
         else:
             self.create_bucket_for_large_doc_upgrades()
+
+        # Validating that the fragmentation value has been set
+        if self.fragmentation is not None:
+            for bucket in self.cluster.buckets:
+                bucket_helper = BucketHelper(self.cluster.master)
+                if bucket.storageBackend == Bucket.StorageBackend.magma:
+                    bucket_stats = bucket_helper.get_bucket_json(bucket.name)
+                    self.assertEqual(int(bucket_stats["autoCompactionSettings"] \
+                                                    ["magmaFragmentationPercentage"]),
+                                                    self.fragmentation,
+                                                    "Frag val does not match")
 
         self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)

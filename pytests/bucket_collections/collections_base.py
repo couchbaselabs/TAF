@@ -35,6 +35,7 @@ class CollectionBase(ClusterSetup):
         self.doc_ops = self.input.param("doc_ops", None)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
+        self.fragmentation = self.input.param("fragmentation", None)
         self.key_size = self.input.param("key_size", 8)
         self.range_scan_timeout = self.input.param("range_scan_timeout",
                                                       None)
@@ -582,6 +583,10 @@ class CollectionBase(ClusterSetup):
             test_obj.bucket_util.get_bucket_template_from_package(
                 test_obj.spec_name)
         buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = use_simple_names
+
+        if hasattr(test_obj, "fragmentation") and test_obj.fragmentation is not None:
+            buckets_spec[Bucket.autoCompactionDefined] = "true"
+            buckets_spec[Bucket.fragmentationPercentage] = int(test_obj.fragmentation)
 
         test_obj.log.info("Creating bucket from spec: %s" % test_obj.spec_name)
         # Process params to over_ride values if required
