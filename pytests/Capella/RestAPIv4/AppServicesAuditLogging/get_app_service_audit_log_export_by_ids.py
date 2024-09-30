@@ -19,8 +19,8 @@ class GetAuditLogExports(GetAppService):
             # Response params.
             "data": {
                 "id": "to be changed after creation",
-                "start": self.get_utc_datetime(-30),
-                "end": self.get_utc_datetime(0),
+                "start": self.get_utc_datetime(-60),
+                "end": self.get_utc_datetime(-10),
                 "download_id": None,
                 "download_expires": None,
                 "status": None,

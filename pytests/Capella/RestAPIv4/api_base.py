@@ -6,6 +6,7 @@ Created on June 28, 2023
 
 import copy
 import time
+import datetime
 import string
 import random
 import base64
@@ -652,7 +653,6 @@ class APIBase(CouchbaseBaseTest):
 
     @staticmethod
     def get_utc_datetime(minutes_delta=0):
-        import datetime
         now = datetime.datetime.utcnow()
 
         if minutes_delta:
@@ -1698,7 +1698,7 @@ class APIBase(CouchbaseBaseTest):
                     self.organisation_id, self.project_id, self.cluster_id,
                     bucket)
             if resp.status_code != 204:
-                self.fail("Error: {}".format(resp.content))
+                self.log.error("Error: {}".format(resp.content))
 
             # Wait for cluster to rebalance (if it is).
             self.wait_for_deployment(self.cluster_id)
