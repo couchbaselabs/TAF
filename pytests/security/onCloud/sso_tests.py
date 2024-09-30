@@ -124,18 +124,6 @@ class SsoTests(SecurityBase):
             resp = self.sso.delete_realm(self.tenant_id, realm_id)
             self.assertEqual(resp.status_code // 100, 2)
 
-        # Create Application dynamically
-        self.okta_account = self.input.param("okta_account", "https://dev-82235514.okta.com/")
-        self.okta_token = self.input.param("okta_token",
-                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
-        self.okta_app_id, self.idp_metadata = self.sso.create_okta_application(self.okta_token, self.okta_account)
-        self.sso.assign_user(self.okta_token, self.okta_app_id, self.okta_account)
-
-        self.saml_user = self.input.param("saml_user", "qe.security.testing@couchbase.com")
-        self.saml_passcode = self.input.param("saml_passcode", "Password@123")
-        self.okta_token = self.input.param("okta_token",
-                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
-
     def tearDown(self):
         resp = self.sso.list_realms(self.tenant_id)
         if json.loads(resp.content)["data"]:
@@ -144,8 +132,6 @@ class SsoTests(SecurityBase):
             resp = self.sso.delete_realm(self.tenant_id, realm_id)
             self.validate_response(resp, 2)
 
-        self.log.info("Delete all applications")
-        self.sso.delete_okta_applications(self.okta_token)
         super(SsoTests, self).tearDown()
 
     def _generate_key_pair(self):
@@ -304,6 +290,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.log.info("Creating realm")
         realm_resp = self.sso.create_realm(self.tenant_id, body)
         self.validate_response(realm_resp, 2)
+        self.log.info("Realm creation success!!")
 
     def test_create_realm_with_diff_payload(self):
         # 1. metadataXML - valid
@@ -433,6 +420,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.validate_response(realm_resp, 4)
 
     def test_show_realms(self):
+        self.log.info("Create realm")
         self.create_realm(self.team_id)
 
         realms_resp = self.sso.list_realms(self.tenant_id)
@@ -440,10 +428,12 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         realm = data['data'][0]['data']
         realm_id = realm['id']
 
+        self.log.info("Valid inputs")
         resp = self.sso.show_realm(self.tenant_id, realm_id)
         self.validate_response(resp, 2)
 
         # different tenant id
+        self.log.info("invalid tenant id")
         resp = self.sso.show_realm(self.invalid_id, realm_id)
         self.validate_response(resp, 4)
 
@@ -452,16 +442,19 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.validate_response(resp, 4)
 
         # invalid realm id
+        self.log.info("invalid realm id")
         resp = self.sso.show_realm(self.tenant_id, self.invalid_id)
         self.validate_response(resp, 4)
 
     def test_list_realms(self):
         self.create_realm(self.team_id)
 
+        self.log.info("Valid inputs")
         resp = self.sso.list_realms(self.tenant_id)
         self.validate_response(resp, 2)
 
         # different tenant id
+        self.log.info("Invalid inputs")
         resp = self.sso.list_realms(self.invalid_id)
         self.validate_response(resp, 4)
 
@@ -545,12 +538,12 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         resp = self.sso.update_team_org_roles(self.tenant_id, self.team_id, body)
         self.validate_response(resp, 2)
 
-        self.log.info("Update organisation role wth invalid tenantId")
+        # self.log.info("Update organisation role wth invalid tenantId")
         resp = self.sso.update_team_org_roles(self.invalid_id, self.team_id, body)
         self.validate_response(resp, 4)
 
         self.log.info("Update organisation role wth missing team_id")
-        resp = self.sso.update_team_org_roles(self.invalid_id, "", body)
+        resp = self.sso.update_team_org_roles(self.tenant_id, "", body)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
@@ -572,12 +565,12 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         resp = self.sso.update_team_project_roles(self.tenant_id, self.team_id, body)
         self.validate_response(resp, 2)
 
-        self.log.info("Update project role with invalid tenantId")
+        # self.log.info("Update project role with invalid tenantId")
         resp = self.sso.update_team_project_roles(self.invalid_id, self.team_id, body)
         self.validate_response(resp, 4)
 
         self.log.info("Update project role wth missing team_id")
-        resp = self.sso.update_team_project_roles(self.invalid_id, "", body)
+        resp = self.sso.update_team_project_roles(self.tenant_id, "", body)
         self.validate_response(resp, 4)
 
         # user without sufficient permissions
@@ -846,8 +839,8 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         resp = self.sso.rotate_certificate(self.invalid_id, realm_id, get_request_body())
         self.validate_response(resp, 4)
 
-        # Update realm with invalid realm id
         self.log.info("Update realm with invalid realm id")
+        # Update realm with invalid realm id
         resp = self.sso.rotate_certificate(self.tenant_id, self.invalid_id, get_request_body())
         self.validate_response(resp, 4)
 
@@ -889,6 +882,19 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         2. Create a Realm in Capella
         3. Initiate SSO login
         """
+
+        # Create Application dynamically
+        self.okta_account = self.input.param("okta_account", "https://dev-82235514.okta.com/")
+        self.okta_token = self.input.param("okta_token",
+                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
+        self.log.info("Creating an Okta application")
+        self.okta_app_id, self.idp_metadata = self.sso.create_okta_application(self.okta_token, self.okta_account)
+        self.sso.assign_user(self.okta_token, self.okta_app_id, self.okta_account)
+
+        self.saml_user = self.input.param("saml_user", "qe.security.testing@couchbase.com")
+        self.saml_passcode = self.input.param("saml_passcode", "Password@123")
+        self.okta_token = self.input.param("okta_token",
+                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
 
         # Create a Realm in Capella
 
@@ -1008,3 +1014,6 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
                 result = True
                 break
         self.assertTrue(result)
+
+        self.log.info("Delete all applications")
+        self.sso.delete_okta_applications(self.okta_token)
