@@ -35,7 +35,7 @@ class ServerTasks(object):
         self.test_log = logger.get("test")
         self.log.debug("Initiating ServerTasks")
 
-    def async_failover(self, servers=[], failover_nodes=[], graceful=False,
+    def async_failover(self, cluster, failover_nodes=[], graceful=False,
                        use_hostnames=False, wait_for_pending=0, allow_unsafe=False,
                        all_at_once=False):
         """
@@ -52,7 +52,7 @@ class ServerTasks(object):
         Returns:
           FailOverTask - A task future that is a handle to the scheduled task
         """
-        _task = jython_tasks.FailoverTask(servers,
+        _task = jython_tasks.FailoverTask(cluster,
                                           to_failover=failover_nodes,
                                           graceful=graceful,
                                           use_hostnames=use_hostnames,
@@ -1192,7 +1192,7 @@ class ServerTasks(object):
             index_name=index_name, retry_time=retry_time)
         return self.jython_task_manager.get_task_result(_task)
 
-    def failover(self, servers=[], failover_nodes=[], graceful=False,
+    def failover(self, cluster, failover_nodes=[], graceful=False,
                  use_hostnames=False, wait_for_pending=0, allow_unsafe=False,
                  all_at_once=False):
         """Synchronously Failover nodes
@@ -1207,7 +1207,7 @@ class ServerTasks(object):
 
         Returns:
             boolean - Whether or not nodes were failed-over."""
-        _task = self.async_failover(servers, failover_nodes, graceful,
+        _task = self.async_failover(cluster, failover_nodes, graceful,
                                     use_hostnames, wait_for_pending, allow_unsafe,
                                     all_at_once=all_at_once)
         self.jython_task_manager.get_task_result(_task)

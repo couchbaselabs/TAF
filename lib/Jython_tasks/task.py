@@ -23,6 +23,7 @@ from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
 import common_lib
 import global_vars
@@ -4890,11 +4891,11 @@ class BucketCreateTask(Task):
             if self.result is False:
                 self.test_log.critical("Bucket %s creation failed"
                                        % self.bucket.name)
-            elif not self.bucket.num_vbuckets:
+            elif not self.bucket.numVBuckets:
                 # Set num_vbuckets to default it not provided by the user
-                self.bucket.num_vbuckets = CbServer.total_vbuckets
+                self.bucket.numVBuckets = CbServer.total_vbuckets
                 if CbServer.cluster_profile == "serverless":
-                    self.bucket.num_vbuckets = CbServer.Serverless.VB_COUNT
+                    self.bucket.numVBuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False
@@ -4953,7 +4954,7 @@ class BucketCreateFromSpecTask(Task):
 
             self.bucket_obj.serverless.width = b_width
             self.bucket_obj.serverless.weight = b_weight
-            self.bucket_obj.num_vbuckets = num_vbs
+            self.bucket_obj.numVBuckets = num_vbs
 
     def call(self):
         self.result = True
@@ -5032,11 +5033,11 @@ class BucketCreateFromSpecTask(Task):
                 self.set_exception(
                     BucketCreationException(ip=self.bucket_helper.ip,
                                             bucket_name=self.bucket_obj.name))
-            elif not self.bucket_obj.num_vbuckets:
+            elif not self.bucket_obj.numVBuckets:
                 # Set num_vbuckets to default it not provided by the user
-                self.bucket_obj.num_vbuckets = CbServer.total_vbuckets
+                self.bucket_obj.numVBuckets = CbServer.total_vbuckets
                 if CbServer.cluster_profile == "serverless":
-                    self.bucket_obj.num_vbuckets = CbServer.Serverless.VB_COUNT
+                    self.bucket_obj.numVBuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False
@@ -7736,11 +7737,12 @@ class NodeInitializeTask(Task):
 
 
 class FailoverTask(Task):
-    def __init__(self, servers, to_failover=[], wait_for_pending=0,
+    def __init__(self, cluster, to_failover=[], wait_for_pending=0,
                  graceful=False, use_hostnames=False, allow_unsafe=False,
                  all_at_once=False, validate_bucket_ranking=True):
         Task.__init__(self, "failover_task")
-        self.servers = servers
+        self.cluster = cluster
+        self.servers = cluster.nodes_in_cluster
         self.to_failover = to_failover
         self.graceful = graceful
         self.validate_bucket_ranking = validate_bucket_ranking
@@ -7749,12 +7751,13 @@ class FailoverTask(Task):
         self.allow_unsafe = allow_unsafe
         self.all_at_once = all_at_once
         self.otp_nodes_to_fo = list()
-        self.rest = RestConnection(self.servers[0])
+        self.rest = ClusterRestAPI(self.servers[0])
+        self.cluster_util = global_vars.cluster_util
 
     def call(self):
         self.start_task()
         for server in self.to_failover:
-            for node in self.rest.node_statuses():
+            for node in self.cluster_util.get_nodes(self.servers[0]):
                 if (server.hostname if self.use_hostnames else server.ip) == node.ip \
                         and int(server.port) == int(node.port):
                     self.otp_nodes_to_fo.append(node.id)
@@ -7762,13 +7765,13 @@ class FailoverTask(Task):
                             .format(self.otp_nodes_to_fo, self.graceful))
         try:
             self._failover_nodes()
-            rest = RestConnection(self.servers[0])
+            rest = ClusterRestAPI(self.servers[0])
             timeout = 300
             all_nodes_foed = False
             while timeout > 0 and all_nodes_foed is False:
                 all_nodes_foed = True
                 for otp_node in self.otp_nodes_to_fo:
-                    for nodes in rest.get_pools_default()["nodes"]:
+                    for nodes in rest.cluster_details()[1]["nodes"]:
                         if nodes["otpNode"] == otp_node:
                             if nodes["clusterMembership"] != "inactiveFailed":
                                 all_nodes_foed = False
@@ -7785,22 +7788,29 @@ class FailoverTask(Task):
     def _failover_nodes(self):
         # call REST fail_over for the nodes to be failed over all at once
         if self.all_at_once:
-            result = self.rest.fail_over(self.otp_nodes_to_fo, self.graceful,
-                                         self.allow_unsafe, self.all_at_once)
-            if not result:
+            if self.graceful:
+                status, _ = self.rest.perform_graceful_failover(self.otp_nodes_to_fo)
+            else:
+                status, _ = self.rest.perform_hard_failover(self.otp_nodes_to_fo)
+
+            if not status:
                 self.set_exception("Node failover failed!!")
         else:
             # call REST fail_over for the nodes to be failed over one by one
             for otp_node in self.otp_nodes_to_fo:
-                result = self.rest.fail_over(otp_node, self.graceful,
-                                             self.allow_unsafe)
-                if not result:
+                if self.graceful:
+                    status, _ = self.rest.perform_graceful_failover(otp_node)
+                else:
+                    status, _ = self.rest.perform_hard_failover(otp_node)
+
+                if not status:
                     self.set_exception("Node failover failed!!")
-        self.rest.monitorRebalance()
+
+        RebalanceUtil(self.cluster).monitor_rebalance()
 
         if self.validate_bucket_ranking:
             # Validating bucket ranking post rebalance
-            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, self.servers[0])
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(self.cluster, None)
             if not validate_ranking_res:
                 self.log.error("The vbucket movement was not according to bucket ranking")
                 self.set_result(False)

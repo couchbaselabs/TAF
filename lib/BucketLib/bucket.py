@@ -282,7 +282,7 @@ class Bucket(object):
         self.nodes = None
         self.stats = BucketStats()
         self.servers = list()
-        self.num_vbuckets = int(num_vbs) if num_vbs else None
+        self.numVBuckets = int(num_vbs) if num_vbs else None
         self.vbuckets = list()
         self.forward_map = list()
         self.scopes = dict()

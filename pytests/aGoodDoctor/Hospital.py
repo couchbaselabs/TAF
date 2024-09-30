@@ -8,6 +8,7 @@ import random
 import threading
 
 from BucketLib.BucketOperations import BucketHelper
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
 from bkrs import DoctorBKRS
 from constants.cb_constants.CBServer import CbServer
@@ -318,11 +319,10 @@ class Murphy(BaseTestCase, OPD):
         self.writer_threads = self.input.param("writer_threads", "disk_io_optimized")
         self.reader_threads = self.input.param("reader_threads", "disk_io_optimized")
         self.storage_threads = self.input.param("storage_threads", 40)
-        self.bucket_util.update_memcached_num_threads_settings(
-            self.cluster.master,
-            num_writer_threads=self.writer_threads,
-            num_reader_threads=self.reader_threads,
-            num_storage_threads=self.storage_threads)
+        ClusterRestAPI(self.cluster.master).manage_cluster_connections(
+                                num_writer_threads=self.writer_threads,
+                                num_reader_threads=self.reader_threads,
+                                num_storage_threads=self.storage_threads)
 
     def tearDown(self):
         return

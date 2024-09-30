@@ -256,7 +256,6 @@ class UpgradeBase(BaseTestCase):
 
         self.cluster_features = \
             self.upgrade_helper.get_supported_features(self.cluster.version)
-        self.set_feature_specific_params()
 
         # Disable auto-failover to avoid failover of nodes
         if not community_upgrade:
@@ -362,11 +361,6 @@ class UpgradeBase(BaseTestCase):
         upgrade_version = self.input.param("upgrade_version", "8.0.0-1000")
         self.upgrade_chain = upgrade_chains[chain_to_test] + [upgrade_version]
         self.upgrade_version = self.upgrade_chain[0]
-
-    def set_feature_specific_params(self):
-        if "magma" in self.cluster_features:
-            ClusterRestAPI(self.cluster.master).set_internal_settings(
-                "magmaMinMemoryQuota", 256)
 
     def enable_verify_tls(self, master_node, level=None):
         if not level:
@@ -576,14 +570,24 @@ class UpgradeBase(BaseTestCase):
                     cbstats.vbucket_list(self.bucket.name, vb_type)
             cbstats.disconnect()
         if install_on_spare_node:
+            install_tasks = ["populate_build_url", "check_url_status",
+                             "download_build", "uninstall", "install"]
             # Install target version on spare node
             self.upgrade_helper.new_install_version_on_all_nodes(
                 nodes=[self.spare_node], version=version,
-                cluster_profile=self.cluster_profile)
-            self.assertTrue(
-                self.cluster_util.is_ns_server_running(self.spare_node, 30),
-                "{} - REST endpoint unreachable after 30 seconds"
-                .format(self.spare_node.ip))
+                cluster_profile=self.cluster_profile,
+                install_tasks=install_tasks)
+            self.sleep(60, "Wait after installation on the spare node")
+
+            # Initialize paths on the spare node
+            status, content = ClusterRestAPI(self.spare_node).initialize_node(
+                self.spare_node.rest_username,
+                self.spare_node.rest_password,
+                data_path=self.spare_node.data_path,
+                index_path=self.spare_node.index_path,
+                cbas_path=self.spare_node.cbas_path,
+                eventing_path=self.spare_node.eventing_path)
+            self.assertTrue(status, f"Init node failed: {content}")
 
         if self.rebalance_failure_condition is not None:
             nodes_to_induce = self.cluster.nodes_in_cluster + [self.spare_node]

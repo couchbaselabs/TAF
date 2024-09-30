@@ -266,8 +266,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         failover_count = 0
         self.log.info("failing over nodes {0}".format(self.failover_nodes))
         for failover_node in self.failover_nodes:
-            _ = self.task.failover(self.known_nodes, failover_nodes=[failover_node],
-                                                    graceful=graceful, wait_for_pending=120)
+            _ = self.task.failover(self.cluster, failover_nodes=[failover_node],
+                                   graceful=graceful, wait_for_pending=120)
             failover_count = failover_count + 1
             self.wait_for_failover_or_assert(failover_count)
 

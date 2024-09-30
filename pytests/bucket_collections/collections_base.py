@@ -75,10 +75,9 @@ class CollectionBase(ClusterSetup):
         self.disk_optimized_thread_settings = \
             self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            self.bucket_util.update_memcached_num_threads_settings(
-                self.cluster.master,
-                num_writer_threads="disk_io_optimized",
-                num_reader_threads="disk_io_optimized")
+            ClusterRestAPI(self.cluster.master).manage_cluster_connections(
+                                    num_writer_threads="disk_io_optimized",
+                                    num_reader_threads="disk_io_optimized")
         try:
             self.collection_setup()
             CollectionBase.setup_collection_history_settings(self)
@@ -125,11 +124,10 @@ class CollectionBase(ClusterSetup):
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
         if self.disk_optimized_thread_settings:
-            self.bucket_util.update_memcached_num_threads_settings(
-                self.cluster.master,
-                num_writer_threads="default",
-                num_reader_threads="default",
-                num_storage_threads="default")
+            ClusterRestAPI(self.cluster.master).manage_cluster_connections(
+                                        num_writer_threads="default",
+                                        num_reader_threads="default",
+                                        num_storage_threads="default")
         super(CollectionBase, self).tearDown()
 
     def collection_setup(self):

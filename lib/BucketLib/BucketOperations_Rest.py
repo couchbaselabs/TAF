@@ -330,7 +330,7 @@ class BucketHelper(BucketRestApi):
             serverless = bucket_params['serverless']
             init_params[Bucket.weight] = serverless.weight
             init_params[Bucket.width] = serverless.width
-        num_vbs = bucket_params.get("num_vbuckets")
+        num_vbs = bucket_params.get("numVBuckets")
         if num_vbs:
             init_params[Bucket.numVBuckets] = num_vbs
 

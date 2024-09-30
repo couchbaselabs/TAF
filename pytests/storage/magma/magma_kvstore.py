@@ -1,7 +1,9 @@
 import os
+import random
 import threading
 import time
 
+from BucketLib.bucket import Bucket
 from cb_constants.CBServer import CbServer
 from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -391,6 +393,40 @@ class KVStoreTests(MagmaBaseTest):
             for task in task_info:
                 self.task_manager.get_task_result(task)
             count += 1
+
+    def test_bucket_creation_negative_cases(self):
+
+        # Creating a Magma bucket with 100MB RAM and 1024 vbuckets
+        self.try_create_bucket(Bucket.StorageBackend.magma, 100, 1024, "bucket1")
+
+        # Creating a CouchStore bucket with 128 vbuckets
+        self.try_create_bucket(Bucket.StorageBackend.couchstore,
+                               random.randint(100, 1024), 128, "bucket2")
+
+        # Creating a Magma bucket any RAM Quota < 1024MB and 1024 vbuckets
+        self.try_create_bucket(Bucket.StorageBackend.magma, random.randint(100, 1023),
+                               1024, "bucket3")
+
+    def try_create_bucket(self, storage_backend, ram_quota, vbuckets, bucket_name,
+                          bucket_type=Bucket.Type.MEMBASE):
+
+        log_message = "Creating a {} bucket with " \
+                        "{}MB RAM Quota and {} vbuckets".format(
+                        storage_backend, ram_quota, vbuckets)
+        self.log.info(log_message)
+        try:
+            self.bucket_util.create_default_bucket(
+                self.cluster,
+                bucket_type=bucket_type,
+                bucket_name=bucket_name,
+                ram_quota=ram_quota,
+                storage=storage_backend,
+                vbuckets=vbuckets
+            )
+        except Exception as e:
+            self.log.info(e)
+        else:
+            self.fail("Bucket creation succeeded")
 
     def test_cbstats_slow_getStats_ops(self):
 

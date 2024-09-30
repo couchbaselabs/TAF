@@ -599,7 +599,7 @@ class StorageBase(BaseTestCase):
             self.java_doc_loader(generator=self.gen_create,
                                 doc_ops="create",
                                 process_concurrency=2,
-                                skip_default=False)
+                                skip_default=True)
         else:
             task = self.data_load()
             self.wait_for_doc_load_completion(task)

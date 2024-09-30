@@ -87,6 +87,7 @@ class CollectionsRebalance(CollectionBase):
         self.allowed_hosts = self.input.param("allowed_hosts", False)
         self.update_max_ttl = self.input.param("update_max_ttl", False)
         self.remaining_docs = self.input.param("remaining_docs", 0)
+        self.cluster.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -359,7 +360,7 @@ class CollectionsRebalance(CollectionBase):
                                                     self.updated_num_replicas)
         self.log.info("failing over nodes {0}".format(failover_nodes))
         for failover_node in failover_nodes:
-            result = self.task.failover(known_nodes,
+            result = self.task.failover(self.cluster,
                                         failover_nodes=[failover_node],
                                         graceful=False,
                                         wait_for_pending=wait_for_pending)
@@ -494,12 +495,9 @@ class CollectionsRebalance(CollectionBase):
         elif rebalance_operation == "swap_rebalance":
             if step_count == -1:
                 if self.warmup:
-                    for node in add_nodes:
-                        self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                           node.ip, self.cluster.servers[self.nodes_init].port)
                     node = known_nodes[-1]
                     self.warmup_node(node)
-                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
@@ -512,7 +510,7 @@ class CollectionsRebalance(CollectionBase):
                                 bucket, servers=[node], wait_time=1200))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
+                        operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
                                                               retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -522,10 +520,7 @@ class CollectionsRebalance(CollectionBase):
                         self.bucket_util.update_all_bucket_replicas(
                             self.cluster, self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats(self.cluster)
-                    for node in add_nodes:
-                        self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                           node.ip, self.cluster.servers[self.nodes_init].port)
-                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
+                    operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
                                                           check_vbucket_shuffling=False,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(remove_nodes[0])
@@ -561,12 +556,9 @@ class CollectionsRebalance(CollectionBase):
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "rebalance_in_out":
             if self.warmup:
-                for node in add_nodes:
-                    self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                       node.ip, self.cluster.servers[self.nodes_init].port)
                 node = known_nodes[-1]
                 self.warmup_node(node)
-                operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
+                operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(remove_nodes[0])
                 self.task.jython_task_manager.get_task_result(operation)
@@ -587,10 +579,7 @@ class CollectionsRebalance(CollectionBase):
                     self.bucket_util.update_all_bucket_replicas(
                         self.cluster, self.updated_num_replicas)
                     self.bucket_util.print_bucket_stats(self.cluster)
-                for node in add_nodes:
-                    self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                       node.ip, self.cluster.servers[self.nodes_init].port)
-                operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
+                operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
                                                       retry_get_process_num=self.retry_get_process_num)
                 self.execute_N1qltxn(remove_nodes[0])
                 if self.compaction:
@@ -601,7 +590,7 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
                 for failover_node in failover_nodes:
-                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                 graceful=True, wait_for_pending=wait_for_pending)
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
@@ -631,7 +620,7 @@ class CollectionsRebalance(CollectionBase):
                     self.execute_N1qltxn(new_failover_nodes[0])
                     self.execute_allowedhosts()
                     for failover_node in new_failover_nodes:
-                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                     graceful=True, wait_for_pending=wait_for_pending)
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
@@ -653,7 +642,7 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
                 for failover_node in failover_nodes:
-                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                 graceful=False, wait_for_pending=wait_for_pending)
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
@@ -681,7 +670,7 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     for failover_node in new_failover_nodes:
-                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                     graceful=False, wait_for_pending=wait_for_pending)
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
@@ -701,7 +690,7 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
                 for failover_node in failover_nodes:
-                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                 graceful=True, wait_for_pending=wait_for_pending)
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
@@ -711,7 +700,8 @@ class CollectionsRebalance(CollectionBase):
                 self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
-                    self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
+                    self.rest.set_failover_recovery_type(otp_node='ns_1@' + failover_node.ip,
+                                                         recovery_type=self.recovery_type)
                 if self.compaction:
                     self.compact_all_buckets()
                 # Rebalance all the nodes
@@ -732,7 +722,7 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     for failover_node in new_failover_nodes:
-                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                     graceful=True, wait_for_pending=wait_for_pending)
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
@@ -742,8 +732,8 @@ class CollectionsRebalance(CollectionBase):
                     self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
-                        self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
-                                                    recoveryType=self.recovery_type)
+                        self.rest.set_failover_recovery_type(otp_node='ns_1@' + failover_node.ip,
+                                                             recovery_type=self.recovery_type)
                     operation = self.task.async_rebalance(self.cluster, [], [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     iter_count = iter_count + 1
@@ -754,7 +744,7 @@ class CollectionsRebalance(CollectionBase):
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
                 for failover_node in failover_nodes:
-                    result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                 graceful=False, wait_for_pending=wait_for_pending)
                     self.assertTrue(result, "Failover of node {0} failed".
                                     format(failover_node.ip))
@@ -764,7 +754,8 @@ class CollectionsRebalance(CollectionBase):
                 self.data_load_after_failover()
                 # Mark the failover nodes for recovery
                 for failover_node in failover_nodes:
-                    self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip, recoveryType=self.recovery_type)
+                    self.rest.set_failover_recovery_type(otp_node='ns_1@' + failover_node.ip,
+                                                         recovery_type=self.recovery_type)
                 if self.compaction:
                     self.compact_all_buckets()
                 # Rebalance all the nodes
@@ -785,7 +776,7 @@ class CollectionsRebalance(CollectionBase):
                 for new_failover_nodes in failover_list:
                     self.log.info("failing over nodes {0}".format(new_failover_nodes))
                     for failover_node in new_failover_nodes:
-                        result = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        result = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                     graceful=False, wait_for_pending=wait_for_pending)
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
@@ -795,8 +786,8 @@ class CollectionsRebalance(CollectionBase):
                     self.data_load_after_failover()
                     # Mark the failover nodes for recovery
                     for failover_node in new_failover_nodes:
-                        self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
-                                                    recoveryType=self.recovery_type)
+                        self.rest.set_failover_recovery_type(otp_node='ns_1@' + failover_node.ip,
+                                                             recovery_type=self.recovery_type)
                     operation = self.task.async_rebalance(self.cluster, [], [],
                                                           retry_get_process_num=self.retry_get_process_num)
                     iter_count = iter_count + 1
@@ -1012,8 +1003,9 @@ class CollectionsRebalance(CollectionBase):
         nodes_in = self.cluster.servers[len(nodes_in_cluster):len(nodes_in_cluster) + self.nodes_in]
         for node in nodes_in:
             if node not in nodes_in_cluster:
-                self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                              node.ip, node.port, zone_name=zone_name, services=["kv"])
+                self.rest.add_node(node.ip, self.cluster.master.rest_username,
+                                   self.cluster.master.rest_password,
+                                   services=["kv"])
         self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
         self.data_validation_collection()
@@ -1319,7 +1311,7 @@ class CollectionsRebalance(CollectionBase):
                     break
             self.cluster.master = self.nodes_in_cluster[0]
             self.log.info("Failing over node(s): {0}".format(failover_nodes))
-            result = self.task.failover(self.nodes_in_cluster,
+            result = self.task.failover(self.cluster,
                                         failover_nodes=failover_nodes,
                                         graceful=self.graceful)
             self.assertTrue(result, "Failover failed")

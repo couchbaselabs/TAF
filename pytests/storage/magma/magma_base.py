@@ -5,6 +5,7 @@ import time
 import threading
 import json
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -60,19 +61,25 @@ class MagmaBaseTest(StorageBase):
         self.disk_usage = dict()
 
         # Creating clients in SDK client pool
+        self.log.info("Creating SDK clients for client_pool")
+        max_clients = min(self.task_manager.number_of_threads, 20)
+        if self.standard_buckets > 20:
+            max_clients = self.standard_buckets
+        clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
         if self.load_docs_using == "default_loader":
             self.cluster.sdk_client_pool = SDKClientPool()
-            self.log.info("Creating SDK clients for client_pool")
-            max_clients = min(self.task_manager.number_of_threads, 20)
-            if self.standard_buckets > 20:
-                max_clients = self.standard_buckets
-            clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
             for bucket in self.cluster.buckets:
                 self.cluster.sdk_client_pool.create_clients(
                     self.cluster, bucket, [self.cluster.master],
                     clients_per_bucket,
                     compression_settings=self.sdk_compression)
-
+        elif self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(self.cluster.master,
+                                                            self.cluster.master.rest_username,
+                                                            self.cluster.master.rest_password,
+                                                            bucket.name,
+                                                            clients_per_bucket)
         # Initial Data Load
         self.loader_dict = None
         self.init_loading = self.input.param("init_loading", True)

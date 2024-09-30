@@ -6,16 +6,21 @@ from couchbase_helper.cluster import ServerTasks
 from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from xdcr_utils.xdcr_ready_functions import XDCRUtils
+from cb_constants.CBServer import CbServer
 
 
 class StorageMigration(BaseTestCase):
 
     def setUp(self):
         super(StorageMigration, self).setUp()
+        self.migration_with_xdcr = self.input.param("migration_with_xdcr", True)
         self.source_bucket_name = self.input.param("source_bucket_name", "source_bucket")
         self.target_bucket_name = self.input.param("target_bucket_name", "target_bucket")
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.item_count = self.input.param("item_count", 15000000)
+
+        self.current_storage = self.input.param("current_storage", Bucket.StorageBackend.couchstore)
+        self.preferred_storage = self.input.param("preferred_storage", Bucket.StorageBackend.magma)
 
         self.retry_get_process_num = self.input.param("retry_get_process_num", 100)
 
@@ -27,33 +32,42 @@ class StorageMigration(BaseTestCase):
         self.cert_name = self.input.param("cert_name", "ca.pem")
 
         self.clusters = self.get_clusters()
-        if self.num_nodes_in_cluster > 1:
-            for cluster in self.clusters:
-                self.cluster_util.add_all_nodes_then_rebalance(
-                    cluster, cluster.servers[1:self.nodes_init])
 
-        xdcr_task_manager = TaskManager(10)
-        xdcr_task = ServerTasks(xdcr_task_manager)
-        self.xdcr_util = XDCRUtils(self.clusters, xdcr_task, xdcr_task_manager, False)
-        self.source_cluster = self.xdcr_util.get_cb_cluster_by_name("C1")
-        self.destination_cluster = self.xdcr_util.get_cb_cluster_by_name("C2")
+        for cluster in self.clusters:
+            nodes_in = cluster.servers[1:self.nodes_init]
+            if self.services_init is None:
+                self.services = ["kv"] * self.nodes_init
+            else:
+                self.services = self.services_init.replace(":", ",").split("-")
 
-        self.source_cluster.nodes_in_cluster = \
-            self.cluster_util.get_nodes_in_cluster(self.source_cluster)
-        self.destination_cluster.nodes_in_cluster = \
-            self.cluster_util.get_nodes_in_cluster(self.destination_cluster)
-        self.source_cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.source_cluster)
-        self.destination_cluster.kv_nodes = \
-            self.cluster_util.get_kv_nodes(self.destination_cluster)
-        self.spare_node = self.source_cluster.servers[self.nodes_init]
+            result = self.task.rebalance(cluster, nodes_in, [],
+                                        services=self.services[1:])
+            self.assertTrue(result, "Initial rebalance failed")
+            for idx, node in enumerate(cluster.nodes_in_cluster):
+                node.services = self.services[idx]
+
+        if self.migration_with_xdcr:
+            xdcr_task_manager = TaskManager(10)
+            xdcr_task = ServerTasks(xdcr_task_manager)
+            self.xdcr_util = XDCRUtils(self.clusters, xdcr_task, xdcr_task_manager, False)
+            self.source_cluster = self.xdcr_util.get_cb_cluster_by_name("C1")
+            self.destination_cluster = self.xdcr_util.get_cb_cluster_by_name("C2")
+
+            self.source_cluster.nodes_in_cluster = \
+                self.cluster_util.get_nodes_in_cluster(self.source_cluster)
+            self.destination_cluster.nodes_in_cluster = \
+                self.cluster_util.get_nodes_in_cluster(self.destination_cluster)
+            self.source_cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.source_cluster)
+            self.destination_cluster.kv_nodes = \
+                self.cluster_util.get_kv_nodes(self.destination_cluster)
+            self.spare_node = self.source_cluster.servers[self.nodes_init]
 
         if self.enforce_tls:
             self.log.info("Enabling TLS on both clusters")
             self.enable_tls_on_nodes()
-            for server in self.source_cluster.servers:
-                self.set_ports_for_server(server, "ssl")
-            for server in self.destination_cluster.servers:
-                self.set_ports_for_server(server, "ssl")
+            for cluster in self.clusters:
+                for server in cluster.servers:
+                    self.set_ports_for_server(server, "ssl")
 
         for cluster in self.clusters:
             self.cluster_util.print_cluster_stats(cluster)
@@ -168,3 +182,42 @@ class StorageMigration(BaseTestCase):
                     source_bucket_item_count, target_bucket_item_count)
         self.assertEqual(source_bucket_item_count, target_bucket_item_count, err_msg)
         self.log.info("Validated bucket item count on the source and remote cluster")
+
+
+    def test_migration_scenarios(self):
+
+        self.cluster = self.clusters[0]
+
+        # Create a bucket
+        bucket_name = self.current_storage + "_bucket"
+        self.bucket_util.create_default_bucket(
+                    self.cluster,
+                    ram_quota=self.bucket_ram_quota,
+                    storage=self.current_storage,
+                    bucket_name=bucket_name)
+
+        bucket_to_migrate = [bucket for bucket in self.cluster.buckets
+                            if bucket.name == bucket_name][0]
+
+        if self.preferred_storage == Bucket.StorageBackend.couchstore:
+            self.log.info("Disabling history before migrating to CouchStore")
+            self.bucket_util.update_bucket_property(
+                                self.cluster.master,
+                                bucket_to_migrate,
+                                history_retention_collection_default="false")
+            self.bucket_util.set_history_retention_for_collection(self.cluster.master,
+                                    bucket_to_migrate, "_default", "_default", "false")
+
+        # Attempt to migrate the bucket
+        msg = "Migration from {0} {1}MB {2}vB to {3} {1}MB {2}vB".format(self.current_storage,
+                                self.bucket_ram_quota, self.vbuckets, self.preferred_storage)
+        try:
+            self.bucket_util.update_bucket_property(
+                                self.cluster.master,
+                                bucket_to_migrate,
+                                storageBackend=self.preferred_storage)
+        except Exception as e:
+            self.log.info(e)
+            self.log.info(msg + "failed as expected")
+        else:
+            self.fail(msg + "succeeded")

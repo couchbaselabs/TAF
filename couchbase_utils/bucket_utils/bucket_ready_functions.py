@@ -2003,6 +2003,7 @@ class BucketUtils(ScopeUtils):
         self.task_manager.get_task_result(task)
         if task.result is False:
             raise_exception = "BucketCreateTask failed"
+            raise Exception(raise_exception)
 
         # Update server_objects with the bucket object for future reference
         self.get_updated_bucket_server_list(cluster, bucket)
@@ -2843,7 +2844,7 @@ class BucketUtils(ScopeUtils):
                             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
                     except KeyError:
                         resident_ratio = 100
-                    num_vbuckets = str(bucket.num_vbuckets)
+                    num_vbuckets = str(bucket.numVBuckets)
                 bucket_data = [
                     bucket.name,
                     "{} / {}".format(bucket.bucketType, storage_backend),
@@ -3087,21 +3088,6 @@ class BucketUtils(ScopeUtils):
             magma_key_tree_data_block_size=magma_key_tree_data_block_size,
             magma_seq_tree_data_block_size=magma_seq_tree_data_block_size,
             storageBackend=storageBackend)
-
-    def update_memcached_num_threads_settings(self, cluster_node,
-                                              num_writer_threads=None,
-                                              num_reader_threads=None,
-                                              num_storage_threads=None):
-        params = dict()
-        if num_writer_threads is not None:
-            params["num_writer_threads"] = num_writer_threads
-        if num_reader_threads is not None:
-            params["num_reader_threads"] = num_reader_threads
-        if num_storage_threads is not None:
-            params["num_storage_threads"] = num_storage_threads
-
-        self.log.info("Updating memcached num_threads: %s" % params)
-        BucketHelper(cluster_node).update_memcached_settings(**params)
 
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:
@@ -4975,7 +4961,7 @@ class BucketUtils(ScopeUtils):
             # only by the update_bucket_props() to track the current value
             bucket.name = parsed[Bucket.name]
             if Bucket.numVBuckets in parsed:
-                bucket.num_vbuckets = parsed[Bucket.numVBuckets]
+                bucket.numVBuckets = parsed[Bucket.numVBuckets]
 
             bucket.bucketType = parsed[Bucket.bucketType]
             if Bucket.maxTTL in parsed:
@@ -5881,7 +5867,7 @@ class BucketUtils(ScopeUtils):
                                      len(server_bucket["nodes"])))
 
             # Validate bucket.num_vbs against expected value
-            num_vb = t_bucket.num_vbuckets or CbServer.Serverless.VB_COUNT
+            num_vb = t_bucket.numVBuckets or CbServer.Serverless.VB_COUNT
             self.log.debug("%s - required vb_num=%s, actual=%s"
                            % (t_bucket.name,
                               server_bucket[Bucket.numVBuckets], num_vb))

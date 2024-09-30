@@ -320,9 +320,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         cluster_name, cluster, services=services,
                         services_mem_quota_percent=mem_quota_percent)
 
-                # Set this unconditionally
-                ClusterRestAPI(cluster.master).set_internal_settings(
-                    "magmaMinMemoryQuota", 256)
                 if self.nebula and CbServer.cluster_profile == "serverless":
                     try:
                         # Check out nebula git repo

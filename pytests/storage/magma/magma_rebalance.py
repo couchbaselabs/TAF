@@ -153,7 +153,7 @@ class MagmaRebalance(MagmaBaseTest):
                                                     self.updated_num_replicas)
         failover_count = 0
         for failover_node in failover_nodes:
-            failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+            failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                     graceful=False, wait_for_pending=wait_for_pending)
             failover_count = failover_count + 1
             self.wait_for_failover_or_assert(failover_count)
@@ -374,7 +374,7 @@ class MagmaRebalance(MagmaBaseTest):
             if step_count == -1:
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                             graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -400,7 +400,7 @@ class MagmaRebalance(MagmaBaseTest):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                                 graceful=True, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
@@ -419,7 +419,7 @@ class MagmaRebalance(MagmaBaseTest):
             if step_count == -1:
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                             graceful=False, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -445,7 +445,7 @@ class MagmaRebalance(MagmaBaseTest):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                                 graceful=False, wait_for_pending=wait_for_pending)
                         failover_count = failover_count + 1
                         self.wait_for_failover_or_assert(failover_count)
@@ -464,7 +464,7 @@ class MagmaRebalance(MagmaBaseTest):
             if (step_count == -1):
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                             graceful=True, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -494,7 +494,7 @@ class MagmaRebalance(MagmaBaseTest):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                                 graceful=True, wait_for_pending=wait_for_pending)
 
                         failover_count = failover_count + 1
@@ -517,7 +517,7 @@ class MagmaRebalance(MagmaBaseTest):
             if (step_count == -1):
                 failover_count = 0
                 for failover_node in failover_nodes:
-                    failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                    failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                             graceful=False, wait_for_pending=wait_for_pending)
                     failover_count = failover_count + 1
                     self.wait_for_failover_or_assert(failover_count)
@@ -547,7 +547,7 @@ class MagmaRebalance(MagmaBaseTest):
                 for new_failover_nodes in failover_list:
                     failover_count = 0
                     for failover_node in new_failover_nodes:
-                        failover_operation = self.task.failover(known_nodes, failover_nodes=[failover_node],
+                        failover_operation = self.task.failover(self.cluster, failover_nodes=[failover_node],
                                                                 graceful=False, wait_for_pending=wait_for_pending)
 
                         failover_count = failover_count + 1

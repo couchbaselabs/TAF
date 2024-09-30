@@ -445,7 +445,8 @@ class ClusterUtils:
             report_url = cluster_task["lastReportURI"][1:] \
                 if cluster_task["lastReportURI"][0] == "/" \
                 else cluster_task["lastReportURI"]
-            rebalance_report = rest_orchestrator.rebalance_report(report_url)
+            report_id = report_url.split("=")[1]
+            _, rebalance_report = rest_orchestrator.rebalance_report(report_id)
 
             rebalance_start_time_report = rebalance_report["startTime"]
             self.log.debug("The rebalance report is fetched from {}"
@@ -1402,7 +1403,7 @@ class ClusterUtils:
     def rebalance(cluster, wait_for_completion=True, ejected_nodes=[],
                   validate_bucket_ranking=True):
         rest = ClusterRestAPI(cluster.master)
-        nodes = ClusterUtils.get_nodes(cluster)
+        nodes = ClusterUtils.get_nodes(cluster.master)
         result, _ = rest.rebalance(known_nodes=[node.id for node in nodes],
                                    eject_nodes=ejected_nodes)
         if result and wait_for_completion:

@@ -382,7 +382,6 @@ class UpgradeTests(UpgradeBase):
             self.cluster.version = upgrade_version
             self.cluster_features = \
                 self.upgrade_helper.get_supported_features(self.cluster.version)
-            self.set_feature_specific_params()
 
         ### Printing cluster stats after the upgrade of the whole cluster ###
         self.cluster_util.print_cluster_stats(self.cluster)
@@ -777,6 +776,43 @@ class UpgradeTests(UpgradeBase):
             node_to_upgrade = self.fetch_node_to_upgrade()
 
         self.PrintStep("Upgrade of the whole cluster complete")
+
+    def test_upgrade_magma_default(self):
+
+        self.PrintStep("Upgrade begins...")
+        for upgrade_version in self.upgrade_chain:
+            itr = 0
+            self.initial_version = self.upgrade_version
+            self.upgrade_version = upgrade_version
+            ### Fetching the first node to upgrade ###
+            node_to_upgrade = self.fetch_node_to_upgrade()
+
+            while node_to_upgrade is not None:
+                self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
+
+                self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                        self.upgrade_version)
+                itr += 1
+                self.PrintStep("Upgrade of node {0} done".format(itr))
+                self.cluster_util.print_cluster_stats(self.cluster)
+
+                ### Validating mixed mode ###
+                self.log.info("Validating negative bucket creation cases")
+                self.create_bucket_negative_scenarios(Bucket.StorageBackend.magma,
+                                                    100, 1024, "test_bucket1")
+                self.create_bucket_negative_scenarios(Bucket.StorageBackend.magma,
+                                                    100, 128, "test_bucket2")
+                self.create_bucket_negative_scenarios(Bucket.StorageBackend.magma,
+                                                    1024, 128, "test_bucket3")
+
+                ### Fetching the next node to upgrade ###
+                node_to_upgrade = self.fetch_node_to_upgrade()
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.PrintStep("Upgrade of the whole cluster complete")
+
+        self.post_upgrade_validation()
+
 
     def test_bucket_durability_upgrade(self):
         self.key = self.input.param("key", "test_collections")
@@ -2265,3 +2301,68 @@ class UpgradeTests(UpgradeBase):
         self.create_new_indexes_for_new_docs()
         self.log.info("Initial index count = {}".format(self.index_count))
         sdk_client.close()
+
+    def create_bucket_negative_scenarios(self, storage_backend, ram_quota, vbuckets,
+                                         bucket_name, bucket_type=Bucket.Type.MEMBASE):
+
+        log_message = "Creating a {} bucket with " \
+                        "{}MB RAM Quota and {} vbuckets".format(
+                        storage_backend, ram_quota, vbuckets)
+        self.log.info(log_message)
+        try:
+            self.bucket_util.create_default_bucket(
+                self.cluster,
+                bucket_type=bucket_type,
+                bucket_name=bucket_name,
+                ram_quota=ram_quota,
+                storage=storage_backend,
+                vbuckets=vbuckets
+            )
+        except Exception as e:
+            self.log.info(e)
+            self.log.info("Bucket creation failed as expected")
+        else:
+            self.fail("Bucket creation succeeded")
+
+    def post_upgrade_validation(self):
+
+        # Validate magmaMinMemoryQuota has been updated to 100
+
+        # Creation of a Magma 100MB and 128 vbuckets
+        self.bucket_util.create_default_bucket(
+                self.cluster,
+                bucket_name="new_bucket1",
+                ram_quota=100,
+                storage=Bucket.StorageBackend.magma,
+                vbuckets=128
+            )
+
+        # Creation of a Magma bucket with any RAM in the range(100, 1024)
+        # and 128 vbuckets
+        self.bucket_util.create_default_bucket(
+                self.cluster,
+                bucket_name="new_bucket2",
+                ram_quota=random.randint(100, 1023),
+                storage=Bucket.StorageBackend.magma,
+                vbuckets=128
+            )
+
+        # Creation of a Magma bucket with RAM > 1GB and 1024 vbuckets
+        self.bucket_util.create_default_bucket(
+                self.cluster,
+                bucket_name="new_bucket3",
+                ram_quota=1536,
+                storage=Bucket.StorageBackend.magma,
+                vbuckets=1024
+            )
+
+        # Validate that editing RAM from 1GB to 100MB should be blocked
+        sel_bucket = [bucket for bucket in self.cluster.buckets
+                      if bucket.name == "new_bucket3"][0]
+        try:
+            self.bucket_util.update_bucket_property(self.cluster.master,
+                                                    sel_bucket,
+                                                    ram_quota_mb=100)
+        except Exception as e:
+            self.log.info(e)
+            self.log.info("Editing RAM Quota was restricted as expected")

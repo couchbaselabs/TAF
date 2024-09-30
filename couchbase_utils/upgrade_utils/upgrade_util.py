@@ -4,7 +4,6 @@ from builds.build_query import BuildQuery
 from cb_constants import CbServer
 from global_vars import cluster_util
 from membase.api.rest_client import RestConnection
-from scripts.old_install import InstallerJob
 from shell_util.remote_connection import RemoteMachineShellConnection
 from ssh_util.install_util.constants.build import BuildUrl
 from upgrade_lib.couchbase import features
@@ -19,7 +18,6 @@ class CbServerUpgrade(object):
     def __init__(self, logger, product):
         self.log = logger
         self.product = product
-        self.installer = InstallerJob()
         self.helper = InstallHelper(logger)
 
         self.install_tasks = ["populate_build_url", "check_url_status", "download_build",
