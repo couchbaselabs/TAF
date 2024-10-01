@@ -143,7 +143,8 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id,
                     False, headers=header)
-            if self.validate_testcase(result, [409, 202], testcase, failures):
+            self.validate_testcase(result, [409, 202], testcase, failures)
+            if result.status_code == 202:
                 time.sleep(1)
                 if not self.validate_onoff_state(["turningOn", "healthy"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
@@ -243,7 +244,6 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], False, **kwarg)
-
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 time.sleep(1)
                 if not self.validate_onoff_state(["turningOn", "healthy"]):

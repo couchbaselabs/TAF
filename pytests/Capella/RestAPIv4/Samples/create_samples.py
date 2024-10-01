@@ -146,13 +146,7 @@ class CreateSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"], header)
-            if self.validate_testcase(result, [201], testcase, failures):
-                self.log.info("Wait for data load to complete")
-                time.sleep(10)
-                sample_id = result.json()['bucketId']
-                self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    sample_id)
+            self.validate_testcase(result, [201], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -246,13 +240,7 @@ class CreateSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], self.expected_res["name"], kwarg)
-            if self.validate_testcase(result, [201], testcase, failures):
-                self.log.info("Wait for data load to complete")
-                time.sleep(10)
-                sample_id = result.json()['bucketId']
-                self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    sample_id)
+            self.validate_testcase(result, [201], testcase, failures)
 
         if failures:
             for fail in failures:

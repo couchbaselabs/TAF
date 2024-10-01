@@ -99,7 +99,7 @@ class CreateProject(GetProject):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectCreator"
-        ]):
+        ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)

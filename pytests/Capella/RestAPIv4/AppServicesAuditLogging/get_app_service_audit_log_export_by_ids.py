@@ -13,8 +13,8 @@ class GetAuditLogExports(GetAppService):
         GetAppService.setUp(self, nomenclature)
         self.expected_res = {
             # Creation params.
-            "start": self.get_utc_datetime(-30),
-            "end": self.get_utc_datetime(0),
+            "start": self.get_utc_datetime(-60),
+            "end": self.get_utc_datetime(-10),
 
             # Response params.
             "data": {

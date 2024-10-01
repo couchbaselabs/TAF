@@ -96,7 +96,7 @@ class ListTenantEvents(GetProject):
             "organizationOwner", "projectCreator", "projectOwner",
             "projectManager", "projectViewer", "projectDataReader",
             "projectDataReaderWriter"
-        ]):
+        ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)

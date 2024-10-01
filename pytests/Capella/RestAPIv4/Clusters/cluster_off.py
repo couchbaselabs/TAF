@@ -144,7 +144,8 @@ class ClusterOff(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
                     self.organisation_id, self.project_id, self.cluster_id,
                     headers=header)
-            if self.validate_testcase(result, [409, 202], testcase, failures):
+            self.validate_testcase(result, [409, 202], testcase, failures)
+            if result.status_code == 202:
                 time.sleep(1)
                 if not self.validate_onoff_state(["turningOff", "turnedOff"]):
                     self.log.error("Status == {}, State incorrect: {}"

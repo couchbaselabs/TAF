@@ -6,7 +6,6 @@ Created on June 28, 2023
 
 import copy
 import time
-import datetime
 import string
 import random
 import base64
@@ -653,6 +652,7 @@ class APIBase(CouchbaseBaseTest):
 
     @staticmethod
     def get_utc_datetime(minutes_delta=0):
+        import datetime
         now = datetime.datetime.utcnow()
 
         if minutes_delta:
@@ -1228,12 +1228,22 @@ class APIBase(CouchbaseBaseTest):
         if payloadTest:
             testDescriptionKey = "desc"
 
-        # Condition is for Sample Buckets delete testcases.
-        if ("content" in result and "code" in result.content and
-                result.json()["code"] == 6008 and 6008 in success_codes):
-            self.log.info("This is an expected error handler for Sample "
-                          "Buckets Test Cases. The test has passed!")
-            return True
+        try:
+            # Condition for Sample Buckets delete testcases.
+            if (6008 in success_codes and "code" in result.json() and
+                    result.json()["code"] == 6008):
+                self.log.info("This is an expected error handler for Sample "
+                              "Buckets Test Cases. The test has passed!")
+                return True
+            # Condition for Create Buckets dupe name cases.
+            if (6001 in success_codes and "code" in result.json() and
+                    result.json()["code"] == 6001):
+                self.log.info("This is an expected error handler for Create "
+                              "Buckets Test Cases. The test has passed!")
+                return True
+        except Exception as e:
+            if 6001 in success_codes or 6008 in success_codes:
+                self.log.error(e)
 
         # Acceptor for expected error codes.
         if ("expected_status_code" in testcase and
