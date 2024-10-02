@@ -17,6 +17,7 @@ import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import co.elastic.clients.elasticsearch.core.BulkResponse;
 import elasticsearch.EsClient;
 
 import com.couchbase.client.core.error.AmbiguousTimeoutException;
@@ -61,7 +62,7 @@ public class WorkLoadGenerate extends Task{
     public String collection = "_default";
     public boolean stop_loading = false;
     public HashMap<String, List<Result>> failedMutations;
-	private EsClient esClient = null;
+    private EsClient esClient = null;
     static Logger logger = LogManager.getLogger(WorkLoadGenerate.class);
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
@@ -214,7 +215,7 @@ public class WorkLoadGenerate extends Task{
 
         Instant trackFailureTime_start = Instant.now();
         while(! this.stop_loading) {
-//        	Instant st = Instant.now();
+//            Instant st = Instant.now();
             if (this.sdkClientPool != null)
                 this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
 //            Instant en = Instant.now();
@@ -228,7 +229,7 @@ public class WorkLoadGenerate extends Task{
             }
             Instant start = Instant.now();
             if(dg.ws.creates > 0) {
-//            	st = Instant.now();
+//                st = Instant.now();
                 List<Tuple2<String, Object>> docs = dg.nextInsertBatch();
 //                en = Instant.now();
 //                System.out.println(this.taskName + " Time Taken to generate " + docs.size() + " Docs: " + Duration.between(st, en).toMillis() + "ms");
@@ -236,8 +237,10 @@ public class WorkLoadGenerate extends Task{
                     flag = true;
 //                    st = Instant.now();
                     List<Result> result = docops.bulkInsert(this.sdk.connection, docs, setOptions);
-                    if(esClient != null) {
-                        esClient.insertDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
+                    if(this.esClient != null) {
+                        BulkResponse es_result = this.esClient.insertDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
+                        if(es_result.errors())
+                            System.out.println(es_result);
                     }
 //                    en = Instant.now();
 //                    System.out.println(this.taskName + " Time Taken by Inserts: " + Duration.between(st, en).toMillis() + "ms");
@@ -255,8 +258,8 @@ public class WorkLoadGenerate extends Task{
                 if (docs.size()>0) {
                     flag = true;
                     List<Result> result = docops.bulkUpsert(this.sdk.connection, docs, upsertOptions);
-                    if(esClient != null) {
-                        esClient.insertDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
+                    if(this.esClient != null) {
+                        this.esClient.insertDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
                     }
                     ops += dg.ws.batchSize*dg.ws.updates/100;
                     if(trackFailures && result.size()>0)
@@ -286,8 +289,8 @@ public class WorkLoadGenerate extends Task{
                 if (docs.size()>0) {
                     flag = true;
                     List<Result> result = docops.bulkDelete(this.sdk.connection, docs, removeOptions);
-                    if(esClient != null) {
-                        esClient.deleteDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
+                    if(this.esClient != null) {
+                        this.esClient.deleteDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
                     }
                     ops += dg.ws.batchSize*dg.ws.deletes/100;
                     if(trackFailures && result.size()>0)
@@ -340,7 +343,7 @@ public class WorkLoadGenerate extends Task{
                 }
             }
             if(this.sdkClientPool != null)
-            	this.sdkClientPool.release_client(this.sdk);
+                this.sdkClientPool.release_client(this.sdk);
             if(ops == 0)
                 this.stop_loading = true;
             else if(ops < dg.ws.ops/dg.ws.workers && flag) {

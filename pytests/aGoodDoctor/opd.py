@@ -578,7 +578,7 @@ class OPD:
                                 else:
                                     taskName = "Loader_%s_%s_%s_%s_update_%s_%s" % (bucket.name, scope, collection, k, ws.dr.update_s, ws.dr.update_e)
                                 task = WorkLoadGenerate(taskName, dg,
-                                                        cluster.sdk_client_pool, "NONE",
+                                                        cluster.sdk_client_pool, self.esClient, "NONE",
                                                         self.maxttl, self.time_unit,
                                                         self.track_failures, 0)
                                 task.set_collection_for_load(bucket.name, scope, collection)
@@ -807,6 +807,14 @@ class OPD:
         self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
         return kvstore, wal, keyTree, seqTree
 
+    def print_stats_loop(self, cluster, step=300):
+        while not self.stop_run:
+            try:
+                self.print_stats(cluster)
+            except:
+                pass
+            time.sleep(step)
+
     def print_stats(self, cluster):
         self.bucket_util.print_bucket_stats(cluster)
         self.cluster_util.print_cluster_stats(cluster)
@@ -941,7 +949,7 @@ class OPD:
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 
-            if self.cluster_util.is_cluster_rebalanced(rest):
+            if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Abort rebalance")
                 self._induce_error(error_type, nodes)
                 result = self.check_coredump_exist(nodes)
@@ -964,7 +972,7 @@ class OPD:
                     self.task_manager.get_task_result(rebalance_task)
                 except RebalanceFailedException:
                     pass
-                if rebalance.result:
+                if rebalance_task.result:
                     self.log.error("Rebalance passed/finished which is not expected")
                     self.log.info("Rebalance % after rebalance finished = {}".
                                   format(expected_progress))
@@ -1130,7 +1138,10 @@ class OPD:
                                                       "Filtering(M)",
                                                       "Avg Execution Time(ms)",
                                                       "Avg Accuracy",
-                                                      "Avg Recall"])
+                                                      "Avg Recall",
+                                                      "ES Avg Execution Time(ms)",
+                                                      "ES Avg Recall"
+                                                      ])
                         try:
                             for query, _ in sorted(ql.bucket.query_map.items(), key=lambda x: x[1]["identifier"]):
                                 if ql.query_stats[query][1] > 0:
@@ -1139,10 +1150,12 @@ class OPD:
                                          ql.bucket.query_map[query]["identifier"],
                                          ql.query_stats[query][1],
                                          ql.bucket.query_map[query]["vector_defn"]["nProbe"],
-                                         ql.query_stats[query][-2],
+                                         ql.query_stats[query][4],
                                          round(ql.query_stats[query][0]/ql.query_stats[query][1], 2),
                                          round(ql.query_stats[query][2]/ql.query_stats[query][1], 2),
-                                         round(ql.query_stats[query][3]/ql.query_stats[query][1], 2)
+                                         round(ql.query_stats[query][3]/ql.query_stats[query][1], 2),
+                                         round(ql.query_stats[query][6]/ql.query_stats[query][1], 2),
+                                         round(ql.query_stats[query][7]/ql.query_stats[query][1], 2)
                                                                     ])
                         except Exception as e:
                             print(e)

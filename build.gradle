@@ -81,6 +81,8 @@ dependencies {
 
     // https://mvnrepository.com/artifact/commons-io/commons-io
     compile group: 'commons-io', name: 'commons-io', version: '2.4'
+    
+   implementation 'io.opentelemetry:opentelemetry-api:1.29.0'
 
 }
 

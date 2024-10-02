@@ -1,0 +1,80 @@
+{
+	"properties": {
+		"brand": {
+			"type": "text",
+			"index": true,
+			"fields": {
+				"keyword": {
+					"type": "keyword",
+					"ignore_above": 256
+				}
+			}
+		},
+		"category": {
+			"type": "text",
+			"index": true,
+			"fields": {
+				"keyword": {
+					"type": "keyword",
+					"ignore_above": 256
+				}
+			}
+		},
+		"color": {
+			"type": "text",
+			"index": true,
+			"fields": {
+				"keyword": {
+					"type": "keyword",
+					"ignore_above": 256
+				}
+			}
+		},
+		"country": {
+			"type": "text",
+			"index": true,
+			"fields": {
+				"keyword": {
+					"type": "keyword",
+					"ignore_above": 256
+				}
+			}
+		},
+		"embedding": {
+			"type": "dense_vector",
+			"dims": 128,
+			"index": true,
+			"similarity": "l2_norm",
+			"index_options": {
+				"type": "int8_hnsw",
+				"m": 16,
+				"ef_construction": 100
+			}
+		},
+		"id": {
+			"type": "long"
+		},
+		"mutate": {
+			"type": "long",
+			"index": false
+		},
+		"review": {
+			"type": "float",
+			"index": false
+		},
+		"size": {
+			"type": "long",
+			"index": true
+		},
+		"type": {
+			"type": "text",
+			"index": true,
+			"fields": {
+				"keyword": {
+					"type": "keyword",
+					"ignore_above": 256
+				}
+			}
+		}
+	}
+}

@@ -34,6 +34,10 @@ from workloads import siftBigANN
 import os
 from _threading import Lock
 from TestInput import TestInputSingleton
+from java.net import SocketTimeoutException
+from elasticsearch import EsClient
+from java.util import HashMap
+from com.couchbase.test.val import Vector
 
 letters = ascii_uppercase + ascii_lowercase + digits
 faker = Faker()
@@ -137,46 +141,12 @@ HotelQueriesParams = [{},
                       {"country": "faker.address().country()"}
                       ]
 
-NimbusPIndexes = ['CREATE INDEX {}{} ON {}(`uid`, `lastMessageDate` DESC,`unreadCount`, `lastReadDate`, `conversationId`) PARTITION BY hash(`uid`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                  'CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
-
-NimbusPQueries = ['SELECT meta().id, conversationId, lastMessageDate, lastReadDate, unreadCount FROM {} WHERE uid = $uid ORDER BY lastMessageDate DESC LIMIT $N;',
-                  'SELECT uid, conversationId FROM {} WHERE conversationId IN [$conversationId1, $conversationId2]',
-                  'SELECT COUNT(*) AS nb FROM {}  WHERE uid=$uid AND unreadCount>0']
 NimbusPQueriesParams = [{"uid":"str(random.randint(0,1000000)).zfill(32)", "N":"random.randint(100, 1000)"},
                         {"conversationId1":"str(random.randint(0,1000000)).zfill(36)", "conversationId2":"str(random.randint(0,1000000)).zfill(36)"},
                         {"uid":"str(random.randint(0,1000000)).zfill(36)"}]
 
-NimbusMIndexes = ['CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                  'CREATE INDEX {}{} ON {}(`conversationId`, (distinct (array `u` for `u` in `showTo` end)), `timestamp` DESC) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
-
-NimbusMQueries = ['SELECT meta().id AS _id, uid, type, content, url, timestamp, width, height, clickable, roomId, roomTitle, roomStreamers, actions, pixel FROM {} WHERE conversationId = $conversationId ORDER BY timestamp DESC LIMIT $N',
-                  'SELECT COUNT(*) AS nb FROM {} WHERE conversationId = $conversationId']
 NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(36)", "N":"random.randint(100, 1000)"},
                         {"conversationId":"str(random.randint(0,1000000)).zfill(36)"}]
-
-HotelVectorIndexes = [
-    # 'CREATE INDEX {}{} ON {}(`country`,`vector` VECTOR) {{"defer_build":true, {}}};',
-    'CREATE INDEX {index_name} ON {collection}(`country`,`vector` VECTOR) PARTITION BY hash((meta().`id`)) WITH {{"defer_build":true, "num_replica":1, "num_partition":8, {vector}}};',
-    'CREATE INDEX {index_name} ON {collection}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`, vector VECTOR) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
-    'CREATE INDEX {index_name} ON {collection}(`free_breakfast`,`free_parking`,`country`,`city`, vector VECTOR)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
-    'CREATE INDEX {index_name} ON {collection}(`country`, `city`,`price`,`name`, vector VECTOR)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
-    'CREATE INDEX {index_name} ON {collection}(vector VECTOR, `price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
-    'CREATE INDEX {index_name} ON {collection}(`name` INCLUDE MISSING DESC,`phone`,`type`, vector VECTOR) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
-    'CREATE INDEX {index_name} ON {collection}(`city` INCLUDE MISSING ASC, `phone`, vector VECTOR) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
-    'CREATE INDEX {index_name} ON {collection}(`avg_rating`, `price`, `country`, `city`, vector VECTOR) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};'
-    ]
-
-HotelVectorQueries = [
-    'SELECT meta().id from {collection} WHERE country=$country ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT price, country from {collection} where free_breakfast=True and `type`= $type AND free_parking=True and price is not null and array_count(public_likes)>=0 ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT city,country from {collection} where free_breakfast=True and free_parking=True order by country,city,ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT COUNT(1) AS cnt FROM {collection} WHERE city LIKE "North%" ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT h.name,h.country,h.city,h.price FROM {collection} AS h WHERE h.price IS NOT NULL ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT * from {collection} where `name` is not null ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT * from {collection} where city like \"San%\" ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT avg_rating, price, country, city from {collection} where `avg_rating`>4 and price<1000 and country=$country and city=$city ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) LIMIT 100'
-    ]
 
 HotelQueriesVectorParams = [
     {"country": "faker.address().country()"},
@@ -258,6 +228,23 @@ def execute_via_sdk(client, statement, readonly=False,
 
     return output
 
+def performKNNSearchES(esClient, collection, qVec, k, gt, es_params=None):
+    try:
+        esResult = esClient.performKNNSearch(collection.lower().replace("_", ""), "embedding", qVec, k, es_params);
+    except SocketTimeoutException as e:
+        esClient = EsClient(esClient.serverUrl, esClient.apiKey)
+        esClient.initializeSDK()
+        print e
+    esResult = json.loads(str(esResult).encode().decode())
+    recall = 0
+    all_ids_elastic = list()
+    for hit in esResult["hits"]["hits"]:
+        all_ids_elastic.append(hit["_source"]["id"])
+    for item in all_ids_elastic:
+        if item in gt[:100]:
+            recall += 1
+    return round(100.0 * recall/k, 2), esResult["took"]
+
 class DoctorN1QL():
 
     def __init__(self, bucket_util):
@@ -273,6 +260,7 @@ class DoctorN1QL():
             b.indexes = dict()
             b.queries = list()
             b.query_map = dict()
+            vector_defn_counter = 0
             self.log.info("Creating GSI indexes on {}".format(b.name))
             # prev_valType = None
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
@@ -293,29 +281,23 @@ class DoctorN1QL():
                         workloads = list(reversed(workloads))
                     workload = workloads[collection_num % len(workloads)]
                     valType = workload["valType"]
-                    indexType = indexes
-                    queryType = queries
+                    indexType = workload.get("indexes")
+                    queryType = workload.get("queries")
                     queryParams = []
                     # if valType != prev_valType:
                     #     counter = 0
-                    if valType == "Hotel":
+                    if valType == "Hotel" and not workload.get("vector"):
                         indexType = HotelIndexes
                         queryType = HotelQueries
                         queryParams = HotelQueriesParams
                         # prev_valType = valType
                     if valType == "NimbusP":
-                        indexType = NimbusPIndexes
-                        queryType = NimbusPQueries
                         queryParams = NimbusPQueriesParams
                         # prev_valType = valType
                     if valType == "NimbusM":
-                        indexType = NimbusMIndexes
-                        queryType = NimbusMQueries
                         queryParams = NimbusMQueriesParams
                         # prev_valType = valType
                     if valType == "Hotel" and workload.get("vector"):
-                        indexType = HotelVectorIndexes
-                        queryType = HotelVectorQueries
                         queryParams = HotelQueriesVectorParams
                         # prev_valType = valType
                     if valType == "siftBigANN":
@@ -337,16 +319,23 @@ class DoctorN1QL():
                             vector_defn = None
                             dim = None
                             if workload.get("vector"):
-                                vector_defn = workload.get("vector")[i % len(workload.get("vector"))]
+                                vector_defn = workload.get("vector")[vector_defn_counter % len(workload.get("vector"))]
                                 dim = workload.get("dim")
                                 similarity = vector_defn["similarity"]
                                 nProbe = vector_defn["nProbe"]
-                                description = vector_defn.get("description", "IVF,SQ8")
+                                description = vector_defn.get("description", "IVF,%s" % vector_defn.get("quantization", "SQ8"))
                                 vector_fields = "'dimension': {}, 'description': '{}', 'similarity': '{}', 'scan_nprobes': {}".format(
                                 dim, description, similarity, nProbe)
                                 idx_name = b.name.replace("-", "_") + "_idx_" + c + "_" + str(i)
-                                self.idx_q = indexType[i % len(indexType)].format(
-                                    index_name=idx_name, collection=c, vector=vector_fields)
+                                partitions = TestInputSingleton.input.param("partitions", None)
+                                if partitions:
+                                    vector_fields = "'num_partition': {}, ".format(partitions) + vector_fields
+                                    self.idx_q = indexType[i % len(indexType)].format(
+                                        index_name=idx_name, collection=c, vector=vector_fields)
+                                else:
+                                    self.idx_q = indexType[i % len(indexType)].format(
+                                        index_name=idx_name, collection=c, vector=vector_fields)
+                                    self.idx_q = self.idx_q.replace('PARTITION BY HASH(meta().id)', "")
                             else:
                                 self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             print self.idx_q
@@ -369,6 +358,7 @@ class DoctorN1QL():
                                     except IndexExistsException:
                                         break
                             i += 1
+                            vector_defn_counter += 1
                         if q < workload.get("2i")[1]:
                             gt = None
                             unformatted_q = queryType[q % len(queryType)]
@@ -387,9 +377,13 @@ class DoctorN1QL():
                                         "sdk":self.sdkClients[b.name+s],
                                         "vector_defn": vector_defn,
                                         "dim": dim,
-                                        "gt": gt[q]
+                                        "collection": c
                                         }
                                     )
+                                if gt:
+                                    b.query_map[query].update({"gt": gt[q]})
+                                if workload.get("es"):
+                                    b.query_map[query].update({"es": workload.get("es")[q]})
                                 # b.queries.append((query, self.sdkClients[b.name+s], unformatted_q, vector_defn, dim))
                             q += 1
                         # counter += 1
@@ -410,6 +404,7 @@ class DoctorN1QL():
     def build_indexes(self, cluster, buckets,
                       wait=False, timeout=86400):
         build = True
+        build_count = TestInputSingleton.input.param("build_count", 5)
         i = 0
         while build:
             build = False
@@ -421,7 +416,7 @@ class DoctorN1QL():
                     for key, val in bucket.indexes.items():
                         _, _, _, _, c = val
                         d[c].append(key)
-                    for collection in sorted(d.keys())[i:i+1]:
+                    for collection in sorted(d.keys())[i:i+build_count]:
                         details = bucket.indexes[d.get(collection)[0]]
                         build = True
                         build_query = "BUILD INDEX on `%s`(%s) USING GSI" % (
@@ -452,7 +447,7 @@ class DoctorN1QL():
                             d[c].append(key)
                         self.rest = GsiHelper(cluster.master, logger["test"])
                         ths = list()
-                        for collection in sorted(d.keys())[i:i+1]:
+                        for collection in sorted(d.keys())[i:i+build_count]:
                             for index_name in sorted(d.get(collection)):
                                 details = bucket.indexes[index_name]
                                 th = threading.Thread(target=self.rest.polling_create_index_status,
@@ -463,7 +458,7 @@ class DoctorN1QL():
                         for th in ths:
                             th.join()
                 k += 1
-            i += 1
+            i += build_count
 
     def drop_indexes(self, cluster):
         for bucket in cluster.buckets:
@@ -521,17 +516,21 @@ class QueryLoad:
     groundTruths = {}
     queryVectors = []
 
-    def __init__(self, bucket, mockVector=True, base64=False, validate_item_count=False):
+    def __init__(self, bucket, mockVector=True, validate_item_count=False, esClient=None, log_fail=True):
         self.mockVector = mockVector
         self.base64 = False
         self.validate_item_count = validate_item_count
         self.bucket = bucket
         self.queries = [item[0] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
         self.queries_meta = [item[1] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
-        for meta in self.queries_meta:
-            gt = meta["gt"][0]
-            if gt not in QueryLoad.groundTruths.keys():
-                QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(siftBigANN.get("baseFilePath"), gt))})
+        if not mockVector:
+            for meta in self.queries_meta:
+                gt = meta["gt"][0]
+                if gt not in QueryLoad.groundTruths.keys():
+                    QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(siftBigANN.get("baseFilePath"), gt))})
+            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0] for idx, query in enumerate(self.queries)}
+        else:
+            self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0] for idx, query in enumerate(self.queries)}
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
         self.rejected_count = itertools.count()
@@ -543,14 +542,17 @@ class QueryLoad:
         self.log = logger.get("infra")
         self.cluster_conn = self.queries_meta[0]["sdk"]
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
-        self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock()] for idx, query in enumerate(self.queries)}
         self.failures = 0
         self.timeout_failures = 0
         self.lock = Lock()
+        self.esClient = esClient
+        self.log_fail = log_fail
 
     def start_query_load(self):
         if self.bucket.loadDefn.get("valType") == "siftBigANN":
-            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock()] for idx, query in enumerate(self.queries)}
+            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0] for idx, query in enumerate(self.queries)}
+        else:
+            self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0] for idx, query in enumerate(self.queries)}
         self.stop_run = False
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -583,7 +585,7 @@ class QueryLoad:
     def _run_vector_query(self, validate_item_count=True, expected_count=100):
         name = threading.currentThread().getName()
         counter = 0
-        hotel = Hotel()
+        hotel = Vector(None)
         while not self.stop_run:
             # self.lock.acquire()
             client_context_id = name + str(counter)
@@ -593,21 +595,29 @@ class QueryLoad:
                 self.total_query_count.next()
                 query = self.queries[counter%len(self.queries)]
                 query_tuple = self.queries_meta[counter%len(self.queries)]
-                lock = self.query_stats[query][-1]
-                lock.acquire()
-                gt = query_tuple["gt"][0]
+                # lock = self.query_stats[query][5]
+                # lock.acquire()
                 dim = query_tuple["dim"]
+                if self.esClient:
+                    es_scalars = query_tuple["es"]
+                    es_params = []
+                    for k, v in es_scalars.items():
+                        scalar = HashMap()
+                        scalar.put(k, v)
+                        term = HashMap()
+                        term.put("term", scalar)
+                        es_params.append(term)
                 vector_float = []
-                index = self.query_stats[query][1] % len(QueryLoad.queryVectors)
                 if self.mockVector:
-                    flt_buf = Hotel.flt_buf
-                    _slice = random.randint(0, Hotel.flt_buf_length-dim)
+                    flt_buf = hotel.flt_buf
+                    _slice = random.randint(0, hotel.flt_buf_length-dim)
                     embedding = flt_buf[_slice: _slice+dim]
                 else:
-                    expected_count = 100
+                    index = self.query_stats[query][1] % len(QueryLoad.queryVectors)
+                    gt = query_tuple["gt"][0]
+                    expected_count = 10
                     embedding = QueryLoad.queryVectors[index]
                     groudtruth = QueryLoad.groundTruths[gt][index][:expected_count]
-                    validate_item_count = True
 
                 if self.base64:
                     vector_float = hotel.convertToBase64Bytes(embedding)
@@ -630,31 +640,22 @@ class QueryLoad:
                     q_param_json, validate=validate_item_count)
                 self.query_stats[query][0] += metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[query][1] += 1
-                lock.release()
+                # lock.release()
                 if status == QueryStatus.SUCCESS:
-                    if self.bucket.loadDefn.get("valType") == "siftBigANN":
+                    if self.esClient:
+                        recall_es, latency_es = performKNNSearchES(self.esClient, query_tuple["collection"], vector_float, 100, groudtruth, es_params)
+                        self.query_stats[query][6] += latency_es
+                        self.query_stats[query][7] += recall_es
+                    if self.bucket.loadDefn.get("valType") == "siftBigANN" and validate_item_count:
                         results = [result.get("id") for result in list(results)]
-                        if results:
-                            accuracy, recall = self.compare_result(results, groudtruth)
-                            self.query_stats[query][2] += accuracy
-                            self.query_stats[query][3] += round(100.0 * recall//len(results), 2)
-                        # print("Thread: {}, QueryType: {}, QueryNum: {}, QueryResults: {}, Accuracy: {}, recall: {}".format(
-                        #     name,
-                        #     self.bucket.query_map[query]["identifier"],
-                        #     index, len(results),
-                        #     accuracy,
-                        #     round(100.0 * recall//len(results), 2)))
-                        # self.query_stats[query][-1] += 1
-
-                    if validate_item_count:
                         if len(results) != expected_count:
                             self.log.critical("Expected Count:{}, Actual Count:{}".format(expected_count, len(results)))
-                            # q_param_json.removeKey("vector")
-                            # print q_param_json
-                            # print query
                             self.failed_count.next()
                         else:
                             self.success_count.next()
+                            accuracy, recall = self.compare_result(results, groudtruth)
+                            self.query_stats[query][2] += accuracy
+                            self.query_stats[query][3] += round(100.0 * recall//len(results), 2)
                     else:
                         self.success_count.next()
                 else:
@@ -668,8 +669,8 @@ class QueryLoad:
             except (Exception, PlanningFailureException) as e:
                 print e
                 self.error_count.next()
-            if e:
-                lock.release()
+            # if e:
+            #     lock.release()
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
@@ -682,8 +683,7 @@ class QueryLoad:
             elif str(e).find("InternalServerFailureException") != -1 or str(e).find("CouchbaseException") != -1:
                 self.failures += self.error_count.next()
 
-            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1 or\
-                      str(e).find("Index not ready for serving queries") == -1):
+            if self.log_fail and e and (str(e).find("no more information available") != -1 or str(e).find("Index not ready for serving queries") != -1):
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()
@@ -751,7 +751,7 @@ class QueryLoad:
             elif str(e).find("InternalServerFailureException") != -1 or str(e).find("CouchbaseException") != -1:
                 self.failures += self.error_count.next()
 
-            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
+            if (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()

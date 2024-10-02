@@ -23,6 +23,7 @@ import struct
 from index_utils.plasma_stats_util import PlasmaStatsUtil
 from gsiLib.gsiHelper import GsiHelper
 from hostedEventing import DoctorEventing
+import pprint
 try:
     from fts import DoctorFTS, FTSQueryLoad
 except:
@@ -129,21 +130,6 @@ class Murphy(BaseTestCase, OPD):
             self.esHost = "http://" + self.esHost + ":9200"
         if self.esAPIKey:
             self.esAPIKey = "".join(self.esAPIKey.split(","))
-        if self.esHost and self.esAPIKey:
-            self.esClient = EsClient(self.esHost, self.esAPIKey)
-            self.esClient.initializeSDK()
-            if not self.skip_setup_cleanup:
-                for bucket in self.cluster.buckets:
-                    for scope in bucket.scopes.keys():
-                        if scope == CbServer.system_scope:
-                            continue
-                        for collection in bucket.scopes[scope].collections.keys():
-                            if scope == CbServer.system_scope:
-                                continue
-                            if collection == "_default" and scope == "_default":
-                                continue 
-                            self.esClient.deleteESIndex(collection.lower())
-                            self.esClient.createESIndex(collection.lower(), None)
         
         self.load_defn = list()
         nimbus = self.input.param("nimbus", False)
@@ -222,9 +208,9 @@ class Murphy(BaseTestCase, OPD):
         if not self.skip_init:
             self.create_required_buckets(self.cluster)
         else:
+            self.cluster.sdk_client_pool = SDKClientPool()
             for i, bucket in enumerate(self.cluster.buckets):
                 bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
-                self.cluster.sdk_client_pool = SDKClientPool()
                 num_clients = self.input.param("clients_per_db",
                                                min(5, bucket.loadDefn.get("collections")))
                 self.create_sdk_client_pool(self.cluster, [bucket],
@@ -240,6 +226,27 @@ class Murphy(BaseTestCase, OPD):
                             collection_name = self.collection_prefix + str(i)
                             collection_spec = {"name": collection_name}
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
+
+        coll_id = self.input.param("collection_id", False)
+        if coll_id:
+            coll_id = coll_id.split(",")
+            for bucket in self.cluster.buckets:
+                bucket.loadDefn["collections_defn"] = [defn for defn in bucket.loadDefn["collections_defn"] if defn.get("collection_id") in coll_id]
+        if self.esHost and self.esAPIKey:
+            self.esClient = EsClient(self.esHost, self.esAPIKey)
+            self.esClient.initializeSDK()
+            if not self.skip_init:
+                for bucket in self.cluster.buckets:
+                    for scope in bucket.scopes.keys():
+                        if scope == CbServer.system_scope:
+                            continue
+                        for collection in bucket.scopes[scope].collections.keys():
+                            if scope == CbServer.system_scope:
+                                continue
+                            if collection == "_default" and scope == "_default":
+                                continue 
+                            self.esClient.deleteESIndex(collection.lower())
+                            self.esClient.createESIndex(collection.lower())
         if self.xdcr_remote_nodes > 0:
             self.PrintStep("Step 2*: Create required buckets and collections on XDCR remote.")
             self.create_required_buckets(cluster=self.xdcr_remote_cluster)
@@ -309,11 +316,11 @@ class Murphy(BaseTestCase, OPD):
                                              storageMode=storageModeGSI) \
             if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true',
                                                                           storageMode=storageModeGSI)
-            self.gsi_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
-            enableInMemoryCompression = self.input.param("enableInMemoryCompression", True)
-            if not enableInMemoryCompression:
-                self.gsi_rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": enableInMemoryCompression})
-            self.sleep(10, "sleep  after setting indexer params")
+        self.gsi_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+        enableInMemoryCompression = self.input.param("enableInMemoryCompression", True)
+        if not enableInMemoryCompression:
+            self.gsi_rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": 'false'})
+        self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
                                              int(server.mcdMemoryReserved*0.7
@@ -356,6 +363,7 @@ class Murphy(BaseTestCase, OPD):
             num_reader_threads=self.reader_threads,
             num_storage_threads=self.storage_threads)
         self.stop_rebalance = self.input.param("pause_rebalance", False)
+        self.log_query_failures = True
 
     def tearDown(self):
         return
@@ -495,6 +503,10 @@ class Murphy(BaseTestCase, OPD):
                               wait_for_stats=False)
 
     def initial_setup(self):
+        cpu_monitor = threading.Thread(target=self.print_stats_loop,
+                                       kwargs={"cluster": self.cluster})
+        cpu_monitor.start()
+
         self.monitor_query_status()
         self.skip_read_on_error = True
         self.suppress_error_table = True
@@ -506,7 +518,7 @@ class Murphy(BaseTestCase, OPD):
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
         '''
-        if self.cluster.eventing_nodes:
+        if self.vector and self.cluster.eventing_nodes:
             self.drEventing = DoctorEventing(self.bucket_util)
             self.drEventing.create_eventing_function(self.cluster, file="pytests/aGoodDoctor/vector_xattr.json")
             self.drEventing.lifecycle_operation_for_all_functions(self.cluster, "deploy", "deployed")
@@ -529,11 +541,13 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.index_nodes:
             self.drIndex.create_indexes(self.cluster.buckets, base64=self.base64, xattr=self.xattr)
-            self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
-            self.check_index_pending_mutations()
+            # self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
+            # self.check_index_pending_mutations()
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("2iQPS", 0) > 0:
-                    ql = QueryLoad(bucket, self.mockVector, self.base64)
+                    ql = QueryLoad(bucket, self.mockVector,
+                                   validate_item_count=self.input.param("validate_query_results", True),
+                                   esClient=self.esClient, log_fail=self.log_query_failures)
                     ql.start_query_load()
                     self.ql.append(ql)
             self.drIndex.start_index_stats(self.cluster)
@@ -557,37 +571,23 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
-        self.sleep(self.input.param("steady_state_workload_sleep", 120))
+        # self.sleep(self.input.param("steady_state_workload_sleep", 120))
         
         if self.val_type == "siftBigANN":
-            self.mutate_sift = True
-            self.sift_mutation_th = threading.Thread(target=self.sift_data_loading)
-            self.sift_mutation_th.start()
+            self.mutations = True
+            self.mutation_th = threading.Thread(target=self.sift_mutations)
+            self.mutation_th.start()
 
             self.PrintStep("Running Query workload during mutations")
             self.restart_query_load(self.cluster, 0)
             self.sleep(self.input.param("steady_state_workload_sleep", 120))
-            self.check_index_pending_mutations()
+        else:
+            self.mutations = True
+            self.mutation_th = threading.Thread(target=self.normal_mutations)
+            self.mutation_th.start()
 
     def test_rebalance(self):
         self.initial_setup()
-        self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
-        perc = 100/len(self.doc_ops)
-        self.expiry_perc = perc
-        self.create_perc = perc
-        self.update_perc = perc
-        self.delete_perc = perc
-        self.read_perc = perc
-        self.mutation_perc = self.input.param("mutation_perc", 100)
-        for bucket in self.cluster.buckets:
-            bucket.loadDefn["pattern"] = [self.create_perc,
-                                           self.read_perc,
-                                           self.update_perc,
-                                           self.delete_perc,
-                                           self.expiry_perc]
-            bucket.loadDefn["load_type"] = self.doc_ops
-            bucket.original_ops = bucket.loadDefn["ops"]
-            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
 
         self.loop = 1
         self.rebl_nodes = self.input.param("rebl_nodes", 0)
@@ -597,14 +597,6 @@ class Murphy(BaseTestCase, OPD):
         self.sleep(30)
         self.mutation_perc = self.input.param("mutation_perc", 100)
         while self.loop <= self.iterations:
-            if self.val_type == "siftBigANN":
-                self.mutate += 1
-                self.siftBigANN_load()
-            else:
-                for bucket in self.cluster.buckets:
-                    self.generate_docs(bucket=bucket)
-                tasks = self.perform_load(wait_for_load=False,
-                                          cluster=self.cluster)
             self.rebl_nodes += 1
             if self.rebl_nodes > self.max_rebl_nodes:
                 self.rebl_nodes = 1
@@ -672,8 +664,6 @@ class Murphy(BaseTestCase, OPD):
                 self.sleep(10, "Sleep for 60s after rebalance")
 
                 self.loop += 1
-            self.wait_for_doc_load_completion(self.cluster, tasks,
-                                              wait_for_stats=False)
             if self.track_failures:
                 self.data_validation(self.cluster)
 
@@ -685,39 +675,6 @@ class Murphy(BaseTestCase, OPD):
         self.crash_count = 0
         self.rebl_nodes = self.input.param("rebl_nodes", 0)
         self.max_rebl_nodes = self.input.param("max_rebl_nodes", 1)
-        self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
-        perc = 100/len(self.doc_ops)
-        self.expiry_perc = perc
-        self.create_perc = perc
-        self.update_perc = perc
-        self.delete_perc = perc
-        self.read_perc = perc
-        self.mutation_perc = self.input.param("mutation_perc", 100)
-        for bucket in self.cluster.buckets:
-            bucket.loadDefn["pattern"] = [self.create_perc,
-                                           self.read_perc,
-                                           self.update_perc,
-                                           self.delete_perc,
-                                           self.expiry_perc]
-            bucket.loadDefn["load_type"] = self.doc_ops
-            bucket.original_ops = bucket.loadDefn["ops"]
-            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-            self.generate_docs(read_start=0,
-                               read_end=self.num_items,
-                               create_start=self.num_items*2,
-                               create_end=self.num_items*20,
-                               update_start=self.num_items*2,
-                               update_end=self.num_items*20,
-                               delete_start=0,
-                               delete_end=self.num_items*2,
-                               expire_start=self.num_items*2,
-                               expire_end=self.num_items*20,
-                               bucket=bucket
-                               )
-
-        self.tasks = list()
-        self.tasks.append(self.perform_load(wait_for_load=False, cluster=self.cluster))
-        self.sleep(10)
 
         while self.loop <= self.iterations:
             ###################################################################
@@ -1014,6 +971,7 @@ class Murphy(BaseTestCase, OPD):
             self.print_stats(self.cluster)
 
         self.log.info("Volume Test Run Complete")
+        self.mutations = False
         self.doc_loading_tm.abortAllTasks()
 
     def ClusterOpsVolume(self):
@@ -1048,35 +1006,6 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
-            self.create_perc = 25
-            self.update_perc = 25
-            self.delete_perc = 25
-            self.expiry_perc = 25
-            self.read_perc = 25
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-
-            self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
-            perc = 100/len(self.doc_ops)
-            self.expiry_perc = perc
-            self.create_perc = perc
-            self.update_perc = perc
-            self.delete_perc = perc
-            self.read_perc = perc
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-            if self.val_type != "siftBigANN":
-                for bucket in self.cluster.buckets:
-                    bucket.loadDefn["pattern"] = [self.create_perc,
-                                                   self.read_perc,
-                                                   self.update_perc,
-                                                   self.delete_perc,
-                                                   self.expiry_perc]
-                    bucket.loadDefn["load_type"] = ["update", "delete", "read", "create"]
-                    self.generate_docs(bucket=bucket)
-                    bucket.original_ops = bucket.loadDefn["ops"]
-                    bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-                tasks = self.perform_load(wait_for_load=False,
-                                          cluster=self.cluster)
-
             self.rebl_services = self.input.param("rebl_services", "kv").split("-")
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
             self.sleep(300)
@@ -1523,28 +1452,21 @@ class Murphy(BaseTestCase, OPD):
                     self.log.info("Volume Test Run Complete")
                 self.init_doc_params()
 
-        if self.val_type == "siftBigANN":
-            self.mutate_sift = False
-            self.sift_mutation_th.join()
-        else:
-            self.wait_for_doc_load_completion(self.cluster, tasks,
-                                              wait_for_stats=False)
+        self.mutations = False
+        self.mutation_th.join()
+        if self.val_type != "siftBigANN" and self.track_failures:
             tasks = list()
-            tasks.extend(self.data_validation(self.cluster))
             self.doc_loading_tm.getAllTaskResult()
             for task in tasks:
                 self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
     def SystemTestIndexer(self):
         self.loop = 1
-
+        self.log_query_failures = False
         self.initial_setup()
 
         self.PrintStep("Crash indexer with Loading of docs")
-        th = threading.Thread(target=self.crash_indexer,
-                              kwargs={"graceful": False})
-        th.start()
-        th.join()
+        self.crash_indexer(num_kills=2, graceful=False)
 
         self.loop = 0
         while self.loop < self.iterations:
@@ -1581,8 +1503,6 @@ class Murphy(BaseTestCase, OPD):
                     self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats(self.cluster)
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
     
                 ###################################################################
                 '''
@@ -1600,10 +1520,8 @@ class Murphy(BaseTestCase, OPD):
                 Nodes In Cluster = 3
                 '''
                 self.PrintStep("Crash indexer with Loading of docs")
-                th = threading.Thread(target=self.crash_indexer,
-                                      kwargs={"graceful": False})
-                th.start()
-                th.join()
+                self.crash_indexer(num_kills=2, graceful=False)
+
                 self.PrintStep("Step 6: Rebalance Out of {} node with Loading of docs".format(service))
                 rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes,
                                                 services=[service]*self.rebl_nodes)
@@ -1611,13 +1529,12 @@ class Murphy(BaseTestCase, OPD):
                     rebalance_task = self.pause_rebalance()
                 else:
                     rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                if rebalance_task is not None:
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
                 self.PrintStep("Crash indexer with Loading of docs")
-                th = threading.Thread(target=self.crash_indexer,
-                                      kwargs={"graceful": False})
-                th.start()
-                th.join()
+                self.crash_indexer(num_kills=2, graceful=False)
     
                 ###################################################################
                 '''
@@ -1642,13 +1559,12 @@ class Murphy(BaseTestCase, OPD):
                     rebalance_task = self.pause_rebalance()
                 else:
                     rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                if rebalance_task is not None:
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
                 self.PrintStep("Crash indexer with Loading of docs")
-                th = threading.Thread(target=self.crash_indexer,
-                                      kwargs={"graceful": False})
-                th.start()
-                th.join()
+                self.crash_indexer(num_kills=2, graceful=False)
     
                 ###################################################################
                 '''
@@ -1674,13 +1590,12 @@ class Murphy(BaseTestCase, OPD):
                     rebalance_task = self.pause_rebalance()
                 else:
                     rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
-                self.task.jython_task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                if rebalance_task is not None:
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
                 self.PrintStep("Crash indexer with Loading of docs")
-                th = threading.Thread(target=self.crash_indexer,
-                                      kwargs={"graceful": False})
-                th.start()
-                th.join()
+                self.crash_indexer(num_kills=2, graceful=False)
     
                 ###################################################################
                 '''
@@ -1735,10 +1650,8 @@ class Murphy(BaseTestCase, OPD):
                 print "EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes]
                 print "AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers]
                 self.PrintStep("Crash indexer with Loading of docs")
-                th = threading.Thread(target=self.crash_indexer,
-                                      kwargs={"graceful": False})
-                th.start()
-                th.join()
+
+                self.crash_indexer(num_kills=2, graceful=False)
                 ###################################################################
                 '''
                 Existing:
@@ -1787,11 +1700,9 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
                 self.PrintStep("Crash indexer with Loading of docs")
-                th = threading.Thread(target=self.crash_indexer,
-                                      kwargs={"graceful": False})
-                th.start()
-                th.join()
+                self.crash_indexer(num_kills=2, graceful=False)
                 ###################################################################
                 '''
                 Existing:
@@ -1841,10 +1752,7 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
                 self.PrintStep("Crash indexer with Loading of docs")
-                th = threading.Thread(target=self.crash_indexer,
-                                      kwargs={"graceful": False})
-                th.start()
-                th.join()
+                self.crash_indexer(num_kills=2, graceful=False)
     
                 ###################################################################
                 '''
@@ -1863,15 +1771,43 @@ class Murphy(BaseTestCase, OPD):
                 '''
     
                 self.loop += 1
-        if self.val_type == "siftBigANN":
-            self.mutate_sift = False
-            self.sift_mutation_th.join()
+        self.mutations = False
+        self.mutation_th.join()
 
         self.log.info("Volume Test Run Complete")
 
+    def normal_mutations(self):
+        self.create_perc = 25
+        self.update_perc = 25
+        self.delete_perc = 25
+        self.expiry_perc = 25
+        self.read_perc = 25
+        self.mutation_perc = self.input.param("mutation_perc", 100)
+        self.doc_ops = self.input.param("doc_ops", "")
+        pattern = None
+        if self.doc_ops:
+            self.doc_ops = self.doc_ops.split(":")
+            perc = 100/len(self.doc_ops)
+            self.expiry_perc = perc if "expiry" in self.doc_ops else 0
+            self.create_perc = perc if "create" in self.doc_ops else 0
+            self.update_perc = perc if "update" in self.doc_ops else 0
+            self.delete_perc = perc if "delete" in self.doc_ops else 0
+            self.read_perc = perc if "read" in self.doc_ops else 0
+            pattern = [self.create_perc, self.read_perc, self.update_perc, self.delete_perc, self.expiry_perc]
+        while self.mutations:
+            self.mutate += 1
+            for bucket in self.cluster.buckets:
+                bucket.loadDefn["pattern"] = pattern or bucket.loadDefn.get("pattern")
+                bucket.loadDefn["load_type"] = self.doc_ops if self.doc_ops else bucket.loadDefn.get("load_type")
+                self.generate_docs(bucket=bucket)
+                bucket.original_ops = bucket.loadDefn["ops"]
+                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
+                pprint.pprint(bucket.loadDefn)
+            self.perform_load(wait_for_load=True, cluster=self.cluster)
+            self.check_index_pending_mutations()
 
-    def sift_data_loading(self):
-        while self.mutate_sift:
+    def sift_mutations(self):
+        while self.mutations:
             self.expiry_perc = 0
             self.create_perc = 0
             self.update_perc = 100
