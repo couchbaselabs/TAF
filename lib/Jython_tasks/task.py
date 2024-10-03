@@ -7680,15 +7680,6 @@ class NodeInitializeTask(Task):
         username = self.server.rest_username
         password = self.server.rest_password
 
-        rest.configure_memory(service_quota)
-        IndexRestAPI(self.server).set_gsi_settings({"storageMode": self.gsi_type})
-
-        if self.services:
-            status = rest.setup_services(self.services)
-            if not status:
-                self.set_exception(
-                    Exception('unable to set services for server %s'
-                              % self.server.ip))
         if self.disable_consistent_view is not None:
             rest.set_internal_settings(
                 "indexAwareRebalanceDisabled",
@@ -7710,10 +7701,18 @@ class NodeInitializeTask(Task):
                 str(self.maxParallelReplicaIndexers).lower())
 
         rest.initialize_cluster(self.server.ip, username, password,
+                                services=",".join(self.services),
+                                memory_quota=service_quota["memoryQuota"],
+                                index_memory_quota=service_quota["indexMemoryQuota"],
+                                fts_memory_quota=service_quota["ftsMemoryQuota"],
+                                eventing_memory_quota=service_quota["eventingMemoryQuota"],
+                                cbas_memory_quota=service_quota["cbasMemoryQuota"],
                                 data_path=self.server.data_path,
                                 index_path=self.server.index_path,
                                 cbas_path=self.server.cbas_path,
-                                eventing_path=self.server.eventing_path)
+                                eventing_path=self.server.eventing_path,
+                                indexer_storage_mode=self.gsi_type)
+
         self.server.port = self.port
         try:
             rest = ClusterRestAPI(self.server)
