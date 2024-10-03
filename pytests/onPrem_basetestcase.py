@@ -738,13 +738,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 f"{server.eventing_path} {server.index_path} ; "
                 f"chown -R couchbase:couchbase {server.data_path} {server.cbas_path} "
                 f"{server.eventing_path} {server.index_path}")
-            rest = ClusterRestAPI(server)
-            status, content = rest.initialize_node(
-                rest.username, rest.password,
-                data_path=server.data_path,
-                index_path=server.index_path,
-                cbas_path=server.cbas_path)
-            self.assertTrue(status, f"Initialize node failed: {content}")
 
             init_port = port or server.port or '8091'
             assigned_services = services

@@ -7703,18 +7703,24 @@ class NodeInitializeTask(Task):
                 "maxParallelReplicaIndexers",
                 str(self.maxParallelReplicaIndexers).lower())
 
-        rest.initialize_cluster(self.server.ip, username, password,
-                                services=",".join(self.services),
-                                memory_quota=service_quota["memoryQuota"],
-                                index_memory_quota=service_quota["indexMemoryQuota"],
-                                fts_memory_quota=service_quota["ftsMemoryQuota"],
-                                eventing_memory_quota=service_quota["eventingMemoryQuota"],
-                                cbas_memory_quota=service_quota["cbasMemoryQuota"],
-                                data_path=self.server.data_path,
-                                index_path=self.server.index_path,
-                                cbas_path=self.server.cbas_path,
-                                eventing_path=self.server.eventing_path,
-                                indexer_storage_mode=self.gsi_type)
+        t_services = self.services
+        if isinstance(t_services, list):
+            t_services = ",".join(self.services)
+        elif t_services is None:
+            t_services = CbServer.Services.KV
+        rest.initialize_cluster(
+            self.server.ip, username, password,
+            services=t_services,
+            memory_quota=service_quota["memoryQuota"],
+            index_memory_quota=service_quota["indexMemoryQuota"],
+            fts_memory_quota=service_quota["ftsMemoryQuota"],
+            eventing_memory_quota=service_quota["eventingMemoryQuota"],
+            cbas_memory_quota=service_quota["cbasMemoryQuota"],
+            data_path=self.server.data_path,
+            index_path=self.server.index_path,
+            cbas_path=self.server.cbas_path,
+            eventing_path=self.server.eventing_path,
+            indexer_storage_mode=self.gsi_type)
 
         self.server.port = self.port
         try:
