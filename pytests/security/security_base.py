@@ -377,6 +377,10 @@ class SecurityBase(CouchbaseBaseTest):
                     ami_payload["overRide"]["image"] = image
                     ami_payload["overRide"]["server"] = server_version
                     ami_payload["projectId"] = self.project_id
+                    resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
+                    subnet = resp.json()["cidr"]["suggestedBlock"]
+                    ami_payload["cidr"] = subnet
+                    self.log.info("Trying out with cidr {}".format(subnet))
                     if release_id:
                         ami_payload["overRide"]["releaseId"] = release_id
 
@@ -403,6 +407,7 @@ class SecurityBase(CouchbaseBaseTest):
                     self.assertFalse(resp.status_code, "Failed to create a cluster with error "
                                                        "as {}".format(resp.content))
 
+            self.sleep(5, "Waiting for 5 seconds for cluster to be responsive")
             status = self.get_cluster_status(self.cluster_id)
             self.assertEqual(status, "healthy",
                              msg="FAIL, Outcome: {}, Expected: {}".format(status, "healthy"))
