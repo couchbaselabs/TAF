@@ -91,7 +91,8 @@ class ConfluentCloudAPIs(object):
         self.kafka_cluster_endpoint = "/cmk/v2/clusters"
         self.region_endpoint = "/srcm/v2/regions"
 
-    def parse_error(self, response):
+    @staticmethod
+    def parse_error(response):
         errors = response.json()["errors"]
         error_log = ""
         for error in errors:
