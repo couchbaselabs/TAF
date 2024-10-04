@@ -39,7 +39,7 @@ class CollectionsDgmSteady(CollectionBase):
 
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 0,
 
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 0,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 20,
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 20,

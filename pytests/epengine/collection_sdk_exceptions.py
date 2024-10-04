@@ -363,7 +363,7 @@ class SDKExceptionTests(CollectionBase):
         doc_load_spec["doc_crud"] = dict()
         doc_load_spec["subdoc_crud"] = dict()
         doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] = \
-            "test_collections"
+            "test_collections-"
         doc_load_spec["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         doc_load_spec["doc_crud"][

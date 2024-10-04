@@ -11,7 +11,7 @@ class SDKCompression(CollectionBase):
     def setUp(self):
         super(SDKCompression, self).setUp()
 
-        self.key =  self.input.param("key","test-compression")
+        self.key =  self.input.param("key","test-compression-")
         self.bucket = self.cluster.buckets[0]
 
         self.diff_client_for_validation = \

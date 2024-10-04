@@ -165,10 +165,10 @@ class KVGenerator(object):
         return self.itr < self.end
 
     def next_key(self, doc_index):
-        return "%s-%s" % (self.name,
-                          str(abs(doc_index)).zfill(self.key_size
-                                                    - len(self.name)
-                                                    - 1))
+        return "%s%s" % (self.name,
+                         str(abs(doc_index)).zfill(self.key_size
+                                                   - len(self.name)
+                                                   - 1))
 
     def next(self):
         raise NotImplementedError
@@ -253,18 +253,17 @@ class DocumentGenerator(KVGenerator):
 
     def next_key(self):
         if self.name == "random_keys":
-            seed_hash = self.name + '-' + str(abs(self.itr))
+            seed_hash = self.name + str(abs(self.itr))
             self.random.seed(seed_hash)
             """ This will generate a random ascii key with 12 characters """
             _slice = int(self.random.random()*(self.len_random_string
                                                - self.key_size))
             key_len = self.key_size - (len(str(self.itr)) + 1)
-            doc_key = self.random_string[_slice:key_len+_slice] + "-" \
-                      + str(self.itr)
+            doc_key = self.random_string[_slice:key_len+_slice] + str(self.itr)
         elif self.mix_key_size:
-            seed_hash = self.name + '-' + str(abs(self.itr))
+            seed_hash = self.name + str(abs(self.itr))
             self.random.seed(seed_hash)
-            doc_key = "{}-{}".format(self.name, str(abs(self.itr)).zfill(
+            doc_key = "{}{}".format(self.name, str(abs(self.itr)).zfill(
                 self.random.randint(self.key_size, 240)
                 - self.key_len
                 - 1))
@@ -292,7 +291,7 @@ class DocumentGenerator(KVGenerator):
         # TO avoid above , we can use deep_copy
         if self.deep_copy:
             template = copy.deepcopy(self.template)
-        seed_hash = self.name + '-' + str(abs(self.itr))
+        seed_hash = self.name + str(abs(self.itr))
         self.random.seed(seed_hash)
         if self.randomize:
             for k in template.getNames():
@@ -399,7 +398,7 @@ class SubdocDocumentGenerator(KVGenerator):
             doc_key = self.doc_keys[self.itr]
         elif self.name == "random_keys":
             """ This will generate a random ascii key with 12 characters """
-            seed_hash = self.name + '-' + str(self.itr)
+            seed_hash = self.name + str(self.itr)
             self.random.seed(seed_hash)
             doc_key = ''.join(self.random.choice(
                               ascii_uppercase + ascii_lowercase + digits)
@@ -418,7 +417,7 @@ class SubdocDocumentGenerator(KVGenerator):
             raise StopIteration
 
         doc_args = list()
-        rand_hash = self.name + '-' + str(self.itr)
+        rand_hash = self.name + str(self.itr)
         self.random.seed(rand_hash)
         for arg in self.args:
             value = self.random.choice(arg)
@@ -543,7 +542,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         template = self.template
         if self.deep_copy:
             template = copy.deepcopy(self.template)
-        rand_hash = self.name + '-' + str(self.itr)
+        rand_hash = self.name + str(self.itr)
         self.random.seed(rand_hash)
         if self.randomize:
             for k in template.getNames():

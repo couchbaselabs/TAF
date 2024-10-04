@@ -35,7 +35,7 @@ spec = {
 
         # Applies to all active collections selected as per the
         # COLLECTIONS_CONSIDERED_FOR_CRUD value
-        MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+        MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
 
         MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 100,
         MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,

@@ -63,7 +63,7 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
             # Doc loading params
             "doc_crud": {
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 30,
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 1000,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,

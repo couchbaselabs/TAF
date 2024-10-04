@@ -250,7 +250,7 @@ class CollectionBase(ClusterSetup):
         test_obj.assertTrue(result, "History setting validation failed")
         # Create history docs on disks
         CollectionBase.mutate_history_retention_data(
-            test_obj, doc_key="test_collections", update_percent=1,
+            test_obj, doc_key="test_collections-", update_percent=1,
             update_itrs=update_itr)
     @staticmethod
     def create_indexes_for_all_collections(test_obj, sdk_client,
@@ -485,7 +485,7 @@ class CollectionBase(ClusterSetup):
                 runs_per_collection=range_scan_runs_per_collection)
 
     @staticmethod
-    def get_history_retention_load_spec(test_obj, doc_key="test_collections",
+    def get_history_retention_load_spec(test_obj, doc_key="test_collections-",
                                         update_percent=1, update_itrs=1000,
                                         doc_ttl=0):
         return {
@@ -517,7 +517,7 @@ class CollectionBase(ClusterSetup):
             test_obj.log.info("Starting dedupe updates load ({0}, {1})"
                               .format(update_percent, update_itr))
             load_spec = CollectionBase.get_history_retention_load_spec(
-                test_obj, doc_key="hist_retention_docs",
+                test_obj, doc_key="hist_retention_docs-",
                 update_percent=update_percent, update_itrs=update_itr)
             CollectionBase.over_ride_doc_loading_template_params(test_obj,
                                                                  load_spec)
@@ -559,7 +559,7 @@ class CollectionBase(ClusterSetup):
             test_obj.cluster, test_obj.cluster.buckets)
 
     @staticmethod
-    def mutate_history_retention_data(test_obj, doc_key="test_collections",
+    def mutate_history_retention_data(test_obj, doc_key="test_collections-",
                                       update_percent=1, update_itrs=1000,
                                       doc_ttl=0):
         test_obj.log.info("Loading docs for history_retention testing")

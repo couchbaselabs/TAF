@@ -99,7 +99,7 @@ class CollectionDurabilityTests(CollectionBase):
             self.durability_level
 
         doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] = \
-            "test_collections"
+            "test_collections-"
         if not sub_doc_test:
             doc_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 10
@@ -264,7 +264,7 @@ class CollectionDurabilityTests(CollectionBase):
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 2
 
             doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
-                = "test_collections"
+                = "test_collections-"
             doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbs
 
             doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] \
@@ -388,7 +388,7 @@ class CollectionDurabilityTests(CollectionBase):
         doc_load_spec = dict()
         doc_load_spec["doc_crud"] = dict()
         doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
-            = "test_collections"
+            = "test_collections-"
         doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbuckets
         doc_load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 5
         doc_load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
@@ -555,7 +555,7 @@ class CollectionDurabilityTests(CollectionBase):
         doc_load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
         doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
         doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
-            = "test_collections"
+            = "test_collections-"
 
         if doc_ops[0] == "create":
             doc_load_spec["doc_crud"][
@@ -738,7 +738,7 @@ class CollectionDurabilityTests(CollectionBase):
         doc_load_spec["doc_crud"] = dict()
         doc_load_spec["subdoc_crud"] = dict()
         doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
-            = "test_collections"
+            = "test_collections-"
         doc_load_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbuckets
         doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 5

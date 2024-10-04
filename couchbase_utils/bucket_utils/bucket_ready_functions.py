@@ -455,7 +455,7 @@ class DocLoaderUtils(object):
 
         # Fetch common doc_key to use while doc_loading
         doc_key = input_spec["doc_crud"].get(
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_docs")
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY, "test_docs-")
         # Fetch doc_size to use for doc_loading
         doc_size = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.DOC_SIZE, 256)

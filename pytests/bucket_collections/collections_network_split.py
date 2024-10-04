@@ -197,7 +197,7 @@ class CollectionsNetworkSplit(CollectionBase):
 
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 1000,
 
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 5,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 5,
@@ -244,7 +244,7 @@ class CollectionsNetworkSplit(CollectionBase):
 
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 100,
 
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 5,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 5,

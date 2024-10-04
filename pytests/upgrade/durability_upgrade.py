@@ -756,7 +756,7 @@ class UpgradeTests(UpgradeBase):
 
 
     def test_bucket_durability_upgrade(self):
-        self.key = self.input.param("key", "test_collections")
+        self.key = self.input.param("key", "test_collections-")
         update_task = None
         self.sdk_timeout = 60
         create_batch_size = 10000

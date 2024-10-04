@@ -36,7 +36,7 @@ spec = {
 
         # Applies to all active collections selected as per the
         # COLLECTIONS_CONSIDERED_FOR_CRUD value
-        MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+        MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
         MetaCrudParams.DocCrud.DOC_SIZE :1024,
         MetaCrudParams.DocCrud.RANDOMIZE_DOC_SIZE: True,
 

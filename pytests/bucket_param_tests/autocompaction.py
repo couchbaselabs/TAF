@@ -19,7 +19,7 @@ from cb_tools.cbstats import Cbstats
 class AutoCompactionTests(CollectionBase):
     def setUp(self):
         super(AutoCompactionTests, self).setUp()
-        self.key = self.input.param("key", "test_collections")
+        self.key = self.input.param("key", "test_collections-")
         self.is_crashed = Event()
         self.autocompaction_value = self.input.param("autocompaction_value", 0)
         self.during_ops = self.input.param("during_ops", None)

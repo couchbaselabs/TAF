@@ -275,7 +275,7 @@ class DocHistoryRetention(ClusterSetup):
             "doc_crud": {
                 MetaCrudParams.DocCrud.DOC_SIZE: self.doc_size,
                 MetaCrudParams.DocCrud.RANDOMIZE_VALUE: False,
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
 
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 0,

@@ -81,7 +81,7 @@ class RollbackTests(CollectionBase):
         load_spec = dict()
         load_spec["doc_crud"] = dict()
         load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
-            = "test_collections"
+            = "test_collections-"
         load_spec[MetaCrudParams.TARGET_VBUCKETS] = self.target_vbuckets
         load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 3
         load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"

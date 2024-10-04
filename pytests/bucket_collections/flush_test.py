@@ -46,7 +46,7 @@ class FlushTests(CollectionBase):
             # Doc loading params
             "doc_crud": {
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 5000,
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 100,
             },
 
@@ -202,7 +202,7 @@ class FlushTests(CollectionBase):
             MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 0,
 
             "doc_crud": {
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections-",
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 20,
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 20,
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 20,
