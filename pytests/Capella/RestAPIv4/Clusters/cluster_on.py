@@ -111,13 +111,16 @@ class ClusterOn(GetCluster):
                     org, proj, clus, False)
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/activationState"
-            if self.validate_testcase(result, [202], testcase, failures):
-                time.sleep(1)
-                if not self.validate_onoff_state(["turningOn", "healthy"]):
-                    self.log.error("Status == {}, Key validation Failure : {}"
+            if self.validate_testcase(result, [409, 202], testcase, failures):
+                start_time = time.time()
+                while not self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1):
+                    if time.time() < 1800 + start_time:
+                        continue
+                    self.log.error("Status == {}, State incorrect: {}"
                                    .format(result.status_code,
                                            testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
+                    self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:
@@ -143,14 +146,16 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id,
                     False, headers=header)
-            self.validate_testcase(result, [409, 202], testcase, failures)
-            if result.status_code == 202:
-                time.sleep(1)
-                if not self.validate_onoff_state(["turningOn", "healthy"]):
-                    self.log.error("Status == {}, Key validation Failure : {}"
+            if self.validate_testcase(result, [409, 202], testcase, failures):
+                start_time = time.time()
+                while not self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1):
+                    if time.time() < 1800 + start_time:
+                        continue
+                    self.log.error("Status == {}, State incorrect: {}"
                                    .format(result.status_code,
                                            testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
+                    self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:
@@ -245,12 +250,15 @@ class ClusterOn(GetCluster):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], False, **kwarg)
             if self.validate_testcase(result, [409, 202], testcase, failures):
-                time.sleep(1)
-                if not self.validate_onoff_state(["turningOn", "healthy"]):
-                    self.log.error("Status == {}, Key validation Failure : {}"
+                start_time = time.time()
+                while not self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1):
+                    if time.time() < 1800 + start_time:
+                        continue
+                    self.log.error("Status == {}, State incorrect: {}"
                                    .format(result.status_code,
                                            testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
+                    self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:
@@ -285,14 +293,16 @@ class ClusterOn(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id, val)
-            if self.validate_testcase(result, [409, 202], testcase,
-                                      failures, payloadTest=True):
-                time.sleep(1)
-                if not self.validate_onoff_state(["turningOn", "healthy"]):
-                    self.log.error("Status == {}, State validation Failure: {}"
+            if self.validate_testcase(result, [409, 202], testcase, failures):
+                start_time = time.time()
+                while not self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1):
+                    if time.time() < 1800 + start_time:
+                        continue
+                    self.log.error("Status == {}, State incorrect: {}"
                                    .format(result.status_code,
-                                           testcase["desc"]))
-                    self.log.warning("Result : {}".format(result.json()))
+                                           testcase["description"]))
+                    self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:

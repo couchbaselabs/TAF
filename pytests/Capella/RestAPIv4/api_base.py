@@ -48,7 +48,8 @@ class APIBase(CouchbaseBaseTest):
             self.update_auth_with_api_token(self.curr_owner_key)
         else:
             self.capella["tenant_id"] = {
-                "id": self.organisation_id
+                "id": self.organisation_id,
+                "otherProj": None
             }
             self.create_v2_control_plane_api_key()
 
@@ -103,22 +104,26 @@ class APIBase(CouchbaseBaseTest):
                     self.project_id = res.json()["id"]
                     self.capella["project"] = self.project_id
 
-            # Create a residual project used for auth verification tests.
-            self.log.info("Creating the security-test required project")
-            resp = self.capellaAPI.org_ops_apis.create_project(
-                self.organisation_id, "Auth_Project")
-            if resp.status_code == 201:
-                self.other_project_id = resp.json()["id"]
-                self.capella["tenant_id"]["otherProj"] = self.other_project_id
-            else:
-                self.fail(
-                    "Error while creating project: {}".format(resp.content))
-
-            # Create security related API keys, 256 to be exact.
             self.api_keys = dict()
-            self.api_keys.update(
-                self.create_api_keys_for_all_combinations_of_roles(
-                    [self.project_id]))
+            if self.input.param("GROUP", "functional") == "security":
+                # Create a residual project used for auth verification tests.
+                self.log.info("Creating the security-test required project")
+                resp = self.capellaAPI.org_ops_apis.create_project(
+                    self.organisation_id, "Auth_Project")
+                if resp.status_code == 201:
+                    self.other_project_id = resp.json()["id"]
+                    self.capella["tenant_id"][
+                        "otherProj"] = self.other_project_id
+                else:
+                    self.fail("Error while creating project: {}"
+                              .format(resp.content))
+
+                if "apiKeys" not in self.capella["tenant_id"] or not \
+                        self.capella["tenant_id"]["apiKeys"]:
+                    # Create security related API keys, 255 to be exact.
+                    self.api_keys.update(
+                        self.create_api_keys_for_all_combinations_of_roles(
+                            [self.project_id]))
             self.capella["tenant_id"]["apiKeys"] = self.api_keys
 
         # Templates for cluster configurations across Computes and CSPs.
@@ -545,10 +550,11 @@ class APIBase(CouchbaseBaseTest):
             self.delete_api_keys(self.api_keys)
 
             # Delete the projects that were created.
-            if self.delete_projects(
-                    self.organisation_id,
-                    [self.project_id, self.other_project_id],
-                    self.curr_owner_key):
+            projects = [self.project_id]
+            if self.capella["tenant_id"]["otherProj"]:
+                projects.append(self.other_project_id)
+            if self.delete_projects(self.organisation_id, projects,
+                                    self.curr_owner_key):
                 self.log.error("Error while deleting projects.")
             else:
                 self.log.info("Projects deleted successfully")

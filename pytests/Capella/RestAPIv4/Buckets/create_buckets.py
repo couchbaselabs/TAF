@@ -133,8 +133,9 @@ class CreateBucket(GetBucket):
                     self.expected_res['priority'])
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
-            if self.validate_testcase(result, [200, 6001], testcase, failures):
-                self.buckets.append(result.json()['id'])
+            self.validate_testcase(result, [201, 6001], testcase, failures)
+            if result.status_code == 201:
+                self.delete_buckets([result.json()['id']])
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -196,8 +197,8 @@ class CreateBucket(GetBucket):
                     self.expected_res['flush'],
                     self.expected_res['timeToLiveInSeconds'],
                     self.expected_res['priority'], headers=header)
-            self.validate_testcase(result, [200, 6001], testcase, failures)
-            if res.status_code == 200:
+            self.validate_testcase(result, [201, 6001], testcase, failures)
+            if res.status_code == 201:
                 self.delete_buckets([result.json()['id']])
             self.log.debug("Bucket cleanup successful")
 
@@ -333,8 +334,8 @@ class CreateBucket(GetBucket):
                     self.expected_res['flush'],
                     self.expected_res['timeToLiveInSeconds'],
                     self.expected_res['priority'], **kwarg)
-            self.validate_testcase(result, [200, 6001], testcase, failures)
-            if res.status_code == 200:
+            self.validate_testcase(result, [201, 6001], testcase, failures)
+            if res.status_code == 201:
                 self.delete_buckets([result.json()['id']])
                 self.log.debug("Bucket cleanup successful")
 
@@ -593,8 +594,8 @@ class CreateBucket(GetBucket):
                     testcase["durabilityLevel"], testcase['replicas'],
                     testcase['flush'], testcase['timeToLiveInSeconds'],
                     testcase['priority'])
-            self.validate_testcase(result, [200], testcase, failures)
-            if res.status_code == 200:
+            self.validate_testcase(result, [201], testcase, failures)
+            if res.status_code == 201:
                 self.delete_buckets([result.json()['id']])
             self.log.debug("Bucket cleanup successful")
 

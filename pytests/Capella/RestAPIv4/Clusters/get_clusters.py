@@ -66,7 +66,7 @@ class GetCluster(GetProject):
                     app_svc_template,
                     self.app_svc_templates[app_svc_template]["compute"],
                     self.app_svc_templates[app_svc_template]["nodes"])
-            elif res.status_code == 409:
+            if res.status_code == 409:
                 apps = self.capellaAPI.cluster_ops_apis.list_appservices(
                     self.organisation_id)
                 for app in apps.json()["data"]:
