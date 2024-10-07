@@ -279,7 +279,8 @@ class ColumnarBaseTest(BaseTestCase):
             external_collection_file_formats=[],
             path_on_external_container="", aws_kafka_cluster_details=[],
             confluent_kafka_cluster_details=[], external_dbs=[],
-            kafka_topics={}):
+            kafka_topics={}, aws_kafka_schema_registry_details=[],
+            confluent_kafka_schema_registry_details=[]):
 
         # Updating Database spec
         columnar_spec["database"]["no_of_databases"] = self.input.param(
@@ -331,11 +332,15 @@ class ColumnarBaseTest(BaseTestCase):
                 columnar_spec["kafka_link"]["vendors"].append("aws_kafka")
                 columnar_spec["kafka_link"]["kafka_cluster_details"][
                     "aws_kafka"].extend(aws_kafka_cluster_details)
+                columnar_spec["kafka_link"]["schema_registry_details"][
+                    "aws_kafka"].extend(aws_kafka_schema_registry_details)
 
             if confluent_kafka_cluster_details:
                 columnar_spec["kafka_link"]["vendors"].append("confluent")
                 columnar_spec["kafka_link"]["kafka_cluster_details"][
                     "confluent"].extend(confluent_kafka_cluster_details)
+                columnar_spec["kafka_link"]["schema_registry_details"][
+                    "confluent"].extend(confluent_kafka_schema_registry_details)
 
         # Updating Remote Dataset Spec
         columnar_spec["remote_dataset"][

@@ -875,14 +875,14 @@ class Link_Util(Dataverse_Util):
             params = dict()
             uri = ""
             if dataverse:
-                uri += "/{0}".format(urllib.quote_plus(
+                uri += "/{0}".format(urllib.parse.quote_plus(
                     CBASHelper.metadata_format(dataverse), safe=""))
             if link_name:
-                uri += "/{0}".format(urllib.quote_plus(
+                uri += "/{0}".format(urllib.parse.quote_plus(
                     CBASHelper.unformat_name(link_name), safe=""))
             if link_type:
                 params["type"] = link_type
-            params = urllib.urlencode(params)
+            params = urllib.parse.urlencode(params)
             status, status_code, content, errors = cbas_helper.analytics_link_operations(
                 method="GET", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)

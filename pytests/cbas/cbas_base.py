@@ -2,6 +2,7 @@
 Created on 04-Jun-2021
 @author: Umang Agrawal
 '''
+import copy
 
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
@@ -45,6 +46,18 @@ class CBASBaseTest(BaseTestCase):
                 self.input.test_params.update({
                 "ipv4_only": False, "ipv6_only": False})
 
+        """
+        Cluster node services. Parameter value format
+        serv1:serv2-serv1:ser2|serv1:serv2-ser1:serv2
+        | -> separates services per cluster.
+        - -> separates services on each node of the cluster.
+        : -> separates services on a node.
+        """
+        services_init = [x for x in self.input.param(
+            "services_init", "kv:n1ql:index").split("|")]
+        if len(services_init) > 1:
+            self.input.test_params["services_init"] = services_init[0]
+
         super(CBASBaseTest, self).setUp()
 
         """
@@ -54,8 +67,7 @@ class CBASBaseTest(BaseTestCase):
         - -> separates services on each node of the cluster.
         : -> separates services on a node.
         """
-        self.services_init = [x.split("-") for x in self.input.param(
-            "services_init", "kv:n1ql:index").split("|")]
+        self.services_init = [x.split("-") for x in services_init]
 
         """
         Number of nodes per cluster. Parameter value format
@@ -97,6 +109,27 @@ class CBASBaseTest(BaseTestCase):
 
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
+
+        cluster.rest = RestConnection(cluster.master)
+        cluster.rest.activate_service_api(["cbas", "security"])
+
+        """
+        For the remote cluster set max memory for KV
+        """
+        if self.num_of_clusters > 1:
+            service_memory_config = dict()
+            _, info = cluster.rest.cluster.node_details()
+            total_memory = int(info["mcdMemoryReserved"] * 0.8)
+            if "index" in cluster.master.services:
+                service_memory_config[CbServer.Settings.INDEX_MEM_QUOTA] \
+                    = CbServer.Settings.MinRAMQuota.INDEX
+                total_memory -= service_memory_config[
+                    CbServer.Settings.INDEX_MEM_QUOTA]
+            service_memory_config[CbServer.Settings.KV_MEM_QUOTA] = total_memory
+            status, content = cluster.rest.cluster.configure_memory(
+                service_memory_config)
+            if not status:
+                self.fail("Unable to modify memory setting for remote cluster")
 
         # Force disable TLS to avoid initial connection issues
         tasks = [self.node_utils.async_disable_tls(server)
