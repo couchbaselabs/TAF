@@ -249,9 +249,10 @@ class CollectionsRebalance(CollectionBase):
         if isinstance(self.collection_savepoint, dict):
             results = [[self.collection_savepoint, self.savepoints]]
             self.log.info("queries ran are %s" % self.queries)
-            self.n1ql_fun.process_value_for_verification(self.bucket_col,
-                                                         doc_gen_list, results,
-                                                         buckets=self.cluster.buckets)
+            self.n1ql_fun.process_value_for_verification(
+                self.bucket_col, doc_gen_list, results,
+                buckets=self.cluster.buckets,
+                sdk_client_pool=self.cluster.sdk_client_pool)
         else:
             self.fail(self.collection_savepoint)
 

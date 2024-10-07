@@ -527,7 +527,6 @@ class N1qlBase(CollectionBase):
         self.log.info("Expected keys: %s, Actual: %s, Deleted: %s"
                       % (len(success.keys()), len(key_value.keys()),
                          len(deleted_key)))
-        self.cluster.sdk_client_pool.release_client(client)
 
     def validate_error_during_commit(self, result,
                                       collection_savepoint, savepoint):
@@ -592,7 +591,8 @@ class N1qlBase(CollectionBase):
                 return True
 
     def process_value_for_verification(self, bucket_col, doc_gen_list,
-                                       results, buckets=None):
+                                       results, buckets=None,
+                                       sdk_client_pool=None):
         """
         1. get the collection
         2. get its doc_gen
@@ -624,7 +624,7 @@ class N1qlBase(CollectionBase):
                                         mutated[1]
                                 except:
                                     self.validate_dict[t_id].put(mutated[0],
-                                                                     mutated[1])
+                                                                 mutated[1])
             bucket_collection = collection.split('.')
             if buckets:
                 self.buckets = buckets
@@ -632,9 +632,11 @@ class N1qlBase(CollectionBase):
                 self.buckets = self.cluster.buckets
             bucket = BucketUtils.get_bucket_obj(self.buckets,
                                                 bucket_collection[0])
-            client = self.cluster.sdk_client_pool.get_client_for_bucket(
+            sdk_client_pool = sdk_client_pool or self.cluster.sdk_client_pool
+            client = sdk_client_pool.get_client_for_bucket(
                 bucket, bucket_collection[1], bucket_collection[2])
             self.validate_keys(client, self.validate_dict, self.deleted_key)
+            sdk_client_pool.release_client(client)
 
     def thread_txn(self, args):
         stmt = args[0]
