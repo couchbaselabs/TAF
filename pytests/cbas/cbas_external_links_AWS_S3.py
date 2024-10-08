@@ -138,8 +138,8 @@ class CBASExternalLinks(CBASBaseTest):
         if not link_regions:
             link_regions = self.aws_region_list
 
-        self.cbas_util.create_external_link_obj(
-            self.cluster, link_type="s3", link_cardinality=self.link_cardinality,
+        self.cbas_util.create_link_obj(
+            self.cluster, "s3", link_cardinality=self.link_cardinality,
             accessKeyId=self.aws_access_key, secretAccessKey=self.aws_secret_key,
             regions=link_regions, no_of_objs=self.input.param("no_of_links", 1))
 
@@ -148,7 +148,7 @@ class CBASExternalLinks(CBASBaseTest):
             link_objs = self.cbas_util.list_all_link_objs(link_type="s3")
 
             for link_obj in link_objs:
-                if not self.cbas_util.create_external_link(
+                if not self.cbas_util.create_link(
                         self.cluster, link_obj.properties,
                         username=self.analytics_username):
                     self.fail("link creation failed")
@@ -158,7 +158,7 @@ class CBASExternalLinks(CBASBaseTest):
                 self.cluster, self.aws_buckets,
                 same_dv_for_link_and_dataset=same_dv_for_link_and_dataset,
                 dataset_cardinality=self.dataset_cardinality,
-                object_construction_def=None, paths_on_external_container=None,
+                object_construction_def=None, path_on_aws_bucket=None,
                 file_format="json", redact_warning=None, header=None,
                 null_string=None, include=None, exclude=None,
                 name_length=30, fixed_length=False,
@@ -1313,7 +1313,7 @@ class CBASExternalLinks(CBASBaseTest):
         dataset_obj = self.cbas_util.list_all_dataset_objs()[0]
 
         result = self.s3_data_helper.generate_data_for_s3_and_upload(
-            aws_bucket_name=dataset_obj.dataset_properties["external_container_name"],
+            aws_bucket_name=dataset_obj.dataset_properties["aws_bucket_name"],
             key=self.key, no_of_files=self.input.param("no_of_files", 1000),
             file_formats=["json"], no_of_folders=0, max_folder_depth=0,
             header=False, null_key="", operation="create",
