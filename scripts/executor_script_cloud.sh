@@ -147,6 +147,7 @@ else
 fi
 
 touch $WORKSPACE/testexec.$$.ini
+setup_test_infra_repo_for_installation
 populate_ini
 
 parallel=true
@@ -239,7 +240,6 @@ if [ "$?" -eq 0 ]; then
         ansible-playbook $PWD/productivitynautomation/ansible_setup/21-bucket.yml -i $PWD/ans_hosts
     fi
     ansible-playbook $PWD/productivitynautomation/ansible_setup/30-firewall.yml -i $PWD/ans_hosts
-
     deactivate
 
     if [ "$component" != "backup_recovery" ]; then
@@ -251,11 +251,10 @@ if [ "$?" -eq 0 ]; then
   fi
 
   if [ ${skip_install} == true ]; then
-    	echo "sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' $WORKSPACE/testexec.$$.ini"
+    	set -x
     	sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' $WORKSPACE/testexec.$$.ini
-
-    	echo "sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' $WORKSPACE/testexec.$$.ini"
     	sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' $WORKSPACE/testexec.$$.ini
+    	set +x
   fi
 
   ###### Added on 4/April/2018 to fix issues related to disk full on slaves.
@@ -283,7 +282,8 @@ if [ "$?" -eq 0 ]; then
   sed -i 's/pod\:https\:\/\//pod:/g' $WORKSPACE/testexec.$$.ini
   sed -i 's/pod\:api/pod:cloudapi/g' $WORKSPACE/testexec.$$.ini
 
-  cat $WORKSPACE/testexec.$$.ini
+  pyenv local $PYENV_VERSION
+  cat 3.10.14/testexec.$$.ini
   # Find free port on this machine to use for this run
   sirius_port=49152 ; while [ "$(ss -tulpn | grep LISTEN | grep $sirius_port | wc -l)" -ne 0 ]; do sirius_port=$((sirius_port+1)) ; done
   echo "Will use $sirius_port for starting sirius"
