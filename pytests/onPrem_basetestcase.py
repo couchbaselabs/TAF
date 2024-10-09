@@ -739,6 +739,19 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 f"chown -R couchbase:couchbase {server.data_path} {server.cbas_path} "
                 f"{server.eventing_path} {server.index_path}")
 
+            status, content = ClusterRestAPI(server).initialize_node(
+                server.rest_username,
+                server.rest_password,
+                data_path=server.data_path,
+                index_path=server.index_path,
+                cbas_path=server.cbas_path,
+                eventing_path=server.eventing_path)
+            self.assertTrue(status, f"Init node failed: {content}")
+
+            # We need to initialize only the master node
+            if cluster.master != server:
+                continue
+
             init_port = port or server.port or '8091'
             assigned_services = services
             init_tasks.append(
