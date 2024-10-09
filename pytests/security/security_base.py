@@ -339,15 +339,21 @@ class SecurityBase(CouchbaseBaseTest):
         if single_node:
             payload = self.get_single_node_cluster_payload(provider)
             payload["serverVersion"] = TestInputSingleton.input.param("server_version", "7.6")
-            resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
-            subnet = resp.json()["cidr"]["suggestedBlock"]
-            payload["cidr"] = subnet
 
-            resp = self.capellaAPIv2.deploy_v2_cluster(self.tenant_id, payload)
-            self.assertEqual(resp.status_code, 202,
-                             msg="FAIL. Outcome: {}, Expected: {}, Reason: {}".format(
-                                 resp.status_code, 202, resp.content))
-            self.cluster_id = resp.json()['id']
+            while (self.cluster_id is None):
+                resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
+                subnet = resp.json()["cidr"]["suggestedBlock"]
+                payload["cidr"] = subnet
+                resp = self.capellaAPIv2.deploy_v2_cluster(self.tenant_id, payload)
+                if resp.status_code == 202:
+                    self.cluster_id = resp.json()['id']
+                    break
+                elif "CIDR" in resp.json()["message"]:
+                    continue
+                else:
+                    self.assertFalse(resp.status_code, "Failed to create a cluster with error "
+                                                       "as {}".format(resp.content))
+
             status = self.get_cluster_status(self.cluster_id)
             self.assertEqual(status, "healthy",
                              msg="FAIL, Outcome: {}, Expected: {}".format(status, "healthy"))
