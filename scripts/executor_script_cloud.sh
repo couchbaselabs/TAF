@@ -56,10 +56,11 @@ export GOPATH=`pwd`/go
 export PATH="${GOPATH}/bin:${PATH}"
 export GO111MODULE=on
 # Set desired python env
+export PYENV_VERSION=3.10.14
 export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
-pyenv local 3.10.14
+pyenv local $PYENV_VERSION
 
 # Install requirements for pip
 python -m pip install -r requirements.txt
