@@ -6,7 +6,7 @@ setup_test_infra_repo_for_installation() {
   git submodule update --init --force --remote
   pyenv local $PYENV_VERSION
   python -m pip install `cat requirements.txt  | grep -v "#" | grep -v couchbase | xargs`
-  cd -
+  cd ..
 }
 
 populate_ini() {
@@ -22,14 +22,14 @@ populate_ini() {
     -k '{'${UPDATE_INI_VALUES}'}' \
     --keyValue "${cluster_info}"
   set +x
-  cd -
+  cd ..
 }
 
 do_install() {
   cd test_infra_runner
   python scripts/new_install.py -i $WORKSPACE/testexec.$$.ini -p $install_params
   status=$?
-  cd -
+  cd ..
 }
 
 ## cherrypick the gerrit request if it was defined
