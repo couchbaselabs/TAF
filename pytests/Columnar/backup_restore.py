@@ -54,10 +54,6 @@ class BackupRestore(ColumnarBaseTest):
                 project_id=self.tenant.project_id,
                 instance=self.columnar_cluster, backup_id=backup["data"]["id"])
 
-        if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.columnar_cluster, self.columnar_spec):
-            self.fail("Error while deleting cbas entities")
-
         super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage="Teardown")
@@ -448,7 +444,7 @@ class BackupRestore(ColumnarBaseTest):
         self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
 
         if not self.cbas_util.wait_for_data_ingestion_in_the_collections(
-                self.cluster):
+                self.columnar_cluster):
             self.fail("Ingestion into analytics collections failed")
 
         result = self.cbas_util.disconnect_links(
@@ -483,7 +479,7 @@ class BackupRestore(ColumnarBaseTest):
             self.pod.url_public, '', '', self.tenant.user,
             self.tenant.pwd, override_token)
         resp = columnar_internal.set_trigger_time_for_scheduled_backup(
-            formatted_new_utc_time, [self.cluster.instance_id])
+            formatted_new_utc_time, [self.columnar_cluster.instance_id])
         if resp.status_code == 202:
             self.log.info("Applied sudo time to trigger backup")
         else:
@@ -570,7 +566,7 @@ class BackupRestore(ColumnarBaseTest):
             self.mini_volume.stop_crud_on_data_sources()
 
             if not self.cbas_util.wait_for_data_ingestion_in_the_collections(
-                    self.cluster):
+                    self.columnar_cluster):
                 self.fail("Ingestion into analytics collections failed")
 
             count_before_backup = self.dataset_count()

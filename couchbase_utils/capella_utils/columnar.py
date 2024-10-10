@@ -691,7 +691,7 @@ class ColumnarUtils:
             resp = self.get_instance_info(pod, tenant, project_id,
                                           instance.instance_id)
             status = resp["data"]["state"]
-            self.log.info("Waiting for instance to be in turning on state")
+            self.log.info("Waiting for instance to be in turning on state, current state : {}".format(status))
             time.sleep(30)
         if status != 'turning_on':
             self.log.error("Instance turn-on was not initiated by control "

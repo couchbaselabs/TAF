@@ -312,27 +312,16 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             self.fail(msg)
 
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
-
+        statement = "COPY INTO {0} FROM `{1}` AT {2} PATH \"\";"
         for standalone_coll in datasets:
-            if not (
-                    self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.columnar_cluster, standalone_coll.name,
-                        standalone_coll.dataset_properties["external_container_name"],
-                        standalone_coll.link_name, standalone_coll.dataverse_name,
-                        standalone_coll.database_name,
-                        standalone_coll.dataset_properties["include"],
-                        standalone_coll.dataset_properties["file_format"],
-                        standalone_coll.dataset_properties["object_construction_def"],
-                        standalone_coll.dataset_properties["path_on_external_container"],
-                        standalone_coll.dataset_properties["header"],
-                        standalone_coll.dataset_properties["null_string"],
-                        standalone_coll.dataset_properties["exclude"],
-                        standalone_coll.dataset_properties["parse_json_string"],
-                        standalone_coll.dataset_properties["convert_decimal_to_double"],
-                        standalone_coll.dataset_properties["timezone"],
-                        expected_error="Parameter(s) format must be specified",
-                        expected_error_code=21010, validate_error_msg=True
-                    )):
+            statement_to_execute = statement.format(standalone_coll.full_name,
+                                                    standalone_coll.dataset_properties["external_container_name"],
+                                                    standalone_coll.link_name)
+            status, metrics, errors, results, _, warnings = self.cbas_util.execute_statement_on_cbas_util(
+                self.columnar_cluster, statement_to_execute)
+            if not self.cbas_util.validate_error_and_warning_in_response(status, errors,
+                                                                         expected_error="Parameter(s) format must be specified",
+                                                                         expected_error_code=21010):
                 self.fail("Error while copying data from S3 into {0} "
                           "standalone collection".format(standalone_coll.full_name))
 
