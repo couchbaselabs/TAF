@@ -7,6 +7,7 @@ This test suite contains tests for columnar upgrades on cloud.
 """
 import time
 
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from Columnar.columnar_base import ColumnarBaseTest
 from datetime import datetime, timedelta
 
@@ -609,6 +610,30 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                 maintenance_job_id=ungrade_info["id"], timeout=7200
         ):
             self.fail("Upgrade failed.")
+
+        self.log.info("Validating server version post upgrade")
+        rest = ClusterRestAPI(self.columnar_cluster.master)
+        status, content = rest.cluster_details()
+        if not status:
+            self.fail(
+                "Error while fetching pools/default using connection string")
+
+        node_versions = set()
+        for node_info in content["nodes"]:
+            node_versions.add(node_info["version"])
+
+        if len(node_versions) > 1:
+            self.fail(f"Post upgrade cluster has nodes with different "
+                      f"versions - {node_versions}")
+        else:
+            upgrade_version = self.upgrade_version.split("-")
+            expected_version_post_upgrade = "-".join(
+                upgrade_version[2:4] + [upgrade_version[1]])
+            actual_version_post_upgrade = node_versions.pop()
+            if actual_version_post_upgrade != expected_version_post_upgrade:
+                self.fail(f"Incorrect Server version post upgrade. Expected "
+                          f"version {expected_version_post_upgrade}, "
+                          f"Actual version {actual_version_post_upgrade}")
 
         status, error = self.cbas_util.perform_metadata_validation_for_all_entities(
             self.columnar_cluster, cbas_entities_before_upgrade)
