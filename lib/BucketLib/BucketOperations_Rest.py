@@ -374,10 +374,7 @@ class BucketHelper(BucketRestApi):
             init_params[Bucket.threadsNumber] = 8
         init_params.pop(Bucket.priority)
 
-        if bucket_params.get(Bucket.bucketType) == Bucket.Type.MEMCACHED:
-            # Remove 'replicaNumber' in case of MEMCACHED bucket
-            init_params.pop(Bucket.replicaNumber, None)
-        elif bucket_params.get(Bucket.bucketType) == Bucket.Type.EPHEMERAL:
+        if bucket_params.get(Bucket.bucketType) == Bucket.Type.EPHEMERAL:
             # Remove 'replicaIndex' parameter in case of EPHEMERAL bucket
             init_params.pop(Bucket.replicaIndex, None)
             # Add purgeInterval only for Ephemeral case

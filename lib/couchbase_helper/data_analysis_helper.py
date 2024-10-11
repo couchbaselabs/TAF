@@ -556,8 +556,6 @@ class DataCollector(object):
         """
         bucketMap = dict()
         for bucket in buckets:
-            if bucket.bucketType == Bucket.Type.MEMCACHED:
-                continue
             dataMap = dict()
             for server in servers:
                 map_data = dict()

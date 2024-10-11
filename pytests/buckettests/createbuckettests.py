@@ -222,8 +222,7 @@ class CreateBucketTests(ClusterSetup):
             Bucket.storageBackend: self.bucket_storage,
             Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
             Bucket.durabilityMinLevel: self.bucket_durability_level}
-        for bucket_type in [Bucket.Type.MEMBASE, Bucket.Type.EPHEMERAL,
-                            Bucket.Type.MEMCACHED]:
+        for bucket_type in [Bucket.Type.MEMBASE, Bucket.Type.EPHEMERAL]:
             init_params[Bucket.bucketType] = bucket_type
             for name, error in invalid_names.items():
                 init_params[Bucket.name] = name

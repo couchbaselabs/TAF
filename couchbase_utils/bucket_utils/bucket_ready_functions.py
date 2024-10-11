@@ -2294,11 +2294,6 @@ class BucketUtils(ScopeUtils):
         helper = BucketHelper(cluster.master)
         self.log.debug("Updating server_list for bucket :: %s"
                        % bucket_obj.name)
-        if bucket_obj.bucketType == Bucket.Type.MEMCACHED:
-            self.log.critical("Since the vBucketServerMap does not exist for memcached buckets, "
-                              "populating the bucket servers with kv_nodes in cluster")
-            bucket_obj.servers = cluster.kv_nodes
-            retry = 0
         while retry > 0:
             # Reset the known servers list
             bucket_obj.servers = list()
@@ -3191,16 +3186,6 @@ class BucketUtils(ScopeUtils):
         self.log.debug("Verifying stats for bucket {0}".format(bucket.name))
         stats_tasks = []
         servers = self.cluster_util.get_bucket_kv_nodes(cluster, bucket)
-        if bucket.bucketType == Bucket.Type.MEMCACHED:
-            items_actual = 0
-            for server in servers:
-                client = MemcachedClientHelper.direct_client(server, bucket)
-                items_actual += int(client.stats()["curr_items"])
-                client.close()
-            if items != items_actual:
-                raise Exception("Items are not correct")
-            return
-
         # TODO: Need to fix the config files to always satisfy the
         #       replica number based on the available number_of_servers
         available_replicas = bucket.replicaNumber
@@ -3465,8 +3450,6 @@ class BucketUtils(ScopeUtils):
         for node in kv_nodes:
             cbstat = Cbstats(node)
             for bucket in buckets:
-                if bucket.bucketType == Bucket.Type.MEMCACHED:
-                    continue
                 val = cbstat.all_stats(bucket.name)["ep_dcp_oso_backfill"]
                 if val != expected_val:
                     result = False
@@ -5835,9 +5818,6 @@ class BucketUtils(ScopeUtils):
             expected_num_items = self.get_expected_total_num_items(bucket)
             self.verify_stats_for_bucket(cluster, bucket, expected_num_items,
                                          timeout=timeout, num_zone=num_zone)
-
-            if bucket.bucketType == Bucket.Type.MEMCACHED:
-                continue
 
             status = self.validate_manifest_uid(cluster.master, bucket)
             if not status:

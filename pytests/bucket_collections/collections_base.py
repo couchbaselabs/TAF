@@ -99,26 +99,24 @@ class CollectionBase(ClusterSetup):
 
         cbstat_obj = Cbstats(self.cluster.kv_nodes[0])
         for bucket in self.cluster.buckets:
-            if bucket.bucketType != Bucket.Type.MEMCACHED:
-                retry = 0
-                while True:
-                    try:
-                        result = cbstat_obj.all_stats(bucket.name)
-                        self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
-                                      % (bucket.name,
-                                         result["vb_active_perc_mem_resident"]))
-                        self.log.info("Bucket: %s, Replica Resident ratio(DGM): %s%%"
-                                      % (bucket.name,
-                                         result["vb_replica_perc_mem_resident"]))
-                        break
-                    except KeyError as e:
-                        if retry == 5:
-                            raise e
-                        retry += 1
-                        self.sleep(5, "Retrying due to %s" % e)
+            retry = 0
+            while True:
+                try:
+                    result = cbstat_obj.all_stats(bucket.name)
+                    self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
+                                  % (bucket.name,
+                                     result["vb_active_perc_mem_resident"]))
+                    self.log.info("Bucket: %s, Replica Resident ratio(DGM): %s%%"
+                                  % (bucket.name,
+                                     result["vb_replica_perc_mem_resident"]))
+                    break
+                except KeyError as e:
+                    if retry == 5:
+                        raise e
+                    retry += 1
+                    self.sleep(5, "Retrying due to %s" % e)
 
-            if not self.skip_collections_cleanup \
-                    and bucket.bucketType != Bucket.Type.MEMCACHED:
+            if not self.skip_collections_cleanup:
                 self.bucket_util.remove_scope_collections_for_bucket(
                     self.cluster, bucket)
         cbstat_obj.disconnect()

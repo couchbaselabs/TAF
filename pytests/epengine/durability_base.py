@@ -146,8 +146,7 @@ class BucketDurabilityBase(ClusterSetup):
         self.bucket_template[Bucket.durabilityMinLevel] = None
 
         self.bucket_types_to_test = [Bucket.Type.MEMBASE,
-                                     Bucket.Type.EPHEMERAL,
-                                     Bucket.Type.MEMCACHED]
+                                     Bucket.Type.EPHEMERAL]
 
         self.d_level_order = [
             SDKConstants.DurabilityLevel.NONE,
@@ -162,8 +161,6 @@ class BucketDurabilityBase(ClusterSetup):
         self.possible_d_levels[Bucket.Type.EPHEMERAL] = [
             SDKConstants.DurabilityLevel.NONE,
             SDKConstants.DurabilityLevel.MAJORITY]
-        self.possible_d_levels[Bucket.Type.MEMCACHED] = [
-            SDKConstants.DurabilityLevel.NONE]
 
         # Dict to store the list of active/replica VBs in each node
         self.vbs_in_node = dict()

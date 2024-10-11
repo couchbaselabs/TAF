@@ -169,7 +169,6 @@ class Bucket(object):
     class Type(object):
         EPHEMERAL = "ephemeral"
         MEMBASE = "couchbase"
-        MEMCACHED = "memcached"
 
     class ReplicaNum(object):
         ZERO = 0

@@ -39,10 +39,6 @@ class CreateBucketTests(BucketDurabilityBase):
                         % (self.bucket_type, b_level)
 
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
-            # Remove unsupported replica string in case if MC bucket
-            if self.bucket_type == Bucket.Type.MEMCACHED:
-                del bucket_dict[Bucket.replicaNumber]
-
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
 

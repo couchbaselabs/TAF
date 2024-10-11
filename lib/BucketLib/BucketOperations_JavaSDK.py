@@ -70,9 +70,7 @@ class BucketHelper(BucketHelperRest, SDKClient):
         try:
             bucketSettings = DefaultBucketSettings.builder()
 
-            if bucket_params.get('bucketType') == "memcached":
-                bucketSettings.type(BucketType.MEMCACHED)
-            elif bucket_params.get('bucketType') == "ephemeral":
+            if bucket_params.get('bucketType') == "ephemeral":
                 bucketSettings.type(BucketType.EPHEMERAL)
             else:
                 bucketSettings.type(BucketType.COUCHBASE)
