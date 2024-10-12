@@ -177,6 +177,79 @@ class RemoteMachineShellConnection:
             self.cmd_ext = ".exe"
             self.bin_path = Windows.COUCHBASE_BIN_PATH
 
+    def apply_io_throttling(self, read_limit, write_limit, device="/dev/xvda"):
+        override_content = "[Service]\nIOReadBandwidthMax={0} {1}\nIOWriteBandwidthMax={0} {2}\n".format(
+            device, read_limit, write_limit)
+        commands = [
+            "mkdir -p /etc/systemd/system/couchbase-server.service.d",
+            "echo '{0}' | tee /etc/systemd/system/couchbase-server.service.d/override.conf".format(
+                override_content),
+            "systemctl daemon-reload",
+            "systemctl restart couchbase-server.service",
+            "ls -l /etc/systemd/system/couchbase-server.service.d"
+        ]
+        try:
+            for command in commands:
+                self.log.info("Executing command: {0}".format(command))
+                output, error = self.execute_command(command)
+                self.log.info("Output: {0}".format(output))
+                self.log.info("Error: {0}".format(error))
+                if command.startswith("echo"):
+                    # Check if the file was created
+                    check_file = "ls -l /etc/systemd/system/couchbase-server.service.d/override.conf"
+                    self.log.debug("Checking file: {0}".format(check_file))
+                    check_output, check_error = self.execute_command(
+                        check_file)
+                    self.log.debug("Check Output: {0}".format(check_output))
+                    self.log.debug("Check Error: {0}".format(check_error))
+        except Exception as e:
+            self.log.error(
+                "Failed to execute commands to simulate slow disk {}"
+                    .format(e))
+
+    import os
+
+    def remove_io_throttling(self, device="/dev/xvda"):
+        override_conf_path = "/etc/systemd/system/couchbase-server.service.d/override.conf"
+        commands = [
+            "systemctl daemon-reload",
+            "systemctl restart couchbase-server.service"
+        ]
+
+        try:
+            # Use shell command to check if the file exists
+            check_command = "test -f " + override_conf_path + " && echo 'File exists' || echo 'File does not exist'"
+            self.log.info("Checking for path using shell command: {0}".format(
+                check_command))
+            output, error = self.execute_command(check_command)
+            # Join the output list into a single string if necessary
+            if isinstance(output, list):
+                output = ''.join(output).strip()
+
+            if "File exists" in output:
+                self.log.info("File exists: {0}. Removing it.".format(
+                    override_conf_path))
+                remove_command = "rm -f " + override_conf_path
+                output, error = self.execute_command(remove_command)
+                self.log.debug("Output: {0}".format(output))
+                self.log.debug("Error: {0}".format(error))
+            else:
+                self.log.info(
+                    "File does not exist: {0}. Skipping removal.".format(
+                        override_conf_path))
+
+            for command in commands:
+                self.log.info("Executing command: {0}".format(command))
+                output, error = self.execute_command(command)
+                self.log.debug("Output: {0}".format(output))
+                self.log.debug("Error: {0}".format(error))
+        except Exception as e:
+            self.log.error(
+                "Failed to execute command: {0}. Error: {1}".format(command,
+                                                                    e))
+        finally:
+            pass
+
     def connect(self):
         if self.is_cloud:
             raise Exception("Running in Capella env. ssh isn't supported!")

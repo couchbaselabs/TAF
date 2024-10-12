@@ -6238,11 +6238,11 @@ class AutoFailoverNodesFailureTask(Task):
 
 
 class NodeFailureTask(Task):
-    def __init__(self, task_manager, node, failure_type,
-                 task_type="induce_failure", disk_location="/data"):
+    def __init__(self, task_manager, node, failure_type, task_type="induce_failure", disk_location="/data",
+                 read_limit=None, write_limit=None):
         super(NodeFailureTask, self).__init__("NodeFailureTask_%s_%s_%s"
-                                              % (node.ip, failure_type,
-                                                 task_type))
+                                            % (node.ip, failure_type,
+                                               task_type))
         self.task_manager = task_manager
         self.target_node = node
         self.failure_type = failure_type
@@ -6250,6 +6250,8 @@ class NodeFailureTask(Task):
         self.shell = None
         self.set_result(True)
         self.disk_location = disk_location
+        self.read_limit = read_limit
+        self.write_limit = write_limit
 
     def _fail_disk(self, node):
         output, error = self.shell.unmount_partition(self.disk_location)
@@ -6267,6 +6269,29 @@ class NodeFailureTask(Task):
                 .format(self.disk_location, node.ip)
             self.test_log.error(exception_str)
             self.set_exception(Exception(exception_str))
+
+    def _simulate_slow_disk(self):
+        try:
+            self.test_log.info(
+                "Applying I/O throttling on node: {0}".format(
+                    self.target_node.ip))
+            shell = RemoteMachineShellConnection(self.target_node)
+            shell.apply_io_throttling(self.read_limit,
+                                               self.write_limit)
+            self.set_result(True)
+            shell.disconnect()
+
+        except Exception as e:
+            self.test_log.error(
+                "Exception during I/O throttling: {0}".format(str(e)))
+            self.set_result(False)
+
+    def _revert_slow_disk(self):
+        self.test_log.info(
+            "Removing I/O throttling on node: {0}".format(self.target_node.ip))
+        shell = RemoteMachineShellConnection(self.target_node)
+        shell.remove_io_throttling()
+        shell.disconnect()
 
     def _recover_disk(self, node):
         # we need to stop couchbase server before mounting partition to avoid inconsistencies
@@ -6309,7 +6334,9 @@ class NodeFailureTask(Task):
             self.test_log.error(error)
 
     def __induce_node_failure(self):
-        if self.failure_type == "firewall":
+        if self.failure_type == "slow_disk":
+            self._simulate_slow_disk()
+        elif self.failure_type == "firewall":
             RemoteUtilHelper.enable_firewall(self.target_node)
         elif self.failure_type == "restart_couchbase":
             self.shell.restart_couchbase()
@@ -6339,7 +6366,9 @@ class NodeFailureTask(Task):
             self.set_result(False)
 
     def __revert_node_failure(self):
-        if self.failure_type in ["firewall", "network_split"]:
+        if self.failure_type == "slow_disk":
+            self._revert_slow_disk()
+        elif self.failure_type in ["firewall", "network_split"]:
             self.shell.disable_firewall()
         elif self.failure_type == "stop_couchbase":
             self.shell.start_couchbase()

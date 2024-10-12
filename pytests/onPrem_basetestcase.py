@@ -637,6 +637,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Open ssh_connections for command execution
         for server in cluster.servers:
             ssh_sessions[server.ip] = RemoteMachineShellConnection(server)
+            ssh_sessions[server.ip].remove_io_throttling()
 
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user

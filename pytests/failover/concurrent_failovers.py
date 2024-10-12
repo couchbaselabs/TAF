@@ -340,22 +340,21 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         self.log.info("Performing doc_ops with durability level=%s"
                       % load_spec[MetaCrudParams.DURABILITY_LEVEL])
-        doc_loading_task = \
-            self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
-                load_spec,
-                mutation_num=0,
-                async_load=(not validate_num_items),
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
+        doc_loading_task = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.cluster.buckets,
+            load_spec,
+            mutation_num=0,
+            async_load=(not validate_num_items),
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency
+        )
 
         if doc_loading_task.result is False:
             self.fail("Collection CRUDs failure")
-
         if validate_num_items:
-            # Verify initial doc load count
+            # Verify initial document load count
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets,
                                                          timeout=1200)
@@ -1215,6 +1214,140 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             finally:
                 # Making sure to remove failed nodes before failing the test
                 self.cluster_util.rebalance(self.cluster)
+
+    def test_slow_disk_autofailover(self):
+        exception_occured = False
+        slow_disk_timeout = self.input.param("slow_disk_timeout", 5)
+        read_limit = self.input.param("read_limit", "10M")
+        write_limit = self.input.param("write_limit", "10M")
+
+        # Disable autofailover temporarily
+        status = self.rest.update_autofailover_settings(
+            enabled=False, timeout=self.timeout)
+        self.assertTrue(status, "Failed to disable Autofailover")
+
+        len_of_nodes_to_afo = len(self.failover_order[0].split(":"))
+        nodes_to_fo = dict()
+        nodes_in_cluster = self.rest.get_nodes()
+
+        # Determine nodes to failover
+        for node in nodes_in_cluster:
+            if len_of_nodes_to_afo <= 0:
+                break
+            if str(self.cluster.master.ip) == str(node.ip):
+                continue
+            nodes_to_fo[node] = self.failover_method
+            len_of_nodes_to_afo -= 1
+
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        self.nodes_to_fail = nodes_to_fo
+        self.__update_server_obj()
+        expected_fo_nodes = self.num_nodes_to_be_failover
+        self.fo_events += expected_fo_nodes
+        fo_events = self.fo_events
+
+        try:
+            for node, failure_method in self.nodes_to_fail.items():
+                # Induce slow disk failure
+                node_failure_task = NodeFailureTask(
+                    task_manager=self.task_manager,
+                    node=node,
+                    failure_type="slow_disk",
+                    task_type="induce_failure",
+                    read_limit=read_limit,
+                    write_limit=write_limit
+                )
+
+                self.task_manager.add_new_task(node_failure_task)
+                self.task_manager.get_task_result(node_failure_task)
+                if not node_failure_task.result:
+                    raise Exception("Slow disk simulation failed")
+
+                # Wait for bucket warmup to complete
+                for bucket in self.cluster.buckets:
+                    self.bucket_util._wait_warmup_completed(
+                        bucket,
+                        wait_time=1800)
+
+                # Re-enable autofailover
+                status = self.rest.update_autofailover_settings(
+                    enabled=True, timeout=self.timeout,
+                    maxCount=self.max_count)
+                self.assertTrue(status, "Failed to enable Autofailover")
+                self.validate_failover_settings(True, self.timeout, 0,
+                                                self.max_count)
+
+                # Simulate slow disk conditions
+                shell_conn = RemoteMachineShellConnection(self.cluster.master)
+                shell_conn.enable_slow_disk(slow_disk_timeout)
+                load_spec = self.bucket_util.get_crud_template_from_package(
+                    "new_collections_load")
+                doc_loading_task = self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    load_spec,
+                    mutation_num=0,
+                    async_load=True,
+                    validate_task=False,
+                    batch_size=self.batch_size,
+                    process_concurrency=3
+                )
+
+                # Check if failover occurs within the timeout
+                timeout = self.timeout + 40
+                start_time = time()
+                while time() - start_time < timeout:
+                    curr_fo_settings = self.rest.get_autofailover_settings()
+                    if fo_events == curr_fo_settings.count:
+                        self.assertTrue(True, "Fail-over happened as expected")
+                        break
+                    self.sleep(1)
+                else:
+                    self.assertTrue(False,
+                                    "Fail-over did not happen as expected")
+                    raise Exception("Fail-over did not happen")
+
+        except Exception as e:
+            exception_occured = True
+            self.log.info("Exception occurred during test {}".format(e))
+        finally:
+            # Revert slow disk simulation and restore settings
+            status = self.rest.update_autofailover_settings(enabled=False,
+                                                            timeout=self.timeout)
+            for node in self.nodes_to_fail.keys():
+                revert_task = NodeFailureTask(
+                    task_manager=self.task_manager,
+                    node=node,
+                    failure_type="slow_disk",
+                    task_type="revert_failure"
+                )
+
+                self.task_manager.add_new_task(revert_task)
+                self.task_manager.get_task_result(revert_task)
+
+                if not revert_task.result:
+                    self.log.info("!!! Warning Slow Disk Reverse Failure !!!")
+                    exception_occured = True
+                else:
+                    self.sleep(50)
+
+                # Decide whether to add back nodes or eject them
+                if choice([True, False]):
+                    rest_nodes = self.rest.get_nodes(inactive_added=True,
+                                                     inactive_failed=True)
+                    for node in rest_nodes:
+                        if node.clusterMembership == "inactiveFailed":
+                            self.rest.add_back_node(node.id)
+                            if CbServer.Services.KV in node.services:
+                                self.rest.set_recovery_type(node.id, "delta")
+                    result = self.cluster_util.rebalance(self.cluster)
+                    self.assertTrue(result, "Final re-balance failed")
+                else:
+                    result = self.cluster_util.rebalance(self.cluster)
+                    self.assertTrue(result, "Final re-balance failed")
+                self.assertFalse(exception_occured,
+                                 "Exception occurred during test")
 
     def test_MB_51219(self):
         """
