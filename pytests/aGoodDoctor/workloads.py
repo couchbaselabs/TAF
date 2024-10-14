@@ -112,6 +112,11 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {collection}(`brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
             "queries": [
                 'SELECT id from {collection} where brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {collection} where brand="Nike" AND color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -153,6 +158,12 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (country, brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (country, brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 ],
             "queries": [
                 'SELECT id from {collection} where country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -199,6 +210,13 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (category, country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (category, country, brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (category, country, brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (category, country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {collection} where category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -250,6 +268,14 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`type`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (type, category, country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (type, category, country, brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (type, category, country, brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (type, category, country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (type, category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (type, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -313,6 +339,15 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {collection}(`review`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, type, category, country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, type, category, country, brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, type, category, country, brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, type, category, country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, type, category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, type, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -381,6 +416,15 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {collection}(`category`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 # 'CREATE INDEX {index_name} ON {collection}(`type`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 # 'CREATE INDEX {index_name} ON {collection}(`review`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (type, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (review, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {collection} where size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -453,10 +497,13 @@ siftBigANN = {
             #     'SELECT id from {collection} where review > 0 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
             #     ],
             "indexes": [
-                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":32, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {collection}(`embedding` VECTOR) INCLUDE (`review`, `type`, `category`,`country`, `brand`, `color`, `size`, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "indexes_base64": [
-                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":32, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 ],
             "queries": [
                 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 10',

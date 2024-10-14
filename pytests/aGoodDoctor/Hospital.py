@@ -153,9 +153,9 @@ class Murphy(BaseTestCase, OPD):
         if self.vector:
             self.load_defn = list()
             if self.index_nodes > 0:
-                if self.mockVector:
+                if self.val_type == "Hotel":
                     self.load_defn.append(hotel_vector)
-                else:
+                if self.val_type == "siftBigANN":
                     self.load_defn.append(siftBigANN)
                     self.siftFileName = FileDownload.checkDownload(
                         siftBigANN.get("baseFilePath"),
@@ -572,6 +572,7 @@ class Murphy(BaseTestCase, OPD):
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
         # self.sleep(self.input.param("steady_state_workload_sleep", 120))
+        self.trigger_rollback()
         
         if self.val_type == "siftBigANN":
             self.mutations = True

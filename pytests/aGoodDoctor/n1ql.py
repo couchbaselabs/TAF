@@ -304,6 +304,9 @@ class DoctorN1QL():
                         if base64:
                             indexType = workload.get("indexes_base64")
                             queryType = workload.get("queries_base64")
+                        elif TestInputSingleton.input.param("bhive", False):
+                            indexType = workload.get("bhive_indexes")
+                            queryType = workload.get("queries")
                         else:
                             indexType = workload.get("indexes")
                             queryType = workload.get("queries")

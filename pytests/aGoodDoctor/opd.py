@@ -34,6 +34,7 @@ from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from TestInput import TestInputServer
 from gsiLib.gsiHelper import GsiHelper
 from _collections import defaultdict
+from memcached.helper.data_helper import MemcachedClientHelper
 
 
 class OPD:
@@ -407,7 +408,9 @@ class OPD:
         print "Final End: %s" % bucket.end
         print "================{}=================".format(bucket.name)
 
-    def _loader_dict(self, cluster, buckets, overRidePattern=None, cmd={}, skip_default=True):
+    def _loader_dict(self, cluster, buckets, overRidePattern=None, cmd={},
+                     skip_default=True,
+                     overWriteValType=None):
         self.loader_map = dict()
         self.default_pattern = [100, 0, 0, 0, 0]
         buckets = buckets or cluster.buckets
@@ -416,7 +419,7 @@ class OPD:
             for scope in bucket.scopes.keys():
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
                     workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
-                    valType = workloads[i % len(workloads)]["valType"]
+                    valType = overWriteValType or workloads[i % len(workloads)]["valType"]
                     dim = workloads[i % len(workloads)].get("dim", self.dim)
                     if scope == CbServer.system_scope:
                         continue
@@ -505,7 +508,8 @@ class OPD:
 
     def load_sift_data(self, wait_for_load=True,
                      validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
-                     wait_for_stats=True):
+                     wait_for_stats=True,
+                     override_num_items=None):
         cmd = {}
         tasks = list()
         steps = [0, 1000000, 2000000, 5000000, 10000000, 20000000, 50000000, 100000000, 200000000, 500000000, 1000000000]
@@ -530,10 +534,10 @@ class OPD:
                         continue
                     end_offset = 0
                     if cmd.get("cr", "0") > 0:
-                        end_offset = workload.get("num_items")
+                        end_offset = override_num_items or workload.get("num_items")
                     elif cmd.get("up", "0") > 0:
-                        end_offset = workload.get("num_items")
-            
+                        end_offset = override_num_items or workload.get("num_items")
+
                     for k in range(len(steps)):
                         if end_offset > steps[k]:
                             for i in range(self.process_concurrency):
@@ -715,10 +719,12 @@ class OPD:
 
     def perform_load(self, wait_for_load=True,
                      validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
-                     wait_for_stats=True):
+                     wait_for_stats=True,
+                     overWriteValType=None):
         self.get_memory_footprint()
         buckets = buckets or cluster.buckets
-        self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default)
+        self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default,
+                          overWriteValType=overWriteValType)
         # master = Server(self.cluster.master.ip, self.cluster.master.port,
         #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
         #                 str(self.cluster.master.memcached_port))
@@ -999,6 +1005,9 @@ class OPD:
             self.sleep(sleep,
                        "Iteration:{} waiting to kill memc on all nodes".
                        format(self.crash_count))
+            self.kill_memcached(num_kills=num_kills,
+                                graceful=graceful, wait=True,
+                                services=["kv"])
             self.kill_memcached(nodes, num_kills=num_kills,
                                 graceful=graceful, wait=True,
                                 services=["indexer"])
@@ -1026,7 +1035,7 @@ class OPD:
         self.stop_crash = False
         self.crash_count = 0
         if not nodes:
-            nodes = self.cluster.kv_nodes + [self.cluster.master]
+            nodes = self.cluster.kv_nodes
 
         while not self.stop_crash:
             sleep = random.randint(60, 120)
@@ -1043,7 +1052,7 @@ class OPD:
     def kill_memcached(self, servers=None, num_kills=1,
                        graceful=False, wait=True, services=["kv"]):
         if not servers:
-            servers = self.cluster.kv_nodes + [self.cluster.master]
+            servers = self.cluster.kv_nodes
 
         for server in servers:
             for _ in xrange(num_kills):
@@ -1276,3 +1285,48 @@ class OPD:
                         temp_server.cbas_port = 18095
                     nodes.append(temp_server)
                 cluster.refresh_object(nodes)
+
+    def trigger_rollback(self):
+        mem_only_items = 100000
+        rollbacks = 0
+        while rollbacks < 20:
+            for i, node in enumerate(self.cluster.kv_nodes):
+                self.key = "rollback_docs_%s_%s-" % (rollbacks, i)
+                # Stopping persistence on NodeA
+                for bucket in self.cluster.buckets:
+                    mem_client = MemcachedClientHelper.direct_client(
+                        node, bucket)
+                    mem_client.stop_persistence()
+
+                if self.val_type == "siftBigANN":
+                    self.load_sift_data(cluster=self.cluster,
+                                  buckets=self.cluster.buckets,
+                                  overRidePattern=[100,0,0,0,0],
+                                  validate_data=False,
+                                  wait_for_stats=False,
+                                  override_num_items=mem_only_items)
+                else:
+                    self.normal_load()
+
+                self.check_index_pending_mutations()
+                # Kill memcached on NodeA to trigger rollback on other Nodes
+                shell = RemoteMachineShellConnection(node)
+                shell.kill_memcached()
+
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    self.cluster.buckets[0],
+                    servers=[self.cluster.master],
+                    wait_time=self.wait_timeout * 10))
+                self.sleep(10, "Not Required, but waiting for 10s after warm up")
+                self.check_index_pending_mutations()
+                result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+                if result:
+                    self.stop_crash = True
+                    self.task_manager.abort_all_tasks()
+                    self.doc_loading_tm.abortAllTasks()
+                    self.assertFalse(
+                        result,
+                        "CRASH | CRITICAL | WARN messages found in cb_logs")
+            rollbacks += 1
+
+        self.key = self.input.param("key", "test_docs-")
