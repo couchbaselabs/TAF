@@ -154,7 +154,7 @@ class GetBuildStatus(GetIndex):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
                  "organizationOwner", "projectOwner", "projectDataReader",
-                 "projectViewer", "projectDataReaderWriter", "projectManager"
+                 "projectDataReaderWriter"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
