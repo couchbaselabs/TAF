@@ -541,8 +541,8 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.index_nodes:
             self.drIndex.create_indexes(self.cluster.buckets, base64=self.base64, xattr=self.xattr)
-            # self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
-            # self.check_index_pending_mutations()
+            self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
+            self.check_index_pending_mutations()
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("2iQPS", 0) > 0:
                     ql = QueryLoad(bucket, self.mockVector,
