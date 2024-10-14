@@ -687,13 +687,13 @@ class ColumnarUtils:
         start_time = time.time()
         end_time = start_time + timeout
         # First wait for turn-on job to get picked up by control plane
-        while status != 'turning_on' and time.time() < end_time:
+        while status != 'turning_on' and status != 'healthy' and time.time() < end_time:
             resp = self.get_instance_info(pod, tenant, project_id,
                                           instance.instance_id)
             status = resp["data"]["state"]
             self.log.info("Waiting for instance to be in turning on state, current state : {}".format(status))
             time.sleep(30)
-        if status != 'turning_on':
+        if status != 'turning_on' and status != 'healthy':
             self.log.error("Instance turn-on was not initiated by control "
                            "place even after {} seconds".format(timeout))
             return False
