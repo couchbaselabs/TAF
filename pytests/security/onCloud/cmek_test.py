@@ -202,7 +202,7 @@ class CMEKTest(SecurityBase):
                 'cidr': '10.1.14.0/23',
             },
             'couchbaseServer': {
-                'version': '7.2',
+                'version': self.server_version,
             },
             'serviceGroups': [
                 {
@@ -296,7 +296,7 @@ class CMEKTest(SecurityBase):
                 "cidr": "10.1.16.0/23"
             },
             "couchbaseServer": {
-                "version": "7.2"
+                "version": self.server_version
             },
             "serviceGroups": [
                 {
