@@ -14,7 +14,7 @@ from .sso_utils import SSOComponents
 
 from java.security import KeyPairGenerator, KeyFactory
 from pytests.security.onCloud.sso_utils import SsoUtils
-from pytests.Capella.RestAPIv4.security_base import SecurityBase
+from pytests.security.security_base import SecurityBase
 from java.security.spec import PKCS8EncodedKeySpec, RSAPublicKeySpec
 
 IDPMetadataTemplate = """

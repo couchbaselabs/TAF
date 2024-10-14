@@ -4,7 +4,7 @@ import json
 import requests
 
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
-from pytests.Capella.RestAPIv4.security_base import SecurityBase
+from pytests.security.security_base import SecurityBase
 from urlparse import urljoin, urlparse
 from .sso_utils import SSOComponents, SsoUtils
 from .saml_response import SAMLResponse
