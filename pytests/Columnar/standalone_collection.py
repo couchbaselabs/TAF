@@ -638,7 +638,8 @@ class StandaloneCollection(ColumnarBaseTest):
                 statement = "Select * from {}".format(dataset.full_name)
                 status, metrics, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
                     self.columnar_cluster, statement)
+                actual_result = [x[dataset.name] for x in results]
                 if status == "success":
                     for dicts in data_to_add:
-                        if dicts not in results:
+                        if dicts not in actual_result:
                             self.fail("Few docs were updated")
