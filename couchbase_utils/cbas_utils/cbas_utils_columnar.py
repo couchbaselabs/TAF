@@ -4224,7 +4224,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         aws_kafka_counter = 0
         kafka_topics = copy.deepcopy(dataset_spec["kafka_topics"])
         if not dataset_spec["data_source"]:
-            datasources = ["mongo", "postgresql", "mysql"]
+            datasources = ["mongo", "postgresql", "mysql", "dynamodb"]
         else:
             datasources = dataset_spec["data_source"]
 

@@ -7,7 +7,6 @@ Created on 04-October-2024
 
 This utility is for performing actions on Molo17 connector.
 """
-
 from capellaAPI.capella.lib.APIRequests import APIRequests
 from  kafka_util.confluent_utils import ConfluentCloudAPIs
 
@@ -64,7 +63,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while getting all pipelines - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -78,7 +77,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching pipeline - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -97,7 +96,7 @@ class Molo17APIs(object):
             return resp["pipelineId"]
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while creating pipeline - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -105,13 +104,13 @@ class Molo17APIs(object):
         """
         Method to get all unassigned agents
         """
-        url = self.api_request.API_BASE_URL + "/unassigned-agent"
+        url = "/unassigned-agents"
         response = self.api_request.api_get(url, headers=self.generate_auth_header())
         if response.status_code == 200:
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching unassigned agents - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -125,7 +124,7 @@ class Molo17APIs(object):
             return True
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while deleting pipeline - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -144,7 +143,7 @@ class Molo17APIs(object):
             return response.json()["pipelineId"]
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while updating pipelines - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -158,7 +157,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching agents in the pipeline - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -172,7 +171,7 @@ class Molo17APIs(object):
             return True
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while deleting agent from pipeline - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -186,7 +185,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching specific agent from pipeline- "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -200,7 +199,7 @@ class Molo17APIs(object):
             return True
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while assigning agent to pipeline - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -215,7 +214,7 @@ class Molo17APIs(object):
         """
         Method to configure credentials of an agent
         """
-        url = self.pipeline_endpoints + "/{0}/agents/{1}".format(pipeline_id, agent_id) + "/configure/credentials"
+        url = self.pipeline_endpoints + "/{0}/agents/{1}".format(pipeline_id, agent_id) + "/config/credentials"
         payload = {"hostCredentials": {"connectionName":connection_name, "connectionString":connection_string,
                                        "databaseName": database_name, "disableAuth": disable_auth,
                                        "enableTls": enable_tls, "host":host,
@@ -240,7 +239,7 @@ class Molo17APIs(object):
             return
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while configuring agent credentials - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -248,14 +247,14 @@ class Molo17APIs(object):
         """
         Method to specify specifics of an agent
         """
-        url = self.pipeline_endpoints + "/{0}/agents/{1}".format(pipeline_id, agent_id) + "/configure/specific"
+        url = self.pipeline_endpoints + "/{0}/agents/{1}".format(pipeline_id, agent_id) + "/config/specific"
         payload= {"key": key, "value": value}
         response = self.api_request.api_put(url, payload, headers=self.generate_auth_header())
         if response.status_code == 202:
             return
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while specifying specifics of an agent - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -270,7 +269,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching columns of table - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -284,7 +283,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching schema of an agent - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -299,7 +298,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching tables from schema - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -314,7 +313,7 @@ class Molo17APIs(object):
             return True
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while upsert entities of pipeline agent - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -328,7 +327,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching pipeline config- "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -342,7 +341,7 @@ class Molo17APIs(object):
             return True
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while setting pipeline config - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -356,7 +355,7 @@ class Molo17APIs(object):
             return True
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while deleting entity - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -364,13 +363,13 @@ class Molo17APIs(object):
         """
         Method to get all entities in a pipeline
         """
-        url = self.pipeline_endpoints + "{0}/entities".format(pipeline_id)
+        url = self.pipeline_endpoints + "/{0}/entities".format(pipeline_id)
         response = self.api_request.api_get(url, headers=self.generate_auth_header())
         if response.status_code == 200:
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching all entities - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -384,7 +383,7 @@ class Molo17APIs(object):
             return response.json()
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while fetching specific entity - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )
 
@@ -399,6 +398,48 @@ class Molo17APIs(object):
             return response.json()["pipelineId"]
         else:
             raise Exception(
-                "Following error occurred while creating apiToken - "
+                "Following error occurred while completing pipeline configuration - "
+                "{0}".format(ConfluentCloudAPIs.parse_error(response))
+            )
+
+    def sync_one_time_snapshot(self, pipeline_id, entity_id, snapshotWriteMethod='UPSERT'):
+        url = self.pipeline_endpoints + ("/{0}/commands/sync/one-time-snapshot?entity={1}"
+                                         "&snapshotWriteMethod={2}").format(pipeline_id, entity_id,
+                                                                            snapshotWriteMethod)
+        response = self.api_request.api_post(url, request_body=None, headers=self.generate_auth_header())
+        if response.status_code == 202:
+            return True
+        else:
+            raise Exception(
+                "Following error occurred while syncing connector - "
+                "{0}".format(ConfluentCloudAPIs.parse_error(response))
+            )
+
+    def sync_redo(self, pipeline_id, entity_id, withSnapshot=True, snapshotWriteMethod='UPSERT', cdc=True):
+        url = self.pipeline_endpoints + ("/{0}/commands/sync/redo?entity={1}&withSnapshot={2}"
+                                         "&snapshotWriteMethod={3}").format(pipeline_id, entity_id, withSnapshot,
+                                                                            snapshotWriteMethod)
+        if not cdc:
+            url = self.pipeline_endpoints + "/{0}/commands/sync/redo?entity={1}&snapshotWriteMethod={2}".format(pipeline_id, entity_id,
+                                                                                                                snapshotWriteMethod)
+        response = self.api_request.api_post(url, request_body=None, headers=self.generate_auth_header())
+        if response.status_code == 202:
+            return True
+        else:
+            raise Exception(
+                "Following error occurred while syncing connector - "
+                "{0}".format(ConfluentCloudAPIs.parse_error(response))
+            )
+
+    def sync_start(self, pipeline_id, entity_id):
+        url = self.pipeline_endpoints + ("/{0}/commands/sync/start?entity={1}&withSnapshot={2}"
+                                         "&snapshotWriteMethod={3}").format(pipeline_id, entity_id, 'true',
+                                                                            'UPSERT')
+        response = self.api_request.api_post(url, request_body=None, headers=self.generate_auth_header())
+        if response.status_code == 202:
+            return True
+        else:
+            raise Exception(
+                "Following error occurred while syncing connector - "
                 "{0}".format(ConfluentCloudAPIs.parse_error(response))
             )

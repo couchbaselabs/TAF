@@ -1,4 +1,5 @@
 import time
+from random import randint
 
 import boto3
 from botocore.exceptions import ClientError
@@ -357,6 +358,70 @@ class S3(AWSBase):
                 objects.append(obj['Key'])
         return objects
 
+class DynamoDB(AWSBase):
+    def __init__(self, access_key, secret_key, region, session_token=None):
+        super(DynamoDB, self).__init__(access_key, secret_key, session_token)
+        self.dynamo_client = self.create_service_client(
+            service_name="dynamodb", region=region)
+        self.dynamo_client_resource = boto3.resource(
+            'dynamodb',
+            region_name=region,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            aws_session_token=session_token
+        )
+
+    def create_table(self, key_name, key_type):
+        try:
+            table_name = "dynamo_table_" + str(randint(1, 10000))
+            key_schema = [{'AttributeName': key_name, 'KeyType': 'HASH'}]
+            attribute_definitions = [{'AttributeName': key_name, 'AttributeType': key_type}]
+            _ = self.dynamo_client.create_table(TableName=table_name,
+                KeySchema=key_schema,
+                AttributeDefinitions=attribute_definitions,
+                ProvisionedThroughput={
+                    'ReadCapacityUnits': 20,
+                    'WriteCapacityUnits': 20
+                })
+            return table_name
+        except Exception as err:
+            raise Exception(str(err))
+
+    def enable_dynamodb_streams(self, table_name, stream_view_type="NEW_AND_OLD_IMAGES"):
+        try:
+            _ = self.dynamo_client.update_table(
+                TableName=table_name,
+                StreamSpecification={
+                    'StreamEnabled': True,
+                    'StreamViewType': stream_view_type
+                }
+            )
+            self.dynamo_client.get_waiter('table_exists').wait(TableName=table_name)
+        except Exception as err:
+            raise Exception(str(err))
+
+    def get_item_count(self, table_name):
+        total_count = 0
+        table = self.dynamo_client_resource.Table(table_name)
+        try:
+            # Describe the table to get the item count
+            response = table.scan()
+            total_count += response['Count']
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                total_count += response['Count']
+            return total_count
+        except Exception as err:
+            raise Exception(str(err))
+
+    def delete_dynamo_table(self, table_name):
+        try:
+            self.dynamo_client.delete_table(TableName=table_name)
+            waiter = self.dynamo_client.get_waiter('table_not_exists')
+            waiter.wait(TableName=table_name)
+        except Exception as err:
+            raise Exception(str(err))
+        return True
 
 class MSK(AWSBase):
 
