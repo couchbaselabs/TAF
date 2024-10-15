@@ -33,8 +33,13 @@ do_install() {
 }
 
 ## cherrypick the gerrit request if it was defined
-if [ "$cherrypick" != "None" ]; then
+if [ "$cherrypick" != "None" ] && [ "$cherrypick" != "" ] ; then
+   echo "###############################################"
+   echo "########### GIT :: Fetching patch #############"
+   echo "###############################################"
+   echo "$cherrypick"
    sh -c "$cherrypick"
+   echo "###############################################"
 fi
 
 set +e
