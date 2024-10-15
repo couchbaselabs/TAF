@@ -956,15 +956,12 @@ class ColumnarRBAC(ColumnarBaseTest):
                         # create remote collection.
                         self.log.info("Test creating remote collection")
                         remote_coll_obj = self.cbas_util.create_remote_dataset_obj(
-                            self.columnar_cluster,
-                            self.remote_cluster.buckets[0].name,
-                            "_default",
-                            "_default",
-                            remote_link,
-                            use_only_existing_db=True,
-                            use_only_existing_dv=True,
-                            database=database_name,
-                            dataverse=scope_name)[0]
+                            cluster=self.columnar_cluster,
+                            bucket=self.remote_cluster.buckets[0].name,
+                            scope="_default", collection="_default",
+                            link=remote_link, use_only_existing_db=True,
+                            use_only_existing_dv=True, database=database_name,
+                            dataverse=scope_name, capella_as_source=True)[0]
                         expected_error = self.ACCESS_DENIED_ERR
 
                         result = self.cbas_util.create_remote_dataset(
