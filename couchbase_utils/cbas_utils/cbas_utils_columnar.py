@@ -5110,9 +5110,10 @@ class UDFUtil(Index_Util):
         """
         super(UDFUtil, self).__init__(server_task, run_query_using_sdk)
 
-    def generate_create_udf_cmd(self, name, dataverse=None, database=None, or_replace=False,
-                                parameters=[], body=None, if_not_exists=False,
-                                query_context=False, use_statement=False):
+    def generate_create_udf_cmd(
+            self, name, dataverse=None, database=None, or_replace=False,
+            parameters=[], body=None, if_not_exists=False,
+            query_context=False, use_statement=False):
 
         create_udf_statement = ""
         if use_statement:
@@ -5165,9 +5166,9 @@ class UDFUtil(Index_Util):
         :param analytics_timeout : int
         """
         param = {}
-        create_udf_statement = self.generate_create_udf_cmd(name, dataverse, database, or_replace,
-                                                            parameters, body, if_not_exists,
-                                                            query_context, use_statement)
+        create_udf_statement = self.generate_create_udf_cmd(
+            name, dataverse, database, or_replace, parameters, body,
+            if_not_exists, query_context, use_statement)
 
         self.log.info("Executing cmd - \n{0}\n".format(create_udf_statement))
 

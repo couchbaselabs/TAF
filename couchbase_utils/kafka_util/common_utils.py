@@ -7,6 +7,8 @@ This utility is for making rest calls.
 """
 
 import logging
+import time
+
 from confluent_kafka.admin import AdminClient, NewTopic, NewPartitions
 from confluent_kafka import KafkaException
 
@@ -116,8 +118,12 @@ class KafkaClusterUtils(object):
                 topics, operation_timeout=operation_timeout,
                 request_timeout=request_timeout)
             for topic in response:
-                response[topic].result()
-
+                retry = 0
+                while (not response[topic].done()) and retry < 300:
+                    time.sleep(1)
+                    retry += 1
+                if not response[topic].done():
+                    raise Exception(f"Unable to delete topic {topic}")
         except KafkaException as err:
             raise Exception(err.args[0].str())
 
