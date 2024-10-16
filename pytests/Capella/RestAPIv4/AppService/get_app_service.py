@@ -50,6 +50,16 @@ class GetAppService(GetCluster):
             self.app_service_id)
         self.log.debug("Res: {}".format(res.content))
         try:
+            retry = 1
+            while res.json()["errorType"] == "AppServiceConnectionRefused" \
+                    and retry < 6:
+                self.log.warning(res.json()["message"])
+                retry += 1
+                self.log.debug("...Waiting for 5 seconds before retrying...")
+                time.sleep(5)
+                res = self.capellaAPI_v2.get_sgw_databases(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.app_service_id)
             if res.json()["errorType"] == "EntityStateInvalid":
                 self.log.warning("App service is off, so skipping the App "
                                  "Endpoint gibberish")

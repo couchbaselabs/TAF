@@ -198,7 +198,7 @@ class CreateBucket(GetBucket):
                     self.expected_res['timeToLiveInSeconds'],
                     self.expected_res['priority'], headers=header)
             self.validate_testcase(result, [201, 6001], testcase, failures)
-            if res.status_code == 201:
+            if result.status_code == 201:
                 self.delete_buckets([result.json()['id']])
             self.log.debug("Bucket cleanup successful")
 
@@ -335,7 +335,7 @@ class CreateBucket(GetBucket):
                     self.expected_res['timeToLiveInSeconds'],
                     self.expected_res['priority'], **kwarg)
             self.validate_testcase(result, [201, 6001], testcase, failures)
-            if res.status_code == 201:
+            if result.status_code == 201:
                 self.delete_buckets([result.json()['id']])
                 self.log.debug("Bucket cleanup successful")
 
@@ -595,7 +595,7 @@ class CreateBucket(GetBucket):
                     testcase['flush'], testcase['timeToLiveInSeconds'],
                     testcase['priority'])
             self.validate_testcase(result, [201], testcase, failures)
-            if res.status_code == 201:
+            if result.status_code == 201:
                 self.delete_buckets([result.json()['id']])
             self.log.debug("Bucket cleanup successful")
 
