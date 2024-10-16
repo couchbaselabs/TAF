@@ -75,9 +75,7 @@ class KafkaConnectUtil(object):
     AWS_MSK_CDC_PORT = 8084
     AWS_MSK_NON_CDC_PORT = 8085
 
-
     def __init__(self):
-
         self.connector_endpoint = "/connectors"
         self.connector_plugins = "/connector-plugins"
 
@@ -86,7 +84,10 @@ class KafkaConnectUtil(object):
     @staticmethod
     def generate_mongo_connector_config(
             mongo_connection_str, mongo_collections, topic_prefix,
-            src_connector="debezium", partitions=None, cdc_enabled=False):
+            src_connector="debezium", partitions=None, cdc_enabled=False,
+            serialization_type="JSON", schema_registry_url=None,
+            schema_registry_access_key=None,
+            schema_registry_secret_access_key=None):
         """
         Method to generate mongo connector configurations
         :param mongo_connection_str <str> Connection string to connect to mongo
@@ -99,6 +100,12 @@ class KafkaConnectUtil(object):
         :param partitions <int> Number of partition per topic.
         :param cdc_enabled <bool> If True, then generate connector config
         to stream cdc data, otherwise generate config to stream non-cdc data.
+        :param serialization_type <str> Supported values JSON, PROTOBUF, AVRO
+        :param schema_registry_url <str> URL for the schema registry
+        :param schema_registry_access_key <str> Access key for the schema
+        registry
+        :param schema_registry_secret_access_key <str> Secret Access key for
+        the schema registry
         """
         if src_connector.lower() == "debezium":
             if cdc_enabled:
@@ -112,6 +119,34 @@ class KafkaConnectUtil(object):
         config["tasks.max"] = len(mongo_collections)
         if partitions:
             config["topic.creation.default.partitions"] = partitions
+
+        if serialization_type in ["AVRO", "PROTOBUF"]:
+            if (not schema_registry_url or not schema_registry_access_key or
+                    not schema_registry_secret_access_key):
+                raise Exception(
+                    f"Need schema registry's URL, access and secret access "
+                    f"key for serialization type {serialization_type}")
+            else:
+                if serialization_type == "AVRO":
+                    config["value.converter"] = "io.confluent.connect.avro.AvroConverter"
+                    config["key.converter"] = "io.confluent.connect.avro.AvroConverter"
+                elif serialization_type == "PROTOBUF":
+                    config["value.converter"] = "io.confluent.connect.protobuf.ProtobufConverter"
+                    config["key.converter"] = "io.confluent.connect.protobuf.ProtobufConverter"
+
+        if schema_registry_url:
+            config["key.converter.schema.registry.url"] = schema_registry_url
+            config["value.converter.schema.registry.url"] = schema_registry_url
+            config["key.converter.basic.auth.credentials.source"] = "USER_INFO"
+            config[
+                "value.converter.basic.auth.credentials.source"] = "USER_INFO"
+            config["key.converter.schema.registry.basic.auth.user.info"] = (
+                    schema_registry_access_key + ":" +
+                    schema_registry_secret_access_key)
+            config["value.converter.schema.registry.basic.auth.user.info"] = (
+                    schema_registry_access_key + ":" +
+                    schema_registry_secret_access_key)
+
         return config
 
     def format_connect_cluster_hostname(self, connect_cluster_hostname):

@@ -396,7 +396,8 @@ class MongoUtil(object):
     Method deletes docs from the specified mongoDB collection.
     """
     def delete_docs_from_mongo_collection(
-            self, database, collection, start, end, sdk_batch_size=500):
+            self, database, collection, start, end, sdk_batch_size=500,
+            wait_for_task_complete=False):
         self.loader.database = database
         self.loader.collection = collection
         self.loader.sdk_batch_size = sdk_batch_size
@@ -410,7 +411,8 @@ class MongoUtil(object):
             operation_config=operation_config,
         )
         self.task_manager.add_new_task(task)
-        self.task_manager.get_task_result(task)
+        if wait_for_task_complete:
+            self.task_manager.get_task_result(task)
         return task
 
     """
@@ -419,7 +421,7 @@ class MongoUtil(object):
     def update_docs_in_mongo_collection(
             self, database, collection, start, end,
             fields_to_update=[], doc_template=SiriusCodes.Templates.PERSON,
-            doc_size=1024, sdk_batch_size=500):
+            doc_size=1024, sdk_batch_size=500, wait_for_task_complete=False):
         self.loader.database = database
         self.loader.collection = collection
         self.loader.sdk_batch_size = sdk_batch_size
@@ -436,7 +438,8 @@ class MongoUtil(object):
             operation_config=operation_config,
         )
         self.task_manager.add_new_task(task)
-        self.task_manager.get_task_result(task)
+        if wait_for_task_complete:
+            self.task_manager.get_task_result(task)
         return task
 
     """
@@ -445,15 +448,17 @@ class MongoUtil(object):
     def get_collection_doc_count(self, database, collection):
         self.loader.database = database
         self.loader.collection = collection
-        task = WorkLoadTask(
+        task = DatabaseManagementTask(
             task_manager=self.task_manager,
             op_type=SiriusCodes.DBMgmtOps.COUNT,
             database_information=self.loader,
-            operation_config=self.no_op_operation_config,
-        )
+            operation_config=self.no_op_operation_config)
         self.task_manager.add_new_task(task)
         self.task_manager.get_task_result(task)
-        return task
+        if task.result and not task.error:
+            return task.data
+        else:
+            raise Exception(task.error)
 
     """
     Method performs creation, updation and deletion of docs in the 
@@ -463,33 +468,43 @@ class MongoUtil(object):
             self, database, collection, start, end,
             percentage_create=100, percentage_update=0, percentage_delete=0,
             fields_to_update=[], doc_template=SiriusCodes.Templates.PERSON,
-            doc_size=1024, sdk_batch_size=500):
+            doc_size=1024, sdk_batch_size=500, wait_for_task_complete=False):
 
         if (percentage_create + percentage_update + percentage_delete) > 100:
             raise Exception(
                 "Total value of percentage_create + percentage_update + "
                 "percentage_delete cannot be greater than 100")
 
+        doc_tasks = list()
+
         if percentage_delete:
-            delete_end_counter = int(end - start) * int(percentage_delete / 100)
-            self.delete_docs_from_mongo_collection(
-                database, collection, start, delete_end_counter, sdk_batch_size)
+            delete_end_counter = int(((end - start) * percentage_delete) //
+                                     100)
+            doc_tasks.append(self.delete_docs_from_mongo_collection(
+                database, collection, start, delete_end_counter,
+                sdk_batch_size, False))
             start = delete_end_counter
 
         if percentage_create:
-            create_end = int(end - start) * int(percentage_create / 100)
-            self.load_docs_in_mongo_collection(
+            create_end = int(((end - start) * percentage_create) // 100) + end
+            doc_tasks.append(self.load_docs_in_mongo_collection(
                 database, collection, end, create_end, doc_template, doc_size,
-                sdk_batch_size)
+                sdk_batch_size, False))
             end = create_end
 
         if percentage_update:
-            update_end = int(end - start) * int(percentage_update / 100)
-            self.update_docs_in_mongo_collection(
+            update_end = (int(((end - start) * percentage_update) // 100) +
+                          start)
+            doc_tasks.append(self.update_docs_in_mongo_collection(
                 database, collection, start, update_end, fields_to_update,
-                doc_template, doc_size, sdk_batch_size)
+                doc_template, doc_size, sdk_batch_size))
 
-        return "status"
+        if wait_for_task_complete:
+            for task in doc_tasks:
+                self.task_manager.get_task_result(task)
+            return [], start, end
+        else:
+            return doc_tasks, start, end
 
 
 class CouchbaseUtil(object):
