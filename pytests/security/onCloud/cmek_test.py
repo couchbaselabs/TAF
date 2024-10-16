@@ -2,7 +2,7 @@ import time
 import json
 import requests
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
-from pytests.Capella.RestAPIv4.security_base import SecurityBase
+from pytests.security.security_base import SecurityBase
 
 
 class CMEKTest(SecurityBase):
