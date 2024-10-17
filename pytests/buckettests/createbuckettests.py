@@ -1,11 +1,10 @@
-import json
-import urllib
 import copy
 
 from BucketLib.BucketOperations import BucketHelper
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from custom_exceptions.exception import BucketCreationException
@@ -49,6 +48,21 @@ class CreateBucketTests(ClusterSetup):
         """
         Create all types of bucket (CB/Eph/Memcached)
         """
+        def doc_op(op_type):
+            tasks = list()
+            self.log.info(f"Perform {op_type} for {self.num_items} items")
+            for t_bucket in self.cluster.buckets:
+                tasks.append(self.task.async_load_gen_docs(
+                    self.cluster, t_bucket, load_gen, op_type,
+                    load_using=self.load_docs_using,
+                    durability=self.durability_level,
+                    process_concurrency=2,
+                    suppress_error_table=False,
+                    print_ops_rate=False))
+
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+
         bucket_specs = [
             {"cb_bucket_with_underscore": {
                 Bucket.bucketType: Bucket.Type.MEMBASE}},
@@ -66,27 +80,65 @@ class CreateBucketTests(ClusterSetup):
             self.bucket_util.create_default_bucket(
                 self.cluster, bucket_name=name,
                 bucket_type=spec[Bucket.bucketType],
-                ram_quota=self.bucket_size, replica=self.num_replicas)
+                ram_quota=self.bucket_size, replica=self.num_replicas,
+                durability_impossible_fallback=self.durability_impossible_fallback)
 
-        tasks = list()
+        rest = BucketRestApi(self.cluster.master)
+        status, buckets_info = rest.get_bucket_info()
+        self.assertTrue(status, "Get bucket info failed")
+        for bucket in buckets_info:
+            expected_val = self.durability_impossible_fallback
+            if self.durability_impossible_fallback is None:
+                expected_val = "disabled"
+            self.assertEqual(bucket["durabilityImpossibleFallback"],
+                             expected_val,
+                             "Value mismatch")
+
         load_gen = doc_generator(self.key, 0, self.num_items)
-        self.log.info("Loading %s items to all buckets" % self.num_items)
-        for bucket in self.cluster.buckets:
-            task = self.task.async_load_gen_docs(
-                self.cluster, bucket, load_gen,
-                DocLoading.Bucket.DocOps.CREATE,
-                load_using=self.load_docs_using)
-            tasks.append(task)
+        doc_op(DocLoading.Bucket.DocOps.CREATE)
 
-        for task in tasks:
-            self.task_manager.get_task_result(task)
+        self.log.info(f"Validating the item={self.num_items} on the buckets")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+        doc_op(DocLoading.Bucket.DocOps.UPDATE)
+        doc_op(DocLoading.Bucket.DocOps.DELETE)
+
+        verification_dict = dict()
+        verification_dict["ops_create"] = self.num_items
+        verification_dict["ops_update"] = self.num_items
+        verification_dict["ops_delete"] = self.num_items
+        verification_dict["rollback_item_count"] = 0
+        verification_dict["sync_write_aborted_count"] = 0
+        verification_dict["sync_write_committed_count"] = 0
+
+        if self.durability_level not in ["", "NONE", None]:
+            verification_dict[
+                "sync_write_committed_count"] = self.num_items * 3
+
+        self.log.info("Validating the items on the buckets")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+        d_helper = DurabilityHelper(
+            self.log, self.nodes_init,
+            durability=self.durability_level)
+        for bucket in self.cluster.buckets:
+            failed = d_helper.verify_vbucket_details_stats(
+                bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                vbuckets=bucket.numVBuckets,
+                expected_val=verification_dict)
+            if failed:
+                self.fail("Cbstat vbucket-details verification failed for "
+                          f"{bucket.name}")
 
         # Validate doc_items count
         self.log.info("Validating the items on the buckets")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util.print_bucket_stats(self.cluster)
-        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
 
     def test_minimum_replica_update_during_replica_update_rebalance(self):
         rest = RestConnection(self.cluster.master)
@@ -235,8 +287,10 @@ class CreateBucketTests(ClusterSetup):
         """
         Create with unsupported param and validate the error.
         - vbuckets
+        - durabilityImpossibleFallback
         """
-        def create_bucket(width=None, weight=None, num_vb=None):
+        def create_bucket(width=None, weight=None, num_vb=None,
+                          durability_impossible_fallback=None):
             init_params.pop(Bucket.width, None)
             init_params.pop(Bucket.weight, None)
             init_params.pop(Bucket.numVBuckets, None)
@@ -247,10 +301,25 @@ class CreateBucketTests(ClusterSetup):
             if num_vb is not None:
                 init_params[Bucket.numVBuckets] = num_vb
 
+            if durability_impossible_fallback is not None:
+                init_params[Bucket.durabilityImpossibleFallback] \
+                    = durability_impossible_fallback
             status, content = bucket_helper.create_bucket(init_params)
             self.assertFalse(status, "Bucket created successfully")
+            content = content.json()
             self.log.critical("%s" % content)
-            return content["errors"]
+            if num_vb is not None:
+                self.assertEqual(
+                    content["errors"]["numVBuckets"],
+                    "Number of vbuckets must be 128 or 1024 (magma) "
+                    "or 1024 (couchstore)",
+                    "Invalid error message")
+            if durability_impossible_fallback is not None:
+                self.assertEqual(
+                    content["errors"]["durability_impossible_fallback"],
+                    "Durability impossible fallback must be either "
+                    "'disabled' or 'fallbackToActiveAck'",
+                    "Mismatch in error message of d_impossible_fallback")
 
         bucket_helper = BucketRestApi(self.cluster.master)
         init_params = {
@@ -268,10 +337,14 @@ class CreateBucketTests(ClusterSetup):
         # error = create_bucket(width=1)
         # error = create_bucket(weight=1)
         # error = create_bucket(weight=0)
-        error = create_bucket(num_vb=CbServer.total_vbuckets)
-        exp_err = "Support for variable number of vbuckets is not enabled"
-        self.assertEqual(error["numVBuckets"], exp_err,
-                         "Invalid error message")
+        create_bucket(num_vb=int(CbServer.total_vbuckets)-1)
+
+        # Valid durability_impossible_fallback = disabled / fallbackToActiveAck
+        create_bucket(durability_impossible_fallback="NONE")
+        create_bucket(durability_impossible_fallback="none")
+        create_bucket(durability_impossible_fallback="Disabled")
+        create_bucket(durability_impossible_fallback="fallbacktoactiveack")
+        create_bucket(durability_impossible_fallback="None")
 
     def test_create_collections_validate_history_stat(self):
         """

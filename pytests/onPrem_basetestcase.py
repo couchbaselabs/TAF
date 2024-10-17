@@ -1273,7 +1273,8 @@ class ClusterSetup(OnPremBaseTest):
             "history_retention_seconds": self.bucket_dedup_retention_seconds,
             "history_retention_bytes": self.bucket_dedup_retention_bytes,
             "magma_key_tree_data_block_size": self.magma_key_tree_data_block_size,
-            "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size
+            "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size,
+            "durability_impossible_fallback": self.durability_impossible_fallback,
         }
 
         # This is needed because server will throw the error saying,

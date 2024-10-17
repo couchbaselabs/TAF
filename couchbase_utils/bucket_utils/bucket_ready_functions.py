@@ -2219,7 +2219,8 @@ class BucketUtils(ScopeUtils):
             history_retention_seconds=0,
             magma_key_tree_data_block_size=4096,
             magma_seq_tree_data_block_size=4096,
-            vbuckets=None, weight=None, width=None):
+            vbuckets=None, weight=None, width=None,
+            durability_impossible_fallback=None):
         node_info = global_vars.cluster_util.get_nodes_self(cluster.master)
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2260,7 +2261,8 @@ class BucketUtils(ScopeUtils):
              Bucket.magmaSeqTreeDataBlockSize: magma_seq_tree_data_block_size,
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
-             Bucket.weight: weight})
+             Bucket.weight: weight,
+             Bucket.durabilityImpossibleFallback: durability_impossible_fallback})
         if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,

@@ -87,6 +87,8 @@ class CouchbaseBaseTest(unittest.TestCase):
             self.input.param("magma_key_tree_data_block_size", None)
         self.magma_seq_tree_data_block_size = \
             self.input.param("magma_seq_tree_data_block_size", None)
+        self.durability_impossible_fallback = \
+            self.input.param("durability_impossible_fallback", None)
 
         if self.bucket_type == Bucket.Type.EPHEMERAL:
             # Ephemeral + Eviction Policy not set explicitly

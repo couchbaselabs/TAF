@@ -365,7 +365,8 @@ class BucketHelper(BucketRestApi):
                             Bucket.historyRetentionBytes,
                             Bucket.historyRetentionSeconds,
                             Bucket.magmaKeyTreeDataBlockSize,
-                            Bucket.magmaSeqTreeDataBlockSize]:
+                            Bucket.magmaSeqTreeDataBlockSize,
+                            Bucket.durabilityImpossibleFallback]:
                 val = bucket_params.get(b_param, None)
                 if val is not None:
                     init_params[b_param] = val
@@ -461,7 +462,8 @@ class BucketHelper(BucketRestApi):
                             history_retention_bytes=None,
                             history_retention_seconds=None,
                             magma_key_tree_data_block_size=None,
-                            magma_seq_tree_data_block_size=None):
+                            magma_seq_tree_data_block_size=None,
+                            durability_impossible_fallback=None):
 
         params_dict = {}
         if ramQuotaMB:
@@ -505,6 +507,8 @@ class BucketHelper(BucketRestApi):
                 = magma_seq_tree_data_block_size
         if storageBackend is not None:
             params_dict[Bucket.storageBackend] = storageBackend
+        if durability_impossible_fallback is not None:
+            params_dict["durabilityImpossibleFallback"] = durability_impossible_fallback
 
         self.log.info("Updating bucket properties for {}".format(bucket.name))
         status, content = self.edit_bucket(bucket.name, params_dict)

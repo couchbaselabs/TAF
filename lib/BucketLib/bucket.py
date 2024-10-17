@@ -160,6 +160,7 @@ class Bucket(object):
     historyRetentionBytes = "historyRetentionBytes"
     magmaKeyTreeDataBlockSize = "magmaKeyTreeDataBlockSize"
     magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
+    durabilityImpossibleFallback = "durabilityImpossibleFallback"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -263,6 +264,8 @@ class Bucket(object):
             Bucket.magmaKeyTreeDataBlockSize, 4096)
         self.magmaSeqTreeDataBlockSize = new_params.get(
             Bucket.magmaSeqTreeDataBlockSize, 4096)
+        self.durabilityImpossibleFallback = new_params.get(
+            Bucket.durabilityImpossibleFallback, "none")
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
@@ -344,7 +347,11 @@ class Bucket(object):
                 bucket.magmaSeqTreeDataBlockSize = 4096
             if bucket.magmaSeqTreeDataBlockSize is None:
                 bucket.magmaKeyTreeDataBlockSize = 4096
-            bucket.scopes[CbServer.default_scope].collections[CbServer.default_collection].history = bucket.historyRetentionCollectionDefault
+            if bucket.durabilityImpossibleFallback is None:
+                bucket.durabilityImpossibleFallback = "disabled"
+            bucket.scopes[CbServer.default_scope].collections[
+                CbServer.default_collection].history = bucket.historyRetentionCollectionDefault
+
 
 class TravelSample(Bucket):
     def __init__(self):
