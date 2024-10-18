@@ -12,8 +12,6 @@ class ColumnarOnPremBase(CBASBaseTest):
     def setUp(self):
         super(ColumnarOnPremBase, self).setUp()
         self.use_sdk_for_cbas = self.input.param("use_sdk_for_cbas", False)
-        self.columnar_cbas_utils = columnarCBASUtil(
-            self.task, self.use_sdk_for_cbas)
 
         self.aws_region = self.input.param("aws_region", "ap-south-1")
         self.s3_source_bucket = self.input.param("s3_source_bucket", None)

@@ -629,10 +629,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # delete aws bucket that was created for compute storage separation
         if (self.analytics_compute_storage_separation and
                 self.aws_bucket_created):
-            for cluster_name, cluster in self.cb_clusters.items():
-                self.log.info("Resetting cluster nodes")
-                self.node_utils.reset_cluster_nodes(self.cluster_util,
-                                                    cluster)
             self.log.info("Deleting AWS S3 bucket - {}".format(
                 self.aws_bucket_name))
             if not self.s3_obj.delete_bucket(self.aws_bucket_name):

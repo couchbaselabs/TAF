@@ -6559,6 +6559,10 @@ class CbasUtil(CBOUtil):
         cluster
         """
         try:
+            # Drop all views
+            for view in self.get_all_views_from_metadata(cluster):
+                if not self.drop_analytics_view(cluster, view):
+                    self.log.error(f"Failed to drop View {view}")
             # Drop all UDFs
             for udf in self.get_all_udfs_from_metadata(cluster):
                 if not self.drop_udf(
