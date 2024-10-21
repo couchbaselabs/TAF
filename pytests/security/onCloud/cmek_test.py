@@ -256,9 +256,10 @@ class CMEKTest(SecurityBase):
         end_time = time.time() + 1800
         response = aws_cluster_id = ""
         while time.time() < end_time:
-            subnet = CapellaUtils.get_next_cidr() + "/20"
-            self.log.info("Trying with cidr: {}".format(subnet))
+            resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
+            subnet = resp.json()["cidr"]["suggestedBlock"]
             json_data["cloudProvider"]["cidr"] = subnet
+            self.log.info("Trying out with cidr {}".format(subnet))
             response = requests.post("{0}/projects/{1}/clusters".format(self.cmek_base_url, self.project_id),
                                      headers=headers,
                                      json=json_data,
@@ -332,9 +333,10 @@ class CMEKTest(SecurityBase):
         end_time = time.time() + 1800
         response = gcp_cluster_id = ""
         while time.time() < end_time:
-            subnet = CapellaUtils.get_next_cidr() + "/20"
-            self.log.info("Trying with cidr: {}".format(subnet))
+            resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
+            subnet = resp.json()["cidr"]["suggestedBlock"]
             json_data["cloudProvider"]["cidr"] = subnet
+            self.log.info("Trying out with cidr {}".format(subnet))
             response = requests.post("{0}/projects/{1}/clusters".format(self.cmek_base_url, self.project_id),
                                      headers=headers,
                                      json=json_data,
