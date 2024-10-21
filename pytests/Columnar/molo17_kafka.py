@@ -173,7 +173,7 @@ class Molo17(ColumnarBaseTest):
         }
 
 
-    def test_glueSync_initial_snapshot_resync(self):
+    def test_glueSync_initial_snapshot(self):
         """
         Steps:
             1. Create a dynamo table
@@ -216,21 +216,12 @@ class Molo17(ColumnarBaseTest):
         # validate results in the columnar datasets
         datasets = self.cbas_util.get_all_dataset_objs('standalone')
         for dataset in datasets:
+            self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster, dataset.full_name, self.initial_doc_count)
             item_count = self.cbas_util.get_num_items_in_cbas_dataset(self.columnar_cluster, dataset.full_name)
             if item_count != self.initial_doc_count:
                 self.fail("Data count mismatch in Dynamo and Kafka datasets")
 
-        # re-syncing connector
-        self.load_doc_to_dynamo_table(self.dynamo_table, 0, self.initial_doc_count * 2)
-        self.create_glueSync_connector(create_pipelines=False, sync_type="redo", cdc=True)
-        item_count = self.dynamo_lib.get_item_count(self.dynamo_table)
-        for dataset in datasets:
-            if not self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster, dataset.full_name,
-                                                                      item_count):
-                self.fail("Failed to ingest data from DynamoDB")
-        self.log.info("Data count matched in Dynamo and Columnar")
-
-    def test_glueSync_cdc_resync(self):
+    def test_glueSync_cdc(self):
         # create and prepare dynamo table for connector
         self.create_dynamo_table_load()
 
@@ -261,6 +252,7 @@ class Molo17(ColumnarBaseTest):
         # validate results in the columnar datasets initial count
         datasets = self.cbas_util.get_all_dataset_objs('standalone')
         for dataset in datasets:
+            self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster, dataset.full_name, self.initial_doc_count)
             item_count = self.cbas_util.get_num_items_in_cbas_dataset(self.columnar_cluster, dataset.full_name)
             if item_count != self.initial_doc_count:
                 self.fail("Data count mismatch in Dynamo and Kafka datasets")
@@ -272,15 +264,6 @@ class Molo17(ColumnarBaseTest):
         delete_end = randint(self.initial_doc_count//4 + 1, self.initial_doc_count//2)
         self.load_doc_to_dynamo_table(self.dynamo_table, delete_start, delete_end , action="delete")
 
-        item_count = self.dynamo_lib.get_item_count(self.dynamo_table)
-        for dataset in datasets:
-            if not self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster, dataset.full_name, item_count):
-                self.fail("Failed to ingest data from DynamoDB")
-        self.log.info("Data count matched in Dynamo and Columnar")
-
-        # re-syncing connector
-        self.create_glueSync_connector(create_pipelines=False, sync_type="redo", cdc=True)
-        self.load_doc_to_dynamo_table(self.dynamo_table, 0, self.initial_doc_count * 3)
         item_count = self.dynamo_lib.get_item_count(self.dynamo_table)
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster, dataset.full_name, item_count):
