@@ -319,7 +319,7 @@ class DoctorN1QL():
                     q = 0
                     while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
                         if i < workload.get("2i")[0]:
-                            vector_defn = None
+                            vector_defn = {}
                             dim = None
                             if workload.get("vector"):
                                 vector_defn = workload.get("vector")[vector_defn_counter % len(workload.get("vector"))]
@@ -690,8 +690,8 @@ class QueryLoad:
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()
-            if end - start < 1:
-                time.sleep(end - start)
+            # if end - start < 1:
+            #     time.sleep(end - start)
             counter += 1
 
     def _run_query(self, validate_item_count=False, expected_count=0):
@@ -704,11 +704,9 @@ class QueryLoad:
             e = ""
             try:
                 self.total_query_count.next()
-                query_tuple = self.queries[counter%len(self.queries)]
-                query = query_tuple[0]
-                original_query = query_tuple[2]
-
-                q_param = self.bucket.query_map[original_query][1]
+                query = self.queries[counter%len(self.queries)]
+                query_tuple = self.queries_meta[counter%len(self.queries)]
+                q_param = query_tuple["queryParams"]
                 q_param_json = JsonObject.create()
                 for k, v in q_param.items():
                     try:
@@ -718,8 +716,8 @@ class QueryLoad:
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
                     q_param_json, validate=validate_item_count)
-                self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
-                self.query_stats[original_query][1] += 1
+                self.query_stats[query][0] += metrics.executionTime().toNanos()/1000000.0
+                self.query_stats[query][1] += 1
                 if status == QueryStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
@@ -754,12 +752,12 @@ class QueryLoad:
             elif str(e).find("InternalServerFailureException") != -1 or str(e).find("CouchbaseException") != -1:
                 self.failures += self.error_count.next()
 
-            if (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
+            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()
-            if end - start < 1:
-                time.sleep(end - start)
+            # if end - start < 1:
+            #     time.sleep(end - start)
 
     def read_query_vecs(self, filename):
         '''

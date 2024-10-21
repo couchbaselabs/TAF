@@ -22,6 +22,7 @@ from custom_exceptions.exception import ServerUnavailableException
 
 class hostedOPD(OPD):
     def __init__(self):
+        self.siftFileName = None
         pass
 
     def threads_calculation(self):

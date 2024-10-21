@@ -1158,7 +1158,7 @@ class OPD:
                                         [str(ql.bucket.name),
                                          ql.bucket.query_map[query]["identifier"],
                                          ql.query_stats[query][1],
-                                         ql.bucket.query_map[query]["vector_defn"]["nProbe"],
+                                         ql.bucket.query_map[query]["vector_defn"].get("nProbe"),
                                          ql.query_stats[query][4],
                                          round(ql.query_stats[query][0]/ql.query_stats[query][1], 2),
                                          round(ql.query_stats[query][2]/ql.query_stats[query][1], 2),
@@ -1290,6 +1290,7 @@ class OPD:
         mem_only_items = 100000
         rollbacks = 0
         while rollbacks < 20:
+            self.PrintStep("Running Rollback: %s" % rollbacks)
             for i, node in enumerate(self.cluster.kv_nodes):
                 self.key = "rollback_docs_%s_%s-" % (rollbacks, i)
                 # Stopping persistence on NodeA
@@ -1315,7 +1316,7 @@ class OPD:
 
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
                     self.cluster.buckets[0],
-                    servers=[self.cluster.master],
+                    servers=[node],
                     wait_time=self.wait_timeout * 10))
                 self.sleep(10, "Not Required, but waiting for 10s after warm up")
                 self.check_index_pending_mutations()

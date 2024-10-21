@@ -90,7 +90,7 @@ class Murphy(BaseTestCase, OPD):
         self.mutate = 0
         self.iterations = self.input.param("iterations", 10)
         self.step_iterations = self.input.param("step_iterations", 1)
-        self.rollback = self.input.param("rollback", True)
+        self.rollback = self.input.param("rollback", False)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.end_step = self.input.param("end_step", None)
         self.key_prefix = "Users"
@@ -571,8 +571,11 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
-        # self.sleep(self.input.param("steady_state_workload_sleep", 120))
-        self.trigger_rollback()
+        self.PrintStep("Running Query workload for 5 mins with NO mutations")
+        self.sleep(self.input.param("steady_state_workload_sleep", 300))
+
+        if self.rollback:
+            self.trigger_rollback()
         
         if self.val_type == "siftBigANN":
             self.mutations = True

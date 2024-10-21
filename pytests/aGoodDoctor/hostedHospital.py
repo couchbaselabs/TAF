@@ -52,6 +52,7 @@ class Murphy(BaseTestCase, hostedOPD):
 
     def setUp(self):
         BaseTestCase.setUp(self)
+        hostedOPD.__init__(self)
         self.init_doc_params()
 
         self.num_collections = self.input.param("num_collections", 1)
