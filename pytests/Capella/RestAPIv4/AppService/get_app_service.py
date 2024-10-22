@@ -94,9 +94,15 @@ class GetAppService(GetCluster):
                 "bucketForAppEndpoint", "couchbase", "magma", 1024, "seqno",
                 "none", 1, False, 0)
         if res.status_code != 201:
-            self.log.error("Error : {}".format(res.content))
-            self.tearDown()
-            self.fail("!!!..Bucket creation failed...!!!")
+            try:
+                if res.json()["code"] == 6001 and res.json()["hint"] == \
+                        ("The bucket name provided already exists. Please "
+                         "choose a different name for the bucket."):
+                    self.log.warning("...Bucket already exists...")
+            except (Exception,):
+                self.log.error("Error : {}".format(res.content))
+                self.tearDown()
+                self.fail("!!!..Bucket creation failed...!!!")
         self.app_endpoint_bucket_id = res.json()['id']
         self.app_endpoint_bucket_name = "bucketForAppEndpoint"
 
