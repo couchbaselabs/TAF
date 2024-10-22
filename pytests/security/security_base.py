@@ -90,6 +90,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.create_api_keys_for_different_roles()
         self.project_id = self.input.capella.get("project_id", None)
         self.instance_id = None
+        self.cmek_id = None
         if self.project_id is None:
             self.create_project(self.prefix + "Project")
 
@@ -334,7 +335,7 @@ class SecurityBase(CouchbaseBaseTest):
                 self.instance_id = resp.json()["id"]
                 self.wait_for_columnar_instance_to_deploy(self.instance_id)
 
-    def create_cluster(self, cluster_name, server_version, provider="AWS"):
+    def create_cluster(self, cluster_name, server_version, provider="AWS", deploy_payload={}):
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
         single_node = TestInputSingleton.input.param("single_node", False)
         if single_node:
@@ -398,14 +399,30 @@ class SecurityBase(CouchbaseBaseTest):
                     resp = self.capellaAPI.create_cluster_customAMI(self.tenant_id,
                                                                     ami_payload)
                 else:
-                    resp = self.capellaAPI.cluster_ops_apis.create_cluster(self.tenant_id,
-                                                                           self.project_id,
-                                                                           payload["name"],
-                                                                           payload["cloudProvider"],
-                                                                           payload["couchbaseServer"],
-                                                                           payload["serviceGroups"],
-                                                                           payload["availability"],
-                                                                           payload["support"])
+
+                    payload.update(deploy_payload)
+                    if self.cmek_id:
+                        cmek = {"cmekId": self.cmek_id}
+                        resp = self.capellaAPI.cluster_ops_apis.create_cluster(self.tenant_id,
+                                                                               self.project_id,
+                                                                               payload["name"],
+                                                                               payload["cloudProvider"],
+                                                                               couchbaseServer=payload["couchbaseServer"],
+                                                                               serviceGroups=payload["serviceGroups"],
+                                                                               availability=payload["availability"],
+                                                                               support=payload["support"],
+                                                                               description="",
+                                                                               headers=None,
+                                                                               **cmek)
+                    else:
+                        resp = self.capellaAPI.cluster_ops_apis.create_cluster(self.tenant_id,
+                                                                               self.project_id,
+                                                                               payload["name"],
+                                                                               payload["cloudProvider"],
+                                                                               payload["couchbaseServer"],
+                                                                               payload["serviceGroups"],
+                                                                               payload["availability"],
+                                                                               payload["support"])
 
                 if resp.status_code == 202:
                     self.cluster_id = resp.json()['id']
@@ -541,7 +558,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "type": "multi"
                 },
                 "support": {
-                    "plan": "developer pro",
+                    "plan": "enterprise",
                     "timezone": "PT"
                 }
             },
@@ -601,7 +618,7 @@ class SecurityBase(CouchbaseBaseTest):
             "projectId": self.project_id,
             "provider": "aws",
             "region": "us-east-1",
-            "plan": "Developer Pro",
+            "plan": "enterprise",
             "supportTimezone": "PT",
             "serverVersion": "7.6",
             "cidr": "",

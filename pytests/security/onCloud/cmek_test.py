@@ -1,7 +1,6 @@
 import time
 import json
 import requests
-from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.security.security_base import SecurityBase
 
 
@@ -185,176 +184,6 @@ class CMEKTest(SecurityBase):
             self.log.info(response.status_code)
             self.log.info(response.content)
 
-    def post_deploy_cluster_aws(self, aws_key_id, region="us-east-1"):
-        self.log.info("Deploying AWS cluster")
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer '
-                             '{0}'.format(self.capellaAPI.cluster_ops_apis.bearer_token),
-        }
-
-        json_data = {
-            'name': '0000000-Test-cmek-AWS',
-            'description': 'Deploy CMEK cluster',
-            'cloudProvider': {
-                'type': 'aws',
-                'region': region,
-                'cidr': '10.1.14.0/23',
-            },
-            'couchbaseServer': {
-                'version': self.server_version,
-            },
-            'serviceGroups': [
-                {
-                    'node': {
-                        'compute': {
-                            'cpu': 4,
-                            'ram': 16,
-                        },
-                        'disk': {
-                            'storage': 50,
-                            'type': 'gp3',
-                            'iops': 3000,
-                        },
-                    },
-                    'numOfNodes': 3,
-                    'services': [
-                        'data',
-                        'query',
-                        'index',
-                        'search',
-                    ],
-                },
-                {
-                    'node': {
-                        'compute': {
-                            'cpu': 4,
-                            'ram': 32,
-                        },
-                        'disk': {
-                            'storage': 50,
-                            'type': 'io2',
-                            'iops': 3005,
-                        },
-                    },
-                    'numOfNodes': 2,
-                    'services': [
-                        'analytics',
-                    ],
-                },
-            ],
-            'availability': {
-                'type': 'multi',
-            },
-            'support': {
-                'plan': 'enterprise',
-                'timezone': 'PT',
-            },
-            'cmekId': aws_key_id,
-        }
-        self.log.info("{0}/projects/{1}/clusters',".format(self.cmek_base_url, self.project_id))
-        end_time = time.time() + 1800
-        response = aws_cluster_id = ""
-        while time.time() < end_time:
-            resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
-            subnet = resp.json()["cidr"]["suggestedBlock"]
-            json_data["cloudProvider"]["cidr"] = subnet
-            self.log.info("Trying out with cidr {}".format(subnet))
-            response = requests.post("{0}/projects/{1}/clusters".format(self.cmek_base_url, self.project_id),
-                                     headers=headers,
-                                     json=json_data,
-                                     verify=False)
-            if response.status_code == 202:
-                aws_cluster_id = json.loads(response.content).get("id")
-                self.log.info("Creating capella cluster with id: {0}".format(aws_cluster_id))
-                break
-            if response.status_code == 422 and ("region" in response.content):
-                raise Exception
-        self.log.info(response.content)
-        data = json.loads(response.content.decode())
-
-        # Convert dictionary to JSON with indentation for pretty self.log.infoing
-        pretty_json = json.dumps(data, indent=4)
-
-        # self.log.info the pretty JSON
-        self.log.info(pretty_json)
-        return aws_cluster_id
-
-    def post_deploy_cluster_gcp(self, gcp_key_id):
-        self.log.info("Deploying GCP cluster")
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer '
-                             '{0}'.format(self.capellaAPI.cluster_ops_apis.bearer_token),
-        }
-
-        json_data = {
-            "name": "0000000-Test-cmek-GCP",
-            "description": "My first test GCP cluster.",
-            "cloudProvider": {
-                "type": "gcp",
-                "region": "asia-south2",
-                "cidr": "10.1.16.0/23"
-            },
-            "couchbaseServer": {
-                "version": self.server_version
-            },
-            "serviceGroups": [
-                {
-                    "node": {
-                        "compute": {
-                            "cpu": 4,
-                            "ram": 16
-                        },
-                        "disk": {
-                            "storage": 64,
-                            "type": "pd-ssd"
-                        }
-                    },
-                    "numOfNodes": 3,
-                    "services": [
-                        "data",
-                        "query",
-                        "index",
-                        "search"
-                    ]
-                }
-            ],
-            "availability": {
-                "type": "single"
-            },
-            "support": {
-                "plan": "enterprise",
-                "timezone": "ET"
-            },
-            'cmekId': gcp_key_id,
-        }
-        self.log.info("{0}/projects/{1}/clusters',".format(self.cmek_base_url, self.project_id))
-        end_time = time.time() + 1800
-        response = gcp_cluster_id = ""
-        while time.time() < end_time:
-            resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
-            subnet = resp.json()["cidr"]["suggestedBlock"]
-            json_data["cloudProvider"]["cidr"] = subnet
-            self.log.info("Trying out with cidr {}".format(subnet))
-            response = requests.post("{0}/projects/{1}/clusters".format(self.cmek_base_url, self.project_id),
-                                     headers=headers,
-                                     json=json_data,
-                                     verify=False)
-            if response.status_code == 202:
-                gcp_cluster_id = json.loads(response.content).get("id")
-                self.log.info("Creating capella cluster with id: {0}".format(gcp_cluster_id))
-                break
-        self.log.info(response.content)
-        data = json.loads(response.content.decode())
-
-        # Convert dictionary to JSON with indentation for pretty self.log.infoing
-        pretty_json = json.dumps(data, indent=4)
-
-        # self.log.info the pretty JSON
-        self.log.info(pretty_json)
-        return gcp_cluster_id
-
     # POST UNASSOCIATE A KEY
     def post_unassociate_a_key(self, cmek_id, cluster_id):
         self.log.info("Unssociating a key to the cluster...")
@@ -454,32 +283,19 @@ class CMEKTest(SecurityBase):
         aws_key_id, gcp_key_id = self.post_create_a_key(arn, resourceName)
         self.log.info("aws_key_id: ".format(aws_key_id))
         self.log.info("gcp_key_id: ".format(gcp_key_id))
+        self.cmek_id = aws_key_id
 
         # 4
         self.get_get_key_detail(aws_key_id, gcp_key_id)
 
         # 5
-        aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
+        self.create_cluster("CMEK_cluster", self.server_version)
         # gcp_cluster_id = self.post_deploy_cluster_gcp(gcp_key_id)
 
         # 6
         self.del_delete_key()
 
         # 7
-        # Delete clusters
-        self.log.info("Deleting cluster with id: {}".format(aws_cluster_id))
-        resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
-                                                               self.project_id,
-                                                               aws_cluster_id)
-        self.log.info(resp)
-
-        # self.log.info("Deleting cluster with id: {}".format(gcp_cluster_id))
-        # resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
-        #                                                        self.project_id,
-        #                                                        gcp_cluster_id)
-        # self.log.info(resp)
-
-        # 8
         self.del_delete_key()
 
         self.log.info("---Test CMEK end1---")
@@ -517,36 +333,26 @@ class CMEKTest(SecurityBase):
         aws_key_id, gcp_key_id = self.post_create_a_key(arn, resourceName)
         self.log.info("aws_key_id: ".format(aws_key_id))
         self.log.info("gcp_key_id: ".format(gcp_key_id))
+        self.cmek_id = aws_key_id
 
         # 4
         self.get_get_key_detail(aws_key_id, gcp_key_id)
 
         # 5
         aws_response = self.post_associate_a_key(aws_key_id, self.cluster_id)
-        if aws_response.status_code == 422:
-            self.log.info("This is as expected as CMEK is only supported on the Enterprise plan")
-        else:
-            self.fail("CMEK should only be supported on the Enterprise plan")
-
-        aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
-
-        aws_response = self.post_unassociate_a_key(aws_key_id, aws_cluster_id)
         self.log.info(aws_response)
-        aws_response = self.post_associate_a_key(aws_key_id, aws_cluster_id)
+
+        self.create_cluster("CMEK_cluster", self.server_version)
+
+        aws_response = self.post_unassociate_a_key(aws_key_id, self.cluster_id)
+        self.log.info(aws_response)
+        aws_response = self.post_associate_a_key(aws_key_id,self.cluster_id)
         self.log.info(aws_response)
 
         # 6
         self.del_delete_key()
 
         # 7
-        # Delete clusters
-        self.log.info("Deleting cluster with id: {}".format(aws_cluster_id))
-        resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
-                                                               self.project_id,
-                                                               aws_cluster_id)
-        self.log.info(resp)
-
-        # 8
         self.del_delete_key()
 
         self.log.info("---Test CMEK end2---")
@@ -637,12 +443,13 @@ class CMEKTest(SecurityBase):
         aws_key_id, gcp_key_id = self.post_create_a_key(arn, resourceName)
         self.log.info("aws_key_id: ".format(aws_key_id))
         self.log.info("gcp_key_id: ".format(gcp_key_id))
+        self.cmek_id = aws_key_id
 
         # 4
         self.get_get_key_detail(aws_key_id, gcp_key_id)
 
         # 5
-        aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
+        self.create_cluster("CMEK_cluster", self.server_version)
         new_resourceName = "arn:aws:kms:us-east-1:264138468394:key/a6c363c5-b4cd-4244-b1e1-ddd1ca7f827d"
         resp = self.put_update_key(aws_key_id, new_resourceName)
         if resp.status_code != 204:
@@ -655,15 +462,6 @@ class CMEKTest(SecurityBase):
         self.del_delete_key()
 
         # 7
-        # Delete clusters
-
-        self.log.info("Deleting cluster with id: {}".format(aws_cluster_id))
-        resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
-                                                               self.project_id,
-                                                               aws_cluster_id)
-        self.log.info(resp)
-
-        # 8
         self.del_delete_key()
 
         self.log.info("---Test CMEK end4---")
@@ -745,13 +543,16 @@ class CMEKTest(SecurityBase):
         aws_key_id, gcp_key_id = self.post_create_a_key(arn, resourceName)
         self.log.info("aws_key_id: ".format(aws_key_id))
         self.log.info("gcp_key_id: ".format(gcp_key_id))
+        self.cmek_id = aws_key_id
 
         # 4
         self.get_get_key_detail(aws_key_id, gcp_key_id)
 
         # 5
         try:
-            self.post_deploy_cluster_aws(aws_key_id, region="us-east-2")
+            region_payload = {"cloudProvider": {"region": "us-east-2"}}
+            self.create_cluster("CMEK_cluster", self.server_version,
+                                deploy_payload=json.loads(region_payload))
         except Exception as e:
             self.log.info("Ran into an Exception: {0}".format(e))
             self.log.info("Failed as expected as different region")
