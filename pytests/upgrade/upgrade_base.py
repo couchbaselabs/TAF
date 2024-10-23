@@ -510,36 +510,26 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Graceful failover rebalance failed")
             return
 
-        shell = RemoteMachineShellConnection(node_to_upgrade)
-        appropriate_build = self.upgrade_helper.get_build(
-            self.upgrade_version, shell)
-        self.assertTrue(appropriate_build.url,
-                        msg="Unable to find build %s" % self.upgrade_version)
-        self.assertTrue(shell.download_build(appropriate_build),
-                        "Failed while downloading the build!")
-
-        self.log.info("Starting node upgrade")
-        upgrade_success = shell.couchbase_upgrade(appropriate_build,
-                                                  save_upgrade_config=False,
-                                                  forcefully=self.is_downgrade)
-        shell.disconnect()
-        if not upgrade_success:
-            self.log_failure("Upgrade failed")
-            return
+        install_tasks = ["populate_build_url", "check_url_status",
+                         "download_build", "install"]
+        # Install target version on spare node
+        self.upgrade_helper.new_install_version_on_all_nodes(
+            nodes=[node_to_upgrade], version=self.upgrade_version,
+            cluster_profile=self.cluster_profile,
+            install_tasks=install_tasks)
+        self.sleep(30, "Wait after installation on the spare node")
 
         rest.set_failover_recovery_type(otp_node.id, recovery_type)
+        self.sleep(5, "Wait after setting failover recovery type")
 
         delta_recovery_buckets = list()
         if recovery_type == "delta":
             delta_recovery_buckets = [bucket.name
                                       for bucket in self.cluster.buckets]
 
-        # Validate orchestrator selection
-        self.cluster_util.validate_orchestrator_selection(self.cluster)
-
-        rest.rebalance(known_nodes=[node.id for node in \
-                    self.cluster_util.get_nodes(rest_node)],
-                    delta_recovery_buckets=delta_recovery_buckets)
+        known_nodes=[node.id for node in self.cluster_util.get_nodes(rest_node, inactive_added=True)]
+        _, _ = rest.rebalance(known_nodes=known_nodes,
+                            delta_recovery_buckets=delta_recovery_buckets)
 
         self.perform_collection_ops_load(self.collection_spec)
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
@@ -889,26 +879,23 @@ class UpgradeBase(BaseTestCase):
                 self.log_failure("Got /pools/default::balanced=false")
                 return
 
-    def full_offline(self, nodes_to_upgrade, version):
+    def full_offline(self, nodes_to_upgrade):
+
+        self.log.info("Stopping couchbase server on all nodes")
         for node in nodes_to_upgrade:
-            rest = ClusterRestAPI(node)
             shell = RemoteMachineShellConnection(node)
+            shell.stop_couchbase()
 
-            appropriate_build = self.upgrade_helper.get_build(version, shell)
-            self.assertTrue(appropriate_build.url,
-                            msg="Unable to find build %s" % version)
-            self.assertTrue(shell.download_build(appropriate_build),
-                            "Failed while downloading the build!")
+        install_tasks = ["populate_build_url", "check_url_status",
+                         "download_build", "install"]
+        # Install target version on all the nodes
+        self.upgrade_helper.new_install_version_on_all_nodes(
+            nodes=nodes_to_upgrade, version=self.upgrade_version,
+            cluster_profile=self.cluster_profile,
+            install_tasks=install_tasks)
+        self.sleep(30, "Wait after installation on all nodes")
 
-            self.log.info("Starting node upgrade")
-            upgrade_success = shell.couchbase_upgrade(
-                appropriate_build, save_upgrade_config=False,
-                forcefully=self.is_downgrade)
-            shell.disconnect()
-
-            if upgrade_success:
-                self.log.info("Upgrade of {0} completed".format(node))
-
+        for node in nodes_to_upgrade:
             self.log.info("Wait for ns_server to accept connections")
             if not self.cluster_util.is_ns_server_running(
                     node, timeout_in_seconds=120):
@@ -924,8 +911,8 @@ class UpgradeBase(BaseTestCase):
             self.log.info("Cluster not balanced. Rebalance starting...")
             otp_nodes = [node.id for node in \
                          self.cluster_util.get_nodes(self.cluster.master)]
-            rebalance_task = rest.rebalance(known_nodes=otp_nodes,
-                                            eject_nodes=[])
+            rebalance_task, _ = rest.rebalance(known_nodes=otp_nodes,
+                                               eject_nodes=[])
             self.log.info("Rebalance successful") if rebalance_task \
                 else self.log.info("Rebalance failed")
 

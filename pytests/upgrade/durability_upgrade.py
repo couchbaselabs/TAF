@@ -442,6 +442,15 @@ class UpgradeTests(UpgradeBase):
                                                                     self.upgrade_version))
                     self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
+                    # Initialize paths on the spare node
+                    status, content = ClusterRestAPI(self.spare_node).initialize_node(
+                        self.spare_node.rest_username,
+                        self.spare_node.rest_password,
+                        data_path=self.spare_node.data_path,
+                        index_path=self.spare_node.index_path,
+                        cbas_path=self.spare_node.cbas_path,
+                        eventing_path=self.spare_node.eventing_path)
+                    self.assertTrue(status, f"Init node failed: {content}")
                     migration_methods = ["swap_rebalance", "failover_recovery"]
                     nodes_to_migrate = self.cluster.nodes_in_cluster
                     random_index = random.randint(0,1)
@@ -453,6 +462,15 @@ class UpgradeTests(UpgradeBase):
                                                                     self.upgrade_version))
                     self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
+                    # Initialize paths on the spare node
+                    status, content = ClusterRestAPI(self.spare_node).initialize_node(
+                        self.spare_node.rest_username,
+                        self.spare_node.rest_password,
+                        data_path=self.spare_node.data_path,
+                        index_path=self.spare_node.index_path,
+                        cbas_path=self.spare_node.cbas_path,
+                        eventing_path=self.spare_node.eventing_path)
+                    self.assertTrue(status, f"Init node failed: {content}")
                     nodes_to_migrate = self.cluster.nodes_in_cluster
                     self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
                     self.spare_nodes.append(self.spare_node)
@@ -497,7 +515,8 @@ class UpgradeTests(UpgradeBase):
 
         # Play with collection if upgrade was successful
         if not self.test_failure and not self.test_guardrail_upgrade and \
-            not self.test_guardrail_migration and not self.include_indexing_query:
+            not self.test_guardrail_migration and not self.include_indexing_query \
+                and self.perform_collection_ops:
             self.__play_with_collection()
 
         ### Verifying start sequence numbers ###
@@ -1344,6 +1363,15 @@ class UpgradeTests(UpgradeBase):
             if reb_task == "rebalance_in":
                 self.upgrade_helper.new_install_version_on_all_nodes(
                     [self.spare_node], self.upgrade_version)
+                # Initialize paths on the spare node
+                status, content = ClusterRestAPI(self.spare_node).initialize_node(
+                    self.spare_node.rest_username,
+                    self.spare_node.rest_password,
+                    data_path=self.spare_node.data_path,
+                    index_path=self.spare_node.index_path,
+                    cbas_path=self.spare_node.cbas_path,
+                    eventing_path=self.spare_node.eventing_path)
+                self.assertTrue(status, f"Init node failed: {content}")
 
                 rest = ClusterRestAPI(self.cluster.master)
                 services = self.cluster_util.get_nodes_services(self.cluster.master)
@@ -1351,12 +1379,14 @@ class UpgradeTests(UpgradeBase):
                 services_on_master = services[(self.cluster.master.ip + ":"
                                                + str(self.cluster.master.port))]
 
-                rest.add_node(self.spare_node.ip,
-                            self.creds.rest_username,
-                            self.creds.rest_password,
-                            services=services_on_master)
+                status, content = rest.add_node(self.spare_node.ip,
+                                                self.cluster.master.rest_username,
+                                                self.cluster.master.rest_password,
+                                                services=services_on_master)
+                self.log.info(f"Status: {status}, Content: {content}")
                 otp_nodes = [node.id for node in \
-                             self.cluster_util.get_nodes(self.cluster.master)]
+                             self.cluster_util.get_nodes(self.cluster.master,
+                                                         inactive_added=True)]
 
                 # Validate orchestrator selection
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
@@ -1400,9 +1430,6 @@ class UpgradeTests(UpgradeBase):
                 self.cluster_util.validate_orchestrator_selection(self.cluster)
 
             elif reb_task == "swap_rebalance":
-                self.upgrade_helper.new_install_version_on_all_nodes(
-                        nodes=[self.spare_node], version=self.upgrade_version,
-                        cluster_profile=self.cluster_profile)
 
                 rest = ClusterRestAPI(self.cluster.master)
                 cluster_nodes = self.cluster_util.get_nodes(self.cluster.master)
@@ -1462,7 +1489,8 @@ class UpgradeTests(UpgradeBase):
                 delta_recovery_buckets = [bucket.name for bucket in self.cluster.buckets]
                 self.log.info("Rebalance starting...")
                 rest.rebalance(known_nodes=[node.id for node in \
-                                    self.cluster_util.get_nodes(self.cluster.master)],
+                                    self.cluster_util.get_nodes(self.cluster.master,
+                                                                inactive_added=True)],
                                delta_recovery_buckets=delta_recovery_buckets)
                 self.sleep(10, "Wait before fetching rebalance stats")
                 rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
@@ -1507,7 +1535,8 @@ class UpgradeTests(UpgradeBase):
 
                 self.log.info("Rebalance starting...")
                 rest.rebalance(known_nodes=[node.id for node in \
-                                self.cluster_util.get_nodes(self.cluster.master)])
+                                self.cluster_util.get_nodes(self.cluster.master,
+                                                            inactive_added=True)])
                 self.sleep(10, "Wait before fetching rebalance stats")
                 rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 
@@ -1663,6 +1692,15 @@ class UpgradeTests(UpgradeBase):
                                                         self.upgrade_version))
         self.upgrade_helper.new_install_version_on_all_nodes(
             [self.spare_node], self.upgrade_version)
+        # Initialize paths on the spare node
+        status, content = ClusterRestAPI(self.spare_node).initialize_node(
+            self.spare_node.rest_username,
+            self.spare_node.rest_password,
+            data_path=self.spare_node.data_path,
+            index_path=self.spare_node.index_path,
+            cbas_path=self.spare_node.cbas_path,
+            eventing_path=self.spare_node.eventing_path)
+        self.assertTrue(status, f"Init node failed: {content}")
 
         nodes_to_replace = self.cluster.nodes_in_cluster
 
@@ -1699,6 +1737,15 @@ class UpgradeTests(UpgradeBase):
                                                     self.upgrade_version))
         self.upgrade_helper.new_install_version_on_all_nodes(
             [self.spare_node], self.upgrade_version)
+        # Initialize paths on the spare node
+        status, content = ClusterRestAPI(self.spare_node).initialize_node(
+            self.spare_node.rest_username,
+            self.spare_node.rest_password,
+            data_path=self.spare_node.data_path,
+            index_path=self.spare_node.index_path,
+            cbas_path=self.spare_node.cbas_path,
+            eventing_path=self.spare_node.eventing_path)
+        self.assertTrue(status, f"Init node failed: {content}")
 
         cluster_nodes = self.cluster.nodes_in_cluster
 
@@ -1750,7 +1797,8 @@ class UpgradeTests(UpgradeBase):
 
             self.log.info("Rebalance starting...")
             rest.rebalance(known_nodes=[node.id for node in \
-                            self.cluster_util.get_nodes(self.cluster.master)])
+                            self.cluster_util.get_nodes(self.cluster.master,
+                                                        inactive_added=True)])
             self.sleep(10, "Wait before fetching rebalance stats")
             rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
             self.log.info("Performing data load during failover rebalance")
@@ -1865,7 +1913,8 @@ class UpgradeTests(UpgradeBase):
 
             self.log.info("Rebalance starting...")
             rest.rebalance(known_nodes=[node.id for node in \
-                           self.cluster_util.get_nodes(self.cluster.master)])
+                           self.cluster_util.get_nodes(self.cluster.master,
+                                                       inactive_added=True)])
             self.sleep(10, "Wait before fetching rebalance stats")
             rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
 

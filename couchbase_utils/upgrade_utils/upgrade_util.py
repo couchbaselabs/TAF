@@ -20,8 +20,8 @@ class CbServerUpgrade(object):
         self.product = product
         self.helper = InstallHelper(logger)
 
-        self.install_tasks = ["populate_build_url", "check_url_status", "download_build",
-                              "uninstall", "install", "init_cluster"]
+        self.install_tasks = ["populate_build_url", "check_url_status",
+                              "download_build", "uninstall", "install"]
 
     @staticmethod
     def get_supported_features(cluster_version):
