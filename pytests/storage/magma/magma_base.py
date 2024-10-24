@@ -75,11 +75,12 @@ class MagmaBaseTest(StorageBase):
                     compression_settings=self.sdk_compression)
         elif self.load_docs_using == "sirius_java_sdk":
             for bucket in self.cluster.buckets:
-                SiriusCouchbaseLoader.create_clients_in_pool(self.cluster.master,
-                                                            self.cluster.master.rest_username,
-                                                            self.cluster.master.rest_password,
-                                                            bucket.name,
-                                                            clients_per_bucket)
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master,
+                    self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name,
+                    clients_per_bucket)
         # Initial Data Load
         self.loader_dict = None
         self.init_loading = self.input.param("init_loading", True)

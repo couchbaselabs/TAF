@@ -2,6 +2,7 @@ from copy import deepcopy
 from random import randint, choice
 
 from BucketLib.bucket import Bucket
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
@@ -11,7 +12,6 @@ from error_simulation.cb_error import CouchbaseError
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
 from shell_util.remote_connection import RemoteMachineShellConnection
-
 
 
 class DurabilityTestsBase(ClusterSetup):
@@ -52,6 +52,13 @@ class DurabilityTestsBase(ClusterSetup):
                 self.cluster, self.bucket,
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            self.log.info("Creating SDK clients in Java side")
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=self.sdk_pool_capacity)
 
         if not self.skip_init_load:
             if self.target_vbucket and type(self.target_vbucket) is not list:

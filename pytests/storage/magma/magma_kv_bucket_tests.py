@@ -1,3 +1,4 @@
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from storage.magma.magma_base import MagmaBaseTest
 
 
@@ -58,13 +59,20 @@ class MagmaKVTests(MagmaBaseTest):
 
         if self.load_docs_using == "default_loader":
             self.log.info("Creating SDK clients for the new buckets")
-            clients_per_bucket = 1
             for bucket in buckets_in_cluster:
                 if "new_bucket" in bucket.name:
                     self.cluster.sdk_client_pool.create_clients(
                         self.cluster, bucket,
-                        req_clients=clients_per_bucket,
+                        req_clients=1,
                         compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            self.log.info("Creating SDK clients in Java side")
+            for bucket in self.cluster.buckets:
+                if "new_bucket" in bucket.name:
+                    SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.cluster.master, self.cluster.master.rest_username,
+                        self.cluster.master.rest_password,
+                        bucket.name, req_clients=1)
 
         self.log.info("Loading data into all buckets...")
         self.key = "new_docs"
@@ -103,13 +111,20 @@ class MagmaKVTests(MagmaBaseTest):
 
         if self.load_docs_using == "default_loader":
             self.log.info("Creating SDK clients for the new buckets")
-            clients_per_bucket = 1
             for bucket in buckets_in_cluster:
                 if "new_bucket" in bucket.name:
                     self.cluster.sdk_client_pool.create_clients(
                         self.cluster, bucket,
-                        req_clients=clients_per_bucket,
+                        req_clients=1,
                         compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            self.log.info("Creating SDK clients in Java side")
+            for bucket in self.cluster.buckets:
+                if "new_bucket" in bucket.name:
+                    SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.cluster.master, self.cluster.master.rest_username,
+                        self.cluster.master.rest_password,
+                        bucket.name, req_clients=1)
 
         self.log.info("Loading data into all buckets...")
         self.key = "new_test_docs"

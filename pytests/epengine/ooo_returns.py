@@ -1,6 +1,7 @@
 from random import choice
 from threading import Thread, Lock
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
@@ -38,6 +39,13 @@ class OutOfOrderReturns(ClusterSetup):
                 self.cluster, self.bucket,
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            self.log.info("Creating SDK clients in Java side")
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=self.sdk_pool_capacity)
 
         # Create shell connection to each kv_node for cbstat object
         self.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)

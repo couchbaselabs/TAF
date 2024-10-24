@@ -1,6 +1,7 @@
 import os
 from math import ceil
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
@@ -143,6 +144,13 @@ class RebalanceBaseTest(BaseTestCase):
                         self.cluster, bucket,
                         req_clients=self.sdk_pool_capacity,
                         compression_settings=self.sdk_compression)
+            elif self.load_docs_using == "sirius_java_sdk":
+                self.log.info("Creating SDK clients in Java side")
+                for bucket in self.cluster.buckets:
+                    SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.cluster.master, self.cluster.master.rest_username,
+                        self.cluster.master.rest_password,
+                        bucket.name, req_clients=self.sdk_pool_capacity)
 
             if not self.atomicity:
                 _ = self._load_all_buckets(self.cluster, self.gen_create,
@@ -241,7 +249,7 @@ class RebalanceBaseTest(BaseTestCase):
                                             num_writer_threads="default",
                                             num_reader_threads="default",
                                             num_storage_threads="default")
-            
+
         super(RebalanceBaseTest, self).tearDown()
 
     def shuffle_nodes_between_zones_and_rebalance(self, to_remove=None):

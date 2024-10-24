@@ -1584,10 +1584,11 @@ class UpgradeTests(UpgradeBase):
                     req_clients=clients_per_bucket,
                     compression_settings=self.sdk_compression)
         elif self.load_docs_using == "sirius_java_sdk":
-            SiriusCouchbaseLoader.create_clients_in_pool(
-                    self.cluster.master, self.cluster.master.rest_username,
-                    self.cluster.master.rest_password,
-                    bucket.name, req_clients=clients_per_bucket)
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.cluster.master, self.cluster.master.rest_username,
+                        self.cluster.master.rest_password,
+                        bucket.name, req_clients=clients_per_bucket)
 
         self.log.info("Loading data into the new bucket...")
         new_bucket_load = self.bucket_util.get_crud_template_from_package(
