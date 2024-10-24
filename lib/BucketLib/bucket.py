@@ -265,7 +265,7 @@ class Bucket(object):
         self.magmaSeqTreeDataBlockSize = new_params.get(
             Bucket.magmaSeqTreeDataBlockSize, 4096)
         self.durabilityImpossibleFallback = new_params.get(
-            Bucket.durabilityImpossibleFallback, "none")
+            Bucket.durabilityImpossibleFallback, None)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
