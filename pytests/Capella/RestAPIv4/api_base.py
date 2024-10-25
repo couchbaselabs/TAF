@@ -133,7 +133,7 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": {
                     "type": "aws",
                     "region": self.input.param("region", "us-east-1"),
-                    "cidr": "10.0.0.0/20"
+                    "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
                     "version": str(self.input.param("server_version", 7.6))
@@ -171,7 +171,7 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": {
                     "type": "aws",
                     "region": self.input.param("region", "us-east-1"),
-                    "cidr": "10.0.0.0/20"
+                    "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
                     "version": str(self.input.param("server_version", 7.6))
@@ -209,7 +209,7 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": {
                     "type": "azure",
                     "region": self.input.param("region", "eastus"),
-                    "cidr": "10.0.0.0/20"
+                    "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
                     "version": str(self.input.param("server_version", 7.6))
@@ -246,7 +246,7 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": {
                     "type": "azure",
                     "region": self.input.param("region", "eastus"),
-                    "cidr": "10.0.0.0/20"
+                    "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
                     "version": str(self.input.param("server_version", 7.6))
@@ -283,7 +283,7 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": {
                     "type": "gcp",
                     "region": self.input.param("region", "us-east1"),
-                    "cidr": "10.0.0.0/20"
+                    "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
                     "version": str(self.input.param("server_version", 7.6))
@@ -320,7 +320,7 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": {
                     "type": "gcp",
                     "region": self.input.param("region", "us-east1"),
-                    "cidr": "10.0.0.0/20"
+                    "cidr": "10.1.0.0/20"
                 },
                 "couchbaseServer": {
                     "version": str(self.input.param("server_version", 7.6))
