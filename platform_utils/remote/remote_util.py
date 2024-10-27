@@ -177,7 +177,30 @@ class RemoteMachineShellConnection:
             self.cmd_ext = ".exe"
             self.bin_path = Windows.COUCHBASE_BIN_PATH
 
-    def apply_io_throttling(self, read_limit, write_limit, device="/dev/xvda"):
+    def get_root_device(self):
+        command = "findmnt -n -o SOURCE /"
+        output, error = self.execute_command(command)
+        if isinstance(output, list):
+            output = ''.join(output)
+        device = output.strip()
+        if error:
+            if isinstance(error, bytes):
+                error_message = error.decode('utf-8').strip()
+            elif isinstance(error, list):
+                error_message = ''.join(error).strip()
+            else:
+                error_message = error.strip()
+
+            self.log.error("Error finding root device: {0}".format(error_message))
+
+        return device
+
+    def apply_io_throttling(self, read_limit, write_limit,
+                            device_block="/dev/xvda"):
+        device = self.get_root_device()
+        if not device:
+            self.log.error("Could not determine root device.")
+            device = device_block
         override_content = "[Service]\nIOReadBandwidthMax={0} {1}\nIOWriteBandwidthMax={0} {2}\n".format(
             device, read_limit, write_limit)
         commands = [
@@ -206,8 +229,6 @@ class RemoteMachineShellConnection:
             self.log.error(
                 "Failed to execute commands to simulate slow disk {}"
                     .format(e))
-
-    import os
 
     def remove_io_throttling(self, device="/dev/xvda"):
         override_conf_path = "/etc/systemd/system/couchbase-server.service.d/override.conf"
