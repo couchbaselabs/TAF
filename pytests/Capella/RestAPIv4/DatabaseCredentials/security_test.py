@@ -5,8 +5,7 @@ import random
 import string
 import uuid
 
-from pytests.Capella.RestAPIv4.security_base import SecurityBase
-from pytests.basetestcase import BaseTestCase
+from pytests.security.security_base import SecurityBase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
 

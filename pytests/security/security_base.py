@@ -817,7 +817,7 @@ class SecurityBase(CouchbaseBaseTest):
     def create_different_organization_roles(self):
         self.log.info("Creating Different Organization Roles")
         self.test_users = {}
-        roles = ["organizationOwner", "projectCreator", "organizationMember", "cloudManager"]
+        roles = ["organizationOwner", "projectCreator", "organizationMember"]
         setup_capella_api = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
                                          self.user, self.passwd)
 
