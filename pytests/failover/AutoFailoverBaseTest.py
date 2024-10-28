@@ -188,7 +188,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         CollectionBase.deploy_buckets_from_spec_file(self)
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, "initial_load")
-        if self.range_scan_collections > 0:
+        if isinstance(self.range_scan_collections, int) \
+                and self.range_scan_collections > 0:
             CollectionBase.range_scan_load_setup(self)
 
     def _loadgen(self):

@@ -524,7 +524,7 @@ class SDKClient(object):
                 success[doc_key]['value'] = dict()
                 for mutation_result in mutate_in_result.value:
                     success[doc_key]['value'][mutation_result['path']] = \
-                        mutation_result["value"]
+                        mutation_result["path"]
             else:
                 fail[doc_key] = dict()
                 fail[doc_key]['value'] = mutate_in_result["value"]
@@ -898,9 +898,9 @@ class SDKClient(object):
                 access_deleted=access_deleted,
                 create_as_deleted=create_as_deleted)
 
-            result = self.collection.mutate_in(key, mutate_in_specs, options)
-            return self.__translate_upsert_multi_sub_doc_result(result,
-                                                                path_val)
+            result, _ = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.collection.mutate_in(key, mutate_in_specs,
+                                                options)}, path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.UPSERT, "subdoc_upsert"]:
             sub_key, value = value[0], value[1]
             path_val = dict()
@@ -916,9 +916,9 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 create_as_deleted=create_as_deleted)
-            result = self.collection.mutate_in(key, mutate_in_specs, options)
-            return self.__translate_upsert_multi_sub_doc_result(result,
-                                                                path_val)
+            result, _ = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.collection.mutate_in(key, mutate_in_specs,
+                                                options)}, path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.REMOVE, "subdoc_delete"]:
             mutate_in_specs = list()
             path_val = dict()
@@ -932,9 +932,9 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 create_as_deleted=create_as_deleted)
-            result = self.collection.mutate_in(key, mutate_in_specs, options)
-            result = self.__translate_upsert_multi_sub_doc_result(result,
-                                                                  path_val)
+            result, _ = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.collection.mutate_in(key, mutate_in_specs,
+                                                options)}, path_val)
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
             path_val = dict()
@@ -949,9 +949,9 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 create_as_deleted=create_as_deleted)
-            result = self.collection.mutate_in(key, mutate_in_specs, options)
-            result = self.__translate_upsert_multi_sub_doc_result(result,
-                                                                  path_val)
+            result, _ = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.collection.mutate_in(key, mutate_in_specs,
+                                                options)}, path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.LOOKUP, "subdoc_read"]:
             mutate_in_specs = list()
             path_val = dict()
@@ -960,10 +960,9 @@ class SDKClient(object):
             options = SDKOptions.get_look_up_in_options(
                 timeout, time_unit)
 
-            result = {key: self.collection.lookup_in(key, mutate_in_specs,
-                                                     options)}
-            result, _ = self.__translate_get_multi_sub_doc_result(result,
-                                                                  path_val)
+            result, _ = self.__translate_get_multi_sub_doc_result(
+                {key: self.collection.lookup_in(key, mutate_in_specs,
+                                                options)}, path_val)
         elif op_type == DocLoading.Bucket.SubDocOps.COUNTER:
             sub_key, step_value = value[0], value[1]
             mutate_in_specs = list()
@@ -975,9 +974,9 @@ class SDKClient(object):
                 persist_to, replicate_to, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry)
-            result = {key: self.collection.mutate_in(key, mutate_in_specs,
-                                                     options)}
-            result, _ = self.__translate_upsert_multi_sub_doc_result(result)
+            result, _ = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.collection.mutate_in(key, mutate_in_specs,
+                                                options)})
         else:
             self.log.error("Unsupported operation %s" % op_type)
         return result

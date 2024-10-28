@@ -21,7 +21,6 @@ from Jython_tasks import sirius_task
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_constants.ClusterRun import ClusterRun
-from cb_server_rest_util.index.index_api import IndexRestAPI
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
@@ -961,7 +960,7 @@ class RebalanceTask(Task):
                 for removed in self.to_remove:
                     try:
                         rest = ClusterRestAPI(removed)
-                    except ServerUnavailableException as e:
+                    except Exception as e:
                         self.test_log.error(e)
                         continue
                     start = time.time()
@@ -972,7 +971,7 @@ class RebalanceTask(Task):
                                     (len(pools_info["pools"]) == 0):
                                 success_cleaned.append(removed)
                                 break
-                        except (ServerUnavailableException, IncompleteRead) as e:
+                        except Exception as e:
                             self.test_log.error(e)
 
                 for node in set(self.to_remove) - set(success_cleaned):

@@ -211,7 +211,7 @@ def main():
         create_log_file(log_config_filename, test_log_file)
         logging.config.fileConfig(log_config_filename)
         print("Logs will be stored at %s" % logs_folder)
-        print("\npython testrunner -i {0} {1} -t {2}{3}\n"
+        print("\npython testrunner.py -i {0} {1} -t {2}{3}\n"
               .format(arg_i or "", ("-p " + arg_p if arg_p else ""),
                       name, xunit_test_ref.params))
         name = name.split(",")[0]

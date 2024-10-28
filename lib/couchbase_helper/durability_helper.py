@@ -91,6 +91,10 @@ class DurabilityHelper:
         """
         durability_succeeds = True
         bucket = BucketHelper(master).get_buckets_json(bucket_name)
+        if bucket["replicaNumber"] > 2:
+            # Durability is not supported with replica > 2 (MB-34453)
+            return False
+
         min_nodes_req = bucket["replicaNumber"] + 1
         majority_value = floor(min_nodes_req/2) + 1
 
