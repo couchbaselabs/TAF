@@ -1,10 +1,14 @@
 from math import floor
 
 from BucketLib.bucket import Bucket
+from cb_constants import DocLoading
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from rebalance_new import rebalance_base
 from rebalance_new.rebalance_base import RebalanceBaseTest
+from scenario_plugins.ns_server_scenarios import NsServerFeaturePlugins
 
 
 class RebalanceDurability(RebalanceBaseTest):
@@ -289,6 +293,8 @@ class RebalanceDurability(RebalanceBaseTest):
                                 len(task.fail) == (gen_update.end
                                                    - gen_update.start),
                                 assert_msg)
+                    NsServerFeaturePlugins.test_durability_impossible_fallback(
+                        self, self.cluster.master)
                     break
             elif not self.atomicity:
                 # If durability works fine, re-calculate the self.num_items

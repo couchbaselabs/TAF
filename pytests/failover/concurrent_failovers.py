@@ -4,8 +4,11 @@ from random import choice
 from time import time
 
 from BucketLib.bucket import Bucket
-from custom_exceptions.exception import FailoverFailedException
-from sdk_client3 import SDKClient
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
+from rebalance_utils.rebalance_util import RebalanceUtil
+from sdk_client3 import SDKClient, SDKClientPool
 from cb_constants import CbServer, DocLoading
 from Jython_tasks.task import ConcurrentFailoverTask
 from bucket_collections.collections_base import CollectionBase
@@ -17,6 +20,7 @@ from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
+from scenario_plugins.ns_server_scenarios import NsServerFeaturePlugins
 
 
 class ConcurrentFailoverTests(AutoFailoverBaseTest):
@@ -61,13 +65,13 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         self.load_during_fo = self.input.param("load_during_fo", False)
         self.preserve_durability_during_auto_fo = self.input.param(
-            "preserve_durability_during_auto_fo", False)
+            "preserve_durability_during_auto_fo", "false")
         self.log.info("Updating Auto-failover settings")
-        self.rest.update_autofailover_settings(
-            enabled=True, timeout=self.timeout, maxCount=self.max_count,
-            preserve_durability_during_auto_fo=
+        self.rest.update_auto_failover_settings(
+            enabled="true", timeout=self.timeout, max_count=self.max_count,
+            failover_preserve_durability=
             self.preserve_durability_during_auto_fo)
-        # Find the bucket with least replica to check the Auto-FO possibility
+        # Find the bucket with least-replica to check the Auto-FO possibility
         self.find_minimum_bucket_replica()
         # Hold the dict of {node_obj_to_fail: failover_type, ...}
         self.nodes_to_fail = None
@@ -88,7 +92,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             CollectionBase.create_sdk_clients(
                 self.cluster, self.task_manager.number_of_threads,
                 self.cluster.master, self.cluster.buckets,
-                self.sdk_compression)
+                self.sdk_compression, self.load_docs_using)
 
         # Perform initial collection load
         self.__load_initial_collection_data()
@@ -118,8 +122,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.cluster.master = self.cluster.kv_nodes[0]
 
         self.log.info("Resetting auto-failover settings to default")
-        self.rest.update_autofailover_settings(
-            enabled=True, timeout=120, maxCount=1)
+        self.rest.update_auto_failover_settings(
+            enabled="true", timeout=120, max_count=1)
         self.log_setup_status(self.__class__.__name__, "complete",
                               self.tearDown.__name__)
 
@@ -221,7 +225,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         fo_nodes = set()
         num_unreachable_nodes = 0
-        active_cluster_nodes = len(self.rest.get_nodes())
+        active_cluster_nodes = len(self.cluster_util.get_nodes(
+            self.cluster.master))
         total_nodes = active_cluster_nodes + self.fo_events + self.nodes_in
         min_nodes_for_quorum = int(total_nodes/2) + 1
         max_allowed_unreachable_nodes = total_nodes - min_nodes_for_quorum
@@ -352,7 +357,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         master_fo = False
         # Update the list of service-nodes mapping in the cluster object
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
-        nodes_in_cluster = self.rest.get_nodes()
+        nodes_in_cluster = self.cluster_util.get_nodes(self.cluster.master)
         for services in services_to_fail:
             node_services = set(services.split("_"))
             # To handle serviceless node failover, force creating a set
@@ -379,27 +384,28 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         return nodes
 
     def validate_failover_settings(self, enabled, timeout, count, max_count):
-        settings = self.rest.get_autofailover_settings()
+        _, settings = self.rest.get_auto_failover_settings()
         self.auto_fo_settings_tbl.rows = list()
         self.auto_fo_settings_tbl.rows.append([
-            str(settings.enabled), str(settings.count),
-            str(settings.maxCount), str(settings.timeout),
-            str(settings.failoverOnDataDiskIssuesEnabled),
-            str(settings.failoverOnDataDiskIssuesTimeout)])
+            str(settings['enabled']), str(settings['count']),
+            str(settings['maxCount']), str(settings['timeout']),
+            str(settings['failoverOnDataDiskIssues']['enabled']),
+            str(settings['failoverOnDataDiskIssues']['timePeriod'])])
         self.auto_fo_settings_tbl.display("Auto failover status:")
 
         err_msg = "Mismatch in '%s' field. " \
-                  "Cluster FO data: " + str(settings.__dict__)
-        self.assertEqual(settings.enabled, enabled, err_msg % "enabled")
-        self.assertEqual(settings.timeout, timeout, err_msg % "timeout")
-        self.assertEqual(settings.count, count, err_msg % "count")
-        self.assertEqual(settings.maxCount, max_count,
+                  "Cluster FO data: " + str(settings)
+        self.assertEqual(settings['enabled'], enabled, err_msg % "enabled")
+        self.assertEqual(settings['timeout'], timeout, err_msg % "timeout")
+        self.assertEqual(settings['count'], count, err_msg % "count")
+        self.assertEqual(settings['maxCount'], max_count,
                          err_msg % "maxCount")
 
     def __display_failure_node_status(self, message):
         self.test_status_tbl.rows = list()
-        cluster_nodes = self.rest.get_nodes(inactive_added=True,
-                                            inactive_failed=True)
+        cluster_nodes = self.cluster_util.get_nodes(self.cluster.master,
+                                                    inactive_added=True,
+                                                    inactive_failed=True)
         for node, fo_type in self.nodes_to_fail.items():
             node = [t_node for t_node in cluster_nodes
                     if t_node.ip == node.ip][0]
@@ -408,14 +414,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.test_status_tbl.display(message)
 
     def __update_unaffected_node(self):
-        cluster_nodes = self.rest.get_nodes()
+        cluster_nodes = self.cluster_util.get_nodes(self.cluster.master)
         for cluster_node in cluster_nodes:
             for failure_node in self.nodes_to_fail:
                 if cluster_node.ip == failure_node.ip:
                     break
             else:
                 self.orchestrator = cluster_node
-                self.rest = RestConnection(self.orchestrator)
+                self.rest = ClusterRestAPI(self.orchestrator)
                 self.cluster.master = cluster_node
                 self.log.info("Node for REST APIs: %s" % cluster_node.ip)
                 break
@@ -428,27 +434,29 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         """
 
         self.log.info("Testing max_event counts")
-        enable_failover = True
+        enable_failover = "true"
         timeout_val = 10
         max_plus_1 = CbServer.Failover.MAX_EVENTS + 1
 
         # Set max_events between (min, max)
         for num_events in range(CbServer.Failover.MIN_EVENTS, max_plus_1):
-            status = self.rest.update_autofailover_settings(
-                enable_failover, timeout_val, maxCount=num_events)
+            status = self.rest.update_auto_failover_settings(
+                enable_failover, timeout_val, max_count=num_events)
             self.assertTrue(status, "Failed to set max events=%s" % num_events)
-            self.validate_failover_settings(enable_failover, timeout_val,
-                                            0, num_events)
+            self.validate_failover_settings(
+                enable_failover == "true", timeout_val, 0, num_events)
 
         for num_events in [0, max_plus_1]:
             self.log.info("Testing max_event_count=%s" % num_events)
-            status = self.rest.update_autofailover_settings(
-                enable_failover, timeout_val, maxCount=max_plus_1)
+            status = self.rest.update_auto_failover_settings(
+                enable_failover, timeout_val, max_count=max_plus_1)
             self.assertFalse(status, "Able to set max events=%s" % num_events)
-            self.validate_failover_settings(enable_failover, timeout_val,
-                                            0, CbServer.Failover.MAX_EVENTS)
+            self.validate_failover_settings(
+                enable_failover == "true", timeout_val, 0,
+                CbServer.Failover.MAX_EVENTS)
 
     def __run_test(self):
+        reb_util = RebalanceUtil(self.cluster)
         # Validate count before the start of failover procedure
         self.validate_failover_settings(True, self.timeout,
                                         self.fo_events, self.max_count)
@@ -457,7 +465,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.__display_failure_node_status("Nodes to be failed")
 
         try:
-            rest_nodes = self.rest.get_nodes()
+            rest_nodes = self.cluster_util.get_nodes(self.cluster.master)
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 expected_fo_nodes = self.num_nodes_to_be_failover
                 self.fo_events += expected_fo_nodes
@@ -479,7 +487,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     node = [t_node for t_node in rest_nodes
                             if t_node.ip == node.ip][0]
                     try:
-                        status = self.rest.fail_over(node.id, graceful=True)
+                        status, _ = self.rest.perform_graceful_failover(
+                            node.id)
                     except Exception as e_msg:
                         if CbServer.Services.KV in node.services:
                             self.fail("Graceful failover failed for %s:%s"
@@ -495,26 +504,43 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                             self.fail("Graceful failover failed for %s: %s"
                                       % (node, node.services))
                         self.sleep(5, "Wait for failover to start")
-                        reb_result = self.rest.monitorRebalance()
+                        reb_result = reb_util.monitor_rebalance()
                         self.assertTrue(reb_result, "Graceful failover failed")
             elif self.current_fo_strategy == CbServer.Failover.Type.FORCEFUL:
                 for node in self.nodes_to_fail:
                     node = [t_node for t_node in rest_nodes
                             if t_node.ip == node.ip][0]
-                    status = self.rest.fail_over(node.id, graceful=False)
+                    status, _ = self.rest.perform_hard_failover(node.id)
                     if status is False:
                         self.fail("Hard failover failed for %s" % node)
                     self.sleep(5, "Wait for failover to start")
-                    reb_result = self.rest.monitorRebalance()
+                    reb_result = reb_util.monitor_rebalance()
                     self.assertTrue(reb_result, "Hard failover failed")
+
+            new_replica = self.input.param('new_bucket_replica', None)
+            if new_replica is not None:
+                self.bucket_util.update_all_bucket_replicas(self.cluster,
+                                                            new_replica)
+
+            if self.input.param('test_non_durable_sync_writes', False):
+                NsServerFeaturePlugins.test_durability_impossible_fallback(
+                    self, self.orchestrator)
+                self.log.info(
+                    "Setting durable fallback for doc-ops to work always")
+                bucket_param = {
+                    Bucket.durabilityImpossibleFallback: "fallbackToActiveAck"}
+                bucket_rest = BucketRestApi(self.cluster.master)
+                for t_bucket in self.cluster.buckets:
+                    bucket_rest.edit_bucket(t_bucket.name, bucket_param)
+                self.sleep(12, "Wait for new settings to take effect")
         except Exception as e:
             self.log.error("Exception occurred: %s" % str(e))
             raise e
         finally:
             # Disable auto-fo after the expected time limit
-            self.rest.update_autofailover_settings(
-                enabled=False, timeout=self.timeout, maxCount=self.max_count,
-                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
+            self.rest.update_auto_failover_settings(
+                enabled="false", timeout=self.timeout, max_count=self.max_count,
+                failover_preserve_durability=self.preserve_durability_during_auto_fo)
 
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 failover_task = ConcurrentFailoverTask(
@@ -528,9 +554,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
             # Enable back prev auto_fo settings
             self.sleep(15, "Wait before enabling back auto-fo")
-            self.rest.update_autofailover_settings(
-                enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
+            self.rest.update_auto_failover_settings(
+                enabled="true", timeout=self.timeout, max_count=self.max_count,
+                failover_preserve_durability=self.preserve_durability_during_auto_fo)
 
         # After failure - failed nodes' information
         self.__display_failure_node_status("Nodes status failure")
@@ -562,8 +588,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.cluster.master, bucket,
                     replica_number=update_replica_number_to)
 
-            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
-                                                   retry_get_process_num=3000)
+            rebalance_task = self.task.async_rebalance(
+                self.cluster, [], [], retry_get_process_num=3000)
             self.task_manager.get_task_result(rebalance_task)
             self.find_minimum_bucket_replica()
             self.__perform_doc_ops(durability=self.durability_level,
@@ -596,11 +622,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         if choice([True, False]):
             # Add back all nodes and rebalance
             self.log.info("Performing node add back operation")
-            rest_nodes = self.rest.get_nodes(inactive_added=True,
-                                             inactive_failed=True)
+            rest_nodes = self.cluster_util.get_nodes(self.cluster.master,
+                                                     inactive_added=True,
+                                                     inactive_failed=True)
             for node in rest_nodes:
                 if node.clusterMembership == "inactiveFailed":
-                    self.rest.add_back_node(node.id)
+                    self.rest.re_add_node(node.id)
                     if CbServer.Services.KV in node.services:
                         self.rest.set_recovery_type(node.id, "delta")
             result = self.cluster_util.rebalance(self.cluster,
@@ -613,10 +640,18 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                                                  wait_for_completion=
                                                  (not pause_rebalance_test))
 
+        reb_util = RebalanceUtil(self.cluster)
         if pause_rebalance_test:
-            stopped = self.rest.stop_rebalance(
-                wait_timeout=self.wait_timeout / 3)
-            self.assertTrue(stopped, msg="Unable to stop rebalance")
+            status, content = self.rest.stop_rebalance()
+            self.assertTrue(status, f"Stop rebalance failed: {content}")
+            for i in range(self.wait_timeout):
+                if reb_util.get_rebalance_status() != 'running':
+                    break
+                self.log.warn("Rebalance not stopped after {0} sec"
+                                   .format(i + 1))
+                self.sleep(1)
+            else:
+                self.fail("Unable to stop rebalance")
             result = self.cluster_util.rebalance(self.cluster)
 
         if exception:
@@ -686,7 +721,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.sleep(5, "Wait for nodes to be reachable")
 
         def post_failover_procedure():
-            self.rest.monitorRebalance()
+            RebalanceUtil(self.cluster.master).monitor_rebalance()
             self.validate_failover_settings(True, self.timeout,
                                             num_nodes_to_fo,
                                             self.max_count)
@@ -712,7 +747,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.log.info("Fetching current cluster_nodes")
         self.cluster_util.find_orchestrator(self.cluster)
         # cluster_nodes holds servers which are not yet selected for nw split
-        cluster_nodes = self.rest.get_nodes()
+        cluster_nodes = self.cluster_util.get_nodes(self.cluster.master)
         for node in cluster_nodes:
             node.services.sort()
 
@@ -773,8 +808,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         finally:
             recover_from_split(node_split_1 + node_split_2)
             self.sleep(5, "Wait for n/w split to heal")
-            rest_nodes = self.rest.get_nodes(inactive_added=True,
-                                             inactive_failed=True)
+            rest_nodes = self.cluster_util.get_nodes(self.cluster.master,
+                                                     inactive_added=True,
+                                                     inactive_failed=True)
             for t_node in rest_nodes:
                 if t_node.clusterMembership == "active":
                     for node in self.cluster.servers:
@@ -799,7 +835,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                                                     dynamic_fo_method=True)
         expected_fo_nodes = self.num_nodes_to_be_failover
         self.__update_server_obj()
-        rand_node = choice(self.nodes_to_fail.keys())
+        rand_node = choice(list(self.nodes_to_fail.keys()))
         self.__update_unaffected_node()
         self.__display_failure_node_status("Nodes to be failed")
         try:
@@ -844,12 +880,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Make sure the new auto-failover timing is honoured
             new_timer = new_timer + self.timeout
             while int(time()) < new_timer:
-                settings = self.rest.get_autofailover_settings()
+                _, settings = self.rest.get_auto_failover_settings()
                 if settings.count != 0:
                     self.fail("Nodes failed over before new failover time")
 
             self.sleep(10, "Wait for failover rebalance to trigger")
-            self.rest.monitorRebalance()
+            RebalanceUtil(self.cluster).monitor_rebalance()
 
             # Validate auto_failover_settings after actual auto failover
             self.validate_failover_settings(True, self.timeout,
@@ -880,7 +916,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         def get_reb_out_nodes():
             nodes = list()
             nodes_with_services = dict()
-            cluster_nodes = self.rest.get_nodes()
+            cluster_nodes = self.cluster_util.get_nodes(self.cluster.master)
             for node in cluster_nodes:
                 node.services.sort()
                 d_key = '_'.join(node.services)
@@ -995,9 +1031,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             retry = 5
             for i in range(retry):
                 try:
-                    status = self.rest.update_autofailover_settings(
-                        enabled=False, timeout=self.timeout, maxCount=self.max_count,
-                        preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
+                    status = self.rest.update_auto_failover_settings(
+                        enabled="false", timeout=self.timeout,
+                        max_count=self.max_count,
+                        failover_preserve_durability=self.preserve_durability_during_auto_fo)
                     self.assertTrue(status)
                     break
                 except Exception as e:
@@ -1019,9 +1056,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
             # Enable back prev auto_fo settings
             self.sleep(5, "Wait before enabling back auto-fo")
-            self.rest.update_autofailover_settings(
-                enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
+            self.rest.update_auto_failover_settings(
+                enabled="true", timeout=self.timeout,
+                max_count=self.max_count,
+                failover_preserve_durability=self.preserve_durability_during_auto_fo)
 
             # Rebalance the cluster to remove failed nodes
             result = self.cluster_util.rebalance(self.cluster)
@@ -1053,19 +1091,20 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             param("update_minimum_replica", None)
         update_afo_nodes_with_vbucket_number = \
             self.input.param("update_afo_nodes", None)
-        nodes_in_cluster = self.rest.get_nodes()
+        nodes_in_cluster = self.cluster_util.get_nodes(self.cluster.master)
         nodes_to_fo = dict()
         iterator = 0
         # dividing all nodes in 2 node per zone
+        server_group_rest = ServerGroupsAPI(self.cluster.master)
         while iterator < len(self.cluster.servers):
             iterator += 2
             group = "Group " + str(iterator)
-            self.rest.add_zone(group)
+            server_group_rest.create_server_group(group)
             nodes = [server for server in self.cluster.servers[
                                              iterator:iterator + 2]]
-            self.rest.shuffle_nodes_in_zones(nodes, "Group 1", group)
+            self.cluster_util.shuffle_nodes_in_zones(nodes, "Group 1", group)
 
-        cluster_details = self.rest.get_cluster_stats()
+        cluster_details = self.cluster_util.get_cluster_stats()
         num_nodes_with_vbuckets_to_afo = 0
         if self.min_bucket_replica == 1:
             num_nodes_with_vbuckets_to_afo = 1
@@ -1111,7 +1150,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         """
         len_of_nodes_to_afo = len(self.failover_order[0].split(":"))
         nodes_to_fo = dict()
-        nodes_in_cluster = self.rest.get_nodes()
+        nodes_in_cluster = self.cluster_util.get_nodes(self.cluster.master)
         for node in nodes_in_cluster:
             if len_of_nodes_to_afo <= 0:
                 break
@@ -1141,7 +1180,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             task_id_changed = False
             self.prev_rebalance_status_id = None
             while not task_id_changed and int(time()) < timeout:
-                server_task = self.rest.ns_server_tasks(
+                server_task = self.cluster_util.get_cluster_tasks(
                     task_type="rebalance", task_sub_type="failover")
                 if server_task and server_task["statusId"] != \
                         self.prev_rebalance_status_id:
