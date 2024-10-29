@@ -382,8 +382,10 @@ class TravelSampleApp(AppBase):
     def run_with_travel_sample_ops(test_function):
         def with_ops(self):
             self.__travel_sample_app_ops("start")
-            test_function(self)
-            self.__travel_sample_app_ops("stop")
+            try:
+                test_function(self)
+            finally:
+                self.__travel_sample_app_ops("stop")
         return with_ops
 
     @run_with_travel_sample_ops
