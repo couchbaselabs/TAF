@@ -63,7 +63,7 @@ class BasicOps(DurabilityTestsBase):
             key_size=self.key_size,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=def_bucket.numVBuckets)
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_sub_docs(
@@ -256,7 +256,7 @@ class BasicOps(DurabilityTestsBase):
         doc_gen = doc_generator(
             self.key, self.num_items, self.num_items*2, doc_size=self.doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=def_bucket.numVBuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_gen, "create", self.maxttl,
             batch_size=10, process_concurrency=8,
@@ -287,13 +287,13 @@ class BasicOps(DurabilityTestsBase):
                                            key_size=self.key_size,
                                            doc_size=self.sub_doc_size,
                                            target_vbucket=self.target_vbucket,
-                                           vbuckets=self.cluster.vbuckets)
+                                           vbuckets=def_bucket.numVBuckets)
             doc_gen[1] = sub_doc_generator(self.key, half_of_num_items,
                                            self.num_items,
                                            key_size=self.key_size,
                                            doc_size=self.sub_doc_size,
                                            target_vbucket=self.target_vbucket,
-                                           vbuckets=self.cluster.vbuckets)
+                                           vbuckets=def_bucket.numVBuckets)
         elif doc_ops in [DocLoading.Bucket.SubDocOps.UPSERT,
                          DocLoading.Bucket.SubDocOps.REMOVE]:
             self.log.info("Creating sub_docs before upsert/remove operation")
@@ -303,7 +303,7 @@ class BasicOps(DurabilityTestsBase):
                 key_size=self.key_size,
                 doc_size=self.sub_doc_size,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=def_bucket.numVBuckets)
             template_index_1 = 0
             template_index_2 = 1
             if doc_ops == DocLoading.Bucket.SubDocOps.REMOVE:
@@ -332,7 +332,7 @@ class BasicOps(DurabilityTestsBase):
                 key_size=self.key_size,
                 template_index=template_index_1,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=def_bucket.numVBuckets)
             doc_gen[1] = sub_doc_generator_for_edit(
                 self.key,
                 start=half_of_num_items,
@@ -340,7 +340,7 @@ class BasicOps(DurabilityTestsBase):
                 key_size=self.key_size,
                 template_index=template_index_2,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=def_bucket.numVBuckets)
         else:
             self.fail("Invalid sub_doc operation '%s'" % doc_ops)
 
@@ -446,7 +446,7 @@ class BasicOps(DurabilityTestsBase):
                                           self.num_items * 2,
                                           doc_size=self.doc_size,
                                           target_vbucket=self.target_vbucket,
-                                          vbuckets=self.cluster.vbuckets)
+                                          vbuckets=def_bucket.numVBuckets)
         doc_gen["read"] = doc_generator(self.key,
                                         0,
                                         self.num_items)
@@ -469,7 +469,7 @@ class BasicOps(DurabilityTestsBase):
                                     template_index=0,
                                     key_size=self.key_size,
                                     target_vbucket=self.target_vbucket,
-                                    vbuckets=self.cluster.vbuckets)
+                                    vbuckets=def_bucket.numVBuckets)
         sub_doc_gen["remove"] = sub_doc_generator_for_edit(
                                     self.key,
                                     start=upsert_end_index,
@@ -477,7 +477,7 @@ class BasicOps(DurabilityTestsBase):
                                     template_index=2,
                                     key_size=self.key_size,
                                     target_vbucket=self.target_vbucket,
-                                    vbuckets=self.cluster.vbuckets)
+                                    vbuckets=def_bucket.numVBuckets)
 
         # Start full document mutations before starting sub_doc ops
         tasks.append(self.task.async_load_gen_docs(
@@ -604,7 +604,7 @@ class BasicOps(DurabilityTestsBase):
                                         key_size=self.key_size,
                                         doc_size=self.sub_doc_size,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster.vbuckets)
+                                        vbuckets=def_bucket.numVBuckets)
         task = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, sub_doc_gen,
             DocLoading.Bucket.SubDocOps.INSERT, self.maxttl,
@@ -623,13 +623,14 @@ class BasicOps(DurabilityTestsBase):
                                        insert_end_index,
                                        key_size=self.key_size,
                                        target_vbucket=self.target_vbucket,
-                                       vbuckets=self.cluster.vbuckets)
+                                       vbuckets=def_bucket.numVBuckets)
         gen_update = sub_doc_generator_for_edit(
             self.key,
             insert_end_index,
             upsert_end_index,
             key_size=self.key_size,
             template_index=0,
+            vbuckets=def_bucket.numVBuckets,
             target_vbucket=self.target_vbucket)
         gen_delete = sub_doc_generator_for_edit(
             self.key,
@@ -637,6 +638,7 @@ class BasicOps(DurabilityTestsBase):
             self.num_items,
             key_size=self.key_size,
             template_index=2,
+            vbuckets=def_bucket.numVBuckets,
             target_vbucket=self.target_vbucket)
 
         self.log.info("Starting parallel doc_ops - insert/Read/upsert/remove")
@@ -809,6 +811,7 @@ class BasicOps(DurabilityTestsBase):
             self.num_items/2,
             self.crud_batch_size,
             key_size=self.key_size,
+            vbuckets=def_bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         gen["read"] = sub_doc_generator_for_edit(
             self.key,
@@ -816,6 +819,7 @@ class BasicOps(DurabilityTestsBase):
             50,
             key_size=self.key_size,
             template_index=0,
+            vbuckets=def_bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         gen["upsert"] = sub_doc_generator_for_edit(
             self.key,
@@ -823,6 +827,7 @@ class BasicOps(DurabilityTestsBase):
             50,
             key_size=self.key_size,
             template_index=0,
+            vbuckets=def_bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         gen["remove"] = sub_doc_generator_for_edit(
             self.key,
@@ -830,6 +835,7 @@ class BasicOps(DurabilityTestsBase):
             50,
             key_size=self.key_size,
             template_index=2,
+            vbuckets=def_bucket.numVBuckets,
             target_vbucket=target_vbuckets)
 
         self.log.info("Starting parallel doc_ops - insert/Read/upsert/remove")
@@ -983,6 +989,7 @@ class BasicOps(DurabilityTestsBase):
         self.log.info("Loading more docs into the targeted vb: %s"
                       % vb_for_key)
         doc_gen = doc_generator(self.key, self.num_items, 1000,
+                                vbuckets=bucket.numVBuckets,
                                 target_vbucket=[vb_for_key])
         doc_load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,

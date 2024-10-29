@@ -47,14 +47,14 @@ class DocumentKeysTests(ClusterSetup):
         target_vb = None
         if self.target_vbucket is not None:
             target_vb = [self.target_vbucket]
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         gen_load = doc_generator(dockey, 0, self.num_items,
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster.vbuckets,
+                                 vbuckets=bucket.numVBuckets,
                                  target_vbucket=target_vb)
 
-        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for op_type in ["create", "update", "delete"]:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_load, op_type, 0, batch_size=20,

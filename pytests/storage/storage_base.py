@@ -597,9 +597,9 @@ class StorageBase(BaseTestCase):
                 self.task_manager.get_task_result(task)
         elif self.load_docs_using == "sirius_java_sdk":
             self.java_doc_loader(generator=self.gen_create,
-                                doc_ops="create",
-                                process_concurrency=2,
-                                skip_default=True)
+                                 doc_ops="create",
+                                 process_concurrency=2,
+                                 skip_default=True)
         else:
             task = self.data_load()
             self.wait_for_doc_load_completion(task)
@@ -736,12 +736,10 @@ class StorageBase(BaseTestCase):
         if "create" in doc_ops:
             if create_start is not None:
                 self.create_start = create_start
-
             if create_end is not None:
                 self.create_end = create_end
 
             self.log.critical("Create :: %s:%s" % (self.create_start, self.create_end))
-
             self.gen_create = self.genrate_docs_basic(self.create_start,
                                                       self.create_end,
                                                       target_vbucket=target_vbucket,
@@ -773,7 +771,6 @@ class StorageBase(BaseTestCase):
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
                                                       target_vbucket=target_vbucket,
-
                                                       mutate=expiry_mutate)
 
     def generate_subDocs(self, sub_doc_ops=None,

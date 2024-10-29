@@ -215,15 +215,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -683,15 +683,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -934,6 +934,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.key,
                 self.num_items,
                 crud_batch_size,
+                vbuckets=self.bucket.numVBuckets,
                 target_vbucket=replica_vbs[server])
             success = self.bucket_util.load_durable_aborts(
                 ssh_shell, server, [load_gen[server]], self.cluster,

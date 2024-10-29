@@ -592,6 +592,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             target_vbs = self.vbs_in_node[random_node][target_vb_type]
             doc_gen = doc_generator(self.key, 0, 1,
+                                    vbuckets=bucket_obj.numVBuckets,
                                     target_vbucket=target_vbs)
 
             doc_load_task = self.task.async_load_gen_docs(
@@ -681,15 +682,15 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.log.info("Creating doc_generators")
             gen_create = doc_generator(
                 self.key, self.num_items, crud_batch_size,
-                vbuckets=self.cluster.vbuckets,
+                vbuckets=bucket.numVBuckets,
                 target_vbucket=target_vbuckets)
             gen_update = doc_generator(
                 self.key, 0, crud_batch_size,
-                vbuckets=self.cluster.vbuckets,
+                vbuckets=bucket.numVBuckets,
                 target_vbucket=target_vbuckets, mutate=1)
             gen_delete = doc_generator(
                 self.key, 0, crud_batch_size,
-                vbuckets=self.cluster.vbuckets,
+                vbuckets=bucket.numVBuckets,
                 target_vbucket=target_vbuckets)
             self.log.info("Done creating doc_generators")
 

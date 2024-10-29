@@ -196,13 +196,14 @@ class basic_ops(ClusterSetup):
                               % (error.status, error.message))
 
     def generate_docs_bigdata(self, docs_per_day, start=0,
-                              document_size=1024000):
+                              document_size=1024000,
+                              vbuckets=CbServer.total_vbuckets):
         return doc_generator(self.key, start, docs_per_day,
                              key_size=self.key_size,
                              doc_size=document_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster.vbuckets,
+                             vbuckets=vbuckets,
                              randomize_doc_size=self.randomize_doc_size,
                              randomize_value=self.randomize_value)
 
@@ -245,7 +246,7 @@ class basic_ops(ClusterSetup):
             self.key, 0, self.num_items, key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type, target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=def_bucket.numVBuckets,
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value)
         self.log.info("Loading {0} docs into the bucket: {1}"
@@ -299,7 +300,7 @@ class basic_ops(ClusterSetup):
             key_size=self.key_size,
             doc_size=self.doc_size, doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=def_bucket.numVBuckets,
             mutate=1,
             randomize_doc_size=self.randomize_doc_size,
             randomize_value=self.randomize_value)
@@ -420,9 +421,10 @@ class basic_ops(ClusterSetup):
         # load 250 docs generate docs with size >= 1MB , See MB-29333
 
         self.doc_size *= 1024*1024
-        gens_load = self.generate_docs_bigdata(
-            docs_per_day=self.num_items, document_size=self.doc_size)
         for bucket in self.cluster.buckets:
+            gens_load = self.generate_docs_bigdata(
+                docs_per_day=self.num_items, document_size=self.doc_size,
+                vbuckets=bucket.numVBuckets)
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gens_load,
                 DocLoading.Bucket.DocOps.CREATE, 0,
@@ -442,9 +444,10 @@ class basic_ops(ClusterSetup):
         # with compression enabled and check if it fails
         # check with compression_mode as active, passive and off
 
-        gens_load = self.generate_docs_bigdata(
-            docs_per_day=1, document_size=(self.doc_size * 1024000))
         for bucket in self.cluster.buckets:
+            gens_load = self.generate_docs_bigdata(
+                docs_per_day=1, document_size=(self.doc_size * 1024000),
+                vbuckets=bucket.numVBuckets)
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gens_load,
                 DocLoading.Bucket.DocOps.CREATE, 0,
@@ -474,7 +477,8 @@ class basic_ops(ClusterSetup):
             else:
                 self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
                 gens_update = self.generate_docs_bigdata(
-                    docs_per_day=1, document_size=(21 * 1024000))
+                    docs_per_day=1, document_size=(21 * 1024000),
+                    vbuckets=bucket.numVBuckets)
                 task = self.task.async_load_gen_docs(
                     self.cluster, bucket, gens_update,
                     DocLoading.Bucket.DocOps.UPDATE, 0,
@@ -1004,6 +1008,7 @@ class basic_ops(ClusterSetup):
         target_vb = choice(range(self.cluster.vbuckets))
         vb_str = str(target_vb)
         doc_gen = doc_generator(self.key, 0, self.num_items,
+                                vbuckets=bucket.numVBuckets,
                                 target_vbucket=[target_vb])
 
         target_node = None
@@ -1064,6 +1069,7 @@ class basic_ops(ClusterSetup):
 
         # Create and delete 10K more items to validate bloom_filter_size
         doc_gen = doc_generator(self.key, self.num_items, self.num_items+10000,
+                                vbuckets=bucket.numVBuckets,
                                 target_vbucket=[target_vb])
         self.log.info("Loading 10K items for bloom_filter_size validation")
         while doc_gen.has_next():
@@ -1464,7 +1470,7 @@ class basic_ops(ClusterSetup):
         active_vbs = cb_stat.vbucket_list(bucket.name,
                                           vbucket_type="active")
         doc_gen = doc_generator(self.key, 0, 10000,
-                                doc_size=1,
+                                doc_size=1, vbuckets=bucket.numVBuckets,
                                 target_vbucket=active_vbs)
 
         # Load with doc_ttl set
@@ -1613,6 +1619,7 @@ class basic_ops(ClusterSetup):
         while is_resident:
             doc_gen = doc_generator("docs", start_index, batch_size,
                                     key_size=100, doc_size=10240,
+                                    vbuckets=bucket.numVBuckets,
                                     target_vbucket=[key_vb])
             while doc_gen.has_next():
                 d_key, val = doc_gen.next()
@@ -2522,7 +2529,8 @@ class basic_ops(ClusterSetup):
 
         target_vbs = list(set(range(0, 1024)) - set(active_vbs))
         doc_gen = doc_generator("test_docs", 0, 100000, key_size=220,
-                                doc_size=1024, target_vbucket=target_vbs)
+                                doc_size=1024, target_vbucket=target_vbs,
+                                vbuckets=bucket.numVBuckets)
 
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,

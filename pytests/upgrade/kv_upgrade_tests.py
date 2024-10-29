@@ -139,6 +139,7 @@ class KVUpgradeTests(UpgradeBase):
         while is_resident:
             doc_gen = doc_generator("docs", start_index, batch_size,
                                     key_size=100, doc_size=10240,
+                                    vbuckets=bucket.numVBuckets,
                                     target_vbucket=[key_vb])
             while doc_gen.has_next():
                 d_key, val = doc_gen.next()

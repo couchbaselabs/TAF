@@ -27,7 +27,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             key_size=self.key_size,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         self.log.info("Loading {0} Sub-docs into the bucket: {1}"
                       .format(self.num_items/2, self.bucket))
         task = self.task.async_load_gen_sub_docs(
@@ -304,6 +304,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.key,
             self.num_items/2,
             self.crud_batch_size,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbs,
             key_size=self.key_size)
         doc_gen["remove"] = sub_doc_generator_for_edit(
@@ -312,6 +313,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.crud_batch_size,
             key_size=self.key_size,
             template_index=2,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbs)
         doc_gen["read"] = sub_doc_generator_for_edit(
             self.key,
@@ -319,6 +321,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.crud_batch_size,
             key_size=self.key_size,
             template_index=0,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbs)
         doc_gen["upsert"] = sub_doc_generator_for_edit(
             self.key,
@@ -326,6 +329,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             self.crud_batch_size,
             key_size=self.key_size,
             template_index=1,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbs)
 
         for op_type in doc_gen.keys():
@@ -712,17 +716,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
             key_size=self.key_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         gen_update_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
             key_size=self.key_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_subdoc = sub_doc_generator(
             self.key, 0, self.crud_batch_size,
             key_size=self.key_size,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
 
@@ -754,7 +758,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 gen_subdoc = sub_doc_generator(
                     self.key, inital_num_items, self.crud_batch_size,
                     key_size=self.key_size,
-                    vbuckets=self.cluster.vbuckets,
+                    vbuckets=self.bucket.numVBuckets,
                     target_vbucket=target_vbuckets)
                 gen_loader[1] = gen_subdoc
             gen_loader[1] = gen_subdoc

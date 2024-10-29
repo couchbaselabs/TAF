@@ -167,11 +167,13 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
             load_gen["ADD"][server] = list()
             load_gen["ADD"][server].append(doc_generator(
                 self.key, 0, crud_batch_size,
+                vbuckets=def_bucket.numVBuckets,
                 target_vbucket=replica_vbs[server],
                 mutation_type="ADD"))
             if self.sync_write_abort_pattern in partial_aborts:
                 load_gen["ADD"][server].append(doc_generator(
                     self.key, 10000, crud_batch_size,
+                    vbuckets=def_bucket.numVBuckets,
                     target_vbucket=replica_vbs[server],
                     mutation_type="ADD"))
                 verification_dict["ops_create"] += crud_batch_size
@@ -197,11 +199,13 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
             load_gen["SET"][server] = list()
             load_gen["SET"][server].append(doc_generator(
                 self.key, 0, crud_batch_size,
+                vbuckets=def_bucket.numVBuckets,
                 target_vbucket=replica_vbs[server],
                 mutation_type="SET"))
             if self.sync_write_abort_pattern in partial_aborts:
                 load_gen["SET"][server].append(doc_generator(
                     self.key, 10000, crud_batch_size,
+                    vbuckets=def_bucket.numVBuckets,
                     target_vbucket=replica_vbs[server],
                     mutation_type="SET"))
                 verification_dict["ops_update"] += crud_batch_size

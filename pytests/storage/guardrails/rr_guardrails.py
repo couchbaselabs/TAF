@@ -558,6 +558,7 @@ class RRGuardrails(GuardrailsBase):
                                                                 self.cluster.master.ip))
         doc_gen = doc_generator(key="new_docs", start=0, end=self.init_items_load,
                                 doc_size=self.doc_size,
+                                vbuckets=self.bucket.numVBuckets,
                                 target_vbucket=vbucket_list[self.cluster.master.ip],
                                 randomize_value=True)
         self.log.info("Starting data load...")
@@ -591,6 +592,7 @@ class RRGuardrails(GuardrailsBase):
         self.sdk_client = SDKClient(self.cluster, self.bucket,
                                     servers=[non_master_node])
         new_docs = doc_generator(key="temp_docs", start=0, end=number_of_docs,
+                                 vbuckets=self.bucket.numVBuckets,
                                  target_vbucket=vbucket_list[non_master_node.ip],
                                  randomize_value=True)
         result = []

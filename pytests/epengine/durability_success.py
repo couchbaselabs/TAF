@@ -267,10 +267,13 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
                                    self.crud_batch_size,
+                                   vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=target_vbuckets)
         gen_delete = doc_generator(self.key, 0, 50,
+                                   vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=target_vbuckets)
         gen_update = doc_generator(self.key, int(self.num_items/2), 50,
+                                   vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=target_vbuckets)
 
         # Perform CRUDs with induced error scenario is active

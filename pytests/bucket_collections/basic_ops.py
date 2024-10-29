@@ -27,14 +27,14 @@ class BasicOps(CollectionBase):
         if self.target_vbucket is not None:
             target_vb = [self.target_vbucket]
 
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         gen_load = doc_generator(dockey, 0, self.num_items,
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster.vbuckets,
+                                 vbuckets=bucket.numVBuckets,
                                  target_vbucket=target_vb)
 
-        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         for op_type in ["create", "update", "delete"]:
             for _, scope in bucket.scopes.items():
                 for _, collection in scope.collections.items():
@@ -92,6 +92,7 @@ class BasicOps(CollectionBase):
         load_gen = doc_generator('test_drop_default',
                                  0, self.num_items,
                                  mutate=0,
+                                 vbuckets=self.bucket.numVBuckets,
                                  target_vbucket=self.target_vbucket)
 
         if data_load in ["before_drop", "during_drop"]:
@@ -226,6 +227,7 @@ class BasicOps(CollectionBase):
                                    0, self.num_items,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
+                                   vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=self.target_vbucket,
                                    mutation_type="ADD",
                                    mutate=1,
@@ -234,6 +236,7 @@ class BasicOps(CollectionBase):
                                    0, self.num_items,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
+                                   vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=self.target_vbucket,
                                    mutation_type="SET",
                                    mutate=2,
@@ -825,6 +828,7 @@ class BasicOps(CollectionBase):
         load_gen = doc_generator('test_drop_default',
                                  0, self.num_items,
                                  mutate=0,
+                                 vbuckets=self.bucket.numVBuckets,
                                  target_vbucket=self.target_vbucket)
 
         # Add num_items which are about to be loaded into
