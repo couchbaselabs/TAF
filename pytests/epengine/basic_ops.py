@@ -7,6 +7,7 @@ from couchbase.exceptions import CouchbaseException, AmbiguousTimeoutException
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 from SecurityLib.rbac import RbacUtil
 from basetestcase import ClusterSetup
@@ -97,6 +98,13 @@ class basic_ops(ClusterSetup):
                 self.cluster.buckets[0],
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            self.log.info("Creating SDK clients in Java side")
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=self.sdk_pool_capacity)
 
         # Set index storage to avoid failures during index creation
         rest = RestConnection(self.cluster.master)

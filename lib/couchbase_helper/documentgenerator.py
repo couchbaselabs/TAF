@@ -213,6 +213,12 @@ class DocumentGenerator(KVGenerator):
         if 'key_size' in kwargs:
             self.key_size = kwargs['key_size']
 
+        if 'vbuckets' in kwargs:
+            self.vbuckets = kwargs['vbuckets']
+
+        if 'target_vbucket' in kwargs:
+            self.target_vbucket = kwargs['target_vbucket']
+
         if 'doc_size' in kwargs:
             self.doc_size = kwargs['doc_size']
             self.body = [''.rjust(self.doc_size, 'a')][0]

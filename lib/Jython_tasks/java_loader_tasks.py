@@ -105,6 +105,7 @@ class SiriusCouchbaseLoader(object):
         self.ops = ops
         self.gtm = False
         self.iterations = iterations
+        self.target_vbuckets = None
 
         # Key / Doc properties
         self.key_prefix = key_prefix
@@ -165,6 +166,12 @@ class SiriusCouchbaseLoader(object):
             self.doc_size = generator.doc_size
             self.key_size = generator.key_size
             self.key_prefix = generator.name
+            self.vbuckets = 1024
+
+            if hasattr(generator, "vbuckets"):
+                self.vbuckets = generator.vbuckets
+            if hasattr(generator, "target_vbucket"):
+                self.target_vbuckets = generator.target_vbucket
 
             if op_type == DocLoading.Bucket.DocOps.CREATE:
                 self.create_percent = 100
@@ -267,9 +274,13 @@ class SiriusCouchbaseLoader(object):
         if isinstance(value, dict):
             result = '{'
             for key, val in value.items():
-                if isinstance(val, dict) or isinstance(val, list):
+                if isinstance(val, dict):
                     result += SiriusCouchbaseLoader.__flatten_param_to_str(val)
+                elif isinstance(val, list):
+                    result += '\"%s\":%s,' % (key, SiriusCouchbaseLoader.__flatten_param_to_str(val))
                 else:
+                    if val is None:
+                        continue
                     try:
                         val = int(val)
                     except ValueError:
@@ -282,7 +293,11 @@ class SiriusCouchbaseLoader(object):
                 if isinstance(val, dict) or isinstance(val, list):
                     result += SiriusCouchbaseLoader.__flatten_param_to_str(val)
                 else:
-                    result += '"%s",' % val
+                    try:
+                        val = int(val)
+                        result += '%s,' % val
+                    except ValueError:
+                        result += '"%s",' % val
             result = result[:-1] + ']'
         return result
 
@@ -325,6 +340,9 @@ class SiriusCouchbaseLoader(object):
             "bucket_name": self.bucket.name,
             "scope_name": self.scope,
             "collection_name": self.collection,
+
+            "num_vbuckets": self.vbuckets,
+            "target_vbuckets": self.target_vbuckets,
 
             "create_percent": self.create_percent,
             "delete_percent": self.delete_percent,
