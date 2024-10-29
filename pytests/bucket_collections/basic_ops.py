@@ -1,14 +1,9 @@
 # -*- coding: utf-8 -*-
-from couchbase.exceptions import CouchbaseException
-
 from BucketLib.BucketOperations import BucketHelper
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
-from cb_constants import CbServer, DocLoading
-from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
-from constants.sdk_constants.java_client import SDKConstants
+from cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
-from sdk_utils.sdk_options import SDKOptions
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from cb_tools.cbstats import Cbstats
