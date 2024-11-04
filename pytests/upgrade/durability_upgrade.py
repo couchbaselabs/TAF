@@ -7,7 +7,6 @@ from threading import Thread
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
-from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from rebalance_utils.rebalance_util import RebalanceUtil
 import testconstants
@@ -123,21 +122,22 @@ class UpgradeTests(UpgradeBase):
             MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 50
         CollectionBase.set_retry_exceptions(
             collection_load_spec, self.durability_level)
-        collection_task = \
-            self.bucket_util.run_scenario_from_spec(self.task,
-                                                    self.cluster,
-                                                    self.cluster.buckets,
-                                                    collection_load_spec,
-                                                    mutation_num=1,
-                                                    batch_size=500,
-                                                    load_using=self.load_docs_using)
+        collection_task = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.cluster.buckets,
+            collection_load_spec,
+            mutation_num=1,
+            batch_size=500,
+            load_using=self.load_docs_using)
         if collection_task.result is False:
             self.log_failure("Collection task failed")
             return
 
-        if(collection_task.result is True):
+        if collection_task.result is True:
             self.log.info("Collection task 1 completed")
-            if not self.upgrade_with_data_load and self.upgrade_type == "offline":
+            if not self.upgrade_with_data_load \
+                    and self.upgrade_type == "offline":
                 self.__wait_for_persistence_and_validate()
 
         # Drop and recreate scope/collections
@@ -147,21 +147,22 @@ class UpgradeTests(UpgradeBase):
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         collection_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 10
         collection_load_spec[MetaCrudParams.SCOPES_TO_DROP] = 2
-        collection_task = \
-            self.bucket_util.run_scenario_from_spec(self.task,
-                                                    self.cluster,
-                                                    self.cluster.buckets,
-                                                    collection_load_spec,
-                                                    mutation_num=1,
-                                                    batch_size=500,
-                                                    load_using=self.load_docs_using)
+        collection_task = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.cluster.buckets,
+            collection_load_spec,
+            mutation_num=1,
+            batch_size=500,
+            load_using=self.load_docs_using)
         if collection_task.result is False:
             self.log_failure("Drop scope/collection failed")
             return
 
-        if(collection_task.result is True):
+        if collection_task.result is True:
             self.log.info("Task 2 completed")
-            if not self.upgrade_with_data_load and self.upgrade_type == "offline":
+            if not self.upgrade_with_data_load \
+                    and self.upgrade_type == "offline":
                 self.__wait_for_persistence_and_validate()
 
         self.cluster.sdk_client_pool.shutdown()
@@ -212,8 +213,8 @@ class UpgradeTests(UpgradeBase):
         range_scan_started = False
         range_scan_spare_node = self.spare_node
 
-        ### Upserting all docs to increase fragmentation value ###
-        ### Compaction operation is called once frag val hits 50% ###
+        # Upsert all docs to increase fragmentation value
+        # Compaction operation is called once frag val hits 50%
         if self.magma_upgrade:
             self.PrintStep("Upserting docs to increase fragmentation value")
             self.upsert_docs_to_increase_frag_val()
@@ -224,13 +225,12 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Upgrade begins...")
         for upgrade_version in self.upgrade_chain:
             itr = 0
-            bucket = self.cluster.buckets[0]
             self.initial_version = self.upgrade_version
             self.upgrade_version = upgrade_version
-            ### Fetching the first node to upgrade ###
+            # Fetching the first node to upgrade
             node_to_upgrade = self.fetch_node_to_upgrade()
 
-            ### Each node in the cluster is upgraded iteratively ###
+            # Each node in the cluster is upgraded iteratively
             while node_to_upgrade is not None:
 
                 if self.include_indexing_query:
@@ -245,11 +245,11 @@ class UpgradeTests(UpgradeBase):
                     sdk_client.close()
 
                 if self.upgrade_with_data_load:
-                    ### Loading docs with size > 1MB ###
+                    # Loading docs with size > 1MB
                     if self.load_large_docs:
                         self.loading_large_documents(large_docs_start_num)
 
-                    ### Starting async subsequent data load just before the upgrade starts ###
+                    # Starting async subsequent data load just before the upgrade starts
                     ''' Skipping this step for online swap because data load for swap rebalance
                         is started after the rebalance function is called '''
                     if self.upgrade_type != "online_swap":
@@ -274,23 +274,24 @@ class UpgradeTests(UpgradeBase):
                             load_using=self.load_docs_using,
                             ops_rate=self.ops_rate)
 
-                ### The upgrade procedure starts ###
+                # The upgrade procedure starts
                 self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
 
-                ### Based on the type of upgrade, the upgrade function is called ###
+                # Based on the type of upgrade, the upgrade function is called
                 if self.upgrade_type in ["failover_delta_recovery",
                                          "failover_full_recovery"]:
                     self.upgrade_function[self.upgrade_type](node_to_upgrade)
                 elif self.upgrade_type == "full_offline":
-                    self.upgrade_function[self.upgrade_type](self.cluster.nodes_in_cluster, self.upgrade_version)
+                    self.upgrade_function[self.upgrade_type](
+                        self.cluster.nodes_in_cluster, self.upgrade_version)
                 else:
-                    self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                             self.upgrade_version)
+                    self.upgrade_function[self.upgrade_type](
+                        node_to_upgrade, self.upgrade_version)
 
                 # Upgrade of node
                 self.cluster_util.print_cluster_stats(self.cluster)
 
-                ### Stopping the data load ###
+                # Stopping the data load
                 if self.upgrade_with_data_load and self.upgrade_type != "online_swap":
                     update_task.stop_indefinite_doc_loading_tasks()
                     self.task_manager.get_task_result(update_task)
@@ -300,8 +301,8 @@ class UpgradeTests(UpgradeBase):
 
                 self.sleep(10, "Wait for items to get reflected")
 
-                ## Performing sync write while the cluster is in mixed mode ###
-                ## Sync write is performed after the upgrade of each node ###
+                # Performing sync write while the cluster is in mixed mode
+                # Sync write is performed after the upgrade of each node
                 sync_load_spec = self.bucket_util.get_crud_template_from_package(
                     self.sync_write_spec)
                 CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
@@ -309,7 +310,7 @@ class UpgradeTests(UpgradeBase):
 
                 sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = SDKConstants.DurabilityLevel.MAJORITY
 
-                ## Collections are dropped and re-created while the cluster is mixed mode ###
+                # Collections are dropped and re-created while the cluster is mixed mode
                 self.log.info("Performing collection ops in mixed mode cluster setting...")
                 if self.guardrail_type != "collection_guardrail" and not self.include_indexing_query:
                     sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
@@ -323,7 +324,7 @@ class UpgradeTests(UpgradeBase):
                     sync_load_spec["doc_crud"][
                         MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 100000
 
-                #Validate sync_write results after upgrade
+                # Validate sync_write results after upgrade
                 if self.key_size is not None:
                     sync_load_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_KEY_SIZE] = \
                         self.key_size
@@ -360,13 +361,13 @@ class UpgradeTests(UpgradeBase):
                                 query += ' WITH { "num_replica":1 };'
                                 client_query = RestConnection(self.cluster.query_nodes[0])
                                 result = client_query.query_tool(query)
-                                self.log.info("Result for creation of index {0} = {1}".format(index_name,
-                                                                                    result['status']))
+                                self.log.info(f"Result for creation of index "
+                                              f"{index_name}={result['status']}")
                                 if result['status'] == 'success':
                                     self.index_count += 1
                                     self.indexes.add(index_name)
 
-                ### Starting Range Scans if enabled ##
+                # Starting Range Scans if enabled
                 if self.range_scan_collections > 0 and not range_scan_started:
                     self.cluster.master = range_scan_spare_node
                     range_scan_started = True
@@ -375,7 +376,7 @@ class UpgradeTests(UpgradeBase):
                 # Halt further upgrade if test has failed during current upgrade
                 if self.test_failure is not None:
                     break
-                ### Fetching the next node to upgrade ###
+                # Fetching the next node to upgrade
                 node_to_upgrade = self.fetch_node_to_upgrade()
                 itr += 1
 
@@ -383,10 +384,10 @@ class UpgradeTests(UpgradeBase):
             self.cluster_features = \
                 self.upgrade_helper.get_supported_features(self.cluster.version)
 
-        ### Printing cluster stats after the upgrade of the whole cluster ###
+        # Printing cluster stats after the upgrade of the whole cluster
         self.cluster_util.print_cluster_stats(self.cluster)
-        self.PrintStep("Upgrade of the whole cluster to {0} complete".format(
-                                                            self.upgrade_version))
+        self.PrintStep(f"Upgrade of the whole cluster to "
+                       f"{self.upgrade_version} complete")
 
         self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         self.servers = self.cluster_util.get_kv_nodes(self.cluster)
@@ -401,7 +402,7 @@ class UpgradeTests(UpgradeBase):
         if float(self.upgrade_version[:3]) >= 7.6 and float(self.initial_version[:3]) < 7.6:
             self.add_system_scope_to_all_buckets()
 
-        ### Migration of the storageBackend ###
+        # Migration of the storageBackend
         if self.migrate_storage_backend:
             self.PrintStep("Migration of the storageBackend to {0}".format(
                                                     self.preferred_storage_mode))
@@ -409,9 +410,9 @@ class UpgradeTests(UpgradeBase):
                 self.disable_history_on_buckets()
             for bucket in self.cluster.buckets:
                 try:
-                    self.bucket_util.update_bucket_property(self.cluster.master,
-                                                        bucket,
-                                                        storageBackend=self.preferred_storage_mode)
+                    self.bucket_util.update_bucket_property(
+                        self.cluster.master, bucket,
+                        storageBackend=self.preferred_storage_mode)
                     if self.test_guardrail_migration and self.breach_guardrail:
                         self.fail("Migration was allowed even when it would breach guardrail limits")
                 except Exception as e:
@@ -430,7 +431,7 @@ class UpgradeTests(UpgradeBase):
                 for bucket in self.cluster.buckets:
                     self.verify_storage_key_for_migration(bucket, self.bucket_storage)
 
-                ### Swap Rebalance/Failover recovery of all nodes post upgrade for migration ###
+                # Swap Rebalance/Failover recovery of all nodes post upgrade for migration
                 if self.migration_procedure == "failover_recovery":
                     self.failover_recovery_all_nodes()
                 elif self.migration_procedure == "swap_rebalance_all":
@@ -438,8 +439,8 @@ class UpgradeTests(UpgradeBase):
                 elif self.migration_procedure == "swap_rebalance":
                     self.swap_rebalance_all_nodes_iteratively()
                 elif self.migration_procedure == "randomize_method":
-                    self.log.info("Installing the version {0} on the spare node".format(
-                                                                    self.upgrade_version))
+                    self.log.info(f"Installing the version "
+                                  f"{self.upgrade_version} on the spare node")
                     self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
                     # Initialize paths on the spare node
@@ -458,8 +459,8 @@ class UpgradeTests(UpgradeBase):
                         self.migrate_node_random(node, migration_methods[random_index % 2])
                         random_index += 1
                 elif self.migration_procedure == "swap_rebalance_batch":
-                    self.log.info("Installing the version {0} on the spare node".format(
-                                                                    self.upgrade_version))
+                    self.log.info(f"Installing the version "
+                                  f"{self.upgrade_version} on the spare node")
                     self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
                     # Initialize paths on the spare node
@@ -482,7 +483,8 @@ class UpgradeTests(UpgradeBase):
                         start_index += batch_size
                     self.spare_node = self.spare_nodes[0]
 
-                self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
+                self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(
+                    self.cluster)
                 self.servers = self.cluster_util.get_kv_nodes(self.cluster)
                 self.bucket_util.get_all_buckets(self.cluster)
                 self.bucket_util.print_bucket_stats(self.cluster)
@@ -495,7 +497,7 @@ class UpgradeTests(UpgradeBase):
         if self.test_guardrail_migration or self.test_guardrail_upgrade:
             self.post_upgrade_migration_guardrail_validation()
 
-        ### Enabling CDC ###
+        # Enabling CDC
         if self.magma_upgrade:
             self.vb_dict_list1 = {}
             self.enable_cdc_and_get_vb_details()
@@ -697,9 +699,10 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Starting the downgrade of nodes to {0}"
                        .format(self.upgrade_chain[0]))
 
-        self.log.info("Nodes in {0} : {1}".format(self.upgrade_version, upgraded_nodes))
+        self.log.info("Nodes in {0} : {1}".format(self.upgrade_version,
+                                                  upgraded_nodes))
         for node_to_downgrade in upgraded_nodes:
-            self.log.info("Selected node for downgrade : {0}".format(node_to_downgrade))
+            self.log.info(f"Selected node for downgrade : {node_to_downgrade}")
 
             self.upgrade_function[self.upgrade_type](node_to_downgrade,
                                                      self.upgrade_chain[0])
@@ -797,7 +800,6 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Upgrade of the whole cluster complete")
 
     def test_upgrade_magma_default(self):
-
         self.PrintStep("Upgrade begins...")
         for upgrade_version in self.upgrade_chain:
             itr = 0

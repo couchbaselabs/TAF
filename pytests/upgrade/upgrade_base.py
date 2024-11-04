@@ -261,7 +261,8 @@ class UpgradeBase(BaseTestCase):
         if not community_upgrade:
             status = ClusterRestAPI(self.cluster.master) \
                 .update_auto_failover_settings("false")
-            self.assertTrue(status, msg="Failure during disabling auto-failover")
+            self.assertTrue(status,
+                            msg="Failure during disabling auto-failover")
 
         if self.enable_auto_retry_rebalance:
             after_time_period = self.input.param("afterTimePeriod", 100)
@@ -767,7 +768,7 @@ class UpgradeBase(BaseTestCase):
         # Rebalance-out the target_node
         rest_node, rest = self.__get_rest_node(self.spare_node)
         eject_otp_node = self.__get_otp_node(rest_node, node_to_upgrade)
-        otp_nodes = [node.id for node in \
+        otp_nodes = [node.id for node in
                      self.cluster_util.get_nodes(rest_node)]
         rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
 
