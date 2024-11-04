@@ -190,6 +190,31 @@ class ColumnarRBACUtil:
 
         return privileges_payload
 
+    def update_api_keys(self, pod, tenant, project_id, instance, user_id, username, password,
+            privileges_payload=None, role_ids=[]):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        if not privileges_payload:
+            privileges_payload = self.create_privileges_payload()
+
+        api_key_payload = {
+            "name": username,
+            "password": password,
+            "privileges": privileges_payload,
+            "roles": role_ids
+        }
+
+        resp = columnar_api.update_api_key(tenant.id, project_id, instance.instance_id, user_id,
+            api_key_payload)
+        if resp.status_code == 200:
+            self.log.info("API keys updated successfully")
+            return True
+        else:
+            self.log.critical(str(resp.content))
+            return None
+
     def create_api_keys(
             self, pod, tenant, project_id, instance, username, password,
             privileges_payload=None, role_ids=[]):

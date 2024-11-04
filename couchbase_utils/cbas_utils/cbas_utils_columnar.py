@@ -747,7 +747,7 @@ class Database_Util(BaseUtil):
         """
         return cbas_spec.get("database", {})
 
-    def create_database_from_spec(self, cluster, cbas_spec):
+    def create_database_from_spec(self, cluster, cbas_spec, username=None, password=None):
         """
         Creates database from spec
         :param cluster: cluster object
@@ -767,7 +767,7 @@ class Database_Util(BaseUtil):
             results.append(self.create_database(
                 cluster, self.format_name(name), if_not_exists=True,
                 timeout=cbas_spec.get("api_timeout", 300),
-                analytics_timeout=cbas_spec.get("cbas_timeout", 300)
+                analytics_timeout=cbas_spec.get("cbas_timeout", 300), username=username, password=password
             ))
         return all(results)
 
@@ -1195,7 +1195,7 @@ class Dataverse_Util(Database_Util):
                 if not self.get_crud_dataverse_obj(dataverse.name):
                     database_obj.crud_dataverses[dataverse.name] = dataverse
 
-    def create_dataverse_from_spec(self, cluster, cbas_spec):
+    def create_dataverse_from_spec(self, cluster, cbas_spec, username=None, password=None):
         self.log.info("Creating dataverses based on CBAS Spec")
 
         dataverse_spec = self.get_dataverse_spec(cbas_spec)
@@ -1214,7 +1214,7 @@ class Dataverse_Util(Database_Util):
                         dataverse_name=self.format_name(name),
                         if_not_exists=True, analytics_scope=False, scope=True,
                         timeout=cbas_spec.get("api_timeout", 300),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300), username=username, password=password):
                     no_of_dataverses -= 1
                 else:
                     self.log.debug("Failed to create dataverse {0} in "
@@ -1266,7 +1266,7 @@ class Dataverse_Util(Database_Util):
                         cluster, self.format_name(name), database.name,
                         if_not_exists=True, analytics_scope=analytics_scope,
                         scope=scope, timeout=cbas_spec.get("api_timeout", 300),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300), username=username, password=password):
                     results.append(True)
                 else:
                     results.append(False)
@@ -1733,7 +1733,7 @@ class RemoteLink_Util(Link_Util):
         """
         return cbas_spec.get("remote_link", {})
 
-    def create_remote_link_from_spec(self, cluster, cbas_spec):
+    def create_remote_link_from_spec(self, cluster, cbas_spec, username=None, password=None):
         self.log.info("Creating Remote Links based on CBAS Spec")
 
         link_spec = self.get_remote_link_spec(cbas_spec)
@@ -1753,7 +1753,7 @@ class RemoteLink_Util(Link_Util):
 
             if not self.create_remote_link(
                     cluster, link.properties, create_if_not_exists=True,
-                    timeout=cbas_spec.get("api_timeout", 300)):
+                    timeout=cbas_spec.get("api_timeout", 300), username=username, password=password):
                 results.append(False)
             else:
                 self.remote_links[link.name] = link
@@ -1853,7 +1853,7 @@ class ExternalLink_Util(RemoteLink_Util):
         """
         return cbas_spec.get("external_link", {})
 
-    def create_external_link_from_spec(self, cluster, cbas_spec):
+    def create_external_link_from_spec(self, cluster, cbas_spec, username=None, password=None):
         self.log.info("Creating External Links based on CBAS Spec")
 
         link_spec = self.get_external_link_spec(cbas_spec)
@@ -1872,7 +1872,7 @@ class ExternalLink_Util(RemoteLink_Util):
 
             if not self.create_external_link(
                     cluster, link.properties, create_if_not_exists=True,
-                    timeout=cbas_spec.get("api_timeout", 300)):
+                    timeout=cbas_spec.get("api_timeout", 300), username=username, password=password):
                 results.append(False)
             else:
                 self.external_links[link.name] = link
@@ -1984,7 +1984,7 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         return cbas_spec.get("kafka_link", {})
 
-    def create_kafka_link_from_spec(self, cluster, cbas_spec):
+    def create_kafka_link_from_spec(self, cluster, cbas_spec, username=None, password=None):
         self.log.info("Creating Kafka Links based on CBAS Spec")
 
         link_spec = self.get_kafka_link_spec(cbas_spec)
@@ -2023,7 +2023,7 @@ class KafkaLink_Util(ExternalLink_Util):
                     cluster, name, kafka_cluster_detail,
                     schema_registry_detail,
                     timeout=cbas_spec.get("api_timeout", 300),
-                    analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
+                    analytics_timeout=cbas_spec.get("cbas_timeout", 300), username=username, password=password):
                 results.append(False)
             else:
                 self.kafka_links[link.name] = link
@@ -2675,7 +2675,7 @@ class Remote_Dataset_Util(Dataset_Util):
         return dataset_objs
 
     def create_remote_dataset_from_spec(
-            self, cluster, remote_clusters, cbas_spec, bucket_util):
+            self, cluster, remote_clusters, cbas_spec, bucket_util, username=None, password=None):
         """
         Creates remote datasets based on remote dataset specs.
         """
@@ -2821,7 +2821,7 @@ class Remote_Dataset_Util(Dataset_Util):
                     dataset_obj.full_kv_entity_name, link.name,
                     dataverse_name, dataset_obj.database_name, False, False,
                     None, None, storage_format, analytics_collection,
-                    False, None, None, None,
+                    False, username, password, None,
                     timeout=cbas_spec.get("api_timeout",
                                           300),
                     analytics_timeout=cbas_spec.get(
@@ -3087,7 +3087,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             external_datasets.append(dataset)
         return external_datasets
 
-    def create_external_dataset_from_spec(self, cluster, cbas_spec):
+    def create_external_dataset_from_spec(self, cluster, cbas_spec, username=None, password=None):
         """
         Creates external datasets based on external dataset specs.
         """
@@ -3209,7 +3209,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                         "convert_decimal_to_double"],
                     dataset_obj.dataset_properties[
                         "timezone"],
-                    False, None, None, None, None,
+                    False, username, password, None, None,
                     timeout=cbas_spec.get(
                         "api_timeout", 300),
                     analytics_timeout=cbas_spec.get(
@@ -3295,7 +3295,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self, cluster, collection_name, dataverse_name, database_name,
             no_of_docs, document_size=1024, batch_size=500,
             max_concurrent_batches=10, country_type="string",
-            include_country=True, analytics_timeout=1800, timeout=1800):
+            include_country=True, analytics_timeout=1800, timeout=1800, username=None, password=None):
         """
         Load documents to a standalone collection.
         """
@@ -3322,7 +3322,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                         cluster, collection_name,
                         batch_docs, dataverse_name, database_name,
                         analytics_timeout=analytics_timeout,
-                        timeout=timeout)
+                        timeout=timeout, username=username, password=password)
                     if result:
                         break
                     elif retry_count == 2:
@@ -3380,6 +3380,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return True
 
+    @staticmethod
     def generate_upsert_into_cmd(self, collection_name, new_item, dataverse_name=None,
                                  database_name=None):
         cmd = "UPSERT INTO "
@@ -3417,6 +3418,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return True
 
+    @staticmethod
     def generate_delete_from_cmd(
             self, collection_name, dataverse_name=None, database_name=None,
             where_clause=None, use_alias=False):
@@ -4080,7 +4082,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         """
         return cbas_spec.get(spec_name, {})
 
-    def create_standalone_dataset_from_spec(self, cluster, cbas_spec):
+    def create_standalone_dataset_from_spec(self, cluster, cbas_spec, username=None, password=None):
         self.log.info("Creating Standalone Datasets based on CBAS Spec")
 
         dataset_spec = self.get_standalone_dataset_spec(cbas_spec)
@@ -4174,7 +4176,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     dataverse_name=dataset_obj.dataverse_name,
                     database_name=dataset_obj.database_name,
                     primary_key=dataset_obj.primary_key,
-                    storage_format=storage_format))
+                    storage_format=storage_format, username=username, password=password))
             if results[-1]:
                 dataverse.standalone_datasets[
                     dataset_obj.name] = dataset_obj
@@ -4185,7 +4187,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
     standalone collections to be created.
     """
     def create_standalone_collection_for_kafka_topics_from_spec(
-            self, cluster, cbas_spec):
+            self, cluster, cbas_spec, username=None, password=None):
         self.log.info("Creating Standalone Datasets for external database "
                       "based on CBAS Spec")
 
@@ -4345,6 +4347,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     value_serialization_type=dataset_obj.value_serialization_type,
                     cdc_source=dataset_obj.data_source,
                     cdc_source_connector=dataset_obj.cdc_source_connector,
+                    username=username, password=password
             ):
                 self.log.error("Failed to create dataset {}".format(name))
                 results.append(False)
@@ -4594,7 +4597,7 @@ class Synonym_Util(StandAlone_Collection_Util):
         """
         return cbas_spec.get("synonym", {})
 
-    def create_synonym_from_spec(self, cluster, cbas_spec):
+    def create_synonym_from_spec(self, cluster, cbas_spec, username=None, password=None):
         self.log.info("Creating Synonyms based on CBAS Spec")
 
         synonym_spec = self.get_synonym_spec(cbas_spec)
@@ -4672,7 +4675,7 @@ class Synonym_Util(StandAlone_Collection_Util):
                         cbas_entity_full_name=synonym.cbas_entity_full_name,
                         if_not_exists=False,
                         timeout=cbas_spec.get("api_timeout", 300),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300), username=username, password=password):
                     results.append(False)
                 else:
                     dataverse.synonyms[synonym.name] = synonym
@@ -5013,7 +5016,7 @@ class Index_Util(View_Util):
         """
         return cbas_spec.get("index", {})
 
-    def create_index_from_spec(self, cluster, cbas_spec):
+    def create_index_from_spec(self, cluster, cbas_spec, username=None, password=None):
         self.log.info(
             "Creating Secondary indexes on datasets based on CBAS spec")
 
@@ -5080,7 +5083,7 @@ class Index_Util(View_Util):
                     dataset_name=index.full_dataset_name,
                     analytics_index=index.analytics_index,
                     timeout=cbas_spec.get("api_timeout", 300),
-                    analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
+                    analytics_timeout=cbas_spec.get("cbas_timeout", 300), username=username, password=password):
                 results.append(False)
             else:
                 dataset.indexes[index.name] = index
@@ -6241,7 +6244,7 @@ class CbasUtil(CBOUtil):
     def create_cbas_infra_from_spec(
             self, cluster, cbas_spec, bucket_util,
             wait_for_ingestion=True, remote_clusters=None,
-            connect_link_before_creating_ds=False):
+            connect_link_before_creating_ds=False, username=None, password=None):
         """
         Method creates CBAS infra based on the spec data.
         :param cluster
@@ -6265,7 +6268,7 @@ class CbasUtil(CBOUtil):
                             cluster, link.name,
                             timeout=cbas_spec.get("api_timeout", 300),
                             analytics_timeout=cbas_spec.get("cbas_timeout",
-                                                            300)):
+                                                            300), username=username, password=password):
                         results.append(False)
                     else:
                         results.append(True)
@@ -6276,23 +6279,23 @@ class CbasUtil(CBOUtil):
             return True, ""
 
         if cbas_spec["database"].get("no_of_databases", 0) > 0 and not \
-                self.create_database_from_spec(cluster, cbas_spec):
+                self.create_database_from_spec(cluster, cbas_spec, username, password):
             return False, "Failed at create database"
 
         if cbas_spec["dataverse"].get("no_of_dataverses", 0) > 0 and not \
-                self.create_dataverse_from_spec(cluster, cbas_spec):
+                self.create_dataverse_from_spec(cluster, cbas_spec, username, password):
             return False, "Failed at create dataverse"
 
         if cbas_spec["remote_link"].get("no_of_remote_links", 0) > 0 and not \
-                self.create_remote_link_from_spec(cluster, cbas_spec):
+                self.create_remote_link_from_spec(cluster, cbas_spec, username, password):
             return False, "Failed at create remote link from spec"
 
         if cbas_spec["external_link"].get("no_of_external_links", 0) > 0 and \
-                not self.create_external_link_from_spec(cluster, cbas_spec):
+                not self.create_external_link_from_spec(cluster, cbas_spec, username, password):
             return False, "Failed at create external link from spec"
 
         if cbas_spec["kafka_link"].get("no_of_kafka_links", 0) > 0 and not \
-                self.create_kafka_link_from_spec(cluster, cbas_spec):
+                self.create_kafka_link_from_spec(cluster, cbas_spec, username, password):
             return False, "Failed at create kafka link from spec"
 
         if connect_link_before_creating_ds:
@@ -6302,19 +6305,19 @@ class CbasUtil(CBOUtil):
 
         if cbas_spec["remote_dataset"].get("num_of_remote_datasets", 0) > 0 \
                 and not self.create_remote_dataset_from_spec(
-            cluster, remote_clusters, cbas_spec, bucket_util):
+            cluster, remote_clusters, cbas_spec, bucket_util, username, password):
             return False, "Failed at create remote dataset from spec"
         if cbas_spec["external_dataset"].get("num_of_external_datasets", 0) \
                 > 0 and not self.create_external_dataset_from_spec(
-            cluster, cbas_spec):
+            cluster, cbas_spec, username, password):
             return False, "Failed at create external dataset from spec"
         if cbas_spec["standalone_dataset"].get("num_of_standalone_coll", 0) \
                 > 0 and not self.create_standalone_dataset_from_spec(
-            cluster, cbas_spec):
+            cluster, cbas_spec, username, password):
             return False, "Failed at create standalone collection from spec"
         if cbas_spec["kafka_dataset"].get("num_of_ds_on_external_db", 0) \
                 > 0 and not self.create_standalone_collection_for_kafka_topics_from_spec(
-            cluster, cbas_spec):
+            cluster, cbas_spec, username, password):
             return False, "Failed at create standalone collection from spec"
 
         if not connect_link_before_creating_ds:
@@ -6347,12 +6350,12 @@ class CbasUtil(CBOUtil):
 
         self.log.info("Creating Synonyms based on CBAS Spec")
         if cbas_spec["synonym"].get("no_of_synonyms", 0) > 0 and not \
-                self.create_synonym_from_spec(cluster, cbas_spec):
+                self.create_synonym_from_spec(cluster, cbas_spec, username, password):
             return False, "Could not create synonym"
 
         self.log.info("Creating Indexes based on CBAS Spec")
         if cbas_spec["index"].get("no_of_indexes") > 0 and not \
-                self.create_index_from_spec(cluster, cbas_spec):
+                self.create_index_from_spec(cluster, cbas_spec, username, password):
             return False, "Failed at create index from spec"
 
         return True, "Success"
@@ -6553,7 +6556,7 @@ class CbasUtil(CBOUtil):
         self.task.jython_task_manager.add_new_task(links_task)
         return links_task
 
-    def cleanup_cbas(self, cluster, retry=10):
+    def cleanup_cbas(self, cluster, username=None, password=None, retry=10):
         """
         This method will delete all the analytics entities on the specified
         cluster
@@ -6561,61 +6564,64 @@ class CbasUtil(CBOUtil):
         try:
             # Drop all views
             for view in self.get_all_views_from_metadata(cluster):
-                if not self.drop_analytics_view(cluster, view):
+                if not self.drop_analytics_view(cluster, view, username=username, password=password):
                     self.log.error(f"Failed to drop View {view}")
             # Drop all UDFs
             for udf in self.get_all_udfs_from_metadata(cluster):
                 if not self.drop_udf(
-                        cluster, CBASHelper.format_name(udf[0]), None, None, udf[1]):
+                        cluster, CBASHelper.format_name(udf[0]), None, None, udf[1],
+                username=username, password=password):
                     self.log.error("Unable to drop UDF {0}".format(udf[0]))
 
             # Drop all indexes
             for idx in self.get_all_indexes_from_metadata(cluster):
                 idx_split = idx.split(".")
                 if not self.drop_cbas_index(cluster, idx_split[-1],
-                                            ".".join(idx_split[:-1])):
+                                            ".".join(idx_split[:-1]), username=username, password=password):
                     self.log.error(
                         "Unable to drop Index {0}".format(idx))
 
             # Drop all Synonyms
             for syn in self.get_all_synonyms_from_metadata(cluster):
-                if not self.drop_analytics_synonym(cluster, syn):
+                if not self.drop_analytics_synonym(cluster, syn, username=username, password=password):
                     self.log.error("Unable to drop Synonym {0}".format(syn))
 
             # Disconnect all remote links
             remote_links = self.get_all_links_from_metadata(cluster, "couchbase")
             for remote_link in remote_links:
-                if not self.disconnect_link(cluster, remote_link):
+                if not self.disconnect_link(cluster, remote_link, username=username, password=password):
                     self.log.error(
                         "Unable to disconnect Link {0}".format(remote_link))
 
             # Disconnect all Kafka links
             kafka_links = self.get_all_links_from_metadata(cluster, "kafka")
             for kafka_link in kafka_links:
-                if not self.disconnect_link(cluster, kafka_link):
+                if not self.disconnect_link(cluster, kafka_link, username=username, password=password):
                     self.log.error(
                         "Unable to disconnect Link {0}".format(kafka_link))
 
             # Drop all datasets
             for ds in self.get_all_datasets_from_metadata(cluster):
-                if not self.drop_dataset(cluster, ds):
+                if not self.drop_dataset(cluster, ds, username=username, password=password):
                     self.log.error("Unable to drop Dataset {0}".format(ds))
 
             for lnk in self.get_all_links_from_metadata(cluster):
-                if not self.drop_link(cluster, lnk):
+                if not self.drop_link(cluster, lnk, username=username, password=password):
                     self.log.error("Unable to drop Link {0}".format(lnk))
 
             for dv in self.get_all_dataverses_from_metadata(cluster):
                 if dv != "Default.Default":
-                    if not self.drop_dataverse(cluster, dv):
+                    if not self.drop_dataverse(cluster, dv, username=username, password=password):
                         self.log.error("Unable to drop Dataverse {0}".format(dv))
 
             for db in self.get_all_databases_from_metadata(cluster):
                 if db != "Default":
-                    if not self.drop_database(cluster, db):
+                    if not self.drop_database(cluster, db, username=username, password=password):
                         self.log.error("Unable to drop Database {0}".format(db))
         except Exception as e:
             self.log.info(str(e))
+            return False
+        return True
 
     def get_replica_number_from_settings(
             self, node, method="GET", param="", username=None, password=None,
