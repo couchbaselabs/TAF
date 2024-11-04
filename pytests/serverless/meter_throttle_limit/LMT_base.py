@@ -2,6 +2,7 @@ import time
 import copy
 import re
 
+from Jython_tasks.task_manager import TaskManager
 from cb_tools.mc_stat import McStat
 from couchbase_helper.documentgenerator import doc_generator
 
@@ -167,13 +168,13 @@ class LMT(ServerlessOnPremBaseTest):
         super(LMT, self).tearDown()
 
     def PrintStep(self, msg=None):
-        print "\n"
-        print "\t", "#"*60
-        print "\t", "#"
-        print "\t", "#  %s" % msg
-        print "\t", "#"
-        print "\t", "#"*60
-        print "\n"
+        print("\n")
+        print("\t", "#"*60)
+        print("\t", "#")
+        print("\t", "#  %s" % msg)
+        print("\t", "#")
+        print("\t", "#"*60)
+        print("\n")
 
     def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
         return doc_generator(self.key, start, end,
@@ -281,19 +282,18 @@ class LMT(ServerlessOnPremBaseTest):
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
                                                       target_vbucket=target_vbucket,
-
                                                       mutate=expiry_mutate)
 
-        print "Read Start: %s" % self.read_start
-        print "Read End: %s" % self.read_end
-        print "Update Start: %s" % self.update_start
-        print "Update End: %s" % self.update_end
-        print "Expiry Start: %s" % self.expire_start
-        print "Expiry End: %s" % self.expire_end
-        print "Delete Start: %s" % self.delete_start
-        print "Delete End: %s" % self.delete_end
-        print "Create Start: %s" % self.create_start
-        print "Create End: %s" % self.create_end
+        print("Read Start: %s" % self.read_start)
+        print("Read End: %s" % self.read_end)
+        print("Update Start: %s" % self.update_start)
+        print("Update End: %s" % self.update_end)
+        print("Expiry Start: %s" % self.expire_start)
+        print("Expiry End: %s" % self.expire_end)
+        print("Delete Start: %s" % self.delete_start)
+        print("Delete End: %s" % self.delete_end)
+        print("Create Start: %s" % self.create_start)
+        print("Create End: %s" % self.create_end)
 
     def loadgen_docs(self,
                      retry_exceptions=[],
