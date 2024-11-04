@@ -192,40 +192,32 @@ class UpgradeBase(BaseTestCase):
                 "{} - Server REST endpoint unreachable after 30 seconds"
                 .format(node.ip))
 
-        if self.disk_location_data == testconstants.COUCHBASE_DATA_PATH and \
-                self.disk_location_index == testconstants.COUCHBASE_DATA_PATH:
+        # Construct dict of mem. quota percent / mb per service
+        mem_quota_percent = dict()
+        # Construct dict of mem. quota percent per service
+        if self.kv_mem_quota_percent:
+            mem_quota_percent[CbServer.Services.KV] = \
+                self.kv_mem_quota_percent
+        if self.index_mem_quota_percent:
+            mem_quota_percent[CbServer.Services.INDEX] = \
+                self.index_mem_quota_percent
+        if self.cbas_mem_quota_percent:
+            mem_quota_percent[CbServer.Services.CBAS] = \
+                self.cbas_mem_quota_percent
+        if self.fts_mem_quota_percent:
+            mem_quota_percent[CbServer.Services.FTS] = \
+                self.fts_mem_quota_percent
+        if self.eventing_mem_quota_percent:
+            mem_quota_percent[CbServer.Services.EVENTING] = \
+                self.eventing_mem_quota_percent
 
-            # Construct dict of mem. quota percent / mb per service
-            mem_quota_percent = dict()
-            # Construct dict of mem. quota percent per service
-            if self.kv_mem_quota_percent:
-                mem_quota_percent[CbServer.Services.KV] = \
-                    self.kv_mem_quota_percent
-            if self.index_mem_quota_percent:
-                mem_quota_percent[CbServer.Services.INDEX] = \
-                    self.index_mem_quota_percent
-            if self.cbas_mem_quota_percent:
-                mem_quota_percent[CbServer.Services.CBAS] = \
-                    self.cbas_mem_quota_percent
-            if self.fts_mem_quota_percent:
-                mem_quota_percent[CbServer.Services.FTS] = \
-                    self.fts_mem_quota_percent
-            if self.eventing_mem_quota_percent:
-                mem_quota_percent[CbServer.Services.EVENTING] = \
-                    self.eventing_mem_quota_percent
+        if not mem_quota_percent:
+            mem_quota_percent = None
 
-            if not mem_quota_percent:
-                mem_quota_percent = None
-
-            for cluster_name, cluster in self.cb_clusters.items():
-                if not self.skip_cluster_reset:
-                    self.initialize_cluster(
-                        cluster_name, cluster, services=None,
-                        services_mem_quota_percent=mem_quota_percent)
-                else:
-                    self.quota = ""
-            else:
-                self.quota = ""
+        for cluster_name, cluster in self.cb_clusters.items():
+            self.initialize_cluster(
+                cluster_name, cluster, services=None,
+                services_mem_quota_percent=mem_quota_percent)
 
         self.cluster = list(self.cb_clusters.values())[0]
         if self.services_init:
@@ -910,7 +902,7 @@ class UpgradeBase(BaseTestCase):
 
         if not balanced:
             self.log.info("Cluster not balanced. Rebalance starting...")
-            otp_nodes = [node.id for node in \
+            otp_nodes = [node.id for node in
                          self.cluster_util.get_nodes(self.cluster.master)]
             rebalance_task, _ = rest.rebalance(known_nodes=otp_nodes,
                                                eject_nodes=[])
@@ -1147,7 +1139,6 @@ class UpgradeBase(BaseTestCase):
                       .format(failed_queries))
 
     def create_bucket_for_large_doc_upgrades(self):
-
         rest = ClusterRestAPI(self.cluster.master)
         pools_info = rest.cluster_details()[1]
         kv_quota = pools_info["memoryQuota"]

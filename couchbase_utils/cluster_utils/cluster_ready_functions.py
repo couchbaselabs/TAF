@@ -1403,7 +1403,7 @@ class ClusterUtils:
     def rebalance(cluster, wait_for_completion=True, ejected_nodes=[],
                   validate_bucket_ranking=True):
         rest = ClusterRestAPI(cluster.master)
-        nodes = ClusterUtils.get_nodes(cluster.master)
+        nodes = ClusterUtils.get_nodes(cluster.master, inactive_added=True)
         result, _ = rest.rebalance(known_nodes=[node.id for node in nodes],
                                    eject_nodes=ejected_nodes)
         if result and wait_for_completion:

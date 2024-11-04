@@ -5,7 +5,8 @@ features = {
     "6.5": ["durability"],
     "7.0": ["collections"],
     "7.1": ["magma", "system_event_logs"],
-    "7.2": ["cdc"]
+    "7.2": ["cdc"],
+    "8.0": ["durability_impossible_fallback"],
 }
 
 upgrade_chains = {

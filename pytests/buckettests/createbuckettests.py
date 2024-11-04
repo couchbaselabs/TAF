@@ -9,6 +9,7 @@ from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from custom_exceptions.exception import BucketCreationException
 from BucketLib.bucket import Bucket
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CreateBucketTests(ClusterSetup):
@@ -283,6 +284,41 @@ class CreateBucketTests(ClusterSetup):
                 self.assertEqual(content.json()["errors"]["name"], error,
                                  "Invalid error message")
 
+    def __test_memcached_bucket_creation(self):
+        b_name = "memcached_bucket"
+        b_type = "memcached"
+        ram_mb = 256
+        bucket_rest = BucketRestApi(self.cluster.master)
+        status, content = bucket_rest.create_bucket(
+            {"name": b_name, "bucketType": b_type, "ramQuota": ram_mb})
+        self.assertFalse(status, "Memcached bucket created successfully")
+        content = content.json()
+        exp_err = {'bucketType': 'memcached buckets are no longer supported'}
+        self.assertEqual(content["errors"], exp_err,
+                         f"Bucket creation error mismatch: {content}")
+
+        self.assertTrue(
+            len(self.bucket_util.get_all_buckets(self.cluster)) == 0,
+            "Bucket created")
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        output, error = shell.execute_command(
+            f"/opt/couchbase/bin/couchbase-cli bucket-create"
+            f" --cluster {self.cluster.master.ip}:8091"
+            f" --username {self.cluster.master.rest_username}"
+            f" --password {self.cluster.master.rest_password}"
+            f" --bucket {b_name}"
+            f" --bucket-type {b_type}"
+            f" --bucket-ramsize {ram_mb}")
+        shell.disconnect()
+        self.assertEqual(
+            "ERROR: bucketType - memcached buckets are no longer supported",
+            output[1],
+            f"Mismatch in cb-cli bucket-create error: {output}")
+        self.assertTrue(
+            len(self.bucket_util.get_all_buckets(self.cluster)) == 0,
+            "Bucket created")
+
     def test_invalid_params(self):
         """
         Create with unsupported param and validate the error.
@@ -333,6 +369,8 @@ class CreateBucketTests(ClusterSetup):
             Bucket.storageBackend: self.bucket_storage,
             Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
             Bucket.durabilityMinLevel: self.bucket_durability_level}
+
+        self.__test_memcached_bucket_creation()
 
         # error = create_bucket(width=1)
         # error = create_bucket(weight=1)

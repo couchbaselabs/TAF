@@ -7,6 +7,8 @@ from threading import Thread
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from rebalance_utils.rebalance_util import RebalanceUtil
 import testconstants
@@ -21,6 +23,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from gsiLib.gsiHelper import GsiHelper
 from membase.api.rest_client import RestConnection
+from scenario_plugins.ns_server_scenarios import NsServerFeaturePlugins
 from sdk_client3 import SDKClient, SDKClientPool
 from shell_util.remote_connection import RemoteMachineShellConnection
 from upgrade.upgrade_base import UpgradeBase
@@ -232,7 +235,6 @@ class UpgradeTests(UpgradeBase):
 
             # Each node in the cluster is upgraded iteratively
             while node_to_upgrade is not None:
-
                 if self.include_indexing_query:
                     self.indexes = set()
                     sdk_client = SDKClient(
@@ -350,7 +352,7 @@ class UpgradeTests(UpgradeBase):
                     self.log.info("Creating indexes for new collections")
                     bucket = self.cluster.buckets[0]
                     for scope in self.bucket_util.get_active_scopes(bucket):
-                        if scope.name in ["_system", "myscope"] :
+                        if scope.name in ["_system", "myscope"]:
                             continue
                         for col in self.bucket_util.get_active_collections(bucket, scope.name):
                             index_name = "{0}_{1}_{2}_index".format(bucket.name, scope.name, col.name)
@@ -558,6 +560,142 @@ class UpgradeTests(UpgradeBase):
         # Perform final collection/doc_count validation
         self.validate_test_failure()
         self.PrintStep("Test Complete")
+
+    def test_upgrade_to_morpheus(self):
+        """
+        This currently includes testing of,
+         - Removal of memcached bucket :: CBQE-8271
+         - Durability_Impossible fallback :: CBQE-8290
+        """
+        mc_bucket_params = {"name": "memcached", "bucketType": "memcached",
+                            "ramQuota": 100}
+        memcached_bucket = Bucket(mc_bucket_params)
+        self.cluster.buckets.append(memcached_bucket)
+        bucket_rest = BucketRestApi(self.cluster.master)
+        status, content = bucket_rest.create_bucket(mc_bucket_params)
+        self.assertTrue(status, "Memcached bucket creation failed")
+        for upgrade_version in self.upgrade_chain:
+            itr = 0
+            self.initial_version = self.upgrade_version
+            self.upgrade_version = upgrade_version
+            # Fetching the first node to upgrade
+            node_to_upgrade = self.fetch_node_to_upgrade()
+
+            # Each node in the cluster is upgraded iteratively
+            while node_to_upgrade is not None:
+                # Validate durabilityImpossibleFallback param
+                # does not exist in bucket property (via REST)
+                bucket_rest = BucketRestApi(self.cluster.master)
+                status, content = bucket_rest.get_bucket_info()
+                self.assertTrue(status, "Get Buckets failed")
+                for bucket in content:
+                    if Bucket.durabilityImpossibleFallback in bucket:
+                        self.fail("durabilityImpossibleFallback property "
+                                  "present before full upgrade")
+
+                # Try setting durabilityImpossibleFallback param in
+                # non-upgraded cluster to validate
+                for t_bucket in self.cluster.buckets:
+                    if t_bucket.bucketType == "memcached":
+                        continue
+                    try:
+                        self.bucket_util.update_bucket_property(
+                            self.cluster.master, t_bucket,
+                            durability_impossible_fallback="disabled")
+                    except Exception as e:
+                        self.log.info(e)
+                        if "Failure while setting bucket" not in str(e):
+                            raise e
+
+                # The upgrade procedure starts
+                self.log.info(f"Node to upgrade: {node_to_upgrade.ip}")
+
+                # Based on the type of upgrade, the upgrade function is called
+                try:
+                    if self.upgrade_type == "full_offline":
+                        self.upgrade_function[self.upgrade_type](
+                            self.cluster.nodes_in_cluster, self.upgrade_version)
+                    else:
+                        self.upgrade_function[self.upgrade_type](
+                            node_to_upgrade, self.upgrade_version)
+                except Exception as e:
+                    # Has to happen only for the 1st node else it is a failure
+                    if itr != 0:
+                        raise e
+                    # Validate rebalance failures reason (Due of mc bucket)
+                    last_node = self.cluster_util.get_nodes(
+                        self.cluster.master, inactive_added=True,
+                        active=False)[0]
+                    for server in self.cluster.servers:
+                        if server.ip == last_node.ip:
+                            last_node = server
+                            break
+                    last_event = \
+                        SystemEventRestHelper(self.cluster.servers).get_events(
+                            server=last_node, events_count=1)["events"][-1]
+                    self.assertEqual(last_event["description"],
+                                     "Rebalance failed",
+                                     "Last event is not reb_failure")
+                    msg = last_event["extra_attributes"]["completion_message"]
+                    self.assertTrue(
+                        "error,memcached_buckets_present" in msg,
+                        "Mismatch in system_event_log for failed rebalance")
+                    # Reset test_failure to make sure we don't fail by mistake
+                    self.test_failure = None
+                    # Handle the failure for the 1st time having a mc bucket
+                    for bucket in self.cluster.buckets:
+                        if bucket.bucketType == "memcached":
+                            self.bucket_util.delete_bucket(self.cluster,
+                                                           bucket)
+                    self.sleep(5, "Wait for memcached buckets to get deleted")
+                    eject_nodes = None
+                    for c_node in self.cluster_util.get_nodes(node_to_upgrade):
+                        if c_node.ip == node_to_upgrade.ip:
+                            eject_nodes = [c_node.id]
+                            break
+                    self.assertTrue(self.cluster_util.rebalance(
+                        self.cluster, ejected_nodes=eject_nodes),
+                        "Rebalance failed after memcached bucket deletion")
+                    # Update spare_node to rebalanced-out node
+                    self.spare_node = node_to_upgrade
+
+                self.cluster_util.print_cluster_stats(self.cluster)
+                # Halt further upgrades if failure is observed
+                if self.test_failure is not None:
+                    break
+
+                # Fetching the next node to upgrade
+                node_to_upgrade = self.fetch_node_to_upgrade()
+                itr += 1
+
+            self.cluster.version = upgrade_version
+            self.cluster_features = self.upgrade_helper.get_supported_features(
+                self.cluster.version)
+
+        otp_node = None
+        server_for_rest_conn = self.cluster.master
+        node_to_fo = choice(self.cluster.kv_nodes)
+        for node in self.cluster_util.get_nodes(self.cluster.master):
+            if node.ip == node_to_fo.ip:
+                otp_node = node.id
+                break
+        if node_to_fo == server_for_rest_conn:
+            for node in self.cluster.kv_nodes:
+                if node.ip != node_to_fo.ip:
+                    server_for_rest_conn = node
+                    break
+        cluster_rest = ClusterRestAPI(self.cluster.master)
+        self.log.info(f"Performing graceful failover on '{otp_node}'")
+        status, _ = cluster_rest.perform_graceful_failover(otp_node)
+        self.assertTrue(status, "Graceful FO trigger failed")
+        self.assertTrue(RebalanceUtil(self.cluster).monitor_rebalance(),
+                        "Graceful FO rebalance failed")
+        NsServerFeaturePlugins.test_durability_impossible_fallback(
+            self, server_for_rest_conn)
+        # Printing cluster stats after the upgrade of the whole cluster
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.PrintStep(f"Upgrade of the whole cluster to "
+                       f"{self.upgrade_version} complete")
 
     def test_upgrade_from_ce_to_ee(self):
         itr = 0
@@ -1816,7 +1954,7 @@ class UpgradeTests(UpgradeBase):
         bucket_stats = bucket_helper.get_buckets_json(bucket.name)
         for node in bucket_stats['nodes']:
             if 'storageBackend' not in node or \
-                ('storageBackend' in node and node['storageBackend'] != storage_backend):
+                    ('storageBackend' in node and node['storageBackend'] != storage_backend):
                 self.log.info("storageBackend key mismatch/not present in node {0}".format(
                                                                         node['hostname']))
             else:

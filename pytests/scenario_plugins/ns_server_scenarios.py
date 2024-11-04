@@ -58,8 +58,9 @@ class NsServerFeaturePlugins(object):
 
             for task in tasks:
                 test_obj.task_manager.get_task_result(task)
-                test_obj.assertTrue(not load_will_fail and len(task.fail) == 0,
-                                    "Failures seen in delete docs task")
+                if not load_will_fail:
+                    test_obj.assertTrue(len(task.fail) == 0,
+                                        "Failures seen in delete docs task")
 
         def get_committed_not_durable_count_for_buckets():
             active_commited_not_durable_count = dict()

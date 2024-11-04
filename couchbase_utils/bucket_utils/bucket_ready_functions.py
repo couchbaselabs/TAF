@@ -3075,7 +3075,8 @@ class BucketUtils(ScopeUtils):
                                history_retention_bytes=None,
                                history_retention_seconds=None,
                                magma_key_tree_data_block_size=None,
-                               magma_seq_tree_data_block_size=None):
+                               magma_seq_tree_data_block_size=None,
+                               durability_impossible_fallback=None):
         return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
@@ -3089,7 +3090,8 @@ class BucketUtils(ScopeUtils):
             history_retention_bytes=history_retention_bytes,
             magma_key_tree_data_block_size=magma_key_tree_data_block_size,
             magma_seq_tree_data_block_size=magma_seq_tree_data_block_size,
-            storageBackend=storageBackend)
+            storageBackend=storageBackend,
+            durability_impossible_fallback=durability_impossible_fallback)
 
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:
