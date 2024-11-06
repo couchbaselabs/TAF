@@ -33,7 +33,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         16vCPUs:128GB,
         """
         self.instance_type = self.input.param("instance_type",
-                                              "4vCPUs:16GB").split(":")
+                                              "4vCPUs:32GB").split(":")
         self.columnar_image = self.capella.get("columnar_image", None)
 
         # Utility objects
@@ -94,6 +94,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         if instance_ids:
             instance_ids = instance_ids.split(',')
 
+        provider = self.input.param("columnar_provider", "aws")
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):
                 populate_columnar_instance_obj(self.tenant, instance_ids[i])
@@ -102,7 +103,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                     self.columnar_utils.generate_instance_configuration(
                         name=self.prefix + "Columnar_{0}".format(
                             random.randint(1, 100000)),
-                        region=self.region,
+                        provider = provider,
+                        region=self.region if provider == "aws" else self.gcp_region,
                         nodes=self.num_nodes_in_columnar_instance,
                         instance_types={
                             "vcpus": self.instance_type[0],

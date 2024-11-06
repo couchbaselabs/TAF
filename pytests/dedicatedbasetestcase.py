@@ -14,7 +14,7 @@ from capella_utils.dedicated import CapellaUtils
 from capella_utils.common_utils import Pod, Tenant
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
-from constants.cloud_constants.capella_constants import AWS, Cluster, AZURE
+from constants.cloud_constants.capella_constants import AWS, Cluster, AZURE, GCP
 from Jython_tasks.task import DeployCloud
 import uuid
 from table_view import TableView
@@ -87,6 +87,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
             "eventing": self.input.param("eventing_disk", 200)
             }
         self.region = self.input.param("region", AWS.Region.US_WEST_2)
+        self.gcp_region = self.input.param("gcp_region", GCP.Region.US_EAST_1)
         storage_type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd" if provider == "gcp" else "P6"
         self.storage_type = self.input.param("type", storage_type).lower()
         if provider == "aws":

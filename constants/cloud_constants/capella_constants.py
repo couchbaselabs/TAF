@@ -85,6 +85,10 @@ class GCP(object):
                "n2-standard-96"
                ]
 
+    class Region(object):
+        US_WEST_2 = "us-west2"
+        US_EAST_1 = "us-east1"
+
     class StorageType(object):
        PD_SSD = "PD-SSD"
 
