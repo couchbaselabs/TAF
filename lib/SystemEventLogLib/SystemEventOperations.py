@@ -6,7 +6,7 @@ from copy import deepcopy
 from random import choice
 
 from cb_constants import CbServer
-from Rest_Connection import RestConnection
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 
 
 class SystemEventRestHelper:
@@ -27,9 +27,9 @@ class SystemEventRestHelper:
             return update_auth(rest, username, password)
 
         if server:
-            rest = RestConnection(server)
+            rest = ClusterRestAPI(server)
         else:
-            rest = RestConnection(choice(self.servers))
+            rest = ClusterRestAPI(choice(self.servers))
         rest = update_auth(rest, username, password)
         return rest
 
@@ -43,29 +43,8 @@ class SystemEventRestHelper:
         :param username: Username auth to use during API operations
         :param password: Password auth to use during API operations
         """
-        def get_str(dict_obj):
-            str_data = "{"
-            for k, v in dict_obj.items():
-                kv_format = "\"%s\":"
-                if isinstance(v, dict):
-                    v = get_str(v)
-                    kv_format += "%s,"
-                elif isinstance(v, int):
-                    kv_format += "%s,"
-                else:
-                    kv_format += "\"%s\","
-                str_data += kv_format % (k, v)
-            str_data = str_data[:-1] + "}"
-            return str_data
-
         rest = self.get_rest_object(rest, server, username, password)
-        api = rest.baseUrl + "_event"
-        header = rest.get_headers_for_content_type_json()
-        header['Connection'] = "close"
-        status, content, _ = rest._http_request(
-            api, method=RestConnection.POST, headers=header,
-            params=get_str(event_dict))
-        return status, json.loads(content)
+        return rest.create_system_event(event_dict)
 
     def create_event_stream(self, rest=None, server=None,
                             username=None, password=None):
@@ -77,9 +56,8 @@ class SystemEventRestHelper:
         :param password: Password auth to use during API operations
         """
         rest = self.get_rest_object(rest, server, username, password)
-        api = rest.baseUrl + "eventsStreaming"
-        status, content, _ = rest._http_request(api, method=RestConnection.GET)
-        return json.loads(content)
+        status, content, _ = rest.get_system_event_streaming()
+        return content
 
     def get_events(self, rest=None, server=None, username=None, password=None,
                    since_time=None, events_count=None):
@@ -94,23 +72,8 @@ class SystemEventRestHelper:
         :param events_count: Number of events to fetch from the specific
                            'since_time' value"""
         rest = self.get_rest_object(rest, server, username, password)
-        api = rest.baseUrl + "events"
-        get_params = dict()
-        if since_time:
-            get_params.update({"sinceTime": since_time})
-        if events_count is not None:
-            get_params.update({"limit": events_count})
-
-        response = requests.get(
-            api, params=get_params, auth=(rest.username, rest.password),
-            verify=False)
-
-        # MB-49617: Exception handling for non-json (plain text) case
-        try:
-            return response.json()
-        except ValueError:
-            pass
-        return response.content
+        status, content = rest.get_system_event_logs(since_time, events_count)
+        return content
 
     def update_max_events(self,
                           max_event_count=CbServer.sys_event_def_logs,
@@ -126,9 +89,4 @@ class SystemEventRestHelper:
         :return: status, content
         """
         rest = self.get_rest_object(rest, server, username, password)
-        api = rest.baseUrl + "internalSettings"
-        params = urllib.urlencode({'eventLogsLimit': max_event_count})
-        status, content, _ = rest._http_request(
-            api, RestConnection.POST, params=params,
-            headers=rest.get_headers_for_content_type_json())
-        return status, json.loads(content)
+        return rest.set_internal_settings("eventLogsLimit", max_event_count)
