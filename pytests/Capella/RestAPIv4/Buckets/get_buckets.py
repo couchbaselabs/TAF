@@ -62,6 +62,17 @@ class GetBucket(GetCluster):
             self.expected_res['durabilityLevel'],
             self.expected_res['replicas'], self.expected_res['flush'],
             self.expected_res['timeToLiveInSeconds'])
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_bucket(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_res['name'], self.expected_res['type'],
+                self.expected_res['storageBackend'],
+                self.expected_res['memoryAllocationInMb'],
+                self.expected_res['bucketConflictResolution'],
+                self.expected_res['durabilityLevel'],
+                self.expected_res['replicas'], self.expected_res['flush'],
+                self.expected_res['timeToLiveInSeconds'])
         if res.status_code != 201:
             self.log.error("Error : {}".format(res.content))
             self.tearDown()
@@ -342,7 +353,6 @@ class GetBucket(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"], **kwarg)
-
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.bucket_id)
 
