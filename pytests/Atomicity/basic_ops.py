@@ -1,6 +1,7 @@
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading
-from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
+from couchbase_helper.documentgenerator import DocumentGenerator, \
+    doc_generator, get_valid_key_size
 from couchbase_helper.tuq_generators import JsonGenerator
 from sdk_client3 import SDKClient
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -42,11 +43,12 @@ class basic_ops(ClusterSetup):
         template = {"age": None,
                     "first_name": None,
                     "body": None}
+        key_size = get_valid_key_size(self.key, self.key_size)
         generator = DocumentGenerator(self.key, template, randomize=True,
                                       age=age,
                                       first_name=first, body=body,
                                       start=start, end=end,
-                                      key_size=self.key_size,
+                                      key_size=key_size,
                                       doc_size=self.doc_size,
                                       doc_type=self.doc_type)
         return generator
