@@ -111,6 +111,16 @@ class MemcachedClient(KeepRefs):
     def __del__(self):
         self.close()
 
+    def get_random_key(self):
+        opaque = self.r.randint(0, 2**32)
+        self._sendCmd(memcacheConstants.CMD_GET_RANDOM_KEY, '', '', opaque)
+        cmd, opaque, cas, klen, extralen, dtype, rv, frameextralen = \
+            self._handleKeyedResponse(None)
+        rv = {}
+        if klen:
+            rv[data[4:klen+4]] = data[klen:]
+        return rv
+
     def _sendCmd(self, cmd, key, val, opaque, extraHeader='', cas=0, scope=None, collection=None,
                  extended_meta_data='', extraHeaderLength=None):
         self._sendMsg(cmd, key, val, opaque, extraHeader=extraHeader, cas=cas,

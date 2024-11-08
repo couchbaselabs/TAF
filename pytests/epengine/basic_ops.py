@@ -1,9 +1,11 @@
-import json
 import urllib
 from random import choice, randint
 from threading import Thread
 
+from couchbase.durability import PersistTo
+from couchbase.options import IncrementOptions
 from couchbase.exceptions import CouchbaseException, AmbiguousTimeoutException
+from couchbase.logic.options import DeltaValueBase
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
@@ -12,6 +14,7 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from SecurityLib.rbac import RbacUtil
 from basetestcase import ClusterSetup
 from cb_constants import constants, CbServer, DocLoading
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.rest_client import RestConnection
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
@@ -25,6 +28,7 @@ from error_simulation.cb_error import CouchbaseError
 from gsiLib.gsiHelper import GsiHelper
 
 from mc_bin_client import MemcachedClient, MemcachedError
+from memcached.helper.data_helper import VBucketAwareMemcached
 from platform_constants.os_constants import Linux
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -118,82 +122,76 @@ class basic_ops(ClusterSetup):
         super(basic_ops, self).tearDown()
 
     def do_basic_ops(self):
-        KEY_NAME = 'key1'
-        KEY_NAME2 = 'key2'
+        key_1 = 'key1'
+        key_2 = 'key2'
         self.log.info('Starting basic ops')
 
         default_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         sdk_client = SDKClient(self.cluster, default_bucket,
                                compression_settings=self.sdk_compression)
-        # mcd = client.memcached(KEY_NAME)
+        cluster_rest = ClusterRestAPI(self.cluster.master)
+        mcd_client = VBucketAwareMemcached(cluster_rest, default_bucket,
+                                           info=self.cluster.master)
+        mc_for_key = mcd_client.memcached(key_1)
 
         # MB-17231 - incr with full eviction
-        rc = sdk_client.incr(KEY_NAME, delta=1)
+        rc = sdk_client.collection._increment(
+            key_1, IncrementOptions(delta=DeltaValueBase(1)))
         self.log.info('rc for incr: {0}'.format(rc))
 
         # MB-17289 del with meta
-        rc = sdk_client.set(KEY_NAME, 0, 0,
-                            json.dumps({'value': 'value2'}))
+        rc = sdk_client.crud(DocLoading.Bucket.DocOps.UPDATE,
+                             key_1, {'value': 'value2'},
+                             persist_to=PersistTo.ONE)
         self.log.info('set is: {0}'.format(rc))
-        # cas = rc[1]
-
-        # wait for it to persist
-        persisted = 0
-        while persisted == 0:
-            opaque, rep_time, persist_time, persisted, cas = \
-                sdk_client.observe(KEY_NAME)
 
         try:
-            rc = sdk_client.evict_key(KEY_NAME)
+            mc_for_key.evict_key(key_1)
         except MemcachedError as exp:
             self.fail("Exception with evict meta - {0}".format(exp))
 
         CAS = 0xabcd
         try:
             # key, exp, flags, seqno, cas
-            rc = mcd.del_with_meta(KEY_NAME2, 0, 0, 2, CAS)
+            mc_for_key.del_with_meta(key_2, 0, 0, 2, CAS)
         except MemcachedError as exp:
             self.fail("Exception with del_with meta - {0}".format(exp))
 
     # Reproduce test case for MB-28078
     def do_setWithMeta_twice(self):
-        mc = MemcachedClient(self.cluster.master.ip,
-                             constants.memcached_port)
-        mc.sasl_auth_plain(self.cluster.master.rest_username,
-                           self.cluster.master.rest_password)
-        mc.bucket_select('default')
-
+        key, value = "1", '{"Hello":"World"}'
+        cluster_rest = ClusterRestAPI(self.cluster.master)
+        mcd_client = VBucketAwareMemcached(
+            cluster_rest, self.cluster.buckets[0],
+            info=self.cluster.master)
+        mc_for_key = mcd_client.memcached(key)
         try:
-            mc.setWithMeta('1', '{"Hello":"World"}', 3600, 0, 1,
-                           0x1512a3186faa0000)
+            mc_for_key.setWithMeta(key, value, 3600, 0, 1, 0x1512a3186faa0000,
+                                   options=0)
         except MemcachedError as error:
-            self.log.info("<MemcachedError #%d ``%s''>"
-                          % (error.status, error.message))
-            self.fail("Error on First setWithMeta()")
+            self.fail("Error on first setWithMeta :: "
+                      f"<MemcachedError #{error.status} `{error.msg}`>")
 
-        stats = mc.stats()
+        stats = mc_for_key.stats()
         self.log.info('curr_items: {0} and curr_temp_items:{1}'
                       .format(stats['curr_items'], stats['curr_temp_items']))
         self.sleep(5, "Wait before checking the stats")
-        stats = mc.stats()
+        stats = mc_for_key.stats()
         self.log.info('curr_items: {0} and curr_temp_items:{1}'
                       .format(stats['curr_items'], stats['curr_temp_items']))
 
         try:
-            mc.setWithMeta('1', '{"Hello":"World"}', 3600, 0, 1,
-                           0x1512a3186faa0000)
+            mc_for_key.setWithMeta(key, value, 3600, 0, 1, 0x1512a3186faa0000,
+                                   options=0)
         except MemcachedError as error:
-            stats = mc.stats()
-            self.log.info('After 2nd setWithMeta(), curr_items: {} '
-                          'and curr_temp_items: {}'
-                          .format(stats['curr_items'],
-                                  stats['curr_temp_items']))
-            if int(stats['curr_temp_items']) == 1:
-                self.fail("Error on second setWithMeta(), "
-                          "expected curr_temp_items to be 0")
-            else:
-                self.log.info("<MemcachedError #%d ``%s''>"
-                              % (error.status, error.message))
+            stats = mc_for_key.stats()
+            self.log.info('After second setWithMeta(), '
+                          f'curr_items: {stats["curr_items"]} '
+                          f'and curr_temp_items: {stats["curr_temp_items"]}')
+            self.assertEqual(int(stats['curr_temp_items']), 0,
+                             "Error on 2nd setWithMeta(), "
+                             "expected curr_temp_items == 0")
+            self.log.info(f"<MemcachedError #{error.status} `{error.msg}`>")
 
     def generate_docs_bigdata(self, docs_per_day, start=0,
                               document_size=1024000,
@@ -619,7 +617,7 @@ class basic_ops(ClusterSetup):
         port = self.cluster.master.port
 
         # check if local host can work fine
-        cmd = []
+        cmd = list()
         cmd_base = 'curl http://{0}:{1}@localhost:{2}/diag/eval ' \
             .format(self.cluster.master.rest_username,
                     self.cluster.master.rest_password, port)
@@ -2643,7 +2641,6 @@ class basic_ops(ClusterSetup):
             try:
                 mc.get_random_key()
             except MemcachedError as error:
-                self.fail("<MemcachedError #%d ``%s''>"
-                          % (error.status, error.message))
+                self.fail(f"<MemcachedError #{error.status} `{error.msg}`>")
             if count % 1000 == 0:
                 self.log.info('The number of iteration is {}'.format(count))

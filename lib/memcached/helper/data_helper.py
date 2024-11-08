@@ -121,6 +121,8 @@ class VBucketAwareMemcached(object):
                 raise ex
 
     def _get_vBucket_id(self, key):
+        if isinstance(key, str):
+            key = str.encode(key)
         return (zlib.crc32(key) >> 16) & (len(self.vBucketMap) - 1)
 
     def memcached(self, key, replica_index=None):
