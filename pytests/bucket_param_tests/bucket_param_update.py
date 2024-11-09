@@ -682,6 +682,98 @@ class BucketParamTest(ClusterSetup):
                             bucket, bucket.scopes[scope].name,
                             bucket.scopes[scope].collections[collection].name)
 
+    def test_bucket_properties(self):
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            self.log.info(
+                "Checking default values for bucket: %s" % bucket.name)
+            bucket = bucket_helper.get_bucket_from_cluster(bucket)
+            self.log.debug("Default values for bucket %s: %s" % (
+            bucket.name, bucket.__dict__))
+            self.assertTrue(str(bucket.accessScannerEnabled).lower() == "true",
+                            "Default value mismatch for accessScannerEnabled")
+            self.assertTrue(bucket.expiryPagerSleepTime == 600,
+                            "Default value mismatch for expiryPagerSleepTime")
+            self.assertTrue(bucket.warmupBehavior == "background",
+                            "Default value mismatch for warmupBehavior")
+            self.assertTrue(bucket.memoryLowWatermark == 75,
+                            "Default value mismatch for memoryLowWatermark")
+            self.assertTrue(bucket.memoryHighWatermark == 85,
+                            "Default value mismatch for memoryHighWatermark")
+
+            self.log.info(
+                "Setting and verifying valid values for bucket: %s" % bucket.name)
+            bucket_helper.change_bucket_props(
+                bucket,
+                accessScannerEnabled="false",
+                expiryPagerSleepTime=300,
+                warmupBehavior="blocking",
+                memoryLowWatermark=70,
+                memoryHighWatermark=80
+            )
+            bucket = bucket_helper.get_bucket_from_cluster(bucket)
+            self.log.debug(
+                "Values after setting valid params for bucket %s: %s" % (
+                bucket.name, bucket.__dict__))
+            self.assertTrue(str(bucket.accessScannerEnabled).lower() == "false",
+                            "Valid value mismatch for accessScannerEnabled")
+            self.assertTrue(bucket.expiryPagerSleepTime == 300,
+                            "Valid value mismatch for expiryPagerSleepTime")
+            self.assertTrue(bucket.warmupBehavior == "blocking",
+                            "Valid value mismatch for warmupBehavior")
+            self.assertTrue(bucket.memoryLowWatermark == 70,
+                            "Valid value mismatch for memoryLowWatermark")
+            self.assertTrue(bucket.memoryHighWatermark == 80,
+                            "Valid value mismatch for memoryHighWatermark")
+
+            bucket_helper.change_bucket_props(
+                bucket,
+                accessScannerEnabled="true",
+                expiryPagerSleepTime=0,
+                warmupBehavior="none",
+                memoryLowWatermark=89,
+                memoryHighWatermark=90
+            )
+            bucket = bucket_helper.get_bucket_from_cluster(bucket)
+            self.log.debug(
+                "Values after setting valid params for bucket %s: %s" % (
+                    bucket.name, bucket.__dict__))
+            self.assertTrue(
+                str(bucket.accessScannerEnabled).lower() == "true",
+                "Valid value mismatch for accessScannerEnabled")
+            self.assertTrue(bucket.expiryPagerSleepTime == 0,
+                            "Valid value mismatch for expiryPagerSleepTime")
+            self.assertTrue(bucket.warmupBehavior == "none",
+                            "Valid value mismatch for warmupBehavior")
+            self.assertTrue(bucket.memoryLowWatermark == 89,
+                            "Valid value mismatch for memoryLowWatermark")
+            self.assertTrue(bucket.memoryHighWatermark == 90,
+                            "Valid value mismatch for memoryHighWatermark")
+
+            self.log.info(
+                "Testing invalid values for bucket: %s" % bucket.name)
+            invalid_params = [
+                {"accessScannerEnabled": "invalid_value"},
+                {"expiryPagerSleepTime": -1},
+                {"warmupBehavior": "invalid_behavior"},
+                {"memoryLowWatermark": 49},
+                {"memoryHighWatermark": 91},
+                {"memoryLowWatermark": 90, "memoryHighWatermark": 50}
+            ]
+
+            for params in invalid_params:
+                try:
+                    bucket_helper.change_bucket_props(bucket, **params)
+                    self.assertTrue(False,
+                                    "Expected exception for params: %s" % params)
+                except Exception as e:
+                    self.log.error(
+                        "Caught expected exception for params %s: %s" % (
+                        params, e))
+                    raise Exception(e)
+
+            self.log.info("Completed tests for bucket: %s" % bucket.name)
+
     def test_MB_34947(self):
         # Update already Created docs with async_writes
         load_gen = doc_generator(self.key, 0, self.num_items,

@@ -161,6 +161,12 @@ class Bucket(object):
     historyRetentionBytes = "historyRetentionBytes"
     magmaKeyTreeDataBlockSize = "magmaKeyTreeDataBlockSize"
     magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
+    accessScannerEnabled = "accessScannerEnabled"
+    expiryPagerSleepTime = "expiryPagerSleepTime"
+    warmupBehavior = "warmupBehavior"
+    memoryLowWatermark = "memoryLowWatermark"
+    memoryHighWatermark = "memoryHighWatermark"
+
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -265,6 +271,16 @@ class Bucket(object):
             Bucket.magmaKeyTreeDataBlockSize, 4096)
         self.magmaSeqTreeDataBlockSize = new_params.get(
             Bucket.magmaSeqTreeDataBlockSize, 4096)
+        self.accessScannerEnabled = new_params.get(
+            Bucket.accessScannerEnabled, "true")
+        self.expiryPagerSleepTime = new_params.get(
+            Bucket.expiryPagerSleepTime, 600)
+        self.warmupBehavior = new_params.get(
+            Bucket.warmupBehavior, "background")
+        self.memoryLowWatermark = new_params.get(
+            Bucket.memoryLowWatermark, 75)
+        self.memoryHighWatermark = new_params.get(
+            Bucket.memoryHighWatermark, 85)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(

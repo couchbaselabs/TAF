@@ -38,8 +38,8 @@ class BucketHelper(RestConnection):
 
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
         api = '%s%s%s?basic_stats=true' \
-               % (self.baseUrl, 'pools/default/buckets/',
-                  urllib.quote_plus(bucket.name))
+              % (self.baseUrl, 'pools/default/buckets/',
+                 urllib.quote_plus(bucket.name))
         status, content, _ = self._http_request(api)
         num = 1
         while not status and num_attempt > num:
@@ -92,6 +92,11 @@ class BucketHelper(RestConnection):
                     parsed["basicStats"]["vbActiveNumNonResident"]
             bucket.maxTTL = parsed.get("maxTTL")
             bucket.rank = parsed.get("rank")
+            bucket.accessScannerEnabled = parsed.get("accessScannerEnabled")
+            bucket.expiryPagerSleepTime = parsed.get("expiryPagerSleepTime")
+            bucket.warmupBehavior = parsed.get("warmupBehavior")
+            bucket.memoryLowWatermark = parsed.get("memoryLowWatermark")
+            bucket.memoryHighWatermark = parsed.get("memoryHighWatermark")
         return bucket
 
     def get_buckets_json(self):
@@ -496,7 +501,7 @@ class BucketHelper(RestConnection):
         return status
 
     def change_bucket_props(self, bucket, ramQuotaMB=None,
-                            replicaNumber=None ,proxyPort=None,
+                            replicaNumber=None, proxyPort=None,
                             replicaIndex=None, flushEnabled=None,
                             timeSynchronization=None, maxTTL=None,
                             compressionMode=None, bucket_durability=None,
@@ -506,7 +511,12 @@ class BucketHelper(RestConnection):
                             history_retention_bytes=None,
                             history_retention_seconds=None,
                             magma_key_tree_data_block_size=None,
-                            magma_seq_tree_data_block_size=None):
+                            magma_seq_tree_data_block_size=None,
+                            accessScannerEnabled=None,
+                            expiryPagerSleepTime=None,
+                            warmupBehavior=None,
+                            memoryLowWatermark=None,
+                            memoryHighWatermark=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -536,22 +546,33 @@ class BucketHelper(RestConnection):
         if bucketWeight:
             params_dict["weight"] = bucketWeight
         if history_retention_collection_default is not None:
-            params_dict[Bucket.historyRetentionCollectionDefault] \
+            params_dict[Bucket.historyRetentionCollectionDefault]\
                 = history_retention_collection_default
         if history_retention_bytes is not None:
-            params_dict[Bucket.historyRetentionBytes] \
+            params_dict[Bucket.historyRetentionBytes]\
                 = history_retention_bytes
         if history_retention_seconds is not None:
-            params_dict[Bucket.historyRetentionSeconds] \
+            params_dict[Bucket.historyRetentionSeconds]\
                 = history_retention_seconds
         if magma_key_tree_data_block_size is not None:
-            params_dict[Bucket.magmaKeyTreeDataBlockSize] \
+            params_dict[Bucket.magmaKeyTreeDataBlockSize]\
                 = magma_key_tree_data_block_size
         if magma_seq_tree_data_block_size is not None:
             params_dict[Bucket.magmaSeqTreeDataBlockSize] \
                 = magma_seq_tree_data_block_size
         if storageBackend is not None:
             params_dict[Bucket.storageBackend] = storageBackend
+        if accessScannerEnabled is not None:
+            params_dict["accessScannerEnabled"] = accessScannerEnabled
+        if expiryPagerSleepTime is not None:
+            params_dict["expiryPagerSleepTime"] = expiryPagerSleepTime
+        if warmupBehavior is not None:
+            params_dict["warmupBehavior"] = warmupBehavior
+        if memoryLowWatermark is not None:
+            params_dict["memoryLowWatermark"] = memoryLowWatermark
+        if memoryHighWatermark is not None:
+            params_dict["memoryHighWatermark"] = memoryHighWatermark
+
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)
