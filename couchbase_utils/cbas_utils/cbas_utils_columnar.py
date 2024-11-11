@@ -1416,6 +1416,8 @@ class Link_Util(Dataverse_Util):
                     if value:
                         if isinstance(value, str):
                             params[key] = str(value)
+                        elif isinstance(value, dict):
+                            params[key] = json.dumps(value)
                         else:
                             params[key] = value
                 params = urllib.parse.urlencode(params)
@@ -1838,8 +1840,8 @@ class ExternalLink_Util(RemoteLink_Util):
         :param timeout int, REST API timeout
         """
         self.log.info(
-            "Creating link - {0} in region {1}".format(
-                link_properties["name"], link_properties["region"]))
+            "Creating link - {0}".format(
+                link_properties["name"]))
         return self.create_link(
             cluster, link_properties, username, password, validate_error_msg,
             expected_error, expected_error_code, create_if_not_exists,
@@ -3099,7 +3101,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
         # get all external link objects
         link_types = dataset_spec.get("include_link_types", [])
         if not link_types:
-            link_types = ["s3", "azure", "gcp"]
+            link_types = ["s3", "azure", "gcs"]
 
         if set(link_types) == set(
                 dataset_spec.get("exclude_link_types", [])):
@@ -3170,7 +3172,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 dataset_properties = dataset_spec[
                     "external_dataset_properties"][i % len(dataset_spec[
                                                                "external_dataset_properties"])]
-                if link.properties["region"] == dataset_properties.get(
+                if link.properties["type"] == "gcs" or link.properties["region"] == dataset_properties.get(
                         "region", None):
                     break
 
@@ -6418,7 +6420,7 @@ class CbasUtil(CBOUtil):
 
         self.log.info("Disconnecting all the Links")
         for link in self.get_all_link_objs():
-            if link.link_type != "s3":
+            if link.link_type != "s3" and link.link_type != "gcs":
                 link_info = self.get_link_info(
                     cluster, link.name, link.link_type)
                 if ((type(link_info) is not None) and len(link_info) > 0 and

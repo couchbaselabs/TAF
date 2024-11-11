@@ -314,7 +314,19 @@ class ColumnarBaseTest(BaseTestCase):
         columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param("num_external_links", 0)
         if columnar_spec["external_link"]["no_of_external_links"]:
-            columnar_spec["external_link"]["properties"] = [{
+            if self.input.param("external_link_source", "s3") == "gcs":
+                with open('pytests/Columnar/credentials.json', 'r') as file:
+                    # Load JSON data from file
+                    data = json.load(file)
+                    data["private_key_id"] = self.input.param("gcs_private_key_id")
+                    data["private_key"] = self.input.param("gcs_private_key")
+                    data["client_email"] = self.input.param("gcs_client_email")
+                    data["client_id"] = self.input.param("gcs_client_id")
+                columnar_spec["external_link"]["properties"] = [{
+                    "type": "gcs",
+                    "jsonCredentials": data
+                }]
+            else: columnar_spec["external_link"]["properties"] = [{
                 "type": "s3",
                 "region": self.aws_region,
                 "accessKeyId": self.aws_access_key,

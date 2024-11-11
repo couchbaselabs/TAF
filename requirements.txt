@@ -13,3 +13,4 @@ setuptools
 pytz
 delta-spark==3.2.1
 pyspark==3.5.3
+google-cloud-storage
