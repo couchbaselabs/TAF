@@ -161,6 +161,7 @@ class Bucket(object):
     magmaKeyTreeDataBlockSize = "magmaKeyTreeDataBlockSize"
     magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
     durabilityImpossibleFallback = "durabilityImpossibleFallback"
+    warmupBehavior = "warmupBehavior"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -221,6 +222,11 @@ class Bucket(object):
         magma = "magma"
         couchstore = "couchstore"
 
+    class WarmupBehavior(object):
+        BACKGROUND = "background"
+        BLOCKING = "blocking"
+        NONE = "none"
+
     def __init__(self, new_params=dict()):
         # Default values based on Couchbase document,
         # docs.couchbase.com/server/current/rest-api/rest-bucket-create.html
@@ -266,6 +272,8 @@ class Bucket(object):
             Bucket.magmaSeqTreeDataBlockSize, 4096)
         self.durabilityImpossibleFallback = new_params.get(
             Bucket.durabilityImpossibleFallback, None)
+        self.warmupBehavior = new_params.get(
+            Bucket.warmupBehavior, None)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(

@@ -323,7 +323,9 @@ class BucketHelper(BucketRestApi):
             Bucket.conflictResolutionType:
                 bucket_params.get(Bucket.conflictResolutionType),
             Bucket.durabilityMinLevel:
-                bucket_params.get(Bucket.durabilityMinLevel)}
+                bucket_params.get(Bucket.durabilityMinLevel),
+            Bucket.warmupBehavior:
+                bucket_params.get(Bucket.warmupBehavior)}
 
         # Set Bucket's width/weight param only if serverless is enabled
         if bucket_params.get('serverless'):
@@ -456,6 +458,7 @@ class BucketHelper(BucketRestApi):
                             replicaIndex=None, flushEnabled=None,
                             timeSynchronization=None, maxTTL=None,
                             compressionMode=None, bucket_durability=None,
+                            eviction_policy=None,
                             bucket_rank=None, storageBackend=None,
                             bucketWidth=None, bucketWeight=None,
                             history_retention_collection_default=None,
@@ -463,7 +466,8 @@ class BucketHelper(BucketRestApi):
                             history_retention_seconds=None,
                             magma_key_tree_data_block_size=None,
                             magma_seq_tree_data_block_size=None,
-                            durability_impossible_fallback=None):
+                            durability_impossible_fallback=None,
+                            warmup_behavior=None):
 
         params_dict = {}
         if ramQuotaMB:
@@ -509,6 +513,10 @@ class BucketHelper(BucketRestApi):
             params_dict[Bucket.storageBackend] = storageBackend
         if durability_impossible_fallback is not None:
             params_dict["durabilityImpossibleFallback"] = durability_impossible_fallback
+        if eviction_policy is not None:
+            params_dict["evictionPolicy"] = eviction_policy
+        if warmup_behavior is not None:
+            params_dict["warmupBehavior"] = warmup_behavior
 
         self.log.info("Updating bucket properties for {}".format(bucket.name))
         status, content = self.edit_bucket(bucket.name, params_dict)

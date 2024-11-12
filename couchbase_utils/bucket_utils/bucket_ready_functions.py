@@ -2220,7 +2220,8 @@ class BucketUtils(ScopeUtils):
             magma_key_tree_data_block_size=4096,
             magma_seq_tree_data_block_size=4096,
             vbuckets=None, weight=None, width=None,
-            durability_impossible_fallback=None):
+            durability_impossible_fallback=None,
+            warmup_behavior=Bucket.WarmupBehavior.BACKGROUND):
         node_info = global_vars.cluster_util.get_nodes_self(cluster.master)
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2262,7 +2263,8 @@ class BucketUtils(ScopeUtils):
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight,
-             Bucket.durabilityImpossibleFallback: durability_impossible_fallback})
+             Bucket.durabilityImpossibleFallback: durability_impossible_fallback,
+             Bucket.warmupBehavior: warmup_behavior})
         if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
@@ -2639,6 +2641,8 @@ class BucketUtils(ScopeUtils):
                     Bucket.weight: bucket_spec[Bucket.weight]})
                 if Bucket.numVBuckets in bucket_spec:
                     b_obj.numVBuckets = bucket_spec[Bucket.numVBuckets]
+                if Bucket.warmupBehavior in bucket_spec:
+                    b_obj.warmupBehavior = bucket_spec[Bucket.warmupBehavior]
                 task = self.async_create_database(cluster, b_obj,
                                                   timeout=timeout,
                                                   dataplane_id=dataplane_id)
@@ -2962,7 +2966,8 @@ class BucketUtils(ScopeUtils):
             weight=None, width=None,
             history_retention_collection_default="true",
             history_retention_bytes=0,
-            history_retention_seconds=0):
+            history_retention_seconds=0,
+            warmup_behavior=Bucket.WarmupBehavior.BACKGROUND):
         success = True
         info = self.cluster_util.get_nodes_self(cluster.master)
         tasks = dict()
@@ -3009,7 +3014,8 @@ class BucketUtils(ScopeUtils):
                         Bucket.width: width,
                         Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
                         Bucket.historyRetentionSeconds: history_retention_seconds,
-                        Bucket.historyRetentionBytes: history_retention_bytes})
+                        Bucket.historyRetentionBytes: history_retention_bytes,
+                        Bucket.warmupBehavior: warmup_behavior})
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1
 
@@ -3068,6 +3074,7 @@ class BucketUtils(ScopeUtils):
                                replica_number=None, replica_index=None,
                                flush_enabled=None, time_synchronization=None,
                                max_ttl=None, compression_mode=None,
+                               eviction_policy=None,
                                storageBackend=None, bucket_rank=None,
                                bucket_durability=None, bucket_width=None,
                                bucket_weight=None,
@@ -3076,12 +3083,14 @@ class BucketUtils(ScopeUtils):
                                history_retention_seconds=None,
                                magma_key_tree_data_block_size=None,
                                magma_seq_tree_data_block_size=None,
-                               durability_impossible_fallback=None):
+                               durability_impossible_fallback=None,
+                               warmup_behavior=None):
         return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
             timeSynchronization=time_synchronization, maxTTL=max_ttl,
             compressionMode=compression_mode,
+            eviction_policy=eviction_policy,
             bucket_durability=bucket_durability, bucketWidth=bucket_width,
             bucketWeight=bucket_weight,
             bucket_rank=bucket_rank,
@@ -3091,7 +3100,8 @@ class BucketUtils(ScopeUtils):
             magma_key_tree_data_block_size=magma_key_tree_data_block_size,
             magma_seq_tree_data_block_size=magma_seq_tree_data_block_size,
             storageBackend=storageBackend,
-            durability_impossible_fallback=durability_impossible_fallback)
+            durability_impossible_fallback=durability_impossible_fallback,
+            warmup_behavior=warmup_behavior)
 
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:
@@ -4965,6 +4975,9 @@ class BucketUtils(ScopeUtils):
             bucket.name = parsed[Bucket.name]
             if Bucket.numVBuckets in parsed:
                 bucket.numVBuckets = parsed[Bucket.numVBuckets]
+
+            if Bucket.warmupBehavior in parsed:
+                bucket.warmupBehavior = parsed[Bucket.warmupBehavior]
 
             bucket.bucketType = parsed[Bucket.bucketType]
             if Bucket.maxTTL in parsed:
