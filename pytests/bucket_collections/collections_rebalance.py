@@ -95,10 +95,12 @@ class CollectionsRebalance(CollectionBase):
                 bucket_helper = BucketHelper(self.cluster.master)
                 if bucket.storageBackend == Bucket.StorageBackend.magma:
                     bucket_stats = bucket_helper.get_bucket_json(bucket.name)
-                    self.assertEqual(int(bucket_stats["autoCompactionSettings"] \
-                                                    ["magmaFragmentationPercentage"]),
-                                                    self.fragmentation,
-                                                    "Frag val does not match")
+                    frag_val = bucket_stats["autoCompactionSettings"] \
+                                           ["magmaFragmentationPercentage"]
+                    self.log.info("Bucket: {}, Fragmentation value: {}".\
+                                  format(bucket.name, frag_val))
+                    self.assertEqual(int(frag_val), self.fragmentation,
+                                     "Fragmentation value does not match")
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
