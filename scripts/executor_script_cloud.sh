@@ -26,6 +26,7 @@ populate_ini() {
 }
 
 do_install() {
+  echo "Starting server installation"
   cd test_infra_runner
   python scripts/new_install.py -i $WORKSPACE/testexec.$$.ini -p $install_params
   status=$?
