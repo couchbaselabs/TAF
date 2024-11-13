@@ -3685,9 +3685,16 @@ class ViewCreateTask(Task):
             return 0
         try:
             self.rest.create_design_document(self.bucket, ddoc)
-            self.log.debug("Waiting for potential concurrent ddoc updates to complete")
-            sleep(2)
-            return_value = self.check()
+            end_time = int(time.time()) + 600
+            while int(time.time()) <= end_time:
+                sleep(1)
+                return_value = self.check()
+                if return_value != "not_found":
+                    break
+            else:
+                self.set_exception(
+                    Exception("View not found even after 10 mins timeout"))
+                return_value = 0
             self.complete_task()
             return return_value
         except DesignDocCreationException as e:
@@ -3751,7 +3758,7 @@ class ViewCreateTask(Task):
         except QueryViewException as e:
             if e.message.find('not_found') or e.message.find(
                     'view_undefined') > -1:
-                self.check()
+                return "not_found"
             else:
                 self.set_exception(e)
                 return 0
