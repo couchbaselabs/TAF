@@ -35,7 +35,7 @@ class Hotel:
     Stores Hotel information to generate document for the doc_loader
     """
 
-    def __init__(self):
+    def __init__(self, include_reviews_field=True):
         self.characters_with_spaces = string.ascii_letters + string.digits + ' '
         self.characters_without_spaces = string.ascii_letters + string.digits
         self.document_size = None
@@ -46,17 +46,18 @@ class Hotel:
         username = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(10, 100)))
         domain = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(5, 10)))
         self.url = "www.{0}.{1}.com".format(username, domain)
-        self.reviews = self.build_review(random.randint(0, 10))
         self.phone = random.randint(1000, 9999999)
         self.price = random.choice([1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0,
                                     7000.0, 8000.0, 9000.0, 10000.0])
         self.avg_rating = random.uniform(0, 1)
         self.free_breakfast = random.choice([True, False])
         self.name = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(5, 20)))
-        self.public_likes = self.build_public_likes(random.randint(0, 10))
         self.email = "{0}@{1}.com".format(username, domain)
         self.mutated = 0.0
         self.padding = ""
+        self.public_likes = self.build_public_likes(random.randint(0, 10))
+        if include_reviews_field:
+            self.reviews = self.build_review(random.randint(0, 10))
 
     def country_selector(self, field_type="string"):
         country_names = ["Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Anguilla", "Antigua & Barbuda",
@@ -147,15 +148,17 @@ class Hotel:
             else:
                 self.country_selector(country_type)
         try:
-            self.build_public_likes(random.randint(1, 10))
+            if hasattr(self, "public_likes"):
+                self.build_public_likes(random.randint(1, 10))
         except Exception as err:
             error = str(err)
 
         while True:
-            new_reviews = self.build_review(random.randint(1, 10))
             document = self.__to_json(self.__dict__)
+            new_reviews = self.build_review(random.randint(1, 10))
             new_review_doc = self.__to_json([review.__dict__ for review in new_reviews])
-            if len(document.encode("utf-8")) + len(new_review_doc.encode("utf-8")) <= document_size:
+            if hasattr(self, "reviews") and len(document.encode(\
+                    "utf-8")) + len(new_review_doc.encode("utf-8")) <= document_size:
                 self.reviews.extend(new_reviews)
             else:
                 required_length = document_size - len(document.encode("utf-8"))

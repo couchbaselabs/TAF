@@ -16,6 +16,8 @@ import copy
 import requests
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread, current_thread
+from decimal import *
+from datetime import datetime, timedelta
 
 from Columnar.templates.crudTemplate.docgen_template import Hotel
 from global_vars import logger
@@ -2851,13 +2853,14 @@ class External_Dataset_Util(Remote_Dataset_Util):
         """
         return cbas_spec.get("external_dataset", {})
 
-    def generate_create_external_dataset_cmd(self, dataset_name, external_container_name,
-                                             link_name, if_not_exists=False, dataverse_name=None,
-                                             database_name=None, object_construction_def=None,
-                                             path_on_external_container=None, file_format="json",
-                                             redact_warning=None, header=None, null_string=None, include=None,
-                                             exclude=None, parse_json_string=0, convert_decimal_to_double=0,
-                                             timezone="", embed_filter_values=None):
+    def generate_create_external_dataset_cmd(
+            self, dataset_name, external_container_name, link_name,
+            if_not_exists=False, dataverse_name=None, database_name=None,
+            object_construction_def=None, path_on_external_container=None,
+            file_format="json", redact_warning=None, header=None,
+            null_string=None, include=None, exclude=None, parse_json_string=0,
+            convert_decimal_to_double=0, timezone="",
+            embed_filter_values=None, timestamp_to_long=0, date_to_int=0):
 
         cmd = "CREATE EXTERNAL DATASET"
 
@@ -2881,38 +2884,58 @@ class External_Dataset_Util(Remote_Dataset_Util):
             cmd += " USING \"{0}\"".format(path_on_external_container)
 
         with_parameters = dict()
-        with_parameters["format"] = file_format
-
-        if redact_warning is not None:
-            with_parameters["redact-warnings"] = redact_warning
-
-        if header is not None:
-            with_parameters["header"] = header
-
-        if null_string:
-            with_parameters["null"] = null_string
-
-        if include is not None:
-            with_parameters["include"] = include
-
-        if exclude is not None:
-            with_parameters["exclude"] = exclude
-
-        if with_parameters["format"] == "parquet":
+        if file_format == "delta":
+            with_parameters["table-format"] = file_format
             if timezone:
                 with_parameters["timezone"] = timezone.upper()
-            if parse_json_string > 0:
-                if parse_json_string == 1:
-                    with_parameters["parse-json-string"] = True
-                else:
-                    with_parameters["parse-json-string"] = False
             if convert_decimal_to_double > 0:
                 if convert_decimal_to_double == 1:
                     with_parameters["decimal-to-double"] = True
                 else:
                     with_parameters["decimal-to-double"] = False
-        if embed_filter_values:
-            with_parameters["embed-filter-values"] = embed_filter_values
+            if timestamp_to_long > 0:
+                if timestamp_to_long == 1:
+                    with_parameters["timestamp-to-long"] = True
+                else:
+                    with_parameters["timestamp-to-long"] = False
+            if date_to_int > 0:
+                if date_to_int == 1:
+                    with_parameters["date-to-int"] = True
+                else:
+                    with_parameters["date-to-int"] = False
+        else:
+            with_parameters["format"] = file_format
+
+            if redact_warning is not None:
+                with_parameters["redact-warnings"] = redact_warning
+
+            if header is not None:
+                with_parameters["header"] = header
+
+            if null_string:
+                with_parameters["null"] = null_string
+
+            if include is not None:
+                with_parameters["include"] = include
+
+            if exclude is not None:
+                with_parameters["exclude"] = exclude
+
+            if with_parameters["format"] == "parquet":
+                if timezone:
+                    with_parameters["timezone"] = timezone.upper()
+                if parse_json_string > 0:
+                    if parse_json_string == 1:
+                        with_parameters["parse-json-string"] = True
+                    else:
+                        with_parameters["parse-json-string"] = False
+                if convert_decimal_to_double > 0:
+                    if convert_decimal_to_double == 1:
+                        with_parameters["decimal-to-double"] = True
+                    else:
+                        with_parameters["decimal-to-double"] = False
+            if embed_filter_values:
+                with_parameters["embed-filter-values"] = embed_filter_values
 
         cmd += " WITH {0};".format(json.dumps(with_parameters))
 
@@ -2927,7 +2950,8 @@ class External_Dataset_Util(Remote_Dataset_Util):
             exclude=None, parse_json_string=0, convert_decimal_to_double=0,
             timezone="", validate_error_msg=False, username=None,
             password=None, expected_error=None, expected_error_code=None,
-            timeout=300, analytics_timeout=300, embed_filter_values=None):
+            timeout=300, analytics_timeout=300, embed_filter_values=None,
+            timestamp_to_long=0, date_to_int=0):
         """
         Creates a dataset for an external resource like AWS S3 bucket /
         Azure container / GCP buckets.
@@ -2975,16 +2999,26 @@ class External_Dataset_Util(Remote_Dataset_Util):
         2 - Explicitly Set to False
         :param timezone str, Timezone values likes GMT, PST, IST etc (in
         upper case only)
+        :param timestamp_to_long int, Parses timestamps as long integers
+        representing milliseconds since the Unix epoch
+        0 - Use default value , default is True
+        1 - Set to True.
+        2 - Explicitly Set to False
+        :param date_to_int int, Parses dates as integers representing days
+        since the Unix epoch.
+        0 - Use default value , default is True
+        1 - Set to True.
+        2 - Explicitly Set to False
         :return True/False
         """
 
-        cmd = self.generate_create_external_dataset_cmd(dataset_name, external_container_name,
-                                                        link_name, if_not_exists, dataverse_name,
-                                                        database_name, object_construction_def,
-                                                        path_on_external_container, file_format,
-                                                        redact_warning, header, null_string, include,
-                                                        exclude, parse_json_string, convert_decimal_to_double,
-                                                        timezone, embed_filter_values)
+        cmd = self.generate_create_external_dataset_cmd(
+            dataset_name, external_container_name, link_name, if_not_exists,
+            dataverse_name, database_name, object_construction_def,
+            path_on_external_container, file_format, redact_warning, header,
+            null_string, include, exclude, parse_json_string,
+            convert_decimal_to_double, timezone, embed_filter_values,
+            timestamp_to_long, date_to_int)
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -3215,7 +3249,12 @@ class External_Dataset_Util(Remote_Dataset_Util):
                     timeout=cbas_spec.get(
                         "api_timeout", 300),
                     analytics_timeout=cbas_spec.get(
-                        "cbas_timeout", 300)))
+                        "cbas_timeout", 300),
+                    timestamp_to_long=dataset_obj.dataset_properties[
+                        "timestamp_to_long"],
+                    date_to_int=dataset_obj.dataset_properties[
+                        "date_to_int"]
+                ))
             if results[-1]:
                 dataverse.external_datasets[
                     dataset_obj.name] = dataset_obj
@@ -3247,17 +3286,34 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return data
 
-    def generate_docs(self, document_size=256000, country_type="string", include_country=True):
+    def generate_docs(self, document_size=256000, country_type="string",
+                      include_country=True, include_reviews_field=True,
+                      include_date_time_fields=False,
+                      include_decimal_field=False):
         """
         Generate docs of specific size
         """
         doc = None
         try:
-            hotel = Hotel()
+            hotel = Hotel(include_reviews_field=include_reviews_field)
             hotel.generate_document(document_size, country_type, include_country)
             doc = json.loads(json.dumps(hotel.__dict__, default=lambda o: o.__dict__, ensure_ascii=False))
             del hotel
             doc = self.convert_unicode_to_string(doc)
+            if include_decimal_field:
+                doc["decimal_field"] = Decimal(random.uniform(0, 10))
+            if include_date_time_fields:
+                start_datetime = datetime(1970, 1, 1)
+                end_datetime = datetime.now()
+                delta = end_datetime - start_datetime
+                random_seconds = random.randint(0, int(delta.total_seconds()))
+                doc["datetime_in_ISO"] = start_datetime + timedelta(
+                    seconds=random_seconds)
+                doc["date"] = doc["datetime_in_ISO"].date()
+                doc["datetime_in_epoch_millis"] = (
+                        int(doc["datetime_in_ISO"].timestamp()) * 1000)
+                epoch_start_date = datetime(1970, 1, 1).date()
+                doc["days_since_epoch"] = (doc["date"] - epoch_start_date).days
         except Exception as err:
             self.log.error(str(err))
         return doc

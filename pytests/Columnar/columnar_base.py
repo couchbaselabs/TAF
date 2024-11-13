@@ -383,7 +383,9 @@ class ColumnarBaseTest(BaseTestCase):
                     "null_string": None,
                     "parse_json_string": 0,
                     "convert_decimal_to_double": 0,
-                    "timezone": ""
+                    "timezone": "",
+                    "timestamp_to_long": 0,
+                    "date_to_int": 0
                 })
             elif file_format == "parquet":
                 prop.update({
@@ -396,7 +398,9 @@ class ColumnarBaseTest(BaseTestCase):
                     "null_string": None,
                     "parse_json_string": 1,
                     "convert_decimal_to_double": 1,
-                    "timezone": "GMT"
+                    "timezone": "GMT",
+                    "timestamp_to_long": 0,
+                    "date_to_int": 0
                 })
             elif file_format == "avro":
                 prop.update({
@@ -409,7 +413,9 @@ class ColumnarBaseTest(BaseTestCase):
                     "null_string": None,
                     "parse_json_string": 0,
                     "convert_decimal_to_double": 0,
-                    "timezone": ""
+                    "timezone": "",
+                    "timestamp_to_long": 0,
+                    "date_to_int": 0
                 })
             elif file_format == "csv":
                 prop.update({
@@ -430,7 +436,9 @@ class ColumnarBaseTest(BaseTestCase):
                     "null_string": None,
                     "parse_json_string": 0,
                     "convert_decimal_to_double": 0,
-                    "timezone": ""
+                    "timezone": "",
+                    "timestamp_to_long": 0,
+                    "date_to_int": 0
                 })
             elif file_format == "tsv":
                 prop.update({
@@ -451,7 +459,24 @@ class ColumnarBaseTest(BaseTestCase):
                     "null_string": None,
                     "parse_json_string": 0,
                     "convert_decimal_to_double": 0,
-                    "timezone": ""
+                    "timezone": "",
+                    "timestamp_to_long": 0,
+                    "date_to_int": 0
+                })
+            elif file_format == "delta":
+                prop.update({
+                    "file_format": "delta",
+                    "include": None,
+                    "exclude": None,
+                    "object_construction_def": None,
+                    "redact_warning": None,
+                    "header": None,
+                    "null_string": None,
+                    "parse_json_string": 0,
+                    "convert_decimal_to_double": 0,
+                    "timezone": "",
+                    "timestamp_to_long": 0,
+                    "date_to_int": 0
                 })
             columnar_spec["external_dataset"][
                 "external_dataset_properties"].append(prop)

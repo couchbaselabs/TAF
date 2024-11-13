@@ -358,6 +358,7 @@ class S3(AWSBase):
                 objects.append(obj['Key'])
         return objects
 
+
 class DynamoDB(AWSBase):
     def __init__(self, access_key, secret_key, region, session_token=None):
         super(DynamoDB, self).__init__(access_key, secret_key, session_token)
@@ -422,6 +423,7 @@ class DynamoDB(AWSBase):
         except Exception as err:
             raise Exception(str(err))
         return True
+
 
 class MSK(AWSBase):
 
