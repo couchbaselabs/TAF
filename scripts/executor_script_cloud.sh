@@ -183,6 +183,7 @@ if [ ${skip_install} == false ]; then
       cp /tmp/testexec.$$.ini $WORKSPACE/
       initial_version=$(echo $parameters | grep -P 'initial_version=[0-9]+.[0-9].[0-9]+-[0-9]+' -o | cut -d '=' -f 2)
       #initial_version= $(echo ${parameters} |sed 's/.*,initial_version=\([0-9].[0-9].[0-9]-[0-9]\{4\}\),.*/ \1/')
+      echo "Starting server installation"
       echo "Initial version: $initial_version"
       if [ -n "$initial_version" ]; then
           echo ${py_executable} scripts/new_install.py -i /tmp/testexec.$$.ini -p timeout=${INSTALL_TIMEOUT},skip_local_download=${SKIP_LOCAL_DOWNLOAD},get-cbcollect-info=True,version=${initial_version},product=cb,debug_logs=True,ntp=True,url=${url}${extraInstall}

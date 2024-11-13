@@ -245,6 +245,7 @@ else
       fi
 
       # Install requirements for this venv
+      echo "Starting server installation"
       set -x
       docker run --rm \
         -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
