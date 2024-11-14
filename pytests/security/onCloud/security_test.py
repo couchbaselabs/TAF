@@ -34,7 +34,11 @@ class SecurityTest(SecurityBase):
     SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase', 18091)
 
     def setUp(self):
-        SecurityBase.setUp(self)
+        try:
+            SecurityBase.setUp(self)
+        except Exception as e:
+            self.tearDown()
+            self.fail("Base Setup Failed with error as - {}".format(e))
 
         self.rest_username = TestInputSingleton.input.membase_settings.rest_username
         self.rest_password = TestInputSingleton.input.membase_settings.rest_password
@@ -671,8 +675,11 @@ class SecurityTest(SecurityBase):
         common_capella_api = CommonCapellaAPI("https://" + self.url, self.secret_key,
                                               self.access_key, self.user, self.passwd)
         # loading a sample bucket
-        capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id,
+        resp = capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id,
                                        "beer-sample")
+        self.assertEqual(resp.status_code, 201,
+                         msg="FAIL. Outcome: {}, Expected: {}, Reason: {}".format(
+                             resp.status_code, 201, resp.content))
         self.sleep(20, "Waiting for the beer-sample bucket to be loaded")
 
         #Turning off a cluster

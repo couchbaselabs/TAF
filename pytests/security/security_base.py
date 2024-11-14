@@ -89,6 +89,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.create_different_organization_roles()
         self.create_api_keys_for_different_roles()
         self.project_id = self.input.capella.get("project_id", None)
+        self.instance_id = None
         if self.project_id is None:
             self.create_project(self.prefix + "Project")
 
