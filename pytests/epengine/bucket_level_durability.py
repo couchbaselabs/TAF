@@ -2,7 +2,6 @@ from copy import deepcopy
 from random import sample, choice
 
 from BucketLib.bucket import Bucket
-from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_tools.cb_cli import CbCli
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
@@ -46,6 +45,8 @@ class CreateBucketTests(BucketDurabilityBase):
             if bucket_dict[Bucket.storageBackend] \
                     == Bucket.StorageBackend.magma:
                 bucket_obj.numVBuckets = CbServer.magma_default_vbuckets
+            else:
+                bucket_obj.numVBuckets = CbServer.total_vbuckets
 
             output = cb_cli.create_bucket(bucket_dict, wait=True)
             if self.num_replicas == Bucket.ReplicaNum.THREE \

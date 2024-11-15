@@ -89,18 +89,11 @@ class LoadCouchbaseDocs(object):
                                   # access_deleted=self.access_deleted,
                                   # create_as_deleted=self.create_as_deleted,
                                   )
-        if self.retry_exceptions_task:
-            operation_config = WorkloadOperationConfig(
-                start=self.generator.start,
-                end=self.generator.end,
-                template=SiriusCodes.Templates.PERSON,
-                doc_size=self.generator.doc_size)
-        else:
-            operation_config = WorkloadOperationConfig(
-                start=self.generator.start,
-                end=self.generator.end,
-                template=SiriusCodes.Templates.PERSON,
-                doc_size=self.generator.doc_size)
+        operation_config = WorkloadOperationConfig(
+            start=self.generator.start,
+            end=self.generator.end,
+            template=SiriusCodes.Templates.PERSON,
+            doc_size=self.generator.doc_size)
         op_type = None
         if self.op_type == DocLoading.Bucket.DocOps.CREATE:
             op_type = SiriusCodes.DocOps.CREATE

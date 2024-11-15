@@ -287,6 +287,7 @@ class BucketDurabilityBase(ClusterSetup):
 
             doc_gen = doc_generator(
                 self.key, doc_start_index, num_items_to_load,
+                vbuckets=bucket.numVBuckets,
                 target_vbucket=self.vbs_in_node[random_node][target_vb_type])
             error_sim = CouchbaseError(self.log,
                                        self.vbs_in_node[random_node]["shell"],

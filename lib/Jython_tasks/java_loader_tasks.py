@@ -170,8 +170,8 @@ class SiriusCouchbaseLoader(object):
 
             if hasattr(generator, "vbuckets"):
                 self.vbuckets = generator.vbuckets
-            if hasattr(generator, "target_vbucket"):
-                self.target_vbuckets = generator.target_vbucket
+            if hasattr(generator, "target_vbuckets"):
+                self.target_vbuckets = generator.target_vbuckets
 
             if op_type == DocLoading.Bucket.DocOps.CREATE:
                 self.create_percent = 100
