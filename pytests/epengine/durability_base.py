@@ -12,6 +12,7 @@ from error_simulation.cb_error import CouchbaseError
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
 from shell_util.remote_connection import RemoteMachineShellConnection
+from sirius_client_framework.sirius_setup import SiriusSetup
 
 
 class DurabilityTestsBase(ClusterSetup):
@@ -227,6 +228,16 @@ class BucketDurabilityBase(ClusterSetup):
             return [SDKConstants.DurabilityLevel.NONE,
                     SDKConstants.DurabilityLevel.MAJORITY]
         return self.bucket_util.get_supported_durability_levels()
+
+    def init_java_clients(self, bucket):
+        if self.load_docs_using != "sirius_java_sdk":
+            return
+        SiriusSetup.reset_java_loader_tasks(self.thread_to_use)
+        self.log.info("Creating SDK clients in Java side")
+        SiriusCouchbaseLoader.create_clients_in_pool(
+            self.cluster.master, self.cluster.master.rest_username,
+            self.cluster.master.rest_password,
+            bucket.name, req_clients=self.sdk_pool_capacity)
 
     def validate_durability_with_crud(
             self, bucket, bucket_durability,

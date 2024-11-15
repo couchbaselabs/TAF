@@ -2,6 +2,7 @@ from copy import deepcopy
 from random import sample, choice
 
 from BucketLib.bucket import Bucket
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_tools.cb_cli import CbCli
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
@@ -72,8 +73,8 @@ class CreateBucketTests(BucketDurabilityBase):
                 self.bucket_util.print_bucket_stats(self.cluster)
                 self.summary.add_step(test_step)
 
-            # Perform CRUDs to validate bucket_creation with durability
-            if not create_failed:
+                # Perform CRUDs to validate bucket_creation with durability
+                self.init_java_clients(bucket_obj)
                 self.sleep(10, "Wait to avoid cbstat returning null")
                 verification_dict = self.get_cb_stat_verification_dict()
                 self.validate_durability_with_crud(bucket_obj, d_level,
@@ -124,6 +125,7 @@ class CreateBucketTests(BucketDurabilityBase):
             # Perform CRUDs to validate bucket_creation with durability
             if not create_failed:
                 self.sleep(10, "Wait to avoid cbstat returning null")
+                self.init_java_clients(bucket_obj)
                 verification_dict = self.get_cb_stat_verification_dict()
 
                 self.validate_durability_with_crud(bucket_obj, d_level,
@@ -165,6 +167,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         self.get_vbucket_type_mapping(bucket_obj.name)
         self.summary.add_step(create_desc)
 
+        self.init_java_clients(bucket_obj)
         # Index for doc_gen to avoid creating/deleting same docs across d_level
         index = 0
         for d_level in self.get_supported_durability_for_bucket():
@@ -205,6 +208,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.summary.add_step(step_desc)
 
+            self.init_java_clients(bucket_obj)
             self.validate_durability_with_crud(bucket_obj, d_level,
                                                verification_dict)
             self.summary.add_step("Async write with bucket durability %s"
@@ -329,10 +333,10 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.summary.add_step(create_desc)
 
             # Perform doc_ops using all possible higher durability levels
+            self.init_java_clients(bucket_obj)
             index = 0
             op_type = "create"
             durability_index = self.d_level_order.index(d_level) + 1
-
             while durability_index < d_level_order_len:
                 # Ephemeral case
                 if self.d_level_order[durability_index] \
@@ -382,6 +386,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.summary.add_step(create_desc)
 
             # Perform doc_ops using all possible higher durability levels
+            self.init_java_clients(bucket_obj)
             index = 0
             op_type = "create"
             durability_index = self.d_level_order.index(d_level) - 1
@@ -445,6 +450,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.bucket_util.print_bucket_stats(self.cluster)
 
             # Load basic docs to support other CRUDs
+            self.init_java_clients(bucket_obj)
             self.log.info("Performing initial doc_load")
             create_task = self.task.async_load_gen_docs(
                 self.cluster, bucket_obj, create_gen_1, "create",
@@ -580,6 +586,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         self.summary.add_step(create_desc)
 
         self.bucket_util.print_bucket_stats(self.cluster)
+        self.init_java_clients(bucket_obj)
 
         # Loop to update all other durability levels
         prev_d_level = supported_d_levels[0]
@@ -862,6 +869,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
             self.summary.add_step(create_desc)
+            self.init_java_clients(bucket_obj)
 
             for doc_op in crud_variations:
                 test_scenario(bucket_obj, doc_op)
@@ -934,6 +942,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                            wait_for_warmup=True)
             self.summary.add_step(create_desc)
 
+            self.init_java_clients(bucket_obj)
             verification_dict = self.get_cb_stat_verification_dict()
 
             # Test CRUD operations
