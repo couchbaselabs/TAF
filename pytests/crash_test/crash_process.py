@@ -109,7 +109,6 @@ class CrashTest(ClusterSetup):
                     stats_failed = \
                         self.durability_helper.verify_vbucket_details_stats(
                             bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                            vbuckets=self.cluster.vbuckets,
                             expected_val=verification_dict)
 
                     if stats_failed:
@@ -359,7 +358,6 @@ class CrashTest(ClusterSetup):
                     self.durability_helper.verify_vbucket_details_stats(
                         def_bucket,
                         self.cluster_util.get_kv_nodes(self.cluster),
-                        vbuckets=self.cluster.vbuckets,
                         expected_val=verification_dict)
                 if stats_failed:
                     self.fail("Cbstats verification failed")

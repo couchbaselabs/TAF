@@ -75,7 +75,6 @@ class CollectionsSuccessTests(CollectionBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -124,7 +123,6 @@ class CollectionsSuccessTests(CollectionBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -464,7 +462,6 @@ class CollectionsSuccessTests(CollectionBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -619,7 +616,6 @@ class CollectionsSuccessTests(CollectionBase):
         # Initial validation
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -673,7 +669,6 @@ class CollectionsSuccessTests(CollectionBase):
                                                            doc_loading_task)
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -717,7 +712,6 @@ class CollectionsSuccessTests(CollectionBase):
         # Validate verification_dict and validate
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=verification_dict)
         if failed:
             # MB-39963 - Not failing due to known behavior

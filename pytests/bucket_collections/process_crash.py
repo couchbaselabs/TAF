@@ -114,7 +114,6 @@ class CrashTest(CollectionBase):
             # Verify cbstats vbucket-details
             stats_failed = self.durability_helper.verify_vbucket_details_stats(
                 bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                vbuckets=self.cluster.vbuckets,
                 expected_val=verification_dict)
 
             if self.atomicity is False:
@@ -622,7 +621,6 @@ class CrashTest(CollectionBase):
             stats_failed = \
                 self.durability_helper.verify_vbucket_details_stats(
                     def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                    vbuckets=self.cluster.vbuckets,
                     expected_val=verification_dict)
             if stats_failed:
                 self.fail("Cbstats verification failed")

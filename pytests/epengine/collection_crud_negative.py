@@ -77,7 +77,6 @@ class CollectionDurabilityTests(CollectionBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -172,7 +171,6 @@ class CollectionDurabilityTests(CollectionBase):
         # Cb stat validation before trying successful mutation
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed ")
@@ -223,7 +221,6 @@ class CollectionDurabilityTests(CollectionBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed ")
@@ -293,7 +290,6 @@ class CollectionDurabilityTests(CollectionBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.bucket, kv_nodes,
-            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed "
@@ -327,7 +323,6 @@ class CollectionDurabilityTests(CollectionBase):
                                     += total_mutation
             failed = self.durability_helper.verify_vbucket_details_stats(
                 self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                vbuckets=self.cluster.vbuckets,
                 expected_val=self.verification_dict)
             if failed:
                 self.log_failure("Cbstat vbucket-details verification "

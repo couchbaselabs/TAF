@@ -67,7 +67,6 @@ class SDKExceptionTests(CollectionBase):
         def validate_vb_detail_stats():
             failed = durability_helper.verify_vbucket_details_stats(
                 self.bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                vbuckets=self.cluster.vbuckets,
                 expected_val=verification_dict)
             if failed:
                 self.log_failure("vBucket_details validation failed")

@@ -7,6 +7,7 @@ from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import BucketDurabilityBase
 from error_simulation.cb_error import CouchbaseError
+from py_constants import CbServer
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 
@@ -41,6 +42,9 @@ class CreateBucketTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
+            if bucket_dict[Bucket.storageBackend] \
+                    == Bucket.StorageBackend.magma:
+                bucket_obj.numVBuckets = CbServer.magma_default_vbuckets
 
             output = cb_cli.create_bucket(bucket_dict, wait=True)
             if self.num_replicas == Bucket.ReplicaNum.THREE \

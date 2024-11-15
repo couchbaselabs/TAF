@@ -128,7 +128,6 @@ class CreateBucketTests(ClusterSetup):
         for bucket in self.cluster.buckets:
             failed = d_helper.verify_vbucket_details_stats(
                 bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                vbuckets=bucket.numVBuckets,
                 expected_val=verification_dict)
             if failed:
                 self.fail("Cbstat vbucket-details verification failed for "

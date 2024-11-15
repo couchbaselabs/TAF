@@ -1072,7 +1072,6 @@ class UpgradeTests(UpgradeBase):
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.cluster.buckets[0],
             self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details validation failed")
@@ -1136,7 +1135,6 @@ class UpgradeTests(UpgradeBase):
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.cluster.buckets[0],
             self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
             expected_val=self.verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details validation failed")

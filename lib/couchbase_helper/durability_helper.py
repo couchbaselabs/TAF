@@ -222,7 +222,6 @@ class DurabilityHelper:
         return retry_success
 
     def verify_vbucket_details_stats(self, bucket, kv_servers,
-                                     vbuckets=1024,
                                      expected_val=dict()):
         """
 
@@ -252,7 +251,7 @@ class DurabilityHelper:
             vb_details_stats.update(cbstat_obj.vbucket_details(bucket.name))
             cbstat_obj.disconnect()
 
-        for vb_num in range(0, vbuckets):
+        for vb_num in range(0, bucket.numVBuckets):
             vb_num = str(vb_num)
             for op_type in list(ops_val.keys()):
                 ops_val[op_type] += int(vb_details_stats[vb_num][op_type])
