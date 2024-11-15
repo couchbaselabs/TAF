@@ -20,7 +20,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     def test_rebalance_out_with_ops_durable(self):
         self.gen_create = doc_generator(self.key, self.num_items,
                                         self.num_items + self.items)
-        self.gen_delete = doc_generator(self.key, self.items / 2,
+        self.gen_delete = doc_generator(self.key, int(self.items / 2),
                                         self.items)
         servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
@@ -115,8 +115,9 @@ class RebalanceOutTests(RebalanceBaseTest):
         rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
         tasks_info = self.loadgen_docs()
         self.sleep(15, "Wait for rebalance to start")
+        reb_util = RebalanceUtil(self.cluster)
         if verify_MB_57991:
-            status = self.rest.monitorRebalance()
+            status = reb_util.monitor_rebalance()
             self.assertTrue(status, "re-balance failed")
             for bucket in self.cluster.buckets:
                 status = self.bucket_util.delete_bucket(self.cluster, bucket,
