@@ -26,7 +26,7 @@ from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
-from ssh_util.shell_util.remote_connection import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from docker_utils.DockerSDK import DockerClient
 from awsLib.S3 import S3
@@ -874,7 +874,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.log.info(f"{server.ip} - Parsing logs for error/critical "
                           f"string patterns")
             shell = RemoteMachineShellConnection(server)
-            shell.extract_remote_info()
             crash_dir = lib_cb + "crash/"
             if shell.info.type.lower() == "windows":
                 crash_dir = crash_dir_win
