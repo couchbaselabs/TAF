@@ -39,7 +39,7 @@ if [ "$cherrypick" != "None" ] && [ "$cherrypick" != "" ] ; then
    echo "########### GIT :: Fetching patch #############"
    echo "###############################################"
    echo "$cherrypick"
-   $cherrypick
+   sh -c "$cherrypick"
    echo "###############################################"
 fi
 
