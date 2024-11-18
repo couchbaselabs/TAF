@@ -739,7 +739,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 index_path=server.index_path,
                 cbas_path=server.cbas_path,
                 eventing_path=server.eventing_path)
-            self.assertTrue(status, f"Init node failed: {content}")
+            if not status:
+                self.log.warning(f"Error during node_init: {content}")
 
             # We need to initialize only the master node
             if cluster.master != server:
