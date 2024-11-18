@@ -1615,7 +1615,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         doc_gen["doc_crud"] = doc_generator(self.doc_id, 0, 1)
 
         doc_key = doc_gen["doc_crud"].next()[0]
-        target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
+        target_vb = self.bucket_util.get_vbucket_num_for_key(
+            doc_key, self.cluster.buckets[0].numVBuckets)
 
         # Reset it back to start index
         doc_gen["doc_crud"].reset()
@@ -1725,11 +1726,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         self.validate_test_failure()
 
     def test_subdoc_sync_write_in_progress(self):
-        shell = None
         doc_gen = dict()
         doc_key = doc_generator(self.doc_id, 0, 1).next()[0]
-        target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
-        target_node =  None
+        target_vb = self.bucket_util.get_vbucket_num_for_key(
+            doc_key, self.cluster.buckets[0].numVBuckets)
+        target_node = None
 
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cbstat_obj = Cbstats(node)
@@ -2145,7 +2146,9 @@ class XattrTests(SubdocBaseTest):
         for path in self.paths:
             for key_number in range(key_min, key_max):
                 doc_key = self.format_doc_key(key_number)
-                if vbucket_filter and self.to_vbucket(doc_key) not in vbucket_filter:
+                if vbucket_filter and self.to_vbucket(
+                        doc_key, self.cluster.buckets[0].numVBuckets
+                        ) not in vbucket_filter:
                     continue
                 sub_val = self.get_subdoc_val()
                 sub_doc = [path, sub_val]
@@ -2199,11 +2202,14 @@ class XattrTests(SubdocBaseTest):
         for doc_key in map(self.format_doc_key, range(key_min, key_max)):
             for xattr in self.paths:
                 if self.get_xattribute(doc_key, xattr, access_deleted=True)[0]:
-                    if self.to_vbucket(doc_key) in seen_vbuckets:
+                    if self.to_vbucket(
+                            doc_key, self.cluster.buckets[0].numVBuckets
+                            ) in seen_vbuckets:
                         self.fail("Found multiple tombstones in the same "
                                   "vbucket post purging.")
                     else:
-                        seen_vbuckets.add(self.to_vbucket(doc_key))
+                        seen_vbuckets.add(self.to_vbucket(
+                            doc_key, self.cluster.buckets[0].numVBuckets))
                         break
 
     def verify_workload(self, key_min, key_max, is_deleted=False):
@@ -2450,7 +2456,9 @@ class XattrTests(SubdocBaseTest):
                 accessible, xattrvalue = self.get_xattribute(
                     doc_key, path, access_deleted=True)
                 # If vb belongs to a node 1, then xattr should not exist
-                if self.to_vbucket(doc_key) in vbuckets:
+                if self.to_vbucket(
+                        doc_key, self.cluster.buckets[0].numVBuckets
+                        ) in vbuckets:
                     self.assertFalse(accessible)
                 else:
                     self.assertEqual(
@@ -2510,7 +2518,9 @@ class XattrTests(SubdocBaseTest):
                 accessible, xattrvalue = self.get_xattribute(
                     doc_key, path, access_deleted=True)
                 # If vb belongs to a node 1, then that xattr should be accessible
-                if self.to_vbucket(doc_key) in vbuckets:
+                if self.to_vbucket(
+                        doc_key, self.cluster.buckets[0].numVBuckets
+                        ) in vbuckets:
                     self.assertEqual(
                         xattrvalue, self.get_subdoc_val())
 

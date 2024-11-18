@@ -432,7 +432,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             # Validate the returned error from the SDK
             vb_num = self.bucket_util.get_vbucket_num_for_key(
                 key,
-                self.cluster.vbuckets)
+                self.bucket.numVBuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failure detected for {0}"
@@ -569,7 +569,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         def validate_doc_errors(crud_type):
             for doc in doc_errors[crud_type]:
                 vb_num = self.bucket_util.get_vbucket_num_for_key(
-                    doc["key"], self.cluster.vbuckets)
+                    doc["key"], self.bucket.numVBuckets)
                 if vb_num in active_vb_numbers:
                     if "durability_not_possible" not in str(doc["error"]):
                         self.log_failure("Invalid exception {0}".format(doc))
@@ -874,7 +874,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             # Validate the returned error from the SDK
             vb_num = self.bucket_util.get_vbucket_num_for_key(
                 key,
-                self.cluster.vbuckets)
+                self.bucket.numVBuckets)
             if vb_num in active_vb_numbers or vb_num in replica_vb_numbers:
                 if "error" not in fail:
                     self.log_failure("No failures detected")
@@ -1403,7 +1403,7 @@ class TimeoutTests(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.cluster.vbuckets)
+                        doc_id, self.bucket.numVBuckets)
                     if not SDKException.check_if_exception_exists(
                             SDKException.DurabilityAmbiguousException,
                             crud_result["error"]):
@@ -1428,7 +1428,7 @@ class TimeoutTests(DurabilityTestsBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.cluster.vbuckets)))
+                        self.bucket.numVBuckets)))
 
         affected_vbs = list(set(affected_vbs))
         err_msg = "%s - mismatch in %s vb-%s seq_no: %s != %s"
@@ -1477,7 +1477,8 @@ class TimeoutTests(DurabilityTestsBase):
                 if self.load_docs_using != "default_loader":
                     # Temp hack
                     doc_info["value"] = {"test": "value", "mutated": 1}
-                vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
+                vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                    doc_key, self.bucket.numVBuckets)
 
                 ambiguous_table_view.add_row([doc_key, str(vb_for_key)])
                 retry_success = \

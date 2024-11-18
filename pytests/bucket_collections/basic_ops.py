@@ -67,7 +67,8 @@ class BasicOps(CollectionBase):
                             self.cluster)
 
     def __validate_cas_for_key(self, key, crud_result, known_cas):
-        vb = self.bucket_util.get_vbucket_num_for_key(key)
+        vb = self.bucket_util.get_vbucket_num_for_key(
+            key, self.bucket.numVBuckets)
         if crud_result["cas"] in known_cas:
             if vb in known_cas[crud_result["cas"]]:
                 self.log_failure(

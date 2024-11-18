@@ -961,7 +961,8 @@ class BasicOps(DurabilityTestsBase):
         index_created = False
         index_name = "test_index"
         bucket = self.cluster.buckets[0]
-        vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+        vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+            key, bucket.numVBuckets)
 
         # Open SDK client
         client = SDKClient(self.cluster, bucket)

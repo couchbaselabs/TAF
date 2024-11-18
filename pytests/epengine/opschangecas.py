@@ -899,7 +899,8 @@ class OpsChangeCasTests(CasBaseTest):
                     self.log_failure("Max CAS mismatch. %s != 0" % cas)
             else:
                 max_cas = None
-                vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+                vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                    key, self.bucket.numVBuckets)
                 for _, data in self.node_data.items():
                     if vb_for_key in data["active"]:
                         vb_stat = data["cb_stat"].vbucket_details(
@@ -954,7 +955,8 @@ class OpsChangeCasTests(CasBaseTest):
 
         while load_gen.has_next():
             key, value = load_gen.next()
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                key, self.bucket.numVBuckets)
             cas = None
             for _, data in self.node_data.items():
                 if vb_for_key in data["active"]:

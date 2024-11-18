@@ -95,8 +95,9 @@ class KVUpgradeTests(UpgradeBase):
         upgrade_cluster = self.input.param("upgrade_cluster", "source")
         key, val = "test_key", {"f": "value"}
         sub_doc = ["_key", "value"]
-        key_vb = self.bucket_util.get_vbucket_num_for_key(key)
         bucket = self.cluster.buckets[0]
+        key_vb = self.bucket_util.get_vbucket_num_for_key(key,
+                                                          bucket.numVBuckets)
         in_node = self.cluster.servers[1]
         num_items = self.num_items
 

@@ -50,7 +50,8 @@ class OpsChangeCasTests(CasBaseTest):
             client = SDKClient(self.cluster, bucket)
             while generator.has_next():
                 key, value = generator.next()
-                vb_of_key = self.bucket_util.get_vbucket_num_for_key(key)
+                vb_of_key = self.bucket_util.get_vbucket_num_for_key(
+                    key, bucket.numVBuckets)
                 active_node_ip = None
                 for node in nodes:
                     if vb_of_key in self.vb_details[node.ip]["active"]:

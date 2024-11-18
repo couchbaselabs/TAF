@@ -927,7 +927,8 @@ class basic_ops(ClusterSetup):
         self.log.info("Fetching keys evicted from replica vbs")
         for doc_index in range(self.num_items):
             key = "%s-%s" % (self.key, doc_index)
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                key, bucket.numVBuckets)
             for node, n_data in nodes_data.items():
                 if vb_for_key in n_data["replica_vbs"]:
                     stat = n_data["cbstats"].vkey_stat(bucket.name, key,
@@ -1023,7 +1024,8 @@ class basic_ops(ClusterSetup):
         self.log.info("Testing using vbucket %s" % target_vb)
         while doc_gen.has_next():
             key, val = doc_gen.next()
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                key, bucket.numVBuckets)
 
             # Create and delete a key
             result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, val)
@@ -1575,8 +1577,9 @@ class basic_ops(ClusterSetup):
         """
         key, val = "test_key", {"f": "value"}
         sub_doc = ["_key", "value"]
-        key_vb = self.bucket_util.get_vbucket_num_for_key(key)
         bucket = self.cluster.buckets[0]
+        key_vb = self.bucket_util.get_vbucket_num_for_key(
+            key, bucket.numVBuckets)
         in_node = self.cluster.servers[1]
         num_items = 0
 
@@ -1783,7 +1786,8 @@ class basic_ops(ClusterSetup):
         while req_key_for_vb:
             index += 1
             key = "%s_%s" % (self.key, index)
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                key, self.cluster.buckets[0].numVBuckets)
             if vb_for_key in req_key_for_vb:
                 doc_keys[vb_for_key].append(key)
                 if len(doc_keys[vb_for_key]) == docs_per_vb:
@@ -2502,11 +2506,11 @@ class basic_ops(ClusterSetup):
         bucket = self.cluster.buckets[0]
         client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(
-            key, self.cluster.vbuckets)
+            key, bucket.numVBuckets)
 
         self.log.info("Disabling auto-failover settings")
-        RestConnection(self.cluster.master)\
-            .update_autofailover_settings(False, 60)
+        ClusterRestAPI(self.cluster.master)\
+            .update_auto_failover_settings("false", 60)
 
         load_docs(10000)
         perform_sync_write(client, key)

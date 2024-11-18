@@ -693,7 +693,7 @@ class SDKExceptionTests(CollectionBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.cluster.vbuckets)
+                        doc_id, self.bucket.numVBuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
@@ -717,7 +717,7 @@ class SDKExceptionTests(CollectionBase):
                 affected_vbs.append(
                     str(self.bucket_util.get_vbucket_num_for_key(
                         doc_id,
-                        self.cluster.vbuckets)))
+                        self.bucket.numVBuckets)))
 
         affected_vbs = list(set(affected_vbs))
         # Fetch latest stats and validate the seq_nos are not updated
@@ -765,7 +765,8 @@ class SDKExceptionTests(CollectionBase):
 
             # Iterate failed keys for validation
             for doc_key, doc_info in task.fail.items():
-                vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
+                vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                    doc_key, self.bucket.numVBuckets)
 
                 if SDKException.DurabilityAmbiguousException \
                         not in str(doc_info["error"]):
