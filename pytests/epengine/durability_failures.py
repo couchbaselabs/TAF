@@ -775,13 +775,12 @@ class DurabilityFailureTests(DurabilityTestsBase):
             read_task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_loader[0], "read",
                 batch_size=self.crud_batch_size, process_concurrency=1,
-                timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
+                timeout_secs=self.sdk_timeout)
             self.task_manager.get_task_result(read_task)
             for key, doc_info in read_task.success.items():
-                if doc_info["cas"] != 0 \
-                        and json.loads(str(doc_info["value"]))["mutated"] != 1:
-                    self.log_failure("Update failed for key %s: %s"
-                                     % (key, doc_info))
+                if doc_info["cas"] != 0 and doc_info["value"]["mutated"] != 1:
+                    err_str = f"Update failed for key {key}: {doc_info}"
+                    self.log_failure(err_str)
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
