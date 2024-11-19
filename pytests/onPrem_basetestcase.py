@@ -726,11 +726,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 server.cbas_path = server.data_path
             if not server.eventing_path:
                 server.eventing_path = server.data_path
+            paths = f"{server.data_path} {server.cbas_path}" \
+                    f"{server.eventing_path} {server.index_path}"
             ssh_sessions[server.ip].execute_command(
-                f"mkdir -p {server.data_path} {server.cbas_path} "
-                f"{server.eventing_path} {server.index_path} ; "
-                f"chown -R couchbase:couchbase {server.data_path} {server.cbas_path} "
-                f"{server.eventing_path} {server.index_path}")
+                f"chattr -i {paths} ;"
+                f"mkdir -p {paths} ;"
+                f"chown -R couchbase:couchbase {paths}")
 
             status, content = ClusterRestAPI(server).initialize_node(
                 server.rest_username,
@@ -739,8 +740,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 index_path=server.index_path,
                 cbas_path=server.cbas_path,
                 eventing_path=server.eventing_path)
-            if not status:
-                self.log.warning(f"Error during node_init: {content}")
+            self.assertTrue(status, f"Init node failed: {content}")
 
             # We need to initialize only the master node
             if cluster.master != server:
