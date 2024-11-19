@@ -166,7 +166,7 @@ def main():
         name = name.split(",")[0]
         xunit_test_suite_ref = xunit.get_unit_test_suite(name)
         xunit_test_ref = xunit_test_suite_ref.add_test(
-            name, params=s_params, status="not_run")
+            name, params=s_params, status="skip")
         xunit.write("%s%sreport-%s"
                     % (os.path.dirname(logs_folder), os.sep, str_time))
         tests_to_be_exec.append({
@@ -174,7 +174,7 @@ def main():
             "params": params,
             "name": name,
             "logs_folder": logs_folder,
-            "status": "not_run",
+            "status": "skip",
             "xunit_suite_ref": xunit_test_suite_ref,
             "xunit_test_ref": xunit_test_ref,
         })

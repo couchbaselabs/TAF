@@ -181,7 +181,7 @@ def merge_reports(filespath, run_params=""):
                 pass_count += 1
                 xunit_suite.add_test(name=tname, time=inttime, params=tparams,
                                      status=t_result)
-            elif t_result == "not_run":
+            elif t_result == "skip":
                 not_run_count += 1
                 xunit_suite.add_test(name=tname, time=inttime, params=tparams,
                                      status=t_result)

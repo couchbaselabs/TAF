@@ -13,6 +13,7 @@ import xml.dom.minidom
 #    </testcase>
 #</testsuite>
 
+
 #
 # XUnitTestCase has name , time and error is a XUnitTestCase
 class XUnitTestCase(object):
@@ -21,7 +22,7 @@ class XUnitTestCase(object):
         self.time = 0
         self.error = None
         self.params = ''
-        self.run_status = "not_run"
+        self.run_status = "skip"
 
     def update_results(self, suite, result=None, time_taken=None,
                        error_type=None, error_message=None):
@@ -95,7 +96,11 @@ class XUnitTestResult(object):
             full_name = testobject.name+testobject.params
             testcase.setAttribute('name', full_name)
             testcase.setAttribute('time', str(testobject.time))
-            testcase.setAttribute("result", testobject.run_status)
+            if testobject.run_status == "skip":
+                skipped_element = doc.createElement("skipped")
+                testcase.appendChild(skipped_element)
+            else:
+                testcase.setAttribute("result", testobject.run_status)
             if testobject.error:
                 error = doc.createElement('error')
                 error.setAttribute('type', testobject.error.type)
@@ -119,6 +124,7 @@ class XUnitTestResult(object):
             report_xml_file.close()
 
     def print_summary(self):
+        print(f"Summary :: ")
         for suite in self.suites:
             num_passed = 0
             errors = []
@@ -126,16 +132,16 @@ class XUnitTestResult(object):
             for test in suite.tests:
                 if test.error:
                     errors.append(test.name)
-                elif test.run_status == "not_run":
+                elif test.run_status == "skip":
                     num_not_run += 1
                 else:
                     num_passed += 1
-            print(f"Summary:: suite {suite.name}, pass {num_passed}, "
+            print(f"  - Suite {suite.name}, pass {num_passed}, "
                   f"fail {len(errors)}, scheduled {num_not_run}")
             if errors:
-                print("failures so far...")
+                print("    Failures:")
                 for error in errors:
-                    print(error)
+                    print(f"     * {error}")
 
 
 class XUnitTestSuite(object):
@@ -167,7 +173,7 @@ class XUnitTestSuite(object):
             # Incr. counters
             self.failures += 1
             self.errors += 1
-        elif status == 'skip' or status == 'not_run':
+        elif status == 'skip':
             self.skips += 1
         self.time += time
         return test
