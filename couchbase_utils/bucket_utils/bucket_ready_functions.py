@@ -3956,8 +3956,8 @@ class BucketUtils(ScopeUtils):
         """
 
         def get_num_items(doc_gen):
-            if doc_gen.doc_keys:
-                return len(doc_gen.doc_keys)
+            if doc_gen.pre_generated_keys:
+                return len(doc_gen.pre_generated_keys)
             return doc_gen.end
 
         def load_docs(doc_gen, load_for=""):
