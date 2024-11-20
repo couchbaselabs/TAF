@@ -269,8 +269,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
             self.cluster.buckets, path=None)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
         # nodes = self.cluster.nodes_in_cluster
-        # self.bucket_util.vb_distribution_analysis(servers=nodes,
-        # std=1.0, total_vbuckets=self.cluster.vbuckets)
+        # self.bucket_util.vb_distribution_analysis(servers=nodes, std=1.0)
 
     def test_incremental_rebalance_in_out_with_mutation(self):
         """

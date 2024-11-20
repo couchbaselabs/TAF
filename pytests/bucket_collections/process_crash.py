@@ -67,14 +67,7 @@ class CrashTest(CollectionBase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
-        gen_create = doc_generator(
-            self.key, 0, self.num_items,
-            key_size=self.key_size,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.cluster.buckets[0].numVBuckets)
         if self.atomicity:
             transaction_task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets,
@@ -92,6 +85,13 @@ class CrashTest(CollectionBase):
                 sync=self.sync)
             self.task.jython_task_manager.get_task_result(transaction_task)
         for bucket in self.cluster.buckets:
+            gen_create = doc_generator(
+                self.key, 0, self.num_items,
+                key_size=self.key_size,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=bucket.numVBuckets)
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_create,
                 DocLoading.Bucket.DocOps.CREATE, self.maxttl,
@@ -164,14 +164,14 @@ class CrashTest(CollectionBase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         gen_load = doc_generator(
             self.key, self.num_items, self.new_docs_to_add,
             key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         if self.atomicity:
             self.transaction_load_task = \
                 self.task.async_load_gen_docs_atomicity(
@@ -271,9 +271,10 @@ class CrashTest(CollectionBase):
                                              vbucket_type="active")
         cbstat_obj.disconnect()
         target_vbuckets = list(
-            set(range(0, 1024)).difference(set(active_vbs)))
+            set(range(0, self.bucket.numVBuckets)).difference(set(active_vbs)))
         doc_gen = doc_generator(self.key, 0, 1000,
-                                target_vbucket=target_vbuckets)
+                                target_vbucket=target_vbuckets,
+                                vbuckets=self.bucket.numVBuckets)
 
         if crash_during == "pre_action":
             cb_error.create(crash_type)
@@ -387,9 +388,10 @@ class CrashTest(CollectionBase):
                                              vbucket_type="active")
         cbstat_obj.disconnect()
         target_vbuckets = list(
-            set(range(0, 1024)).difference(set(active_vbs)))
+            set(range(0, self.bucket.numVBuckets)).difference(set(active_vbs)))
         doc_gen = doc_generator(self.key, 0, 1000,
-                                target_vbucket=target_vbuckets)
+                                target_vbucket=target_vbuckets,
+                                vbuckets=self.bucket.numVBuckets)
 
         if crash_during == "pre_action":
             cb_error.create(crash_type)
@@ -536,7 +538,7 @@ class CrashTest(CollectionBase):
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        target_vbuckets = range(0, self.cluster.vbuckets)
+        target_vbuckets = range(0, def_bucket.numVBuckets)
         retry_exceptions = list()
         self.transaction_load_task = None
         self.doc_loading_task = None

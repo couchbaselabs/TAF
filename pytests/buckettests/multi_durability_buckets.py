@@ -152,8 +152,7 @@ class MultiDurabilityTests(BaseTestCase):
         gen_create = doc_generator(self.key, 0, self.num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
+                                   doc_type=self.doc_type)
         doc_loading_tasks = list()
         for bucket in self.cluster.buckets:
             doc_loading_tasks.append(self.task.async_load_gen_docs(
@@ -176,18 +175,15 @@ class MultiDurabilityTests(BaseTestCase):
         gen_create = doc_generator(self.key, self.num_items, self.num_items*2,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
+                                   doc_type=self.doc_type)
         gen_update = doc_generator(self.key, half_of_num_items, self.num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
+                                   doc_type=self.doc_type)
         gen_delete = doc_generator(self.key, 0, half_of_num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
+                                   doc_type=self.doc_type)
 
         # replicate_to computation for 4th bucket object
         replica = self.bucket_dict[3]["replica"]

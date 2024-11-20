@@ -83,7 +83,6 @@ class LMT(ServerlessOnPremBaseTest):
         self.deep_copy = self.input.param("deep_copy", False)
 
         # Bucket Creation
-        buckets = ["default"]*self.num_buckets
         for i in range(self.num_buckets):
             self.bucket_util.create_default_bucket(
                 self.cluster,
@@ -176,12 +175,13 @@ class LMT(ServerlessOnPremBaseTest):
         print("\t", "#"*60)
         print("\n")
 
-    def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
+    def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0,
+                           total_vbs=CbServer.total_vbuckets):
         return doc_generator(self.key, start, end,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=target_vbucket,
-                             vbuckets=self.cluster.vbuckets,
+                             vbuckets=total_vbs,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
                              randomize_value=self.randomize_value,
@@ -199,7 +199,7 @@ class LMT(ServerlessOnPremBaseTest):
                       read_mutate=0,
                       delete_end=None, delete_start=None,
                       expiry_end=None, expiry_start=None,
-                      expiry_mutate=0):
+                      expiry_mutate=0, total_vbs=CbServer.total_vbuckets):
 
         doc_ops = doc_ops or self.doc_ops
 

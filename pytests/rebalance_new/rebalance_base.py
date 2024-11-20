@@ -338,7 +338,7 @@ class RebalanceBaseTest(BaseTestCase):
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
-                             vbuckets=self.cluster.vbuckets,
+                             vbuckets=self.cluster.buckets[0].numVBuckets,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
                              randomize_value=self.randomize_value,

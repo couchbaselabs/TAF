@@ -4274,7 +4274,7 @@ class BucketUtils(ScopeUtils):
 
     def vb_distribution_analysis(self, cluster,
                                  servers=[], buckets=[], num_replicas=0,
-                                 total_vbuckets=0, std=1.0, type="rebalance",
+                                 std=1.0, type="rebalance",
                                  graceful=True):
         """
         Method to check vbucket distribution analysis after rebalance
@@ -4288,26 +4288,26 @@ class BucketUtils(ScopeUtils):
             active_result = active[bucket]
             replica_result = replica[bucket]
             if graceful or type == "rebalance":
-                self.assertTrue(active_result["total"] == total_vbuckets,
+                self.assertTrue(active_result["total"] == bucket.numVBuckets,
                                 "total vbuckets do not match for active data set (= criteria), actual {0} expectecd {1}"
-                                .format(active_result["total"], total_vbuckets))
+                                .format(active_result["total"], bucket.numVBuckets))
             else:
-                self.assertTrue(active_result["total"] <= total_vbuckets,
+                self.assertTrue(active_result["total"] <= bucket.numVBuckets,
                                 "total vbuckets do not match for active data set  (<= criteria), actual {0} expectecd {1}"
-                                .format(active_result["total"], total_vbuckets))
+                                .format(active_result["total"], bucket.numVBuckets))
             if type == "rebalance":
                 if (len(cluster.kv_nodes) - num_replicas) >= 1:
-                    self.assertTrue(replica_result["total"] == num_replicas * total_vbuckets,
+                    self.assertTrue(replica_result["total"] == num_replicas * bucket.numVBuckets,
                                     "total vbuckets do not match for replica data set (= criteria), actual {0} expected {1}"
-                                    .format(replica_result["total"], num_replicas * total_vbuckets))
+                                    .format(replica_result["total"], num_replicas * bucket.numVBuckets))
                 else:
-                    self.assertTrue(replica_result["total"] < num_replicas * total_vbuckets,
+                    self.assertTrue(replica_result["total"] < num_replicas * bucket.numVBuckets,
                                     "total vbuckets do not match for replica data set (<= criteria), actual {0} expected {1}"
-                                    .format(replica_result["total"], num_replicas * total_vbuckets))
+                                    .format(replica_result["total"], num_replicas * bucket.numVBuckets))
             else:
-                self.assertTrue(replica_result["total"] <= num_replicas * total_vbuckets,
+                self.assertTrue(replica_result["total"] <= num_replicas * bucket.numVBuckets,
                                 "total vbuckets do not match for replica data set (<= criteria), actual {0} expected {1}"
-                                .format(replica_result["total"], num_replicas * total_vbuckets))
+                                .format(replica_result["total"], num_replicas * bucket.numVBuckets))
             self.assertTrue(active_result["std"] >= 0.0 and active_result["std"] <= std,
                             "std test failed for active vbuckets")
             self.assertTrue(replica_result["std"] >= 0.0 and replica_result["std"] <= std,

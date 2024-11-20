@@ -40,8 +40,7 @@ class BucketParamTest(ClusterSetup):
             doc_create = doc_generator(self.key, 0, self.num_items,
                                        key_size=self.key_size,
                                        doc_size=self.doc_size,
-                                       doc_type=self.doc_type,
-                                       vbuckets=self.cluster.vbuckets)
+                                       doc_type=self.doc_type)
 
             if self.atomicity:
                 task = self.task.async_load_gen_docs_atomicity(
@@ -252,12 +251,12 @@ class BucketParamTest(ClusterSetup):
                 retry_exceptions.append(d_impossible_exception)
 
             # Creating doc creator to be used by test cases
-            doc_create = doc_generator(self.key, start_doc_for_insert,
-                                       start_doc_for_insert + num_items,
-                                       key_size=self.key_size,
-                                       doc_size=self.doc_size,
-                                       doc_type=self.doc_type,
-                                       vbuckets=self.cluster.vbuckets)
+            doc_create = doc_generator(
+                self.key, start_doc_for_insert,
+                start_doc_for_insert + num_items,
+                key_size=self.key_size,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type)
 
             # Creating doc updater to be used by test cases
             doc_update = doc_generator(
@@ -266,8 +265,7 @@ class BucketParamTest(ClusterSetup):
                 start_doc_for_insert,
                 key_size=self.key_size,
                 doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets)
+                doc_type=self.doc_type)
 
             # Creating doc updater to be used by test cases
             doc_delete = doc_generator(
@@ -275,8 +273,7 @@ class BucketParamTest(ClusterSetup):
                 start_doc_for_insert - num_items,
                 start_doc_for_insert - int(num_items/2),
                 key_size=self.key_size,
-                doc_size=self.doc_size, doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets)
+                doc_size=self.doc_size, doc_type=self.doc_type)
 
             tasks, doc_count, start_doc_for_insert = self.doc_ops_operations(
                 doc_ops,
@@ -483,12 +480,11 @@ class BucketParamTest(ClusterSetup):
             self.bucket_type = bucket["type"]
             self.create_bucket(self.cluster, bucket["name"])
 
+        data_load_task = []
         doc_create = doc_generator(self.key, 0, self.num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
-        data_load_task = []
+                                   doc_type=self.doc_type)
         for bucket in self.cluster.buckets:
             task = \
                 self.task.async_load_gen_docs(
@@ -692,8 +688,7 @@ class BucketParamTest(ClusterSetup):
         load_gen = doc_generator(self.key, 0, self.num_items,
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
-                                 doc_type=self.doc_type,
-                                 vbuckets=self.cluster.vbuckets)
+                                 doc_type=self.doc_type)
         task = self.task.async_load_gen_docs(
             self.cluster, self.def_bucket, load_gen, "update", 0,
             persist_to=self.persist_to, replicate_to=self.replicate_to,

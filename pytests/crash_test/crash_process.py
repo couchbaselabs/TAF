@@ -81,7 +81,7 @@ class CrashTest(ClusterSetup):
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=self.cluster.buckets[0].numVBuckets)
             if self.atomicity:
                 task = self.task.async_load_gen_docs_atomicity(
                     self.cluster, self.cluster.buckets, gen_create, "create",
@@ -167,7 +167,7 @@ class CrashTest(ClusterSetup):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=def_bucket.numVBuckets)
 
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
@@ -259,7 +259,7 @@ class CrashTest(ClusterSetup):
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        target_vbuckets = range(0, self.cluster.vbuckets)
+        target_vbuckets = range(0, def_bucket.numVBuckets)
         retry_exceptions = list()
 
         # If Memcached is killed, we should not perform KV ops on
@@ -283,7 +283,7 @@ class CrashTest(ClusterSetup):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=def_bucket.numVBuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets, gen_load, "create",

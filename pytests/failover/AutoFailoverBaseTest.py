@@ -833,13 +833,13 @@ class AutoFailoverBaseTest(ClusterSetup):
                 validate_durability_for_bucket(b_index, bucket_obj)
 
     def data_load_after_autofailover(self):
+        self.bucket = self.cluster.buckets[0]
         gen_create = doc_generator(self.key, self.num_items*2,
                                    self.num_items * 3,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
-        self.bucket = self.cluster.buckets[0]
+                                   vbuckets=self.bucket.numVBuckets)
         if self.atomicity:
             task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets,

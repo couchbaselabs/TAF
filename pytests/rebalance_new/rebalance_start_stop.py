@@ -359,6 +359,4 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
         self.bucket_util.vb_distribution_analysis(
-            self.cluster,
-            servers=nodes, std=1.0,
-            total_vbuckets=self.cluster.vbuckets)
+            self.cluster, servers=nodes, std=1.0)

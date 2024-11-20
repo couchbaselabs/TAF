@@ -68,12 +68,12 @@ class DocumentKeysTests(ClusterSetup):
 
     """Perform verification with views after loading data"""
     def _dockey_views(self, dockey="dockey"):
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         gen_load = doc_generator(dockey, 0, self.num_items,
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster.vbuckets)
-        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+                                 vbuckets=bucket.numVBuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, bucket, gen_load, "create", 0,
             batch_size=20,
@@ -89,12 +89,12 @@ class DocumentKeysTests(ClusterSetup):
     data can be retrieved
     """
     def _dockey_dcp(self, dockey="dockey"):
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
         gen_load = doc_generator(dockey, 0, self.num_items,
                                  key_size=self.key_size,
                                  doc_size=self.doc_size,
                                  doc_type=self.doc_type,
-                                 vbuckets=self.cluster.vbuckets)
-        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+                                 vbuckets=bucket.numVBuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, bucket, gen_load, "create", 0,
             batch_size=20,

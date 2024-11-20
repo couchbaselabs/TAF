@@ -16,20 +16,20 @@ class basic_ops(ClusterSetup):
         super(basic_ops, self).tearDown()
 
     def normal_load_and_transactions(self):
-        self.gen_create = doc_generator(self.key, 0, self.num_items,
-                                        key_size=self.key_size,
-                                        doc_size=self.doc_size,
-                                        doc_type=self.doc_type,
-                                        target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster.vbuckets)
         self.rebalance_in = self.input.param("rabalance_in", True)
 
         # Loading of 1M docs through normal loader
         self.log.info("Going to load 1M docs through normal load")
         self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         for bucket in self.buckets:
+            gen_create = doc_generator(self.key, 0, self.num_items,
+                                       key_size=self.key_size,
+                                       doc_size=self.doc_size,
+                                       doc_type=self.doc_type,
+                                       target_vbucket=self.target_vbucket,
+                                       vbuckets=bucket.numVBuckets)
             task = self.task.async_load_gen_docs(
-                self.cluster, bucket, self.gen_create, "create", 0,
+                self.cluster, bucket, gen_create, "create", 0,
                 batch_size=20, persist_to=self.persist_to,
                 replicate_to=self.replicate_to,
                 load_using=self.load_docs_using)

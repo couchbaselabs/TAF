@@ -1194,9 +1194,10 @@ class Murphy(BaseTestCase, OPD):
                     nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
                     self.bucket_util.vb_distribution_analysis(
                         self.cluster,
-                        servers=self.cluster.kv_nodes, buckets=self.cluster.buckets,
+                        servers=self.cluster.kv_nodes,
+                        buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std, total_vbuckets=self.cluster.vbuckets)
+                        std=std)
 
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
@@ -1299,7 +1300,7 @@ class Murphy(BaseTestCase, OPD):
                         servers=self.cluster.kv_nodes,
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std, total_vbuckets=self.cluster.vbuckets)
+                        std=std)
 
                 ###################################################################
                 '''
@@ -1378,7 +1379,7 @@ class Murphy(BaseTestCase, OPD):
                     servers=self.cluster.kv_nodes,
                     buckets=self.cluster.buckets,
                     num_replicas=self.num_replicas,
-                    std=std, total_vbuckets=self.cluster.vbuckets)
+                    std=std)
 
                 ###################################################################
                 '''

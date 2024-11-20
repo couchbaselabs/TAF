@@ -383,14 +383,11 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Initialize doc_generators to use for testing
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
-            self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets)
+            self.key, self.num_items, self.num_items+self.crud_batch_size)
         gen_update = doc_generator(
-            self.key, 0, self.num_items,
-            vbuckets=self.cluster.vbuckets)
+            self.key, 0, self.num_items)
         gen_delete = doc_generator(
-            self.key, 0, half_of_num_items,
-            vbuckets=self.cluster.vbuckets)
+            self.key, 0, half_of_num_items)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -554,7 +551,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["withDiskIssue"] = cbstat_obj.vbucket_seqno(self.bucket.name)
 
         # Verify cbstats for the affected vbuckets are not updated during CRUDs
-        for vb in range(self.cluster.vbuckets):
+        for vb in range(self.bucket.numVBuckets):
             if vb in active_vb_numbers:
                 for stat_name in vb_info["withDiskIssue"][vb].keys():
                     stat_before_crud = vb_info["init"][vb][stat_name]
@@ -824,13 +821,13 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -1279,7 +1276,7 @@ class TimeoutTests(DurabilityTestsBase):
             retry_validation = False
             vb_info["post_timeout"][node.ip] = \
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
-            for tem_vb_num in range(self.cluster.vbuckets):
+            for tem_vb_num in range(self.bucket.numVBuckets):
                 tem_vb_num = str(tem_vb_num)
                 if tem_vb_num not in affected_vbs:
                     if tem_vb_num in vb_info["init"][node.ip].keys() \

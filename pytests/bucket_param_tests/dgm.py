@@ -16,7 +16,7 @@ class Bucket_DGM_Tests(ClusterSetup):
         doc_create = doc_generator(
             self.key, 0, self.num_items,
             key_size=self.key_size, doc_size=self.doc_size,
-            doc_type=self.doc_type, vbuckets=self.cluster.vbuckets)
+            doc_type=self.doc_type)
         for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
@@ -58,18 +58,15 @@ class Bucket_DGM_Tests(ClusterSetup):
                                    num_items+self.num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
+                                   doc_type=self.doc_type)
         gen_update = doc_generator(self.key, 0, self.num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
+                                   doc_type=self.doc_type)
         gen_delete = doc_generator(self.key, self.num_items, num_items,
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
+                                   doc_type=self.doc_type)
 
         # Perform continuous updates while bucket moves from DGM->non-DGM state
         if not self.atomicity:

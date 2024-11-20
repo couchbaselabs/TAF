@@ -74,7 +74,7 @@ class DurabilityTestsBase(ClusterSetup):
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=self.bucket.numVBuckets)
 
             self.log.info("Loading {0} items into bucket"
                           .format(self.num_items))

@@ -342,9 +342,10 @@ class FailoverTests(FailoverBaseTest):
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=nodes, buckets=self.buckets,
+                servers=nodes,
+                buckets=self.buckets,
                 num_replicas=self.num_replicas,
-                total_vbuckets=self.total_vbuckets, std=20.0)
+                std=20.0)
         self.log.info("End VERIFICATION for Rebalance after Failover Only")
 
     def run_add_back_operation_and_verify(self, chosen, prev_vbucket_stats,
@@ -521,9 +522,10 @@ class FailoverTests(FailoverBaseTest):
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=nodes, buckets=self.cluster.buckets,
+                servers=nodes,
+                buckets=self.cluster.buckets,
                 num_replicas=self.num_replicas,
-                total_vbuckets=self.total_vbuckets, std=20.0)
+                std=20.0)
 
         self.log.info("End VERIFICATION for Add-back and rebalance")
 
@@ -647,9 +649,11 @@ class FailoverTests(FailoverBaseTest):
             nodes = self.filter_servers(self.servers, chosen)
             self.bucket_util.vb_distribution_analysis(
                 self.cluster,
-                servers=nodes, buckets=self.buckets, std=20.0,
+                servers=nodes,
+                buckets=self.buckets,
+                std=20.0,
                 num_replicas=self.num_replicas,
-                total_vbuckets=self.total_vbuckets, type="failover",
+                type="failover",
                 graceful=(self.graceful and graceful_failover))
 
     def run_failover_operations_with_ops(self, chosen, failover_reason):

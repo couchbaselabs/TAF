@@ -758,8 +758,8 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.update_end = 1
         self.doc_ops = "update"
 
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":
-                                                         self.graceful})
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs={"graceful": self.graceful})
         self.crash_th.start()
 
         count = 0
@@ -772,7 +772,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 doc_size=upsert_size,
                 doc_type=self.doc_type,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets,
+                vbuckets=self.buckets[0].numVBuckets,
                 key_size=self.key_size,
                 mutate=self.mutate,
                 randomize_doc_size=self.randomize_doc_size,

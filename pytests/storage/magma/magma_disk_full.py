@@ -877,7 +877,6 @@ class MagmaDiskFull(MagmaBaseTest):
 
         large_doc = doc_generator(key="sample_large_doc", start=0, end=2000,
                                   doc_size=2048000, doc_type=self.doc_type,
-                                  vbuckets=self.cluster.vbuckets,
                                   key_size=self.key_size,
                                   randomize_value=True)
 

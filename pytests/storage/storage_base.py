@@ -31,7 +31,7 @@ class StorageBase(BaseTestCase):
         self._data_validation = self.input.param("data_validation", True)
 
         # Bucket Params
-        self.vbuckets = self.input.param("vbuckets", self.cluster.vbuckets)
+        self.vbuckets = self.input.param("vbuckets", CbServer.total_vbuckets)
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.fragmentation = int(self.input.param("fragmentation", 50))
         self.bucket_storage = self.input.param("bucket_storage",
@@ -679,12 +679,13 @@ class StorageBase(BaseTestCase):
 
         super(StorageBase, self).tearDown()
 
-    def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
+    def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0,
+                           total_vbuckets=CbServer.total_vbuckets):
         return doc_generator(self.key, start, end,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=target_vbucket,
-                             vbuckets=self.cluster.vbuckets,
+                             vbuckets=total_vbuckets,
                              key_size=self.key_size,
                              randomize_doc_size=self.randomize_doc_size,
                              randomize_value=self.randomize_value,

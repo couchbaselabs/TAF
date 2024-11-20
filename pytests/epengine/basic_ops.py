@@ -1002,7 +1002,7 @@ class basic_ops(ClusterSetup):
         on_disk_deletes = 0
         bloom_filter_size = None
         bucket = self.cluster.buckets[0]
-        target_vb = choice(range(self.cluster.vbuckets))
+        target_vb = choice(range(bucket.numVBuckets))
         vb_str = str(target_vb)
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 vbuckets=bucket.numVBuckets,
@@ -1770,10 +1770,11 @@ class basic_ops(ClusterSetup):
         :return:
         """
         docs_per_vb = 2
-        total_docs = self.cluster.vbuckets * docs_per_vb
         doc_val = {"f": "test"}
+        bucket = self.cluster.buckets[0]
+        total_docs = bucket.numVBuckets * docs_per_vb
         doc_keys = dict([(vb_num, list())
-                        for vb_num in range(0, self.cluster.vbuckets)])
+                        for vb_num in range(0, bucket.numVBuckets)])
         index = -1
         req_key_for_vb = list(doc_keys.keys())
         d_level = SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
@@ -1787,14 +1788,14 @@ class basic_ops(ClusterSetup):
             index += 1
             key = "%s_%s" % (self.key, index)
             vb_for_key = self.bucket_util.get_vbucket_num_for_key(
-                key, self.cluster.buckets[0].numVBuckets)
+                key, bucket.numVBuckets)
             if vb_for_key in req_key_for_vb:
                 doc_keys[vb_for_key].append(key)
                 if len(doc_keys[vb_for_key]) == docs_per_vb:
                     req_key_for_vb.remove(vb_for_key)
 
         # Open SDK client for loading
-        client = SDKClient(self.cluster, self.cluster.buckets[0])
+        client = SDKClient(self.cluster, bucket)
 
         # Load doc with async writes
         self.log.info("Loading documents to each vbucket")
@@ -1826,7 +1827,7 @@ class basic_ops(ClusterSetup):
         diag_eval_cmd = diag_eval_cmd_format \
             % (self.cluster.master.rest_username,
                self.cluster.master.rest_password,
-               self.cluster.buckets[0].name, param, param_val)
+               bucket.name, param, param_val)
 
         cbstat = Cbstats(self.cluster.master)
         shell = RemoteMachineShellConnection(self.cluster.master)
@@ -1844,7 +1845,7 @@ class basic_ops(ClusterSetup):
         self.bucket_util.is_warmup_complete(self.cluster.buckets)
 
         # Validate the diag_eval command is reflected in the server
-        all_stats = cbstat.all_stats(self.cluster.buckets[0].name)
+        all_stats = cbstat.all_stats(bucket.name)
         curr_val = int(all_stats["ep_warmup_backfill_scan_chunk_duration"])
         self.assertEqual(curr_val, param_val,
                          "Unexpected value: '%s'" % curr_val)
@@ -1857,7 +1858,7 @@ class basic_ops(ClusterSetup):
             self.log.info("Wait for warmup to complete")
             self.bucket_util.is_warmup_complete(self.cluster.buckets)
 
-            warmup_stats = cbstat.all_stats(self.cluster.buckets[0].name,
+            warmup_stats = cbstat.all_stats(bucket.name,
                                             "warmup")
             for key in ["ep_warmup_estimated_key_count",
                         "ep_warmup_estimated_value_count",
@@ -1867,7 +1868,7 @@ class basic_ops(ClusterSetup):
                                  "Value mismatch. %s = %s"
                                  % (key, warmup_stats[key]))
 
-            vb_details = cbstat.vbucket_details(self.cluster.buckets[0].name)
+            vb_details = cbstat.vbucket_details(bucket.name)
             for vb_num, vb_stats in vb_details.items():
                 self.assertFalse(int(vb_stats["num_items"]) != docs_per_vb,
                                  "Vb %s reports less num_items: %s"
@@ -1878,7 +1879,7 @@ class basic_ops(ClusterSetup):
         diag_eval_cmd = diag_eval_cmd_format \
             % (self.cluster.master.rest_username,
                self.cluster.master.rest_password,
-               self.cluster.buckets[0].name, param, param_val)
+               bucket.name, param, param_val)
 
         self.log.info("Running diag_eval and restarting couchbase-server")
         self.log.info(diag_eval_cmd)
@@ -1889,7 +1890,7 @@ class basic_ops(ClusterSetup):
         self.log.info("Wait for warmup to complete")
         self.bucket_util.is_warmup_complete(self.cluster.buckets)
 
-        all_stats = cbstat.all_stats(self.cluster.buckets[0].name)
+        all_stats = cbstat.all_stats(bucket.name)
         curr_val = int(all_stats["ep_warmup_backfill_scan_chunk_duration"])
         self.assertEqual(curr_val, param_val,
                          "Unexpected value: '%s'" % curr_val)
@@ -1928,7 +1929,6 @@ class basic_ops(ClusterSetup):
                                    key_size=self.key_size,
                                    doc_size=self.doc_size,
                                    doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets,
                                    randomize_doc_size=self.randomize_doc_size,
                                    randomize_value=self.randomize_value)
         gen_create2 = doc_generator("eviction2_",
@@ -1937,7 +1937,6 @@ class basic_ops(ClusterSetup):
                                     key_size=self.key_size,
                                     doc_size=self.doc_size,
                                     doc_type=self.doc_type,
-                                    vbuckets=self.cluster.vbuckets,
                                     randomize_doc_size=self.randomize_doc_size,
                                     randomize_value=self.randomize_value)
         def_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]

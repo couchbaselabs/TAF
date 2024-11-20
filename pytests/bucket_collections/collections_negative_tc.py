@@ -174,7 +174,7 @@ class CollectionsNegativeTc(CollectionBase):
                 collection_spec={"name": self.collection_name})
         gen_load = doc_generator("test-max-key-size", 0, 1,
                                  key_size=self.key_size,
-                                 vbuckets=self.cluster.vbuckets)
+                                 vbuckets=self.bucket.numVBuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_load, "create", self.maxttl,
             batch_size=20,
@@ -191,7 +191,7 @@ class CollectionsNegativeTc(CollectionBase):
         else:
             self.fail("Inserting doc key greater than max key size "
                       "succeeded when it should have failed")
-    
+
     def test_max_collection_scope_name_length(self):
         try:
             BucketUtils.create_scope(self.cluster.master, self.bucket,
@@ -200,7 +200,7 @@ class CollectionsNegativeTc(CollectionBase):
             self.fail("Scope creation failed")
         else:
             self.log.info("Scope creation passed with the max length")
-        
+
         try:
             BucketUtils.create_scope(self.cluster.master, self.bucket,
                                     {"name": "a"*(CbServer.max_scope_name_len+1)})
