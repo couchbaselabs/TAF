@@ -1,6 +1,7 @@
 from random import randint, choice
 
 from BucketLib.bucket import Bucket
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
@@ -46,6 +47,12 @@ class CrashTest(ClusterSetup):
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user(self.cluster.master)
 
+        if self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=self.sdk_pool_capacity)
         if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK clients for client_pool")
             for bucket in self.cluster.buckets:

@@ -1,6 +1,7 @@
 from random import randint
 from threading import Thread
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants import DocLoading
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
@@ -33,13 +34,18 @@ class ExpiryMaxTTL(ClusterSetup):
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Create sdk_clients for pool
+        if self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=self.sdk_pool_capacity)
         if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
                 self.cluster, self.cluster.buckets[0],
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
-
         self.log.info("==========Finished ExpiryMaxTTL base setup========")
 
     def getTargetNodes(self):
