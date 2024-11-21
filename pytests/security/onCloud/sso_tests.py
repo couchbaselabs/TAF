@@ -99,30 +99,36 @@ def validate_realm_name(realm_name):
 
 class SsoTests(SecurityBase):
     def setUp(self):
-        SecurityBase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.secret_key = self.input.capella.get("secret_key")
-        self.access_key = self.input.capella.get("access_key")
+        try:
+            SecurityBase.setUp(self)
+            self.url = self.input.capella.get("pod")
+            self.user = self.input.capella.get("capella_user")
+            self.passwd = self.input.capella.get("capella_pwd")
+            self.tenant_id = self.input.capella.get("tenant_id")
+            self.secret_key = self.input.capella.get("secret_key")
+            self.access_key = self.input.capella.get("access_key")
 
-        self.sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
-        self.unauth_z_sso = SsoUtils(self.url, self.secret_key, self.access_key, self.test_users["User3"]["mailid"],
-                                     self.test_users["User3"]["password"])
+            self.sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
+            self.unauth_z_sso = SsoUtils(self.url, self.secret_key, self.access_key,
+                                         self.test_users["User3"]["mailid"],
+                                         self.test_users["User3"]["password"])
 
-        self._generate_key_pair()
-        self._generate_ssigned_cert()
-        self.get_team_id()
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
+            self._generate_key_pair()
+            self._generate_ssigned_cert()
+            self.get_team_id()
+            self.invalid_id = "00000000-0000-0000-0000-000000000000"
 
-        self.log.info("Deleting any realms that are already present")
-        resp = self.sso.list_realms(self.tenant_id)
-        if json.loads(resp.content)["data"]:
-            self.log.info("Destroying the realm")
-            realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
-            resp = self.sso.delete_realm(self.tenant_id, realm_id)
-            self.assertEqual(resp.status_code // 100, 2)
+            self.log.info("Deleting any realms that are already present")
+            resp = self.sso.list_realms(self.tenant_id)
+            if json.loads(resp.content)["data"]:
+                self.log.info("Destroying the realm")
+                realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+                resp = self.sso.delete_realm(self.tenant_id, realm_id)
+                self.assertEqual(resp.status_code // 100, 2)
+
+        except Exception as e:
+            self.tearDown()
+            self.fail("Base Setup Failed with error as - {}".format(e))
 
     def tearDown(self):
         resp = self.sso.list_realms(self.tenant_id)

@@ -4,9 +4,13 @@ from pytests.security.security_base import SecurityBase
 
 class TestFeatureFlagsAPI(SecurityBase):
     def setUp(self):
-        SecurityBase.setUp(self)
-        self.flag_name_exist = "sso"
-        self.flag_name_not_exist = "dummy_flag"
+        try:
+            SecurityBase.setUp(self)
+            self.flag_name_exist = "sso"
+            self.flag_name_not_exist = "dummy_flag"
+        except Exception as e:
+            self.tearDown()
+            self.fail("Base Setup Failed with error as - {}".format(e))
 
     def tearDown(self):
         super(TestFeatureFlagsAPI, self).tearDown()

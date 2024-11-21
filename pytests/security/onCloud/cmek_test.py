@@ -6,18 +6,23 @@ from pytests.security.security_base import SecurityBase
 
 class CMEKTest(SecurityBase):
     def setUp(self):
-        SecurityBase.setUp(self)
-        self.base_url = "https://" + self.url
-        self.log.info("Base URL: {0}".format(self.base_url))
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.access_key = self.input.capella.get("access_key")
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.bearer_token_key = self.input.capella.get("bearer_token_key")
-        self.cmek_base_url = "{0}/v4/organizations/{1}".format(self.base_url, self.tenant_id)
-        self.log.info("CMEK Base URL: {0}".format(self.cmek_base_url))
+        try:
+            SecurityBase.setUp(self)
+            self.base_url = "https://" + self.url
+            self.log.info("Base URL: {0}".format(self.base_url))
+            self.url = self.input.capella.get("pod")
+            self.user = self.input.capella.get("capella_user")
+            self.passwd = self.input.capella.get("capella_pwd")
+            self.tenant_id = self.input.capella.get("tenant_id")
+            self.access_key = self.input.capella.get("access_key")
+            self.invalid_id = "00000000-0000-0000-0000-000000000000"
+            self.bearer_token_key = self.input.capella.get("bearer_token_key")
+            self.cmek_base_url = "{0}/v4/organizations/{1}".format(self.base_url, self.tenant_id)
+            self.log.info("CMEK Base URL: {0}".format(self.cmek_base_url))
+
+        except Exception as e:
+            self.tearDown()
+            self.fail("Base Setup Failed with error as - {}".format(e))
 
     def tearDown(self):
         super(CMEKTest, self).tearDown()

@@ -13,32 +13,38 @@ from .saml_signatory import SAMLSignatory
 
 class SSOTest(SecurityBase):
     def setUp(self):
-        SecurityBase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.secret_key = self.input.capella.get("secret_key")
-        self.access_key = self.input.capella.get("access_key")
-        self.capi = CapellaAPI(
-            "https://" + self.url,
-            self.secret_key,
-            self.access_key,
-            self.user,
-            self.passwd
-        )
+        try:
+            SecurityBase.setUp(self)
+            self.url = self.input.capella.get("pod")
+            self.user = self.input.capella.get("capella_user")
+            self.passwd = self.input.capella.get("capella_pwd")
+            self.tenant_id = self.input.capella.get("tenant_id")
+            self.secret_key = self.input.capella.get("secret_key")
+            self.access_key = self.input.capella.get("access_key")
+            self.capi = CapellaAPI(
+                "https://" + self.url,
+                self.secret_key,
+                self.access_key,
+                self.user,
+                self.passwd
+            )
 
-        self.sso = SSOComponents(self.capi, "https://" + self.url)
-        self.sso_u = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
+            self.sso = SSOComponents(self.capi, "https://" + self.url)
+            self.sso_u = SsoUtils(self.url, self.secret_key, self.access_key, self.user,
+                                  self.passwd)
 
-        resp = self.sso_u.list_realms(self.tenant_id)
-        if json.loads(resp.content)["data"]:
-            self.log.info("Destroying the realm")
-            realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
-            resp = self.sso.delete_realm(self.tenant_id, realm_id)
-            self.assertEqual(resp.status_code // 100, 2)
+            resp = self.sso_u.list_realms(self.tenant_id)
+            if json.loads(resp.content)["data"]:
+                self.log.info("Destroying the realm")
+                realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+                resp = self.sso.delete_realm(self.tenant_id, realm_id)
+                self.assertEqual(resp.status_code // 100, 2)
 
-        self.setup_sso()
+            self.setup_sso()
+
+        except Exception as e:
+            self.tearDown()
+            self.fail("Base Setup Failed with error as - {}".format(e))
 
     def setup_sso(self):
         tenants = self.sso.get_teams(self.tenant_id)
