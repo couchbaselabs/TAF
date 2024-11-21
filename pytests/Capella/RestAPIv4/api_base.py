@@ -1857,3 +1857,20 @@ class APIBase(CouchbaseBaseTest):
                 self.log.debug("Instance delete request successful.")
 
         return instance_deletion_failed
+
+    def create_app_endpoint_to_be_tested(self, app_svc_id, name, deltaSync,
+                                         bucket, scopes, xattr):
+        res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+            self.organisation_id, self.project_id, self.cluster_id,
+            app_svc_id, name, deltaSync, bucket, scopes, xattr)
+        if res.status_code == 429:
+            self.handle_rate_limit(res.headers-["Retry-After"])
+            res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+                self.organisation_id, self.project_id, self.cluster_id,
+                app_svc_id, name, deltaSync, bucket, scopes, xattr)
+        if res.status_code != 201:
+            self.log.error(res.content)
+            self.tearDown()
+            self.fail("!!!...Failed to create a replacement App "
+                      "Endpoint...!!!")
+        self.log.debug("...Replacement App endpoint created successfully...")

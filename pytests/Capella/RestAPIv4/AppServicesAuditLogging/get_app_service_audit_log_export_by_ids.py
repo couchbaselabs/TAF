@@ -19,8 +19,8 @@ class GetAuditLogExports(GetAppService):
             # Response params.
             "data": {
                 "id": "to be changed after creation",
-                "start": self.get_utc_datetime(-60),
-                "end": self.get_utc_datetime(-10),
+                "start": None,
+                "end": None,
                 "download_id": None,
                 "download_expires": None,
                 "status": None,
@@ -37,16 +37,16 @@ class GetAuditLogExports(GetAppService):
             },
             "permissions": {
                 "create": {
-                    "accessible": None
+                    "accessible": True
                 },
                 "read": {
-                    "accessible": None
+                    "accessible": True
                 },
                 "update": {
-                    "accessible": None
+                    "accessible": True
                 },
                 "delete": {
-                    "accessible": None
+                    "accessible": True
                 }
             }
         }
