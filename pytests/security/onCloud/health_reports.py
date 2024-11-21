@@ -35,7 +35,9 @@ class SecurityTest(SecurityBase):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, self.user,
                                  self.passwd)
         resp = capella_api.generate_health_report(self.tenant_id, self.project_id, self.cluster_id)
-        print("the response is -", resp.content)
+        self.log.info("The generate health report response is - {}, Status Code - {}".format(
+                                                                        resp.content,
+                                                                        resp.status_code))
         if resp.status_code == 429:
             resp = self.capellaAPIv2.list_health_reports(self.tenant_id, self.project_id,
                                                          self.cluster_id)
@@ -49,7 +51,13 @@ class SecurityTest(SecurityBase):
                              msg="FAIL. Outcome: {}, Expected: {}, Reason: {}".format(
                              resp.status_code, 202, resp.content))
 
-            report_id = resp.json()['id']
+            resp = self.capellaAPIv2.list_health_reports(self.tenant_id, self.project_id,
+                                                         self.cluster_id)
+            self.assertEqual(resp.status_code, 200,
+                             msg="FAIL. Outcome: {}, Expected: {}, Reason: {}".format(
+                                 resp.status_code, 200, resp.content))
+            resp = resp.json()
+            report_id = resp["data"][0]["id"]
             self.log.info("Generated a health report for the cluster")
 
         return report_id
@@ -343,6 +351,7 @@ class SecurityTest(SecurityBase):
             self.fail("Auth test failed. Error: {}".format(error))
 
         # Test with different tenant ids
+        self.sleep(310, "Waiting for 5 minutes before generating next report")
         test_method_args = {
             'project_id': self.project_id,
             'cluster_id': self.cluster_id,
@@ -354,6 +363,7 @@ class SecurityTest(SecurityBase):
             self.fail("Tenant ids test failed. Error: {}".format(error))
 
         # Test with different project ids
+        self.sleep(310, "Waiting for 5 minutes before generating next report")
         test_method_args = {
             'tenant_id': self.tenant_id,
             'cluster_id': self.cluster_id,
@@ -365,6 +375,7 @@ class SecurityTest(SecurityBase):
             self.fail("Project ids test failed. Error: {}".format(error))
 
         # Test with org roles
+        self.sleep(310, "Waiting for 5 minutes before generating next report")
         test_method_args = {
             'tenant_id': self.tenant_id,
             'project_id': self.project_id,
@@ -378,6 +389,7 @@ class SecurityTest(SecurityBase):
             self.fail("Org roles test failed. Error: {}".format(error))
 
         # Test with project roles
+        self.sleep(310, "Waiting for 5 minutes before generating next report")
         result, error = self.test_with_project_roles("get_health_report_overall_stats",
                                                      test_method_args,
                                                      ["projectOwner", "projectClusterViewer",
@@ -395,8 +407,11 @@ class SecurityTest(SecurityBase):
 
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}/health-advisor/settings'.format(
             self.capellaAPIv2.internal_url, self.tenant_id, self.project_id, self.cluster_id)
-        body = {"generateReport":True,"sendWeeklyReport":True,"emailSettings":{"type":"orgRole",
-                "users":[],"roles":["projectOwner","organizationOwner"]}}
+        body = {"generateReport":True,"sendWeeklyReport":True,"emailSettings":{"type":"projectRole",
+                "users":[],"roles":["projectOwner","projectClusterManager"]}}
+        body = {"generateReport": True, "sendWeeklyReport": True,
+         "emailSettings": {"type": "projectRole", "users": [],
+                           "roles": ["projectOwner", "projectClusterManager"]}}
         result, error = self.test_authentication(url, method="PATCH", payload=body)
         if not result:
             self.fail("Auth test failed. Error: {}".format(error))
@@ -409,9 +424,9 @@ class SecurityTest(SecurityBase):
                 "generateReport":True,
                 "sendWeeklyReport":True,
                 "emailSettings": {
-                    "type":"orgRole",
+                    "type":"projectRole",
                     "users":[],
-                    "roles":["projectOwner","organizationOwner"]
+                    "roles":["projectOwner","projectClusterManager"]
                 }
             })
         }
@@ -424,15 +439,15 @@ class SecurityTest(SecurityBase):
         test_method_args = {
             'tenant_id': self.tenant_id,
             'cluster_id': self.cluster_id,
-            'payload' : {
+            'payload' : json.dumps({
                 "generateReport":True,
                 "sendWeeklyReport":True,
                 "emailSettings": {
-                    "type":"orgRole",
+                    "type":"projectRole",
                     "users":[],
-                    "roles":["projectOwner","organizationOwner"]
+                    "roles":["projectOwner","projectClusterManager"]
                 }
-            }
+            })
         }
         result, error = self.test_project_ids(self.capellaAPIv2.update_health_advisor_settings,
                                               test_method_args, 'project_id', 200)
@@ -444,15 +459,15 @@ class SecurityTest(SecurityBase):
             'tenant_id': self.tenant_id,
             'project_id': self.project_id,
             'cluster_id': self.cluster_id,
-            'payload' : '''{
+            'payload' : json.dumps({
                 "generateReport":True,
                 "sendWeeklyReport":True,
                 "emailSettings": {
-                    "type":"orgRole",
+                    "type":"projectRole",
                     "users":[],
-                    "roles":["projectOwner","organizationOwner"]
+                    "roles":["projectOwner","projectClusterManager"]
                 }
-            }'''
+            })
         }
         result, error = self.test_with_org_roles("update_health_advisor_settings",
                                                  test_method_args,
