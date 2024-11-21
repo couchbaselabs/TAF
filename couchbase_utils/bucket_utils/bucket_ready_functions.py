@@ -4557,14 +4557,13 @@ class BucketUtils(ScopeUtils):
         return tasks
 
     def _expiry_pager(self, cluster, val=10):
-        for node in self.cluster_util.get_kv_nodes(cluster):
+        kv_nodes = self.cluster_util.get_kv_nodes(cluster)
+        rest = BucketRestApi(kv_nodes[0])
+        for node in kv_nodes:
             shell_conn = RemoteMachineShellConnection(node)
             cbepctl_obj = Cbepctl(shell_conn)
             for bucket in cluster.buckets:
-                cbepctl_obj.set(bucket.name,
-                                "flush_param",
-                                "exp_pager_stime",
-                                val)
+                rest.edit_bucket(bucket.name, {"expiryPagerSleepTime": val})
                 cbepctl_obj.set(bucket.name,
                                 "flush_param",
                                 "exp_pager_initial_run_time",
