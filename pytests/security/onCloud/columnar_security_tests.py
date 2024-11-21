@@ -21,7 +21,7 @@ class ColumnarSecurityTest(SecurityBase):
                                                                 self.project_id,
                                                                 instance_id)
         if delete_resp.status_code != 202:
-            self.fail("Failed to delete columanr cluster {}".format(instance_id))
+            self.fail("Failed to delete columnar cluster {}".format(instance_id))
 
 
     def test_create_columnar_cluster(self):

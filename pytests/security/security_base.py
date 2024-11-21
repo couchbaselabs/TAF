@@ -937,7 +937,7 @@ class SecurityBase(CouchbaseBaseTest):
         return True, None
 
     def test_tenant_ids(self, test_method=None, test_method_args=None, tenant_id_arg=None,
-                        expected_success_code=None, on_success_callback=None):
+                        expected_success_code=None, on_success_callback=None, expected_failure_code=404):
         tenant_ids = {
             "valid_tenant_id": self.tenant_id,
             "invalid_tenant_id": self.invalid_id
@@ -948,7 +948,7 @@ class SecurityBase(CouchbaseBaseTest):
             resp = test_method(**test_method_args)
 
             if tenant_id == "invalid_tenant_id":
-                if resp.status_code != 404:
+                if resp.status_code != expected_failure_code:
                     error = "Test failed for invalid tenant id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
                         format(tenant_ids[tenant_id], 404, resp.status_code)
@@ -956,6 +956,7 @@ class SecurityBase(CouchbaseBaseTest):
                     return False, error
             else:
                 if resp.status_code != expected_success_code:
+                    self.log.error(resp.content)
                     error = "Test failed for valid tenant id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
                         format(tenant_ids[tenant_id], expected_success_code,
