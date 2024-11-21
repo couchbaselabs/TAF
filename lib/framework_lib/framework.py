@@ -212,7 +212,9 @@ class HelperLib(object):
                         and not fw.startswith("num_nodes:") \
                         and not fw.startswith("spec:")\
                         and not fw.startswith("no_of_test_identified:")\
-                        and not fw.startswith("get-cbcollect-info:"):
+                        and not fw.startswith("get-cbcollect-info:") \
+                        and not fw.startswith("infra_log_level:") \
+                        and not fw.startswith("log_level:"):
                     line = line + fw.replace(":", "=", 1)
                     if fw != testwords[-1]:
                         line = line + ","
@@ -229,7 +231,9 @@ class HelperLib(object):
                         and not fw.startswith("num_nodes=") \
                         and not fw.startswith("spec=")\
                         and not fw.startswith("no_of_test_identified=")\
-                        and not fw.startswith("get-cbcollect-info="):
+                        and not fw.startswith("get-cbcollect-info=") \
+                        and not fw.startswith("infra_log_level=") \
+                        and not fw.startswith("log_level="):
                     line.append(fw)
             return ",".join(line)
 
