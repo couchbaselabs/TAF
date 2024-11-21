@@ -21,7 +21,7 @@ def filter_fields(testname, run_params=""):
         'logs_folder', 'conf_file', 'cluster_name',
         'ini', 'case_number', 'num_nodes', 'spec',
         'last_case_fail', 'teardown_run', 'is_container',
-        'total_testcases']
+        'total_testcases', 'get-cbcollect-info']
     if "logs_folder:" in testname:
         testwords = testname.split(",")
         line = ""
