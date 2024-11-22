@@ -18,8 +18,9 @@ package versions accordingly.
 
 import json
 import logging
-
+import os
 import pyspark
+
 from delta import *
 from cbas_utils.cbas_utils_columnar import BaseUtil
 
@@ -33,6 +34,7 @@ class DeltaLakeUtils(object):
     def __init__(self):
         self.log = logging.getLogger(__name__)
         self.spark_session = None
+        os.environ["SPARK_LOCAL_HOSTNAME"] = "127.0.0.1"
 
     @staticmethod
     def format_s3_path(s3_bucket, delta_table_folder_path):
