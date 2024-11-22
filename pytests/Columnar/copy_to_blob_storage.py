@@ -48,7 +48,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         self.no_of_docs = self.input.param("no_of_docs", 1000)
         self.sink_blob_bucket_name = None
         self.link_type = self.input.param("external_link_source", "s3")
-        self.gcs_client = GCS(credentials=None)
+        self.gcs_client = None
         if self.link_type == "gcs":
             with open('pytests/Columnar/credentials.json', 'r') as file:
                 # Load JSON data from file
@@ -1223,12 +1223,13 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("Failed to create S3 link on different region")
 
         results = []
+        bucket_name = self.cbas_util.generate_name()
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             jobs.put((self.cbas_util.copy_to_s3,
                       {"cluster": self.columnar_cluster, "collection_name": datasets[i].name,
                        "dataverse_name": datasets[i].dataverse_name,
-                       "destination_bucket": self.cbas_util.generate_name(),
+                       "destination_bucket": bucket_name,
                        "destination_link_name": external_link_obj.full_name, "path": path, "validate_error_msg": True,
                        "expected_error": "External sink error. "
                                          "software.amazon.awssdk.services.s3.model.NoSuchBucketException: "

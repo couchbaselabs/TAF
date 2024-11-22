@@ -1,13 +1,13 @@
-from couchbase.pycbc_core import result
 from google.cloud import storage
-import json
+
+
 class GCS:
     def __init__(self, credentials):
         import logging
         logging.basicConfig()
         self.logger = logging.getLogger("GCS_Util")
         credentials = credentials
-        self.client = storage.Client.from_service_account_info(credentials=credentials)
+        self.client = storage.Client.from_service_account_info(info=credentials)
 
     def create_gcs_bucket(self, bucket_name, location="US"):
         try:
