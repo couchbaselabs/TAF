@@ -215,6 +215,32 @@ class ColumnarRBACUtil:
             self.log.critical(str(resp.content))
             return None
 
+    def list_all_roles(self, pod, tenant, project_id, instance):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        resp = columnar_api.list_all_roles(tenant.id, project_id, instance.instance_id)
+        if resp.status_code == 200:
+            self.log.info("Fetching all roles present in columnar")
+            resp_json = resp.json()
+            roles_data = resp_json["data"]
+            roles_name_id = dict()
+            for data in roles_data:
+                roles_name_id[data["data"]["name"]] = data["data"]["id"]
+            return roles_name_id
+
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return None
+        else:
+            self.log.critical("Unable to fetch roles from columnar instance")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return None
+
+
     def create_api_keys(
             self, pod, tenant, project_id, instance, username, password,
             privileges_payload=None, role_ids=[]):

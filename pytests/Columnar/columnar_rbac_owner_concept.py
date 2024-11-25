@@ -1,5 +1,6 @@
 import random
 import string
+import time
 from datetime import datetime, timedelta
 
 from Columnar.columnar_base import ColumnarBaseTest
@@ -8,6 +9,9 @@ from capella_utils.columnar import ColumnarUtils, ColumnarRBACUtil
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from sirius_client_framework.sirius_constants import SiriusCodes
+from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
+from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
+from Jython_tasks.sirius_task import MongoUtil
 
 
 def generate_random_password(length=12):
@@ -83,9 +87,46 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
         if self.perform_columnar_instance_cleanup:
             for instance in self.tenant.columnar_instances:
                 self.cbas_util.cleanup_cbas(instance)
-        if hasattr(self, "remote_cluster"):
+        delete_confluent_dlq_topic = True
+        if hasattr(self, "kafka_topic_prefix"):
+            delete_confluent_dlq_topic = self.confluent_util.kafka_cluster_util.delete_topic_by_topic_prefix(
+                self.kafka_topic_prefix)
+
+        if hasattr(self, "cdc_connector_name"):
+            confluent_cleanup_for_cdc = self.confluent_util.cleanup_kafka_resources(
+                self.kafka_connect_hostname_cdc_confluent,
+                [self.cdc_connector_name], self.kafka_topic_prefix + "_cdc")
+        else:
+            confluent_cleanup_for_cdc = True
+
+        if hasattr(self, "non_cdc_connector_name"):
+            confluent_cleanup_for_non_cdc = (
+                self.confluent_util.cleanup_kafka_resources(
+                    self.kafka_connect_hostname_non_cdc_confluent,
+                    [self.non_cdc_connector_name],
+                    self.kafka_topic_prefix + "_non_cdc",
+                    self.confluent_cluster_obj.cluster_access_key))
+        else:
+            confluent_cleanup_for_non_cdc = True
+
+        mongo_collections_deleted = True
+        if hasattr(self, "mongo_collections"):
+            for mongo_coll, _ in self.mongo_collections.items():
+                database, collection = mongo_coll.split(".")
+                mongo_collections_deleted = mongo_collections_deleted and (
+                    self.mongo_util.delete_mongo_collection(database, collection))
+
+
+        if hasattr(self, "remote_cluster") and self.remote_cluster is not None:
             self.delete_all_buckets_from_capella_cluster(
                 self.tenant, self.remote_cluster)
+
+        if not all([confluent_cleanup_for_non_cdc,
+                    confluent_cleanup_for_cdc, delete_confluent_dlq_topic,
+                    mongo_collections_deleted]):
+            self.fail(f"Unable to either cleanup "
+                      f"Confluent Kafka resources or delete mongo collections")
+
         super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(
             self.__class__.__name__, "Finished", stage="Teardown")
@@ -546,8 +587,282 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
                 if not self.cbas_util.cleanup_cbas(instance, username=user.username, password=user.password):
                     self.fail("Owner un-able to drop columnar entities")
 
+    def setup_infra_for_mongo(self):
+        """
+        This method will create a mongo collection, load initial data into it
+        and deploy connectors for streaming both cdc and non-cdc data from
+        confluent and AWS MSK kafka
+        :return:
+        """
+        self.log.info("Creating Collections on Mongo")
+        self.mongo_collections = {}
+        mongo_db_name = f"TAF_upgrade_mongo_db_{int(time.time())}"
+        for i in range(1, self.input.param("num_mongo_collections") + 1):
+            mongo_coll_name = f"TAF_owner_concept_mongo_coll_{i}"
+
+            self.log.info(f"Creating collection {mongo_db_name}."
+                          f"{mongo_coll_name}")
+            if not self.mongo_util.create_mongo_collection(
+                    mongo_db_name, mongo_coll_name):
+                self.fail(
+                    f"Error while creating mongo collection {mongo_db_name}."
+                    f"{mongo_coll_name}")
+            self.mongo_collections[f"{mongo_db_name}.{mongo_coll_name}"] = 0
+
+            self.log.info(f"Loading docs in mongoDb collection "
+                          f"{mongo_db_name}.{mongo_coll_name}")
+            mongo_doc_loading_task = self.mongo_util.load_docs_in_mongo_collection(
+                database=mongo_db_name, collection=mongo_coll_name,
+                start=0, end=self.no_of_docs,
+                doc_template=SiriusCodes.Templates.PRODUCT,
+                doc_size=self.doc_size, sdk_batch_size=1000,
+                wait_for_task_complete=True)
+            if not mongo_doc_loading_task.result:
+                self.fail(f"Failed to load docs in mongoDb collection "
+                          f"{mongo_db_name}.{mongo_coll_name}")
+            else:
+                self.mongo_collections[
+                    f"{mongo_db_name}.{mongo_coll_name}"] = \
+                mongo_doc_loading_task.success_count
+
+        self.log.info("Generating Connector config for Mongo CDC")
+        self.cdc_connector_name = f"mongo_{self.kafka_topic_prefix}_cdc"
+        cdc_connector_config = KafkaConnectUtil.generate_mongo_connector_config(
+            mongo_connection_str=self.mongo_util.loader.connection_string,
+            mongo_collections=list(self.mongo_collections.keys()),
+            topic_prefix=self.kafka_topic_prefix+"_cdc",
+            partitions=32, cdc_enabled=True)
+
+        self.log.info("Generating Connector config for Mongo Non-CDC")
+        self.non_cdc_connector_name = f"mongo_{self.kafka_topic_prefix}_non_cdc"
+        non_cdc_connector_config = (
+            KafkaConnectUtil.generate_mongo_connector_config(
+                mongo_connection_str=self.mongo_util.loader.connection_string,
+                mongo_collections=list(self.mongo_collections.keys()),
+                topic_prefix=self.kafka_topic_prefix + "_non_cdc",
+                partitions=32, cdc_enabled=False))
+
+        self.log.info("Deploying CDC connectors to stream data from mongo to "
+                      "Confluent")
+        if self.confluent_util.deploy_connector(
+                self.cdc_connector_name, cdc_connector_config,
+                self.kafka_connect_hostname_cdc_confluent):
+            self.confluent_cluster_obj.connectors[
+                self.cdc_connector_name] = cdc_connector_config
+        else:
+            self.fail("Failed to deploy connector for confluent")
+
+        self.log.info("Deploying Non-CDC connectors to stream data from mongo "
+                      "to Confluent")
+        if self.confluent_util.deploy_connector(
+                self.non_cdc_connector_name, non_cdc_connector_config,
+                self.kafka_connect_hostname_non_cdc_confluent):
+            self.confluent_cluster_obj.connectors[
+                self.non_cdc_connector_name] = non_cdc_connector_config
+        else:
+            self.fail("Failed to deploy connector for confluent")
+
+        for mongo_collection_name, num_items in self.mongo_collections.items():
+            for kafka_type in ["confluent"]:
+                self.kafka_topics[kafka_type]["MONGODB"].extend(
+                    [
+                        {
+                            "topic_name": f"{self.kafka_topic_prefix+'_cdc'}."
+                                          f"{mongo_collection_name}",
+                            "key_serialization_type": "json",
+                            "value_serialization_type": "json",
+                            "cdc_enabled": True,
+                            "source_connector": "DEBEZIUM",
+                            "num_items": num_items
+                        },
+                        {
+                            "topic_name": f"{self.kafka_topic_prefix+'_non_cdc'}."
+                                          f"{mongo_collection_name}",
+                            "key_serialization_type": "json",
+                            "value_serialization_type": "json",
+                            "cdc_enabled": False,
+                            "source_connector": "DEBEZIUM",
+                            "num_items": num_items
+                        }
+                    ]
+                )
+
+    def setup_infra_for_remote_cluster(self):
+        """
+        This method will create buckets, scopes and collections on remote
+        couchbase cluster and will load initial data into it.
+        :return:
+        """
+        self.log.info("Creating Buckets, Scopes and Collections on remote "
+                      "cluster.")
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster, num_buckets=self.num_buckets,
+            bucket_ram_quota=self.bucket_size,
+            num_scopes_per_bucket=self.input.param("num_scopes_per_bucket", 1),
+            num_collections_per_scope=self.input.param(
+                "num_collections_per_scope", 1))
+
+        self.log.info("Loading data into remote couchbase collection")
+        for remote_bucket in self.remote_cluster.buckets:
+            for scope_name, scope in remote_bucket.scopes.items():
+                if scope_name != "_system" and scope != "_mobile":
+                    for collection_name, collection in (
+                            scope.collections.items()):
+                        self.log.info(
+                            f"Loading docs in {remote_bucket.name}."
+                            f"{scope_name}.{collection_name}")
+                        cb_doc_loading_task = self.couchbase_doc_loader.load_docs_in_couchbase_collection(
+                            bucket=remote_bucket.name, scope=scope_name,
+                            collection=collection_name, start=0,
+                            end=self.no_of_docs,
+                            doc_template=SiriusCodes.Templates.PRODUCT,
+                            doc_size=self.doc_size, sdk_batch_size=1000
+                        )
+                        if not cb_doc_loading_task.result:
+                            self.fail(
+                                f"Failed to load docs in couchbase collection "
+                                f"{remote_bucket.name}.{scope_name}.{collection_name}")
+                        else:
+                            collection.num_items = cb_doc_loading_task.success_count
+
     def test_links_owner_concept(self):
-        pass
+
+        user = self.create_user(self.database_privileges, [], "instance")
+
+        self.mongo_util = MongoUtil(
+            task_manager=self.task_manager,
+            hostname=self.input.param("mongo_hostname"),
+            username=self.input.param("mongo_username"),
+            password=self.input.param("mongo_password")
+        )
+        self.couchbase_doc_loader = CouchbaseUtil(
+            task_manager=self.task_manager,
+            hostname=self.remote_cluster.master.ip,
+            username=self.remote_cluster.master.rest_username,
+            password=self.remote_cluster.master.rest_password,
+        )
+        self.kafka_topic_prefix = f"rbac_owner_concept_{int(time.time())}"
+        self.confluent_util = ConfluentUtils(
+            cloud_access_key=self.input.param("confluent_cloud_access_key"),
+            cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+        self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
+            kafka_cluster_id=self.input.param("confluent_cluster_id"),
+            topic_prefix=self.kafka_topic_prefix)
+        if not self.confluent_cluster_obj:
+            self.fail("Unable to initialize Confluent Kafka cluster object")
+
+        self.kafka_connect_util = KafkaConnectUtil()
+        kafka_connect_hostname = self.input.param('kafka_connect_hostname')
+        self.kafka_connect_hostname_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_CDC_PORT}")
+        self.kafka_connect_hostname_non_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_NON_CDC_PORT}")
+
+        self.kafka_topics = {
+            "confluent": {
+                "MONGODB": [
+                    {
+                        "topic_name": "do-not-delete-mongo-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": True,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                    {
+                        "topic_name": "do-not-delete-mongo-non-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": False,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                ],
+                "POSTGRESQL": [],
+                "MYSQLDB": []
+            }
+        }
+
+        self.setup_infra_for_mongo()
+        self.setup_infra_for_remote_cluster()
+
+        confluent_kafka_cluster_details = [
+            self.confluent_util.generate_confluent_kafka_cluster_detail(
+                brokers_url=self.confluent_cluster_obj.bootstrap_server,
+                auth_type="PLAIN", encryption_type="TLS",
+                api_key=self.confluent_cluster_obj.cluster_access_key,
+                api_secret=self.confluent_cluster_obj.cluster_secret_key)]
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json", "csv", "tsv", "avro",
+                                              "parquet"],
+            path_on_external_container="level_{level_no:int}_folder_{"
+                                       "folder_no:int}",
+            confluent_kafka_cluster_details=confluent_kafka_cluster_details,
+            external_dbs=["MONGODB"],
+            kafka_topics=self.kafka_topics)
+        self.columnar_spec["kafka_dataset"]["primary_key"] = [
+            {"_id": "string"}]
+        self.columnar_spec["index"]["indexed_fields"] = ["price:double"]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster], username=user.username, password=user.password)
+
+        if not result:
+            self.fail(msg)
+
+        total_links = (self.input.param("num_remote_links", 0) + self.input.param("num_external_links", 0) +
+                       self.input.param("num_kafka_links", 0))
+        self.validate_owner(user.username, 0, total_links, 0, 0, 0, 0, 0)
+
+        if not self.update_user(user, [], [], "instance"):
+            self.fail("Failed to update api user privileges")
+
+        # performing operations on links with the owner concept
+        # disconnect links
+        if not self.cbas_util.disconnect_links(self.columnar_cluster, cbas_spec=self.columnar_spec, username=user.username,
+                                               password=user.password):
+            self.fail("Failed to disconnect link")
+
+        # alter remote links
+        remote_link_properties = self.columnar_spec["remote_link"]["properties"][0]
+        capella_api_v2 = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key, self.tenant.api_access_key,
+                                      self.tenant.user, self.tenant.pwd)
+        if not capella_api_v2.create_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id,
+                                                       "ownerConcept", "Couchbase@123").status_code == 200: self.fail("failed to create user on provisioned cluster")
+
+        self.remote_cluster.username = "ownerConcept"
+        remote_link_properties["username"] = "ownerConcept"
+        if not self.cbas_util.alter_link_properties(self.columnar_cluster, remote_link_properties):
+            self.fail("Failed to update remote link creds using owner api")
+
+        # alter aws link
+        aws_link_properties = self.columnar_spec["external_link"]["properties"][0]
+        if not self.cbas_util.alter_link_properties(self.columnar_cluster, aws_link_properties):
+            self.fail("Failed to update aws link creds using owner api")
+
+        # alter kafka link
+        kafka_link_properties = {"type": "kafka-sink", "name": self.cbas_util.get_all_link_objs("kafka")[0].name,
+                                 "kafkaClusterDetails":
+                                     self.columnar_spec["kafka_link"]["kafka_cluster_details"]["confluent"][0]}
+        if not self.cbas_util.alter_link_properties(self.columnar_cluster, kafka_link_properties):
+            self.fail("Failed to update kafka link creds using owner api")
+
+        # connect links
+        if not self.cbas_util.connect_links(self.columnar_cluster, self.columnar_spec):
+            self.fail("Failed to connect link using owner api without privileges")
+
+        # create new collections on links without privileges
+        if not self.cbas_util.create_standalone_collection_for_kafka_topics_from_spec(self.columnar_cluster, self.columnar_spec):
+            self.fail("Cannot create collections on link with link owners")
+
+        if not self.cbas_util.cleanup_cbas(self.columnar_cluster, user.username, user.password):
+            self.fail("Not able to delete links and collections using owner permission")
 
     def test_database_owner_create_object(self):
         user = self.create_user(["database_drop", "database_create"], [], "instance")
@@ -597,3 +912,22 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
                                                             database_name="owner_database",
                                                             username=user.username, password=user.password)):
             self.fail("Non-Owner of database able to create scopes and collections")
+
+    def test_roles_owner_concept(self):
+        num_roles = self.input.param("no_of_roles", 1)
+        role_list = []
+        for i in range(num_roles):
+            role_name = self.cbas_util.generate_name()
+            role_list.append(role_name)
+            if not self.columnar_rbac_util.create_columnar_role(self.pod, self.tenant, self.tenant.project_id,
+                                                                self.columnar_cluster, role_name):
+                self.fail("Failed to create role with name: {0}".format(role_name))
+
+        role_query = "select * from Metadata.`Role`"
+        status, _, _, results, _, warnings = self.cbas_util.execute_statement_on_cbas_util(
+            self.columnar_cluster, role_query, mode="immediate", timeout=300,
+            analytics_timeout=300)
+
+        results = [x for x in results if x['Role']['Creator'] == "couchbase-cloud-admin"]
+        if not len(results) == num_roles:
+            self.fail("not all roles present with the correct owner")

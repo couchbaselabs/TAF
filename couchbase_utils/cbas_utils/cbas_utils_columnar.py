@@ -6272,9 +6272,9 @@ class CbasUtil(CBOUtil):
                     results.append(True)
         return results
 
-    def disconnect_links(self, cluster, cbas_spec):
+    def disconnect_links(self, cluster, cbas_spec, username=None, password=None):
         """
-        Connect all links present
+        Disconnect all links present
         """
         # Connect link only when remote links or kafka links are present,
         # Local link is connected by default and external links are not
@@ -6283,18 +6283,18 @@ class CbasUtil(CBOUtil):
         links = (self.get_all_link_objs("couchbase") +
                  self.get_all_link_objs("kafka"))
         if len(links) > 0:
-            self.log.info("Connecting all remote and kafka Links")
+            self.log.info("Disconnecting all remote and kafka Links")
             for link in links:
                 if not self.disconnect_link(
                         cluster, link.name,
                         timeout=cbas_spec.get("api_timeout", 300),
                         analytics_timeout=cbas_spec.get("cbas_timeout",
-                                                        300)):
-                    self.log.error("Failed to connect link {0}".format(
+                                                        300), username=username, password=password):
+                    self.log.error("Failed to disconnect link {0}".format(
                         link.name))
                     results.append(False)
                 else:
-                    self.log.info("Successfully connected link {0}".format(
+                    self.log.info("Successfully disconnected link {0}".format(
                         link.name))
                     results.append(True)
         return results
