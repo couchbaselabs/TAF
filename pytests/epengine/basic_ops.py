@@ -122,8 +122,8 @@ class basic_ops(ClusterSetup):
         super(basic_ops, self).tearDown()
 
     def do_basic_ops(self):
-        key_1 = 'key1'
-        key_2 = 'key2'
+        key = 'key1'
+        tombstone_key = 'key2'
         self.log.info('Starting basic ops')
 
         default_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
@@ -132,30 +132,45 @@ class basic_ops(ClusterSetup):
         cluster_rest = ClusterRestAPI(self.cluster.master)
         mcd_client = VBucketAwareMemcached(cluster_rest, default_bucket,
                                            info=self.cluster.master)
-        mc_for_key = mcd_client.memcached(key_1)
+        mc_for_key = mcd_client.memcached(key)
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstats = Cbstats(self.cluster.master)
+        cbepctl = Cbepctl(shell)
 
         # MB-17231 - incr with full eviction
         rc = sdk_client.collection._increment(
-            key_1, IncrementOptions(delta=DeltaValueBase(1)))
+            key, IncrementOptions(delta=DeltaValueBase(1)))
         self.log.info('rc for incr: {0}'.format(rc))
 
         # MB-17289 del with meta
         rc = sdk_client.crud(DocLoading.Bucket.DocOps.UPDATE,
-                             key_1, {'value': 'value2'},
+                             key, {'value': 'value2'},
                              persist_to=PersistTo.ONE)
         self.log.info('set is: {0}'.format(rc))
 
+        self.sleep(5, "Wait before eviction")
         try:
-            mc_for_key.evict_key(key_1)
+            mc_for_key.evict_key(key)
         except MemcachedError as exp:
             self.fail("Exception with evict meta - {0}".format(exp))
 
-        CAS = 0xabcd
+        # MB-63769: Stop persistence + lookup tombstone
+        self.log.info("Stopping persistence to avoid flusher run")
+        cbepctl.persistence(default_bucket.name, "stop")
+        # To create a key as a tombstone with custom CAS
+        tombstone_cas = 0xabcd
         try:
             # key, exp, flags, seqno, cas
-            mc_for_key.del_with_meta(key_2, 0, 0, 2, CAS)
-        except MemcachedError as exp:
-            self.fail("Exception with del_with meta - {0}".format(exp))
+            mc_for_key.del_with_meta(tombstone_key, 0, 0, 2, tombstone_cas)
+            sdk_client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+                            tombstone_key, "_sysXattr", xattr=True,
+                            access_deleted=True)
+        except Exception as exp:
+            self.fail(f"Exception with del_with meta + lookup - {exp}")
+        finally:
+            cbepctl.persistence(default_bucket.name, "start")
+            cbstats.disconnect()
+            shell.disconnect()
 
     # Reproduce test case for MB-28078
     def do_setWithMeta_twice(self):

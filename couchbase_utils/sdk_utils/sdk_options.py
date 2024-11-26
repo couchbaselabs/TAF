@@ -164,9 +164,11 @@ class SDKOptions(object):
 
     @staticmethod
     def get_look_up_in_options(timeout=5,
-                               time_unit=SDKConstants.TimeUnit.SECONDS):
+                               time_unit=SDKConstants.TimeUnit.SECONDS,
+                               access_deleted=False):
         timeout = SDKOptions.get_duration(timeout, time_unit)
-        return options.LookupInOptions(timeout=timeout)
+        return options.LookupInOptions(timeout=timeout,
+                                       access_deleted=access_deleted)
 
     @staticmethod
     def get_insert_multi_options(

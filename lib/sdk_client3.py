@@ -958,7 +958,7 @@ class SDKClient(object):
             path_val[key] = [(value, '')]
             mutate_in_specs.append(SubDoc.get(value, xattr=xattr))
             options = SDKOptions.get_look_up_in_options(
-                timeout, time_unit)
+                timeout, time_unit, access_deleted=access_deleted)
 
             result, _ = self.__translate_get_multi_sub_doc_result(
                 {key: self.collection.lookup_in(key, mutate_in_specs,
