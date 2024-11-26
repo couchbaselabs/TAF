@@ -550,6 +550,7 @@ class Murphy(BaseTestCase, OPD):
                                    esClient=self.esClient, log_fail=self.log_query_failures)
                     ql.start_query_load()
                     self.ql.append(ql)
+            self.drIndex.start_update_stats(self.cluster)
             self.drIndex.start_index_stats(self.cluster)
 
         if self.cluster.fts_nodes:

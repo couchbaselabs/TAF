@@ -515,6 +515,19 @@ class DoctorN1QL():
                               kwargs=dict({"cluster": cluster}))
         th.start()
 
+    def update_index_stats(self, cluster, interval=1200):
+        for bucket in cluster.buckets:
+            for idx_name, idx_details in bucket.indexes.items():
+                update_q = "UPDATE STATISTICS FOR INDEX {0}.{1}".format(idx_details[4], idx_name)
+                execute_statement_on_n1ql(self.sdkClients[idx_details[2]+idx_details[3]], update_q)
+            time.sleep(interval)
+
+    def start_update_stats(self, cluster):
+        self.stop_run = False
+        th = threading.Thread(target=self.update_index_stats,
+                              kwargs=dict({"cluster": cluster}))
+        th.start()
+
 class QueryLoad:
     groundTruths = {}
     queryVectors = []
@@ -553,9 +566,9 @@ class QueryLoad:
 
     def start_query_load(self):
         if self.bucket.loadDefn.get("valType") == "siftBigANN":
-            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0] for idx, query in enumerate(self.queries)}
+            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0, []] for idx, query in enumerate(self.queries)}
         else:
-            self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0] for idx, query in enumerate(self.queries)}
+            self.query_stats = {query: [0, 0, 0, 0, "None", Lock(), 0, 0, []] for idx, query in enumerate(self.queries)}
         self.stop_run = False
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -643,6 +656,9 @@ class QueryLoad:
                     q_param_json, validate=validate_item_count)
                 self.query_stats[query][0] += metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[query][1] += 1
+                self.query_stats[query][8].append(metrics.executionTime().toNanos()/1000000.0)
+                if len(self.query_stats[query][8]) > 1000:
+                    self.query_stats[query][8].pop(0)
                 # lock.release()
                 if status == QueryStatus.SUCCESS:
                     if self.esClient:
@@ -716,8 +732,12 @@ class QueryLoad:
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
                     q_param_json, validate=validate_item_count)
-                self.query_stats[query][0] += metrics.executionTime().toNanos()/1000000.0
+                exec_time = metrics.executionTime().toNanos()/1000000.0
+                self.query_stats[query][0] += exec_time
                 self.query_stats[query][1] += 1
+                self.query_stats[query][8].append(exec_time)
+                if len(self.query_stats[query][8]) > 1000:
+                    self.query_stats[query][8].pop(0)
                 if status == QueryStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:

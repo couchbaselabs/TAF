@@ -323,6 +323,7 @@ class Murphy(BaseTestCase, hostedOPD):
                             ql.start_query_load()
                             self.ql.append(ql)
                     self.drIndex.start_index_stats(cluster)
+                    self.drIndex.start_update_stats(cluster)
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
@@ -364,7 +365,7 @@ class Murphy(BaseTestCase, hostedOPD):
                 if cluster.fts_nodes:
                     self.sleep(3600, "Check fts vector query status during %s KV load" % self.input.param("rebl_ops_rate", 5000))
 
-        self.sleep(10)
+        self.sleep(300)
 
         upgrade = self.input.capella.get("upgrade_image")
         if upgrade:
