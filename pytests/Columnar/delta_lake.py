@@ -715,7 +715,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
         testcases = [
             {
                 "description": "Invalid Value for table-format flag",
-                "expected_error": "Parameter(s) format must be specified",
+                "expected_error": "Invalid value for parameter 'table-format': deltatable",
                 "with_flag": "table-format",
                 "flag_value": "deltatable"
             },
@@ -751,10 +751,28 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                 "with_flag": "header",
                 "flag_value": True
             },
+            {
+                "description": "table-format flag missing",
+                "missing_with_flag": True,
+                "expected_error": "Parameter(s) format or table-format must be specified",
+                "with_flag": "table-format",
+                "flag_value": "delta"
+            },
+            {
+                "description": "If delta table missing",
+                "delta_table_missing": True,
+                "expected_error": "External source error. io.delta.kernel.exceptions.TableNotFoundException",
+                "with_flag": "table-format",
+                "flag_value": "delta"
+            },
         ]
+
         for testcase in testcases:
             self.log.info(f"Executing scenario - {testcase['description']}")
             dataset_name = self.cbas_util.generate_name()
+            if testcase.get("delta_table_missing", False):
+                delta_table_name = dataset_properties['path_on_external_container']
+                dataset_properties['path_on_external_container'] = "dummy"
             ddl = (f"CREATE EXTERNAL DATASET {dataset_name} on "
                    f"`{dataset.dataset_properties['external_container_name']}`"
                    f" at {link.name} path "
@@ -765,6 +783,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
             }
             if "table-format" not in with_parameters:
                 with_parameters["table-format"] = "delta"
+
+            if testcase.get("missing_with_flag", False):
+                with_parameters = {}
 
             ddl += json.dumps(with_parameters) + ";"
 
@@ -781,6 +802,8 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                 if status == "fatal":
                     self.fail(f"Error while running query on {dataset_name}. "
                               f"Error - {errors}")
+            if testcase.get("delta_table_missing", False):
+                 dataset_properties['path_on_external_container'] = delta_table_name
 
     def test_decimal_to_double_flag(self):
         decimal_to_double = self.input.param("decimal_to_double", True)
