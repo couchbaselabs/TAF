@@ -618,7 +618,7 @@ class SecurityBase(CouchbaseBaseTest):
             "projectId": self.project_id,
             "provider": "aws",
             "region": "us-east-1",
-            "plan": "Developer pro",
+            "plan": "Developer Pro",
             "supportTimezone": "PT",
             "serverVersion": "7.6",
             "cidr": "",
