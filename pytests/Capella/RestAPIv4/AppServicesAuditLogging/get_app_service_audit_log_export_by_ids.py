@@ -37,16 +37,16 @@ class GetAuditLogExports(GetAppService):
             },
             "permissions": {
                 "create": {
-                    "accessible": True
+                    "accessible": None
                 },
                 "read": {
-                    "accessible": True
+                    "accessible": None
                 },
                 "update": {
-                    "accessible": True
+                    "accessible": None
                 },
                 "delete": {
-                    "accessible": True
+                    "accessible": None
                 }
             }
         }

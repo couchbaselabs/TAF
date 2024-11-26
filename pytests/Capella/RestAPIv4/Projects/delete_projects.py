@@ -113,7 +113,8 @@ class DeleteProject(APIBase):
                 result = self.capellaAPI.org_ops_apis.delete_project(org, proj)
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
-            if self.validate_testcase(result, [204], testcase, failures):
+            self.validate_testcase(result, [204], testcase, failures)
+            if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
                 # Create a test subject resource.
                 res = self.capellaAPI.org_ops_apis.create_project(
@@ -151,7 +152,8 @@ class DeleteProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.delete_project(
                     self.organisation_id, self.project_id, header)
-            if self.validate_testcase(result, [204, 404], testcase, failures):
+            self.validate_testcase(result, [204, 404], testcase, failures)
+            if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
                 # Create a test subject resource.
                 res = self.capellaAPI.org_ops_apis.create_project(

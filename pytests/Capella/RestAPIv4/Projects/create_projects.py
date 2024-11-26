@@ -75,7 +75,8 @@ class CreateProject(GetProject):
                     org, self.prefix + "CREATE")
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
-            if self.validate_testcase(result, [201], testcase, failures):
+            self.validate_testcase(result, [201], testcase, failures)
+            if result.status_code == 201:
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
                 self.log.info("Deleting Project: {}".format(project_id))
@@ -111,7 +112,8 @@ class CreateProject(GetProject):
                 result = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, self.prefix + "CREATE",
                     headers=header)
-            if self.validate_testcase(result, [201], testcase, failures):
+            self.validate_testcase(result, [201], testcase, failures)
+            if result.status_code == 201:
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
                 self.log.info("Deleting Project: {}".format(project_id))
@@ -197,7 +199,8 @@ class CreateProject(GetProject):
                 result = self.capellaAPI.org_ops_apis.create_project(
                     testcase["organizationID"], self.prefix + "CREATE",
                     **kwarg)
-            if self.validate_testcase(result, [201], testcase, failures):
+            self.validate_testcase(result, [201], testcase, failures)
+            if result.status_code == 201:
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
                 self.log.info("Deleting Project: {}".format(project_id))
@@ -290,8 +293,9 @@ class CreateProject(GetProject):
                 result = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, testcase["name"],
                     testcase["description"])
-            if self.validate_testcase(result, [201], testcase, failures,
-                                      payloadTest=True):
+            self.validate_testcase(result, [201], testcase, failures,
+                                   payloadTest=True)
+            if result.status_code == 201:
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
                 self.log.info("Deleting Project: {}".format(project_id))
