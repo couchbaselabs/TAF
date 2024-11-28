@@ -20,6 +20,7 @@ spec = {
     Bucket.storageBackend: Bucket.StorageBackend.magma,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
+    Bucket.warmupBehavior: Bucket.WarmupBehavior.BACKGROUND,
 
     "buckets": {
         # Default bucket conf
@@ -66,6 +67,7 @@ spec = {
             Bucket.priority: Bucket.Priority.HIGH,
             Bucket.historyRetentionCollectionDefault: "true",
             Bucket.historyRetentionBytes: 10737418240,
+            Bucket.warmupBehavior: Bucket.WarmupBehavior.BLOCKING,
              "scopes": {
                 "scope_1": {
                     "collections": {

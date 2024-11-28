@@ -20,6 +20,7 @@ spec = {
     Bucket.storageBackend: Bucket.StorageBackend.magma,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
+    Bucket.warmupBehavior: Bucket.WarmupBehavior.BACKGROUND,
     "buckets": {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
@@ -33,7 +34,8 @@ spec = {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 50,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 10,
-            Bucket.ramQuotaMB: 1000
+            Bucket.ramQuotaMB: 1000,
+            Bucket.warmupBehavior: Bucket.WarmupBehavior.BLOCKING
         }
     }
 }

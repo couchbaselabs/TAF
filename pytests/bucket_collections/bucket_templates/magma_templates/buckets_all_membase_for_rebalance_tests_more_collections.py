@@ -19,6 +19,7 @@ spec = {
     Bucket.storageBackend: Bucket.StorageBackend.magma,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.VALUE_ONLY,
     Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
+    Bucket.warmupBehavior: Bucket.WarmupBehavior.BACKGROUND,
 
     "buckets": {
         "default": {
@@ -64,6 +65,7 @@ spec = {
         "bucket1": {
             Bucket.bucketType: Bucket.Type.MEMBASE,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 5,
+            Bucket.warmupBehavior: Bucket.WarmupBehavior.BLOCKING,
             "privileges": [
                 "Perm2"
             ],
