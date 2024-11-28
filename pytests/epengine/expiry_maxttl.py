@@ -3,6 +3,7 @@ from threading import Thread
 
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants import DocLoading
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
@@ -642,9 +643,10 @@ class ExpiryMaxTTL(ClusterSetup):
 
         self.log.info("Target node: %s, Key: %s" % (target_node.ip, key))
         self.log.info("Disabling expiry_pager")
+        rest = BucketRestApi(target_node)
+        rest.edit_bucket(bucket.name, {"expiryPagerSleepTime": 0})
         shell = RemoteMachineShellConnection(target_node)
         cb_ep_ctl = Cbepctl(shell)
-        cb_ep_ctl.set(bucket.name, "flush_param", "exp_pager_stime", 0)
 
         # Create SDK client
         client = SDKClient(self.cluster, bucket)
