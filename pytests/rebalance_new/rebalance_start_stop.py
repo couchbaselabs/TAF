@@ -88,7 +88,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
         """
         rest = ClusterRestAPI(self.cluster.master)
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
                                                      timeout=1200)
@@ -152,7 +152,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
             """
         rest = ClusterRestAPI(self.cluster.master)
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
                                                      timeout=1200)
@@ -227,7 +227,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.nodes_init|servs_in|extra_nodes_in|extra_nodes_out|servs_out
             """
         rest = ClusterRestAPI(self.cluster.master)
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
                                                      timeout=1200)
@@ -313,7 +313,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats,
                                                          prev_failover_stats)
         self.rest = ClusterRestAPI(self.cluster.master)
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         _ = list(set(self.servers[:self.nodes_init] + self.servs_in)
                  - set(self.servs_out))

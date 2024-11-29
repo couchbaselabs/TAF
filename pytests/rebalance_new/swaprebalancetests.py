@@ -24,7 +24,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                       % (self.case_number, self._testMethodName))
         self.cluster_run = False
         self.rest = ClusterRestAPI(self.cluster.master)
-        self.reb_util = RebalanceUtil(self.cluster.master)
+        self.reb_util = RebalanceUtil(self.cluster)
         if len(set([server.ip for server in self.servers])) == 1:
             ip = self.cluster_util.get_nodes_self(self.cluster.master).ip
             for server in self.servers:
