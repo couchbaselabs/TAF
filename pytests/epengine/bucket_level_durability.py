@@ -7,7 +7,6 @@ from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import BucketDurabilityBase
 from error_simulation.cb_error import CouchbaseError
-from py_constants import CbServer
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 
@@ -42,12 +41,8 @@ class CreateBucketTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
-            if bucket_dict[Bucket.storageBackend] \
-                    == Bucket.StorageBackend.magma:
-                bucket_obj.numVBuckets = CbServer.magma_default_vbuckets
-            else:
-                bucket_obj.numVBuckets = CbServer.total_vbuckets
-
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             output = cb_cli.create_bucket(bucket_dict, wait=True)
             if self.num_replicas == Bucket.ReplicaNum.THREE \
                     and d_level != SDKConstants.DurabilityLevel.NONE:
@@ -104,7 +99,8 @@ class CreateBucketTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
-
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             try:
                 self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                                wait_for_warmup=True)
@@ -163,6 +159,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
         self.log.info(create_desc)
         # Object to support performing CRUDs and create Bucket
         bucket_obj = Bucket(bucket_dict)
+        self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                         bucket_dict, bucket_obj)
         self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                        wait_for_warmup=True)
         self.get_vbucket_type_mapping(bucket_obj.name)
@@ -204,6 +202,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Object to support performing CRUDs and create Bucket
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
@@ -245,6 +245,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Object to support performing CRUDs and create Bucket
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.summary.add_step(step_desc)
@@ -328,6 +330,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
@@ -381,6 +385,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
@@ -443,6 +449,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
@@ -581,6 +589,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
         bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
         # Object to support performing CRUDs and create Bucket
         bucket_obj = Bucket(bucket_dict)
+        self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                         bucket_dict, bucket_obj)
         self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                        wait_for_warmup=True)
         self.get_vbucket_type_mapping(bucket_obj.name)
@@ -866,6 +876,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.get_vbucket_type_mapping(bucket_obj.name)
@@ -939,6 +951,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
             self.summary.add_step(create_desc)
@@ -974,6 +988,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
+            self.set_num_vbuckets_for_bucket(self.bucket_type,
+                                             bucket_dict, bucket_obj)
             task = self.bucket_util.async_create_bucket(self.cluster,
                                                         bucket_obj)
             self.task_manager.get_task_result(task)

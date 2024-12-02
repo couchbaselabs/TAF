@@ -9,6 +9,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
+from py_constants import CbServer
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -206,6 +207,15 @@ class BucketDurabilityBase(ClusterSetup):
         verification_dict["sync_write_aborted_count"] = 0
         verification_dict["sync_write_committed_count"] = 0
         return verification_dict
+
+    @staticmethod
+    def set_num_vbuckets_for_bucket(bucket_type, bucket_dict, bucket_obj):
+        if bucket_type != Bucket.Type.EPHEMERAL \
+                and bucket_dict[
+                    Bucket.storageBackend] == Bucket.StorageBackend.magma:
+            bucket_obj.numVBuckets = CbServer.magma_default_vbuckets
+        else:
+            bucket_obj.numVBuckets = CbServer.total_vbuckets
 
     def get_vbucket_type_mapping(self, bucket_name):
         for node in list(self.vbs_in_node.keys()):
