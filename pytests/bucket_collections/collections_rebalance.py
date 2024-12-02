@@ -297,16 +297,17 @@ class CollectionsRebalance(CollectionBase):
     def set_retry_exceptions(self, doc_loading_spec):
         retry_exceptions = list()
         if self.data_load_stage == "during" or \
-                (self.data_load_stage == "before" and self.data_load_type == "async"):
-            retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-            retry_exceptions.append(SDKException.TimeoutException)
-            retry_exceptions.append(SDKException.RequestCanceledException)
-            retry_exceptions.append(SDKException.DocumentNotFoundException)
+                (self.data_load_stage == "before"
+                 and self.data_load_type == "async"):
+            retry_exceptions.extend(SDKException.AmbiguousTimeoutException)
+            retry_exceptions.extend(SDKException.TimeoutException)
+            retry_exceptions.extend(SDKException.RequestCanceledException)
+            retry_exceptions.extend(SDKException.DocumentNotFoundException)
             # This is needed as most of the magma testing would be done < 10% DGM
-            retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+            retry_exceptions.extend(SDKException.ServerOutOfMemoryException)
             if self.durability_level:
-                retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-                retry_exceptions.append(SDKException.DurabilityImpossibleException)
+                retry_exceptions.extend(SDKException.DurabilityAmbiguousException)
+                retry_exceptions.extend(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def load_to_dgm(self):

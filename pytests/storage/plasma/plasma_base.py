@@ -18,9 +18,9 @@ class PlasmaBaseTest(StorageBase):
     def setUp(self):
         super(PlasmaBaseTest, self).setUp()
         self.index_replicas = self.input.param("index_replicas", 0)
-        self.retry_exceptions = list([SDKException.AmbiguousTimeoutException,
-                                      SDKException.DurabilityImpossibleException,
-                                      SDKException.DurabilityAmbiguousException])
+        self.retry_exceptions = SDKException.AmbiguousTimeoutException \
+            + SDKException.DurabilityImpossibleException \
+            + SDKException.DurabilityAmbiguousException
         self.sdk_timeout = self.input.param("sdk_timeout", 60)
         self.moi_snapshot_interval = self.input.param("moi_snapshot_interval", 120)
         self.manual = self.input.param("manual", False)

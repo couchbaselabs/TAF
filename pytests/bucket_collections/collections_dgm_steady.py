@@ -124,9 +124,8 @@ class CollectionsDgmSteady(CollectionBase):
         self.bucket_util.print_bucket_stats(self.cluster)
 
     def set_ignore_exceptions(self, doc_loading_spec):
-        ignore_exceptions = list()
-        ignore_exceptions.append(SDKException.ServerOutOfMemoryException)
-        ignore_exceptions.append(SDKException.TemporaryFailureException)
+        ignore_exceptions = SDKException.ServerOutOfMemoryException \
+            + SDKException.TemporaryFailureException
         doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
 
     def data_validation(self, doc_loading_task):

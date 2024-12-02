@@ -90,12 +90,12 @@ class MagmaRebalance(MagmaBaseTest):
     def set_retry_exceptions(self):
         #retry_exceptions = []
         ##if self.data_load_stage == "during" or (self.data_load_stage == "before" and self.data_load_type == "async"):
-        #    retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        #    retry_exceptions.append(SDKException.TimeoutException)
-        #    retry_exceptions.append(SDKException.RequestCanceledException)
+        #    retry_exceptions.extend(SDKException.AmbiguousTimeoutException)
+        #    retry_exceptions.extend(SDKException.TimeoutException)
+        #    retry_exceptions.extend(SDKException.RequestCanceledException)
         if self.durability_level:
-            self.retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            self.retry_exceptions.append(SDKException.DurabilityImpossibleException)
+            self.retry_exceptions.extend(SDKException.DurabilityAmbiguousException)
+            self.retry_exceptions.extend(SDKException.DurabilityImpossibleException)
         #doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def get_active_resident_threshold(self, bucket_name):

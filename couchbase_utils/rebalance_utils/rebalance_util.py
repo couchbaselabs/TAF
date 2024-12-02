@@ -5,7 +5,6 @@ from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from common_lib import sleep
 from custom_exceptions.exception import ServerUnavailableException, \
     RebalanceFailedException
-from py_constants import CbServer
 
 
 class RebalanceUtil(object):

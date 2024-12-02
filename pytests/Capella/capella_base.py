@@ -45,13 +45,13 @@ class CapellaBase(BaseTestCase):
 
         # SDK Exceptions
         self.check_temporary_failure_exception = False
-        self.retry_exceptions = [SDKException.TimeoutException,
-                                 SDKException.AmbiguousTimeoutException,
-                                 SDKException.RequestCanceledException,
-                                 SDKException.UnambiguousTimeoutException,
-                                 SDKException.ServerOutOfMemoryException,
-                                 SDKException.DurabilityAmbiguousException]
-        self.ignore_exceptions = []
+        self.retry_exceptions = SDKException.TimeoutException \
+            + SDKException.AmbiguousTimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.UnambiguousTimeoutException \
+            + SDKException.ServerOutOfMemoryException \
+            + SDKException.DurabilityAmbiguousException
+        self.ignore_exceptions = list()
 
         # Create Buckets
         self.log.info("Get the available memory quota")

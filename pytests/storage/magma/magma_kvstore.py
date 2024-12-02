@@ -65,7 +65,7 @@ class KVStoreTests(MagmaBaseTest):
         read_task = False
 
         if self.check_temporary_failure_exception:
-            retry_exceptions.append(SDKException.TemporaryFailureException)
+            retry_exceptions.extend(SDKException.TemporaryFailureException)
 
         if "update" in doc_ops and self.gen_update is not None:
             task = self.bucket_util.async_load_bucket(

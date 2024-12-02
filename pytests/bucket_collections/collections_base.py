@@ -823,15 +823,14 @@ class CollectionBase(ClusterSetup):
 
     @staticmethod
     def set_retry_exceptions(doc_loading_spec, d_level):
-        retry_exceptions = list()
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        retry_exceptions = SDKException.AmbiguousTimeoutException \
+            + SDKException.TimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.DocumentNotFoundException \
+            + SDKException.ServerOutOfMemoryException
         if d_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+            retry_exceptions += SDKException.DurabilityAmbiguousException
+            retry_exceptions += SDKException.DurabilityImpossibleException
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def set_allowed_hosts(self):

@@ -5284,15 +5284,14 @@ class CBASRebalanceUtil(object):
         Exceptions for which mutations need to be retried during
         topology changes
         """
-        retry_exceptions = list()
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        retry_exceptions = SDKException.AmbiguousTimeoutException \
+            + SDKException.TimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.DocumentNotFoundException \
+            + SDKException.ServerOutOfMemoryException
         if durability_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+            retry_exceptions += SDKException.DurabilityAmbiguousException
+            retry_exceptions += SDKException.DurabilityImpossibleException
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     @staticmethod
@@ -5303,7 +5302,7 @@ class CBASRebalanceUtil(object):
         eg: reads or deletes before creates
         """
         ignore_exceptions = list()
-        ignore_exceptions.append(SDKException.DocumentNotFoundException)
+        ignore_exceptions.extend(SDKException.DocumentNotFoundException)
         doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
 
     def wait_for_data_load_to_complete(self, cluster, task, skip_validations):

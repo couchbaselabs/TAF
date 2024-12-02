@@ -228,12 +228,10 @@ class volume(BaseTestCase):
             if "update" not in self.doc_ops:
                 self.update_perc = 0
             process_concurrency = (self.delete_perc*process_concurrency)/(self.create_perc + self.delete_perc + self.update_perc)
-        retry_exceptions = [
-            SDKException.AmbiguousTimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException,
-        ]
+        retry_exceptions = SDKException.AmbiguousTimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.DurabilityAmbiguousException \
+            + SDKException.DurabilityImpossibleException
         tasks_info = self.bucket_util._async_load_all_buckets(
             self.cluster, kv_gen, op_type, 0, batch_size=20,
             persist_to=self.persist_to, replicate_to=self.replicate_to,

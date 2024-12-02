@@ -552,7 +552,7 @@ class CrashTest(CollectionBase):
                 def_bucket.name, self.target_node)
             cb_stat.disconnect()
             if self.target_node == "active":
-                retry_exceptions = [SDKException.TimeoutException]
+                retry_exceptions.extend(SDKException.TimeoutException)
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
             remote.disconnect()

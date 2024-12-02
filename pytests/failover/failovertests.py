@@ -270,13 +270,11 @@ class FailoverTests(FailoverBaseTest):
             self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
                                 eject_nodes=[node.id for node in chosen])
 
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException,
-            SDKException.TemporaryFailureException
-        ]
+        retry_exceptions = SDKException.TimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.DurabilityAmbiguousException \
+            + SDKException.DurabilityImpossibleException \
+            + SDKException.TemporaryFailureException
 
         # Rebalance Monitoring
         reb_util = RebalanceUtil(self.cluster)
@@ -410,15 +408,13 @@ class FailoverTests(FailoverBaseTest):
             self.sleep(60)
             self.log.info(" Start Rebalance Again !")
             self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
-                                deltaRecoveryBuckets=self.deltaRecoveryBuckets)
+                                delta_recovery_buckets=self.deltaRecoveryBuckets)
 
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException,
-            SDKException.TemporaryFailureException
-        ]
+        retry_exceptions = SDKException.TimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.DurabilityAmbiguousException \
+            + SDKException.DurabilityImpossibleException \
+            + SDKException.TemporaryFailureException
 
         if not self.atomicity:
             # CRUDs while rebalance is running in parallel

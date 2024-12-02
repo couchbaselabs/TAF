@@ -61,18 +61,17 @@ class LMT(ServerlessOnPremBaseTest):
         rest = RestConnection(self.cluster.master)
         self.info = rest.get_nodes_self()
         kv_memory = self.info.memoryQuota - 100
-        ramQuota = self.input.param("ramQuota", kv_memory)
         self.PrintStep("Create required buckets and collections")
         self.dynamic_throttling = self.input.param("dynamic_throttling", False)
         self.bucket_throttling_limit = self.input.param("bucket_throttling_limit", 5000)
         self.check_temporary_failure_exception = False
-        self.retry_exceptions = [SDKException.TimeoutException,
-                                 SDKException.AmbiguousTimeoutException,
-                                 SDKException.RequestCanceledException,
-                                 SDKException.UnambiguousTimeoutException,
-                                 SDKException.ServerOutOfMemoryException,
-                                 SDKException.DurabilityAmbiguousException]
-        self.ignore_exceptions = []
+        self.retry_exceptions = SDKException.TimeoutException \
+            + SDKException.AmbiguousTimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.UnambiguousTimeoutException \
+            + SDKException.ServerOutOfMemoryException \
+            + SDKException.DurabilityAmbiguousException
+        self.ignore_exceptions = list()
         # Monitor Stats Params
         self.ep_queue_stats = self.input.param("ep_queue_stats", True)
         self.monitor_stats = ["doc_ops", "ep_queue_size"]
@@ -313,7 +312,7 @@ class LMT(ServerlessOnPremBaseTest):
         read_task = False
 
         if self.check_temporary_failure_exception:
-            retry_exceptions.append(SDKException.TemporaryFailureException)
+            retry_exceptions.extend(SDKException.TemporaryFailureException)
 
         if "update" in doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(

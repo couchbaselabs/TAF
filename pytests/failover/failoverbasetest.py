@@ -5,18 +5,16 @@ from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
 
-retry_exceptions = [
-    SDKException.TimeoutException,
-    SDKException.RequestCanceledException,
-    SDKException.DurabilityAmbiguousException,
-    SDKException.DurabilityImpossibleException]
+retry_exceptions = SDKException.TimeoutException \
+    + SDKException.RequestCanceledException \
+    + SDKException.DurabilityAmbiguousException \
+    + SDKException.DurabilityImpossibleException
 
 
 class FailoverBaseTest(BaseTestCase):
-
     def setUp(self):
-        self._cleanup_nodes = []
-        self._failed_nodes = []
+        self._cleanup_nodes = list()
+        self._failed_nodes = list()
         super(FailoverBaseTest, self).setUp()
         default_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
         self.default_view_name = "default_view"
@@ -151,7 +149,7 @@ class FailoverBaseTest(BaseTestCase):
             load_using=self.load_docs_using)
 
     def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
-        tasks = []
+        tasks = list()
         for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, kv_gen, op_type, exp,
@@ -210,10 +208,10 @@ class FailoverBaseTest(BaseTestCase):
                      task_verification=False):
         retry_exceptions = \
             list(set(retry_exceptions +
-                     [SDKException.TimeoutException,
-                      SDKException.RequestCanceledException,
-                      SDKException.DurabilityImpossibleException,
-                      SDKException.DurabilityAmbiguousException]))
+                     SDKException.TimeoutException +
+                     SDKException.RequestCanceledException +
+                     SDKException.DurabilityImpossibleException +
+                     SDKException.DurabilityAmbiguousException))
 
         loaders = self.start_parallel_cruds(retry_exceptions,
                                             ignore_exceptions,

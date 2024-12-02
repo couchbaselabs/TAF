@@ -12,8 +12,8 @@ from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 
-retry_exceptions = rebalance_base.retry_exceptions +\
-                    [SDKException.RequestCanceledException]
+retry_exceptions = rebalance_base.retry_exceptions \
+    + SDKException.RequestCanceledException
 
 
 class RebalanceInTests(RebalanceBaseTest):

@@ -236,8 +236,6 @@ class basic_ops(ClusterSetup):
         doc_op = self.input.param("doc_op", None)
         doc_ops_loop = self.input.param("doc_ops_loop", 1)
         def_bucket = self.cluster.buckets[0]
-        ignore_exceptions = list()
-        retry_exceptions = list()
         supported_d_levels = self.bucket_util.get_supported_durability_levels(
             minimum_level=SDKConstants.DurabilityLevel.MAJORITY)
 

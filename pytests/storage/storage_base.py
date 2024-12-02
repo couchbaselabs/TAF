@@ -45,13 +45,13 @@ class StorageBase(BaseTestCase):
 
         # SDK Exceptions
         self.check_temporary_failure_exception = False
-        self.retry_exceptions = [SDKException.TimeoutException,
-                                 SDKException.AmbiguousTimeoutException,
-                                 SDKException.RequestCanceledException,
-                                 SDKException.UnambiguousTimeoutException,
-                                 SDKException.ServerOutOfMemoryException,
-                                 SDKException.DurabilityAmbiguousException]
-        self.ignore_exceptions = []
+        self.retry_exceptions = SDKException.TimeoutException \
+            + SDKException.AmbiguousTimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.UnambiguousTimeoutException \
+            + SDKException.ServerOutOfMemoryException \
+            + SDKException.DurabilityAmbiguousException
+        self.ignore_exceptions = list()
 
         # Sets autocompaction at bucket level
         self.autoCompactionDefined = str(self.input.param("autoCompactionDefined", "false")).lower()
@@ -907,7 +907,7 @@ class StorageBase(BaseTestCase):
         read_task = False
 
         if self.check_temporary_failure_exception:
-            retry_exceptions.append(SDKException.TemporaryFailureException)
+            retry_exceptions.extend(SDKException.TemporaryFailureException)
 
         if "update" in doc_ops and self.gen_update is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(

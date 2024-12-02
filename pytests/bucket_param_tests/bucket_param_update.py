@@ -235,20 +235,20 @@ class BucketParamTest(ClusterSetup):
             d_impossible_exception = \
                 SDKException.DurabilityImpossibleException
             ignore_exceptions = list()
-            retry_exceptions = [SDKException.DurabilityAmbiguousException,
-                                SDKException.AmbiguousTimeoutException]
+            retry_exceptions = SDKException.DurabilityAmbiguousException \
+                + SDKException.AmbiguousTimeoutException
 
             suppress_error_table = False
             num_items = self.num_items
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:
                 doc_ops = "update"
                 suppress_error_table = True
-                ignore_exceptions = [d_impossible_exception]+retry_exceptions
+                ignore_exceptions = d_impossible_exception + retry_exceptions
                 retry_exceptions = list()
                 # Cap this value to avoid unnecessary failures
                 num_items = 10000
             else:
-                retry_exceptions.append(d_impossible_exception)
+                retry_exceptions.extend(d_impossible_exception)
 
             # Creating doc creator to be used by test cases
             doc_create = doc_generator(
@@ -324,7 +324,7 @@ class BucketParamTest(ClusterSetup):
 
             ignore_exceptions = list()
             if replica_num == 3 and self.is_sync_write_enabled:
-                ignore_exceptions.append(
+                ignore_exceptions.extend(
                     SDKException.DurabilityImpossibleException)
 
             self.log.info("Performing doc_ops(update) after rebalance")

@@ -172,15 +172,14 @@ class volume(AutoFailoverBaseTest):
         self.assertTrue(task.result, "Rebalance Failed")
 
     def set_retry_exceptions(self, doc_loading_spec):
-        retry_exceptions = []
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        retry_exceptions = SDKException.AmbiguousTimeoutException \
+            + SDKException.TimeoutException \
+            + SDKException.RequestCanceledException \
+            + SDKException.DocumentNotFoundException \
+            + SDKException.ServerOutOfMemoryException
         if self.durability_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+            retry_exceptions += SDKException.DurabilityAmbiguousException
+            retry_exceptions += SDKException.DurabilityImpossibleException
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def data_load_collection(self, async_load=True, skip_read_success_results=True):
