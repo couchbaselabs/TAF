@@ -163,7 +163,7 @@ class SiriusCouchbaseLoader(object):
         self.base64 = base64
         self.mutate_field = None
         self.mutation_timeout = 0
-        
+
         # Flags for validation
         self.validate_docs = validate_docs
         self.validate_deleted_docs = validate_deleted_docs

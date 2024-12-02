@@ -4,22 +4,21 @@ Created on 07-May-2021
 @author: riteshagarwal
 '''
 from FtsLib.FtsOperations import FtsHelper
+from cb_server_rest_util.search.search_api import SearchRestAPI
 from global_vars import logger
 from TestInput import TestInputSingleton
-from BucketLib.bucket import Bucket
 
 
 class FTSUtils:
 
-    def __init__(self, cluster, cluster_util, server_task):
+    def __init__(self, cluster, server_task):
         self.cluster = cluster
-        self.cluster_util = cluster_util
         self.task = server_task
         self.task_manager = self.task.jython_task_manager
         self.input = TestInputSingleton.input
         self.fts_index_partitions = self.input.param("fts_index_partition", 6)
         self.log = logger.get("test")
-        self.fts_helper = FtsHelper(self.cluster.fts_nodes[0])
+        self.fts_helper = SearchRestAPI(self.cluster.fts_nodes[0])
 
     def get_fts_idx_template(self):
         fts_idx_template = {
@@ -74,7 +73,7 @@ class FTSUtils:
         fts_param_template["planParams"].update({
             "indexPartitions": self.fts_index_partitions})
         fts_param_template["params"]["mapping"]["types"].update({
-            "%s.%s" % (scope.name, collection.name): {
+            "%s.%s" % (scope, collection): {
                 "dynamic": True, "enabled": True}
             }
         )
@@ -83,9 +82,9 @@ class FTSUtils:
         fts_param_template = str(fts_param_template).replace("'", "\"")
 
         self.log.debug("Creating fts index: {}".format(name))
-        status, _ = self.fts_helper.create_fts_index_from_json(
+        status, content = self.fts_helper.create_fts_index_from_json(
             name, str(fts_param_template))
-        return status
+        return status, content
 
     def drop_fts_indexes(self, idx_name):
         """
@@ -93,5 +92,5 @@ class FTSUtils:
         from fts_dict
         """
         self.log.debug("Dropping fts index: {}".format(idx_name))
-        status, _ = self.fts_helper.delete_fts_index(idx_name)
-        return status
+        status, content = self.fts_helper.delete_fts_index(idx_name)
+        return status, content
