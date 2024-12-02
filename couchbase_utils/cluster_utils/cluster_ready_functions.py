@@ -1004,9 +1004,9 @@ class ClusterUtils:
 
                 for _, node_status in node_statuses.items():
                     if node.id == node_status["otpNode"]:
-                        if 'gracefulFailoverPossible' in node_status.keys() and \
-                                node_status['gracefulFailoverPossible'] == "true":
-                            node.gracefulFailoverPossible = True
+                        if 'gracefulFailoverPossible' in node_status.keys():
+                            node.gracefulFailoverPossible = \
+                                node_status['gracefulFailoverPossible']
                         else:
                             node.gracefulFailoverPossible = False
                         break
@@ -1422,9 +1422,8 @@ class ClusterUtils:
         retry = 0
         while progress != -1 and progress < percentage and retry < num_retry:
             # -1 is error , -100 means could not retrieve progress
-            self.get_rebalance_status_and_progress(cluster)
             _, progress = self.get_rebalance_status_and_progress(
-                cluster.master, "rebalance")
+                cluster, "rebalance")
             if progress == -100:
                 self.log.error("Unable to retrieve rebalance progress. "
                                "Retrying..")

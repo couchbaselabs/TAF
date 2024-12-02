@@ -4293,10 +4293,10 @@ class BucketUtils(ScopeUtils):
         servers = self.cluster_util.get_kv_nodes(cluster, servers)
         active, replica = self.get_vb_distribution_active_replica(
             cluster, servers=servers, buckets=buckets)
-        for bucket in list(active.keys()):
+        for bucket in buckets:
             self.log.debug("Begin Verification for Bucket {0}".format(bucket))
-            active_result = active[bucket]
-            replica_result = replica[bucket]
+            active_result = active[bucket.name]
+            replica_result = replica[bucket.name]
             if graceful or type == "rebalance":
                 self.assertTrue(active_result["total"] == bucket.numVBuckets,
                                 "total vbuckets do not match for active data set (= criteria), actual {0} expectecd {1}"
