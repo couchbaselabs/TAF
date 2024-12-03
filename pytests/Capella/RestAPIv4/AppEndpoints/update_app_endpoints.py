@@ -141,13 +141,15 @@ class PutAppEndpoints(GetAppEndpoints):
 
             result = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
                 organization, project, cluster, appService, appEndpointName,
-                self.expected_res["deltaSync"], self.expected_res["bucket"],
-                self.expected_res["scopes"], self.expected_res["userXattrKey"])
+                self.expected_res["name"], self.expected_res["deltaSync"],
+                self.expected_res["bucket"], self.expected_res["scopes"],
+                self.expected_res["userXattrKey"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
                     organization, project, cluster, appService,
-                    appEndpointName, self.expected_res["deltaSync"],
+                    appEndpointName, self.expected_res["name"],
+                    self.expected_res["deltaSync"],
                     self.expected_res["bucket"], self.expected_res["scopes"],
                     self.expected_res["userXattrKey"])
             self.capellaAPI.cluster_ops_apis.app_endpoints_endpoint = \
@@ -173,15 +175,16 @@ class PutAppEndpoints(GetAppEndpoints):
             result = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
                 self.organisation_id, self.project_id, self.cluster_id, 
                 self.app_service_id, self.appEndpointName,
-                self.expected_res["deltaSync"], self.expected_res["bucket"],
-                self.expected_res["scopes"], self.expected_res["userXattrKey"],
+                self.expected_res["name"], self.expected_res["deltaSync"],
+                self.expected_res["bucket"], self.expected_res["scopes"],
+                self.expected_res["userXattrKey"],
                 header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
-                    self.organisation_id, self.project_id, self.cluster_id, 
+                    self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, self.appEndpointName,
-                    self.expected_res["deltaSync"],
+                    self.expected_res["name"], self.expected_res["deltaSync"],
                     self.expected_res["bucket"], self.expected_res["scopes"],
                     self.expected_res["userXattrKey"],
                     header)
@@ -434,7 +437,7 @@ class PutAppEndpoints(GetAppEndpoints):
             self.log.info(testcase["description"])
             res = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id, self.appEndpointName,
+                self.app_service_id, self.appEndpointName, testcase["name"],
                 testcase["deltaSync"], testcase["bucket"], testcase["scopes"],
                 testcase["userXattrKey"])
             if res.status_code == 429:
@@ -442,8 +445,8 @@ class PutAppEndpoints(GetAppEndpoints):
                 res = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, self.appEndpointName,
-                    testcase["deltaSync"], testcase["bucket"],
-                    testcase["scopes"],
+                    testcase["name"], testcase["deltaSync"],
+                    testcase["bucket"], testcase["scopes"],
                     testcase["userXattrKey"])
             self.validate_testcase(res, [204], testcase, failures)
             if res.status_code == 204:
@@ -460,7 +463,10 @@ class PutAppEndpoints(GetAppEndpoints):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_app_endpoint, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id, self.appEndpointName
+                self.app_service_id, self.appEndpointName,
+                self.expected_res["name"], self.expected_res["deltaSync"],
+                self.expected_res["bucket"], self.expected_res["scopes"],
+                self.expected_res["userXattrKey"]
             )
         ]]
         self.throttle_test(api_func_list)
@@ -469,7 +475,10 @@ class PutAppEndpoints(GetAppEndpoints):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_app_endpoint, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id, self.appEndpointName
+                self.app_service_id, self.appEndpointName,
+                self.expected_res["name"], self.expected_res["deltaSync"],
+                self.expected_res["bucket"], self.expected_res["scopes"],
+                self.expected_res["userXattrKey"]
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)
