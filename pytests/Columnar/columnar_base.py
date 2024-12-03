@@ -2,6 +2,7 @@
 Created on 17-Oct-2023
 @author: Umang Agrawal
 """
+import os
 
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
@@ -315,17 +316,19 @@ class ColumnarBaseTest(BaseTestCase):
             "no_of_external_links"] = self.input.param("num_external_links", 0)
         if columnar_spec["external_link"]["no_of_external_links"]:
             if self.input.param("external_link_source", "s3") == "gcs":
-                with open('pytests/Columnar/credentials.json', 'r') as file:
-                    # Load JSON data from file
-                    data = json.load(file)
-                    data["private_key_id"] = self.input.param("gcs_private_key_id")
-                    data["private_key"] = self.input.param("gcs_private_key")
-                    data["client_email"] = self.input.param("gcs_client_email")
-                    data["client_id"] = self.input.param("gcs_client_id")
-                columnar_spec["external_link"]["properties"] = [{
-                    "type": "gcs",
-                    "jsonCredentials": data
-                }]
+                try:
+                    # gcs_certificate variable should be set in jenkins to use here
+                    self.log.info("Fetching certificate file path from the env: gcs_certificate")
+                    gcs_certificate = os.getenv('gcs_certificate')
+                    with open(gcs_certificate, 'r') as file:
+                        # Load JSON data from file
+                        data = json.load(file)
+                    columnar_spec["external_link"]["properties"] = [{
+                        "type": "gcs",
+                        "jsonCredentials": data
+                    }]
+                except Exception as err:
+                    raise err
             else: columnar_spec["external_link"]["properties"] = [{
                 "type": "s3",
                 "region": self.aws_region,

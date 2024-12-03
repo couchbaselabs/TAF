@@ -6,6 +6,7 @@ Created on 3-January-2024
 import math
 import json
 import os.path
+import os
 import random
 from queue import Queue
 
@@ -25,6 +26,8 @@ def pairs(*lists):
         for pair in product(*t):
             yield pair
 
+
+gcs_certificate = os.getenv('gcp_storage_access_file')
 
 class CopyToBlobStorage(ColumnarBaseTest):
     def __init__(self, methodName: str = "runTest"):
@@ -50,13 +53,9 @@ class CopyToBlobStorage(ColumnarBaseTest):
         self.link_type = self.input.param("external_link_source", "s3")
         self.gcs_client = None
         if self.link_type == "gcs":
-            with open('pytests/Columnar/credentials.json', 'r') as file:
+            with open(gcs_certificate, 'r') as file:
                 # Load JSON data from file
                 credentials = json.load(file)
-                credentials["private_key_id"] = self.input.param("gcs_private_key_id")
-                credentials["private_key"] = self.input.param("gcs_private_key")
-                credentials["client_email"] = self.input.param("gcs_client_email")
-                credentials["client_id"] = self.input.param("gcs_client_id")
                 self.gcs_client = GCS(credentials)
 
         for i in range(5):
