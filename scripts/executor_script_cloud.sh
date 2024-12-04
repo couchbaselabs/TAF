@@ -72,8 +72,9 @@ pyenv local $PYENV_VERSION
 python -m pip install -r requirements.txt
 
 # Export JAVA_HOME for delta_spark dependencies to work
-export JAVA_HOME=`update-alternatives --list java | head -1 | sed  's|/jre/bin/java||g'`
-
+tem_java_home=`update-alternatives --list java | head -1 | sed  's|/bin/java||g'`
+export JAVA_HOME=`echo $tem_java_home | sed  's|/jre||g'`
+echo "JAVA_HOME is $JAVA_HOME"
 # Fetch rerun job to run
 echo "" > rerun_props_file
 if [ ${fresh_run} == false ]; then
