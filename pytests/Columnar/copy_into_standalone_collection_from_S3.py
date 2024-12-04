@@ -320,7 +320,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             status, metrics, errors, results, _, warnings = self.cbas_util.execute_statement_on_cbas_util(
                 self.columnar_cluster, statement_to_execute)
             if not self.cbas_util.validate_error_and_warning_in_response(status, errors,
-                                                                         expected_error="Parameter(s) format must be specified",
+                                                                         expected_error="Parameter(s) format or table-format must be specified",
                                                                          expected_error_code=21010):
                 self.fail("Error while copying data from S3 into {0} "
                           "standalone collection".format(standalone_coll.full_name))
