@@ -70,7 +70,7 @@ class RemoteMachineHelper(object):
                 self.infra_log.error("%s - process %s not running or crashed"
                                      % (self.remote_shell.ip, process_name))
                 return False
-            self.log.debug("Sleep before monitor_process retry..")
+            self.infra_log.debug("Sleep before monitor_process retry..")
             sleep(1, log_type="infra")
         return True
 
@@ -117,15 +117,14 @@ class RemoteUtilHelper(object):
             shell.log_command_output(o, r)
             o, r = shell.execute_command('netsh advfirewall set privateprofile state on')
             shell.log_command_output(o, r)
-            shell.test_log.debug("Enabled firewall on {0}".format(server))
+            shell.log.debug("Enabled firewall on {0}".format(server))
             suspend_erlang = shell.windows_process_utils("pssuspend.exe",
                                                          "erl.exe", option="")
             if suspend_erlang:
-                shell.test_log.debug("%s - Erlang process is suspended"
-                                     % shell.ip)
+                shell.log.debug(f"{shell.ip} - Erlang process is suspended")
             else:
-                shell.test_log.error("%s - Erlang process failed to suspend"
-                                     % shell.ip)
+                shell.log.error(
+                    f"{shell.ip} - Erlang process failed to suspend")
         else:
             copy_server = copy.deepcopy(server)
             command_1 = "/sbin/iptables -A INPUT -p tcp "
@@ -143,8 +142,8 @@ class RemoteUtilHelper(object):
                     and server.ssh_username != "root":
                 copy_server.ssh_username = "root"
                 shell.disconnect()
-                shell.test_log.info("%s - Connect to server as %s "
-                                    % (shell.ip, copy_server.ssh_username))
+                shell.log.info("%s - Connect to server as %s "
+                               % (shell.ip, copy_server.ssh_username))
                 shell = RemoteMachineShellConnection(copy_server)
                 o, r = shell.execute_command("whoami")
                 shell.log_command_output(o, r)
@@ -158,7 +157,7 @@ class RemoteUtilHelper(object):
             if xdcr:
                 o, r = shell.execute_command(command_3)
                 shell.log_command_output(o, r)
-            shell.test_log.debug("%s - Enabled firewall" % shell.ip)
+            shell.log.debug("%s - Enabled firewall" % shell.ip)
             o, r = shell.execute_command("/sbin/iptables --list")
             shell.log_command_output(o, r)
         shell.disconnect()
