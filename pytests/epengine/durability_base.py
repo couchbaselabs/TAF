@@ -296,7 +296,7 @@ class BucketDurabilityBase(ClusterSetup):
                 self.durability_helper.get_vb_and_error_type(d_level_to_test)
 
             doc_gen = doc_generator(
-                self.key, doc_start_index, num_items_to_load,
+                d_level_to_test, doc_start_index, num_items_to_load,
                 vbuckets=bucket.numVBuckets,
                 target_vbucket=self.vbs_in_node[random_node][target_vb_type])
             error_sim = CouchbaseError(self.log,
@@ -309,6 +309,7 @@ class BucketDurabilityBase(ClusterSetup):
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to,
                 durability=doc_durability,
+                process_concurrency=min(num_items_to_load, 8),
                 timeout_secs=32,
                 batch_size=1,
                 skip_read_on_error=True,
@@ -343,13 +344,15 @@ class BucketDurabilityBase(ClusterSetup):
 
             verification_dict["sync_write_aborted_count"] += num_items_to_load
         else:
-            doc_gen = doc_generator(self.key, doc_start_index,
-                                    doc_start_index+num_items_to_load)
+            doc_gen = doc_generator(d_level_to_test, doc_start_index,
+                                    doc_start_index+num_items_to_load,
+                                    load_using=self.load_docs_using)
 
         # Retry the same CRUDs without any error simulation in place
         doc_load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, op_type,
             exp=self.maxttl, durability=doc_durability,
+            process_concurrency=min(num_items_to_load, 8),
             timeout_secs=2, batch_size=1,
             load_using=self.load_docs_using)
         self.task_manager.get_task_result(doc_load_task)

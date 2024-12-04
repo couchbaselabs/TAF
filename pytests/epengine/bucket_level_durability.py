@@ -168,19 +168,17 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
         self.init_java_clients(bucket_obj)
         # Index for doc_gen to avoid creating/deleting same docs across d_level
-        index = 0
         for d_level in self.get_supported_durability_for_bucket():
             self.validate_durability_with_crud(
                 bucket_obj,
                 getattr(SDKConstants.DurabilityLevel, b_durability.upper()),
                 verification_dict,
                 doc_durability=d_level,
-                doc_start_index=index)
+                doc_start_index=0)
             self.summary.add_step("CRUD with doc_durability %s" % d_level)
 
             # Cbstats vbucket-details validation
             self.cb_stat_verify(verification_dict)
-            index += 10
 
     def test_ops_only_with_bucket_level_durability(self):
         """
