@@ -3417,7 +3417,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
     def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
                                           database_name=None, username=None, validate_error_msg=None,
                                           expected_error=None, expected_error_code=None, password=None,
-                                          analytics_timeout=300, timeout=300):
+                                          analytics_timeout=300, timeout=300, client_context_id=None):
         """
         Query to insert into standalone collection
         """
@@ -3427,7 +3427,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                                                        CBASHelper.format_name(collection_name)))
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
-            analytics_timeout=analytics_timeout)
+            analytics_timeout=analytics_timeout, client_context_id=client_context_id)
 
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(
@@ -3439,7 +3439,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             return True
 
     @staticmethod
-    def generate_upsert_into_cmd(self, collection_name, new_item, dataverse_name=None,
+    def generate_upsert_into_cmd(collection_name, new_item, dataverse_name=None,
                                  database_name=None):
         cmd = "UPSERT INTO "
         if database_name:
@@ -3457,7 +3457,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
     def upsert_into_standalone_collection(self, cluster, collection_name, new_item, dataverse_name=None,
                                           database_name=None, username=None, validate_error_msg=None,
                                           expected_error=None, expected_error_code=None, password=None,
-                                          analytics_timeout=300, timeout=300):
+                                          analytics_timeout=300, timeout=300, client_context_id=None):
         """
         Upsert into standalone collection
         """
@@ -3465,7 +3465,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                                             database_name)
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
-            analytics_timeout=analytics_timeout)
+            analytics_timeout=analytics_timeout, client_context_id=client_context_id)
 
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(
@@ -3477,8 +3477,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             return True
 
     @staticmethod
-    def generate_delete_from_cmd(
-            self, collection_name, dataverse_name=None, database_name=None,
+    def generate_delete_from_cmd(collection_name, dataverse_name=None, database_name=None,
             where_clause=None, use_alias=False):
         cmd = "DELETE FROM "
         if database_name and dataverse_name:
@@ -3501,7 +3500,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self, cluster, collection_name, dataverse_name=None, database_name=None,
             where_clause=None, use_alias=False, username=None, validate_error_msg=None,
             expected_error=None, expected_error_code=None, password=None,
-            analytics_timeout=300, timeout=300):
+            analytics_timeout=300, timeout=300, client_context_id=None):
         """
         Query to delete from standalone collection
         """
@@ -3512,7 +3511,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
-            analytics_timeout=analytics_timeout)
+            analytics_timeout=analytics_timeout, client_context_id=client_context_id)
 
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(

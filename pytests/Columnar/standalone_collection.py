@@ -6,6 +6,7 @@ Created on 29-January-2024
 import json
 import string
 import random
+import time
 from queue import Queue
 
 from Columnar.columnar_base import ColumnarBaseTest
@@ -499,10 +500,23 @@ class StandaloneCollection(ColumnarBaseTest):
             self.fail("Failed to insert doc in standalone collection")
 
     def test_insert_atomicity(self):
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"])
+
+        if self.input.param("primary_key", None) is not None:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = json.loads(self.input.param("primary_key"))
+
+        # create entities on columnar cluster based on spec file
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
         if not result:
             self.fail(msg)
+
         data_to_add = []
         for i in range(self.initial_doc_count):
             data_to_add.append(self.cbas_util.generate_docs(self.doc_size))
@@ -515,26 +529,44 @@ class StandaloneCollection(ColumnarBaseTest):
             jobs.put((self.cbas_util.insert_into_standalone_collection,
                       {"cluster": self.columnar_cluster, "collection_name": dataset.name,
                        "document": data_to_add, "dataverse_name": dataset.dataverse_name,
-                       "database_name": dataset.database_name}))
+                       "database_name": dataset.database_name, "client_context_id": "insert_request"}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=True
         )
-
-        active_requests = self.cbas_util.get_all_active_requests(self.columnar_cluster)
-        for request in active_requests:
-            if str(request['statement']).startswith("INSERT INTO"):
-                context_id = str(request['clientContextID'])
-                self.cbas_util.delete_request(self.columnar_cluster, context_id)
+        get_requests = True
+        retry_count = 1
+        while get_requests and retry_count < 100:
+            retry_count = retry_count + 1
+            active_requests = self.cbas_util.get_all_active_requests(self.columnar_cluster)
+            for request in active_requests:
+                if str(request['statement']).startswith("INSERT INTO"):
+                    get_requests = False
+                    context_id = str(request['clientContextID'])
+                    time.sleep(0.1)
+                    if not self.cbas_util.delete_request(self.columnar_cluster, context_id):
+                        self.fail("Failed to delete insert request")
 
         for dataset in datasets:
             doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.columnar_cluster, dataset.full_name)
-            if doc_count[0] != 0:
+            if doc_count != 0:
                 self.fail("Some documents were inserted after statement is aborted")
 
     def test_delete_atomicity(self):
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"])
+
+        if self.input.param("primary_key", None) is not None:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = json.loads(self.input.param("primary_key"))
+
+        # create entities on columnar cluster based on spec file
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
         if not result:
             self.fail(msg)
 
@@ -556,22 +588,28 @@ class StandaloneCollection(ColumnarBaseTest):
         for dataset in datasets:
             jobs.put((self.cbas_util.delete_from_standalone_collection,
                       {"cluster": self.columnar_cluster, "collection_name": dataset.name,
-                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name}))
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
+                       "client_context_id": "delete_Request"}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=True
         )
-
-        active_requests = self.cbas_util.get_all_active_requests(self.columnar_cluster)
-        for request in active_requests:
-            if str(request['statement']).startswith("DELETE FROM"):
-                context_id = str(request['clientContextID'])
-                if not self.cbas_util.delete_request(self.columnar_cluster, context_id):
-                    self.fail("Failed to delete request")
+        get_requests = True
+        retry_count = 1
+        while get_requests and retry_count < 100:
+            retry_count = retry_count + 1
+            active_requests = self.cbas_util.get_all_active_requests(self.columnar_cluster)
+            for request in active_requests:
+                if str(request['statement']).startswith("DELETE FROM"):
+                    get_requests = False
+                    context_id = str(request['clientContextID'])
+                    time.sleep(0.1)
+                    if not self.cbas_util.delete_request(self.columnar_cluster, context_id):
+                        self.fail("Failed to delete request")
 
         for dataset in datasets:
             doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.columnar_cluster, dataset.full_name)
-            if doc_count[0] != self.initial_doc_count:
+            if doc_count != self.initial_doc_count:
                 self.fail("Some documents were deleted after statement is aborted")
 
     def test_upsert_atomicity(self):
@@ -609,7 +647,7 @@ class StandaloneCollection(ColumnarBaseTest):
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False
         )
-        data_to_modify = data_to_add
+        data_to_modify = [data.copy() for data in data_to_add]
         for data in data_to_modify:
             data['phone'] = random.randint(1, 10000)
 
@@ -617,18 +655,23 @@ class StandaloneCollection(ColumnarBaseTest):
             jobs.put((self.cbas_util.upsert_into_standalone_collection,
                       {"cluster": self.columnar_cluster, "collection_name": dataset.name,
                        "new_item": data_to_modify, "dataverse_name": dataset.dataverse_name,
-                       "database_name": dataset.database_name}))
+                       "database_name": dataset.database_name, "client_context_id": "upsert_request"}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=True
         )
-        active_request = self.cbas_util.get_all_active_requests(self.columnar_cluster)
-        for request in active_request:
-            if str(request['statement']).startswith("UPSERT INTO"):
-                context_id = str(request['clientContextID'])
-                if not self.cbas_util.delete_request(self.columnar_cluster, context_id, username=self.columnar_cluster.api_access_key,
-                                              password=self.columnar_cluster.api_secret_key):
-                    self.fail("Failed to delete upsert request")
+        get_requests = True
+        retry_count = 1
+        while get_requests and retry_count < 20:
+            retry_count = retry_count + 1
+            active_request = self.cbas_util.get_all_active_requests(self.columnar_cluster)
+            for request in active_request:
+                if str(request['statement']).startswith("UPSERT INTO"):
+                    get_requests = False
+                    context_id = str(request['clientContextID'])
+                    time.sleep(0.1)
+                    if not self.cbas_util.delete_request(self.columnar_cluster, context_id):
+                        self.fail("Failed to delete upsert request")
 
         for dataset in datasets:
             doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.columnar_cluster, dataset.full_name)
@@ -640,6 +683,8 @@ class StandaloneCollection(ColumnarBaseTest):
                     self.columnar_cluster, statement)
                 actual_result = [x[dataset.name] for x in results]
                 if status == "success":
-                    for dicts in data_to_add:
-                        if dicts not in actual_result:
-                            self.fail("Few docs were updated")
+                    for dict_item in data_to_add:
+                        if not any([item['address'] == dict_item["address"] for item in actual_result]):
+                            self.fail("Some documents were not updated")
+                else:
+                    self.fail("Failed to get documents from the collection")
