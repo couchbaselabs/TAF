@@ -14,6 +14,7 @@ from custom_exceptions.exception import \
     GetBucketInfoFailed, \
     BucketCompactionException
 from Rest_Connection import RestConnection
+from datetime import datetime, timedelta
 from membase.api.rest_client import RestConnection as RC
 
 
@@ -35,6 +36,48 @@ class BucketHelper(RestConnection):
         except Exception as e:
             self.log.info(e)
             return False
+
+    def create_secret_params(self, secret_type="auto-generated-aes-key-256",
+                             name="Default secret", usage=None,
+                             autoRotation=True, rotationIntervalInDays=60,
+                             rotationIntervalInSeconds=None, keyARN=None,
+                             region=None, useIMDS=None, credentialsFile=None,
+                             configFile=None, profile=None):
+        if usage is None:
+            usage = ["bucket-encryption-*"]
+
+        data = {
+            "autoRotation": autoRotation,
+            "rotationIntervalInDays": rotationIntervalInDays
+        }
+
+        if rotationIntervalInSeconds is not None:
+            data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                seconds=rotationIntervalInSeconds)).isoformat() + "Z"
+        else:
+            data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                days=rotationIntervalInDays)).isoformat() + "Z"
+
+        if keyARN is not None:
+            data["keyARN"] = keyARN
+        if region is not None:
+            data["region"] = region
+        if useIMDS is not None:
+            data["useIMDS"] = useIMDS
+        if credentialsFile is not None:
+            data["credentialsFile"] = credentialsFile
+        if configFile is not None:
+            data["configFile"] = configFile
+        if profile is not None:
+            data["profile"] = profile
+
+        params = {
+            "type": secret_type,
+            "name": name,
+            "usage": usage,
+            "data": data
+        }
+        return params
 
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
         api = '%s%s%s?basic_stats=true' \
@@ -363,10 +406,11 @@ class BucketHelper(RestConnection):
             Bucket.flushEnabled: bucket_params.get(Bucket.flushEnabled),
             Bucket.evictionPolicy: bucket_params.get(Bucket.evictionPolicy),
             Bucket.storageBackend: bucket_params.get(Bucket.storageBackend),
-            Bucket.conflictResolutionType:
-                bucket_params.get(Bucket.conflictResolutionType),
-            Bucket.durabilityMinLevel:
-                bucket_params.get(Bucket.durabilityMinLevel)}
+            Bucket.conflictResolutionType: bucket_params.get(Bucket.conflictResolutionType),
+            Bucket.durabilityMinLevel: bucket_params.get(Bucket.durabilityMinLevel),
+            Bucket.encryptionAtRestSecretId: bucket_params.get(Bucket.encryptionAtRestSecretId),
+            Bucket.encryptionAtRestDekRotationInterval: bucket_params.get(Bucket.encryptionAtRestDekRotationInterval),
+            Bucket.encryptionAtRestDekLifetime: bucket_params.get(Bucket.encryptionAtRestDekLifetime)}
 
         # Set Bucket's width/weight param only if serverless is enabled
         if bucket_params.get('serverless'):
@@ -386,7 +430,7 @@ class BucketHelper(RestConnection):
             init_params[Bucket.compressionMode] = bucket_params.get(Bucket.compressionMode)
             init_params[Bucket.maxTTL] = bucket_params.get(Bucket.maxTTL)
         if bucket_params.get(Bucket.bucketType) == Bucket.Type.MEMBASE and\
-           'autoCompactionDefined' in bucket_params:
+                'autoCompactionDefined' in bucket_params:
             init_params["autoCompactionDefined"] = bucket_params.get('autoCompactionDefined')
             init_params["parallelDBAndViewCompaction"] = "false"
             init_params["databaseFragmentationThreshold%5Bpercentage%5D"] = 50
@@ -449,7 +493,7 @@ class BucketHelper(RestConnection):
                                        bucket_params.get('name')))
                 break
             elif (int(header['status']) == 503 and
-                    '{"_":"Bucket with given name still exists"}' in content):
+                  '{"_":"Bucket with given name still exists"}' in content):
                 sleep(1, "Bucket still exists, will retry..")
             else:
                 return False
@@ -516,7 +560,10 @@ class BucketHelper(RestConnection):
                             expiryPagerSleepTime=None,
                             warmupBehavior=None,
                             memoryLowWatermark=None,
-                            memoryHighWatermark=None):
+                            memoryHighWatermark=None,
+                            encryptionAtRestSecretId=None,
+                            encryptionAtRestDekRotationInterval=None,
+                            encryptionAtRestDekLifetime=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -558,7 +605,7 @@ class BucketHelper(RestConnection):
             params_dict[Bucket.magmaKeyTreeDataBlockSize]\
                 = magma_key_tree_data_block_size
         if magma_seq_tree_data_block_size is not None:
-            params_dict[Bucket.magmaSeqTreeDataBlockSize] \
+            params_dict[Bucket.magmaSeqTreeDataBlockSize]\
                 = magma_seq_tree_data_block_size
         if storageBackend is not None:
             params_dict[Bucket.storageBackend] = storageBackend
@@ -572,6 +619,12 @@ class BucketHelper(RestConnection):
             params_dict["memoryLowWatermark"] = memoryLowWatermark
         if memoryHighWatermark is not None:
             params_dict["memoryHighWatermark"] = memoryHighWatermark
+        if encryptionAtRestSecretId is not None:
+            params_dict[Bucket.encryptionAtRestSecretId] = encryptionAtRestSecretId
+        if encryptionAtRestDekRotationInterval is not None:
+            params_dict[Bucket.encryptionAtRestDekRotationInterval] = encryptionAtRestDekRotationInterval
+        if encryptionAtRestDekLifetime is not None:
+            params_dict[Bucket.encryptionAtRestDekLifetime] = encryptionAtRestDekLifetime
 
         params = urllib.urlencode(params_dict)
 
