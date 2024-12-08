@@ -163,6 +163,9 @@ class Bucket(object):
     durabilityImpossibleFallback = "durabilityImpossibleFallback"
     warmupBehavior = "warmupBehavior"
     fusionLogstoreURI = "fusionLogstoreURI"
+    encryptionAtRestSecretId = "encryptionAtRestSecretId"
+    encryptionAtRestDekRotationInterval = "encryptionAtRestDekRotationInterval"
+    encryptionAtRestDekLifetime = "encryptionAtRestDekLifetime"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -277,7 +280,17 @@ class Bucket(object):
             Bucket.warmupBehavior, None)
         self.fusionLogstoreURI = new_params.get(
             Bucket.fusionLogstoreURI, None)
-
+        self.encryptionAtRestSecretId = new_params.get(
+            Bucket.encryptionAtRestSecretId, -1)
+        self.encryptionAtRestDekRotationInterval = new_params.get(
+            Bucket.encryptionAtRestDekRotationInterval, 2592000)
+        self.encryptionAtRestDekLifetime = new_params.get(
+            Bucket.encryptionAtRestDekLifetime, 31536000)
+        self.encryptionAtRestInfo = {
+            'dataStatus': new_params.get('dataStatus', 'unencrypted'),
+            'dekNumber': new_params.get('dekNumber', 0),
+            'issues': new_params.get('issues', [])
+        }
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(
                 Bucket.evictionPolicy,
