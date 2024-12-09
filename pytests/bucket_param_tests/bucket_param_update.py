@@ -1,3 +1,5 @@
+import json
+
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.bucket import Bucket
@@ -773,6 +775,88 @@ class BucketParamTest(ClusterSetup):
                     raise Exception(e)
 
             self.log.info("Completed tests for bucket: %s" % bucket.name)
+
+    def test_bucket_encryption_properties(self):
+        bucket_helper = BucketHelper(self.cluster.master)
+        rest = RestConnection(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            self.log.info(
+                "Checking default encryption values for bucket: %s" % bucket.name)
+            bucket = bucket_helper.get_bucket_from_cluster(bucket)
+            self.log.debug("Default encryption values for bucket %s: %s" % (
+                bucket.name, bucket.__dict__))
+
+            # Check default values for new encryption parameters
+            self.assertTrue(bucket.encryptionAtRestSecretId == -1,
+                            "Default value mismatch for encryptionAtRestSecretId")
+            self.assertTrue(
+                bucket.encryptionAtRestDekRotationInterval == 2592000,
+                "Default value mismatch for encryptionAtRestDekRotationInterval")
+            self.assertTrue(bucket.encryptionAtRestDekLifetime == 31536000,
+                            "Default value mismatch for encryptionAtRestDekLifetime")
+            self.assertTrue(
+                bucket.encryptionAtRestInfo['dataStatus'] == "unencrypted",
+                "Default value mismatch for dataStatus")
+            self.assertTrue(bucket.encryptionAtRestInfo['dekNumber'] == 0,
+                            "Default value mismatch for dekNumber")
+            self.assertTrue(bucket.encryptionAtRestInfo['issues'] == [],
+                            "Default value mismatch for issues")
+            params = bucket_helper.create_secret_params(
+                secret_type="auto-generated-aes-key-256",
+                name="UTestSecret",
+                usage=["bucket-encryption-*"],
+                autoRotation=True,
+                rotationIntervalInSeconds=5184000)
+            status, response = rest.create_secret(params)
+            generated_key = ""
+            if status:
+                response_dict = json.loads(response)
+                generated_key = \
+                response_dict.get('data', {}).get('keys', [{}])[0].get('id')
+            self.log.info("Setting and verifying valid "
+                          "encryption values for bucket: %s" % bucket.name)
+            bucket_helper.change_bucket_props(
+                bucket,
+                encryptionAtRestSecretId=generated_key,
+                encryptionAtRestDekRotationInterval=604800,
+                encryptionAtRestDekLifetime=7776000
+            )
+
+            bucket = bucket_helper.get_bucket_from_cluster(bucket)
+            self.log.debug(
+                "Encryption values after setting valid params for bucket %s: %s" % (
+                    bucket.name, bucket.__dict__))
+
+            # Verify valid values for new encryption parameters
+            self.assertTrue(bucket.encryptionAtRestSecretId == 12345,
+                            "Valid value mismatch for encryptionAtRestSecretId")
+            self.assertTrue(
+                bucket.encryptionAtRestDekRotationInterval == 604800,
+                "Valid value mismatch for encryptionAtRestDekRotationInterval")
+            self.assertTrue(bucket.encryptionAtRestDekLifetime == 7776000,
+                            "Valid value mismatch for encryptionAtRestDekLifetime")
+
+            self.log.info(
+                "Testing invalid encryption values for bucket: %s" % bucket.name)
+            invalid_params = [
+                {"encryptionAtRestSecretId": generated_key},
+                {"encryptionAtRestDekRotationInterval": -1},
+                {"encryptionAtRestDekLifetime": -1}
+            ]
+
+            for params in invalid_params:
+                try:
+                    bucket_helper.change_bucket_props(bucket, **params)
+                    self.assertTrue(False,
+                                    "Expected exception for params: %s" % params)
+                except Exception as e:
+                    self.log.error(
+                        "Caught expected exception for params %s: %s" % (
+                            params, e))
+                    raise Exception(e)
+
+            self.log.info(
+                "Completed encryption tests for bucket: %s" % bucket.name)
 
     def test_MB_34947(self):
         # Update already Created docs with async_writes
