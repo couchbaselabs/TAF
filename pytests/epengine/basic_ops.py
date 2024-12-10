@@ -14,6 +14,7 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from SecurityLib.rbac import RbacUtil
 from basetestcase import ClusterSetup
 from cb_constants import constants, CbServer, DocLoading
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.rest_client import RestConnection
 from cb_tools.cb_cli import CbCli
@@ -30,6 +31,7 @@ from gsiLib.gsiHelper import GsiHelper
 from mc_bin_client import MemcachedClient, MemcachedError
 from memcached.helper.data_helper import VBucketAwareMemcached
 from platform_constants.os_constants import Linux
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from sdk_utils.sdk_options import SDKOptions
@@ -2640,6 +2642,71 @@ class basic_ops(ClusterSetup):
         for _, n_info in node_info.items():
             n_info["cbstat"].disconnect()
             n_info["shell"].disconnect()
+
+    def test_data_eviction_under_low_water_mark(self):
+        """
+        Ref: MB-64008
+        1. Load data just below low watermark on Ephemeral bucket
+        2. Perform graceful failover
+        3. Make sure the num_items remain the same
+        """
+        def validate_item_count():
+            retry = 10
+            while retry > 0:
+                b_info = b_rest.get_bucket_info(bucket.name)
+                if self.num_items == int(b_info["basicStats"]["itemCount"]):
+                    break
+                retry -= 1
+                self.sleep(2, "Wait before next check")
+            else:
+                self.fail("Bucket item_count mismatch")
+
+        node_info = dict()
+        bucket = self.cluster.buckets[0]
+        load_gen = doc_generator("docs", 0, self.num_items,
+                                 key_size=20, doc_size=2048)
+        self.log.info("Loading documents into the bucket")
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, load_gen, DocLoading.Bucket.DocOps.CREATE,
+            batch_size=200, process_concurrency=4, print_ops_rate=False,
+            skip_read_on_error=True, sdk_client_pool=self.sdk_client_pool)
+        self.task_manager.get_task_result(load_task)
+
+        self.log.info("Validation doc_count")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
+        rest = ClusterRestAPI(self.cluster.master)
+        b_rest = BucketRestApi(self.cluster.master)
+        validate_item_count()
+
+        self.log.info("Fetching cb_stats")
+        for node in self.cluster.nodes_in_cluster:
+            node_info[node.ip] = dict()
+            node_info[node.ip]["cbstat"] = Cbstats(node)
+            cbstat = node_info[node.ip]["cbstat"].all_stats(bucket.name)
+            self.log.info("%s - Low wm: %s, Mem used: %s"
+                          % (node.ip, cbstat["ep_mem_low_wat"],
+                             cbstat["mem_used"]))
+
+        otp_node = "ns_1@%s" % self.cluster.servers[1].ip
+        self.log.info("Performing graceful failover of %s" % otp_node)
+        rest.perform_graceful_failover(otp_node)
+        self.assertTrue(RebalanceUtil(self.cluster).monitor_rebalance(),
+                        "FO rebalance failed")
+        validate_item_count()
+
+        node = self.cluster.nodes_in_cluster[0]
+        cbstat = node_info[node.ip]["cbstat"].all_stats(bucket.name)
+        self.log.info("%s - Low wm: %s, Mem used: %s"
+                      % (node.ip, cbstat["ep_mem_low_wat"],
+                         cbstat["mem_used"]))
+        for node in self.cluster.nodes_in_cluster:
+            node_info[node.ip]["cbstat"].disconnect()
+
+        rest.set_recovery_type(
+            otp_node, recovery_type=CbServer.Failover.RecoveryType.DELTA)
+        result = self.task.rebalance(self.cluster, [], [])
+        self.assertTrue(result, "Delta recovery rebalance failed")
+        validate_item_count()
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
