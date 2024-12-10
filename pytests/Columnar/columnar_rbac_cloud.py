@@ -1052,7 +1052,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                             "_default",
                             remote_link,
                             use_only_existing_db=True,
-                            use_only_existing_dv=True)[0]
+                            use_only_existing_dv=True, capella_as_source=True)[0]
 
                         expected_error = self.ACCESS_DENIED_ERR
                         result = self.cbas_util.create_remote_dataset(
