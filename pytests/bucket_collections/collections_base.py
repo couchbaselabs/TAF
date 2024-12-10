@@ -1,4 +1,4 @@
-from math import ceil
+from math import ceil,log2
 from random import sample
 
 from basetestcase import ClusterSetup
@@ -210,6 +210,17 @@ class CollectionBase(ClusterSetup):
                 cluster, bucket=bucket, servers=[servers_to_connect],
                 req_clients=req_clients,
                 compression_settings=sdk_compression)
+
+    @staticmethod
+    def calculate_entropy(data):
+        if not data:
+            return 0
+        entropy = 0
+        for x in range(256):
+            p_x = data.count(chr(x)) / len(data)
+            if p_x > 0:
+                entropy += - p_x * log2(p_x)
+        return entropy
 
     @staticmethod
     def setup_collection_history_settings(test_obj):
