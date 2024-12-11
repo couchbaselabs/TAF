@@ -26,11 +26,13 @@ class AutoCompactionTests(CollectionBase):
         self.load_spec = self.input.param("load_spec", None)
         self.gen_load = doc_generator(self.key, 0, self.num_items,
                                       doc_size=self.doc_size,
-                                      doc_type=self.doc_type)
+                                      doc_type=self.doc_type,
+                                      load_using=self.load_docs_using)
         self.gen_update = doc_generator(self.key, 0, int(self.num_items/2),
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
-                                        mutation_type="update")
+                                        mutation_type="update",
+                                        load_using=self.load_docs_using)
         self.stop_loading_thread = False
         self.bucket = self.cluster.buckets[0]
         self.log.info("======= Finished Autocompaction base setup =========")
@@ -293,7 +295,8 @@ class AutoCompactionTests(CollectionBase):
             batch_size=300,
             process_concurrency=4,
             scope=scope_name,
-            collection=collection_name)
+            collection=collection_name,
+            load_using=self.load_docs_using)
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         rebalance = self.task.async_rebalance(
             self.cluster,
@@ -428,7 +431,8 @@ class AutoCompactionTests(CollectionBase):
             batch_size=300,
             process_concurrency=4,
             scope=scope_name,
-            collection=collection_name)
+            collection=collection_name,
+            load_using=self.load_docs_using)
         rebalance = self.task.async_rebalance(self.cluster,
                                               servs_in, servs_out,
                                               check_vbucket_shuffling=False)
@@ -740,7 +744,8 @@ class AutoCompactionTests(CollectionBase):
             batch_size=300,
             process_concurrency=4,
             scope=scope_name,
-            collection=collection_name)
+            collection=collection_name,
+            load_using=self.load_docs_using)
 
         while monitor_fragm.completed is False:
             if end_time < time.time():
