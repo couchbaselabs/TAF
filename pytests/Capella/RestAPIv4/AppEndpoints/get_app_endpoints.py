@@ -21,7 +21,7 @@ class GetAppEndpoints(GetAppService):
                     }
                 }
             },
-            "name": "vipul-test",
+            "name": "v4-test-endpoint",
             "deltaSync": False,
             "userXattrKey": "syncFnXattr",
             "offline": None,
@@ -60,9 +60,26 @@ class GetAppEndpoints(GetAppService):
             },
             "isRequireResync": True
         }
-        self.appEndpointName = "vipul-test"
+        self.appEndpointName = self.expected_res["name"]
 
     def tearDown(self):
+        self.update_auth_with_api_token(self.curr_owner_key)
+
+        # Delete the replacement app endpoint left over at the end.
+        res = self.capellaAPI.cluster_ops_apis.delete_app_endpoint(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.app_service_id, self.appEndpointName)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers['Retry-After']))
+            res = self.capellaAPI.cluster_ops_apis.delete_app_endpoint(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.app_service_id, self.appEndpointName)
+        if res.status_code != 202:
+            self.log.error(res.content)
+            self.tearDown()
+            self.fail("!!!...App Endpoint Deletion Failed...!!!")
+        self.log.info("App Endpoint Deleted successfully.")
+
         super(GetAppEndpoints, self).tearDown()
 
     def test_api_path(self):
