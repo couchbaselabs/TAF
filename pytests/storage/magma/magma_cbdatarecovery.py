@@ -1,8 +1,10 @@
+import random
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 
 
 class MagmaRecovery(BaseTestCase):
@@ -13,6 +15,7 @@ class MagmaRecovery(BaseTestCase):
         self.bucket_name = self.input.param("bucket_name", "default")
         self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.item_count = self.input.param("item_count", 1000000)
+        self.doc_prefix = self.input.param("doc_prefix", "temp_docs")
         self.num_buckets = self.input.param("num_buckets", 1)
         self.num_nodes_in_cluster = self.input.param("num_nodes_in_cluster", 2)
         self.scope_to_load = self.input.param("scope_to_load", "_default")
@@ -27,6 +30,7 @@ class MagmaRecovery(BaseTestCase):
         self.ssl_no_verify = self.input.param("ssl_no_verify", False)
         self.username = self.input.param("username", "Administrator")
         self.password = self.input.param("password", "password")
+        self.validate_metadata = self.input.param("validate_metadata", True)
 
         self.clusters = self.get_clusters()
         if self.num_nodes_in_cluster > 1:
@@ -50,6 +54,86 @@ class MagmaRecovery(BaseTestCase):
         for cb_cluster in self.clusters:
             if cb_cluster.name == cluster_name:
                 return cb_cluster
+
+    def validate_document_metadata(self, bucket_name, scope, collection):
+
+        for bucket in self.first_cluster.buckets:
+            if bucket.name == bucket_name:
+                src_bucket = bucket
+
+        for bucket in self.second_cluster.buckets:
+            if bucket.name == bucket_name:
+                dst_bucket = bucket
+
+        src_client = SDKClient([self.first_cluster_master], src_bucket,
+                               scope=scope, collection=collection)
+        dst_client = SDKClient([self.second_cluster_master], dst_bucket,
+                               scope=scope, collection=collection)
+
+        shell_source = RemoteMachineShellConnection(self.first_cluster_master)
+        shell_dest = RemoteMachineShellConnection(self.second_cluster_master)
+
+        target_vbs = None
+        if self.include_vbucket_filter:
+            target_vbs = [i for i in range(512)]
+        if self.transfer_dead_vbuckets:
+            target_vbs = [i for i in range(100)]
+
+        doc_gen = doc_generator(self.doc_prefix, 0, 100, target_vbucket=target_vbs)
+
+        self.log.info("Validating document metdata for bucket: {}".format(bucket_name))
+        while doc_gen.has_next():
+            doc_id, val = doc_gen.next()
+            self.log.info("Validating doc: {}".format(doc_id))
+
+            # Reading documents via SDK from source
+            res = src_client.read(doc_id, timeout=60)
+            self.assertTrue(res['status'] == True, "SDK Read failed for doc: {} = {}".format(doc_id, res))
+
+            # Reading documents via SDK from dest
+            res = dst_client.read(doc_id, timeout=60)
+            self.assertTrue(res['status'] == True, "SDK Read failed for doc: {} = {}".format(doc_id, res))
+
+            source_metadata = dict()
+            dest_metadata = dict()
+
+            url_prefix = "couchbases://" if CbServer.use_https else "couchbase://"
+
+            # Reading metadata from source cluster
+            url = url_prefix + "{}/{}".format(self.first_cluster_master.ip, bucket_name) + "?ssl=no_verify"
+            source_cmd = "/opt/couchbase/bin/cbc cat {} -u Administrator -P password -U ".format(doc_id) \
+                            + url + " --scope='{}' --collection='{}'".format(
+                            scope, collection)
+            self.log.info("Executing command on source: {}".format(source_cmd))
+            output = shell_source.execute_command(source_cmd)
+            s = output[1][0][:-1].replace(",", "").split(" ")
+            for ele in s:
+                if "=" in ele:
+                    tmp = ele.split("=")
+                    source_metadata[tmp[0]] = tmp[1]
+
+            # Reading metadata from destination cluster
+            url = url_prefix + "{}/{}".format(self.second_cluster_master.ip, bucket_name) + "?ssl=no_verify"
+            dest_cmd = "/opt/couchbase/bin/cbc cat {} -u Administrator -P password -U ".format(doc_id) \
+                            + url + " --scope='{}' --collection='{}'".format(
+                            scope, collection)
+            self.log.info("Executing command on destination: {}".format(dest_cmd))
+            output = shell_dest.execute_command(dest_cmd)
+            s = output[1][0][:-1].replace(",", "").split(" ")
+            for ele in s:
+                if "=" in ele:
+                    tmp = ele.split("=")
+                    dest_metadata[tmp[0]] = tmp[1]
+
+            self.log.debug("Source metadata dict = {}".format(source_metadata))
+            self.log.debug("Dest metadata dict = {}".format(dest_metadata))
+
+            self.assertEqual(source_metadata["Flags"], dest_metadata["Flags"],
+                             "Flags value mismatch for doc: {}".format(doc_id))
+
+        self.log.info("Document Metadata validated for bucket: {}".format(bucket_name))
+        shell_source.disconnect()
+        shell_dest.disconnect()
 
 
     def test_cbdatarecovery_with_magma(self):
@@ -82,7 +166,7 @@ class MagmaRecovery(BaseTestCase):
 
         for bucket in self.first_cluster.buckets:
             self.log.info("Loading data into bucket: {}".format(bucket.name))
-            doc_gen = doc_generator(key="temp_docs", start=0, end=self.item_count, doc_size=1024)
+            doc_gen = doc_generator(key=self.doc_prefix, start=0, end=self.item_count, doc_size=1024)
             doc_loading_task = self.task.async_load_gen_docs(self.first_cluster,
                                                             bucket,
                                                             doc_gen, "create",
@@ -211,3 +295,21 @@ class MagmaRecovery(BaseTestCase):
             for node in self.first_cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.start_couchbase()
+
+        if self.transfer_dead_vbuckets:
+            shell = RemoteMachineShellConnection(self.first_cluster_master)
+            self.log.info("Setting back state=active for vbuckets on source cluster " \
+                          "post transfer")
+            for vbucket_no in range(number_of_vbuckets):
+                command = "curl {0}://{1}:{2}@localhost:{3}/diag/eval -X POST -d ".format(
+                    prefix, self.username, self.password, port_to_use)
+                command += "'ns_memcached:set_vbucket(\"{0}\", {1}, active)'" \
+                        .format(self.first_cluster.buckets[0].name, vbucket_no)
+                output, error = shell.execute_command(command)
+            shell.disconnect()
+            self.sleep(30, "Wait after changing state of vbuckets")
+
+        if self.validate_metadata:
+            for bucket in buckets_to_recover:
+                self.validate_document_metadata(bucket.name, self.scope_to_load,
+                                                self.collection_to_load)
