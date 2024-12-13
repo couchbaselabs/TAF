@@ -260,7 +260,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         path_on_external_container = "{copy_dataset:string}"
         # create external dataset on the blob storage bucket
         dataset_obj = self.cbas_util.create_external_dataset_obj(
-            self.columnar_cluster,
+            self.columnar_cluster, link_type=self.link_type,
             external_container_names={
                 self.sink_blob_bucket_name: self.aws_region},
             paths_on_external_container=[path_on_external_container],
@@ -317,7 +317,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("Copy to blob storage statement failure")
 
         path_on_external_container = "{copy_dataset:string}"
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -364,7 +364,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("Copy to blob storage statement failure")
 
         path_on_external_container = "{copy_dataset:string}"
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -440,7 +440,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.log.error("Copy to blob storage statement failure")
 
         path_on_external_container = "{copy_dataset:string}"
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -586,7 +586,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("Copy to command failed for some datasets")
 
         path_on_external_container = "{copy_dataset:string}"
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -663,7 +663,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("Copy to command failed for some datasets")
 
         path_on_external_container = "{copy_dataset:string}"
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -743,7 +743,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         path_on_external_container = "{copy_dataset:string}"
         # create external dataset on the blob storage bucket
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -866,7 +866,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         path_on_external_container = "main/{copy_dataset:string}"
         # create external dataset on the blob bucket
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -897,7 +897,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         # create external dataset on the blob storage bucket
         no_of_dynamic_collection = self.input.param("no_of_dynamic_collection", 1)
         for i in range(no_of_dynamic_collection):
-            dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+            dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                      external_container_names={
                                                                          self.s3_source_bucket: self.aws_region},
                                                                      paths_on_external_container=[
@@ -924,7 +924,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             jobs, results, self.sdk_clients_per_user, async_run=False)
 
         path_on_external_container = "{copy_dataset:string}"
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -994,7 +994,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         path_on_external_container = "{copy_dataset:string}"
         # create external dataset on the blob storage bucket
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -1101,7 +1101,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         path_on_external_container = "{copy_dataset:string}"
         # create external dataset on the blob storage bucket
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
@@ -1344,7 +1344,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         # create external link on copied bucket
         path_on_external_container = "{copy_dataset:string}/{country:string}"
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                  external_container_names={
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[

@@ -1632,7 +1632,7 @@ class Link_Util(Dataverse_Util):
     def get_all_link_objs(self, link_type=None):
         """
         Returns list of all link objects.
-        :param link_type <str> s3, azureblob, gcp, kafka or couchbase, if None
+        :param link_type <str> s3, azureblob, gcs, kafka or couchbase, if None
         returns all link types
         """
         link_objs = list()
