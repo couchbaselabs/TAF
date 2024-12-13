@@ -27,7 +27,7 @@ def pairs(*lists):
             yield pair
 
 
-gcs_certificate = os.getenv('gcp_storage_access_file')
+gcs_certificate = os.getenv('gcp_access_file')
 
 class CopyToBlobStorage(ColumnarBaseTest):
     def __init__(self, methodName: str = "runTest"):

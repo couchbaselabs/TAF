@@ -319,7 +319,7 @@ class ColumnarBaseTest(BaseTestCase):
                 try:
                     # gcs_certificate variable should be set in jenkins to use here
                     self.log.info("Fetching certificate file path from the env: gcs_certificate")
-                    gcs_certificate = os.getenv('gcs_certificate')
+                    gcs_certificate = os.getenv('gcp_access_file')
                     with open(gcs_certificate, 'r') as file:
                         # Load JSON data from file
                         data = json.load(file)
