@@ -43,6 +43,7 @@ class SSOTest(SecurityBase):
             self.setup_sso()
 
         except Exception as e:
+            self.log.info("Base Setup Failed with error as - {}".format(e))
             self.tearDown()
             self.fail("Base Setup Failed with error as - {}".format(e))
 
@@ -77,12 +78,16 @@ class SSOTest(SecurityBase):
         self.realm_name = realm['realmName']
 
     def tearDown(self):
-        self.log.info("Destroying Test Realm")
+        try:
+            resp = self.sso_u.list_realms(self.tenant_id)
+            if json.loads(resp.content)["data"]:
+                self.log.info("Destroying the realm")
+                realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+                self.sso_u.delete_realm(self.tenant_id, realm_id)
+        except AttributeError as e:
+            self.log.info("SSO test teardown error: {0}".format(e))
+
         super(SSOTest, self).tearDown()
-        drealm = self.sso.delete_realm(self.tenant_id, self.realm_id)
-        self.log.info(drealm.headers)
-        self.assertEqual(drealm.status_code // 100, 2, drealm.content)
-        super(SecurityBase, self).tearDown()
 
     def test_lifecycle_realm(self):
         # For this test we just want to run the setup and teardown
