@@ -5,7 +5,10 @@ Created on 22-MAY-2024
 
 This test suite contains tests for columnar upgrades on cloud.
 """
+import copy
 import time
+from queue import Queue
+import random
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from Columnar.columnar_base import ColumnarBaseTest
@@ -28,6 +31,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
 
         # Since all the test cases are being run on 1 cluster only
         self.columnar_cluster = self.tenant.columnar_instances[0]
+        self.dummy_columnar_cluster = copy.deepcopy(self.columnar_cluster)
         self.remote_cluster = self.tenant.clusters[0]
 
         # Initial number of docs to be loaded in external DB collections,
@@ -422,6 +426,43 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                         self.doc_count_level_1_folder_1[file_format],
                         result[0]["$1"]))
 
+    def run_queries_on_datasets(self, timeout=300):
+        datasets = self.cbas_util.get_all_dataset_objs()
+        start_time = time.time()
+        res = True
+        while time.time() < start_time + timeout:
+                dataset = random.choice(datasets)
+                queries = [
+                    "SELECT p.seller_name, p.seller_location, AVG(p.avg_rating) AS avg_rating FROM (SELECT seller_name,"
+                    "seller_location, avg_rating FROM {} WHERE 'Passenger car medium' in product_category) p "
+                    "GROUP BY p.seller_name, p.seller_location ORDER BY avg_rating DESC;".format(dataset.full_name),
+                    "SELECT AVG(r.avg_rating) AS avg_rating, SUM(r.num_sold) AS num_sold, AVG(r.price) AS avg_price, "
+                    "ARRAY_FLATTEN(ARRAY_AGG(r.product_category), 1) AS product_category, "
+                    "AVG(r.product_rating.build_quality) AS avg_build_quality, SUM(r.quantity) AS total_quantity, "
+                    "r.seller_verified, AVG(r.weight) AS avg_weight FROM {} AS r GROUP BY r.product_name, "
+                    "r.seller_verified".format(dataset.full_name),
+                    "SET `compiler.external.field.pushdown` 'false'; "
+                    "SELECT COUNT(*) from {}".format(dataset.full_name)
+                ]
+                query = random.choice(queries).format(dataset.full_name)
+                status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.columnar_cluster, query,analytics_timeout=1800,
+                                                              timeout=1800)
+                if status != "success":
+                    res = False
+        return res
+
+    def create_infra_during_upgrade(self, timeout=1200):
+        res = True
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            result, msg =  self.cbas_util.create_cbas_infra_from_spec(self.dummy_columnar_cluster, self.columnar_spec, self.bucket_util,
+                                                   wait_for_ingestion=False, remote_clusters=[self.remote_cluster])
+            if not result:
+                self.log.error(msg)
+                res = False
+        return res
+
+
     def test_end_to_end_upgrade(self):
         """
         This test will perform following -
@@ -603,13 +644,31 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                       f"{resp.content}")
 
         self.log.info("Waiting for columnar cluster upgrades to finish")
-        if not self.columnar_utils.wait_for_maintenance_job_to_complete(
-                pod=self.pod, tenant=self.tenant,
-                project_id=self.tenant.project_id,
-                instance=self.columnar_cluster,
-                maintenance_job_id=ungrade_info["id"], timeout=7200
-        ):
-            self.fail("Upgrade failed.")
+
+        # add actions here to trigger the issue: https://jira.issues.couchbase.com/browse/MB-64676
+        # running DMLS, DDLS and queries on the instance
+        jobs = Queue()
+        maintenance_job = Queue()
+        maintenance_result = []
+        results = []
+        jobs.put((self.create_infra_during_upgrade, {"timeout": 1200}))
+        jobs.put((self.run_queries_on_datasets, {"timeout": 1200}))
+        jobs.put((self.run_queries_on_datasets, {"timeout": 1200}))
+        jobs.put((self.run_queries_on_datasets, {"timeout": 1200}))
+
+        maintenance_job.put((self.columnar_utils.wait_for_maintenance_job_to_complete,
+                  {"pod": self.pod, "tenant": self.tenant, "project_id": self.tenant.project_id,
+                   "instance": self.columnar_cluster, "maintenance_job_id": ungrade_info["id"], "timeout": 7200}))
+
+        self.cbas_util.run_jobs_in_parallel(jobs, results, 4, True)
+        self.cbas_util.run_jobs_in_parallel(maintenance_job, maintenance_result, 1, False)
+        while not jobs.empty() and len(results) != 4:
+            if not all(results):
+                self.log.error("Operations failed during upgrade")
+        if not all(maintenance_result):
+            self.fail("Upgrade failed")
+
+        self.cbas_util.delete_cbas_infra_created_from_spec(self.dummy_columnar_cluster, self.columnar_spec)
 
         self.log.info("Validating server version post upgrade")
         rest = ClusterRestAPI(self.columnar_cluster.master)
