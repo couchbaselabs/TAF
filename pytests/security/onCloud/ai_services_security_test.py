@@ -1,5 +1,7 @@
+import json
 import random
 import string
+import time
 
 from pytests.security.security_base import SecurityBase
 
@@ -10,11 +12,40 @@ class SecurityTest(SecurityBase):
         try:
             SecurityBase.setUp(self)
             self.integration_id = None
+            self.workflow_id = None
+            #load travel sample bucket
+            res = self.capellaAPIv2.load_sample_bucket(self.tenant_id, self.project_id,
+                                                       self.cluster_id,
+                                                       "travel-sample")
+            if res.status_code != 201:
+                self.fail("Failed to load travel sample bucket." \
+                          "Status code: {}, Error: {}".format(res.status_code, res.content))
+
         except Exception as e:
-            self.tearDown()
+            # self.tearDown()
             self.fail("Base Setup Failed with error as - {}".format(e))
 
     def tearDown(self):
+
+        resp = self.capellaAPIv2.list_autovec_workflows(self.tenant_id)
+        workflow_ids = []
+        if resp.status_code == 200:
+            data = json.loads(resp.content)["data"]
+            for workflow in data:
+                workflow_ids.append(workflow["data"]["id"])
+
+        for workflow_id in workflow_ids:
+            self.log.info("Deleting workflow: {}".format(workflow_id))
+            resp = self.capellaAPIv2.delete_autovec_workflow(self.tenant_id, self.project_id, self.cluster_id,
+                                                             workflow_id)
+            if resp.status_code == 202:
+                result = self.wait_for_workflow_deletion(workflow_id)
+                if not result:
+                    self.log.error("Timed out while waiting for workflow deletion. Workflow id: {}".format(workflow_id))
+            else:
+                self.log.error("Failed to delete workflow: {}. Reason: {}".format(workflow_id,
+                                                                                  resp.content))
+
         super(SecurityTest, self).tearDown()
 
     def generate_random_name(self, base_name="integration"):
@@ -26,6 +57,32 @@ class SecurityTest(SecurityBase):
         random_name = "{}{}".format(base_name, random_suffix)
 
         return random_name
+
+    def get_sample_autovec_workflow_payload(self):
+        payload = {
+            "type": "structured",
+            "schemaFields": [
+                "country"
+            ],
+            "embeddingModel": {
+                "external": {
+                    "name": self.generate_random_name("OpenAIIntegration"),
+                    "modelName": "text-embedding-3-small",
+                    "provider": "openAI",
+                    "apiKey": "asfasd"
+                }
+            },
+            "cbKeyspace": {
+                "bucket": "travel-sample",
+                "scope": "inventory",
+                "collection": "airline"
+            },
+            "vectorIndexName": "vector-index-name",
+            "embeddingFieldName": "embedding-field",
+            "name": "flow2"
+        }
+
+        return payload
 
     def get_sample_integrations_payload(self, integration_type="s3"):
 
@@ -52,6 +109,27 @@ class SecurityTest(SecurityBase):
 
         return payload
 
+    def wait_for_workflow_deletion(self, workflow_id, timeout=1800):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.capellaAPIv2.get_autovec_workflow(self.tenant_id, self.project_id,
+                                                          self.cluster_id, workflow_id)
+            if resp.status_code == 404:
+                return True
+
+            self.sleep(10, "Wait for workflow deletion")
+
+        return False
+
+    def create_autovec_workflow(self):
+        resp = self.capellaAPIv2.create_autovec_workflow(self.tenant_id, self.project_id,
+                                                         self.cluster_id, self.get_sample_autovec_workflow_payload())
+        if resp.status_code != 202:
+            self.fail("Failed to create autovec workflow. Status code: {}, Error: {}".
+                      format(resp.status_code, resp.content))
+
+        return resp.json()["id"]
+
     def create_autovec_integration(self):
         resp = self.capellaAPIv2.create_autovec_integration(self.tenant_id,
                                                             self.get_sample_integrations_payload())
@@ -59,6 +137,29 @@ class SecurityTest(SecurityBase):
             return None
 
         return resp.json()["id"]
+
+    def create_autovec_workflow_callback(self, resp, test_method_args=None):
+        workflow_id = resp.json()["id"]
+        res = self.capellaAPIv2.delete_autovec_workflow(self.tenant_id, self.project_id,
+                                                        self.cluster_id, workflow_id)
+        if res.status_code != 202:
+            self.fail("Failed to delete autovec workflow: {}. Status code: {}, Error: {}".
+                      format(workflow_id, res.status_code, res.content))
+
+        res = self.wait_for_workflow_deletion(workflow_id)
+        if not res:
+            self.fail("Failed to delete autovec workflow even after timeout")
+        self.log.info("Workflow deleted")
+
+    def delete_autovec_workflow_callback(self, resp, test_method_args=None):
+        if resp.status_code != 202:
+            self.fail("Failed to delete workflow")
+
+        res = self.wait_for_workflow_deletion(self.workflow_id)
+        if not res:
+            self.fail("Failed to delete workflow even after timeout")
+        self.workflow_id = self.create_autovec_workflow()
+        self.log.info("Created workflow: {}".format(self.workflow_id))
 
     def delete_autovec_integration_callback(self, resp, test_method_args=None):
         if resp.status_code != 202:
@@ -191,3 +292,201 @@ class SecurityTest(SecurityBase):
         if not result:
             self.fail("Authorization org roles test failed for list autovec integrations. Error: {}".
                       format(error))
+
+    def test_autovec_workflow_api_auth(self):
+        url_method_map = {}
+        workflow_url = "{}/v2/organizations/{}/projects/{}/clusters/{}/ai/workflows". \
+            format(self.capellaAPIv2.internal_url, self.tenant_id, self.project_id, self.cluster_id)
+        url_method_map[workflow_url] = ["POST"]
+
+        self.workflow_id = self.create_autovec_workflow()
+        specific_workflow_url = "{}/v2/organizations/{}/projects/{}/clusters/{}/ai/workflows/{}". \
+            format(self.capellaAPIv2.internal_url, self.tenant_id, self.project_id, self.cluster_id, self.workflow_id)
+        url_method_map[specific_workflow_url] = ["GET", "PUT", "DELETE"]
+
+        list_workflow_url = "{}/v2/organizations/{}/ai/workflows?page={}&perPage={}". \
+            format(self.capellaAPIv2.internal_url, self.tenant_id, 1, 10)
+        url_method_map[list_workflow_url] = ["GET"]
+
+        for url, test_methods in url_method_map.items():
+            self.log.info("Testing auth for url: {}".format(url))
+            for method in test_methods:
+                result, error = self.test_authentication(workflow_url, method=method,
+                                                         expected_status_codes=[401, 404])
+                if not result:
+                    self.fail("Auth test failed for method: {}, url: {}, error: {}".
+                              format(method, url, error))
+
+    def test_autovec_workflow_api_authz_tenant_ids(self):
+        #Test with tenant ids
+        test_method_args = {
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_autovec_workflow_payload()
+        }
+        self.log.info("Testing tenant ids authorization for create autovec workflow api")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.create_autovec_workflow, test_method_args,
+                                             'tenant_id', 202,
+                                             self.create_autovec_workflow_callback)
+        if not result:
+            self.fail("Authorization tenant ids test failed for create autovec workflow. Error: {}".
+                      format(error))
+
+        self.workflow_id = self.create_autovec_workflow()
+        test_method_args = {
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'workflow_id': self.workflow_id
+        }
+        self.log.info("Testing tenant ids authorization for get autovec workflow")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.get_autovec_workflow, test_method_args,
+                                             'tenant_id', 200)
+        if not result:
+            self.fail("Authorization tenant ids test failed for get autovec workflow. Error: {}".
+                      format(error))
+
+        self.log.info("Testing tenant ids authorization for delete autovec workflow")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.delete_autovec_workflow, test_method_args,
+                                             'tenant_id', 202,
+                                             self.delete_autovec_workflow_callback)
+        if not result:
+            self.fail("Authorization tenant ids test failed for delete autovec workflow. Error: {}".
+                      format(error))
+
+        test_method_args = {}
+        self.log.info("Test tenant ids authorization for list autovec workflow")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.list_autovec_workflows, test_method_args,
+                                             'tenant_id', 200)
+        if not result:
+            self.fail("Authorization tenant ids test failed for list autovec workflow. Error: {}".
+                      format(error))
+
+    def test_autovec_workflow_api_authz_project_ids(self):
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_autovec_workflow_payload()
+        }
+        self.log.info("Testing project ids authorization for create autovec workflow")
+        result, error = self.test_project_ids(self.capellaAPIv2.create_autovec_workflow, test_method_args,
+                                              'project_id', 202,
+                                              self.create_autovec_workflow_callback, False)
+        if not result:
+            self.fail("Authorization project ids test failed for create autovec workflow. Error: {}".
+                      format(error))
+
+        self.workflow_id = self.create_autovec_workflow()
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'cluster_id': self.cluster_id,
+            'workflow_id': self.workflow_id
+        }
+        self.log.info("Testing project ids authorization for get autovec workflow")
+        result, error = self.test_project_ids(self.capellaAPIv2.get_autovec_workflow, test_method_args,
+                                              'project_id', 200)
+        if not result:
+            self.fail("Authorization project ids test failed for get autovec workflow. Error: {}".
+                      format(error))
+
+        self.log.info("Testing project ids authorization for delete autovec workflow")
+        result, error = self.test_project_ids(self.capellaAPIv2.delete_autovec_workflow, test_method_args,
+                                              'project_id', 202,
+                                              self.delete_autovec_workflow_callback)
+        if not result:
+            self.fail("Authorization project ids test failed for delete autovec workflow. Error: {}".
+                      format(error))
+
+    def test_autovec_workflow_api_authz_org_roles(self):
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_autovec_workflow_payload()
+        }
+        self.log.info("Testing org roles authorization for create autovec workflow")
+        result, error = self.test_with_org_roles("create_autovec_workflow", test_method_args,
+                                                 202, self.create_autovec_workflow_callback,
+                                                 "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for create autovec workflow. Error: {}".
+                      format(error))
+
+        self.workflow_id = self.create_autovec_workflow()
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'workflow_id': self.workflow_id
+        }
+        self.log.info("Testing org roles authorization for get autovec workflow")
+        result, error = self.test_with_org_roles("get_autovec_workflow", test_method_args,
+                                                 200, None, "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for get autovec workflow. Error: {}".
+                      format(error))
+
+        self.log.info("Testing org roles authorization for delete autovec workflow")
+        result, error = self.test_with_org_roles("delete_autovec_workflow", test_method_args,
+                                                  202, self.delete_autovec_workflow_callback,
+                                                  "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for delete autovec workflow. Error: {}".
+                      format(error))
+
+        test_method_args = {
+            'tenant_id': self.tenant_id
+        }
+        self.log.info("Testing org roles authorization for list autovec workflow")
+        result, error = self.test_with_org_roles("list_autovec_workflow", test_method_args,
+                                                 200, None, "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for list autovec workflow. Error: {}".
+                      format(error))
+
+    def test_autovec_workflow_api_authz_project_roles(self):
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_autovec_workflow_payload()
+        }
+        self.log.info("Testing project roles authorization for create autovec workflow")
+        result, error = self.test_with_project_roles("create_autovec_workflow", test_method_args,
+                                                     ["projectOwner", "projectClusterManager"], 202,
+                                                     self.create_autovec_workflow_callback, "provisioned")
+        if not result:
+            self.fail("Authorization project roles test failed for create autovec workflow. Error: {}".
+                      format(error))
+
+        self.workflow_id = self.create_autovec_workflow()
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'workflow_id': self.workflow_id
+        }
+        self.log.info("Testing project roles authorization for get autovec workflow")
+        result, error = self.test_with_project_roles("get_autovec_workflow", test_method_args,
+                                                     ["projectOwner", "projectClusterManager", "projectClusterViewer"], 200,
+                                                     None, "provionsed")
+        if not result:
+            self.fail("Authorization project roles test failed for get autovec workflow. Error: {}".
+                      format(error))
+
+        self.log.info("Testing project roles authorization for delete autovec workflow")
+        result, error = self.test_with_project_roles("delete_autovec_workflow", test_method_args,
+                                                     ["projectOwner", "projectClusterManager"], 202,
+                                                     self.delete_autovec_workflow_callback, "provisioned")
+        if not result:
+            self.fail("Authorization project roles test failed for delete autovec workflow. Error: {}".
+                      format(error))
+
+        test_method_args = {
+            'tenant_id': self.tenant_id
+        }
+        self.log.info("Testing project roles authorization for list autovec workflow")
+        result, error = self.test_with_project_roles("list_autovec_workflow", test_method_args,
+                                                     [], 200,
+                                                     None, "provionsed")
+        if not result:
+            self.fail("Authorization project roles test failed for list autovec workflow")

@@ -774,7 +774,6 @@ class SecurityBase(CouchbaseBaseTest):
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
         resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'Security Base APIs')
         resp = resp.json()
-
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
@@ -911,7 +910,7 @@ class SecurityBase(CouchbaseBaseTest):
 
         return name
 
-    def test_authentication(self, url, method='GET', payload=None):
+    def test_authentication(self, url, method='GET', payload=None, expected_status_codes=[401]):
 
         headers = {
             'invalid_header': 'abcded',
@@ -926,11 +925,11 @@ class SecurityBase(CouchbaseBaseTest):
 
             resp = self.capellaAPI._urllib_request(url, method=method, headers=cbc_api_request_headers,
                                                    params=json.dumps(payload))
-            if resp.status_code != 401:
+            if resp.status_code not in expected_status_codes:
                 error = "Test failed for invalid auth value: {}. " \
                         "Expected status code: {}, Returned status code: {}". \
                     format(cbc_api_request_headers["Authorization"],
-                           401, resp.status_code)
+                           expected_status_codes, resp.status_code)
                 self.log.error(error)
                 return False, error
 
