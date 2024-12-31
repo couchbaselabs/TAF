@@ -98,6 +98,69 @@ class RestConnection(newRC):
             return True
         return False
 
+    def validate_for_encryption_at_rest_issues(self, bucket):
+        api = self.baseUrl + 'pools/default/buckets/' + str(bucket)
+        temp_fail_keywords = ["pending"]
+
+        def get_bucket_info():
+            status, content, header = self._http_request(api, 'GET')
+            return status, content
+
+        def has_temp_fail_issues(issues):
+            for issue in issues:
+                for detail in issue['issues']:
+                    if any(keyword in detail['details'] for keyword in
+                           temp_fail_keywords):
+                        return True
+            return False
+        status, content = get_bucket_info()
+        if status:
+            data = json.loads(content)
+            issues = self.check_encryption_issues(data)
+            if not issues:
+                return []
+            else:
+                if has_temp_fail_issues(issues):
+                    sleep(10, "waiting temp issue for encryption issues to be "
+                              "resolved")
+                    status, content = get_bucket_info()
+                    if status:
+                        data = json.loads(content)
+                        issues = self.check_encryption_issues(data)
+                        if not issues:
+                            return []
+                return issues
+        else:
+            return None
+
+    def check_encryption_issues(self, data):
+        issues_found = []
+        for node in data['nodes']:
+            encryption_info = node['encryptionAtRestInfo']
+            node_issues = {
+                "node_ip": node['hostname'],
+                "issues": []
+            }
+            if encryption_info['configuration']['issues']:
+                node_issues['issues'].append({
+                    "type": "configuration",
+                    "details": encryption_info['configuration']['issues']
+                })
+            if encryption_info['logs']['issues']:
+                node_issues['issues'].append({
+                    "type": "logs",
+                    "details": encryption_info['logs']['issues']
+                })
+            if encryption_info['audits']['issues']:
+                node_issues['issues'].append({
+                    "type": "audits",
+                    "details": encryption_info['audits']['issues']
+                })
+            if node_issues['issues']:
+                issues_found.append(node_issues)
+
+        return issues_found
+
     def set_minimum_bucket_replica_for_cluster(self, minimum_replica):
         api = self.baseUrl + 'settings/dataService'
         params = urllib.parse.urlencode({'minReplicasCount': minimum_replica})

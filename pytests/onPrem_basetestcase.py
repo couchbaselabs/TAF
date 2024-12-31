@@ -97,6 +97,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
         self.encryption_level = self.input.param("encryption_level", "all")
+        self.enable_encryption_at_rest = self.input.param(
+            "enable_encryption_at_rest", False)
+        self.secret_id = self.input.param("secret_id", None)
+        self.encryptionAtRestDekRotationInterval = self.input.param(
+            "encryptionAtRestDekRotationInterval", 2592000)
+        self.rotationIntervalInSeconds = self.input.param(
+            "rotationIntervalInSeconds", 2592000)
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
@@ -631,6 +638,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if self.validate_system_event_logs:
             sys_event_validation_failure = \
                 self.system_events.validate(self.cluster.master)
+
+        if self.enable_encryption_at_rest:
+            rest = RestConnection(self.cluster.master)
+            for bucket in self.cluster.buckets:
+                issues = rest.validate_for_encryption_at_rest_issues(bucket)
+                if issues is None:
+                    self.log.info("unable to reterive info from the "
+                                  "bucket ".format(bucket))
+                elif len(issues) > 0:
+                    self.fail("Issues found in bucket related to encryption at rest {0} : {1}".format(bucket, issues))
 
         if self.ipv4_only or self.ipv6_only:
             for _, cluster in self.cb_clusters.items():
