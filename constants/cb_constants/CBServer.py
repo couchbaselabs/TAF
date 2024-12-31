@@ -129,6 +129,10 @@ class CbServer(object):
     # TTL limit
     max_ttl_seconds = 2147483647
 
+    # Encryption at rest default settings
+    encryption_at_rest_dek_rotation_interval = 2592000
+    secret_rotation_interval_in_seconds = 2592000
+
     # Max supported system_event_logs
     sys_event_min_logs = 3000
     sys_event_max_logs = 20000
