@@ -410,8 +410,8 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": "aws",
                 "compute": {
                     "cpu": self.input.param("cpu", 4),
-                    "ram": self.input.param("ram", 16)
-                },
+                    "ram": self.input.param("ram", 32)
+                },  # https://jira.issues.couchbase.com/browse/AV-92705
                 "support": {
                     "plan": "developer pro",
                     "timezone": "IST"
@@ -426,8 +426,8 @@ class APIBase(CouchbaseBaseTest):
                 "cloudProvider": "aws",
                 "compute": {
                     "cpu": self.input.param("cpu", 4),
-                    "ram": self.input.param("ram", 16)
-                },
+                    "ram": self.input.param("ram", 32)
+                },  # https://jira.issues.couchbase.com/browse/AV-92705
                 "support": {
                     "plan": "enterprise",
                     "timezone": "IST"
