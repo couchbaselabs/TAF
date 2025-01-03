@@ -3054,7 +3054,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
         for _ in range(no_of_objs):
             external_container = random.choice(list(external_container_names.keys()))
             link = random.choice(all_links)
-            while link.properties["region"] != external_container_names[
+            while link_type != "gcs" and link.properties["region"] != external_container_names[
                 external_container]:
                 link = random.choice(all_links)
 
