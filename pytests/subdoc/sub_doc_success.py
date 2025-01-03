@@ -893,7 +893,7 @@ class BasicOps(DurabilityTestsBase):
 
         # Validation for each CRUD task
         for op_type, task in tasks.items():
-            if len(task.success.keys()) != len(gen[op_type].doc_keys):
+            if len(task.success.keys()) != len(gen[op_type].pre_generated_keys):
                 self.log_failure("Failure during %s operation" % op_type)
             elif len(task.fail.keys()) != 0:
                 self.log_failure("Some CRUD failed during %s: %s"

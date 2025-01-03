@@ -318,7 +318,7 @@ class basic_ops(ClusterSetup):
             randomize_value=self.randomize_value)
 
         if self.target_vbucket:
-            mutation_doc_count = len(doc_update.doc_keys)
+            mutation_doc_count = len(doc_update.pre_generated_keys)
         else:
             mutation_doc_count = (doc_update.end - doc_update.start
                                   + len(task.fail.keys()))

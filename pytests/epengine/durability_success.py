@@ -340,7 +340,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                                  .format(task.op_type, task.fail))
 
         # Update num_items value accordingly to the CRUD performed
-        self.num_items += len(gen_create.doc_keys) - len(gen_delete.doc_keys)
+        self.num_items += (len(gen_create.pre_generated_keys)
+                           - len(gen_delete.pre_generated_keys))
 
         if self.simulate_error \
                 not in [DiskError.DISK_FULL, DiskError.DISK_FAILURE]:
