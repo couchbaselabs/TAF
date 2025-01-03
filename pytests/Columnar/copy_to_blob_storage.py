@@ -501,7 +501,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         # create dataset based on dynamic prefixes
         path_on_external_container_int = "{copy_dataset:string}/{country:int}"
-        dataset_obj_int = self.cbas_util.create_external_dataset_obj(self.columnar_cluster,
+        dataset_obj_int = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                      external_container_names={
                                                                          self.sink_blob_bucket_name: self.aws_region},
                                                                      paths_on_external_container=[
