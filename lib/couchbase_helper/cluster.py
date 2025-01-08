@@ -317,7 +317,7 @@ class ServerTasks(object):
                                 preserve_expiry=None,
                                 sdk_retry_strategy=None,
                                 store_semantics=None,
-                                access_deleted=False,
+                                access_deleted=None,
                                 create_as_deleted=False,
                                 load_using="default_loader"):
         self.log.debug("Loading sub documents to {}".format(bucket.name))

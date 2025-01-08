@@ -1266,7 +1266,7 @@ class GenericLoadingTask(Task):
                              durability="",
                              create_path=True, xattr=False,
                              store_semantics=None,
-                             access_deleted=False,
+                             access_deleted=None,
                              create_as_deleted=False):
         success = dict()
         fail = dict()
@@ -1285,7 +1285,8 @@ class GenericLoadingTask(Task):
                 preserve_expiry=self.preserve_expiry,
                 sdk_retry_strategy=self.sdk_retry_strategy,
                 store_semantics=store_semantics,
-                create_as_deleted=create_as_deleted)
+                create_as_deleted=create_as_deleted,
+                access_deleted=access_deleted)
         except Exception as error:
             self.log.error(error)
             self.set_exception("Exception during sub_doc insert: {0}"
@@ -1297,7 +1298,7 @@ class GenericLoadingTask(Task):
                              durability="",
                              create_path=True, xattr=False,
                              store_semantics=None,
-                             access_deleted=False,
+                             access_deleted=None,
                              create_as_deleted=False):
         success = dict()
         fail = dict()
@@ -1329,7 +1330,7 @@ class GenericLoadingTask(Task):
                               durability="",
                               xattr=False,
                               store_semantics=None,
-                              access_deleted=False,
+                              access_deleted=None,
                               create_as_deleted=False):
         success = dict()
         fail = dict()
@@ -1358,7 +1359,7 @@ class GenericLoadingTask(Task):
     def batch_sub_doc_remove(self, key_value,
                              persist_to=0, replicate_to=0,
                              durability="", xattr=False,
-                             access_deleted=False,
+                             access_deleted=None,
                              create_as_deleted=False):
         success = dict()
         fail = dict()
@@ -1384,7 +1385,7 @@ class GenericLoadingTask(Task):
         return success, fail
 
     def batch_sub_doc_read(self, key_value, xattr=False,
-                           access_deleted=False):
+                           access_deleted=None):
         success = dict()
         fail = dict()
         try:
@@ -1548,7 +1549,7 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  preserve_expiry=None,
                  sdk_retry_strategy=None,
                  store_semantics=None,
-                 access_deleted=False,
+                 access_deleted=None,
                  create_as_deleted=False,
                  track_failures=True):
         super(LoadSubDocumentsTask, self).__init__(
@@ -2655,7 +2656,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  collection=CbServer.default_collection,
                  preserve_expiry=None, sdk_retry_strategy=None,
                  store_semantics=None,
-                 access_deleted=False,
+                 access_deleted=None,
                  create_as_deleted=False):
         thread_name = "SubDocumentsLoadGenTask_%s_%s_%s_%s_%s" \
                       % (task_identifier,

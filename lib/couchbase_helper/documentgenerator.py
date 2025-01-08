@@ -72,7 +72,7 @@ def sub_doc_generator(key, start, end, doc_size=256,
         last_name = [''.rjust(doc_size - 10, 'a')]
         city = ["Chicago", "Dallas", "Seattle", "Aurora", "Columbia"]
         state = ["AL", "CA", "IN", "NV", "NY"]
-        pin_code = ["135", "246", "396", "837", "007"]
+        pin_code = ["135", "246", "396", "837", "107"]
         template = '{{ "full_name.first": "{0}", "full_name.last": "{1}", \
                        "addr.city": "{2}", "addr.state": "{3}", \
                        "addr.pincode": {4} }}'

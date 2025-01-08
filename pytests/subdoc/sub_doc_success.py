@@ -188,7 +188,8 @@ class BasicOps(DurabilityTestsBase):
                 .replace(" }}", ", \"mutated\": \"\" }}")
             # Read all the values to validate update operation
             task = self.task.async_load_gen_sub_docs(
-                self.cluster, def_bucket, sub_doc_gen, "read", 0,
+                self.cluster, def_bucket, sub_doc_gen,
+                DocLoading.Bucket.SubDocOps.LOOKUP, 0,
                 batch_size=100, process_concurrency=8,
                 timeout_secs=self.sdk_timeout,
                 load_using=self.load_docs_using)

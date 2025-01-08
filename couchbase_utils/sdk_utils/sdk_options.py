@@ -165,7 +165,7 @@ class SDKOptions(object):
     @staticmethod
     def get_look_up_in_options(timeout=5,
                                time_unit=SDKConstants.TimeUnit.SECONDS,
-                               access_deleted=False):
+                               access_deleted=None):
         timeout = SDKOptions.get_duration(timeout, time_unit)
         return options.LookupInOptions(timeout=timeout,
                                        access_deleted=access_deleted)

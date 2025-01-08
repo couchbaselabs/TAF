@@ -233,6 +233,25 @@ class SDKClient(object):
         # transaction_options.metadataCollection(tnx_keyspace)
         return transaction_options
 
+    @staticmethod
+    def get_mutate_in_spec(op_type, sd_key, sd_val=None,
+                           create_path=False, xattr=False):
+        if op_type == DocLoading.Bucket.SubDocOps.INSERT:
+            return SubDoc.insert(sd_key, sd_val,
+                                 create_parents=create_path, xattr=xattr)
+        if op_type == DocLoading.Bucket.SubDocOps.UPSERT:
+            return SubDoc.upsert(sd_key, sd_val,
+                                 create_parents=create_path, xattr=xattr)
+        if op_type == DocLoading.Bucket.SubDocOps.REMOVE:
+            return SubDoc.remove(sd_key, xattr=True)
+        if op_type == "subdoc_replace":
+            return SubDoc.replace(sd_key, sd_val, xattr=xattr)
+        if op_type == DocLoading.Bucket.SubDocOps.LOOKUP:
+            return SubDoc.get(sd_key, xattr=xattr)
+        if op_type == DocLoading.Bucket.SubDocOps.COUNTER:
+            return SubDoc.increment(sd_key, sd_val,
+                                    create_parents=create_path, xattr=xattr)
+
     def __init__(self, framework_cb_cluster_obj, bucket, servers=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
@@ -529,9 +548,9 @@ class SDKClient(object):
                 fail[doc_key] = dict()
                 fail[doc_key]['value'] = mutate_in_result["value"]
                 fail[doc_key]['error'] = ""
-                fail[key]['cas'] = 0
+                fail[doc_key]['cas'] = 0
                 if path_val:
-                    fail[key]['path_val'] = path_val[key]  # list of (path, val)
+                    fail[doc_key]['path_val'] = path_val[doc_key]  # list of (path, val)
         return success, fail
 
     # Scope/Collection APIs
@@ -839,7 +858,7 @@ class SDKClient(object):
              persist_to=0, durability="",
              timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
              create_path=True, xattr=False, cas=0, sdk_retry_strategy=None,
-             store_semantics=None, preserve_expiry=None, access_deleted=False,
+             store_semantics=None, preserve_expiry=None, access_deleted=None,
              create_as_deleted=False):
         result = None
         if op_type == DocLoading.Bucket.DocOps.UPDATE:
@@ -1074,7 +1093,7 @@ class SDKClient(object):
                              store_semantics=None,
                              preserve_expiry=None,
                              sdk_retry_strategy=None,
-                             access_deleted=False,
+                             access_deleted=None,
                              create_as_deleted=False):
         """
 
@@ -1098,39 +1117,34 @@ class SDKClient(object):
         :param create_as_deleted: Allows creating documents in Tombstone form
         :return:
         """
-        mutate_in_specs = []
         path_val = dict()
-        for item in keys:
-            key = item.getT1()
-            value = item.getT2()
-            mutate_in_spec = []
-            path_val[key] = value
-            for _tuple in value:
-                _path = _tuple[0]
-                _val = _tuple[1]
-                _mutate_in_spec = SDKClient.sub_doc_op.getInsertMutateInSpec(
-                    _path, _val, create_path, xattr)
-                mutate_in_spec.append(_mutate_in_spec)
-            if not xattr:
-                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1, True)
-                mutate_in_spec.append(_mutate_in_spec)
-            content = Tuples.of(key, mutate_in_spec)
-            mutate_in_specs.append(content)
         options = SDKOptions.get_mutate_in_options(
-            exp, exp_unit, persist_to, replicate_to,
-            timeout, time_unit,
-            durability,
-            store_semantics=store_semantics,
+            cas=cas,
+            timeout=timeout, time_unit=time_unit,
+            persist_to=persist_to, replicate_to=replicate_to,
+            durability=durability,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy,
+            # store_semantics=store_semantics,
+            # sdk_retry_strategy=sdk_retry_strategy,
             access_deleted=access_deleted,
             create_as_deleted=create_as_deleted)
-        if cas > 0:
-            options = options.cas(cas)
-        result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
+        sd_op_result_dict = dict()
+        for item in keys:
+            key = item
+            mutate_in_spec = list()
+            path_val[item] = keys[item]
+            for sd_key, sd_val, in keys[item]:
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    DocLoading.Bucket.SubDocOps.INSERT,
+                    sd_key, sd_val, create_path, xattr))
+            if not xattr:
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    DocLoading.Bucket.SubDocOps.COUNTER,
+                    sd_key="mutated", sd_val=1, create_path=True))
+            sd_op_result_dict[key] = self.collection.mutate_in(
+                key, mutate_in_spec, options)
+        return self.__translate_upsert_multi_sub_doc_result(
+            sd_op_result_dict, path_val)
 
     def sub_doc_upsert_multi(self, keys, exp=0,
                              exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1144,7 +1158,7 @@ class SDKClient(object):
                              store_semantics=None,
                              preserve_expiry=None,
                              sdk_retry_strategy=None,
-                             access_deleted=False,
+                             access_deleted=None,
                              create_as_deleted=False):
         """
         :param keys: Documents to perform sub_doc operations on.
@@ -1165,62 +1179,60 @@ class SDKClient(object):
         :param sdk_retry_strategy: Sets sdk_retry_strategy for doc ops
         :return:
         """
-        mutate_in_specs = []
+        sd_op_result_dict = dict()
         path_val = dict()
-        for kv in keys:
-            key = kv.getT1()
-            value = kv.getT2()
-            mutate_in_spec = []
-            path_val[key] = value
-            for _tuple in value:
-                _path = _tuple[0]
-                _val = _tuple[1]
-                _mutate_in_spec = SDKClient.sub_doc_op.getUpsertMutateInSpec(
-                    _path, _val, create_path, xattr)
-                mutate_in_spec.append(_mutate_in_spec)
-            if not xattr:
-                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1, True)
-                mutate_in_spec.append(_mutate_in_spec)
-            content = Tuples.of(key, mutate_in_spec)
-            mutate_in_specs.append(content)
         options = SDKOptions.get_mutate_in_options(
-            exp, exp_unit, persist_to, replicate_to,
-            timeout, time_unit,
-            durability,
-            store_semantics=store_semantics,
+            cas=cas, timeout=timeout, time_unit=time_unit,
+            persist_to=persist_to, replicate_to=replicate_to,
+            durability=durability,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy,
+            # store_semantics=store_semantics,
+            # sdk_retry_strategy=sdk_retry_strategy,
             access_deleted=access_deleted,
             create_as_deleted=create_as_deleted)
-        if cas > 0:
-            options = options.cas(cas)
-        result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
+        for key in keys:
+            value = keys[key]
+            mutate_in_spec = list()
+            path_val[key] = value
+            for sd_key, sd_val in value:
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    DocLoading.Bucket.SubDocOps.UPSERT,
+                    sd_key, sd_val, create_path=create_path, xattr=xattr))
+            if not xattr:
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    DocLoading.Bucket.SubDocOps.COUNTER,
+                    sd_key="mutated", sd_val=1, create_path=True))
+            sd_op_result_dict[key] = self.collection.mutate_in(
+                key, mutate_in_spec, options)
+        return self.__translate_upsert_multi_sub_doc_result(
+            sd_op_result_dict, path_val)
 
     def sub_doc_read_multi(self, keys, timeout=5,
                            time_unit=SDKConstants.TimeUnit.SECONDS,
-                           xattr=False, access_deleted=False):
+                           xattr=False, access_deleted=None):
         """
         :param keys: List of tuples (key,value)
         :param timeout: timeout for the operation
         :param time_unit: timeout time unit
         :param xattr: Bool to enable xattr read
+        :param access_deleted: Bool to enable reading from tombstone doc
         :return:
         """
         path_val = dict()
         look_up_multi_result = dict()
-        options = SDKOptions.get_look_up_in_options(timeout=timeout,
-                                                    time_unit=time_unit)
-        for doc_key, sub_doc_tuples in keys:
+        options = SDKOptions.get_look_up_in_options(
+            timeout=timeout,
+            time_unit=time_unit,
+            access_deleted=access_deleted)
+        for doc_key in keys:
             path_val[doc_key] = list()
             mutate_in_spec = list()
+            sub_doc_tuples = keys[doc_key]
             for sd_key, sd_val in sub_doc_tuples:
                 path_val[doc_key].append((sd_key, ''))
                 mutate_in_spec.append(SubDoc.get(sd_key, xattr=xattr))
-            look_up_multi_result.update(
-                self.collection.mutate_in(doc_key, mutate_in_spec, options))
+            look_up_multi_result[doc_key] = self.collection.lookup_in(
+                doc_key, mutate_in_spec, options)
         return self.__translate_get_multi_sub_doc_result(
             look_up_multi_result, path_val)
 
@@ -1235,7 +1247,7 @@ class SDKClient(object):
                              store_semantics=None,
                              preserve_expiry=None,
                              sdk_retry_strategy=None,
-                             access_deleted=False,
+                             access_deleted=None,
                              create_as_deleted=False):
         """
         :param keys: Documents to perform sub_doc operations on.
@@ -1255,40 +1267,35 @@ class SDKClient(object):
         :param sdk_retry_strategy: Sets sdk_retry_strategy for doc ops
         :return:
         """
-        mutate_in_specs = []
         path_val = dict()
-        for kv in keys:
-            mutate_in_spec = []
-            key = kv.getT1()
-            value = kv.getT2()
-            path_val[key] = list()
-            for _tuple in value:
-                _path = _tuple[0]
-                _val = _tuple[1]
-                path_val[key].append((_path, ''))
-                _mutate_in_spec = SDKClient.sub_doc_op.getRemoveMutateInSpec(
-                    _path, xattr)
-                mutate_in_spec.append(_mutate_in_spec)
-            if not xattr:
-                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1, False)
-                mutate_in_spec.append(_mutate_in_spec)
-            content = Tuples.of(key, mutate_in_spec)
-            mutate_in_specs.append(content)
+        sd_op_result_dict = dict()
         options = SDKOptions.get_mutate_in_options(
-            exp, exp_unit, persist_to, replicate_to,
-            timeout, time_unit,
-            durability,
-            store_semantics=store_semantics,
+            cas=cas, timeout=timeout, time_unit=time_unit,
+            persist_to=persist_to, replicate_to=replicate_to,
+            durability=durability,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy,
+            # store_semantics=store_semantics,
+            # sdk_retry_strategy=sdk_retry_strategy,
             access_deleted=access_deleted,
             create_as_deleted=create_as_deleted)
-        if cas > 0:
-            options = options.cas(cas)
-        result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
+        for key in keys:
+            mutate_in_spec = []
+            value = keys[key]
+            path_val[key] = list()
+            for sd_key, _ in value:
+                path_val[key].append((sd_key, ''))
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    DocLoading.Bucket.SubDocOps.REMOVE,
+                    sd_key, xattr=xattr))
+            if not xattr:
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    DocLoading.Bucket.SubDocOps.COUNTER,
+                    sd_key="mutated", sd_val=1, create_path=False))
+            sd_op_result_dict[key] = self.collection.mutate_in(
+                key, mutate_in_spec, options)
+
+        return self.__translate_upsert_multi_sub_doc_result(
+            sd_op_result_dict, path_val)
 
     def sub_doc_replace_multi(self, keys, exp=0,
                               exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1300,7 +1307,7 @@ class SDKClient(object):
                               cas=0,
                               store_semantics=None,
                               preserve_expiry=None, sdk_retry_strategy=None,
-                              access_deleted=False,
+                              access_deleted=None,
                               create_as_deleted=False):
         """
 
@@ -1321,39 +1328,34 @@ class SDKClient(object):
         :param sdk_retry_strategy: Sets sdk_retry_strategy for doc ops
         :return:
         """
-        mutate_in_specs = []
-        path_val = dict()
-        for kv in keys:
-            mutate_in_spec = []
-            key = kv.getT1()
-            value = kv.getT2()
-            path_val[key] = value
-            for _tuple in value:
-                _path = _tuple[0]
-                _val = _tuple[1]
-                _mutate_in_spec = SDKClient.sub_doc_op.getReplaceMutateInSpec(
-                    _path, _val, xattr)
-                mutate_in_spec.append(_mutate_in_spec)
-            if not xattr:
-                _mutate_in_spec = SDKClient.sub_doc_op.getIncrMutateInSpec(
-                    "mutated", 1, False)
-                mutate_in_spec.append(_mutate_in_spec)
-            content = Tuples.of(key, mutate_in_spec)
-            mutate_in_specs.append(content)
         options = SDKOptions.get_mutate_in_options(
-            exp, exp_unit, persist_to, replicate_to,
-            timeout, time_unit,
-            durability,
-            store_semantics=store_semantics,
+            cas=cas, timeout=timeout, time_unit=time_unit,
+            persist_to=persist_to, replicate_to=replicate_to,
+            durability=durability,
             preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy,
+            # store_semantics=store_semantics,
+            # sdk_retry_strategy=sdk_retry_strategy,
             access_deleted=access_deleted,
             create_as_deleted=create_as_deleted)
         if cas > 0:
             options = options.cas(cas)
-        result = SDKClient.sub_doc_op.bulkSubDocOperation(
-            self.collection, mutate_in_specs, options)
-        return self.__translate_upsert_multi_sub_doc_result(result, path_val)
+        sd_op_result_dict = dict()
+        path_val = dict()
+        for key in keys:
+            mutate_in_spec = list()
+            value = keys[key]
+            path_val[key] = value
+            for sd_key, sd_val in value:
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    "subdoc_replace", sd_key, sd_val, xattr))
+            if not xattr:
+                mutate_in_spec.append(self.get_mutate_in_spec(
+                    DocLoading.Bucket.SubDocOps.COUNTER,
+                    sd_key="mutated", sd_val=1, create_path=False))
+            sd_op_result_dict[key] = self.collection.mutate_in(
+                key, mutate_in_spec, options)
+        return self.__translate_upsert_multi_sub_doc_result(
+            sd_op_result_dict, path_val)
 
     def insert_binary_document(self, keys, sdk_retry_strategy=None):
         options = \
