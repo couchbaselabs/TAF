@@ -936,25 +936,35 @@ class SecurityBase(CouchbaseBaseTest):
         return True, None
 
     def test_tenant_ids(self, test_method=None, test_method_args=None, tenant_id_arg=None,
-                        expected_success_code=None, on_success_callback=None, expected_failure_code=404):
+                        expected_success_code=None, on_success_callback=None, expected_failure_code=None):
         tenant_ids = {
             "valid_tenant_id": self.tenant_id,
             "invalid_tenant_id": self.invalid_id
         }
+
+        if expected_success_code is None:
+            expected_success_code = []
+        elif isinstance(expected_success_code, int):
+            expected_success_code = [expected_success_code]
+
+        if expected_failure_code is None:
+            expected_failure_code = [404]
+        elif isinstance(expected_failure_code, int):
+            expected_failure_code = [expected_failure_code]
 
         for tenant_id in tenant_ids:
             test_method_args[tenant_id_arg] = tenant_ids[tenant_id]
             resp = test_method(**test_method_args)
 
             if tenant_id == "invalid_tenant_id":
-                if resp.status_code != expected_failure_code:
+                if resp.status_code not in expected_failure_code:
                     error = "Test failed for invalid tenant id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
                         format(tenant_ids[tenant_id], 404, resp.status_code)
                     self.log.error(error)
                     return False, error
             else:
-                if resp.status_code != expected_success_code:
+                if resp.status_code not in expected_success_code:
                     self.log.error(resp.content)
                     error = "Test failed for valid tenant id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
@@ -976,6 +986,11 @@ class SecurityBase(CouchbaseBaseTest):
             'valid_project_id': self.project_id,
             'invalid_project_id': self.invalid_id
         }
+
+        if expected_success_code is None:
+            expected_success_code = []
+        elif isinstance(expected_success_code, int):
+            expected_success_code = [expected_success_code]
 
         if include_different_project:
             resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id,
@@ -1001,7 +1016,7 @@ class SecurityBase(CouchbaseBaseTest):
                     self.log.error(error)
                     return False, error
             else:
-                if resp.status_code != expected_success_code:
+                if resp.status_code not in expected_success_code:
                     error = "Test failed for valid project id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
                         format(project_ids[project_id], expected_success_code,

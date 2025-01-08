@@ -58,6 +58,18 @@ class SecurityTest(SecurityBase):
 
         return random_name
 
+    def get_sample_model_deployment_payload(self):
+        payload = {
+          "compute": "g6.xlarge",
+          "configuration": {
+            "name": "intfloat/e5-mistral-7b-instruct",
+            "kind": "embedding-generation",
+            "parameters": {}
+          }
+        }
+
+        return payload
+
     def get_sample_autovec_workflow_payload(self):
         payload = {
             "type": "structured",
@@ -109,6 +121,18 @@ class SecurityTest(SecurityBase):
 
         return payload
 
+    def wait_for_model_deletion(self, model_id, timeout=1800):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.capellaAPIv2.get_model_details(self.tenant_id, self.project_id,
+                                                       self.cluster_id, model_id)
+            if resp.status_code == 404:
+                return True
+
+            self.sleep(10, "Wait for model deletion")
+
+        return False
+
     def wait_for_workflow_deletion(self, workflow_id, timeout=1800):
         start_time = time.time()
         while time.time() < start_time + timeout:
@@ -120,6 +144,27 @@ class SecurityTest(SecurityBase):
             self.sleep(10, "Wait for workflow deletion")
 
         return False
+
+    def create_model(self):
+        resp = self.capellaAPIv2.deploy_model(self.tenant_id, self.project_id,
+                                              self.cluster_id, self.get_sample_model_deployment_payload())
+
+        error_type = ""
+        if resp.status_code == 409:
+            error_type = resp.json()["errorType"]
+
+        while resp.status_code == 409 and error_type == "LLMCleanUpInProgress":
+            error = resp.json()
+            error_type = error["errorType"]
+            resp = self.capellaAPIv2.deploy_model(self.tenant_id, self.project_id,
+                                                  self.cluster_id, self.get_sample_model_deployment_payload())
+            self.sleep(30, "Wait for model resource cleanup")
+
+        if resp.status_code != 202:
+            self.fail("Failed to create model. Status code: {}. Error: {}".
+                      format(resp.status_code, resp.content))
+
+        return resp.json()["id"]
 
     def create_autovec_workflow(self):
         resp = self.capellaAPIv2.create_autovec_workflow(self.tenant_id, self.project_id,
@@ -138,6 +183,19 @@ class SecurityTest(SecurityBase):
 
         return resp.json()["id"]
 
+    def create_model_callback(self, resp, test_method_args=None):
+        model_id = resp.json()["id"]
+        res = self.capellaAPIv2.delete_model(self.tenant_id, self.project_id,
+                                             self.cluster_id, model_id)
+        if res.status_code != 204:
+            self.fail("Failed to delete model: {}. Status code: {}. Error: {}".
+                      format(model_id, res.status_code, res.content))
+
+        res = self.wait_for_model_deletion(model_id)
+        if not res:
+            self.fail("Failed to delete model even after timeout")
+        self.log.info("Model deleted")
+
     def create_autovec_workflow_callback(self, resp, test_method_args=None):
         workflow_id = resp.json()["id"]
         res = self.capellaAPIv2.delete_autovec_workflow(self.tenant_id, self.project_id,
@@ -150,6 +208,17 @@ class SecurityTest(SecurityBase):
         if not res:
             self.fail("Failed to delete autovec workflow even after timeout")
         self.log.info("Workflow deleted")
+
+    def delete_model_callback(self, resp, test_method_args=None):
+        if resp.status_code != 204:
+            self.fail("Failed to delete model")
+
+        res = self.wait_for_model_deletion(self.model_id)
+        if not res:
+            self.fail("Failed to delete model even after timeout")
+
+        self.model_id = self.create_model()
+        self.log.info("Created model: {}".format(self.model_id))
 
     def delete_autovec_workflow_callback(self, resp, test_method_args=None):
         if resp.status_code != 202:
@@ -311,7 +380,7 @@ class SecurityTest(SecurityBase):
         for url, test_methods in url_method_map.items():
             self.log.info("Testing auth for url: {}".format(url))
             for method in test_methods:
-                result, error = self.test_authentication(workflow_url, method=method,
+                result, error = self.test_authentication(url, method=method,
                                                          expected_status_codes=[401, 404])
                 if not result:
                     self.fail("Auth test failed for method: {}, url: {}, error: {}".
@@ -490,3 +559,114 @@ class SecurityTest(SecurityBase):
                                                      None, "provionsed")
         if not result:
             self.fail("Authorization project roles test failed for list autovec workflow")
+
+    def test_model_api_auth(self):
+        url_method_map = {}
+        model_url = "{}/v2/organizations/{}/projects/{}/clusters/{}/languagemodels". \
+            format(self.capellaAPIv2.internal_url, self.tenant_id, self.project_id, self.cluster_id)
+        url_method_map[model_url] = ["POST"]
+
+        specific_model_url = "{}/v2/organizations/{}/projects/{}/clusters/{}/languagemodels/{}". \
+            format(self.capellaAPIv2.internal_url, self.tenant_id, self.project_id, self.cluster_id, self.invalid_id)
+        url_method_map[specific_model_url] = ["GET", "DELETE"]
+
+        list_model_url = "{}/v2/organizations/{}/languagemodels?page={}&perPage={}". \
+            format(self.capellaAPIv2.internal_url, self.tenant_id, 1, 10)
+        url_method_map[list_model_url] = ["GET"]
+
+        for url, test_methods in url_method_map.items():
+            self.log.info("Testing auth for url: {}".format(url))
+            for method in test_methods:
+                result, error = self.test_authentication(url, method=method,
+                                                         expected_status_codes=[401])
+                if not result:
+                    self.fail("Auth test failed for method: {}, url: {}, error: {}".
+                              format(method, url, error))
+
+    def test_model_api_tenant_ids(self):
+        test_method_args = {
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_model_deployment_payload()
+        }
+        self.log.info("Testing tenant ids authorization for create model api")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.deploy_model, test_method_args,
+                                             'tenant_id', [202, 409],
+                                             self.create_model_callback, 403)
+        if not result:
+            self.fail("Authorization tenant ids test failed for create model api. Error: {}".
+                      format(error))
+
+        self.model_id = self.create_model()
+        test_method_args = {
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'model_id': self.model_id
+        }
+        self.log.info("Testing tenant ids authorization for get model api")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.get_model_details, test_method_args,
+                                             'tenant_id', 200, None,
+                                             [404, 403])
+        if not result:
+            self.fail("Authorization tenant ids test failed for get model api. Error: {}".
+                      format(error))
+
+        test_method_args = {
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'model_id': self.model_id
+        }
+        self.log.info("Testing tenant ids authorization for delete model api")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.delete_model, test_method_args,
+                                             'tenant_id', 204,
+                                             self.delete_model_callback, [404, 403])
+        if not result:
+            self.fail("Authorization tenant ids failed for delete model api. Error: {}".
+                      format(error))
+
+        test_method_args = {}
+        self.log.info("Testing tenant ids authorization for list model api")
+        result, error = self.test_tenant_ids(self.capellaAPIv2.list_models, test_method_args,
+                                             'tenant_id', 200,
+                                             None, [404, 403])
+        if not result:
+            self.fail("Authorization tenant ids test failed for list model api. Error: {}".
+                      format(error))
+
+
+    def test_model_api_project_ids(self):
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_model_deployment_payload()
+        }
+        result, error = self.test_project_ids(self.capellaAPIv2.deploy_model, test_method_args,
+                                              'project_id', [202, 409],
+                                              self.create_model_callback, False)
+        if not result:
+            self.fail("Authorization project ids test failed for create model api. Error: {}".
+                      format(error))
+
+        self.model_id = self.create_model()
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'cluster_id': self.cluster_id,
+            'model_id': self.model_id
+        }
+        result, error = self.test_project_ids(self.capellaAPIv2.get_model_details, test_method_args,
+                                              'project_id', [200])
+        if not result:
+            self.fail("Authorization project ids test failed for get model api. Error: {}".
+                      format(error))
+
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'cluster_id': self.cluster_id,
+            'model_id': self.model_id
+        }
+        result, error = self.test_project_ids(self.capellaAPIv2.delete_model, test_method_args,
+                                              'project_id', [204, 404],
+                                              self.delete_model_callback, True)
+        if not result:
+            self.fail("Authorization project ids test failed for delete model api. Error: {}".
+                      format(error))
