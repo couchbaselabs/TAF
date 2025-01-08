@@ -9,6 +9,7 @@ from constants.sdk_constants.java_client import SDKConstants
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
+from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
@@ -156,7 +157,7 @@ class BasicOps(DurabilityTestsBase):
             # If the values of attributes does not match the
             # expected value, append op to list of failed ops.
             for key, value in task.success.items():
-                if expected_values != set(value["value"]):
+                if expected_values != set(value["value"].values()):
                     op_failed_tbl.add_row([key, value["value"]])
 
             op_failed_tbl.display("Update failed for keys:")
@@ -199,15 +200,20 @@ class BasicOps(DurabilityTestsBase):
             op_failed_tbl.set_headers(["Delete failed key", "Value"])
 
             # Collect read operations that failed
-            for key, value in task.fail.items():
-                op_failed_tbl.add_row([key, value["error"]])
-
+            for key, value in task.success.items():
+                err_str = ""
+                for sd_key, sd_val in value['value'].items():
+                    if sd_val == SDKException.PathNotFoundException:
+                        err_str += f"{sd_key} - PathNotFoundException ; "
+                if err_str:
+                    op_failed_tbl.add_row([key, err_str])
             op_failed_tbl.display("Delete succeeded for keys:")
 
             # Expect the reads to have failed indicating the sub-documents are
             # no longer accessible.
             self.assertEqual(len(op_failed_tbl.rows),
-                             num_item_start_for_crud, "Delete failed for few keys")
+                             num_item_start_for_crud,
+                             "Delete failed for few keys")
         else:
             self.log.warning("Unsupported doc_operation")
 
@@ -404,8 +410,8 @@ class BasicOps(DurabilityTestsBase):
         doc_gen = dict()
         sub_doc_gen = dict()
         tasks = list()
-        insert_end_index = self.num_items/3
-        upsert_end_index = (self.num_items/3) * 2
+        insert_end_index = int(self.num_items/3)
+        upsert_end_index = int((self.num_items/3) * 2)
         def_bucket = self.cluster.buckets[0]
 
         # Stat validation reference variables

@@ -243,7 +243,7 @@ class SDKClient(object):
             return SubDoc.upsert(sd_key, sd_val,
                                  create_parents=create_path, xattr=xattr)
         if op_type == DocLoading.Bucket.SubDocOps.REMOVE:
-            return SubDoc.remove(sd_key, xattr=True)
+            return SubDoc.remove(sd_key, xattr=xattr)
         if op_type == "subdoc_replace":
             return SubDoc.replace(sd_key, sd_val, xattr=xattr)
         if op_type == DocLoading.Bucket.SubDocOps.LOOKUP:
@@ -526,7 +526,8 @@ class SDKClient(object):
                         success[doc_key]['value'][lookup_key] \
                             = lookup_spec_result["value"]
                     else:
-                        success[doc_key]['value'][lookup_key] = ""
+                        success[doc_key]['value'][lookup_key] = \
+                            SDKException.PathNotFoundException
         return success, fail
 
     # Translate APIs for sub-document operations
