@@ -17,6 +17,10 @@ class ColumnarDeployments(ColumnarBaseTest):
         self.deployment_regions = ['us-east-1', 'us-east-2', 'us-west-2',
                                    'eu-west-1', 'eu-central-1', 'ap-south-1',
                                    'ap-southeast-1', 'ap-southeast-2']
+        self.deployment_regions_gcp = ['us-east1', 'us-east4', 'us-central1', 'europe-west1',
+                                       'europe-west4', 'europe-west3', 'asia-southeast1']
+        if self.input.param("columnar_provider", "aws") == "gcp":
+            self.deployment_regions = self.deployment_regions_gcp
         self.deployment_nodes = [1, 2, 4, 8, 16, 32]
         self.instance_types = [
             {'vcpus': '4vCPUs', 'memory': '32GB'},
@@ -89,6 +93,7 @@ class ColumnarDeployments(ColumnarBaseTest):
 
             instance_config = (
                 self.columnar_utils.generate_instance_configuration())
+            instance_config['provider'] = "gcp" if self.input.param("columnar_provider", "aws") == "gcp" else "aws"
             instance_config['region'] = region
             instance_config['nodes'] = nodes
             instance_config['instanceTypes'] = instance_type
@@ -102,7 +107,7 @@ class ColumnarDeployments(ColumnarBaseTest):
             deploy_task.instance_config = instance_config
             deployment_tasks.append(deploy_task)
 
-            if len(deployment_tasks) == 3:
+            if len(deployment_tasks) == 2:
                 instances_created = []
                 for task in deployment_tasks:
                     self.task_manager.get_task_result(task)
