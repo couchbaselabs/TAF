@@ -670,3 +670,95 @@ class SecurityTest(SecurityBase):
         if not result:
             self.fail("Authorization project ids test failed for delete model api. Error: {}".
                       format(error))
+
+    def test_model_api_authz_org_roles(self):
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_model_deployment_payload()
+        }
+        self.log.info("Testing org roles authorization for create model api")
+        result, error = self.test_with_org_roles("deploy_model", test_method_args,
+                                                 [202, 409], self.create_model_callback,
+                                                 "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for create model api. Error: {}".
+                      format(error))
+
+        self.model_id = self.create_model()
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'model_id': self.model_id
+        }
+        self.log.info("Testing org roles authorization for get model api")
+        result, error = self.test_with_org_roles("get_model_details", test_method_args,
+                                                 200, None,
+                                                 "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for get model api. Error: {}".
+                      format(error))
+
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'model_id': self.model_id
+        }
+        self.log.info("Testing org roles authorization for delete model api")
+        result, error = self.test_with_org_roles("delete_model", test_method_args,
+                                                 204, self.delete_model_callback,
+                                                 "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for delete model api. Error: {}".
+                      format(error))
+
+        self.log.info("Testing org roles authorization for list model apis")
+        result, error = self.test_with_org_roles("list_models", test_method_args,
+                                                 200, None,
+                                                 "provisioned")
+        if not result:
+            self.fail("Authorization org roles test failed for list model api. Error: {}".
+                      format(error))
+
+    def test_model_api_authz_project_roles(self):
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'payload': self.get_sample_model_deployment_payload()
+        }
+        self.log.info("Testing project roles authorization for create model api")
+        result, error = self.test_with_project_roles('deploy_model', test_method_args,
+                                                     ['projectOwner', 'projectClusterManager'],
+                                                     [202, 409], self.create_model_callback,
+                                                     "provisioned")
+        if not result:
+            self.fail("Authorization project roles test failed for create model api. Error: {}".
+                      format(error))
+
+        self.log.info("Testing project roles authorization for get model api")
+        self.model_id = self.create_model()
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'model_id': self.model_id
+        }
+        result, error = self.test_with_project_roles('get_model_details', test_method_args,
+                                                     ["projectOwner", "projectClusterManager", "projectClusterViewer"],
+                                                     [200], None, "provisioned")
+        if not result:
+            self.fail("Authorization project roles test failed for get model api. Error: {}".
+                      format(error))
+
+        self.log.info("Testing project roles test for delete model")
+        result, error = self.test_with_project_roles('delete_model', test_method_args,
+                                                     ['projectOwner', 'projectClusterManager'],
+                                                     [204, 404], self.delete_model_callback,
+                                                     "provisioned")
+        if not result:
+            self.fail("Authorization project roles test failed for delete model api. Error: {}".
+                      format(error))

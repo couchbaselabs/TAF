@@ -1041,6 +1041,11 @@ class SecurityBase(CouchbaseBaseTest):
                             expected_success_code=None, on_success_callback=None,
                             api_type="columnar"):
 
+        if expected_success_code is None:
+            expected_success_code = []
+        elif isinstance(expected_success_code, int):
+            expected_success_code = [expected_success_code]
+
         for user in self.test_users:
             self.log.info("Verifying status code for Role: {0}"
                           .format(self.test_users[user]["role"]))
@@ -1059,7 +1064,7 @@ class SecurityBase(CouchbaseBaseTest):
                 resp = test_method(**test_method_args)
 
                 if self.test_users[user]["role"] == "organizationOwner":
-                    if resp.status_code != expected_success_code:
+                    if resp.status_code not in expected_success_code:
                         error = "Test failed for role: {}. " \
                                 "Expected status code: {}, Returned status code: {}". \
                             format(self.test_users[user]["role"], expected_success_code,
