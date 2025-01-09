@@ -136,6 +136,9 @@ class ColumnarRBACUtil:
                                                     username, password,
                                                     role_ids=[analytics_admin_role.id])
         instance.db_users.append(analytics_admin_user)
+        for server in instance.servers:
+            server.rest_username = username
+            server.rest_password = password
         return analytics_admin_user
 
     def create_privileges_payload(self, resources_privileges_map=[]):
@@ -221,6 +224,11 @@ class ColumnarRBACUtil:
             user_id = json.loads(resp.content).get("id")
             db_user = DBUser(user_id, username, password)
             return db_user
+        elif resp.status_code == 409:
+            self.log.info("API keys already exist")
+            user_id = json.loads(resp.content).get("id")
+            db_user = DBUser(user_id, username, password)
+            return db_user
         elif resp.status_code == 500:
             self.log.critical(str(resp.content))
             return None
@@ -277,7 +285,11 @@ class ColumnarRBACUtil:
             role_payload
         )
 
-        if resp.status_code == 201:
+        if resp.status_code == 409:
+            role_id = json.loads(resp.content).get("id")
+            columnar_role = ColumnarRole(role_id, role_name)
+            return columnar_role
+        elif resp.status_code == 201:
             self.log.info("Columnar role created successfully")
             role_id = json.loads(resp.content).get("id")
             columnar_role = ColumnarRole(role_id, role_name)

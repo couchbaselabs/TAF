@@ -45,6 +45,7 @@ class Columnar(BaseTestCase, hostedOPD):
 
     def setUp(self):
         BaseTestCase.setUp(self)
+        hostedOPD.__init__(self)
         self.init_doc_params()
         self.threads_calculation()
         self.skip_read_on_error = False
@@ -93,7 +94,10 @@ class Columnar(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for provisionedcluster in tenant.clusters:
                 resp = CapellaUtils.get_root_ca(self.pod, tenant, provisionedcluster.id)
-                provisionedcluster.root_ca = resp[1]["pem"]
+                for cert in resp:
+                    if "Couchbase Server" not in cert["subject"]:
+                        provisionedcluster.root_ca = cert["pem"]
+                        break
                 remoteCluster = CouchbaseRemoteCluster(provisionedcluster, self.bucket_util)
                 remoteCluster.loadDefn = self.default_workload
                 self.data_sources["remoteCouchbase"].append(remoteCluster)

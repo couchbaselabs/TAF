@@ -19,6 +19,7 @@ import random
 import subprocess
 import shlex
 from table_view import TableView
+from constants.cloud_constants.capella_constants import AWS
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -131,6 +132,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 instance_config = (
                     self.columnar_utils.generate_instance_configuration(
                         name = self.prefix + "Columnar_{0}".format(random.randint(1, 100000)),
+                        provider=self.input.param("provider", AWS.__str__).lower(),
                         nodes=self.num_nodes_in_columnar_instance,
                         image=self.columnar_image,
                         token=self.pod.override_key,
