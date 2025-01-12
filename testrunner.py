@@ -18,7 +18,7 @@ sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
 from shell_util.shell_conn import ShellConnection
 from TestInput import TestInputParser, TestInputSingleton
 from framework_lib.framework import HelperLib, Parameters
-from framework_lib.xunit import XUnitTestResult
+from framework_lib.xunit import XUnitTestResult, CustomTextTestResult
 from sdk_client3 import SDKClient
 
 
@@ -229,14 +229,17 @@ def main():
             suite = unittest.TestLoader().loadTestsFromName(name)
         except AttributeError as e:
             print("Test %s was not found: %s" % (name, e))
-            result = unittest.TextTestRunner(verbosity=2)._makeResult()
+            result = unittest.TextTestRunner(
+                verbosity=2, resultclass=CustomTextTestResult)._makeResult()
             result.errors = [(name, e.message)]
         except SyntaxError as e:
             print("SyntaxError in %s: %s" % (name, e))
-            result = unittest.TextTestRunner(verbosity=2)._makeResult()
+            result = unittest.TextTestRunner(
+                verbosity=2, resultclass=CustomTextTestResult)._makeResult()
             result.errors = [(name, e.message)]
         else:
-            result = unittest.TextTestRunner(verbosity=2).run(suite)
+            result = unittest.TextTestRunner(
+                verbosity=2, resultclass=CustomTextTestResult).run(suite)
             if TestInputSingleton.input.param("rerun") \
                     and (result.failures or result.errors):
                 print("#" * 60, "\n",
@@ -244,12 +247,14 @@ def main():
                       "\n", "#" * 60)
                 print("####### Running test with trace logs enabled #######")
                 TestInputSingleton.input.test_params["log_level"] = "debug"
-                result = unittest.TextTestRunner(verbosity=2).run(suite)
+                result = unittest.TextTestRunner(
+                    verbosity=2, resultclass=CustomTextTestResult).run(suite)
             if not result:
                 for t in threading.enumerate():
                     if t != threading.current_thread():
                         t._Thread__stop()
-                result = unittest.TextTestRunner(verbosity=2)._makeResult()
+                result = unittest.TextTestRunner(
+                    verbosity=2, resultclass=CustomTextTestResult)._makeResult()
                 case_number += 1000
                 print("=== TEST WAS STOPPED DUE TO  TIMEOUT ===")
                 result.errors = [(name, "Test was stopped due to timeout")]

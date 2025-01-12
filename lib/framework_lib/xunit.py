@@ -1,4 +1,10 @@
+import os
+import sys
+import traceback
 import xml.dom.minidom
+from unittest import TextTestResult
+from unittest.result import STDOUT_LINE, STDERR_LINE
+
 
 # a junit compatible xml example
 #<?xml version="1.0" encoding="UTF-8"?>
@@ -177,3 +183,32 @@ class XUnitTestSuite(object):
             self.skips += 1
         self.time += time
         return test
+
+
+class CustomTextTestResult(TextTestResult):
+    def _exc_info_to_string(self, err, test):
+        exctype, value, tb = err
+        tb = self._clean_tracebacks(exctype, value, tb, test)
+        tb_e = traceback.TracebackException(
+            exctype, value, tb,
+            capture_locals=self.tb_locals, compact=True)
+        msg_lines = list(tb_e.format())
+        new_msg_lines = list()
+
+        for t_line in msg_lines:
+            new_msg_lines.append(t_line.replace(
+                os.path.abspath(os.getcwd()), "."))
+
+        msg_lines = new_msg_lines
+        if self.buffer:
+            output = sys.stdout.getvalue()
+            error = sys.stderr.getvalue()
+            if output:
+                if not output.endswith('\n'):
+                    output += '\n'
+                msg_lines.append(STDOUT_LINE % output)
+            if error:
+                if not error.endswith('\n'):
+                    error += '\n'
+                msg_lines.append(STDERR_LINE % error)
+        return ''.join(msg_lines)
