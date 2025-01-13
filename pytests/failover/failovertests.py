@@ -77,6 +77,7 @@ class FailoverTests(FailoverBaseTest):
                       .format(self.master.ip))
         self.print_test_params(failover_reason)
         self.rest = ClusterRestAPI(self.master)
+        self.nodes = self.cluster_util.get_otp_nodes(self.master)
         # Set the data path for the cluster
         status, content = self.rest.node_details()
         self.data_path = content["storage"]["hdd"][0]["path"]
@@ -550,7 +551,7 @@ class FailoverTests(FailoverBaseTest):
                 self.log.info("10 secs delay for membase-server to shutdown")
                 # wait for 5 minutes until node is down
                 self.assertTrue(self.cluster_util.wait_for_node_status(
-                    node, self.rest, "unhealthy", self.wait_timeout * 10),
+                    self.cluster, node, "unhealthy", self.wait_timeout * 10),
                     msg="node status is healthy even after waiting for 5 mins")
             elif failover_reason == "firewall":
                 unreachable = True
@@ -559,7 +560,7 @@ class FailoverTests(FailoverBaseTest):
                 RemoteUtilHelper.enable_firewall(
                     server, bidirectional=self.bidirectional)
                 status = self.cluster_util.wait_for_node_status(
-                    node, self.rest, "unhealthy", self.wait_timeout * 10)
+                    self.cluster, node, "unhealthy", self.wait_timeout * 10)
                 if status:
                     self.log.info("node {0}:{1} is 'unhealthy' as expected"
                                   .format(node.ip, node.port))
@@ -664,7 +665,7 @@ class FailoverTests(FailoverBaseTest):
                 self.log.info("10 seconds delay to wait for membase-server to shutdown")
                 # wait for 5 minutes until node is down
                 self.assertTrue(self.cluster_util.wait_for_node_status(
-                    node, self.rest, "unhealthy", 300),
+                    self.cluster, node, "unhealthy", 300),
                     msg="node status is not unhealthy even "
                         "after waiting for 5 minutes")
             elif failover_reason == "firewall":
@@ -672,7 +673,7 @@ class FailoverTests(FailoverBaseTest):
                 server = [srv for srv in self.servers if node.ip == srv.ip][0]
                 RemoteUtilHelper.enable_firewall(server, bidirectional=self.bidirectional)
                 status = self.cluster_util.wait_for_node_status(
-                    node, self.rest, "unhealthy", 300)
+                    self.cluster, node, "unhealthy", 300)
                 if status:
                     self.log.info("node {0}:{1} is 'unhealthy' as expected"
                                   .format(node.ip, node.port))

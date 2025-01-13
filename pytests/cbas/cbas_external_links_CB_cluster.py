@@ -356,7 +356,7 @@ class CBASExternalLinks(CBASBaseTest):
                 count += 1
                 self.sleep(10, "waiting for couchbase service to come up")
                 try:
-                    if self.cluster_util.is_cluster_healthy(to_cluster.rest):
+                    if self.cluster_util.is_cluster_healthy(to_cluster):
                         service_up = True
                 except Exception as err:
                     self.log.error(str(err))

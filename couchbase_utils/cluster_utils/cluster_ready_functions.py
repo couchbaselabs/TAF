@@ -796,8 +796,7 @@ class ClusterUtils:
                     rest.set_chk_period(chk_period)
 
     def change_password(self, cluster, new_password="new_password"):
-        nodes = RestConnection(cluster.master).node_statuses()
-
+        nodes = self.get_otp_nodes(cluster.master)
         cli = CouchbaseCLI(cluster.master,
                            cluster.master.rest_username,
                            cluster.master.rest_password)
@@ -818,7 +817,7 @@ class ClusterUtils:
                     break
 
     def change_port(self, cluster, new_port="9090", current_port='8091'):
-        nodes = RestConnection(cluster.master).node_statuses()
+        nodes = self.get_otp_nodes(cluster.master)
         remote_client = RemoteMachineShellConnection(cluster.master)
         options = "--cluster-port=%s" % new_port
         cli_command = "cluster-edit"
@@ -1374,9 +1373,9 @@ class ClusterUtils:
                     initial_list.remove(server)
         return initial_list
 
-    def is_cluster_healthy(self, rest_conn, timeout=120):
+    def is_cluster_healthy(self, cluster):
         # get the nodes and verify that all the nodes.status are healthy
-        nodes = rest_conn.node_statuses(timeout)
+        nodes = self.get_otp_nodes(cluster.master)
         self.log.debug("Nodes: %s" % nodes)
         return all(node.status == 'healthy' for node in nodes)
 
@@ -1485,12 +1484,12 @@ class ClusterUtils:
                 inactive_added=True)
         return otpnode
 
-    def wait_for_node_status(self, node, rest, expected_status,
+    def wait_for_node_status(self, cluster, node, expected_status,
                              timeout_in_seconds):
         status_reached = False
         end_time = time.time() + timeout_in_seconds
         while time.time() <= end_time and not status_reached:
-            nodes = rest.node_statuses()
+            nodes = self.get_otp_nodes(cluster.master)
             for n in nodes:
                 if node.id == n.id:
                     self.log.debug('Node {0} status : {1}'
