@@ -3,7 +3,7 @@ from cb_constants import DocLoading
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
-from rebalance_base import RebalanceBaseTest
+from rebalance_new.rebalance_base import RebalanceBaseTest
 from rebalance_utils.rebalance_util import RebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 
