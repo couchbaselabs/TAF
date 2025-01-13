@@ -1462,7 +1462,7 @@ class ClusterUtils:
         command = "ns_orchestrator:needs_rebalance()"
         status, content = rest.diag_eval(command)
         if status:
-            return content.lower() == "false"
+            return content is False
         self.log.critical("Can't define if cluster balanced")
         return None
 
@@ -1791,26 +1791,24 @@ class ClusterUtils:
         return rest.create_stats_snapshhot()
 
     def trigger_cb_collect_on_cluster(self, rest, nodes, single_node=False):
-        params = dict()
-        node_ids = [node.id for node in nodes]
-        params['nodes'] = ",".join(node_ids)
+        nodes = ",".join([node.id for node in nodes])
         if single_node:
             # In case of single node we have to pass ip as below
-            params['nodes'] = 'ns_1@' + '127.0.0.1'
+            nodes = 'ns_1@' + '127.0.0.1'
 
-        self.log.info('Running cbcollect on node ' + params['nodes'])
-        status, _, _ = rest.perform_cb_collect(params)
+        self.log.info(f'Running cb log-collect on nodes {nodes}')
+        status, _ = rest.start_logs_collection(nodes=nodes)
         sleep(10, "Wait for CB collect to start", log_type="infra")
-        self.log.info("%s - cbcollect status: %s"
-                      % (",".join(node_ids), status))
+        self.log.info(f"Cb collect status: {status}")
         return status
 
-    def wait_for_cb_collect_to_complete(self, rest, retry_count=60):
+    def wait_for_cb_collect_to_complete(self, cluster, retry_count=60):
         self.log.info("Polling active_tasks to check cbcollect status")
         retry = 0
         status = False
         while retry < retry_count:
-            cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
+            cb_collect_response = self.get_cluster_tasks(
+                cluster.master, task_type="clusterLogsCollection")
             if cb_collect_response:
                 cb_collect_progress = int(cb_collect_response['progress'])
                 cb_collect_status = cb_collect_response['status']
@@ -1829,9 +1827,10 @@ class ClusterUtils:
                 sleep(10, "CB collect still running", log_type="infra")
         return status
 
-    def copy_cb_collect_logs(self, rest, nodes, cluster, log_path):
+    def copy_cb_collect_logs(self, nodes, cluster, log_path):
         status = True
-        cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
+        cb_collect_response = self.get_cluster_tasks(
+            cluster.master, task_type="clusterLogsCollection")
         self.log.debug(cb_collect_response)
         node_ids = [node.id for node in nodes]
         if 'perNode' in cb_collect_response and len(node_ids) > 0:

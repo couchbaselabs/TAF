@@ -792,9 +792,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 is_single_node_server)
 
             if status is True:
-                self.cluster_util.wait_for_cb_collect_to_complete(rest)
-                self.cluster_util.copy_cb_collect_logs(rest, nodes, cluster,
-                                                       log_path)
+                self.cluster_util.wait_for_cb_collect_to_complete(self.cluster)
+                self.cluster_util.copy_cb_collect_logs(
+                    nodes, cluster, log_path)
             else:
                 self.log.error("API perform_cb_collect returned False")
 

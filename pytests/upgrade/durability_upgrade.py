@@ -68,9 +68,9 @@ class UpgradeTests(UpgradeBase):
         status = self.cluster_util.trigger_cb_collect_on_cluster(rest, nodes)
 
         if status is True:
-            self.cluster_util.wait_for_cb_collect_to_complete(rest)
+            self.cluster_util.wait_for_cb_collect_to_complete(self.cluster)
             status = self.cluster_util.copy_cb_collect_logs(
-                rest, nodes, self.cluster, log_path)
+                nodes, self.cluster, log_path)
             if status is False:
                 self.log_failure("API copy_cb_collect_logs detected failure")
         else:

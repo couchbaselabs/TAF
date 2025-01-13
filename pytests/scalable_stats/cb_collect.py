@@ -334,10 +334,9 @@ class CbCollectInfoTests(CollectionBase):
                                  % (content, expected_msg))
 
         # Validate initial trigger logs
-        self.cluster_util.wait_for_cb_collect_to_complete(rest)
-        status = self.cluster_util.copy_cb_collect_logs(rest, nodes,
-                                                        self.cluster,
-                                                        self.log_path)
+        self.cluster_util.wait_for_cb_collect_to_complete(self.cluster)
+        status = self.cluster_util.copy_cb_collect_logs(
+            nodes, self.cluster, self.log_path)
         if status is False:
             self.log_failure("Cb_collect log verification failed")
 
