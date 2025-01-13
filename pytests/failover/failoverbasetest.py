@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
@@ -104,13 +105,21 @@ class FailoverBaseTest(BaseTestCase):
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user(self.cluster.master)
 
-        if self.cluster.sdk_client_pool:
+        if (self.load_docs_using == "default_loader" and
+                self.cluster.sdk_client_pool):
             self.log.info("Creating SDK clients for client_pool")
             for bucket in self.cluster.buckets:
                 self.cluster.sdk_client_pool.create_clients(
                     self.cluster, bucket,
                     req_clients=self.sdk_pool_capacity,
                     compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.cluster.buckets:
+                self.log.info(f"Creating Java SDK pool for {bucket.name}")
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=self.sdk_pool_capacity)
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
