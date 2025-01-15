@@ -560,7 +560,6 @@ class QueryLoad:
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         self.failures = 0
         self.timeout_failures = 0
-        self.lock = Lock()
         self.esClient = esClient
         self.log_fail = log_fail
 
@@ -603,7 +602,6 @@ class QueryLoad:
         counter = 0
         hotel = Vector(None)
         while not self.stop_run:
-            # self.lock.acquire()
             client_context_id = name + str(counter)
             start = time.time()
             e = ""
@@ -656,9 +654,10 @@ class QueryLoad:
                     q_param_json, validate=validate_item_count)
                 self.query_stats[query][0] += metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[query][1] += 1
-                self.query_stats[query][8].append(metrics.executionTime().toNanos()/1000000.0)
-                if len(self.query_stats[query][8]) > 1000:
-                    self.query_stats[query][8].pop(0)
+                with self.query_stats[query][5]:
+                    self.query_stats[query][8].append(metrics.executionTime().toNanos()/1000000.0)
+                    if len(self.query_stats[query][8]) > 1000:
+                        self.query_stats[query][8].pop(0)
                 # lock.release()
                 if status == QueryStatus.SUCCESS:
                     if self.esClient:

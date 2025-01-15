@@ -1156,20 +1156,21 @@ class OPD:
                                                       ])
                         try:
                             for query, _ in sorted(ql.bucket.query_map.items(), key=lambda x: x[1]["identifier"]):
-                                if ql.query_stats[query][1] > 0:
-                                    self.query_table.add_row(
-                                        [str(ql.bucket.name),
-                                         ql.bucket.query_map[query]["identifier"],
-                                         ql.query_stats[query][1],
-                                         ql.bucket.query_map[query]["vector_defn"].get("nProbe"),
-                                         ql.query_stats[query][4],
-                                         round(ql.query_stats[query][0]/ql.query_stats[query][1], 2),
-                                         round(sum(ql.query_stats[query][8][-1000:])/min(1000,len(ql.query_stats[query][8][-1000:])), 2),
-                                         round(ql.query_stats[query][2]/ql.query_stats[query][1], 2),
-                                         round(ql.query_stats[query][3]/ql.query_stats[query][1], 2),
-                                         round(ql.query_stats[query][6]/ql.query_stats[query][1], 2),
-                                         round(ql.query_stats[query][7]/ql.query_stats[query][1], 2)
-                                                                    ])
+                                with ql.query_stats[query][5]:
+                                    if ql.query_stats[query][1] > 0:
+                                        self.query_table.add_row(
+                                            [str(ql.bucket.name),
+                                             ql.bucket.query_map[query]["identifier"],
+                                             ql.query_stats[query][1],
+                                             ql.bucket.query_map[query]["vector_defn"].get("nProbe"),
+                                             ql.query_stats[query][4],
+                                             round(ql.query_stats[query][0]/ql.query_stats[query][1], 2),
+                                             round(sum(ql.query_stats[query][8][-1000:])/min(1000,len(ql.query_stats[query][8][-1000:])), 2),
+                                             round(ql.query_stats[query][2]/ql.query_stats[query][1], 2),
+                                             round(ql.query_stats[query][3]/ql.query_stats[query][1], 2),
+                                             round(ql.query_stats[query][6]/ql.query_stats[query][1], 2),
+                                             round(ql.query_stats[query][7]/ql.query_stats[query][1], 2)
+                                                                        ])
                         except Exception as e:
                             print(e)
                         self.table.add_row([
