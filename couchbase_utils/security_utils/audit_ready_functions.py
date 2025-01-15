@@ -8,7 +8,7 @@ from global_vars import logger
 
 
 class audit:
-    AUDITLOGFILENAME = 'audit.log'
+    AUDITLOGFILENAME = 'current-audit.log'
     AUDITCONFIGFILENAME = 'audit.json'
     AUDITDESCFILE = 'audit_events.json'
     WINLOGFILEPATH = "C:/Program Files/Couchbase/Server/var/lib/couchbase/logs"
