@@ -5044,9 +5044,13 @@ class BucketCreateFromSpecTask(Task):
                 self.set_exception(
                     BucketCreationException(ip=self.bucket_helper.ip,
                                             bucket_name=self.bucket_obj.name))
-            elif not self.bucket_obj.numVBuckets:
+            elif self.bucket_obj.numVBuckets is None:
                 # Set num_vbuckets to default it not provided by the user
-                self.bucket_obj.numVBuckets = CbServer.total_vbuckets
+                if (self.bucket_obj.bucketType == Bucket.Type.MEMBASE and
+                        self.bucket_obj.storageBackend == Bucket.StorageBackend.magma):
+                    self.bucket_obj.numVBuckets = CbServer.magma_default_vbuckets
+                else:
+                    self.bucket_obj.numVBuckets = CbServer.total_vbuckets
                 if CbServer.cluster_profile == "serverless":
                     self.bucket_obj.numVBuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
