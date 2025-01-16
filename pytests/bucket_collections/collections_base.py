@@ -522,6 +522,7 @@ class CollectionBase(ClusterSetup):
                 test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
                 load_spec, mutation_num=0, async_load=async_load,
                 print_ops_rate=False, batch_size=500, process_concurrency=1,
+                load_using=test_obj.load_docs_using,
                 validate_task=(not test_obj.skip_validations))
         return cont_doc_load
 

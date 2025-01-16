@@ -58,6 +58,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.task, self.cluster, self.cluster.buckets, loading_spec,
             mutation_num=0, batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
+            load_using=self.load_docs_using,
             async_load=True)
 
     def tasks_result(self, mutation_task):
@@ -231,7 +232,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
                                                      timeout=1200)
-        self.log.info("Current nodes : {0}".format([node.id for node in self.cluster_util.get_nodes_self(self.cluster.master)]))
+        self.log.info("Current nodes : {0}".format([node.id for node in self.cluster_util.get_nodes(self.cluster.master)]))
         self.log.info("Adding nodes {0} to cluster".format(self.servs_in))
         self.log.info("Removing nodes {0} from cluster".format(self.servs_out))
         add_in_once = self.extra_servs_in
