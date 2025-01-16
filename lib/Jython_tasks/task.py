@@ -313,7 +313,7 @@ class ScaleColumnarInstance(Task):
                 temp_server.type = "columnar"
                 temp_server.cbas_port = 18095
                 nodes.append(temp_server)
-    
+
             if self.servers:
                 self.cluster.refresh_object(nodes)
             else:
@@ -4936,9 +4936,13 @@ class BucketCreateTask(Task):
             if self.result is False:
                 self.test_log.critical("Bucket %s creation failed"
                                        % self.bucket.name)
-            elif not self.bucket.num_vbuckets:
+            elif self.bucket.numVBuckets is None:
                 # Set num_vbuckets to default it not provided by the user
-                self.bucket.num_vbuckets = CbServer.total_vbuckets
+                if (self.bucket.bucketType == Bucket.Type.MEMBASE and
+                        self.bucket.storageBackend == Bucket.StorageBackend.magma):
+                    self.bucket.numVBuckets = CbServer.magma_default_vbuckets
+                else:
+                    self.bucket.num_vbuckets = CbServer.total_vbuckets
                 if CbServer.cluster_profile == "serverless":
                     self.bucket.num_vbuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
@@ -5077,11 +5081,15 @@ class BucketCreateFromSpecTask(Task):
                 self.set_exception(
                     BucketCreationException(ip=self.bucket_helper.ip,
                                             bucket_name=self.bucket_obj.name))
-            elif not self.bucket_obj.num_vbuckets:
+            elif self.bucket_obj.num_vbuckets is None:
                 # Set num_vbuckets to default it not provided by the user
-                self.bucket_obj.num_vbuckets = CbServer.total_vbuckets
+                if (self.bucket_obj.bucketType == Bucket.Type.MEMBASE and
+                        self.bucket_obj.storageBackend == Bucket.StorageBackend.magma):
+                    self.bucket_obj.numVBuckets = CbServer.magma_default_vbuckets
+                else:
+                    self.bucket_obj.numVBuckets = CbServer.total_vbuckets
                 if CbServer.cluster_profile == "serverless":
-                    self.bucket_obj.num_vbuckets = CbServer.Serverless.VB_COUNT
+                    self.bucket_obj.numVBuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
         except Exception as e:
             self.result = False

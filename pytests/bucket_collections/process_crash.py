@@ -66,14 +66,7 @@ class CrashTest(CollectionBase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
-        gen_create = doc_generator(
-            self.key, 0, self.num_items,
-            key_size=self.key_size,
-            doc_size=self.doc_size,
-            doc_type=self.doc_type,
-            target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.cluster.buckets[0].numVBuckets)
         if self.atomicity:
             transaction_task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets,
@@ -91,6 +84,13 @@ class CrashTest(CollectionBase):
                 sync=self.sync)
             self.task.jython_task_manager.get_task_result(transaction_task)
         for bucket in self.cluster.buckets:
+            gen_create = doc_generator(
+                self.key, 0, self.num_items,
+                key_size=self.key_size,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=self.target_vbucket,
+                vbuckets=bucket.numVBuckets)
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_create,
                 DocLoading.Bucket.DocOps.CREATE, self.maxttl,
@@ -113,7 +113,7 @@ class CrashTest(CollectionBase):
             # Verify cbstats vbucket-details
             stats_failed = self.durability_helper.verify_vbucket_details_stats(
                 bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                vbuckets=self.cluster.vbuckets,
+                vbuckets=self.cluster.buckets[0].numVBuckets,
                 expected_val=verification_dict)
 
             if self.atomicity is False:
@@ -164,14 +164,14 @@ class CrashTest(CollectionBase):
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         gen_load = doc_generator(
             self.key, self.num_items, self.new_docs_to_add,
             key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type,
             target_vbucket=target_vbuckets,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=self.bucket.numVBuckets)
         if self.atomicity:
             self.transaction_load_task = \
                 self.task.async_load_gen_docs_atomicity(
@@ -622,7 +622,7 @@ class CrashTest(CollectionBase):
             stats_failed = \
                 self.durability_helper.verify_vbucket_details_stats(
                     def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                    vbuckets=self.cluster.vbuckets,
+                    vbuckets=self.bucket.numVBuckets,
                     expected_val=verification_dict)
             if stats_failed:
                 self.fail("Cbstats verification failed")

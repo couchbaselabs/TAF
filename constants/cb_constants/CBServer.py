@@ -23,6 +23,7 @@ class CbServer(object):
         FTS_MEM_QUOTA = "ftsMemoryQuota"
         CBAS_MEM_QUOTA = "cbasMemoryQuota"
         EVENTING_MEM_QUOTA = "eventingMemoryQuota"
+        N1QL_MEM_QUOTA = "queryMemoryQuota"
 
         class MinRAMQuota(object):
             KV = 256
@@ -116,6 +117,7 @@ class CbServer(object):
     transaction_collection = "_transactions"
 
     total_vbuckets = 1024
+    magma_default_vbuckets = 128
 
     # Name length limits
     max_bucket_name_len = 100
