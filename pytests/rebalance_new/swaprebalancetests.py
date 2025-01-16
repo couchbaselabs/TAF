@@ -104,7 +104,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
         tasks = []
         for bucket in self.cluster.buckets:
             tasks.append(self.task.async_validate_docs(
-                self.cluster, bucket, self.gen_create, "create", 0,
+                self.cluster, bucket, self.gen_create,
+                DocLoading.Bucket.DocOps.CREATE, 0,
+                validate_using=self.load_docs_using,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency))
         for task in tasks:

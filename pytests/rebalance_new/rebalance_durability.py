@@ -306,11 +306,15 @@ class RebalanceDurability(RebalanceBaseTest):
                 tasks = list()
                 # Create tasks for doc verification
                 tasks.append(self.task.async_validate_docs(
-                    self.cluster, def_bucket, gen_update, "update", 0,
-                    batch_size=10, process_concurrency=4))
+                    self.cluster, def_bucket, gen_update,
+                    DocLoading.Bucket.DocOps.UPDATE, 0,
+                    batch_size=10, process_concurrency=4,
+                    validate_using=self.load_docs_using))
                 tasks.append(self.task.async_validate_docs(
-                    self.cluster, def_bucket, gen_create, "create", 0,
-                    batch_size=10, process_concurrency=4))
+                    self.cluster, def_bucket, gen_create,
+                    DocLoading.Bucket.DocOps.CREATE, 0,
+                    batch_size=10, process_concurrency=4,
+                    validate_using=self.load_docs_using))
 
                 # Wait for all verification tasks to complete
                 for task in tasks:
