@@ -5,6 +5,7 @@ from basetestcase import BaseTestCase
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 retry_exceptions = SDKException.TimeoutException \
     + SDKException.RequestCanceledException \
@@ -127,6 +128,16 @@ class FailoverBaseTest(BaseTestCase):
         self.log.info("== FailoverBaseTest setup finished for test #{0} {1} =="
                       .format(self.case_number, self._testMethodName))
 
+    def __recover_failed_nodes(self, servers):
+        self.log.info("Recovering failures on servers: %s" % servers)
+        for server in servers:
+            shell = RemoteMachineShellConnection(server)
+            shell.disable_firewall()
+            shell.unpause_memcached()
+            shell.unpause_beam()
+            shell.start_couchbase()
+            shell.disconnect()
+
     def tearDown(self):
         self.log.info(
             "=== FailoverBaseTest tearDown started for test #{0} {1} ==="
@@ -139,6 +150,8 @@ class FailoverBaseTest(BaseTestCase):
             self.log.warn("CLEANUP WAS SKIPPED")
             self.cluster.shutdown(force=True)
         else:
+            self.__recover_failed_nodes(self.cluster.servers)
+            self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
             super(FailoverBaseTest, self).tearDown()
 
     def subsequent_load_gen(self, retry_exceptions=[], ignore_exceptions=[]):
