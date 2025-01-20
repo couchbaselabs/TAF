@@ -293,7 +293,8 @@ class ClusterOn(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id, val)
-            if self.validate_testcase(result, [409, 202], testcase, failures):
+            if self.validate_testcase(result, [409, 202], testcase,
+                                      failures, payloadTest=True):
                 start_time = time.time()
                 while not self.validate_onoff_state(
                         ["turningOn", "healthy"], sleep=1):

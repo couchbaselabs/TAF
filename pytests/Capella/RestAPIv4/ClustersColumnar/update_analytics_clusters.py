@@ -260,7 +260,8 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
         testcases = list()
 
         for key in self.expected_res.keys() + ["plan", "timezone"]:
-            if key in ["region", "cloudProvider", "availability", "compute", "id"]:
+            if key in ["region", "cloudProvider", "availability",
+                       "compute", "id"]:
                 continue
             values = [
                 "", 1, 0, 100000, -1, 123.123,

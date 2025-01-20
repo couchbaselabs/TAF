@@ -369,7 +369,7 @@ class UpdateBucket(GetBucket):
                               "storageBackend", "bucketConflictResolution"]:
                     del testcase[param]
 
-                testcase["description"] = "Testing '{}' with val: `{}` of " \
+                testcase["desc"] = "Testing '{}' with val: `{}` of " \
                     "type: `{}`".format(key, value, type(value))
                 if (
                         (key in ["memoryAllocationInMb", "priority",
@@ -483,7 +483,7 @@ class UpdateBucket(GetBucket):
 
         failures = list()
         for testcase in testcases:
-            self.log.info(testcase['description'])
+            self.log.info(testcase['desc'])
 
             # Wait for cluster to rebalance (if it is).
             self.update_auth_with_api_token(self.curr_owner_key)
@@ -522,7 +522,8 @@ class UpdateBucket(GetBucket):
                     testcase['flush'], testcase['timeToLiveInSeconds'],
                     False, testcase["priority"])
 
-            self.validate_testcase(result, [204], testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures,
+                                   payloadTest=True)
 
         if failures:
             for fail in failures:

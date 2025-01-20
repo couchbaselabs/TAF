@@ -113,14 +113,18 @@ class PostEndpointCommand(GetCluster):
             elif "invalid_clusterId" in testcase:
                 cluster = testcase["invalid_clusterId"]
 
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                organization, project, cluster, self.expected_res)
+            result = (self.capellaAPI.cluster_ops_apis
+                      .post_private_endpoint_command(
+                        organization, project, cluster, self.expected_res))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    organization, project, cluster, self.expected_res)
-            self.capellaAPI.cluster_ops_apis.private_network_command_endpoint = \
-                "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand"
+                result = (self.capellaAPI.cluster_ops_apis
+                          .post_private_endpoint_command(
+                            organization, project, cluster, self.expected_res))
+            self.capellaAPI.cluster_ops_apis\
+                .private_network_command_endpoint = \
+                "/v4/organizations/{}/projects/{}/clusters/{}/"\
+                "privateEndpointService/endpointCommand"
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -139,14 +143,16 @@ class PostEndpointCommand(GetCluster):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_res, header)
+            result = (self.capellaAPI.cluster_ops_apis
+                      .post_private_endpoint_command(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        self.expected_res, header))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res, header)
+                result = (self.capellaAPI.cluster_ops_apis
+                          .post_private_endpoint_command(
+                            self.organisation_id, self.project_id,
+                            self.cluster_id, self.expected_res, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -234,14 +240,16 @@ class PostEndpointCommand(GetCluster):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.expected_res, **kwarg)
+            result = (self.capellaAPI.cluster_ops_apis
+                      .post_private_endpoint_command(
+                        testcase["organizationID"], testcase["projectID"],
+                        testcase["clusterID"], self.expected_res, **kwarg))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res, **kwarg)
+                result = (self.capellaAPI.cluster_ops_apis
+                          .post_private_endpoint_command(
+                            testcase["organizationID"], testcase["projectID"],
+                            testcase["clusterID"], self.expected_res, **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -263,10 +271,9 @@ class PostEndpointCommand(GetCluster):
             for value in values:
                 testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
-                testcase["description"] = "Testing `{}` with val: {} of {}" \
+                testcase["desc"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
-                if value == "" or \
-                        key == "vpcID" and value is None:
+                if value == "" or key == "vpcID" and value is None:
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -308,15 +315,17 @@ class PostEndpointCommand(GetCluster):
         failures = list()
         for testcase in testcases:
             payload = {key: testcase[key] for key in self.expected_res.keys()}
-            self.log.info(testcase['description'])
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                self.organisation_id, self.project_id, self.cluster_id,
-                payload)
+            self.log.info(testcase['desc'])
+            result = (self.capellaAPI.cluster_ops_apis
+                      .post_private_endpoint_command(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        payload))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    payload)
+                result = (self.capellaAPI.cluster_ops_apis
+                          .post_private_endpoint_command(
+                            self.organisation_id, self.project_id,
+                            self.cluster_id, payload))
             self.validate_testcase(result, [200], testcase, failures,
                                    payloadTest=True)
 

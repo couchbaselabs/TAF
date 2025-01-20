@@ -315,7 +315,7 @@ class CreateScope(GetScope):
             for pre in ["", "_", "%"]:
                 name = self.generate_random_string(length, False, pre)
                 testcase = {
-                    "description": "Testing scope with name {}".format(name),
+                    "desc": "Testing scope with name {}".format(name),
                     "name": name
                 }
                 if pre != "" or len(name) > 251:
@@ -332,7 +332,7 @@ class CreateScope(GetScope):
 
         failures = list()
         for testcase in testcases:
-            self.log.info(testcase['description'])
+            self.log.info(testcase['desc'])
 
             res = self.capellaAPI.cluster_ops_apis.create_scope(
                 self.organisation_id, self.project_id, self.cluster_id,

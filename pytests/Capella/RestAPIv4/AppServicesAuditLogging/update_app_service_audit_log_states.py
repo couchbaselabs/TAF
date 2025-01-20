@@ -307,7 +307,7 @@ class PutAuditLog(GetAuditLog):
             for val in values:
                 testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = val
-                testcase["description"] = "Testing `{}` with val: {} of {}" \
+                testcase["desc"] = "Testing `{}` with val: {} of {}" \
                     .format(key, val, type(val))
                 testcase["expected_status_code"] = 400
                 testcase["expected_error"] = {
@@ -323,7 +323,7 @@ class PutAuditLog(GetAuditLog):
                 testcases.append(testcase)
         failures = list()
         for testcase in testcases:
-            self.log.info(testcase['description'])
+            self.log.info(testcase['desc'])
             res = (self.capellaAPI.cluster_ops_apis.
                    update_app_svc_audit_log_state(
                     self.organisation_id, self.project_id, self.cluster_id,

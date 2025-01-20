@@ -343,7 +343,7 @@ class UpdateCollection(GetCollection):
         for value in [-2, -1, 0, "1", 2147483648, 1.2, -0.2, "", None, "abc"]:
             testcases += 1
             testcase = {
-                "description": "Testing maxTTL with value `{}` with type {}"
+                "desc": "Testing maxTTL with value `{}` with type {}"
                 .format(value, type(value)),
                 "maxTTL": value
             }
@@ -380,7 +380,7 @@ class UpdateCollection(GetCollection):
                             'modification.',
                     'httpStatusCode': 422
                 }
-            self.log.info("Executing test: {}".format(testcase["description"]))
+            self.log.info("Executing test: {}".format(testcase["desc"]))
             res = self.capellaAPI.cluster_ops_apis.update_collection(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, self.collection_name,

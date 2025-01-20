@@ -308,7 +308,7 @@ class PostAuditLogExports(GetAuditLogExports):
             for val in values:
                 testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = val
-                testcase["description"] = "Testing `{}` with val: {} of {}" \
+                testcase["desc"] = "Testing `{}` with val: {} of {}" \
                     .format(key, val, type(val))
                 # Expected error conditions
                 # if isinstance(val, type(int)) or val == "":
@@ -342,7 +342,7 @@ class PostAuditLogExports(GetAuditLogExports):
                 testcases.append(testcase)
         failures = list()
         for testcase in testcases:
-            self.log.info(testcase['description'])
+            self.log.info(testcase['desc'])
             res = (self.capellaAPI.cluster_ops_apis.
                    create_app_svc_audit_log_export(
                     self.organisation_id, self.project_id, self.cluster_id,

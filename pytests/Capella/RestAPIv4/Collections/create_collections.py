@@ -349,7 +349,7 @@ class CreateCollection(GetScope):
     def test_payload(self):
         testcases = list()
         testcases.append({
-            "description": "Passing negative maxTTL value.",
+            "desc": "Passing negative maxTTL value.",
             "name": "negative_maxTTL",
             "maxTTL": -1
         })
@@ -357,7 +357,7 @@ class CreateCollection(GetScope):
             for pre in ["", "_", "%"]:
                 name = self.generate_random_string(length, False, pre)
                 testcase = {
-                    "description": "Testing scope with name {}".format(name),
+                    "desc": "Testing scope with name {}".format(name),
                     "name": name
                 }
                 if pre != "" or len(name) == 0 or len(name) > 251:
@@ -386,7 +386,7 @@ class CreateCollection(GetScope):
 
         failures = list()
         for testcase in testcases:
-            self.log.info(testcase['description'])
+            self.log.info(testcase['desc'])
 
             res = self.capellaAPI.cluster_ops_apis.create_collection(
                 self.organisation_id, self.project_id, self.cluster_id,
@@ -395,7 +395,8 @@ class CreateCollection(GetScope):
                 res = self.capellaAPI.cluster_ops_apis.create_collection(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id, self.scope_name, testcase["name"])
-            if self.validate_testcase(res, [201], testcase, failures):
+            if self.validate_testcase(res, [201], testcase, failures,
+                                      payloadTest=True):
                 self.collections.append(testcase["name"])
             if len(self.collections) == 1000:
                 self.log.warning("Reached 1000 Collections, flushing all.")
