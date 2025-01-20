@@ -599,6 +599,31 @@ class ClusterUtils:
         else:
             return False
 
+    def stop_rebalance(self, server_node, wait_timeout=10,
+                       include_failover=False):
+        rest = ClusterRestAPI(server_node)
+        end_time = int(time.time()) + wait_timeout
+        status, _ = rest.stop_rebalance()
+        if status:
+            while time.time() < end_time:
+                reb_task = self.get_cluster_tasks(server_node,
+                                                  task_type="rebalance")
+                if "status" in reb_task:
+                    if reb_task["status"] == "notRunning":
+                        # Rebalance finished / notRunning scenario
+                        break
+                    # Required in AF during rebalance where we confuse rebalance with AF
+                    if not include_failover and reb_task["subtype"] == "failover":
+                        break
+                sleep(seconds=2,
+                      message="Wait before next check for rebalance status")
+            else:
+                # Timeout happened before rebalance was detected as stopped.
+                # So return False
+                status = False
+        return status
+
+
     def stop_running_rebalance(self, cluster, master=None):
         if master is None:
             master = cluster.master

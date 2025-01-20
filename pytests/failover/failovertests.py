@@ -972,18 +972,20 @@ class FailoverTests(FailoverBaseTest):
 
     def victim_node_operations(self, node=None):
         if self.stopGracefulFailover:
-            self.log.info(" Stopping Graceful Failover ")
-            stopped = self.rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
-            self.assertTrue(stopped, msg="unable to stop rebalance")
+            self.log.info("Stopping Graceful Failover")
+            stopped = self.cluster_util.stop_rebalance(
+                self.cluster.master,
+                wait_timeout=int(self.wait_timeout/3))
+            self.assertTrue(stopped, msg="Failed to stop rebalance")
         if self.killNodes:
-            self.log.info(" Killing Memcached ")
+            self.log.info("Killing Memcached")
             kill_nodes = self.cluster_util.get_victim_nodes(
                 self.cluster, self.servers, self.master, node,
                 self.victim_type, self.victim_count)
             for kill_node in kill_nodes:
                 self.cluster_util.kill_memcached(self.cluster, node=kill_node)
         if self.stopNodes:
-            self.log.info(" Stopping Node")
+            self.log.info("Stopping Node")
             stop_nodes = self.cluster_util.get_victim_nodes(
                 self.cluster, self.servers, self.master, node,
                 self.victim_type, self.victim_count)
@@ -993,7 +995,7 @@ class FailoverTests(FailoverBaseTest):
             for start_node in stop_nodes:
                 self.cluster_util.start_server(self.cluster, start_node)
         if self.firewallOnNodes:
-            self.log.info(" Enabling Firewall for Node ")
+            self.log.info("Enabling Firewall for Node")
             stop_nodes = self.cluster_util.get_victim_nodes(
                 self.cluster, self.servers, self.master, node,
                 self.victim_type, self.victim_count)
@@ -1001,7 +1003,7 @@ class FailoverTests(FailoverBaseTest):
                 self.cluster_util.start_firewall_on_node(self.cluster,
                                                          stop_node)
             self.sleep(30)
-            self.log.info(" Disable Firewall for Node ")
+            self.log.info("Disable Firewall for Node")
             for start_node in stop_nodes:
                 self.cluster_util.stop_firewall_on_node(self.cluster,
                                                         start_node)
