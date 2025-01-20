@@ -125,8 +125,8 @@ class DeleteActivationStatus(GetAppEndpoints):
             appEndpointName = self.appEndpointName
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.postAppEndpointOffline = \
-                    testcase["url"]
+                self.capellaAPI.cluster_ops_apis.\
+                    app_endpoint_on_off_endpoint = testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
             elif "invalid_projectId" in testcase:
@@ -143,8 +143,9 @@ class DeleteActivationStatus(GetAppEndpoints):
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.pause_app_endpoint(
-                    organization, project, cluster, appService, appEndpointName)
-            self.capellaAPI.cluster_ops_apis.postAppEndpointOffline = \
+                    organization, project, cluster, appService,
+                    appEndpointName)
+            self.capellaAPI.cluster_ops_apis.app_endpoint_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints/{}/activationStatus"
             self.validate_testcase(result, [202], testcase, failures)
@@ -158,7 +159,7 @@ class DeleteActivationStatus(GetAppEndpoints):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-                 "organizationOwner", "projectOwner", "projectManager"
+             "organizationOwner", "projectOwner", "projectManager"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

@@ -147,9 +147,9 @@ class DeleteAppEndpoints(GetAppEndpoints):
             self.capellaAPI.cluster_ops_apis.app_endpoints_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints"
-            if self.validate_testcase(result, [202], testcase, failures):
-                self.log.debug("Deletion Successful")
+            self.validate_testcase(result, [202], testcase, failures)
             if result.status_code == 202:
+                self.log.debug("Deletion Successful")
                 self.create_app_endpoint_to_be_tested(
                     self.app_service_id,
                     self.expected_res["name"], self.expected_res["deltaSync"],
@@ -165,7 +165,7 @@ class DeleteAppEndpoints(GetAppEndpoints):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-                 "organizationOwner", "projectOwner", "projectManager"
+             "organizationOwner", "projectOwner", "projectManager"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
@@ -181,9 +181,9 @@ class DeleteAppEndpoints(GetAppEndpoints):
                     self.organisation_id, self.project_id, self.cluster_id, 
                     self.app_service_id, self.appEndpointName,
                     header)
-            if self.validate_testcase(result, [202], testcase, failures):
-                self.log.debug("Deletion Successful")
+            self.validate_testcase(result, [202], testcase, failures)
             if result.status_code == 202:
+                self.log.debug("Deletion Successful")
                 self.create_app_endpoint_to_be_tested(
                     self.app_service_id,
                     self.expected_res["name"], self.expected_res["deltaSync"],
@@ -329,9 +329,9 @@ class DeleteAppEndpoints(GetAppEndpoints):
                     testcase["clusterID"], testcase["appServiceID"],
                     testcase["AppEndpointName"],
                     **kwarg)
-            if self.validate_testcase(result, [202], testcase, failures):
-                self.log.debug("Deletion Successful")
+            self.validate_testcase(result, [202], testcase, failures)
             if result.status_code == 202:
+                self.log.debug("Deletion Successful")
                 self.create_app_endpoint_to_be_tested(
                     self.app_service_id,
                     self.expected_res["name"], self.expected_res["deltaSync"],

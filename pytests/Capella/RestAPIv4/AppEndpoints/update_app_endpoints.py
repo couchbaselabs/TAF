@@ -344,11 +344,6 @@ class PutAppEndpoints(GetAppEndpoints):
     def test_payload(self):
         testcases = list()
         for k in self.expected_res:
-            # if k in ["console", "anonymous", "basicAuth", "oidc", "cors",
-            #          "name", "offline", "isRequireResync", "state",
-            #          "requireResync"]:
-            #     continue
-
             for v in [
                 "", 1, 0, 100000, -1, 123.123, None, [], {},
                 self.generate_random_string(special_characters=False),
@@ -356,16 +351,24 @@ class PutAppEndpoints(GetAppEndpoints):
             ]:
                 testcase = copy.deepcopy(self.expected_res)
                 testcase[k] = v
-                # for param in ["console", "anonymous", "basicAuth", "oidc", "cors",
-                #      "name", "offline", "isRequireResync", "state",
-                #      "requireResync"]:
-                #     del testcase[param]
-                testcase["description"] = "Testing `{}` with val: `{}` of {}"\
+                testcase["desc"] = "Testing `{}` with val: `{}` of {}"\
                     .format(k, v, type(v))
-                if (k in ["userXattrKey", "name", "bucket"] and not
-                    isinstance(v, str) or
-                        k == "deltaSync" and not isinstance(v, bool) or
-                        k == "scopes" and not isinstance(v, dict)):
+                if k == "userXattrKey" and isinstance(v, str) and len(v) > 128:
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 400,
+                        "message": "User Xattr key is too long. Max length "
+                                   "is 128 characters."
+                    }
+                elif (k in [
+                    "userXattrKey", "name", "bucket"
+                ] and not isinstance(v, str) or
+                      k == "deltaSync" and not isinstance(v, bool) or
+                      k == "scopes" and not isinstance(v, dict)):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -434,7 +437,7 @@ class PutAppEndpoints(GetAppEndpoints):
 
         failures = list()
         for testcase in testcases:
-            self.log.info(testcase["description"])
+            self.log.info(testcase["desc"])
             res = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName, testcase["name"],
@@ -448,7 +451,8 @@ class PutAppEndpoints(GetAppEndpoints):
                     testcase["name"], testcase["deltaSync"],
                     testcase["bucket"], testcase["scopes"],
                     testcase["userXattrKey"])
-            self.validate_testcase(res, [204], testcase, failures)
+            self.validate_testcase(res, [204], testcase, failures,
+                                   payloadTest=True)
             if res.status_code == 204:
                 self.log.debug("...VALID App Endpoint UPDATE request...")
 
