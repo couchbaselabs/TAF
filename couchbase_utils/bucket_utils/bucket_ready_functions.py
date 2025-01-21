@@ -15,7 +15,7 @@ from random import sample, choice, randint
 from time import time
 
 import requests
-import concurrent.futures
+# import concurrent.futures
 
 import exceptions
 import json
@@ -1939,9 +1939,14 @@ class BucketUtils(ScopeUtils):
             status = False
             retry_count = 600
             sleep_time = 5
+            items = 0
             while retry_count > 0:
-                item_count = self.get_buckets_itemCount(cluster)
-                if item_count[sample_bucket.name] == \
+                collection_count_dict = self.get_doc_count_per_collection(cluster, sample_bucket)
+                for _, collection in collection_count_dict.items():
+                    if type(collection) is dict:
+                        for _, c_count in collection.items():
+                            items += c_count['items']
+                if items == \
                         sample_bucket.stats.expected_item_count:
                     status = True
                     break
