@@ -1939,8 +1939,8 @@ class BucketUtils(ScopeUtils):
             status = False
             retry_count = 600
             sleep_time = 5
-            items = 0
             while retry_count > 0:
+                items = 0
                 collection_count_dict = self.get_doc_count_per_collection(cluster, sample_bucket)
                 for _, collection in collection_count_dict.items():
                     if type(collection) is dict:
@@ -1950,7 +1950,9 @@ class BucketUtils(ScopeUtils):
                         sample_bucket.stats.expected_item_count:
                     status = True
                     break
-                sleep(sleep_time, "Sample bucket still loading")
+                sleep(sleep_time,
+                      "Sample bucket still loading. Actual: %s, Expected: %s" %
+                      (items, sample_bucket.stats.expected_item_count))
                 retry_count -= sleep_time
         if status is False:
             self.log.error("Sample bucket failed to load the target items")
