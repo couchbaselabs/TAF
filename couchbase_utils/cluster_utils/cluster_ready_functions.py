@@ -877,15 +877,9 @@ class ClusterUtils:
             else:
                 vb_on_node = 1024
             if cluster.vbuckets != vb_on_node:
-                # or self.upr is not None:
-                env_dict = {}
-                if cluster.vbuckets:
+                env_dict = dict()
+                if cluster.vbuckets and cluster.vbuckets != 1024:
                     env_dict["COUCHBASE_NUM_VBUCKETS"] = cluster.vbuckets
-                # if self.upr is not None:
-                #     if self.upr:
-                #         env_dict["COUCHBASE_REPL_TYPE"] = "upr"
-                #     else:
-                #         env_dict["COUCHBASE_REPL_TYPE"] = "tap"
                 if len(env_dict) >= 1:
                     remote_client.change_env_variables(env_dict)
             remote_client.disconnect()
@@ -893,17 +887,14 @@ class ClusterUtils:
 
         self.log.debug("Wait for all the services to come up after "
                        "change_env_vars update")
-        sleep(10, log_type="infra")
+        sleep(30, log_type="infra")
 
     def reset_env_variables(self, cluster):
-        # if self.upr is not None:
-        #     for server in self.cluster.servers:
-        #         if self.upr:
-        #             remote_client = RemoteMachineShellConnection(server)
-        #             remote_client.reset_env_variables()
-        #             remote_client.disconnect()
-        #     self.log.debug("==== RESET ENVIRONMENT SETTING TO ORIGINAL ====")
-        return
+        for server in cluster.servers:
+            remote_client = RemoteMachineShellConnection(server)
+            remote_client.reset_env_variables()
+            remote_client.disconnect()
+        self.log.debug("==== RESET ENVIRONMENT SETTING TO ORIGINAL ====")
 
     def change_log_info(self, cluster, log_info):
         for server in cluster.servers:

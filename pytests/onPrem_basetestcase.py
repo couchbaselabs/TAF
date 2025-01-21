@@ -688,7 +688,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 # Increase case_number to retry tearDown in setup for next test
                 self.case_number += 1000
             finally:
-                if reset_cluster_env_vars:
+                if reset_cluster_env_vars and cluster.vbuckets != 1024:
+                    self.log.critical("Resetting server env variables")
+                    # Remove buckets to avoid failures while updating vb config
+                    self.bucket_util.delete_all_buckets(cluster)
                     self.cluster_util.reset_env_variables(cluster)
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
