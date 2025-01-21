@@ -5654,7 +5654,7 @@ class BucketUtils(ScopeUtils):
                            collection.num_items))
         return status
 
-    def get_doc_count_per_collection(self, cluster, bucket):
+    def get_doc_count_per_collection(self, cluster, bucket, skip_system_collection=True):
         """
         Fetch total items per collection.
 
@@ -5674,6 +5674,9 @@ class BucketUtils(ScopeUtils):
                         for col_name, c_data in value.items():
                             collection_data[key][col_name]['items'] \
                                 += c_data['items']
+        if skip_system_collection:
+            collection_data.pop(CbServer.system_scope)
+
         return collection_data
 
     def validate_doc_count_as_per_collections(self, cluster, bucket):
