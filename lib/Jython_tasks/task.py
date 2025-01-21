@@ -771,10 +771,13 @@ class RebalanceTask(Task):
                                         "swap rebalance")
             self.state = "add_nodes"
             self.add_nodes()
+
             # Validate the current orchestrator is selected as expected
+            self.sleep(10, "After Adding the nodes wait for ns_server to update orchestrator")
             result = global_vars.cluster_util.\
                 validate_orchestrator_selection(self.cluster)
             if result is False:
+                self.result = False
                 return self.result
             self.state = "triggering"
             self.start_rebalance()
