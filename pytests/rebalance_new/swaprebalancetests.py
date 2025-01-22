@@ -421,6 +421,10 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 if content not in opt_nodes_ids:
                     opt_nodes_ids[0] = content
                     to_eject_nodes[0] = self.cluster.master
+            # Orchestrator is swapped out so have a new node for REST reference
+            self.cluster.master = not_failed_over[0]
+            self.rest = ClusterRestAPI(self.cluster.master)
+            self.reb_util = RebalanceUtil(self.cluster)
 
         self.log.info("To be removed nodes: {}".format(opt_nodes_ids))
         # Failover selected nodes
@@ -434,11 +438,13 @@ class SwapRebalanceBase(RebalanceBaseTest):
                             msg="Rebalance failed after failover of node {0}"
                             .format(node))
 
-        self.rest.rebalance(
-            known_nodes=[node.id for node in
-                         self.cluster_util.get_nodes(self.cluster.master)],
+        status, content = self.rest.rebalance(
+            known_nodes=[node.id for node in self.cluster_util.get_nodes(
+                self.cluster.master,
+                inactive_added=True,
+                inactive_failed=True)],
             eject_nodes=opt_nodes_ids)
-
+        self.assertTrue(status, f"Rebalance trigger failed: {content}")
         self.assertTrue(self.reb_util.monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
                         .format(opt_nodes_ids))
@@ -459,13 +465,12 @@ class SwapRebalanceBase(RebalanceBaseTest):
                                           self.creds.rest_password)
             self.assertTrue(otp_node, msg % server.ip)
 
-        self.rest.rebalance(known_nodes=[node.id for node in
-                                         self.cluster_util.get_nodes(
-                                             self.cluster.master)])
-
+        status, content = self.rest.rebalance(
+            known_nodes=[node.id for node in self.cluster_util.get_nodes(
+                self.cluster.master, inactive_added=True)])
+        self.assertTrue(status, f"Rebalance trigger failed: {content}")
         self.assertTrue(self.reb_util.monitor_rebalance(),
-                        msg="rebalance operation failed after adding node {0}"
-                        .format(to_eject_nodes))
+                        msg=f"Rebalance failed after adding {to_eject_nodes}")
 
         # Wait till load phase is over
         for task in self.loaders:
@@ -522,10 +527,15 @@ class SwapRebalanceBase(RebalanceBaseTest):
         if self.fail_orchestrator:
             self.rest = ClusterRestAPI(new_swap_servers[0])
             self.cluster.master = new_swap_servers[0]
+            self.reb_util = RebalanceUtil(self.cluster)
 
-        self.rest.rebalance(
-            known_nodes=[node.id for node in self.cluster_util.get_nodes(self.cluster.master)],
+        status, content = self.rest.rebalance(
+            known_nodes=[node.id for node in self.cluster_util.get_nodes(
+                self.cluster.master,
+                inactive_added=True,
+                inactive_failed=True)],
             eject_nodes=opt_nodes_ids)
+        self.assertTrue(status, f"Rebalance trigger failed: {content}")
 
         self.assertTrue(self.reb_util.monitor_rebalance(),
                         msg="rebalance operation failed after adding node {0}"
