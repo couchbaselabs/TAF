@@ -437,7 +437,8 @@ class RebalanceDurability(RebalanceBaseTest):
             # start update of all keys
             task_update = self.loadgen_docs()
             self.sleep(30, "Wait for 30 seconds before retrying rebalance")
-            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(
+                self.cluster)
             self.assertTrue(status, "Retry rebalance didn't succeed")
             # Ensure there are no failures
             for task in task_update:

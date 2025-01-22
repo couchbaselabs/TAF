@@ -119,7 +119,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 tasks = self.async_data_load()
             self.sleep(30, "Wait for 30 seconds before retrying rebalance")
             status = self.retry_rebalance_util.check_retry_rebalance_succeeded(
-                self.cluster.master)
+                self.cluster)
             self.assertTrue(status, "Retry rebalance didn't succeed")
             # Validate cbcollect result after rebalance retry
             self.cbcollect_info(trigger=False, validate=True,
@@ -156,7 +156,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             if self.data_load:
                 tasks = self.async_data_load()
             self.sleep(30, "Wait for 30 seconds before retrying rebalance")
-            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster)
             self.assertTrue(status, "Retry rebalance didn't succeed")
             if self.data_load:
                 CollectionBase.wait_for_cont_doc_load_to_complete(self,
@@ -170,7 +170,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 if self.data_load:
                     tasks = self.async_data_load()
                 self.sleep(30, "Wait for 30 seconds before retrying rebalance")
-                status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+                status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster)
                 self.assertTrue(status, "Retry rebalance didn't succeed")
                 if self.data_load:
                     CollectionBase.wait_for_cont_doc_load_to_complete(
@@ -316,7 +316,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             # then the retry will be attempted but fail
             try:
                 self.sleep(30, "Wait for 30 seconds before retrying rebalance")
-                status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+                status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster)
                 self.assertTrue(status, "Retry rebalance didn't succeed")
                 # Validate cbcollect results
                 self.cbcollect_info(trigger=False, validate=True)
@@ -368,7 +368,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 tasks = self.async_data_load()
             self.sleep(30, "Wait for 30 seconds before retrying rebalance")
             status = self.retry_rebalance_util.check_retry_rebalance_succeeded(
-                self.cluster.master)
+                self.cluster)
             self.assertTrue(status, "Retry rebalance didn't succeed")
             if self.data_load:
                 CollectionBase.wait_for_cont_doc_load_to_complete(self,
@@ -411,7 +411,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             else:
                 try:
                     self.sleep(30, "Wait for 30 seconds before retrying rebalance")
-                    status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+                    status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster)
                     self.assertTrue(status, "Retry rebalance didn't succeed")
                 except Exception as e:
                     expected_msg = "Retrying of rebalance still did not help"

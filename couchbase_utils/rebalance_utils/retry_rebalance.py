@@ -90,9 +90,9 @@ class RetryRebalanceUtil:
             self.test_log.info("Command: {0}, Return: {1}".format(get_command, output))
             shell.disconnect()
 
-    def check_retry_rebalance_succeeded(self, server):
-        rest = ClusterRestAPI(server)
-        reb_util = RebalanceUtil(server)
+    def check_retry_rebalance_succeeded(self, cluster):
+        rest = ClusterRestAPI(cluster.master)
+        reb_util = RebalanceUtil(cluster)
         attempts_remaining = retry_rebalance = retry_after_secs = None
         for i in range(10):
             self.test_log.info("Getting stats : try {0}".format(i))

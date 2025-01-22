@@ -622,7 +622,7 @@ class UpgradeBase(BaseTestCase):
                 delete_condition_nodes, self.rebalance_failure_condition)
             self.sleep(30, "Wait for 30 seconds before retrying rebalance")
             status = self.retry_rebalance_util.check_retry_rebalance_succeeded(
-                self.cluster.master)
+                self.cluster)
             self.assertTrue(status, "Retry rebalance didn't succeed")
 
         # VBuckets shuffling verification
