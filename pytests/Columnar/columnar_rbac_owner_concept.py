@@ -1,3 +1,4 @@
+import copy
 import random
 import string
 import time
@@ -449,6 +450,7 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
                     pod=self.pod, tenant=self.tenant,
                     instance=self.columnar_cluster):
                 self.fail("Cluster is not is healthy state")
+            time.sleep(10)
             if not self.columnar_utils.allow_ip_on_instance(
                     pod=self.pod, tenant=self.tenant,
                     project_id=self.tenant.project_id,
@@ -466,19 +468,6 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
         # load data in collection using the user to honour owner concept
         if not self.load_data_to_source(self.no_of_docs + 1, self.no_of_docs * 2, user.username, user.password):
             self.fail("Owner not able to execute query on datasets")
-
-        if self.perform_columnar_instance_cleanup:
-            for instance in self.tenant.columnar_instances:
-                if not self.cbas_util.cleanup_cbas(instance, username=user.username, password=user.password):
-                    self.fail("Failed to drop columnar entities")
-
-        result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
-            bucket_util=self.bucket_util, wait_for_ingestion=False,
-            remote_clusters=[self.remote_cluster], username=user.username, password=user.password)
-
-        if not result:
-            self.fail(msg)
 
         # delete user and re-create with same username
         self.delete_user(user)

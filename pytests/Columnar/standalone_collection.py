@@ -318,14 +318,14 @@ class StandaloneCollection(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, self.remote_cluster.buckets[0].name,
-                                                               "_default", "_default",
-                                                               "couchbases://" + self.remote_cluster.srv,
-                                                               0, self.initial_doc_count,
-                                                               doc_size=self.doc_size,
+        remote_bucket = self.remote_cluster.buckets[0]
+        self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, "_default", remote_bucket.name,
+                                                               "_default", "couchbases://" + self.remote_cluster.srv,
+                                                               0, self.initial_doc_count, doc_size=self.doc_size,
                                                                username=self.remote_cluster.username,
                                                                password=self.remote_cluster.password,
                                                                template="hotel")
+
         self.cbas_util.wait_for_data_ingestion_in_the_collections(self.columnar_cluster)
         remote_dataset = self.cbas_util.get_all_dataset_objs("remote")[0]
         subquery = ["select name as name, email as email, reviews from {}",

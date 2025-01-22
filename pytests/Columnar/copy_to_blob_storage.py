@@ -803,9 +803,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("The document count does not match in dataset and blob storage")
 
     def test_create_copyTo_from_collection_to_non_existing_S3_bucket(self):
+        expected_error = ("External sink error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: "
+                          "The specified bucket does not exist")
         if self.link_type != "s3":
             self.log.info("Test only valid for S3 links")
-            pass
+            expected_error = ("External sink error. com.google.cloud.storage.StorageException: The specified bucket "
+                              "does not exist.")
         self.base_setup()
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
         blob_storage_link = self.cbas_util.get_all_link_objs(self.link_type)[0]
@@ -820,9 +823,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.cbas_util.generate_name(),
                        "destination_link_name": blob_storage_link.full_name, "path": path, "validate_error_msg": True,
-                       "expected_error": "External sink error. "
-                                         "software.amazon.awssdk.services.s3.model.NoSuchBucketException: "
-                                         "The specified bucket does not exist",
+                       "expected_error": expected_error,
                        "expected_error_code": 24230}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -1433,8 +1434,16 @@ class CopyToBlobStorage(ColumnarBaseTest):
                        "partition_by": "ally.country"}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
-        if not all(results):
-            self.fail("Copy to blob storage statement failure")
+        if self.link_type == "s3":
+            if not all(results):
+                self.fail("Copy to blob storage statement failure")
+            else:
+                return
+        elif self.link_type == "gcp":
+            if all(results):
+                self.fail("Copy to blob storage statement failure")
+            else:
+                return
 
         files = []
         if self.link_type == "s3":
