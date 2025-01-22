@@ -1942,7 +1942,9 @@ class BucketUtils(ScopeUtils):
             while retry_count > 0:
                 items = 0
                 collection_count_dict = self.get_doc_count_per_collection(cluster, sample_bucket)
-                for _, collection in collection_count_dict.items():
+                for scope, collection in collection_count_dict.items():
+                    if scope == CbServer.system_scope:
+                        continue
                     if type(collection) is dict:
                         for _, c_count in collection.items():
                             items += c_count['items']
@@ -5661,7 +5663,7 @@ class BucketUtils(ScopeUtils):
                            collection.num_items))
         return status
 
-    def get_doc_count_per_collection(self, cluster, bucket, skip_system_collection=True):
+    def get_doc_count_per_collection(self, cluster, bucket):
         """
         Fetch total items per collection.
 
@@ -5681,8 +5683,6 @@ class BucketUtils(ScopeUtils):
                         for col_name, c_data in value.items():
                             collection_data[key][col_name]['items'] \
                                 += c_data['items']
-        if skip_system_collection:
-            collection_data.pop(CbServer.system_scope)
 
         return collection_data
 
