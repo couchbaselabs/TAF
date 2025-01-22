@@ -15,7 +15,7 @@ from random import sample, choice, randint
 from time import time
 
 import requests
-# import concurrent.futures
+import concurrent.futures
 
 import exceptions
 import json
