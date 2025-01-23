@@ -1052,7 +1052,10 @@ class ColumnarRBAC(ColumnarBaseTest):
                             "_default",
                             remote_link,
                             use_only_existing_db=True,
-                            use_only_existing_dv=True, capella_as_source=True)[0]
+                            use_only_existing_dv=True,
+                            database=database_name,
+                            dataverse=scope_name,
+                            capella_as_source=True)[0]
 
                         expected_error = self.ACCESS_DENIED_ERR
                         result = self.cbas_util.create_remote_dataset(
@@ -1156,14 +1159,16 @@ class ColumnarRBAC(ColumnarBaseTest):
                 # REMOTE COLLECTION
                 remote_coll_obj = self.cbas_util.create_remote_dataset_obj(
                     self.columnar_cluster,
-                    self.remote_bucket,
-                    self.remote_scope,
-                    self.remote_collection,
+                    self.remote_cluster.buckets[0].name,
+                    "_default",
+                    "_default",
                     remote_link,
                     use_only_existing_db=True,
                     use_only_existing_dv=True,
                     database="Default",
-                    dataverse="Default")[0]
+                    dataverse="Default",
+                    capella_as_source=True)[0]
+
                 cmd = self.cbas_util.generate_create_dataset_cmd(
                     remote_coll_obj.name,
                     remote_coll_obj.full_kv_entity_name,
@@ -1206,14 +1211,15 @@ class ColumnarRBAC(ColumnarBaseTest):
                 # REMOTE COLLECTION
                 remote_coll_obj = self.cbas_util.create_remote_dataset_obj(
                     self.columnar_cluster,
-                    self.remote_bucket,
-                    self.remote_scope,
-                    self.remote_collection,
+                    self.remote_cluster.buckets[0].name,
+                    "_default",
+                    "_default",
                     remote_link,
                     use_only_existing_db=True,
                     use_only_existing_dv=True,
                     database="Default",
-                    dataverse="Default")[0]
+                    dataverse="Default",
+                    capella_as_source=True)[0]
                 result = self.cbas_util.create_remote_dataset(
                     self.columnar_cluster,
                     remote_coll_obj.name,
@@ -1266,6 +1272,8 @@ class ColumnarRBAC(ColumnarBaseTest):
                 execute_commands.append(cmd)
 
             return execute_commands
+
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
 
         self.log.info("Testing for cloud roles")
         for user in self.test_users:
@@ -1944,7 +1952,7 @@ class ColumnarRBAC(ColumnarBaseTest):
         res_priv_obj = {
             "name": "",
             "type": "instance",
-            "privileges": ["collection_select", "collection_insert"]
+            "privileges": ["collection_select", "collection_insert", "collection_upsert"]
         }
         extended_res_priv_map.append(res_priv_obj)
         testcases = self.create_rbac_testcases(self.link_dml_privileges, s3_links + rm_links,
@@ -2030,17 +2038,19 @@ class ColumnarRBAC(ColumnarBaseTest):
                                           "on link {} from coll {}".format(res, dataset_copy_from.full_name))
 
         self.log.info("Testing for cloud roles")
-        res = s3_links[0]
+        resources = s3_links + rm_links
         for user in self.test_users:
             self.log.info("========== CLOUD USER TEST CASE: {} ===========".
                           format(self.test_users[user]["role"]))
             self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
                                                self.test_users[user]["mailid"],
                                                self.test_users[user]["password"])
-            for priv in privileges:
+            for priv in self.link_dml_privileges:
                 if priv == "link_copy_to":
                     execute_commands = []
                     for res in resources:
+                        collection = "{}.{}.{}".format(self.remote_cluster.buckets[0].name,
+                                                       "_default","_default")
                         expected_error = self.ACCESS_DENIED_ERR
                         path = "copy_dataset_" + str(path_idx)
                         path_idx += 1
@@ -2116,10 +2126,12 @@ class ColumnarRBAC(ColumnarBaseTest):
             self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
                                                user["mailid"],
                                                user["password"])
-            for priv in privileges:
+            for priv in self.link_dml_privileges:
                 if priv == "link_copy_to":
                     execute_commands = []
                     for res in resources:
+                        collection = "{}.{}.{}".format(self.remote_cluster.buckets[0].name,
+                                                       "_default", "_default")
                         expected_error = self.ACCESS_DENIED_ERR
                         path = "copy_dataset_" + str(path_idx)
                         path_idx += 1
