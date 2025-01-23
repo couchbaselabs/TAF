@@ -64,9 +64,9 @@ class MagmaRecovery(BaseTestCase):
             if bucket.name == bucket_name:
                 dst_bucket = bucket
 
-        src_client = SDKClient([self.first_cluster_master], src_bucket,
+        src_client = SDKClient(self.first_cluster, src_bucket,
                                scope=scope, collection=collection)
-        dst_client = SDKClient([self.second_cluster_master], dst_bucket,
+        dst_client = SDKClient(self.second_cluster, dst_bucket,
                                scope=scope, collection=collection)
 
         shell_source = RemoteMachineShellConnection(self.first_cluster_master)
