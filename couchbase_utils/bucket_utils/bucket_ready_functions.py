@@ -3643,7 +3643,7 @@ class BucketUtils(ScopeUtils):
             return self.verify_doc_op_task_exceptions_with_sirius(
                 tasks_info, cluster)
 
-        # Default SDK case
+        # Default / Java (via sirius) SDK case
         for task, task_info in list(tasks_info.items()):
             client = None
             bucket = task_info["bucket"]
@@ -3681,8 +3681,19 @@ class BucketUtils(ScopeUtils):
                         + SDKException.RequestCanceledException, exception):
                     ambiguous_state = True
 
+                val = None
+                # If DELETE, val can stay None since it has no impact
+                if task_info["op_type"] != DocLoading.Bucket.DocOps.DELETE:
+                    if "value" in failed_doc:
+                        # In Java loader case, the task returns the value
+                        val = failed_doc["value"]
+                    else:
+                        # Python: the value is not preserved, so we regenerate
+                        doc_gen = task.generators[0]
+                        doc_gen.itr = int(key.split("-")[-1])
+                        _, val = doc_gen.next()
                 result = client.crud(
-                    task_info["op_type"], key, failed_doc["value"],
+                    task_info["op_type"], key, val,
                     exp=task_info["exp"],
                     replicate_to=task_info["replicate_to"],
                     persist_to=task_info["persist_to"],

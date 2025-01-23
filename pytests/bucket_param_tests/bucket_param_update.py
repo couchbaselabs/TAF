@@ -31,12 +31,16 @@ class BucketParamTest(ClusterSetup):
         self.include_prefix_scan = self.input.param("include_prefix_scan",
                                                     True)
         self.include_range_scan = self.input.param("include_range_scan",
-                                                    True)
+                                                   True)
         self.range_scan_task = self.input.param("range_scan_task", None)
-        self.skip_range_scan_collection_mutation = self.input.param("skip_range_scan_collection_mutation", True)
+        self.skip_range_scan_collection_mutation = \
+            self.input.param("skip_range_scan_collection_mutation", True)
         if self.spec_name is None:
             self.create_bucket(self.cluster)
             self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+
+            CollectionBase.create_clients_for_sdk_pool(self,
+                                                       cluster=self.cluster)
             doc_create = doc_generator(self.key, 0, self.num_items,
                                        key_size=self.key_size,
                                        doc_size=self.doc_size,
@@ -246,7 +250,7 @@ class BucketParamTest(ClusterSetup):
                 ignore_exceptions = d_impossible_exception + retry_exceptions
                 retry_exceptions = list()
                 # Cap this value to avoid unnecessary failures
-                num_items = 10000
+                num_items = 100
             else:
                 retry_exceptions.extend(d_impossible_exception)
 
@@ -588,6 +592,7 @@ class BucketParamTest(ClusterSetup):
 
         doc_ops = self.input.param("doc_ops", "")
         bucket_helper = BucketHelper(self.cluster.master)
+        self.load_docs_using = "default_loader"
 
         doc_count = self.num_items
         start_doc_for_insert = self.num_items
