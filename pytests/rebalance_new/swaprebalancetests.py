@@ -176,10 +176,11 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.validate_test_failure()
 
         self.log.info("Swap Rebalance phase")
-        self.rest.rebalance(
+        status, content = self.rest.rebalance(
             known_nodes=[node.id for node in self.cluster_util.get_nodes(
-                self.cluster.master)],
+                self.cluster.master, inactive_added=True)],
             eject_nodes=opt_nodes_ids)
+        self.assertTrue(status, f"Rebalance trigger failed: {content}")
 
         if self.test_abort_snapshot:
             self.log.info("Creating abort scenarios during rebalance")
@@ -223,11 +224,13 @@ class SwapRebalanceBase(RebalanceBaseTest):
                         self.assertTrue(stopped,
                                         msg="Unable to stop rebalance")
                         self.sleep(20)
-                        self.rest.rebalance(
+                        status, content = self.rest.rebalance(
                             known_nodes=[node.id for node in
                                          self.cluster_util.get_nodes(
                                              self.cluster.master)],
                             eject_nodes=opt_nodes_ids)
+                        self.assertTrue(status,
+                                        f"Rebalance call failed: {content}")
                         break
                     elif retry > 100:
                         break
@@ -297,10 +300,12 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.cluster.master = new_swap_servers[0]
 
         self.log.info("SWAP REBALANCE PHASE")
-        self.rest.rebalance(
+        status, content = self.rest.rebalance(
             known_nodes=[node.id for node in
-                         self.cluster_util.get_nodes(self.cluster.master)],
+                         self.cluster_util.get_nodes(self.cluster.master,
+                                                     inactive_added=True)],
             eject_nodes=opt_nodes_ids)
+        self.assertTrue(status, f"Rebalance trigger failed: {content}")
         self.sleep(10, "Rebalance should start")
         self.log.info("Fail Swap Rebalance PHASE @ {0}"
                       .format(self.percentage_progress))
@@ -360,8 +365,10 @@ class SwapRebalanceBase(RebalanceBaseTest):
                           % ([(node.ip, node.port) for node in known_nodes]))
             ejected_nodes = list(set(opt_nodes_ids)
                                  & set([node.id for node in known_nodes]))
-            self.rest.rebalance(known_nodes=[node.id for node in known_nodes],
-                                eject_nodes=ejected_nodes)
+            status, content = self.rest.rebalance(
+                known_nodes=[node.id for node in known_nodes],
+                eject_nodes=ejected_nodes)
+            self.assertTrue(status, f"Rebalance trigger failed: {content}")
             self.sleep(10, "Wait for rebalance to start")
             self.assertTrue(self.reb_util.monitor_rebalance(),
                             msg="Rebalance failed after adding node {0}"
