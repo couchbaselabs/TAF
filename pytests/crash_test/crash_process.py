@@ -223,9 +223,12 @@ class CrashTest(ClusterSetup):
             # Create SDK connection for CRUD retries
             sdk_client = SDKClient(self.cluster, def_bucket)
             for doc_key, crud_result in task.fail.items():
-                result = sdk_client.crud("create",
-                                         doc_key,
-                                         crud_result["value"],
+                val = None
+                if "value" not in crud_result:
+                    val = crud_result["value"] if "value" in crud_result \
+                        else {}
+                result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
+                                         doc_key, val,
                                          replicate_to=self.replicate_to,
                                          persist_to=self.persist_to,
                                          durability=self.durability_level,

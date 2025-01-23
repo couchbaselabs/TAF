@@ -31,14 +31,11 @@ class SDKException(object):
     ]
     DurabilityAmbiguousException = [
         "com.couchbase.client.core.error.DurabilityAmbiguousException",
-        "DurabilityAmbiguousException",
+        "DurabilitySyncWriteAmbiguousException",
     ]
     DurabilityImpossibleException = [
         "com.couchbase.client.core.error.DurabilityImpossibleException",
         "DurabilityImpossibleException",
-    ]
-    DurabilitySyncWriteAmbiguousException = [
-        "DurabilitySyncWriteAmbiguousException"
     ]
     DurableWriteInProgressException = [
         "com.couchbase.client.core.error.DurableWriteInProgressException",
