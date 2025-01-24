@@ -17,7 +17,7 @@ from couchbase.exceptions import UnAmbiguousTimeoutException, \
     DocumentExistsException, DurabilityImpossibleException, \
     RequestCanceledException, TimeoutException, \
     DurabilitySyncWriteAmbiguousException, CouchbaseException, \
-    CasMismatchException, DocumentNotFoundException
+    CasMismatchException, DocumentNotFoundException, PathNotFoundException
 from couchbase.logic.options import Compression
 
 from cb_constants import CbServer, DocLoading
@@ -511,9 +511,9 @@ class SDKClient(object):
                     if not lookup_spec_result["exists"]:
                         pass
                 if not result['exists']:
-                    fail[doc_key]['error'] = "SubDocKeyNotFound"
+                    fail[doc_key]['error'] = "PathNotFoundException"
                 else:
-                    fail[doc_key]['error'] = SDKException.PathNotFoundException
+                    fail[doc_key]['error'] = "PathNotFoundException"
                 if path_val:
                     fail[doc_key]['path_val'] = path_val[doc_key]
             elif result.success:
@@ -527,7 +527,7 @@ class SDKClient(object):
                             = lookup_spec_result["value"]
                     else:
                         success[doc_key]['value'][lookup_key] = \
-                            SDKException.PathNotFoundException
+                            "PathNotFoundException"
         return success, fail
 
     # Translate APIs for sub-document operations
@@ -538,7 +538,13 @@ class SDKClient(object):
         if result_dict is None:
             return success, fail
         for doc_key, mutate_in_result in result_dict.items():
-            if mutate_in_result.success:
+            if isinstance(mutate_in_result, PathNotFoundException):
+                success[doc_key] = dict()
+                success[doc_key]['cas'] = 0
+                success[doc_key]["value"] = dict()
+                for sd_key, _ in path_val[doc_key]:
+                    success[doc_key]["value"][sd_key] = "PathNotFoundException"
+            elif mutate_in_result.success:
                 success[doc_key] = dict()
                 success[doc_key]['cas'] = mutate_in_result.cas
                 success[doc_key]['value'] = dict()
@@ -551,7 +557,8 @@ class SDKClient(object):
                 fail[doc_key]['error'] = ""
                 fail[doc_key]['cas'] = 0
                 if path_val:
-                    fail[doc_key]['path_val'] = path_val[doc_key]  # list of (path, val)
+                    fail[doc_key]['path_val'] = path_val[
+                        doc_key]  # list of (path, val)
         return success, fail
 
     # Scope/Collection APIs
@@ -952,9 +959,13 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 create_as_deleted=create_as_deleted)
+            try:
+                result = self.collection.mutate_in(key, mutate_in_specs,
+                                                   options)
+            except PathNotFoundException as e:
+                result = e
             result, _ = self.__translate_upsert_multi_sub_doc_result(
-                {key: self.collection.mutate_in(key, mutate_in_specs,
-                                                options)}, path_val)
+                {key: result}, path_val)
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
             path_val = dict()

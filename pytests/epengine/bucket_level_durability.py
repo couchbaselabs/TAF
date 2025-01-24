@@ -261,37 +261,45 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Perform sub_doc CRUD
             for sub_doc_op in ["subdoc_insert", "subdoc_upsert",
                                "subdoc_replace"]:
+                self.sleep(0.2, "Sleep to avoid dedupe "
+                                "resulting in stats mismatch")
                 sub_doc_val = choice(sub_doc_vals)
-                _, fail = client.crud(sub_doc_op, key,
-                                      [sub_doc_key, sub_doc_val])
-                if fail:
-                    self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"
-                                     % (sub_doc_op, key,
-                                        sub_doc_key, sub_doc_val, result))
+                res = client.crud(sub_doc_op, key, [sub_doc_key, sub_doc_val])
+                for sd_key, sd_res in res[key]['value'].items():
+                    if SDKException.check_if_exception_exists(
+                            SDKException.PathNotFoundException, sd_res):
+                        self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"
+                                         % (sub_doc_op, key,
+                                            sub_doc_key, sub_doc_val, result))
                 else:
                     verification_dict["ops_update"] += 1
                     verification_dict["sync_write_committed_count"] += 1
 
-                success, fail = client.crud("subdoc_read", key, sub_doc_key)
-                if fail or str(success[key]["value"].get(0)) != sub_doc_val:
+                res = client.crud("subdoc_read", key, sub_doc_key)
+                res_val = res[key]['value'][sub_doc_key]
+                if (SDKException.check_if_exception_exists(
+                        SDKException.PathNotFoundException, res_val)
+                        or res_val != sub_doc_val):
                     self.log_failure("%s failed. Expected: %s, Actual: %s"
-                                     % (sub_doc_op, sub_doc_val,
-                                        success[key]["value"].get(0)))
+                                     % (sub_doc_op, sub_doc_val, res_val))
                 self.summary.add_step("%s for key %s" % (sub_doc_op, key))
 
             # Subdoc_delete and verify
             sub_doc_op = "subdoc_delete"
-            _, fail = client.crud(sub_doc_op, key, sub_doc_key)
-            if fail:
+            res = client.crud(sub_doc_op, key, sub_doc_key)
+            if SDKException.check_if_exception_exists(
+                    SDKException.PathNotFoundException,
+                    res[key]['value'][sub_doc_key]):
                 self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"
                                  % (sub_doc_op, key,
                                     sub_doc_key, sub_doc_val, result))
             verification_dict["ops_update"] += 1
             verification_dict["sync_write_committed_count"] += 1
 
-            _, fail = client.crud(sub_doc_op, key, sub_doc_key)
-            if SDKException.PathNotFoundException \
-                    not in str(fail[key]["error"]):
+            res = client.crud(sub_doc_op, key, sub_doc_key)
+            if not SDKException.check_if_exception_exists(
+                    SDKException.PathNotFoundException,
+                    str(res[key]["value"][sub_doc_key])):
                 self.log_failure("Invalid error after sub_doc_delete")
 
             self.summary.add_step("%s for key %s" % (sub_doc_op, key))
@@ -310,6 +318,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             # Delete the bucket on server
             self.bucket_util.delete_bucket(self.cluster, bucket_obj)
             self.summary.add_step("Delete %s bucket" % self.bucket_type)
+            self.validate_test_failure()
 
     def test_higher_durability_level_from_client(self):
         """

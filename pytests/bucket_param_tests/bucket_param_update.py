@@ -592,7 +592,6 @@ class BucketParamTest(ClusterSetup):
 
         doc_ops = self.input.param("doc_ops", "")
         bucket_helper = BucketHelper(self.cluster.master)
-        self.load_docs_using = "default_loader"
 
         doc_count = self.num_items
         start_doc_for_insert = self.num_items
