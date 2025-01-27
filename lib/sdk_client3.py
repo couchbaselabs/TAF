@@ -936,9 +936,10 @@ class SDKClient(object):
                 access_deleted=access_deleted,
                 create_as_deleted=create_as_deleted)
 
-            result, _ = self.__translate_upsert_multi_sub_doc_result(
-                {key: self.collection.mutate_in(key, mutate_in_specs,
-                                                options)}, path_val)
+            success, fail = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.__sd_mutate_in(key, mutate_in_specs,
+                                          options)}, path_val)
+            return success, fail
         elif op_type in [DocLoading.Bucket.SubDocOps.UPSERT, "subdoc_upsert"]:
             sub_key, value = value[0], value[1]
             path_val = dict()
@@ -954,9 +955,10 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 create_as_deleted=create_as_deleted)
-            result, _ = self.__translate_upsert_multi_sub_doc_result(
-                {key: self.collection.mutate_in(key, mutate_in_specs,
-                                                options)}, path_val)
+            success, fail = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.__sd_mutate_in(key, mutate_in_specs,
+                                          options)}, path_val)
+            return success, fail
         elif op_type in [DocLoading.Bucket.SubDocOps.REMOVE, "subdoc_delete"]:
             mutate_in_specs = list()
             path_val = dict()
@@ -973,6 +975,7 @@ class SDKClient(object):
             success, fail = self.__translate_upsert_multi_sub_doc_result(
                 {key: self.__sd_mutate_in(key, mutate_in_specs,
                                           options)}, path_val)
+            return success, fail
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
             path_val = dict()
@@ -990,6 +993,7 @@ class SDKClient(object):
             success, fail = self.__translate_upsert_multi_sub_doc_result(
                 {key: self.__sd_mutate_in(key, mutate_in_specs,
                                           options)}, path_val)
+            return success, fail
         elif op_type in [DocLoading.Bucket.SubDocOps.LOOKUP, "subdoc_read"]:
             mutate_in_specs = list()
             path_val = dict()
@@ -998,9 +1002,14 @@ class SDKClient(object):
             options = SDKOptions.get_look_up_in_options(
                 timeout, time_unit, access_deleted=access_deleted)
 
+            try:
+                result = self.collection.lookup_in(key, mutate_in_specs,
+                                                   options)
+            except CouchbaseException as e:
+                result = e
             success, fail = self.__translate_get_multi_sub_doc_result(
-                {key: self.__sd_mutate_in(key, mutate_in_specs, options)},
-                path_val)
+                {key: result}, path_val)
+            return success, fail
         elif op_type == DocLoading.Bucket.SubDocOps.COUNTER:
             sub_key, step_value = value[0], value[1]
             mutate_in_specs = list()
@@ -1014,6 +1023,7 @@ class SDKClient(object):
                 preserve_expiry=preserve_expiry)
             success, fail = self.__translate_upsert_multi_sub_doc_result(
                 {key: self.__sd_mutate_in(key, mutate_in_specs, options)})
+            return success, fail
         else:
             self.log.error("Unsupported operation %s" % op_type)
         return result

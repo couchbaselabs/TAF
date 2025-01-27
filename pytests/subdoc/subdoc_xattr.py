@@ -253,18 +253,16 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
     def __read_doc_and_validate(self, expected_val, subdoc_key=None):
         if subdoc_key:
-            success, failed_items = self.client.crud("subdoc_read",
+            success, failed_items = self.client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
                                                      self.doc_id,
                                                      subdoc_key,
                                                      xattr=self.xattr)
             self.assertFalse(failed_items, "Xattr read failed")
-            val = success[self.doc_id]["value"][0]
-            if not isinstance(val, unicode):
-                val = json.loads(val.toString())
+            self.log.critical(success[self.doc_id]["value"])
+            val = success[self.doc_id]["value"][subdoc_key]
             self.assertEqual(
                 expected_val, val,
-                "Sub_doc value mismatch: %s != %s"
-                % (success[self.doc_id]["value"][0], expected_val))
+                "Sub_doc value mismatch: %s != %s" % (val, expected_val))
         else:
             result = self.client.crud("read", self.doc_id)
             self.assertEqual(type(expected_val)(result["value"]), expected_val,
@@ -316,8 +314,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
         # Read full doc and validate
         result = self.client.crud("read", self.doc_id)
-        result = json.loads(result["value"])
-        self.assertEqual(result, value,
+        self.assertEqual(result, value["value"],
                          "Document value mismatch: %s != %s" % (result, value))
 
         # Read sub_doc for validating the value
@@ -326,7 +323,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                  sub_doc_key,
                                                  xattr=self.xattr)
         self.assertFalse(failed_items, "Xattr read failed")
-        result = json.loads(str(success[self.doc_id]["value"][0]))
+        result = success[self.doc_id]["value"][sub_doc_key]
         self.assertEqual(result, value,
                          "Sub_doc value mismatch: %s != %s" % (result, value))
 
@@ -383,9 +380,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             xattr=True)
         self.assertTrue(failed_items, "Subdoc Xattr insert with 16 chars")
 
-        self.assertTrue(SDKException.DecodingFailedException
-                        in failed_items[self.doc_id]["error"],
-                        "Invalid exception: %s" % failed_items[self.doc_id])
+        self.assertTrue(SDKException.check_if_exception_exists(
+            SDKException.DecodingFailedException,
+            failed_items[self.doc_id]["error"]),
+            "Invalid exception: %s" % failed_items[self.doc_id])
 
     # https://issues.couchbase.com/browse/MB-23108
     def test_key_underscore(self):
@@ -486,7 +484,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         # trying get before delete
         result = self.client.crud("read", self.doc_id)
         self.assertTrue(result["cas"] != 0, "CAS is zero!")
-        self.assertEqual(result["value"], "{}", "Value mismatch")
+        self.assertEqual(result["value"], {}, "Value mismatch")
 
         # Delete the full document
         self.client.crud("delete", self.doc_id)
@@ -503,9 +501,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                xattr=is_xattr)
             self.assertEqual(failed_items[self.doc_id]["cas"], 0,
                              "CAS is non-zero")
-            self.assertTrue(SDKException.DocumentNotFoundException
-                            in str(failed_items[self.doc_id]["error"]),
-                            "Invalid exception")
+            self.assertTrue(SDKException.check_if_exception_exists(
+                SDKException.DocumentNotFoundException,
+                str(failed_items[self.doc_id]["error"])),
+                "Invalid exception")
 
     # https://issues.couchbase.com/browse/MB-24104
     def test_delete_doc_with_xattr_access_deleted(self):
@@ -577,7 +576,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__read_doc_and_validate("value", "my_attr")
 
         result = self.client.crud("read", self.doc_id)
-        self.assertEqual(result["value"], "{}",
+        self.assertEqual(result["value"], {},
                          "Document value mismatch: %s != %s"
                          % (result["value"], "{}"))
 
@@ -596,9 +595,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["cas"] != 0, "Document CAS is Zero")
         self.assertTrue(result["cas"] != cas_before, "CAS not updated after "
                                                      "subdoc delete")
-        self.assertEqual(result["value"], "{}",
-                         "Document value mismatch: %s != %s"
-                         % (result["value"], "{}"))
+        self.assertEqual(result["value"], {},
+                         f"Document value mismatch: {result['value']} != {{}}")
 
         # Read deleted xattr to verify
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my_attr", xattr=True)
@@ -655,7 +653,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         initial_cas = result["cas"]
 
-        self.__insert_sub_doc_and_validate("subdoc_insert",
+        self.__insert_sub_doc_and_validate(DocLoading.Bucket.SubDocOps.INSERT,
                                            "my", {'value': 1})
 
         # Read and record CAS
@@ -664,7 +662,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         updated_cas_1 = result["cas"]
 
         _, failed_items = self.client.crud(
-            "subdoc_insert",
+            DocLoading.Bucket.SubDocOps.INSERT,
             self.doc_id,
             ["my.inner", {'value_inner': 2}],
             durability=self.durability_level,
@@ -676,7 +674,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(failed_items, "Subdoc Xattr insert failed")
 
         success, failed_items = self.client.crud(
-            "subdoc_insert",
+            DocLoading.Bucket.SubDocOps.INSERT,
             self.doc_id,
             ["my.inner", {'value_inner': 2}],
             durability=self.durability_level,
@@ -737,7 +735,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                           "my_attr",
                                           xattr=self.xattr)
             self.assertTrue(success, "Subdoc read failed")
-            self.assertEqual(success[self.doc_id]["value"][0], i,
+            self.assertEqual(success[self.doc_id]["value"]["my_attr"], i,
                              "Mismatch in value")
 
     def test_delete_child_xattr(self):
@@ -1596,12 +1594,12 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             xattr=self.xattr,
             durability=self.durability_level)
         sdk_error = str(failed_items[self.doc_id]["error"])
-        self.assertTrue(failed_items, "Subdoc CRUD succeeded: %s" % success)
-        self.assertTrue(SDKException.DurabilityImpossibleException
-                        in sdk_error, "Invalid exception: %s" % sdk_error)
+        self.assertTrue(failed_items, f"Subdoc CRUD succeeded: {success}")
+        self.assertTrue(SDKException.check_if_exception_exists(
+            SDKException.DurabilityImpossibleException, sdk_error),
+            f"Invalid exception: {sdk_error}")
 
     def test_doc_sync_write_in_progress(self):
-        shell = None
         doc_tasks = [DocLoading.Bucket.DocOps.CREATE,
                      DocLoading.Bucket.DocOps.UPDATE,
                      DocLoading.Bucket.DocOps.REPLACE,
@@ -1660,9 +1658,13 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             self.sleep(5, "Wait for doc_op task to start")
 
             for sw_test_op in basic_ops + [DocLoading.Bucket.DocOps.REPLACE]:
-                sdk_retry_strategy = choice(
-                    [SDKConstants.RetryStrategy.FAIL_FAST,
-                     SDKConstants.RetryStrategy.BEST_EFFORT])
+                # Commenting out since retry_strategy is not supported in PySDK
+                # sdk_retry_strategy = choice(
+                #     [SDKConstants.RetryStrategy.FAIL_FAST,
+                #      SDKConstants.RetryStrategy.BEST_EFFORT])
+                # Setting BEST_EFFORT to avoid test failures
+                # due to validation logic which is BEST_EFFORT SDK default
+                sdk_retry_strategy = SDKConstants.RetryStrategy.BEST_EFFORT
                 self.log.info("Testing %s over %s, sdk_retry_strategy=%s"
                               % (sw_test_op, op_type, sdk_retry_strategy))
                 value = "test_val"
@@ -1700,10 +1702,12 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                         expected_exception = \
                             SDKException.DocumentNotFoundException
                         retry_reason = None
-                if expected_exception not in sdk_exception:
+                if not SDKException.check_if_exception_exists(
+                        expected_exception, sdk_exception):
                     self.log_failure("Invalid exception: %s" % result)
                 elif retry_reason is not None \
-                        and retry_reason not in sdk_exception:
+                        and not SDKException.check_if_exception_exists(
+                            retry_reason, sdk_exception):
                     self.log_failure("Retry reason missing: %s" % result)
 
                 # Validate CAS doesn't change after sync_write failure
@@ -1801,10 +1805,12 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS,
                 create_path=True, xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
-            if SDKException.AmbiguousTimeoutException not in sdk_exception:
+            if not SDKException.check_if_exception_exists(
+                    SDKException.AmbiguousTimeoutException, sdk_exception):
                 self.log_failure("Invalid exception: %s" % failed_item)
-            if SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
-                    not in sdk_exception:
+            if not SDKException.check_if_exception_exists(
+                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS,
+                    sdk_exception):
                 self.log_failure("Retry reason missing: %s" % failed_item)
 
             # Validate CAS doesn't change after sync_write failure

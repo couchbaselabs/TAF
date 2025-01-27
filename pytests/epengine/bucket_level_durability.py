@@ -264,8 +264,9 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 self.sleep(0.2, "Sleep to avoid dedupe "
                                 "resulting in stats mismatch")
                 sub_doc_val = choice(sub_doc_vals)
-                res = client.crud(sub_doc_op, key, [sub_doc_key, sub_doc_val])
-                for sd_key, sd_res in res[key]['value'].items():
+                _, fail = client.crud(sub_doc_op, key,
+                                      [sub_doc_key, sub_doc_val])
+                for sd_key, sd_res in fail[key]['value'].items():
                     if SDKException.check_if_exception_exists(
                             SDKException.PathNotFoundException, sd_res):
                         self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"
@@ -275,8 +276,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     verification_dict["ops_update"] += 1
                     verification_dict["sync_write_committed_count"] += 1
 
-                res = client.crud("subdoc_read", key, sub_doc_key)
-                res_val = res[key]['value'][sub_doc_key]
+                _, fail = client.crud("subdoc_read", key, sub_doc_key)
+                res_val = fail[key]['value'][sub_doc_key]
                 if (SDKException.check_if_exception_exists(
                         SDKException.PathNotFoundException, res_val)
                         or res_val != sub_doc_val):
@@ -286,20 +287,20 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Subdoc_delete and verify
             sub_doc_op = "subdoc_delete"
-            res = client.crud(sub_doc_op, key, sub_doc_key)
+            _, fail = client.crud(sub_doc_op, key, sub_doc_key)
             if SDKException.check_if_exception_exists(
                     SDKException.PathNotFoundException,
-                    res[key]['value'][sub_doc_key]):
+                    fail[key]['value'][sub_doc_key]):
                 self.log_failure("%s failure. Key %s, sub_doc (%s, %s): %s"
                                  % (sub_doc_op, key,
                                     sub_doc_key, sub_doc_val, result))
             verification_dict["ops_update"] += 1
             verification_dict["sync_write_committed_count"] += 1
 
-            res = client.crud(sub_doc_op, key, sub_doc_key)
+            _, fail = client.crud(sub_doc_op, key, sub_doc_key)
             if not SDKException.check_if_exception_exists(
                     SDKException.PathNotFoundException,
-                    str(res[key]["value"][sub_doc_key])):
+                    str(fail[key]["value"][sub_doc_key])):
                 self.log_failure("Invalid error after sub_doc_delete")
 
             self.summary.add_step("%s for key %s" % (sub_doc_op, key))
