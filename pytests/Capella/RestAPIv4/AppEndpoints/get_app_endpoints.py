@@ -60,6 +60,30 @@ class GetAppEndpoints(GetAppService):
             },
             "isRequireResync": True
         }
+        result = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.app_service_id,
+            self.expected_res["name"], self.expected_res["deltaSync"],
+            self.expected_res["bucket"], self.expected_res["scopes"],
+            self.expected_res["userXattrKey"])
+        if result.status_code == 429:
+            self.handle_rate_limit(int(result.headers["Retry-After"]))
+            result = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.app_service_id,
+                self.expected_res["name"], self.expected_res["deltaSync"],
+                self.expected_res["bucket"], self.expected_res["scopes"],
+                self.expected_res["userXattrKey"])
+        if result.status_code == 412:
+            self.log.debug("App endpoint {} already exists".format(
+                self.expected_res["name"]))
+            self.appEndpointName = self.expected_res["name"]
+        elif result.status_code != 201:
+            self.log.error(result.content)
+            self.tearDown()
+            self.fail("!!!...Creating App Endpoint failed...!!!")
+        self.log.info("Created App Endpoint: {} successfully".format(
+            self.expected_res["name"]))
         self.appEndpointName = self.expected_res["name"]
 
     def tearDown(self):

@@ -4,13 +4,14 @@ Created on August 06, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.AppService.get_app_service import GetAppService
+from pytests.Capella.RestAPIv4.AppEndpoints.app_endpoint_online \
+    import PostActivationStatus
 
 
-class GetAuditLogConfig(GetAppService):
+class GetAuditLogConfig(PostActivationStatus):
 
     def setUp(self, nomenclature="AppServicesAuditLogging_GET"):
-        GetAppService.setUp(self, nomenclature)
+        PostActivationStatus.setUp(self, nomenclature)
         self.expected_res = {
             "auditEnabled": True,
             "enabledEventIds": [

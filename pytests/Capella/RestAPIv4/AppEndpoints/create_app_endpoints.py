@@ -411,6 +411,18 @@ class PostAppEndpoints(GetAppEndpoints):
                         "message": "The bucket name is not valid. A bucket "
                                    "name can not be empty."
                     }
+                else:
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 400,
+                        "message": "The bucket name provided is not valid. "
+                                   "The maximum length of the bucket name can "
+                                   "be (100) characters."
+                    }
                 testcases.append(testcase)
 
         failures = list()

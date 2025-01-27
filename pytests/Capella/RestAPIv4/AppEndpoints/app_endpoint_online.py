@@ -12,6 +12,19 @@ class PostActivationStatus(GetAppEndpoints):
 
     def setUp(self, nomenclature="ActivationState_Post"):
         GetAppEndpoints.setUp(self, nomenclature)
+        result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.app_service_id, self.appEndpointName)
+        if result.status_code == 429:
+            self.handle_rate_limit(int(result.headers["Retry-After"]))
+            result = self.capellaAPI.cluster_ops_apis.resume_app_endpoint(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.app_service_id, self.appEndpointName)
+        if result.status_code != 202:
+            self.log.error(result.content)
+            self.tearDown()
+            self.fail("Failed to resume App Endpoint")
+        self.log.info("App Endpoint resumed successfully")
 
     def tearDown(self):
         super(PostActivationStatus, self).tearDown()
