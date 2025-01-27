@@ -1,4 +1,3 @@
-import json
 import time
 
 from BucketLib.bucket import Bucket
@@ -430,8 +429,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 expected_mutated_val = 0
                 if key_index < half_of_num_items:
                     expected_mutated_val = 1
-                mutated = json.loads(str(doc_info["value"]))["mutated"]
-                if mutated != expected_mutated_val:
+                if doc_info["value"]["mutated"] != expected_mutated_val:
                     failed_keys.add_row([doc_key, doc_info])
 
             failed_keys.display("Affected mutations:")
@@ -504,7 +502,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 timeout_secs=self.sdk_timeout)
             self.task_manager.get_task_result(reader_task)
             for doc_id, read_result in reader_task.success.items():
-                if int(read_result["value"][0]) != int(expected_val):
+                if int(read_result["value"]["mutated"]) != int(expected_val):
                     self.log_failure("Key %s - mutated value is %s != %s"
                                      % (doc_id,
                                         read_result["value"],
@@ -881,8 +879,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
             self.task_manager.get_task_result(read_task)
             for key, doc_info in read_task.success.items():
-                if doc_info["cas"] != 0 \
-                        and json.loads(str(doc_info["value"]))["mutated"] != 1:
+                if doc_info["cas"] != 0 and doc_info["value"]["mutated"] != 1:
                     self.log_failure("Update failed for key %s: %s"
                                      % (key, doc_info))
 

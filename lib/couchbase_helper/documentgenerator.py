@@ -56,7 +56,8 @@ def doc_generator(key, start, end,
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
-                      target_vbucket=None, vbuckets=1024, key_size=None, xattr_test=False):
+                      target_vbucket=None, vbuckets=1024, key_size=None,
+                      xattr_test=False):
     key_size = get_valid_key_size(key, key_size)
     if xattr_test:
         last_name = [''.rjust(doc_size - 10, 'a')]
@@ -142,6 +143,31 @@ class KVGenerator(object):
         self.vbuckets = CbServer.total_vbuckets
         self.target_vbuckets = None
         self.pre_generated_keys = None
+
+    def get_random_key(self, doc_index):
+        """
+        Utilized by:
+          - DocumentGenerator
+          - SubdocDocumentGenerator
+        """
+        seed_hash = self.name + '-' + str(abs(doc_index))
+        self.random.seed(seed_hash)
+        """ This will generate a random ascii key with 12 characters """
+        _slice = int(self.random.random() * (self.len_random_string
+                                             - self.key_size))
+        key_len = self.key_size - (len(str(doc_index)) + 1)
+        return self.random_string[_slice:key_len+_slice] + "-" + str(doc_index)
+
+    def get_key_with_mixed_size(self, doc_index):
+        """
+        Utilized by:
+          - DocumentGenerator
+          - SubdocDocumentGenerator
+        """
+        seed_hash = self.name + '-' + str(abs(doc_index))
+        self.random.seed(seed_hash)
+        return "{}-{}".format(self.name, str(abs(doc_index)).zfill(
+            self.random.randint(self.key_size, 240) - self.key_len - 1))
 
     def has_next(self):
         return self.itr < self.end
@@ -263,26 +289,11 @@ class DocumentGenerator(KVGenerator):
 
         self.generate_keys_for_target_vbuckets()
 
-    def __get_random_key(self, doc_index):
-        seed_hash = self.name + '-' + str(abs(doc_index))
-        self.random.seed(seed_hash)
-        """ This will generate a random ascii key with 12 characters """
-        _slice = int(self.random.random() * (self.len_random_string
-                                             - self.key_size))
-        key_len = self.key_size - (len(str(doc_index)) + 1)
-        return self.random_string[_slice:key_len+_slice] + "-" + str(doc_index)
-
-    def __get_key_with_mixed_size(self, doc_index):
-        seed_hash = self.name + '-' + str(abs(doc_index))
-        self.random.seed(seed_hash)
-        return "{}-{}".format(self.name, str(abs(doc_index)).zfill(
-            self.random.randint(self.key_size, 240) - self.key_len - 1))
-
     def get_key(self, doc_index):
         if self.name == "random_keys":
-            return self.__get_random_key(doc_index)
+            return self.get_random_key(doc_index)
         if self.mix_key_size:
-            return self.__get_key_with_mixed_size(doc_index)
+            return self.get_key_with_mixed_size(doc_index)
         return super(DocumentGenerator, self).next_key(doc_index)
 
     def next_key(self):
@@ -388,13 +399,10 @@ class SubdocDocumentGenerator(KVGenerator):
 
     def get_key(self, doc_index):
         if self.name == "random_keys":
-            """ This will generate a random ascii key with 12 characters """
-            seed_hash = self.name + '-' + str(self.itr)
-            self.random.seed(seed_hash)
-            return ''.join(self.random.choice(
-                ascii_uppercase + ascii_lowercase + digits)
-                              for _ in range(12))
-        return super(SubdocDocumentGenerator, self).next_key(self.itr)
+            return self.get_random_key(doc_index)
+        if self.mix_key_size:
+            return self.get_key_with_mixed_size(doc_index)
+        return super(SubdocDocumentGenerator, self).next_key(doc_index)
 
     def next_key(self):
         if self.pre_generated_keys:

@@ -497,16 +497,30 @@ class SDKClient(object):
         return success, fail
 
     @staticmethod
+    def __make_sure_key_exists_in_dict(t_dict, d_key, cas_val=0):
+        """
+        Utilized by:
+            - __translate_get_multi_sub_doc_result()
+            - __translate_upsert_multi_sub_doc_result()
+        """
+        if d_key not in t_dict:
+            t_dict[d_key] = dict()
+            t_dict[d_key]["cas"] = cas_val
+            t_dict[d_key]["value"] = dict()
+
+    @staticmethod
     def __translate_get_multi_sub_doc_result(data, path_val=None):
         success = dict()
         fail = dict()
         if data is None:
             return success, fail
         for doc_key, result in data.items():
-            if not result.success:
-                fail[doc_key] = dict()
-                fail[doc_key]['cas'] = result.cas
-                fail[doc_key]['value'] = dict()
+            if isinstance(result, CouchbaseException):
+                SDKClient.__make_sure_key_exists_in_dict(fail, doc_key)
+                fail[doc_key]['error'] = result
+            elif not result.success:
+                SDKClient.__make_sure_key_exists_in_dict(fail, doc_key,
+                                                         result.cas)
                 for lookup_spec_result in data["application"].value:
                     if not lookup_spec_result["exists"]:
                         pass
@@ -517,16 +531,17 @@ class SDKClient(object):
                 if path_val:
                     fail[doc_key]['path_val'] = path_val[doc_key]
             elif result.success:
-                success[doc_key] = dict()
-                success[doc_key]['cas'] = result.cas
-                success[doc_key]['value'] = dict()
+                SDKClient.__make_sure_key_exists_in_dict(success, doc_key,
+                                                         result.cas)
                 for lookup_spec_result in result.value:
                     lookup_key = lookup_spec_result['path']
                     if lookup_spec_result["exists"]:
                         success[doc_key]['value'][lookup_key] \
                             = lookup_spec_result["value"]
                     else:
-                        success[doc_key]['value'][lookup_key] = \
+                        SDKClient.__make_sure_key_exists_in_dict(
+                            fail, doc_key, result.cas)
+                        fail[doc_key]['value'][lookup_key] = \
                             "PathNotFoundException"
         return success, fail
 
@@ -538,27 +553,23 @@ class SDKClient(object):
         if result_dict is None:
             return success, fail
         for doc_key, mutate_in_result in result_dict.items():
-            if isinstance(mutate_in_result, PathNotFoundException):
-                success[doc_key] = dict()
-                success[doc_key]['cas'] = 0
-                success[doc_key]["value"] = dict()
+            if isinstance(mutate_in_result, CouchbaseException):
+                SDKClient.__make_sure_key_exists_in_dict(fail, doc_key)
                 for sd_key, _ in path_val[doc_key]:
-                    success[doc_key]["value"][sd_key] = "PathNotFoundException"
+                    fail[doc_key]['error'] = mutate_in_result
+                    fail[doc_key]["value"][sd_key] = None
             elif mutate_in_result.success:
-                success[doc_key] = dict()
-                success[doc_key]['cas'] = mutate_in_result.cas
-                success[doc_key]['value'] = dict()
+                SDKClient.__make_sure_key_exists_in_dict(success, doc_key,
+                                                         mutate_in_result.cas)
                 for mutation_result in mutate_in_result.value:
                     success[doc_key]['value'][mutation_result['path']] = \
                         mutation_result["path"]
             else:
-                fail[doc_key] = dict()
+                SDKClient.__make_sure_key_exists_in_dict(fail, doc_key)
                 fail[doc_key]['value'] = mutate_in_result["value"]
-                fail[doc_key]['error'] = ""
-                fail[doc_key]['cas'] = 0
                 if path_val:
-                    fail[doc_key]['path_val'] = path_val[
-                        doc_key]  # list of (path, val)
+                    # list of (path, val)
+                    fail[doc_key]['path_val'] = path_val[doc_key]
         return success, fail
 
     # Scope/Collection APIs
@@ -959,13 +970,9 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 create_as_deleted=create_as_deleted)
-            try:
-                result = self.collection.mutate_in(key, mutate_in_specs,
-                                                   options)
-            except PathNotFoundException as e:
-                result = e
-            result, _ = self.__translate_upsert_multi_sub_doc_result(
-                {key: result}, path_val)
+            success, fail = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.__sd_mutate_in(key, mutate_in_specs,
+                                          options)}, path_val)
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
             path_val = dict()
@@ -980,9 +987,9 @@ class SDKClient(object):
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
                 create_as_deleted=create_as_deleted)
-            result, _ = self.__translate_upsert_multi_sub_doc_result(
-                {key: self.collection.mutate_in(key, mutate_in_specs,
-                                                options)}, path_val)
+            success, fail = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.__sd_mutate_in(key, mutate_in_specs,
+                                          options)}, path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.LOOKUP, "subdoc_read"]:
             mutate_in_specs = list()
             path_val = dict()
@@ -991,9 +998,9 @@ class SDKClient(object):
             options = SDKOptions.get_look_up_in_options(
                 timeout, time_unit, access_deleted=access_deleted)
 
-            result, _ = self.__translate_get_multi_sub_doc_result(
-                {key: self.collection.lookup_in(key, mutate_in_specs,
-                                                options)}, path_val)
+            success, fail = self.__translate_get_multi_sub_doc_result(
+                {key: self.__sd_mutate_in(key, mutate_in_specs, options)},
+                path_val)
         elif op_type == DocLoading.Bucket.SubDocOps.COUNTER:
             sub_key, step_value = value[0], value[1]
             mutate_in_specs = list()
@@ -1005,9 +1012,8 @@ class SDKClient(object):
                 persist_to, replicate_to, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry)
-            result, _ = self.__translate_upsert_multi_sub_doc_result(
-                {key: self.collection.mutate_in(key, mutate_in_specs,
-                                                options)})
+            success, fail = self.__translate_upsert_multi_sub_doc_result(
+                {key: self.__sd_mutate_in(key, mutate_in_specs, options)})
         else:
             self.log.error("Unsupported operation %s" % op_type)
         return result
@@ -1092,6 +1098,17 @@ class SDKClient(object):
         result = self.collection.get_multi(keys, read_options)
         return self.__translate_get_multi_results(result)
 
+    def __sd_mutate_in(self, doc_key, mutate_in_spec, mutate_in_options):
+        """
+        Wrapper for sub_doc mutate_in function to handle exceptions gracefully
+        """
+        try:
+            return self.collection.mutate_in(
+                doc_key, mutate_in_spec, mutate_in_options)
+        except CouchbaseException as e:
+            self.log.debug(e)
+            return e
+
     # Bulk CRUDs for sub-doc APIs
     def sub_doc_insert_multi(self, keys,
                              exp=0, exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1153,7 +1170,7 @@ class SDKClient(object):
                 mutate_in_spec.append(self.get_mutate_in_spec(
                     DocLoading.Bucket.SubDocOps.COUNTER,
                     sd_key="mutated", sd_val=1, create_path=True))
-            sd_op_result_dict[key] = self.collection.mutate_in(
+            sd_op_result_dict[key] = self.__sd_mutate_in(
                 key, mutate_in_spec, options)
         return self.__translate_upsert_multi_sub_doc_result(
             sd_op_result_dict, path_val)
@@ -1214,7 +1231,7 @@ class SDKClient(object):
                 mutate_in_spec.append(self.get_mutate_in_spec(
                     DocLoading.Bucket.SubDocOps.COUNTER,
                     sd_key="mutated", sd_val=1, create_path=True))
-            sd_op_result_dict[key] = self.collection.mutate_in(
+            sd_op_result_dict[key] = self.__sd_mutate_in(
                 key, mutate_in_spec, options)
         return self.__translate_upsert_multi_sub_doc_result(
             sd_op_result_dict, path_val)
@@ -1243,8 +1260,11 @@ class SDKClient(object):
             for sd_key, sd_val in sub_doc_tuples:
                 path_val[doc_key].append((sd_key, ''))
                 mutate_in_spec.append(SubDoc.get(sd_key, xattr=xattr))
-            look_up_multi_result[doc_key] = self.collection.lookup_in(
-                doc_key, mutate_in_spec, options)
+            try:
+                look_up_multi_result[doc_key] = self.collection.lookup_in(
+                    doc_key, mutate_in_spec, options)
+            except CouchbaseException as e:
+                look_up_multi_result[doc_key] = e
         return self.__translate_get_multi_sub_doc_result(
             look_up_multi_result, path_val)
 
@@ -1303,7 +1323,7 @@ class SDKClient(object):
                 mutate_in_spec.append(self.get_mutate_in_spec(
                     DocLoading.Bucket.SubDocOps.COUNTER,
                     sd_key="mutated", sd_val=1, create_path=False))
-            sd_op_result_dict[key] = self.collection.mutate_in(
+            sd_op_result_dict[key] = self.__sd_mutate_in(
                 key, mutate_in_spec, options)
 
         return self.__translate_upsert_multi_sub_doc_result(
@@ -1364,7 +1384,7 @@ class SDKClient(object):
                 mutate_in_spec.append(self.get_mutate_in_spec(
                     DocLoading.Bucket.SubDocOps.COUNTER,
                     sd_key="mutated", sd_val=1, create_path=False))
-            sd_op_result_dict[key] = self.collection.mutate_in(
+            sd_op_result_dict[key] = self.__sd_mutate_in(
                 key, mutate_in_spec, options)
         return self.__translate_upsert_multi_sub_doc_result(
             sd_op_result_dict, path_val)
