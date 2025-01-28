@@ -1,6 +1,7 @@
 import copy
 
 from BucketLib.BucketOperations import BucketHelper
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
@@ -94,6 +95,15 @@ class CreateBucketTests(ClusterSetup):
             self.assertEqual(bucket["durabilityImpossibleFallback"],
                              expected_val,
                              "Value mismatch")
+
+        self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
+        if self.load_docs_using == "sirius_java_sdk":
+            self.log.info("Creating SDK clients in Java side")
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=self.sdk_pool_capacity)
 
         load_gen = doc_generator(self.key, 0, self.num_items)
         doc_op(DocLoading.Bucket.DocOps.CREATE)
