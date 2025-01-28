@@ -13,7 +13,6 @@ import requests.utils
 import global_vars
 from BucketLib.bucket import Bucket
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
-from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from common_lib import sleep
 from custom_exceptions.exception import \
     GetBucketInfoFailed, \
