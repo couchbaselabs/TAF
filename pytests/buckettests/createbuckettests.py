@@ -321,8 +321,8 @@ class CreateBucketTests(ClusterSetup):
             f" --bucket-ramsize {ram_mb}")
         shell.disconnect()
         self.assertEqual(
-            "ERROR: bucketType - memcached buckets are no longer supported",
-            output[1],
+            "ERROR: Memcached buckets have been removed in versions 8.0 "
+            "and above, please use ephemeral buckets instead", output[0],
             f"Mismatch in cb-cli bucket-create error: {output}")
         self.assertTrue(
             len(self.bucket_util.get_all_buckets(self.cluster)) == 0,
