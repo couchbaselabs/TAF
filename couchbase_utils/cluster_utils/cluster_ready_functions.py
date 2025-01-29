@@ -144,6 +144,49 @@ class ClusterUtils:
         self.log = logger.get("test")
 
     @staticmethod
+    def create_secret_params(secret_type="auto-generated-aes-key-256",
+                             name="Default secret", usage=None,
+                             autoRotation=True, rotationIntervalInDays=60,
+                             rotationIntervalInSeconds=None, keyARN=None,
+                             region=None, useIMDS=None, credentialsFile=None,
+                             configFile=None, profile=None):
+        if usage is None:
+            usage = ["bucket-encryption-*"]
+
+        data = {
+            "autoRotation": autoRotation,
+            "rotationIntervalInDays": rotationIntervalInDays
+        }
+
+        if rotationIntervalInSeconds is not None:
+            data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                seconds=rotationIntervalInSeconds)).isoformat() + "Z"
+        else:
+            data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                days=rotationIntervalInDays)).isoformat() + "Z"
+
+        if keyARN is not None:
+            data["keyARN"] = keyARN
+        if region is not None:
+            data["region"] = region
+        if useIMDS is not None:
+            data["useIMDS"] = useIMDS
+        if credentialsFile is not None:
+            data["credentialsFile"] = credentialsFile
+        if configFile is not None:
+            data["configFile"] = configFile
+        if profile is not None:
+            data["profile"] = profile
+
+        params = {
+            "type": secret_type,
+            "name": name,
+            "usage": usage,
+            "data": data
+        }
+        return params
+
+    @staticmethod
     def flush_network_rules(shell_conn, default_interface_name):
         for command in ["iptables -F",
                         "nft flush ruleset",

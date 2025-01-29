@@ -577,18 +577,6 @@ class CollectionBase(ClusterSetup):
         # If True, creates bucket/scope/collections with simpler names
         use_simple_names = test_obj.input.param("use_simple_names", True)
 
-        # enable encryption at rest
-        if test_obj.enable_encryption_at_rest:
-            params = BucketHelper(test_obj.cluster.master).create_secret_params(
-                usage=["bucket-encryption-*"],
-                rotationIntervalInSeconds=test_obj.rotationIntervalInSeconds,
-            )
-            status, response = RestConnection(
-                test_obj.cluster.master).create_secret(params)
-            test_obj.assertTrue(status, "failed to create encryption at rest secret key")
-            response_dict = json.loads(response)
-            test_obj.secret_id = response_dict.get('id')
-
         # Create bucket(s) and add rbac user
         buckets_spec = \
             test_obj.bucket_util.get_bucket_template_from_package(
@@ -600,7 +588,7 @@ class CollectionBase(ClusterSetup):
         CollectionBase.over_ride_bucket_template_params(
             test_obj, test_obj.bucket_storage, buckets_spec)
         if test_obj.enable_encryption_at_rest:
-            buckets_spec[Bucket.encryptionAtRestSecretId] = test_obj.secret_id
+            buckets_spec[Bucket.encryptionAtRestSecretId] = test_obj.encryption_at_rest_id
             buckets_spec[Bucket.encryptionAtRestDekRotationInterval] = \
                 test_obj.encryptionAtRestDekRotationInterval
             test_obj.log.info("Encryption at rest enabled")
