@@ -924,7 +924,8 @@ class basic_ops(ClusterSetup):
         self.log.info("Fetching keys evicted from replica vbs")
         for doc_index in range(self.num_items):
             key = "%s-%s" % (self.key, doc_index)
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                key, bucket.num_vbuckets)
             for node, n_data in nodes_data.items():
                 if vb_for_key in n_data["replica_vbs"]:
                     stat = n_data["cbstats"].vkey_stat(bucket.name, key,
@@ -1019,7 +1020,8 @@ class basic_ops(ClusterSetup):
         self.log.info("Testing using vbucket %s" % target_vb)
         while doc_gen.has_next():
             key, val = doc_gen.next()
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                key, bucket.num_vbuckets)
 
             # Create and delete a key
             result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, val)
@@ -1773,7 +1775,8 @@ class basic_ops(ClusterSetup):
         while req_key_for_vb:
             index += 1
             key = "%s_%s" % (self.key, index)
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                key, self.cluster.buckets[0].num_vbuckets)
             if vb_for_key in req_key_for_vb:
                 doc_keys[vb_for_key].append(key)
                 if len(doc_keys[vb_for_key]) == docs_per_vb:
@@ -2483,7 +2486,7 @@ class basic_ops(ClusterSetup):
         bucket = self.cluster.buckets[0]
         client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(
-            key, self.cluster.vbuckets)
+            key, bucket.num_vbuckets)
 
         self.log.info("Disabling auto-failover settings")
         RestConnection(self.cluster.master)\

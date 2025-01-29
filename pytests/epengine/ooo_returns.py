@@ -142,7 +142,8 @@ class OutOfOrderReturns(ClusterSetup):
                                         doc_size=1)
                 self.num_items = end_i
             doc_key, _ = dgm_gen.next()
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                doc_key, self.bucket.num_vbuckets)
             for node in self.kv_nodes:
                 if vb_for_key in self.node_data[node]["active_vbs"]:
                     stat = self.node_data[node]["cb_stat"].vkey_stat(
@@ -153,7 +154,8 @@ class OutOfOrderReturns(ClusterSetup):
         dgm_gen = doc_generator(self.key, -(self.num_items-1), 0, doc_size=1)
         while len(non_evicted_doc_keys) != req_docs_to_test:
             doc_key, _ = dgm_gen.next()
-            vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
+            vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+                doc_key, self.bucket.num_vbuckets)
             for node in self.kv_nodes:
                 if vb_for_key in self.node_data[node]["active_vbs"]:
                     stat = self.node_data[node]["cb_stat"].vkey_stat(

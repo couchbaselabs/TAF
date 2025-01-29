@@ -50,7 +50,8 @@ class OpsChangeCasTests(CasBaseTest):
             gen = generator
             while gen.has_next():
                 key, value = gen.next()
-                vb_of_key = self.bucket_util.get_vbucket_num_for_key(key)
+                vb_of_key = self.bucket_util.get_vbucket_num_for_key(
+                    key, bucket.num_vbuckets)
                 active_node_ip = None
                 for node in nodes:
                     if vb_of_key in self.vb_details[node.ip]["active"]:
@@ -212,7 +213,7 @@ class OpsChangeCasTests(CasBaseTest):
             self.vb_details[node.ip] = dict()
             self.vb_details[node.ip]["active"] = list()
             self.vb_details[node.ip]["replica"] = list()
-        
+
             self.cb_stat[node.ip] = Cbstats(node)
             self.vb_details[node.ip]["active"] = \
                 self.cb_stat[node.ip].vbucket_list(self.bucket.name, "active")

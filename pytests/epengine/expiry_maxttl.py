@@ -617,8 +617,9 @@ class ExpiryMaxTTL(ClusterSetup):
         doc_ttl = 5
         target_node = None
         key = "test_ttl_doc"
-        vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
         bucket = self.cluster.buckets[0]
+        vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+            key, bucket.num_vbuckets)
         cb_stat_obj = dict()
 
         for target_node in self.cluster.nodes_in_cluster:

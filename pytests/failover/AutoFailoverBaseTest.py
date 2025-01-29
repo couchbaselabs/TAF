@@ -840,7 +840,8 @@ class AutoFailoverBaseTest(ClusterSetup):
                     # Failures should be observed only in the vbuckets
                     # placed in the failure nodes
                     key = failed_doc["key"]
-                    vb_num = self.bucket_util.get_vbucket_num_for_key(key)
+                    vb_num = self.bucket_util.get_vbucket_num_for_key(
+                        key, bucket.num_vbuckets)
                     msg = "Key '{0}' not found in failed nodes' vbucket list" \
                         .format(key)
                     err_msg = "Invalid exception {0} for vb failure"
