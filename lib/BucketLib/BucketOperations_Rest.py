@@ -367,7 +367,7 @@ class BucketHelper(BucketRestApi):
                 bucket_params.get(Bucket.durabilityMinLevel),
             Bucket.warmupBehavior:
                 bucket_params.get(Bucket.warmupBehavior),
-            Bucket.encryptionAtRestSecretId: bucket_params.get(Bucket.encryptionAtRestSecretId),
+            Bucket.encryptionAtRestKeyId: bucket_params.get(Bucket.encryptionAtRestKeyId),
             Bucket.encryptionAtRestDekRotationInterval: bucket_params.get(Bucket.encryptionAtRestDekRotationInterval),
             Bucket.encryptionAtRestDekLifetime: bucket_params.get(Bucket.encryptionAtRestDekLifetime)}
 
@@ -513,7 +513,7 @@ class BucketHelper(BucketRestApi):
                             magma_key_tree_data_block_size=None,
                             magma_seq_tree_data_block_size=None,
                             durability_impossible_fallback=None,
-                            encryptionAtRestSecretId=None,
+                            encryptionAtRestKeyId=None,
                             encryptionAtRestDekLifetime=None,
                             encryptionAtRestDekRotationInterval=None,
                             warmup_behavior=None):
@@ -565,8 +565,8 @@ class BucketHelper(BucketRestApi):
             params_dict["evictionPolicy"] = eviction_policy
         if warmup_behavior is not None:
             params_dict["warmupBehavior"] = warmup_behavior
-        if encryptionAtRestSecretId is not None:
-            params_dict[Bucket.encryptionAtRestSecretId] = encryptionAtRestSecretId
+        if encryptionAtRestKeyId is not None:
+            params_dict[Bucket.encryptionAtRestKeyId] = encryptionAtRestKeyId
         if encryptionAtRestDekRotationInterval is not None:
             params_dict[Bucket.encryptionAtRestDekRotationInterval] = encryptionAtRestDekRotationInterval
         if encryptionAtRestDekLifetime is not None:

@@ -2496,9 +2496,9 @@ class RestConnection(newRC):
 
     def modify_secret(self, secret_id, params):
         """
-        PUT :: /secrets/<secret_id>
+        PUT :: /settings/encryptionKeys/<secret_id>
         """
-        api = self.baseUrl + '/secrets/' + str(secret_id)
+        api = self.baseUrl + '/settings/encryptionKeys/' + str(secret_id)
         headers = self._create_headers()
         json_params = json.dumps(params)
         status, json_parsed, _ = self._http_request(api, method='PUT', params=json_params, headers=headers)
@@ -2529,7 +2529,8 @@ class RestConnection(newRC):
         api = self.baseUrl + '/settings/security/encryptionAtRest'
         headers = self._create_headers()
         json_params = json.dumps(params)
-        status, json_parsed, _ = self._http_request(api, method='POST', params=json_params, headers=headers)
+        url_encoded_params = '&'.join(['{}={}'.format(key, value) for key, value in params.items()])
+        status, json_parsed, _ = self._http_request(api, method='POST', params=url_encoded_params, headers=headers)
         return status, json_parsed
 
     def trigger_data_reencryption(self, bucket):
@@ -2556,7 +2557,7 @@ class RestConnection(newRC):
         """
         api = self.baseUrl + '/pools/default/buckets/' + str(bucket)
         headers = self._create_headers()
-        params = {'encryptionAtRestSecretId': secret_id}
+        params = {'encryptionAtRestKeyId': secret_id}
         json_params = json.dumps(params)
         status, json_parsed, _ = self._http_request(api, method='POST', params=json_params, headers=headers)
         return status, json_parsed
@@ -2567,7 +2568,7 @@ class RestConnection(newRC):
         """
         api = self.baseUrl + '/pools/default/buckets/' + str(bucket)
         headers = self._create_headers()
-        params = {'encryptionAtRestSecretId': '-1'}
+        params = {'encryptionAtRestKeyId': '-1'}
         json_params = json.dumps(params)
         status, json_parsed, _ = self._http_request(api, method='POST', params=json_params, headers=headers)
         return status, json_parsed

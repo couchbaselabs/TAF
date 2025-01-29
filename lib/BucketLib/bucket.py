@@ -163,7 +163,7 @@ class Bucket(object):
     durabilityImpossibleFallback = "durabilityImpossibleFallback"
     warmupBehavior = "warmupBehavior"
     fusionLogstoreURI = "fusionLogstoreURI"
-    encryptionAtRestSecretId = "encryptionAtRestSecretId"
+    encryptionAtRestKeyId = "encryptionAtRestKeyId"
     encryptionAtRestDekRotationInterval = "encryptionAtRestDekRotationInterval"
     encryptionAtRestDekLifetime = "encryptionAtRestDekLifetime"
 
@@ -280,8 +280,8 @@ class Bucket(object):
             Bucket.warmupBehavior, None)
         self.fusionLogstoreURI = new_params.get(
             Bucket.fusionLogstoreURI, None)
-        self.encryptionAtRestSecretId = new_params.get(
-            Bucket.encryptionAtRestSecretId, -1)
+        self.encryptionAtRestKeyId = new_params.get(
+            Bucket.encryptionAtRestKeyId, -1)
         self.encryptionAtRestDekRotationInterval = new_params.get(
             Bucket.encryptionAtRestDekRotationInterval, 2592000)
         self.encryptionAtRestDekLifetime = new_params.get(
