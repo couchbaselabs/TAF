@@ -324,7 +324,9 @@ class DoctorN1QL():
                             if workload.get("vector"):
                                 vector_defn = workload.get("vector")[vector_defn_counter % len(workload.get("vector"))]
                                 dim = workload.get("dim")
-                                similarity = vector_defn["similarity"]
+                                similarity = TestInputSingleton.input.param(
+                                    "similarity",
+                                    random.choice("L2_SQUARED", "EUCLIDEAN_SQUARED", "COSINE", "DOT"))
                                 nProbe = vector_defn["nProbe"]
                                 description = vector_defn.get("description", "IVF,%s" % vector_defn.get("quantization", "SQ8"))
                                 vector_fields = "'dimension': {}, 'description': '{}', 'similarity': '{}', 'scan_nprobes': {}".format(
