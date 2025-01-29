@@ -3059,7 +3059,8 @@ class BucketUtils(ScopeUtils):
                                history_retention_bytes=None,
                                history_retention_seconds=None,
                                magma_key_tree_data_block_size=None,
-                               magma_seq_tree_data_block_size=None):
+                               magma_seq_tree_data_block_size=None,
+                               expiryPagerSleepTime=None):
         return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
@@ -3073,7 +3074,8 @@ class BucketUtils(ScopeUtils):
             history_retention_bytes=history_retention_bytes,
             magma_key_tree_data_block_size=magma_key_tree_data_block_size,
             magma_seq_tree_data_block_size=magma_seq_tree_data_block_size,
-            storageBackend=storageBackend)
+            storageBackend=storageBackend,
+            expiryPagerSleepTime=expiryPagerSleepTime)
 
     def update_memcached_num_threads_settings(self, cluster_node,
                                               num_writer_threads=None,
@@ -4506,16 +4508,14 @@ class BucketUtils(ScopeUtils):
     def _expiry_pager(self, cluster, val=10):
         for node in self.cluster_util.get_kv_nodes(cluster):
             shell_conn = RemoteMachineShellConnection(node)
-            cbepctl_obj = Cbepctl(shell_conn)
+            cbepctl = Cbepctl(shell_conn)
             for bucket in cluster.buckets:
-                cbepctl_obj.set(bucket.name,
-                                "flush_param",
-                                "exp_pager_stime",
-                                val)
-                cbepctl_obj.set(bucket.name,
-                                "flush_param",
-                                "exp_pager_initial_run_time",
-                                "disable")
+                self.update_bucket_property(node, bucket,
+                                            expiryPagerSleepTime=val)
+                cbepctl.set(bucket.name,
+                            "flush_param",
+                            "exp_pager_initial_run_time",
+                            "disable")
             shell_conn.disconnect()
 
     def _compaction_exp_mem_threshold(self, cluster, val=100):
