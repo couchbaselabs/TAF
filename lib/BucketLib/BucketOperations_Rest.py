@@ -408,7 +408,7 @@ class BucketHelper(RestConnection):
             Bucket.storageBackend: bucket_params.get(Bucket.storageBackend),
             Bucket.conflictResolutionType: bucket_params.get(Bucket.conflictResolutionType),
             Bucket.durabilityMinLevel: bucket_params.get(Bucket.durabilityMinLevel),
-            Bucket.encryptionAtRestSecretId: bucket_params.get(Bucket.encryptionAtRestSecretId),
+            Bucket.encryptionAtRestKeyId: bucket_params.get(Bucket.encryptionAtRestKeyId),
             Bucket.encryptionAtRestDekRotationInterval: bucket_params.get(Bucket.encryptionAtRestDekRotationInterval),
             Bucket.encryptionAtRestDekLifetime: bucket_params.get(Bucket.encryptionAtRestDekLifetime)}
 
@@ -561,7 +561,7 @@ class BucketHelper(RestConnection):
                             warmupBehavior=None,
                             memoryLowWatermark=None,
                             memoryHighWatermark=None,
-                            encryptionAtRestSecretId=None,
+                            encryptionAtRestKeyId=None,
                             encryptionAtRestDekRotationInterval=None,
                             encryptionAtRestDekLifetime=None):
 
@@ -619,8 +619,8 @@ class BucketHelper(RestConnection):
             params_dict["memoryLowWatermark"] = memoryLowWatermark
         if memoryHighWatermark is not None:
             params_dict["memoryHighWatermark"] = memoryHighWatermark
-        if encryptionAtRestSecretId is not None:
-            params_dict[Bucket.encryptionAtRestSecretId] = encryptionAtRestSecretId
+        if encryptionAtRestKeyId is not None:
+            params_dict[Bucket.encryptionAtRestKeyId] = encryptionAtRestKeyId
         if encryptionAtRestDekRotationInterval is not None:
             params_dict[Bucket.encryptionAtRestDekRotationInterval] = encryptionAtRestDekRotationInterval
         if encryptionAtRestDekLifetime is not None:

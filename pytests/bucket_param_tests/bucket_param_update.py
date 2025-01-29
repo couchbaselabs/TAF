@@ -787,8 +787,8 @@ class BucketParamTest(ClusterSetup):
                 bucket.name, bucket.__dict__))
 
             # Check default values for new encryption parameters
-            self.assertTrue(bucket.encryptionAtRestSecretId == -1,
-                            "Default value mismatch for encryptionAtRestSecretId")
+            self.assertTrue(bucket.encryptionAtRestKeyId == -1,
+                            "Default value mismatch for encryptionAtRestKeyId")
             self.assertTrue(
                 bucket.encryptionAtRestDekRotationInterval == 2592000,
                 "Default value mismatch for encryptionAtRestDekRotationInterval")
@@ -817,7 +817,7 @@ class BucketParamTest(ClusterSetup):
                           "encryption values for bucket: %s" % bucket.name)
             bucket_helper.change_bucket_props(
                 bucket,
-                encryptionAtRestSecretId=generated_key,
+                encryptionAtRestKeyId=generated_key,
                 encryptionAtRestDekRotationInterval=604800,
                 encryptionAtRestDekLifetime=7776000
             )
@@ -828,8 +828,8 @@ class BucketParamTest(ClusterSetup):
                     bucket.name, bucket.__dict__))
 
             # Verify valid values for new encryption parameters
-            self.assertTrue(bucket.encryptionAtRestSecretId == 12345,
-                            "Valid value mismatch for encryptionAtRestSecretId")
+            self.assertTrue(bucket.encryptionAtRestKeyId == 12345,
+                            "Valid value mismatch for encryptionAtRestKeyId")
             self.assertTrue(
                 bucket.encryptionAtRestDekRotationInterval == 604800,
                 "Valid value mismatch for encryptionAtRestDekRotationInterval")
@@ -839,7 +839,7 @@ class BucketParamTest(ClusterSetup):
             self.log.info(
                 "Testing invalid encryption values for bucket: %s" % bucket.name)
             invalid_params = [
-                {"encryptionAtRestSecretId": generated_key},
+                {"encryptionAtRestKeyId": generated_key},
                 {"encryptionAtRestDekRotationInterval": -1},
                 {"encryptionAtRestDekLifetime": -1}
             ]

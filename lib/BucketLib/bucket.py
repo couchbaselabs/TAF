@@ -166,7 +166,7 @@ class Bucket(object):
     warmupBehavior = "warmupBehavior"
     memoryLowWatermark = "memoryLowWatermark"
     memoryHighWatermark = "memoryHighWatermark"
-    encryptionAtRestSecretId = "encryptionAtRestSecretId"
+    encryptionAtRestKeyId = "encryptionAtRestKeyId"
     encryptionAtRestDekRotationInterval = "encryptionAtRestDekRotationInterval"
     encryptionAtRestDekLifetime = "encryptionAtRestDekLifetime"
 
@@ -283,8 +283,8 @@ class Bucket(object):
             Bucket.memoryLowWatermark, 75)
         self.memoryHighWatermark = new_params.get(
             Bucket.memoryHighWatermark, 85)
-        self.encryptionAtRestSecretId = new_params.get(
-            Bucket.encryptionAtRestSecretId, -1)
+        self.encryptionAtRestKeyId = new_params.get(
+            Bucket.encryptionAtRestKeyId, -1)
         self.encryptionAtRestDekRotationInterval = new_params.get(
             Bucket.encryptionAtRestDekRotationInterval, 2592000)
         self.encryptionAtRestDekLifetime = new_params.get(
