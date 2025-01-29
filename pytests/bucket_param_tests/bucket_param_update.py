@@ -858,6 +858,180 @@ class BucketParamTest(ClusterSetup):
             self.log.info(
                 "Completed encryption tests for bucket: %s" % bucket.name)
 
+    def test_enable_log_encryption_and_test(self):
+        rest = RestConnection(self.cluster.master)
+        bucket_helper = BucketHelper(self.cluster.master)
+
+        # Create secret for log encryption
+        log_params = bucket_helper.create_secret_params(
+            secret_type="auto-generated-aes-key-256",
+            name="TestSecretLogEncryption",
+            usage=["log-encryption"],
+            autoRotation=True,
+            rotationIntervalInSeconds=60
+        )
+        status, response = rest.create_secret(log_params)
+        if status:
+            response_dict = json.loads(response)
+            config_secret_id = response_dict.get('id')
+        else:
+            self.fail("Failed to create log encryption secret: %s" % response)
+
+        log_params = bucket_helper.create_secret_params(
+            secret_type="auto-generated-aes-key-256",
+            name="TestSecretLogEncryptionNeg",
+            usage=["config-encryption"],
+            autoRotation=True,
+            rotationIntervalInSeconds=60
+        )
+        status, response = rest.create_secret(log_params)
+        response_dict = json.loads(response)
+        config_enc_secret_id = response_dict.get('id')
+
+        params = {
+            "log.encryptionMethod": "encryptionKey",
+            "log.encryptionKeyId": config_enc_secret_id
+        }
+        status, response = rest.configure_encryption_at_rest(params)
+        self.assertFalse(status, "Expected failure for invalid secret ID")
+
+        # Enable log encryption using the config secret
+        params = {
+            "log.encryptionMethod": "encryptionKey",
+            "log.encryptionKeyId": config_secret_id
+        }
+        status, response = rest.configure_encryption_at_rest(params)
+        if not status:
+            self.fail("Failed to enable log encryption: %s" % response)
+
+        # Verify set values for log encryption from the response
+        encryption_settings = json.loads(response)
+        self.assertTrue(
+            encryption_settings['log']['encryptionKey'] == "secret",
+            "Log encryption method mismatch")
+        self.assertTrue(encryption_settings['log'][
+                            'encryptionKeyId'] == config_secret_id,
+                        "Log encryption secret ID mismatch")
+        self.assertTrue(
+            encryption_settings['log']['dekLifetime'] == 31536000,
+            "Log dekLifetime mismatch"
+        )
+        self.assertTrue(
+            encryption_settings['log']['dekRotationInterval'] == 2592000,
+            "Log dekRotationInterval mismatch")
+
+        # Test valid and invalid values
+        valid_params = {
+            "log.encryptionMethod": "encryptionKey",
+            "log.encryptionKeyId": config_secret_id,
+            "log.dekLifetime": 10,
+            "log.dekRotationInterval": 10
+        }
+        status, response = rest.configure_encryption_at_rest(valid_params)
+        self.assertTrue(status, "Failed to set valid log encryption values")
+
+        invalid_params = [
+            {"log.encryptionMethod": "invalid_method"},
+            {"log.encryptionKeyId": config_secret_id}
+        ]
+        for params in invalid_params:
+            try:
+                rest.configure_encryption_at_rest(params)
+                self.assertTrue(False,
+                                "Expected exception for params: %s" % params)
+            except Exception as e:
+                self.log.error(
+                    "Caught expected exception for params %s: %s" % (
+                        params, e))
+
+    def test_enable_config_encryption_and_test(self):
+        rest = RestConnection(self.cluster.master)
+        bucket_helper = BucketHelper(self.cluster.master)
+
+        # Create secret for log encryption
+        log_params = bucket_helper.create_secret_params(
+            secret_type="auto-generated-aes-key-256",
+            name="TestSecretLogEncryption",
+            usage=["config-encryption"],
+            autoRotation=True,
+            rotationIntervalInSeconds=60
+        )
+        status, response = rest.create_secret(log_params)
+        if status:
+            response_dict = json.loads(response)
+            config_secret_id = response_dict.get('id')
+        else:
+            self.fail(
+                "Failed to create config encryption secret: %s" % response)
+
+        log_params = bucket_helper.create_secret_params(
+            secret_type="auto-generated-aes-key-256",
+            name="TestSecretLogEncryptionNeg",
+            usage=["log-encryption"],
+            autoRotation=True,
+            rotationIntervalInSeconds=60
+        )
+        status, response = rest.create_secret(log_params)
+        response_dict = json.loads(response)
+        log_enc_secret_id = response_dict.get('id')
+
+        params = {
+            "config.encryptionMethod": "encryptionKey",
+            "config.encryptionKeyId": log_enc_secret_id
+        }
+        status, response = rest.configure_encryption_at_rest(params)
+        self.assertFalse(status, "Expected failure for invalid secret ID")
+
+        # Enable config encryption using the config secret
+        params = {
+            "config.encryptionMethod": "encryptionKey",
+            "config.encryptionKeyId": config_secret_id
+        }
+        status, response = rest.configure_encryption_at_rest(params)
+        if not status:
+            self.fail("Failed to enable config encryption: %s" % response)
+
+        # Verify def values for config encryption from the response
+        encryption_settings = json.loads(response)
+        self.assertTrue(
+            encryption_settings['config'][
+                'encryptionMethod'] == "encryptionKey",
+            "Log encryption method mismatch")
+        self.assertTrue(encryption_settings['config'][
+                            'encryptionKeyId'] == config_secret_id,
+                        "config encryption secret ID mismatch")
+        self.assertTrue(
+            encryption_settings['config']['dekLifetime'] == 31536000,
+            "config dekLifetime mismatch"
+        )
+        self.assertTrue(
+            encryption_settings['config']['dekRotationInterval'] == 2592000,
+            "config dekRotationInterval mismatch")
+
+        # Test valid and invalid values
+        valid_params = {
+            "config.encryptionMethod": "encryptionKey",
+            "config.encryptionKeyId": config_secret_id,
+            "config.dekLifetime": 10,
+            "config.dekRotationInterval": 10
+        }
+        status, response = rest.configure_encryption_at_rest(valid_params)
+        self.assertTrue(status, "Failed to set valid config encryption values")
+
+        invalid_params = [
+            {"config.encryptionMethod": "encryptionKey"},
+            {"config.encryptionKeyId": config_secret_id}
+        ]
+        for params in invalid_params:
+            try:
+                rest.configure_encryption_at_rest(params)
+                self.assertTrue(False,
+                                "Expected exception for params: %s" % params)
+            except Exception as e:
+                self.log.error(
+                    "Caught expected exception for params %s: %s" % (
+                        params, e))
+
     def test_MB_34947(self):
         # Update already Created docs with async_writes
         load_gen = doc_generator(self.key, 0, self.num_items,
