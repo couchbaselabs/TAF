@@ -2466,9 +2466,9 @@ class RestConnection(newRC):
 
     def create_secret(self, params):
         """
-        POST :: /settings/secrets
+         POST :: /settings/encryptionKeys
         """
-        api = self.baseUrl + '/settings/secrets'
+        api = self.baseUrl + '/settings/encryptionKeys'
         json_params = json.dumps(params)
         headers = self._create_headers()
         status, json_parsed, _ = self._http_request(api, method='POST', params=json_params, headers=headers)
@@ -2476,9 +2476,9 @@ class RestConnection(newRC):
 
     def get_all_secrets(self):
         """
-        GET :: /secrets
+        GET :: settings/encryptionKeys
         """
-        api = self.baseUrl + '/secrets'
+        api = self.baseUrl + 'settings/encryptionKeys'
         headers = self._create_headers()
         status, json_parsed, _ = self._http_request(api, method='GET', headers=headers)
         return status, json_parsed
@@ -2513,9 +2513,9 @@ class RestConnection(newRC):
 
     def delete_secret(self, secret_id):
         """
-        DELETE :: /secrets/<secret_id>
+         DELETE :: settings/encryptionKeys/<secret_id>
         """
-        api = self.baseUrl + '/secrets/' + str(secret_id)
+        api = self.baseUrl + 'settings/encryptionKeys/' + str(secret_id)
         headers = self._create_headers()
         status, json_parsed, _ = self._http_request(api, method='DELETE', headers=headers)
         return status, json_parsed
