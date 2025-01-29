@@ -4939,11 +4939,11 @@ class BucketCreateTask(Task):
             if self.result is False:
                 self.test_log.critical("Bucket %s creation failed"
                                        % self.bucket.name)
-            elif self.bucket.numVBuckets is None:
+            elif self.bucket.num_vbuckets is None:
                 # Set num_vbuckets to default it not provided by the user
                 if (self.bucket.bucketType == Bucket.Type.MEMBASE and
                         self.bucket.storageBackend == Bucket.StorageBackend.magma):
-                    self.bucket.numVBuckets = CbServer.magma_default_vbuckets
+                    self.bucket.num_vbuckets = CbServer.magma_default_vbuckets
                 else:
                     self.bucket.num_vbuckets = CbServer.total_vbuckets
                 if CbServer.cluster_profile == "serverless":

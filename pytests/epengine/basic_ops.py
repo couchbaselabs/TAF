@@ -1356,8 +1356,8 @@ class basic_ops(ClusterSetup):
             ram_quota=100,
             replica=0,
             eviction_policy=self.bucket_eviction_policy,
-            bucket_name="small_bucket"
-        )
+            bucket_name="small_bucket",
+            storage=Bucket.StorageBackend.couchstore)
 
         big_bucket = self.cluster.buckets[0]
         small_bucket = self.cluster.buckets[1]
@@ -1397,9 +1397,7 @@ class basic_ops(ClusterSetup):
 
         # thread manage
         target_nodes = choice(self.cluster_util.get_kv_nodes(self.cluster))
-        bucket_helper.update_memcached_settings(
-            num_reader_threads=1,
-        )
+        bucket_helper.update_memcached_settings(num_reader_threads=1)
 
         # Create shell_connections
         shell_conn[target_nodes.ip] = RemoteMachineShellConnection(
@@ -1411,10 +1409,10 @@ class basic_ops(ClusterSetup):
         error_sim[target_nodes.ip].create(CouchbaseError.KILL_MEMCACHED,
                                           bucket_name=big_bucket.name)
         self.assertTrue(
-            self.bucket_util._wait_warmup_completed([target_nodes],
-                                                    small_bucket)
+            self.bucket_util._wait_warmup_completed(small_bucket,
+                                                    [target_nodes])
             and (not self.bucket_util._wait_warmup_completed(
-                 [target_nodes], big_bucket, self.warmup_timeout)),
+                 big_bucket, [target_nodes], self.warmup_timeout)),
             "Bucket with less data not accessible "
             "when other bucket getting warmed up.")
         # Disconnecting shell_connections
@@ -1566,9 +1564,10 @@ class basic_ops(ClusterSetup):
         """
         key, val = "test_key", {"f": "value"}
         sub_doc = ["_key", "value"]
-        key_vb = self.bucket_util.get_vbucket_num_for_key(key)
         bucket = self.cluster.buckets[0]
         in_node = self.cluster.servers[1]
+        key_vb = self.bucket_util.get_vbucket_num_for_key(
+            key, total_vbuckets=bucket.num_vbuckets)
         num_items = 0
 
         client = SDKClient(self.cluster, bucket)
