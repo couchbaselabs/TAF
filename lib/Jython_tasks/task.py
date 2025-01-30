@@ -7588,8 +7588,9 @@ class NodeInitializeTask(Task):
                  maxParallelIndexers=None,
                  maxParallelReplicaIndexers=None,
                  port=None, quota_percent=None,
-                 services=None, gsi_type='forestdb',
-                 services_mem_quota_percent=None):
+                 services=None, gsi_type=CbServer.IndexStorageMode.PLASMA,
+                 services_mem_quota_percent=None,
+                 cluster_edition="enterprise"):
         Task.__init__(self, "node_init_task_%s_%s" %
                       (server.ip, server.port))
         self.server = server
@@ -7605,6 +7606,7 @@ class NodeInitializeTask(Task):
         self.services = services
         self.gsi_type = gsi_type
         self.total_memory = 0
+        self.cluster_edition = cluster_edition
 
     def __get_memory_quota_in_mb(self, service_name):
         mem_quota = 0
@@ -7724,19 +7726,38 @@ class NodeInitializeTask(Task):
             t_services = ",".join(self.services)
         elif t_services is None:
             t_services = CbServer.Services.KV
-        rest.initialize_cluster(
-            self.server.ip, username, password,
-            services=t_services,
-            memory_quota=service_quota["memoryQuota"],
-            index_memory_quota=service_quota["indexMemoryQuota"],
-            fts_memory_quota=service_quota["ftsMemoryQuota"],
-            eventing_memory_quota=service_quota["eventingMemoryQuota"],
-            cbas_memory_quota=service_quota["cbasMemoryQuota"],
-            data_path=self.server.data_path,
-            index_path=self.server.index_path,
-            cbas_path=self.server.cbas_path,
-            eventing_path=self.server.eventing_path,
-            indexer_storage_mode=self.gsi_type)
+
+        cluster_init_params = {
+            "hostname": self.server.ip,
+            "username": username,
+            "password": password,
+            "services": t_services,
+            "memory_quota": service_quota["memoryQuota"],
+            "index_memory_quota": service_quota["indexMemoryQuota"],
+            "eventing_memory_quota": service_quota["eventingMemoryQuota"],
+            "fts_memory_quota": service_quota["ftsMemoryQuota"],
+            "cbas_memory_quota": service_quota["cbasMemoryQuota"],
+            "data_path": self.server.data_path,
+            "index_path": self.server.index_path,
+            "cbas_path": self.server.cbas_path,
+            "eventing_path": self.server.eventing_path,
+            "indexer_storage_mode": self.gsi_type,
+        }
+        if self.cluster_edition == "community":
+            for k_to_remove in ["fts_memory_quota",
+                                "eventing_memory_quota",
+                                "cbas_memory_quota",
+
+                                "cbas_path",
+                                "eventing_path",
+
+                                "indexer_storage_mode"]:
+                cluster_init_params.pop(k_to_remove)
+        status, content = rest.initialize_cluster(**cluster_init_params)
+        self.set_result(status)
+        if status is False:
+            self.set_exception(Exception(str(content)))
+            return -1
 
         self.server.port = self.port
         try:

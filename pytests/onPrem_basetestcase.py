@@ -215,8 +215,22 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                         % default_cluster_index]
         CbServer.enterprise_edition = \
             self.cluster_util.is_enterprise_edition(self.cluster)
-        self.cluster.edition = "enterprise" \
-            if CbServer.enterprise_edition else "community"
+        if CbServer.enterprise_edition:
+            self.cluster.edition = "enterprise"
+        else:
+            self.cluster.edition = "community"
+
+            # Set CE specific defaults / restrictions
+            self.enforce_tls = False
+            self.multiple_ca = False
+            CbServer.n2n_encryption = False
+            CbServer.use_https = False
+            self.bucket_storage = Bucket.StorageBackend.couchstore
+            self.gsi_type = CbServer.IndexStorageMode.FOREST_DB
+            # This is redundant since we need this to be passed
+            # from config param for the test to start correctly.
+            # Still doing it for consistency purpose.
+            self.use_https = False
 
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
@@ -760,7 +774,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     max_parallel_replica_indexers, init_port,
                     quota_percent, services=assigned_services,
                     gsi_type=self.gsi_type,
-                    services_mem_quota_percent=services_mem_quota_percent))
+                    services_mem_quota_percent=services_mem_quota_percent,
+                    cluster_edition=self.cluster.edition))
         for _task in init_tasks:
             node_quota = self.task_manager.get_task_result(_task)
             if node_quota < quota or quota == 0:
