@@ -186,6 +186,12 @@ class KVGenerator(object):
         if not(isinstance(self.target_vbuckets, list)) \
                 or len(self.target_vbuckets) == 0:
             return
+        # Validate if the given vbuckets falls within bucket's max vb range
+        for vb in self.target_vbuckets:
+            if vb > self.vbuckets:
+                raise(Exception(f"Bucket has only {self.vbuckets} which is "
+                                f"less than {vb} (target_vb) to generate doc"))
+
         self.pre_generated_keys = dict()
         doc_index = self.start
         num_keys_generated = 0
