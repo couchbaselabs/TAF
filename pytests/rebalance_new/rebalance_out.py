@@ -509,12 +509,12 @@ class RebalanceOutTests(RebalanceBaseTest):
 
     def incremental_rebalance_out_with_ops(self):
         items = self.items
-        delete_from = items/2
+        delete_from = int(items/2)
         create_from = items
-        majority = (self.num_replicas+1)/2+1
+        majority = int((self.num_replicas+1)/2)+1
         for i in reversed(range(majority, self.nodes_init, 2)):
             self.gen_delete = self.get_doc_generator(delete_from,
-                                                     delete_from+items/2)
+                                                     int(delete_from+items/2))
             self.gen_create = self.get_doc_generator(create_from,
                                                      create_from+items)
             delete_from += items
@@ -604,7 +604,9 @@ class RebalanceOutTests(RebalanceBaseTest):
             tasks += temp_tasks
         timeout = None
         if self.active_resident_threshold == 0:
-            timeout = max(self.wait_timeout * 4, len(self.cluster.buckets) * self.wait_timeout * self.num_items / 50000)
+            timeout = max(self.wait_timeout * 4,
+                          len(self.cluster.buckets)
+                          * int(self.wait_timeout * self.num_items / 50000))
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -635,7 +637,7 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         servs_out = self.cluster.servers[-self.nodes_out:]
         rebalance = self.task.async_rebalance(self.cluster, [], servs_out)
-        self.sleep(self.wait_timeout / 5)
+        self.sleep(int(self.wait_timeout / 5))
         # see that the result of view queries are the same as expected during the test
         for bucket in self.cluster.buckets:
             self.bucket_util.perform_verify_queries(
@@ -678,8 +680,9 @@ class RebalanceOutTests(RebalanceBaseTest):
         # increase timeout for big data
         timeout = None
         if self.active_resident_threshold == 0:
-            timeout = max(self.wait_timeout * 5, self.wait_timeout * self.num_items / 25000)
-        query = {}
+            timeout = max(self.wait_timeout * 5,
+                          int(self.wait_timeout * self.num_items / 25000))
+        query = dict()
         query["connectionTimeout"] = 60000
         query["full_set"] = "true"
 
@@ -711,7 +714,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         query["stale"] = "update_after"
         for i in reversed(range(1, self.nodes_init, 2)):
             rebalance = self.task.async_rebalance(self.cluster, [], self.cluster.servers[i:i + 2])
-            self.sleep(self.wait_timeout / 5)
+            self.sleep(int(self.wait_timeout / 5))
             # see that the result of view queries are the same as expected during the test
             self.bucket_util.perform_verify_queries(
                 self.cluster.master, num_views, prefix, ddoc_name,
@@ -813,7 +816,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced out of the cluster the test finishes."""
 
     def incremental_rebalance_out_with_mutation_and_deletion(self):
-        gen_2 = self.get_doc_generator(self.num_items / 2 + 2000,
+        gen_2 = self.get_doc_generator(int(self.num_items / 2) + 2000,
                                        self.num_items)
         for i in reversed(range(self.nodes_init)[1:]):
             # don't use batch for rebalance out 2-1 nodes
@@ -859,7 +862,8 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced out of the cluster the test finishes."""
 
     def incremental_rebalance_out_with_mutation_and_expiration(self):
-        gen_2 = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
+        gen_2 = self.get_doc_generator(int(self.num_items / 2) + 2000,
+                                       self.num_items)
         batch_size = 1000
         for i in reversed(range(self.nodes_init)[2:]):
             # don't use batch for rebalance out 2-1 nodes
