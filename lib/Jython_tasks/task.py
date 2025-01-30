@@ -3295,8 +3295,6 @@ class ValidateDocumentsTask(GenericLoadingTask):
         wrong_values = []
         for key, value in key_value.items():
             if key in map:
-                if not isinstance(value, dict):
-                    expected_val = json.loads(value)
                 if map[key]['cas'] != 0:
                     actual_val = map[key]['value']
                 elif map[key]['error'] is not None:
@@ -3305,12 +3303,12 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     missing_keys.append(key)
                     continue
                 actual_val["mutated"] = int(actual_val["mutated"])
-                expected_val["mutated"] = int(expected_val["mutated"])
-                if expected_val == actual_val:
+                value["mutated"] = int(value["mutated"])
+                if value == actual_val:
                     continue
                 else:
                     wrong_value = "Key: {} Expected: {} Actual: {}" \
-                        .format(key, expected_val, actual_val)
+                        .format(key, value, actual_val)
                     wrong_values.append(wrong_value)
             elif SDKException.DocumentNotFoundException \
                     in str(self.failed_reads[key]["error"]):
