@@ -1150,10 +1150,11 @@ class OPD:
                                                       "Avg Execution Time(ms)",
                                                       "Latest 1K - Avg Execution Time(ms)",
                                                       "Avg Accuracy",
-                                                      "Avg Recall",
-                                                      "ES Avg Execution Time(ms)",
-                                                      "ES Avg Recall"
+                                                      "Avg Recall"
                                                       ])
+                        if ql.esClient is not None:
+                            self.query_table.headers.extend(["ES Avg Execution Time(ms)",
+                                                             "ES Avg Recall"])
                         try:
                             for query, _ in sorted(ql.bucket.query_map.items(), key=lambda x: x[1]["identifier"]):
                                 with ql.query_stats[query][5]:
@@ -1167,10 +1168,15 @@ class OPD:
                                              round(ql.query_stats[query][0]/ql.query_stats[query][1], 2),
                                              round(sum(ql.query_stats[query][8][-1000:])/min(1000,len(ql.query_stats[query][8][-1000:])), 2),
                                              round(ql.query_stats[query][2]/ql.query_stats[query][1], 2),
-                                             round(ql.query_stats[query][3]/ql.query_stats[query][1], 2),
-                                             round(ql.query_stats[query][6]/ql.query_stats[query][1], 2),
-                                             round(ql.query_stats[query][7]/ql.query_stats[query][1], 2)
-                                                                        ])
+                                             round(ql.query_stats[query][3]/ql.query_stats[query][1], 2)
+                                             ]
+                                            )
+                                        if ql.esClient is not None:
+                                            self.query_table.rows[-1].extend(
+                                                [str(round(ql.query_stats[query][6]/ql.query_stats[query][1], 2)),
+                                                 str(round(ql.query_stats[query][7]/ql.query_stats[query][1], 2))
+                                                 ]
+                                                )
                         except Exception as e:
                             print(e)
                         self.table.add_row([
