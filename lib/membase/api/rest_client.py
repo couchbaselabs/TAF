@@ -3514,10 +3514,16 @@ class RestConnection(newRC):
 
     'Get list of current users and rols assigned to them'
 
-    def retrieve_user_roles(self):
+    def retrieve_user_roles(self, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        headers = self._create_headers(username, password)
+
         url = "settings/rbac/users"
         api = self.baseUrl + url
-        status, content, header = self._http_request(api, 'GET')
+        status, content, header = self._http_request(api, 'GET', headers=headers)
         if not status:
             raise Exception(content)
         return json.loads(content)
@@ -3571,7 +3577,7 @@ class RestConnection(newRC):
     def check_user_permission(self, user_id, password, permission_set):
         url = "pools/default/checkPermissions/"
         api = self.baseUrl + url
-        authorization = base64.encodestring('%s:%s' % (user_id, password))
+        authorization = base64.b64encode('%s:%s' % (user_id, password))
         header = {'Content-Type': 'application/x-www-form-urlencoded',
                   'Authorization': 'Basic %s' % authorization,
                   'Accept': '*/*'}
@@ -3587,6 +3593,7 @@ class RestConnection(newRC):
     if roles=<empty> user will be created with no roles'''
 
     def add_set_builtin_user(self, user_id, payload):
+
         url = "settings/rbac/users/local/" + user_id
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'PUT', payload)
@@ -3599,18 +3606,67 @@ class RestConnection(newRC):
     '''
 
     def delete_builtin_user(self, user_id):
+
         url = "settings/rbac/users/local/" + user_id
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'DELETE')
         if not status:
             self.log.error("%s - %s" % (user_id, content))
+            raise Exception(content)
+        return json.loads(content)
+
+    '''
+    Delete external user
+    '''
+    def delete_external_user(self, user_id):
+
+        url = "settings/rbac/users/external/" + user_id
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'DELETE')
+        if not status:
+            self.log.error("%s - %s" % (user_id, content))
+            raise Exception(content)
         return json.loads(content)
 
     def get_builtin_user(self, user_id):
         """ Gets the user's rbac settings """
+
         url = "settings/rbac/users/local/" + user_id
         api = self.baseUrl + url
         status, content, _ = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    '''
+    Get external user
+    '''
+    def get_external_user(self, user_id):
+
+        url = "settings/rbac/users/local/" + user_id
+        api = self.baseUrl + url
+        status, content, _ = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    def backup_users(self):
+        url = "settings/rbac/backup"
+        api = self.baseUrl + url
+        status, content, headers = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
+        return json.loads(content)
+
+    def restore_users(self, backup_data):
+        url = "settings/rbac/backup"
+        api = self.baseUrl + url
+        json_data = json.dumps(backup_data)
+        payload = {
+            "backup": json_data
+        }
+        payload = urllib.urlencode(payload)
+        status, content, header = self._http_request(api, 'PUT', payload)
         if not status:
             raise Exception(content)
         return json.loads(content)
@@ -3634,14 +3690,36 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'PUT', payload)
         if not status:
             self.log.error("%s - %s" % (group_name, content))
+            raise Exception(content)
+        return json.loads(content)
+
+    def get_builtin_group(self, group_name):
+
+        url = "settings/rbac/groups/" + group_name
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        if not status:
+            self.log.error("%s - %s" % (group_name, content))
+            raise Exception(content)
+        return json.loads(content)
+
+    def list_groups(self):
+
+        url = "settings/rbac/groups"
+        api = self.baseUrl + url
+        status, content, header = self._http_request(api, 'GET')
+        if not status:
+            raise Exception(content)
         return json.loads(content)
 
     def delete_builtin_group(self, group_name):
+
         url = "settings/rbac/groups/" + group_name
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'DELETE')
         if not status:
             self.log.error("%s - %s" % (group_name, content))
+            raise Exception(content)
         return json.loads(content)
 
     def change_password_policy(self, min_length, enforce_uppercase="false",
