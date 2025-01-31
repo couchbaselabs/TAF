@@ -237,7 +237,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         cbstat_obj = dict()
         failover_info = dict()
         vb_info_info = dict()
-        target_vbuckets = range(0, self.cluster.vbuckets)
+        target_vbuckets = range(0, self.bucket.numVBuckets)
         active_vbs_in_target_nodes = list()
         failover_info["init"] = dict()
         failover_info["afterCrud"] = dict()
