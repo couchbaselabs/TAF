@@ -119,7 +119,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.process_concurrency = self.standard_buckets * self.num_collections * self.num_scopes
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         if self.bucket_dedup_retention_seconds == 0 and self.bucket_dedup_retention_bytes == 0:
             for bucket in self.cluster.buckets:
                 self.bucket_util.update_bucket_property(
@@ -134,7 +134,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.reset_doc_params()
             self.compute_docs_ranges()
 
-            temp_tasks = self.java_doc_loader(wait=False)
+            temp_tasks = self.java_doc_loader(wait=False,skip_default=True)
             self.graceful = self.input.param("graceful", False)
             wait_warmup = self.input.param("wait_warmup", True)
 
@@ -175,7 +175,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.create_start = create_start
                 self.create_end = create_end
                 self.num_items_per_collection += self.create_end - self.create_start
-                self.java_doc_loader(wait=True)
+                self.java_doc_loader(wait=True,skip_default=True)
             if "expiry" in self.doc_ops:
                 self.sleep(self.maxttl, "Wait for docs to expire")
                 self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
@@ -189,7 +189,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.create_start = create_start
                 self.create_end = create_end
                 self.num_items_per_collection += self.create_end - self.create_start
-                self.java_doc_loader(wait=True)
+                self.java_doc_loader(wait=True,skip_default=True)
             count += 1
 
     def test_crash_during_dedupe(self):
@@ -266,7 +266,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
 
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         self.ops_rate = self.ops_rate * 3
@@ -278,7 +278,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        tasks = self.java_doc_loader(wait=False)
+        tasks = self.java_doc_loader(wait=False,skip_default=True)
         self.graceful = self.input.param("graceful", False)
         wait_warmup = self.input.param("wait_warmup", True)
         self.crash_th = threading.Thread(target=self.crash,
@@ -309,7 +309,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
 
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         self.ops_rate = self.ops_rate * 3
@@ -321,7 +321,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        tasks = self.java_doc_loader(wait=False)
+        tasks = self.java_doc_loader(wait=False,skip_default=True)
         self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 2})
         self.crash_th.start()
         for task in tasks:

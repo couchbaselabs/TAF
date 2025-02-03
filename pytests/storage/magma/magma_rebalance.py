@@ -662,7 +662,7 @@ class MagmaRebalance(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.log.info("Initial loading with new loader starts")
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         self.compute_docs_ranges()
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)
@@ -681,7 +681,7 @@ class MagmaRebalance(MagmaBaseTest):
 
         if self.data_load_stage == "before":
             self.log.info("Data loading before rebalance stage")
-            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections)
+            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,skip_default=True)
 
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
@@ -758,7 +758,7 @@ class MagmaRebalance(MagmaBaseTest):
         if self.data_load_stage == "during":
             self.sleep(10, "wait for rebalance to start")
             self.log.info("Data loading during rebalance")
-            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections)
+            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,skip_default=True)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
@@ -778,7 +778,7 @@ class MagmaRebalance(MagmaBaseTest):
             self.wait_for_rebalance_to_complete(rebalance)
         if self.data_load_stage == "after":
             self.log.info("Data loading after rebalance")
-            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections)
+            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,skip_default=True)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:

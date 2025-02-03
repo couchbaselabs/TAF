@@ -18,7 +18,7 @@ class BasicCreateTests(BasicCrudTests):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.log.info("Initial loading with new loader starts")
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         count = 0
         while count < self.test_itr:
             self.log.info("Iteration == {}".format(count))
@@ -43,7 +43,7 @@ class BasicCreateTests(BasicCrudTests):
             self.delete_perc = 0
             self.expiry_perc = 0
             self.update_perc = 0
-            self.java_doc_loader(wait=True)
+            self.java_doc_loader(wait=True,skip_default=True)
             count += 1
 
         self.log.info("====test_basic_create_read_new ends====")

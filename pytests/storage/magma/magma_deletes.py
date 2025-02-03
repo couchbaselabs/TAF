@@ -23,7 +23,7 @@ class BasicDeleteTests(BasicCrudTests):
         self.create_end = self.init_items_per_collection
         self.mutate = 0
         self.log.info("Initial loading with new loader starts")
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         self.sleep(60, "sleep after init loading in test")
         disk_usage = self.get_disk_usage(
             self.buckets[0], self.cluster.nodes_in_cluster)
@@ -52,7 +52,7 @@ class BasicDeleteTests(BasicCrudTests):
             self.expiry_perc = 0
             self.update_perc = 0
             self.num_items_per_collection -= self.delete_end - self.delete_start
-            self.java_doc_loader(wait=True)
+            self.java_doc_loader(wait=True,skip_default=True)
             ##################################################################
             '''
             STEP - 2
@@ -124,7 +124,7 @@ class BasicDeleteTests(BasicCrudTests):
                 self.expiry_perc = 0
                 self.update_perc = 0
                 self.num_items_per_collection += self.create_end - self.create_start
-                self.java_doc_loader(wait=True)
+                self.java_doc_loader(wait=True,skip_default=True)
             count += 1
         self.log.info("====test_create_delete_n_times_new ends====")
 

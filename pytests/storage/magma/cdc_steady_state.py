@@ -21,7 +21,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         if not self.set_history_in_test:
             init_history_start_seq = self.get_history_start_seq_for_each_vb()
             for bucket in self.cluster.buckets:
@@ -36,7 +36,7 @@ class SteadyStateTests(MagmaBaseTest):
             self.update_end = self.init_items_per_collection
             self.update_perc = 100
             self.create_perc = 0
-            self.java_doc_loader(wait=True)
+            self.java_doc_loader(wait=True,skip_default=True)
 
             if count == 2 and self.set_history_in_test:
                 init_history_start_seq = self.get_history_start_seq_for_each_vb()
@@ -100,7 +100,7 @@ class SteadyStateTests(MagmaBaseTest):
                     history_retention_bytes=96000000000)
             self.update_start = 0
             self.update_end = 2000
-            self.java_doc_loader(wait=True, doc_ops="update")
+            self.java_doc_loader(wait=True, doc_ops="update",skip_default=True)
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.restart_couchbase()
@@ -125,7 +125,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         if not self.set_history_in_test:
             init_history_start_seq = self.get_history_start_seq_for_each_vb()
             for bucket in self.cluster.buckets:
@@ -142,7 +142,7 @@ class SteadyStateTests(MagmaBaseTest):
             self.expiry_start = self.update_start = 0
             self.expiry_end = self.update_end = self.init_items_per_collection
             self.num_items_per_collection -= self.expiry_end - self.expiry_start
-            tasks = self.java_doc_loader(wait=False, exp_ttl=self.maxttl)
+            tasks = self.java_doc_loader(wait=False, exp_ttl=self.maxttl,skip_default=True)
             self.sleep(self.maxttl, "Wait for docs to expire")
             for task in tasks:
                 self.doc_loading_tm.get_task_result(task)
@@ -238,7 +238,7 @@ class SteadyStateTests(MagmaBaseTest):
             self.reset_doc_params()
             self.expiry_start = self.update_start = 0
             self.expiry_end = self.update_end = 2000
-            self.java_doc_loader(doc_ops="update", exp_ttl=self.maxttl)
+            self.java_doc_loader(doc_ops="update", exp_ttl=self.maxttl,skip_default=True)
 
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
@@ -262,7 +262,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         init_history_start_seq = self.get_history_start_seq_for_each_vb()
 
         count = 0
@@ -272,12 +272,12 @@ class SteadyStateTests(MagmaBaseTest):
             self.reset_doc_params(doc_ops="update:read")
             self.update_start = self.read_start = 0
             self.update_end = self.read_end = self.init_items_per_collection
-            self.java_doc_loader(wait=True, doc_ops="update:read")
+            self.java_doc_loader(wait=True, doc_ops="update:read",skip_default=True)
             self.reset_doc_params(doc_ops="delete")
             self.delete_start = 0
             self.delete_end = self.init_items_per_collection
             self.num_items_per_collection -= self.delete_end - self.delete_start
-            self.java_doc_loader(wait=True, doc_ops="delete")
+            self.java_doc_loader(wait=True, doc_ops="delete",skip_default=True)
             self.num_items_per_collection += self.delete_end - self.delete_start
 
             self.PrintStep("Step 2.%s.1: Comparing history start seq number"% (count+1))
@@ -334,7 +334,7 @@ class SteadyStateTests(MagmaBaseTest):
                     history_retention_bytes=1000000000000)
             self.update_start = 0
             self.update_end = 2000
-            self.java_doc_loader(wait=True, doc_ops="update")
+            self.java_doc_loader(wait=True, doc_ops="update",skip_default=True)
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.restart_couchbase()

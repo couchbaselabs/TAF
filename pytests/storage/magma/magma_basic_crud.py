@@ -40,7 +40,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.create_perc = 100
             self.create_end = self.init_items_per_collection
             self.log.info("Initial loading with new loader starts")
-            self.java_doc_loader(wait=True, doc_ops="create")
+            self.java_doc_loader(wait=True,skip_default=True)
             self.sleep(5)
 
         def set_input_perc():
@@ -60,7 +60,7 @@ class BasicCrudTests(MagmaBaseTest):
                 math.floor((self.end - self.start) * 0.60))
             self.start = self.delete_end
             self.num_items_per_collection = self.end - self.start
-            self.java_doc_loader(wait=True)
+            self.java_doc_loader(wait=True,skip_default=True)
 
         def load_from_spec():
             """ params start and end takes care of resuming
@@ -82,7 +82,7 @@ class BasicCrudTests(MagmaBaseTest):
                     (self.end - self.start) * (create_per_collection / 100.0)))
                 self.end = self.create_end
             self.num_items_per_collection = self.end - self.start
-            return self.java_doc_loader(wait=wait_for_ops)
+            return self.java_doc_loader(wait=wait_for_ops,skip_default=True)
 
         def reduce_mem(desired_mem, timeout=180):
             """

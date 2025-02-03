@@ -42,6 +42,7 @@ class StorageBase(BaseTestCase):
         self.bucket_name = self.input.param("bucket_name", None)
         self.magma_buckets = self.input.param("magma_buckets", 0)
         self.change_magma_quota = self.input.param("change_magma_quota", False)
+        self.skip_load_to_default_collection = self.input.param("skip_load_to_default_collection", False)
 
         # SDK Exceptions
         self.check_temporary_failure_exception = False
@@ -599,7 +600,7 @@ class StorageBase(BaseTestCase):
             self.java_doc_loader(generator=self.gen_create,
                                  doc_ops="create",
                                  process_concurrency=2,
-                                 skip_default=True)
+                                 skip_default=self.skip_load_to_default_collection)
         else:
             task = self.data_load()
             self.wait_for_doc_load_completion(task)
@@ -806,7 +807,7 @@ class StorageBase(BaseTestCase):
                                            key_size=key_size)
 
     def java_doc_loader(self, scopes=None, collections=None, generator=None, doc_ops=None,
-                        wait=True, process_concurrency=2, skip_default=True, exp_ttl=None):
+                        wait=True, process_concurrency=2, skip_default=False, exp_ttl=None):
 
         doc_loading_tasks = list()
         self.ops_rate = self.input.param("ops_rate", 50000)

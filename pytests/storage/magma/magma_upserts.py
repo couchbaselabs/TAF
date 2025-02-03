@@ -29,7 +29,7 @@ class BasicUpsertTests(BasicCrudTests):
         self.create_end = self.init_items_per_collection
         self.mutate = 0
         self.log.info("Initial loading with new loader starts")
-        self.java_doc_loader(wait=True, doc_ops="create")
+        self.java_doc_loader(wait=True,skip_default=True)
         self.sleep(60, "sleep after init loading in test")
         disk_usage = self.get_disk_usage(
             self.buckets[0], self.cluster.nodes_in_cluster)
@@ -56,7 +56,7 @@ class BasicUpsertTests(BasicCrudTests):
             self.expiry_perc = 0
             self.update_perc = 100
             self.mutate += 1
-            self.java_doc_loader(wait=True)
+            self.java_doc_loader(wait=True,skip_default=True)
             self.log.info("Waiting for ep-queues to get drained")
             self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets, timeout=3600)
