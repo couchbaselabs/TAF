@@ -4,6 +4,7 @@ import global_vars
 from cb_constants import DocLoading
 from sirius_client_framework.sirius_setup import SiriusSetup
 from table_view import TableView
+from cb_constants.CBServer import CbServer
 
 
 class SiriusJavaDocGen(object):
@@ -106,6 +107,7 @@ class SiriusCouchbaseLoader(object):
         self.gtm = False
         self.iterations = iterations
         self.target_vbuckets = None
+        self.vbuckets = CbServer.total_vbuckets
 
         # Key / Doc properties
         self.key_prefix = key_prefix
