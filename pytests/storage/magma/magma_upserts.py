@@ -29,7 +29,7 @@ class BasicUpsertTests(BasicCrudTests):
         self.create_end = self.init_items_per_collection
         self.mutate = 0
         self.log.info("Initial loading with new loader starts")
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         self.sleep(60, "sleep after init loading in test")
         disk_usage = self.get_disk_usage(
             self.buckets[0], self.cluster.nodes_in_cluster)

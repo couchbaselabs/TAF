@@ -662,7 +662,7 @@ class MagmaRebalance(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.log.info("Initial loading with new loader starts")
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         self.compute_docs_ranges()
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)

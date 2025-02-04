@@ -21,7 +21,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         if not self.set_history_in_test:
             init_history_start_seq = self.get_history_start_seq_for_each_vb()
             for bucket in self.cluster.buckets:
@@ -125,7 +125,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         if not self.set_history_in_test:
             init_history_start_seq = self.get_history_start_seq_for_each_vb()
             for bucket in self.cluster.buckets:
@@ -262,7 +262,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         init_history_start_seq = self.get_history_start_seq_for_each_vb()
 
         count = 0

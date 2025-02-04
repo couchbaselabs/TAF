@@ -119,7 +119,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.process_concurrency = self.standard_buckets * self.num_collections * self.num_scopes
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         if self.bucket_dedup_retention_seconds == 0 and self.bucket_dedup_retention_bytes == 0:
             for bucket in self.cluster.buckets:
                 self.bucket_util.update_bucket_property(
@@ -266,7 +266,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
 
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         self.ops_rate = self.ops_rate * 3
@@ -309,7 +309,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
 
-        self.java_doc_loader(wait=True)
+        self.java_doc_loader(wait=True, doc_ops="create")
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         self.ops_rate = self.ops_rate * 3

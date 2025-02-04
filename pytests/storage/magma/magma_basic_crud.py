@@ -40,7 +40,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.create_perc = 100
             self.create_end = self.init_items_per_collection
             self.log.info("Initial loading with new loader starts")
-            self.java_doc_loader(wait=True)
+            self.java_doc_loader(wait=True, doc_ops="create")
             self.sleep(5)
 
         def set_input_perc():
