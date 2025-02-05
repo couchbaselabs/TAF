@@ -70,9 +70,21 @@ echo "########## ulimit values ###########"
 ulimit -a
 echo "####################################"
 
-# Clean up the gradle logs folder which bloat up the disk space
-for file in `find ~/.gradle/ -name "*.out.log"`
-do
+# To clean any available space from docker
+docker system prune -f
+
+# To kill Orphan Python / magmaloader.jar
+ps -ef | grep 'python testrunner.py' | awk '$3 == 1 {print $2}' | xargs kill -9
+ps -ef | grep 'java -jar' | grep 'magmadocloader' | awk '$3 == 1 {print $2}' | xargs kill -9
+
+# Reclaim disk space from gradle files
+for i in `ls /tmp/gradle*.bin`; do
+  lsof $i > /dev/null
+  if [ $? -eq 1 ]; then
+    rm -f $i
+  fi
+done
+for file in `find ~/.gradle/ -name "*.out.log"`; do
     lsof_line_count=`lsof $file | grep -v COMMAND | wc -l`
     if [ $lsof_line_count -eq 0 ]; then
         rm -f $file
