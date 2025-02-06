@@ -21,7 +21,8 @@ class CbServerUpgrade(object):
         self.helper = InstallHelper(logger)
 
         self.install_tasks = ["populate_build_url", "check_url_status",
-                              "download_build", "uninstall", "install"]
+                              "download_build", "uninstall",
+                              "pre_install", "install"]
 
     @staticmethod
     def get_supported_features(cluster_version):
@@ -143,7 +144,7 @@ class CbServerUpgrade(object):
 
     def new_install_version_on_all_nodes(self, nodes, version,
                                          edition="enterprise",
-                                         cluster_profile=None,
+                                         cluster_profile="default",
                                          install_tasks=None):
 
         self.log.info("Installing using ssh_util install method")
@@ -173,7 +174,8 @@ class CbServerUpgrade(object):
             node_helpers.append(NodeInstallInfo(
                                 node, server_info,
                                 self.helper.get_os(server_info),
-                                version, edition))
+                                version, edition,
+                                cluster_profile))
 
         self.log.info("Starting install tasks")
         install_server_threads = \
