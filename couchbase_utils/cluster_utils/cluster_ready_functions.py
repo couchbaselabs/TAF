@@ -1565,6 +1565,9 @@ class ClusterUtils:
                 if 'vb_replica_curr_items' in node_stat['interestingStats']:
                     stat_dict[node_stat['hostname']]['replica_item_count'] = node_stat['interestingStats'][
                         'vb_replica_curr_items']
+                if 'couch_docs_actual_disk_size' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['couch_docs_actual_disk_size'] = node_stat['interestingStats'][
+                        'couch_docs_actual_disk_size']
         return stat_dict
 
     def print_cluster_stats(self, cluster):

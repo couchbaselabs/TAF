@@ -1320,3 +1320,8 @@ class ServerTasks(object):
                                                 collection=collection, index_name=index_name, offset=offset, field=field)
         self.jython_task_manager.add_new_task(_task)
         return _task
+
+    def async_monitor_cluster_stats(self, cluster, monitor_tasks=list(), period=1, timeout=None, store_csv=False, csv_dir=None):
+        _task = jython_tasks.MonitorClusterStatsTask(cluster, monitor_tasks, period, timeout, store_csv, csv_dir)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
