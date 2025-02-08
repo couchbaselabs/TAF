@@ -308,7 +308,6 @@ def main():
     HelperLib.cleanup()
     sys.exit(exit_status)
 
-
 if __name__ == "__main__":
     assert HelperLib.validate_python_version(sys.version_info)
     main()

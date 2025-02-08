@@ -100,7 +100,7 @@ class RestConnection(newRC):
 
     def set_minimum_bucket_replica_for_cluster(self, minimum_replica):
         api = self.baseUrl + 'settings/dataService'
-        params = urllib.urlencode({'minReplicasCount': minimum_replica})
+        params = urllib.parse.urlencode({'minReplicasCount': minimum_replica})
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
@@ -152,7 +152,7 @@ class RestConnection(newRC):
 
     def rename_node(self, hostname, username='Administrator',
                     password='password'):
-        params = urllib.urlencode({'username': username,
+        params = urllib.parse.urlencode({'username': username,
                                    'password': password,
                                    'hostname': hostname})
 
@@ -259,11 +259,11 @@ class RestConnection(newRC):
         capi_url = self.__get_capi_url()
         api = capi_url + '%s/_design/%s/_%s/%s?%s' % (
             bucket, design_doc_name, view_type,
-            view_name, urllib.urlencode(query))
+            view_name, urllib.parse.urlencode(query))
         if isinstance(bucket, Bucket):
             api = capi_url + '%s/_design/%s/_%s/%s?%s' % (
                 bucket.name, design_doc_name, view_type,
-                view_name, urllib.urlencode(query))
+                view_name, urllib.parse.urlencode(query))
         self.test_log.info("Index query url: {0}".format(api))
         status, content, header = self._http_request(api, headers=self._create_capi_headers(),
                                                      timeout=timeout)
@@ -464,7 +464,7 @@ class RestConnection(newRC):
     def init_cluster(self, username='Administrator', password='password',
                      port=constants.port):
         api = self.baseUrl + 'settings/web'
-        params = urllib.urlencode({'port': str(port),
+        params = urllib.parse.urlencode({'port': str(port),
                                    'username': username,
                                    'password': password})
         self.test_log.debug('settings/web params on {0}:{1}:{2}'
@@ -528,7 +528,7 @@ class RestConnection(newRC):
             return False
         if hostname == "127.0.0.1":
             hostname = "{0}:{1}".format(hostname, port)
-        params = urllib.urlencode({'hostname': hostname,
+        params = urllib.parse.urlencode({'hostname': hostname,
                                    'user': username,
                                    'password': password,
                                    'services': ",".join(services)})
@@ -583,7 +583,7 @@ class RestConnection(newRC):
     def set_service_mem_quota(self, ram_quota_dict):
         self.test_log.debug('Setting RAM quotas: %s' % ram_quota_dict)
         api = self.baseUrl + 'pools/default'
-        params = urllib.urlencode(ram_quota_dict)
+        params = urllib.parse.urlencode(ram_quota_dict)
         status, content, header = self._http_request(api, 'POST', params)
         return status
 
@@ -591,7 +591,7 @@ class RestConnection(newRC):
         api = self.baseUrl + 'pools/default'
         if name is None:
             name = ""
-        params = urllib.urlencode({'clusterName': name})
+        params = urllib.parse.urlencode({'clusterName': name})
         self.test_log.debug('pools/default params: {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
         return status
@@ -601,7 +601,7 @@ class RestConnection(newRC):
            From spock, we replace forestdb with plasma
         """
         api = self.baseUrl + 'settings/indexes'
-        params = urllib.urlencode({'storageMode': storageMode})
+        params = urllib.parse.urlencode({'storageMode': storageMode})
         error_message = "storageMode must be one of plasma, memory_optimized"
         self.test_log.debug('settings/indexes params: {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
@@ -630,7 +630,7 @@ class RestConnection(newRC):
         }
         if enableShardAffinity is not None:
             param_dict['enableShardAffinity'] = enableShardAffinity
-        params = urllib.urlencode(param_dict)
+        params = urllib.parse.urlencode(param_dict)
         # self.test_log.debug('settings/indexes params: {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
         # status, content, header = self._http_request(api, 'POST', params)
@@ -685,7 +685,7 @@ class RestConnection(newRC):
         payload = {
             'intCredsRotationInterval': rotation_interval
         }
-        params = urllib.urlencode(payload)
+        params = urllib.parse.urlencode(payload)
         status, content, header = self._http_request(api, 'POST', params)
         if not status:
             self.test_log.error("Failed to set internal password rotation "
@@ -697,7 +697,7 @@ class RestConnection(newRC):
         payload = {
             'allowHashMigrationDuringAuth': enable
         }
-        params = urllib.urlencode(payload)
+        params = urllib.parse.urlencode(payload)
         status, content, header = self._http_request(api, 'POST', params)
         if not status:
             self.test_log.error("Failed to allow hash migration during "
@@ -709,7 +709,7 @@ class RestConnection(newRC):
         payload = {
             'passwordHashAlg': hash_algo
         }
-        params = urllib.urlencode(payload)
+        params = urllib.parse.urlencode(payload)
         status, content, header = self._http_request(api, 'POST', params)
         if not status:
             self.test_log.error("Failed to set password hash algorithm: {}".format(content))
@@ -717,7 +717,7 @@ class RestConnection(newRC):
 
     def set_security_settings(self, settings):
         api = self.baseUrl + "settings/security"
-        params = urllib.urlencode(settings)
+        params = urllib.parse.urlencode(settings)
         status, content, header = self._http_request(api, 'POST', params)
         if not status:
             self.test_log.error("Setting Security settings on node {0} "
@@ -727,14 +727,14 @@ class RestConnection(newRC):
     def set_serverless_bucket_limit(self, limit):
         api = self.baseUrl + "settings/serverless"
         params = {'tenantLimit': limit}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, content, header = self._http_request(api, 'POST', params)
         return status
 
     def set_encryption_level(self, level="control"):
         _ = self.update_autofailover_settings(False, 120)
         api = self.baseUrl + "settings/security"
-        params = urllib.urlencode({'clusterEncryptionLevel': level})
+        params = urllib.parse.urlencode({'clusterEncryptionLevel': level})
         status, content, header = self._http_request(api, 'POST', params)
         if status:
             return content
@@ -773,7 +773,7 @@ class RestConnection(newRC):
         if demandEncryption:
             param_map['demandEncryption'] = 'on'
             param_map['certificate'] = certificate
-        params = urllib.urlencode(param_map)
+        params = urllib.parse.urlencode(param_map)
         status, content, _ = self._http_request(api, 'POST', params)
         # sample response :
         # [{"name":"two","uri":"/pools/default/remoteClusters/two","validateURI":"/pools/default/remoteClusters/two?just_validate=1","hostname":"127.0.0.1:9002","username":"Administrator"}]
@@ -804,7 +804,7 @@ class RestConnection(newRC):
     def get_remote_clusters(self):
         remote_clusters = []
         api = self.baseUrl + 'pools/default/remoteClusters/'
-        params = urllib.urlencode({})
+        params = urllib.parse.urlencode({})
         status, content, header = self._http_request(api, 'GET', params)
         if status:
             remote_clusters = json.loads(content)
@@ -826,7 +826,7 @@ class RestConnection(newRC):
                             .format(urllib.quote(name)))
         api = self.baseUrl + 'pools/default/remoteClusters/{0}?' \
             .format(urllib.quote(name))
-        params = urllib.urlencode({})
+        params = urllib.parse.urlencode({})
         status, content, header = self._http_request(api, 'DELETE', params)
         # sample response : "ok"
         if not status:
@@ -850,7 +850,7 @@ class RestConnection(newRC):
                      'toCluster': toCluster,
                      'type': rep_type}
         param_map.update(xdcr_params)
-        params = urllib.urlencode(param_map)
+        params = urllib.parse.urlencode(param_map)
         status, content, _ = self._http_request(api, 'POST', params)
         # response : {"id": "replication_id"}
         if status:
@@ -952,7 +952,7 @@ class RestConnection(newRC):
         if ClusterRun.is_enabled:
             params['hostname'] = "%s:%s" % (remoteIp, port)
 
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, content, header = self._http_request(api, 'POST', params)
         if status:
             json_parsed = json.loads(content)
@@ -987,7 +987,7 @@ class RestConnection(newRC):
             self.test_log.error('Required otpNode parameter')
             return False
         api = self.baseUrl + 'controller/ejectNode'
-        params = urllib.urlencode({'otpNode': otpNode,
+        params = urllib.parse.urlencode({'otpNode': otpNode,
                                    'user': user,
                                    'password': password})
         status, content, header = self._http_request(api, 'POST', params)
@@ -1061,12 +1061,12 @@ class RestConnection(newRC):
             api = self.baseUrl + 'controller/failOver'
         if all_at_once:
             # concat multiple otpNodes
-            params = urllib.urlencode({'otpNode': otpNode[0]})
+            params = urllib.parse.urlencode({'otpNode': otpNode[0]})
             for i in range(1, len(otpNode)):
-                params = params + "&" + urllib.urlencode({'otpNode': otpNode[i]})
+                params = params + "&" + urllib.parse.urlencode({'otpNode': otpNode[i]})
         else:
-            params = urllib.urlencode({'otpNode': otpNode})
-        params = params + "&" + urllib.urlencode({'allowUnsafe': allowUnsafe})
+            params = urllib.parse.urlencode({'otpNode': otpNode})
+        params = params + "&" + urllib.parse.urlencode({'allowUnsafe': allowUnsafe})
         status, content, header = self._http_request(api, 'POST', params)
         if status:
             self.test_log.debug('{0} - Failover successful'.format(otpNode))
@@ -1088,7 +1088,7 @@ class RestConnection(newRC):
                                 .format(otpNode))
             return False
         api = self.baseUrl + 'controller/setRecoveryType'
-        params = urllib.urlencode({'otpNode': otpNode,
+        params = urllib.parse.urlencode({'otpNode': otpNode,
                                    'recoveryType': recoveryType})
         status, content, header = self._http_request(api, 'POST', params)
         if status:
@@ -1107,7 +1107,7 @@ class RestConnection(newRC):
                                 .format(otpNode))
             return False
         api = self.baseUrl + 'controller/reAddNode'
-        params = urllib.urlencode({'otpNode': otpNode})
+        params = urllib.parse.urlencode({'otpNode': otpNode})
         status, content, header = self._http_request(api, 'POST', params)
         if status:
             self.test_log.debug('{0} - Add_back successful'.format(otpNode))
@@ -1139,7 +1139,7 @@ class RestConnection(newRC):
             params['defragmentZones'] = defrag_options["defragmentZones"]
             params['knownNodes'] = defrag_options["knownNodes"]
         self.test_log.debug('Rebalance params: {0}'.format(params))
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         api = self.baseUrl + "controller/rebalance"
         status, content, header = self._http_request(api, 'POST', params)
         if status:
@@ -1923,7 +1923,7 @@ class RestConnection(newRC):
         else:
             params_dict['failoverPreserveDurabilityMajority'] = 'false'
         params_dict['maxCount'] = maxCount
-        params = urllib.urlencode(params_dict)
+        params = urllib.parse.urlencode(params_dict)
         api = self.baseUrl + 'settings/autoFailover'
         self.test_log.debug('settings/autoFailover params: {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
@@ -1949,10 +1949,10 @@ class RestConnection(newRC):
 
     def update_autoreprovision_settings(self, enabled, maxNodes=1):
         if enabled:
-            params = urllib.urlencode({'enabled': 'true',
+            params = urllib.parse.urlencode({'enabled': 'true',
                                        'maxNodes': maxNodes})
         else:
-            params = urllib.urlencode({'enabled': 'false',
+            params = urllib.parse.urlencode({'enabled': 'false',
                                        'maxNodes': maxNodes})
         api = self.baseUrl + 'settings/autoReprovision'
         self.test_log.debug('settings/autoReprovision params: {0}'
@@ -1976,7 +1976,7 @@ class RestConnection(newRC):
                             email_port=25, email_encrypt='false',
                             alerts='auto_failover_node,auto_failover_maximum_reached'):
         api = self.baseUrl + 'settings/alerts'
-        params = urllib.urlencode({'enabled': 'true',
+        params = urllib.parse.urlencode({'enabled': 'true',
                                    'recipients': recipients,
                                    'sender': sender,
                                    'emailUser': email_username,
@@ -1999,7 +1999,7 @@ class RestConnection(newRC):
 
     def disable_alerts(self):
         api = self.baseUrl + 'settings/alerts'
-        params = urllib.urlencode({'enabled': 'false'})
+        params = urllib.parse.urlencode({'enabled': 'false'})
         self.test_log.debug('settings/alerts params: {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
         return status
@@ -2009,7 +2009,7 @@ class RestConnection(newRC):
         api = self.baseUrl + 'pools/default/buckets/{0}'.format(bucket)
         params_dict = {'driftAheadThresholdMs': ahead_threshold_in_millisecond,
                        'driftBehindThresholdMs': behind_threshold_in_millisecond}
-        params = urllib.urlencode(params_dict)
+        params = urllib.parse.urlencode(params_dict)
         self.test_log.debug("%s with param: %s" % (api, params))
         status, content, header = self._http_request(api, 'POST', params)
         return status
@@ -2029,7 +2029,7 @@ class RestConnection(newRC):
                   "indexCircularCompaction[interval][abortOutside]": "false"}
         api = self.baseUrl + "controller/setAutoCompaction"
         params["purgeInterval"] = interval
-        status, content, _ = self._http_request(api, "POST", urllib.urlencode(params))
+        status, content, _ = self._http_request(api, "POST", urllib.parse.urlencode(params))
         if status:
             self.test_log.info("Successfully set Metadata Purge Interval to {}".
                                format(interval))
@@ -2044,7 +2044,7 @@ class RestConnection(newRC):
         """
         api = self.baseUrl + "_metakv/" + str(key)
         params = {"value": value}
-        status, content, _ = self._http_request(api, "PUT", urllib.urlencode(params))
+        status, content, _ = self._http_request(api, "PUT", urllib.parse.urlencode(params))
         if not status:
             raise Exception(content)
 
@@ -2122,7 +2122,7 @@ class RestConnection(newRC):
             for cbas in cbas_path:
                 data.add('cbas_path', cbas)
         if set_path:
-            data = urllib.urlencode(data)
+            data = urllib.parse.urlencode(data)
             self.test_log.debug('%s: %s' % (end_point, data))
             status, content, header = self._http_request(api, 'POST', data)
             if status:
@@ -2143,10 +2143,10 @@ class RestConnection(newRC):
             paths['java_home'] = jre_path
 
         if paths:
-            params = urllib.urlencode(paths)
+            params = urllib.parse.urlencode(paths)
             self.test_log.debug('/nodes/self/controller/settings params: {0}'
-                                .format(urllib.urlencode(data)))
-            status, content, header = self._http_request(api, 'POST', urllib.urlencode(data))
+                                .format(urllib.parse.urlencode(data)))
+            status, content, header = self._http_request(api, 'POST', urllib.parse.urlencode(data))
             if status:
                 self.test_log.debug("Setting paths: {0}: status {1}"
                                     .format(data, status))
@@ -2220,7 +2220,7 @@ class RestConnection(newRC):
         if isinstance(value, bool):
             value = str(value).lower()
 
-        params = urllib.urlencode({param: value})
+        params = urllib.parse.urlencode({param: value})
         status, content, header = self._http_request(api, "POST", params)
         self.test_log.debug('Update internal setting {0}={1}'.format(param, value))
         return status
@@ -2249,7 +2249,7 @@ class RestConnection(newRC):
         replication = self.get_replication_for_buckets(src_bucket_name, dest_bucket_name)
         api = self.baseUrl[:-1] + replication['settingsURI']
         value = str(value).lower()
-        params = urllib.urlencode({param: value})
+        params = urllib.parse.urlencode({param: value})
         status, _, _ = self._http_request(api, "POST", params)
         if not status:
             raise XDCRException("Unable to set replication setting {0}={1} on bucket {2} on node {3}".
@@ -2298,7 +2298,7 @@ class RestConnection(newRC):
     def pause_resume_repl_by_id(self, repl_id, param, value):
         repl_id = repl_id.replace('/', '%2F')
         api = self.baseUrl + 'settings/replications/' + repl_id
-        params = urllib.urlencode({param: value})
+        params = urllib.parse.urlencode({param: value})
         status, _, _ = self._http_request(api, "POST", params)
         if not status:
             raise XDCRException("Unable to update {0}={1} setting for replication {2}".
@@ -2472,7 +2472,7 @@ class RestConnection(newRC):
         """Enable/disable consistent view for rebalance tasks"""
         api = self.baseUrl + "internalSettings"
         params = {"indexAwareRebalanceDisabled": str(disable).lower()}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, content, header = self._http_request(api, "POST", params)
         self.test_log.info('Consistent-views during rebalance was set as indexAwareRebalanceDisabled={0}'
                            .format(str(disable).lower()))
@@ -2482,7 +2482,7 @@ class RestConnection(newRC):
         """Enable/disable rebalance index waiting"""
         api = self.baseUrl + "internalSettings"
         params = {"rebalanceIndexWaitingDisabled": str(disable).lower()}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, content, header = self._http_request(api, "POST", params)
         self.test_log.info('Rebalance index waiting was set as rebalanceIndexWaitingDisabled={0}'
                            .format(str(disable).lower()))
@@ -2492,7 +2492,7 @@ class RestConnection(newRC):
         """Enable/disable index pausing during rebalance"""
         api = self.baseUrl + "internalSettings"
         params = {"rebalanceIndexPausingDisabled": str(disable).lower()}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, content, header = self._http_request(api, "POST", params)
         self.test_log.info('Index pausing during rebalance was set as rebalanceIndexPausingDisabled={0}'
                            .format(str(disable).lower()))
@@ -2502,7 +2502,7 @@ class RestConnection(newRC):
         """set max parallel indexer threads"""
         api = self.baseUrl + "internalSettings"
         params = {"maxParallelIndexers": count}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, content, header = self._http_request(api, "POST", params)
         self.test_log.info('Max parallel indexer threads was set as maxParallelIndexers={0}'
                            .format(count))
@@ -2512,7 +2512,7 @@ class RestConnection(newRC):
         """set max parallel replica indexers threads"""
         api = self.baseUrl + "internalSettings"
         params = {"maxParallelReplicaIndexers": count}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, content, header = self._http_request(api, "POST", params)
         self.test_log.info('Max parallel replica indexers threads was set as maxParallelReplicaIndexers={0}'
                            .format(count))
@@ -2553,7 +2553,7 @@ class RestConnection(newRC):
         if mode == "full":
             params["indexFragmentationThreshold[percentage]"] = fragmentation
         self.test_log.info("Indexer Compaction Settings: %s" % params)
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         return self._http_request(api, "POST", params)
 
     def set_global_loglevel(self, loglevel='error'):
@@ -2622,7 +2622,7 @@ class RestConnection(newRC):
 
     def update_notifications(self, enable):
         api = self.baseUrl + 'settings/stats'
-        params = urllib.urlencode({'sendStats': enable})
+        params = urllib.parse.urlencode({'sendStats': enable})
         self.test_log.info('settings/stats params : {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
         return status
@@ -2645,7 +2645,7 @@ class RestConnection(newRC):
         headers = self._create_headers()
         api = self.baseUrl + "controller/startLogsCollection"
         return self._http_request(api, 'POST',
-                                  urllib.urlencode(params), headers)
+                                  urllib.parse.urlencode(params), headers)
 
     def get_logs(self, last_n=10, contains_text=None):
         api = self.baseUrl + 'logs'
@@ -2678,7 +2678,7 @@ class RestConnection(newRC):
 
     def create_ro_user(self, username, password):
         api = self.baseUrl + 'settings/readOnlyUser'
-        params = urllib.urlencode({'username': username, 'password': password})
+        params = urllib.parse.urlencode({'username': username, 'password': password})
         self.test_log.info('settings/readOnlyUser params : {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
         return status
@@ -2686,7 +2686,7 @@ class RestConnection(newRC):
     # Change password for readonly user
     def changePass_ro_user(self, username, password):
         api = self.baseUrl + 'settings/readOnlyUser'
-        params = urllib.urlencode({'username': username, 'password': password})
+        params = urllib.parse.urlencode({'username': username, 'password': password})
         self.test_log.info('settings/readOnlyUser params : {0}'.format(params))
         status, content, header = self._http_request(api, 'PUT', params)
         return status
@@ -2787,7 +2787,7 @@ class RestConnection(newRC):
                     query_params['creds'][0]['pass'].encode('utf-8'))
                 del query_params['creds']
             params.update(query_params)
-            params = urllib.urlencode(params)
+            params = urllib.parse.urlencode(params)
             if verbose:
                 self.test_log.debug('Query params: {0}'.format(params))
             api = "%squery?%s" % (self.queryUrl, params)
@@ -2846,7 +2846,7 @@ class RestConnection(newRC):
                     query_params['creds'][0]['pass'].encode('utf-8'))
                 del query_params['creds']
             params.update(query_params)
-            params = urllib.urlencode(params)
+            params = urllib.parse.urlencode(params)
             if verbose:
                 self.test_log.info('Query params: {0}'.format(params))
             api = "%s/analytics/service?%s" % (self.cbas_base_url, params)
@@ -3076,9 +3076,9 @@ class RestConnection(newRC):
     def start_cluster_logs_collection(self, nodes="*", upload=False, \
                                       uploadHost=None, customer="", ticket=""):
         if not upload:
-            params = urllib.urlencode({"nodes": nodes})
+            params = urllib.parse.urlencode({"nodes": nodes})
         else:
-            params = urllib.urlencode({"nodes": nodes, "uploadHost": uploadHost, \
+            params = urllib.parse.urlencode({"nodes": nodes, "uploadHost": uploadHost, \
                                        "customer": customer, "ticket": ticket})
         api = self.baseUrl + "controller/startLogsCollection"
         status, content, header = self._http_request(api, "POST", params)
@@ -3134,13 +3134,13 @@ class RestConnection(newRC):
 
     def configure_sasl_authd(self, settings):
         api = self.baseUrl + 'settings/saslauthdAuth'
-        params = urllib.urlencode(settings)
+        params = urllib.parse.urlencode(settings)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content, header
 
     def configure_ldap_settings(self, settings):
         api = self.baseUrl + 'settings/ldap'
-        params = urllib.urlencode(settings)
+        params = urllib.parse.urlencode(settings)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content, header
 
@@ -3154,7 +3154,7 @@ class RestConnection(newRC):
 
     def clearLDAPSettings(self):
         api = self.baseUrl + 'settings/saslauthdAuth'
-        params = urllib.urlencode({'enabled': 'false'})
+        params = urllib.parse.urlencode({'enabled': 'false'})
         status, content, header = self._http_request(api, 'POST', params)
         return status, content, header
 
@@ -3195,7 +3195,7 @@ class RestConnection(newRC):
 
         if exclude is None:
             self.test_log.info("Into exclude is None")
-            params = urllib.urlencode({'enabled': authOperation,
+            params = urllib.parse.urlencode({'enabled': authOperation,
                                        'admins': '{0}'.format(currAdmins),
                                        'roAdmins': '{0}'.format(currROAdmins),
                                        })
@@ -3203,13 +3203,13 @@ class RestConnection(newRC):
             self.test_log.debug("Into exclude for value of fullAdmin {0}"
                                 .format(exclude))
             if exclude == 'fullAdmin':
-                params = urllib.urlencode({'enabled': authOperation,
+                params = urllib.parse.urlencode({'enabled': authOperation,
                                            'roAdmins': '{0}'.format(currROAdmins),
                                            })
             else:
                 self.test_log.debug("Into exclude for value of fullAdmin {0}"
                                     .format(exclude))
-                params = urllib.urlencode({'enabled': authOperation,
+                params = urllib.parse.urlencode({'enabled': authOperation,
                                            'admins': '{0}'.format(currAdmins),
                                            })
 
@@ -3227,7 +3227,7 @@ class RestConnection(newRC):
     def validateLogin(self, user, password, login, getContent=False):
         api = self.baseUrl + "uilogin"
         header = {'Content-type': 'application/x-www-form-urlencoded'}
-        params = urllib.urlencode({'user': '{0}'.format(user), 'password': '{0}'.format(password)})
+        params = urllib.parse.urlencode({'user': '{0}'.format(user), 'password': '{0}'.format(password)})
         self.test_log.info("value of param is {0}".format(params))
         http = httplib2.Http()
         status, content = http.request(api, 'POST', headers=header, body=params)
@@ -3261,7 +3261,7 @@ class RestConnection(newRC):
 
     def executeValidateCredentials(self, user, password):
         api = self.baseUrl + "validateCredentials"
-        params = urllib.urlencode({
+        params = urllib.parse.urlencode({
             'user': '{0}'.format(user),
             'password': '{0}'.format(password)
         })
@@ -3301,7 +3301,7 @@ class RestConnection(newRC):
     def setAuditSettings(self, enabled='true', rotateInterval=86400, logPath='/opt/couchbase/var/lib/couchbase/logs',
                          disabled='', users='', rotateSize=524288000):
         api = self.baseUrl + "settings/audit"
-        params = urllib.urlencode({
+        params = urllib.parse.urlencode({
             'rotateInterval': '{0}'.format(rotateInterval),
             'rotateSize': '{0}'.format(rotateSize),
             'auditdEnabled': '{0}'.format(enabled),
@@ -3369,7 +3369,7 @@ class RestConnection(newRC):
         """
         url = "settings/rbac/users/external/" + username
         api = self.baseUrl + url
-        payload = urllib.urlencode({"roles": roles})
+        payload = urllib.parse.urlencode({"roles": roles})
         status, content, header = self._http_request(api, 'PUT', payload)
         if not status:
             raise Exception(content)
@@ -3437,7 +3437,7 @@ class RestConnection(newRC):
     def update_password(self, user_id, password):
         url = "settings/rbac/users/local/" + user_id
         api = self.baseUrl + url
-        params = urllib.urlencode({'password': password})
+        params = urllib.parse.urlencode({'password': password})
         status, content, header = self._http_request(api, 'PATCH', params)
         if not status:
             raise Exception(content)
@@ -3510,7 +3510,7 @@ class RestConnection(newRC):
         if preserve_ttl is not None:
             params["preserveTTL"] = preserve_ttl
 
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, _ , _ = self._http_request(
             api, RestConnection.POST, params=params,
             headers=self._create_headers())
@@ -3521,7 +3521,7 @@ class RestConnection(newRC):
     def set_rebalance_settings(self, body):
         url = "settings/rebalance"
         api = self.baseUrl + url
-        params = urllib.urlencode(body)
+        params = urllib.parse.urlencode(body)
         headers = self._create_headers()
         status, content, _ = self._http_request(api, 'POST', headers=headers, params=params)
 
@@ -3543,7 +3543,7 @@ class RestConnection(newRC):
     def set_retry_rebalance_settings(self, body):
         url = "settings/retryRebalance"
         api = self.baseUrl + url
-        params = urllib.urlencode(body)
+        params = urllib.parse.urlencode(body)
         headers = self._create_headers()
         status, content, _ = self._http_request(api, 'POST', headers=headers, params=params)
 
@@ -3599,12 +3599,12 @@ class RestConnection(newRC):
         self.log.info("Start enable {0} on this node {1}".format(
             afamily, self.baseUrl))
         self.update_autofailover_settings(False, 60)
-        params = urllib.urlencode({
+        params = urllib.parse.urlencode({
             'afamily': afamily, 'afamilyOnly': afamilyOnly, 'nodeEncryption': 'off'})
         api = "{0}node/controller/enableExternalListener".format(self.baseUrl)
         status, content, header = self._http_request(api, 'POST', params)
         if status:
-            params = urllib.urlencode({
+            params = urllib.parse.urlencode({
                 'afamily': afamily, 'afamilyOnly': afamilyOnly,
                 'nodeEncryption': 'off'})
             api = "{0}node/controller/setupNetConfig".format(self.baseUrl)
@@ -3753,7 +3753,7 @@ class RestConnection(newRC):
     def set_node_capacity(self, node_capacity_dict):
         self.test_log.debug('Setting node capacities: {}'.format(node_capacity_dict))
         api = self.baseUrl + 'settings/serverless/node'
-        params = urllib.urlencode(node_capacity_dict)
+        params = urllib.parse.urlencode(node_capacity_dict)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
@@ -3770,7 +3770,7 @@ class RestConnection(newRC):
         Modifies current saml settings. If some setting is not specified in POST, it is not modified
         """
         api = self.baseUrl + 'settings/saml'
-        params = urllib.urlencode(saml_settings)
+        params = urllib.parse.urlencode(saml_settings)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content, header
 

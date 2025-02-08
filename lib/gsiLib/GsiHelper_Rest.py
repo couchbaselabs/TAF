@@ -81,20 +81,20 @@ class GsiHelper(RestConnection):
         if status:
             content = json.loads(content)
             for val in content["indexes"]:
-                bucket_name = val['bucket'].encode('ascii', 'ignore')
+                bucket_name = val['bucket']
                 if bucket_name not in result.keys():
                     result[bucket_name] = dict()
-                index_name = val['index'].encode('ascii', 'ignore')
+                index_name = val['index']
                 result[bucket_name][index_name] = dict()
                 result[bucket_name][index_name]['status'] = \
-                    val['status'].encode('ascii', 'ignore')
+                    val['status']
                 result[bucket_name][index_name]['progress'] = \
-                    str(val['progress']).encode('ascii', 'ignore')
+                    str(val['progress'])
                 result[bucket_name][index_name]['definition'] = \
-                    val['definition'].encode('ascii', 'ignore')
+                    val['definition']
                 if len(val['hosts']) == 1:
                     result[bucket_name][index_name]['hosts'] = \
-                        val['hosts'][0].encode('ascii', 'ignore')
+                        val['hosts'][0]
                 else:
                     result[bucket_name][index_name]['hosts'] = val['hosts']
                 result[bucket_name][index_name]['id'] = val['id']
@@ -108,10 +108,10 @@ class GsiHelper(RestConnection):
         if status:
             json_parsed = json.loads(content)
             for i_map in json_parsed["indexes"]:
-                bucket_name = i_map['bucket'].encode('ascii', 'ignore')
+                bucket_name = i_map['bucket']
                 if bucket_name not in index_map.keys():
                     index_map[bucket_name] = {}
-                index_name = i_map['index'].encode('ascii', 'ignore')
+                index_name = i_map['index']
                 index_map[bucket_name][index_name] = {}
                 index_map[bucket_name][index_name]['id'] = i_map['id']
         return index_map
@@ -373,7 +373,7 @@ class GsiHelper(RestConnection):
         for x in range(timeout):
             result = self.index_status()
             if bucket.name in result:
-                if result[bucket.name].has_key(index):
+                if result[bucket.name].get(index):
                     if result[bucket.name][index]['status'] == 'Ready':
                         return True
             sleep(sleep_time)
@@ -442,3 +442,42 @@ class GsiHelper(RestConnection):
                 self.log.info("Got exception:{0} with index name".format(str(e)))
                 sleep(10, "wait after exception")
         return status, content, header
+
+    def get_bucket_index_stats(self, timeout=120):
+        api = self.indexUrl + 'stats'
+        status, content, _ = self._http_request(api, timeout=timeout)
+        parsed = dict()
+        if status:
+            parsed = json.loads(content)
+        index_map = {}
+        for key in list(parsed.keys()):
+            tokens = key.split(":")
+            val = parsed[key]
+            if len(tokens) == 1:
+                field = tokens[0]
+                index_map[field] = val
+            elif len(tokens) == 3:
+                bucket = tokens[0]
+                index_name = tokens[1]
+                stats_name = tokens[2]
+                if bucket not in list(index_map.keys()):
+                    index_map[bucket] = {}
+                if index_name not in list(index_map[bucket].keys()):
+                    index_map[bucket][index_name] = {}
+                index_map[bucket][index_name][stats_name] = val
+            elif len(tokens) == 5:
+                bucket = tokens[0]
+                scope_name = tokens[1]
+                collection_name = tokens[2]
+                index_name = tokens[3]
+                stats_name = tokens[4]
+                if bucket not in index_map:
+                    index_map[bucket] = dict()
+                if scope_name not in index_map[bucket]:
+                    index_map[bucket][scope_name] = dict()
+                if collection_name not in index_map[bucket][scope_name]:
+                    index_map[bucket][scope_name][collection_name] = dict()
+                if index_name not in index_map[bucket][scope_name][collection_name]:
+                    index_map[bucket][scope_name][collection_name][index_name] = dict()
+                index_map[bucket][scope_name][collection_name][index_name][stats_name] = val
+        return index_map

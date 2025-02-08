@@ -8,27 +8,33 @@ import random
 import threading
 
 from BucketLib.BucketOperations import BucketHelper
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from aGoodDoctor.bkrs import DoctorBKRS
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
-from bkrs import DoctorBKRS
-from constants.cb_constants.CBServer import CbServer
-from cbas import CBASQueryLoad
-from cbas import DoctorCBAS
+# from bkrs import DoctorBKRS
+from py_constants.cb_constants.CBServer import CbServer
+from .cbas import CBASQueryLoad
+from .cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
-from elasticsearch import EsClient
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from shell_util.remote_connection import RemoteMachineShellConnection
-from workloads import default, nimbus, vector_load, quartz1, quartz2, quartz3,\
-    quartz5, quartz4, quartz6
+from .workloads import default, nimbus, vector_load, quartz1, quartz2, quartz3,\
+    quartz5, quartz4, quartz6, hotel_vector, siftBigANN
+import struct
+from index_utils.plasma_stats_util import PlasmaStatsUtil
+from gsiLib.gsiHelper import GsiHelper
+from .hostedEventing import DoctorEventing
+import pprint
 try:
-    from fts import DoctorFTS, FTSQueryLoad
+    from .fts import DoctorFTS, FTSQueryLoad
 except:
     pass
 from membase.api.rest_client import RestConnection
-from n1ql import DoctorN1QL
-from n1ql import QueryLoad
-from opd import OPD
-from xdcr import DoctorXDCR
+from .n1ql import DoctorN1QL
+from .n1ql import QueryLoad
+from .opd import OPD
+from .xdcr import DoctorXDCR
 
 
 class Murphy(BaseTestCase, OPD):
@@ -65,6 +71,7 @@ class Murphy(BaseTestCase, OPD):
         self.kv_nodes = self.nodes_init
         self.cbas_nodes = self.input.param("cbas_nodes", 0)
         self.fts_nodes = self.input.param("fts_nodes", 0)
+        self.eventing_nodes = self.input.param("eventing_nodes", 0)
         self.index_nodes = self.input.param("index_nodes", 0)
         self.backup_nodes = self.input.param("backup_nodes", 0)
         self.xdcr_remote_nodes = self.input.param("xdcr_remote_nodes", 0)
@@ -75,6 +82,7 @@ class Murphy(BaseTestCase, OPD):
             self.doc_ops = self.doc_ops.split(':')
 
         self.threads_calculation()
+        self.loader_tasks = list()
         self.rest = RestConnection(self.servers[0])
         self.op_type = self.input.param("op_type", "create")
         self.dgm = self.input.param("dgm", None)
@@ -83,10 +91,10 @@ class Murphy(BaseTestCase, OPD):
         self.mutate = 0
         self.iterations = self.input.param("iterations", 10)
         self.step_iterations = self.input.param("step_iterations", 1)
-        self.rollback = self.input.param("rollback", True)
+        self.rollback = self.input.param("rollback", False)
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.end_step = self.input.param("end_step", None)
-        self.key_prefix = "Users"
+        self.key_prefix = "test_docs-"
         self.crashes = self.input.param("crashes", 20)
         self.check_dump_thread = True
         self.skip_read_on_error = False
@@ -123,22 +131,7 @@ class Murphy(BaseTestCase, OPD):
             self.esHost = "http://" + self.esHost + ":9200"
         if self.esAPIKey:
             self.esAPIKey = "".join(self.esAPIKey.split(","))
-        if self.esHost and self.esAPIKey:
-            self.esClient = EsClient(self.esHost, self.esAPIKey)
-            self.esClient.initializeSDK()
-            if not self.skip_setup_cleanup:
-                for bucket in self.cluster.buckets:
-                    for scope in bucket.scopes.keys():
-                        if scope == CbServer.system_scope:
-                            continue
-                        for collection in bucket.scopes[scope].collections.keys():
-                            if scope == CbServer.system_scope:
-                                continue
-                            if collection == "_default" and scope == "_default":
-                                continue
-                            self.esClient.deleteESIndex(collection.lower())
-                            self.esClient.createESIndex(collection.lower(), None)
-
+        
         self.load_defn = list()
         nimbus = self.input.param("nimbus", False)
         quartz = self.input.param("quartz", False)
@@ -157,13 +150,23 @@ class Murphy(BaseTestCase, OPD):
                 load["pattern"] = [0, 80, 0, 0, 20]
                 load["load_type"] = ["read", "expiry"]
 
+        self.siftFileName = None
         if self.vector:
             self.load_defn = list()
-            self.load_defn.append(vector_load)
+            if self.index_nodes > 0:
+                if self.val_type == "Hotel":
+                    self.load_defn.append(hotel_vector)
+                if self.val_type == "siftBigANN":
+                    self.load_defn.append(siftBigANN)
+                    # self.siftFileName = FileDownload.checkDownload(
+                    #     siftBigANN.get("baseFilePath"),
+                    #     "ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz")
+            else:
+                self.load_defn.append(vector_load)
 
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
-        if self.nodes_init > 1:
+        if self.nodes_init > 1 and len(self.cluster.nodes_in_cluster) < self.nodes_init:
             services = list()
             nodes_init = self.cluster.servers[1:self.nodes_init]
             if self.services_init:
@@ -208,11 +211,13 @@ class Murphy(BaseTestCase, OPD):
         else:
             for i, bucket in enumerate(self.cluster.buckets):
                 bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
-                self.cluster.sdk_client_pool = SDKClientPool()
                 num_clients = self.input.param("clients_per_db",
                                                min(5, bucket.loadDefn.get("collections")))
-                self.create_sdk_client_pool(self.cluster, [bucket],
-                                            num_clients)
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master, self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=num_clients)
+                self.create_sdk_client_pool(self.cluster, self.cluster.buckets, 1)
                 for scope in bucket.scopes.keys():
                     if scope == CbServer.system_scope:
                         continue
@@ -224,6 +229,27 @@ class Murphy(BaseTestCase, OPD):
                             collection_name = self.collection_prefix + str(i)
                             collection_spec = {"name": collection_name}
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
+
+        coll_id = self.input.param("collection_id", False)
+        if coll_id:
+            coll_id = coll_id.split(",")
+            for bucket in self.cluster.buckets:
+                bucket.loadDefn["collections_defn"] = [defn for defn in bucket.loadDefn["collections_defn"] if defn.get("collection_id") in coll_id]
+        # if self.esHost and self.esAPIKey:
+        #     self.esClient = EsClient(self.esHost, self.esAPIKey)
+        #     self.esClient.initializeSDK()
+        #     if not self.skip_init:
+        #         for bucket in self.cluster.buckets:
+        #             for scope in bucket.scopes.keys():
+        #                 if scope == CbServer.system_scope:
+        #                     continue
+        #                 for collection in bucket.scopes[scope].collections.keys():
+        #                     if scope == CbServer.system_scope:
+        #                         continue
+        #                     if collection == "_default" and scope == "_default":
+        #                         continue 
+        #                     self.esClient.deleteESIndex(collection.lower())
+        #                     self.esClient.createESIndex(collection.lower())
         if self.xdcr_remote_nodes > 0:
             self.PrintStep("Step 2*: Create required buckets and collections on XDCR remote.")
             self.create_required_buckets(cluster=self.xdcr_remote_cluster)
@@ -293,7 +319,12 @@ class Murphy(BaseTestCase, OPD):
                                              storageMode=storageModeGSI) \
             if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true',
                                                                           storageMode=storageModeGSI)
-            self.sleep(10, "sleep  after setting indexer params")
+        self.gsi_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+        enableInMemoryCompression = self.input.param("enableInMemoryCompression", False)
+        if enableInMemoryCompression is False:
+            self.sleep(0, "sleep before setting indexer params")
+            self.gsi_rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": False})
+        # self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
                                              int(server.mcdMemoryReserved*0.7
@@ -305,6 +336,17 @@ class Murphy(BaseTestCase, OPD):
                                 validate_bucket_ranking=False)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.fts_nodes]
+        if self.eventing_nodes>0 and self.eventing_nodes > len(self.cluster.eventing_nodes):
+            self.rest.set_service_mem_quota({CbServer.Settings.EVENTING_MEM_QUOTA:
+                                             int(server.mcdMemoryReserved*0.7
+                                                 )})
+            nodes = len(self.cluster.nodes_in_cluster)
+            self.task.rebalance(self.cluster,
+                                self.servers[nodes:nodes+self.eventing_nodes], [],
+                                services=["eventing"]*self.eventing_nodes,
+                                validate_bucket_ranking=False)
+            self.available_servers = [servs for servs in self.available_servers
+                                      if servs not in self.cluster.eventing_nodes]
 
         if self.cluster.backup_nodes:
             self.drBackup = DoctorBKRS(self.cluster)
@@ -315,7 +357,7 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.fts_nodes:
             self.drFTS = DoctorFTS(self.bucket_util)
 
-        print self.available_servers
+        print (self.available_servers)
         self.writer_threads = self.input.param("writer_threads", "disk_io_optimized")
         self.reader_threads = self.input.param("reader_threads", "disk_io_optimized")
         self.storage_threads = self.input.param("storage_threads", 40)
@@ -323,11 +365,22 @@ class Murphy(BaseTestCase, OPD):
                                 num_writer_threads=self.writer_threads,
                                 num_reader_threads=self.reader_threads,
                                 num_storage_threads=self.storage_threads)
+        self.stop_rebalance = self.input.param("pause_rebalance", False)
+        self.log_query_failures = True
 
     def tearDown(self):
-        return
+        for task in self.loader_tasks:
+            self.doc_loading_tm.stop_task(task)
         self.check_dump_thread = False
+        self.mutations = False
+        self.stop_run = True
         self.stop_crash = True
+        for task in self.ql:
+            task.stop_query_load()
+        for task in self.ftsQL:
+            task.stop_query_load()
+        for task in self.cbasQL:
+            task.stop_query_load()
         BaseTestCase.tearDown(self)
 
     def testKvRangeScan(self):
@@ -414,18 +467,16 @@ class Murphy(BaseTestCase, OPD):
             result = self.drBackup.monitor_restore(self.bucket_util, items, timeout=self.restore_timeout)
             self.assertTrue(result, "Restore failed")
 
-    def initial_setup(self):
-        self.monitor_query_status()
-        self.skip_read_on_error = True
-        self.suppress_error_table = True
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        shell.enable_diag_eval_on_non_local_hosts()
-        shell.disconnect()
+    def siftBigANN_load(self):
+        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
+        if not self.skip_init:
+            self.load_sift_data(cluster=self.cluster,
+                              buckets=self.cluster.buckets,
+                              overRidePattern=[100,0,0,0,0],
+                              validate_data=False,
+                              wait_for_stats=False)
 
-        '''
-        Create sequential: 0 - 10M
-        Final Docs = 10M (0-10M, 10M seq items)
-        '''
+    def normal_load(self):
         self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["create"],
@@ -464,6 +515,31 @@ class Murphy(BaseTestCase, OPD):
                               validate_data=False,
                               wait_for_stats=False)
 
+    def initial_setup(self):
+        cpu_monitor = threading.Thread(target=self.print_stats_loop,
+                                       kwargs={"cluster": self.cluster})
+        cpu_monitor.start()
+
+        self.monitor_query_status()
+        self.skip_read_on_error = True
+        self.suppress_error_table = True
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        '''
+        Create sequential: 0 - 10M
+        Final Docs = 10M (0-10M, 10M seq items)
+        '''
+        if self.vector and self.cluster.eventing_nodes:
+            self.drEventing = DoctorEventing(self.bucket_util)
+            self.drEventing.create_eventing_function(self.cluster, file="pytests/aGoodDoctor/vector_xattr.json")
+            self.drEventing.lifecycle_operation_for_all_functions(self.cluster, "deploy", "deployed")
+
+        if self.val_type == "siftBigANN":
+            self.siftBigANN_load()
+        else:
+            self.normal_load()
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets(self.cluster.buckets)
             self.drCBAS.create_indexes(self.cluster.buckets)
@@ -477,13 +553,17 @@ class Murphy(BaseTestCase, OPD):
                     self.cbasQL.append(ql)
 
         if self.cluster.index_nodes:
-            self.drIndex.create_indexes(self.cluster.buckets)
+            self.drIndex.create_indexes(self.cluster.buckets, base64=self.base64, xattr=self.xattr)
             self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
+            self.check_index_pending_mutations()
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("2iQPS", 0) > 0:
-                    ql = QueryLoad(bucket)
+                    ql = QueryLoad(bucket, self.mockVector,
+                                   validate_item_count=self.input.param("validate_query_results", True),
+                                   esClient=self.esClient, log_fail=self.log_query_failures)
                     ql.start_query_load()
                     self.ql.append(ql)
+            self.drIndex.start_update_stats(self.cluster)
             self.drIndex.start_index_stats(self.cluster)
 
         if self.cluster.fts_nodes:
@@ -505,25 +585,27 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
+        self.PrintStep("Running Query workload for 5 mins with NO mutations")
+        self.sleep(self.input.param("steady_state_workload_sleep", 300))
+
+        if self.rollback:
+            self.trigger_rollback()
+        
+        if self.val_type == "siftBigANN":
+            self.mutations = True
+            self.mutation_th = threading.Thread(target=self.sift_mutations)
+            self.mutation_th.start()
+
+            self.PrintStep("Running Query workload during mutations")
+            self.restart_query_load(self.cluster, 0)
+            self.sleep(self.input.param("steady_state_workload_sleep", 120))
+        else:
+            self.mutations = True
+            self.mutation_th = threading.Thread(target=self.normal_mutations)
+            self.mutation_th.start()
+
     def test_rebalance(self):
         self.initial_setup()
-        self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
-        perc = 100/len(self.doc_ops)
-        self.expiry_perc = perc
-        self.create_perc = perc
-        self.update_perc = perc
-        self.delete_perc = perc
-        self.read_perc = perc
-        self.mutation_perc = self.input.param("mutation_perc", 100)
-        for bucket in self.cluster.buckets:
-            bucket.loadDefn["pattern"] = [self.create_perc,
-                                           self.read_perc,
-                                           self.update_perc,
-                                           self.delete_perc,
-                                           self.expiry_perc]
-            bucket.loadDefn["load_type"] = self.doc_ops
-            bucket.original_ops = bucket.loadDefn["ops"]
-            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
 
         self.loop = 1
         self.rebl_nodes = self.input.param("rebl_nodes", 0)
@@ -533,10 +615,6 @@ class Murphy(BaseTestCase, OPD):
         self.sleep(30)
         self.mutation_perc = self.input.param("mutation_perc", 100)
         while self.loop <= self.iterations:
-            for bucket in self.cluster.buckets:
-                self.generate_docs(bucket=bucket)
-            tasks = self.perform_load(wait_for_load=False,
-                                      cluster=self.cluster)
             self.rebl_nodes += 1
             if self.rebl_nodes > self.max_rebl_nodes:
                 self.rebl_nodes = 1
@@ -603,8 +681,6 @@ class Murphy(BaseTestCase, OPD):
                 self.sleep(10, "Sleep for 60s after rebalance")
 
                 self.loop += 1
-            self.wait_for_doc_load_completion(self.cluster, tasks,
-                                              wait_for_stats=False)
             if self.track_failures:
                 self.data_validation(self.cluster)
 
@@ -613,43 +689,9 @@ class Murphy(BaseTestCase, OPD):
 
         self.loop = 1
         self.key_type = "RandomKey"
-        self.stop_rebalance = self.input.param("pause_rebalance", False)
         self.crash_count = 0
         self.rebl_nodes = self.input.param("rebl_nodes", 0)
         self.max_rebl_nodes = self.input.param("max_rebl_nodes", 1)
-        self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
-        perc = 100/len(self.doc_ops)
-        self.expiry_perc = perc
-        self.create_perc = perc
-        self.update_perc = perc
-        self.delete_perc = perc
-        self.read_perc = perc
-        self.mutation_perc = self.input.param("mutation_perc", 100)
-        for bucket in self.cluster.buckets:
-            bucket.loadDefn["pattern"] = [self.create_perc,
-                                           self.read_perc,
-                                           self.update_perc,
-                                           self.delete_perc,
-                                           self.expiry_perc]
-            bucket.loadDefn["load_type"] = self.doc_ops
-            bucket.original_ops = bucket.loadDefn["ops"]
-            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-            self.generate_docs(read_start=0,
-                               read_end=self.num_items,
-                               create_start=self.num_items*2,
-                               create_end=self.num_items*20,
-                               update_start=self.num_items*2,
-                               update_end=self.num_items*20,
-                               delete_start=0,
-                               delete_end=self.num_items*2,
-                               expire_start=self.num_items*2,
-                               expire_end=self.num_items*20,
-                               bucket=bucket
-                               )
-
-        self.tasks = list()
-        self.tasks.append(self.perform_load(wait_for_load=False, cluster=self.cluster))
-        self.sleep(10)
 
         while self.loop <= self.iterations:
             ###################################################################
@@ -946,21 +988,14 @@ class Murphy(BaseTestCase, OPD):
             self.print_stats(self.cluster)
 
         self.log.info("Volume Test Run Complete")
+        self.mutations = False
         self.doc_loading_tm.abortAllTasks()
 
     def ClusterOpsVolume(self):
         self.loop = 1
+
         self.initial_setup()
 
-        def end_step_checks():
-            self.print_stats(self.cluster)
-            result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-            if result:
-                self.stop_crash = True
-                self.task.jython_task_manager.abort_all_tasks()
-                self.assertFalse(
-                    result,
-                    "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.loop = 0
         while self.loop < self.iterations:
@@ -979,35 +1014,6 @@ class Murphy(BaseTestCase, OPD):
             Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
             Nodes In Cluster = 4
             '''
-            self.create_perc = 25
-            self.update_perc = 25
-            self.delete_perc = 25
-            self.expiry_perc = 25
-            self.read_perc = 25
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-
-            self.doc_ops = self.input.param("doc_ops", "expiry").split(":")
-            perc = 100/len(self.doc_ops)
-            self.expiry_perc = perc
-            self.create_perc = perc
-            self.update_perc = perc
-            self.delete_perc = perc
-            self.read_perc = perc
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-
-            for bucket in self.cluster.buckets:
-                bucket.loadDefn["pattern"] = [self.create_perc,
-                                               self.read_perc,
-                                               self.update_perc,
-                                               self.delete_perc,
-                                               self.expiry_perc]
-                bucket.loadDefn["load_type"] = ["update", "delete", "read", "create"]
-                self.generate_docs(bucket=bucket)
-                bucket.original_ops = bucket.loadDefn["ops"]
-                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-
-            tasks = self.perform_load(wait_for_load=False,
-                                      cluster=self.cluster)
             self.rebl_services = self.input.param("rebl_services", "kv").split("-")
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
             for service in self.rebl_services:
@@ -1018,8 +1024,8 @@ class Murphy(BaseTestCase, OPD):
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
-
+                self.end_step_checks()
+    
                 ###################################################################
                 '''
                 Existing:
@@ -1042,7 +1048,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
 
                 ###################################################################
                 '''
@@ -1066,7 +1072,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
 
                 ###################################################################
                 '''
@@ -1091,7 +1097,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
 
                 ###################################################################
                 '''
@@ -1172,14 +1178,14 @@ class Murphy(BaseTestCase, OPD):
                     elif service == "kv":
                         self.cluster.kv_nodes.remove(failed_over)
                 self.available_servers += servs_out
-                print "KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes]
-                print "CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes]
-                print "INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes]
-                print "FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes]
-                print "QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes]
-                print "EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes]
-                print "AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers]
-                end_step_checks()
+                print("KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes])
+                print("CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes])
+                print("INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes])
+                print("FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes])
+                print("QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes])
+                print("EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes])
+                print("AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers])
+                self.end_step_checks()
                 if service == "kv":
                     self.bucket_util.compare_failovers_logs(
                         self.cluster,
@@ -1197,8 +1203,8 @@ class Murphy(BaseTestCase, OPD):
                         servers=self.cluster.kv_nodes,
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std)
-
+                        std=std, total_vbuckets=self.cluster.vbuckets)
+        
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
                 if extra_node_gone > 0:
@@ -1211,7 +1217,7 @@ class Murphy(BaseTestCase, OPD):
 
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                    end_step_checks()
+                    self.end_step_checks()
 
                 ###################################################################
                 '''
@@ -1283,7 +1289,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
                 if service == "kv":
                     self.bucket_util.compare_failovers_logs(
                         self.cluster,
@@ -1300,7 +1306,7 @@ class Murphy(BaseTestCase, OPD):
                         servers=self.cluster.kv_nodes,
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std)
+                        std=std, total_vbuckets=self.cluster.vbuckets)
 
                 ###################################################################
                 '''
@@ -1362,7 +1368,7 @@ class Murphy(BaseTestCase, OPD):
                     validate_bucket_ranking=False)
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
 
                 self.bucket_util.compare_failovers_logs(
                     self.cluster,
@@ -1379,7 +1385,7 @@ class Murphy(BaseTestCase, OPD):
                     servers=self.cluster.kv_nodes,
                     buckets=self.cluster.buckets,
                     num_replicas=self.num_replicas,
-                    std=std)
+                    std=std, total_vbuckets=self.cluster.vbuckets)
 
                 ###################################################################
                 '''
@@ -1410,7 +1416,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
 
                 ####################################################################
                 '''
@@ -1438,7 +1444,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
 
 
             #######################################################################
@@ -1454,11 +1460,416 @@ class Murphy(BaseTestCase, OPD):
                     self.log.info("Volume Test Run Complete")
                 self.init_doc_params()
 
+        self.mutations = False
+        self.mutation_th.join()
+        if self.val_type != "siftBigANN" and self.track_failures:
+            tasks = list()
+            self.doc_loading_tm.getAllTaskResult()
+            for task in tasks:
+                self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
-        self.wait_for_doc_load_completion(self.cluster, tasks,
-                                          wait_for_stats=False)
-        tasks = list()
-        tasks.extend(self.data_validation(self.cluster))
-        self.doc_loading_tm.getAllTaskResult()
-        for task in tasks:
-            self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
+    def SystemTestIndexer(self):
+        self.loop = 1
+        self.log_query_failures = False
+        self.initial_setup()
+
+        self.PrintStep("Crash indexer with Loading of docs")
+        self.crash_indexer(num_kills=2, graceful=False)
+
+        self.loop = 0
+        while self.loop < self.iterations:
+            ###################################################################
+            '''
+            Existing:
+            Sequential: 0 - 10M
+            Random: 0 - 20M
+
+            This Step:
+            Create Random: 20 - 30M
+            Delete Random: 10 - 20M
+            Update Random: 0 - 10M
+            Nodes In Cluster = 3 -> 4
+
+            Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
+            Nodes In Cluster = 4
+            '''
+            self.rebl_services = self.input.param("rebl_services", "index").split("-")
+            self.rebl_nodes = self.input.param("rebl_nodes", 1)
+            # self.sleep(300)
+            for service in self.rebl_services:
+                self.PrintStep("Step 5: Rebalance in of {} node with Loading of docs".format(service))
+    
+                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
+                                                services=[service]*self.rebl_nodes)
+    
+                if self.stop_rebalance:
+                    rebalance_task = self.pause_rebalance()
+                else:
+                    rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
+    
+                if rebalance_task is not None:
+                    self.task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                self.print_stats(self.cluster)
+    
+                ###################################################################
+                '''
+                Existing:
+                Sequential: 0 - 10M
+                Random: 0 - 10M, 20 - 30M
+    
+                This Step:
+                Create Random: 30 - 40M
+                Delete Random: 20 - 30M
+                Update Random: 0 - 10M
+                Nodes In Cluster = 4 -> 3
+    
+                Final Docs = 30M (Random: 0-10M, 30-40M, Sequential: 0-10M)
+                Nodes In Cluster = 3
+                '''
+                self.PrintStep("Crash indexer with Loading of docs")
+                self.crash_indexer(num_kills=2, graceful=False)
+
+                self.PrintStep("Step 6: Rebalance Out of {} node with Loading of docs".format(service))
+                rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes,
+                                                services=[service]*self.rebl_nodes)
+                if self.stop_rebalance:
+                    rebalance_task = self.pause_rebalance()
+                else:
+                    rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
+                if rebalance_task is not None:
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+                self.PrintStep("Crash indexer with Loading of docs")
+                self.crash_indexer(num_kills=2, graceful=False)
+    
+                ###################################################################
+                '''
+                Existing:
+                Sequential: 0 - 10M
+                Random: 0 - 10M, 30 - 40M
+    
+                This Step:
+                Create Random: 40 - 50M
+                Delete Random: 30 - 40M
+                Update Random: 0 - 10M
+                Nodes In Cluster = 3 -> 4
+    
+                Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
+                Nodes In Cluster = 4
+                '''
+    
+                self.PrintStep("Step 9: Rebalance In_Out of {} nodes with Loading of docs".format(service))
+                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1, nodes_out=self.rebl_nodes,
+                                                services=[service]*(self.rebl_nodes+1))
+                if self.stop_rebalance:
+                    rebalance_task = self.pause_rebalance()
+                else:
+                    rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
+                if rebalance_task is not None:
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+                self.PrintStep("Crash indexer with Loading of docs")
+                self.crash_indexer(num_kills=2, graceful=False)
+    
+                ###################################################################
+                '''
+                Existing:
+                Sequential: 0 - 10M
+                Random: 0 - 10M, 40 - 50M
+    
+                This Step:
+                Create Random: 50 - 60M
+                Delete Random: 40 - 50M
+                Update Random: 0 - 10M
+                Nodes In Cluster = 4 -> 4 (SWAP)
+    
+                Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
+                Nodes In Cluster = 4
+                '''
+    
+                self.PrintStep("Step 10: Swap Rebalance of {} Nodes with Loading of docs".format(service))
+    
+                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=self.rebl_nodes,
+                                                services=[service]*(self.rebl_nodes))
+                if self.stop_rebalance:
+                    rebalance_task = self.pause_rebalance()
+                else:
+                    rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
+                if rebalance_task is not None:
+                    self.task.jython_task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+                self.PrintStep("Crash indexer with Loading of docs")
+                self.crash_indexer(num_kills=2, graceful=False)
+    
+                ###################################################################
+                '''
+                Existing:
+                Sequential: 0 - 10M
+                Random: 0 - 10M, 50 - 60M
+    
+                This Step:
+                Create Random: 60 - 70M
+                Delete Random: 50 - 60M
+                Update Random: 0 - 10M
+                Nodes In Cluster = 4 -> 3
+    
+                Final Docs = 30M (Random: 0-10M, 60-70M, Sequential: 0-10M)
+                Nodes In Cluster = 3
+                '''
+                self.PrintStep("Step 11: Failover %s node and RebalanceOut that node \
+                with loading in parallel" % self.num_replicas)
+                graceful = False
+                failover_nodes = self.cluster.index_nodes
+                nodes = [node for node in failover_nodes if node.ip != self.cluster.master.ip]
+                self.rest = RestConnection(self.cluster.master)
+                self.chosen = random.sample(nodes, self.num_replicas)
+    
+                # Mark Node for failover
+                self.success_failed_over = True
+                for node in self.chosen:
+                    failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                    node.id = failover_node.id
+                    success_failed_over = self.rest.fail_over(failover_node.id,
+                                                                   graceful=graceful)
+                    self.success_failed_over = self.success_failed_over and success_failed_over
+                    self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                    self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
+                self.sleep(600, "Waiting for data to go in after failover.")
+    
+                self.nodes = self.rest.node_statuses()
+                self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
+                                    ejectedNodes=[node.id for node in self.chosen])
+                self.assertTrue(self.rest.monitorRebalance(progress_count=500000), msg="Rebalance failed")
+                servs_out = []
+                for failed_over in self.chosen:
+                    servs_out += [node for node in self.cluster.servers
+                                  if node.ip == failed_over.ip]
+                    self.cluster.index_nodes.remove(failed_over)
+                self.available_servers += servs_out
+                print("KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes])
+                print("CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes])
+                print("INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes])
+                print("FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes])
+                print("QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes])
+                print("EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes])
+                print("AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers])
+                self.PrintStep("Crash indexer with Loading of docs")
+
+                self.crash_indexer(num_kills=2, graceful=False)
+                ###################################################################
+                '''
+                Existing:
+                Sequential: 0 - 10M
+                Random: 0 - 10M, 60 - 70M
+    
+                This Step:
+                Create Random: 70 - 80M
+                Delete Random: 60 - 70M
+                Update Random: 0 - 10M
+                Nodes In Cluster = 3 -> 3
+    
+                Final Docs = 30M (Random: 0-10M, 70-80M, Sequential: 0-10M)
+                Nodes In Cluster = 3
+                '''
+                self.PrintStep("Step 13: Failover a node and FullRecovery\
+                 that node")
+                failover_nodes = self.cluster.index_nodes
+                nodes = [node for node in failover_nodes if node.ip != self.cluster.master.ip]
+                self.rest = RestConnection(self.cluster.master)
+                self.chosen = random.sample(nodes, self.num_replicas)
+    
+                # Mark Node for failover
+                self.success_failed_over = True
+                for node in self.chosen:
+                    failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                    node.id = failover_node.id
+                    success_failed_over = self.rest.fail_over(failover_node.id,
+                                                                   graceful=graceful)
+                    self.success_failed_over = self.success_failed_over and success_failed_over
+                    self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                    self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
+                self.sleep(600, "Waiting for data to go in after failover.")
+                self.rest.monitorRebalance(progress_count=50000)
+    
+                # Mark Node for full recovery
+                if self.success_failed_over:
+                    for node in self.chosen:
+                        self.rest.set_recovery_type(otpNode=node.id,
+                                                    recoveryType="full")
+                self.sleep(60, "Waiting for full recovery to finish and settle down cluster.")
+                rebalance_task = self.task.async_rebalance(
+                    self.cluster, [], [],
+                    retry_get_process_num=3000,
+                    validate_bucket_ranking=False)
+    
+                self.task.jython_task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+                self.PrintStep("Crash indexer with Loading of docs")
+                self.crash_indexer(num_kills=2, graceful=False)
+                ###################################################################
+                '''
+                Existing:
+                Sequential: 0 - 10M
+                Random: 0 - 10M, 70 - 80M
+    
+                This Step:
+                Create Random: 80 - 90M
+                Delete Random: 70 - 80M
+                Update Random: 0 - 10M
+                Nodes In Cluster = 3 -> 3
+    
+                Final Docs = 30M (Random: 0-10M, 80-90M, Sequential: 0-10M)
+                Nodes In Cluster = 3
+                '''
+                self.PrintStep("Step 12: Failover a node and DeltaRecovery that \
+                node with loading in parallel")
+                nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
+                self.rest = RestConnection(self.cluster.master)
+                self.chosen = random.sample(nodes, self.num_replicas)
+    
+                # Mark Node for failover
+                self.success_failed_over = True
+                for node in self.chosen:
+                    failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
+                    node.id = failover_node.id
+                    success_failed_over = self.rest.fail_over(failover_node.id,
+                                                                   graceful=True)
+                    self.success_failed_over = self.success_failed_over and success_failed_over
+                    self.sleep(60, "Waiting for failover to finish and settle down cluster.")
+                    self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
+                self.sleep(600, "Waiting for data to go in after failover.")
+                self.rest.monitorRebalance(progress_count=50000)
+    
+                # Mark Node for delta recovery
+                if self.success_failed_over:
+                    for node in self.chosen:
+                        self.rest.set_recovery_type(otpNode=node.id,
+                                                    recoveryType="delta")
+    
+                self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
+                rebalance_task = self.task.async_rebalance(
+                    self.cluster, [], [],
+                    retry_get_process_num=3000,
+                    validate_bucket_ranking=False)
+                self.task.jython_task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+
+                self.PrintStep("Crash indexer with Loading of docs")
+                self.crash_indexer(num_kills=2, graceful=False)
+    
+                ###################################################################
+                '''
+                Existing:
+                Sequential: 0 - 10M
+                Random: 0 - 10M, 80 - 90M
+    
+                This Step:
+                Create Random: 90 - 100M
+                Delete Random: 80 - 90M
+                Update Random: 0 - 10M
+                Replica 1 - > 2
+    
+                Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
+                Nodes In Cluster = 3
+                '''
+    
+                self.loop += 1
+        self.mutations = False
+        self.mutation_th.join()
+
+        self.log.info("Volume Test Run Complete")
+
+    def normal_mutations(self):
+        self.create_perc = 25
+        self.update_perc = 25
+        self.delete_perc = 25
+        self.expiry_perc = 25
+        self.read_perc = 25
+        self.mutation_perc = self.input.param("mutation_perc", 100)
+        self.doc_ops = self.input.param("doc_ops", "")
+        pattern = None
+        self.loader_tasks = list()
+        if self.doc_ops:
+            self.doc_ops = self.doc_ops.split(":")
+            perc = 100/len(self.doc_ops)
+            self.expiry_perc = perc if "expiry" in self.doc_ops else 0
+            self.create_perc = perc if "create" in self.doc_ops else 0
+            self.update_perc = perc if "update" in self.doc_ops else 0
+            self.delete_perc = perc if "delete" in self.doc_ops else 0
+            self.read_perc = perc if "read" in self.doc_ops else 0
+            pattern = [self.create_perc, self.read_perc, self.update_perc, self.delete_perc, self.expiry_perc]
+        while self.mutations:
+            self.mutate += 1
+            for bucket in self.cluster.buckets:
+                bucket.loadDefn["pattern"] = pattern or bucket.loadDefn.get("pattern")
+                bucket.loadDefn["load_type"] = self.doc_ops if self.doc_ops else bucket.loadDefn.get("load_type")
+                self.generate_docs(bucket=bucket)
+                bucket.original_ops = bucket.loadDefn["ops"]
+                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
+                pprint.pprint(bucket.loadDefn)
+            self.loader_tasks = self.perform_load(wait_for_load=False, cluster=self.cluster)
+            for task in self.loader_tasks:
+                self.task_manager.get_task_result(task)
+                self.loader_tasks.remove(task)
+            self.check_index_pending_mutations()
+
+    def sift_mutations(self):
+        self.loader_tasks = list()
+        while self.mutations:
+            self.expiry_perc = 0
+            self.create_perc = 0
+            self.update_perc = 100
+            self.delete_perc = 0
+            self.read_perc = 0
+            self.mutate += 1
+            for bucket in self.cluster.buckets:
+                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
+                self.gtm = False
+            self.loader_tasks = self.load_sift_data(
+                cluster=self.cluster,
+                buckets=self.cluster.buckets,
+                validate_data=False,
+                wait_for_stats=False,
+                wait_for_load=False)
+            for task in self.loader_tasks:
+                self.task_manager.get_task_result(task)
+                self.loader_tasks.remove(task)
+            self.check_index_pending_mutations()
+
+    def check_index_pending_mutations(self):
+        while True:
+            check = False
+            for node in self.cluster.index_nodes:
+                try:
+                    stats = GsiHelper(node, self.log).get_bucket_index_stats()
+                    for bucket in self.cluster.buckets:
+                        bucket = bucket.name
+                        if bucket == "MAINT_STREAM":
+                            continue
+                        for scope in stats[bucket]:
+                            for collection in stats[bucket][scope]:
+                                for idx in stats[bucket][scope][collection]:
+                                    self.log.info(":".join([
+                                        bucket, scope, collection, 
+                                        idx, "num_docs_pending", 
+                                        str(stats[bucket][scope][collection][idx]["num_docs_pending"])]))
+                                    if stats[bucket][scope][collection][idx]["num_docs_pending"] > 0:
+                                        check = True
+                except Exception as e:
+                    self.log.critical(e)
+            if check:
+                self.sleep(30, "Wait for index mutations pending")
+            else:
+                break
+
+    def end_step_checks(self):
+        self.print_stats(self.cluster)
+        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+        self.assertFalse(
+            result,
+            "CRASH | CRITICAL | WARN messages found in cb_logs")

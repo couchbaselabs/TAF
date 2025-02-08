@@ -3,6 +3,7 @@ Created on May 2, 2022
 
 @author: ritesh.agarwal
 '''
+from collections import defaultdict
 import threading
 import time
 
@@ -12,7 +13,9 @@ from aGoodDoctor.hostedOPD import hostedOPD
 from basetestcase import BaseTestCase
 from capella_utils.dedicated import CapellaUtils
 from datasources import s3, CouchbaseRemoteCluster, KafkaClusterUtils, MongoDB
-
+from table_view import TableView
+import random
+import string
 
 class Columnar(BaseTestCase, hostedOPD):
 
@@ -37,6 +40,7 @@ class Columnar(BaseTestCase, hostedOPD):
 
     def setUp(self):
         BaseTestCase.setUp(self)
+        hostedOPD.__init__(self)
         self.init_doc_params()
         self.threads_calculation()
         self.skip_read_on_error = False
@@ -85,7 +89,10 @@ class Columnar(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for provisionedcluster in tenant.clusters:
                 resp = CapellaUtils.get_root_ca(self.pod, tenant, provisionedcluster.id)
-                provisionedcluster.root_ca = resp[1]["pem"]
+                for cert in resp:
+                    if "Couchbase Server" not in cert["subject"]:
+                        provisionedcluster.root_ca = cert["pem"]
+                        break
                 remoteCluster = CouchbaseRemoteCluster(provisionedcluster, self.bucket_util)
                 remoteCluster.loadDefn = self.default_workload
                 self.data_sources["remoteCouchbase"].append(remoteCluster)
@@ -129,10 +136,10 @@ class Columnar(BaseTestCase, hostedOPD):
                                create_start=0,
                                create_end=mongo.loadDefn.get("num_items"),
                                bucket=mongo)
-    
-            mongo.perform_load(self.data_sources["mongo"], wait_for_load=True,
-                               overRidePattern=[100, 0, 0, 0, 0],
-                               tm=self.doc_loading_tm)
+            if not self.skip_init:
+                mongo.perform_load(self.data_sources["mongo"], wait_for_load=True,
+                                   overRidePattern=[100, 0, 0, 0, 0],
+                                   tm=self.doc_loading_tm)
 
     def check_kafka_topics(self, mongo):
         start_time = time.time()
@@ -158,14 +165,14 @@ class Columnar(BaseTestCase, hostedOPD):
         for dataSource in self.data_sources["mongo"]:
             self.kafka_util.deleteKafkaTopics(dataSource.kafka_topics)
 
-    def setup_columnar_sdk_clients(self, columnar):
-        columnar.SDKClients = list()
-        master = Server(columnar.srv, columnar.master.port,
-                        columnar.master.rest_username, columnar.master.rest_password,
-                        str(columnar.master.memcached_port))
-        client = SDKClient(master, "None")
-        client.connectCluster()
-        columnar.SDKClients.append(client)
+    # def setup_columnar_sdk_clients(self, columnar):
+    #     columnar.SDKClients = list()
+    #     master = Server(columnar.srv, columnar.master.port,
+    #                     columnar.master.rest_username, columnar.master.rest_password,
+    #                     str(columnar.master.memcached_port))
+    #     client = SDKClient(master, "None")
+    #     client.connectCluster()
+    #     columnar.SDKClients.append(client)
 
     def load_remote_couchbase_clusters(self):
         self.initial_load()
@@ -209,9 +216,7 @@ class Columnar(BaseTestCase, hostedOPD):
         if self.input.param("remoteCouchbase", False):
             self.setupRemoteCouchbase()
 
-
-        if not self.skip_init:
-            self.load_mongo_cluster()
+        self.load_mongo_cluster()
         for dataSource in self.data_sources["mongo"]:
             self.check_kafka_topics(dataSource)
 
@@ -269,19 +274,24 @@ class Columnar(BaseTestCase, hostedOPD):
             for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
                 for tenant in self.tenants:
                     for columnar in tenant.columnar_instances:
-                        dataSource.create_cbas_collections(columnar, dataSource.loadDefn.get("cbas")[0])
+                        self.drCBAS.disconnect_link(columnar, dataSource.link_name)
+                        self.sleep(60, "wait after previous link disconnect")
+                        dataSource.link_name = "{}_".format(dataSource.type) + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+                        dataSource.links.append(dataSource.link_name)
+                        dataSource.loadDefn.get("cbas")[1] = dataSource.loadDefn.get("cbas")[1] + self.default_workload.get("cbas")[1]
+                        self.drCBAS.create_links(columnar, [dataSource])
                         th = threading.Thread(
                             target=self.drCBAS.wait_for_ingestion,
                             args=(columnar, [dataSource], self.index_timeout))
                         th.start()
                         self.ingestion_ths.append(th)
-
+            self.sleep(300, "Wait for ingestion start before triggering scaling cycle")
             iterations = self.input.param("iterations", 1)
             nodes = self.num_nodes_in_columnar_instance
-            for i in range(0, iterations):
-                self.PrintStep("Scaling OUT operation: %s" % str(i+1))
+            for i in range(iterations-1, -1, -1):
+                self.PrintStep("Scaling IN operation: %s" % str(i+1))
                 tasks = list()
-                nodes = nodes*2
+                nodes = nodes/2
                 for tenant in self.tenants:
                     for cluster in tenant.columnar_instances:
                         self.cluster_util.print_cluster_stats(cluster)
@@ -293,12 +303,12 @@ class Columnar(BaseTestCase, hostedOPD):
                 # self.wait_for_rebalances(tasks)
                 for task in tasks:
                     self.task_manager.get_task_result(task)
-                    self.assertTrue(task.result, "Scaling OUT columnar failed!")
+                    self.assertTrue(task.result, "Scaling IN columnar failed!")
                 self.sleep(60)
-            for i in range(iterations-1, -1, -1):
-                self.PrintStep("Scaling IN operation: %s" % str(i))
+            for i in range(0, iterations):
+                self.PrintStep("Scaling OUT operation: %s" % str(i+1))
                 tasks = list()
-                nodes = nodes/2
+                nodes = nodes*2
                 for tenant in self.tenants:
                     for cluster in tenant.columnar_instances:
                         self.cluster_util.print_cluster_stats(cluster)
@@ -308,8 +318,8 @@ class Columnar(BaseTestCase, hostedOPD):
                 # self.wait_for_rebalances(tasks)
                 for task in tasks:
                     self.task_manager.get_task_result(task)
-                    self.assertTrue(task.result, "Scaling IN columnar failed!")
-                self.sleep(600)
+                    self.assertTrue(task.result, "Scaling OUT columnar failed!")
+                self.sleep(60)
             for th in self.ingestion_ths:
                 th.join()
 

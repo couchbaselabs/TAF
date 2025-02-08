@@ -9,6 +9,9 @@ from BucketLib.bucket import Bucket
 import os
 import random
 from BucketLib.BucketOperations import BucketHelper
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from Jython_tasks.task_manager import TaskManager
+from sdk_client3 import SDKClient, SDKClientPool
 from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 from membase.api.rest_client import RestConnection
@@ -16,11 +19,14 @@ from cb_tools.cbstats import Cbstats
 import time
 from custom_exceptions.exception import RebalanceFailedException,\
     ServerUnavailableException
-from constants.cb_constants.CBServer import CbServer
+from py_constants.cb_constants.CBServer import CbServer
 from threading import Thread
 import threading
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from TestInput import TestInputServer
+from gsiLib.gsiHelper import GsiHelper
+from collections import defaultdict
+from memcached.helper.data_helper import MemcachedClientHelper
 
 
 class OPD:
@@ -57,7 +63,7 @@ class OPD:
         for i in range(self.num_buckets):
             bucket = Bucket(
                 {Bucket.name: buckets[i] + str(i),
-                 Bucket.ramQuotaMB: ramQuota/self.num_buckets,
+                 Bucket.ramQuotaMB: ramQuota//self.num_buckets,
                  Bucket.maxTTL: self.bucket_expiry,
                  Bucket.replicaNumber: self.num_replicas,
                  Bucket.storageBackend: self.bucket_storage,
@@ -76,21 +82,16 @@ class OPD:
                 bucket.name = bucket.loadDefn.get("name")
             self.bucket_util.create_bucket(cluster, bucket)
 
-        # rebalance the new buckets across all nodes.
-        self.log.info("Rebalance Starts")
-        self.nodes = rest.node_statuses()
-        rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                       ejectedNodes=[])
-        rest.monitorRebalance()
-
-        if sdk_init:
-            cluster.sdk_client_pool = SDKClientPool()
+        # if sdk_init:
+        #     # cluster.sdk_client_pool = SDKClientPool()
             num_clients = self.input.param("clients_per_db",
                                            min(5, bucket.loadDefn.get("collections")))
-            for bucket in cluster.buckets:
-                self.create_sdk_client_pool(cluster, [bucket],
-                                            num_clients)
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        cluster.master, cluster.master.rest_username,
+                        cluster.master.rest_password,
+                        bucket.name, req_clients=num_clients)
         self.create_required_collections(cluster)
+        self.create_sdk_client_pool(cluster, cluster.buckets, 1)
 
     def create_required_collections(self, cluster, buckets=None):
         buckets = buckets or cluster.buckets
@@ -140,16 +141,16 @@ class OPD:
         for thread in threads:
             thread.join()
 
-    def create_sdk_client_pool(self, cluster, buckets, req_clients_per_bucket):
+    def create_sdk_client_pool(self, cluster, buckets, req_clients_per_bucket=1):
         for bucket in buckets:
-            self.log.info("Using SDK endpoint %s" % cluster.master.ip)
-            server = Server(cluster.master.ip, cluster.master.port,
-                            cluster.master.rest_username,
-                            cluster.master.rest_password,
-                            str(cluster.master.memcached_port))
-            cluster.sdk_client_pool.create_clients(
-                bucket.name, server, req_clients_per_bucket)
-            bucket.clients = cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
+            # self.log.info("Using SDK endpoint %s" % cluster.master.ip)
+            # SDKClientPool.create_clients_in_pool(
+            #     self.cluster.master, self.cluster.master.rest_username,
+            #     self.cluster.master.rest_password, buckets, req_clients_per_bucket)
+            # cluster.sdk_client_pool.create_clients(
+            #     bucket.name, server, req_clients_per_bucket)
+            # bucket.clients = cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
+            bucket.clients = [SDKClient(cluster, bucket) for _ in range(req_clients_per_bucket)]
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def stop_purger(self, tombstone_purge_age=60):
@@ -185,6 +186,10 @@ class OPD:
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
                 shell.disconnect()
+            elif error_condition == "kill_indexer":
+                shell = RemoteMachineShellConnection(node)
+                shell.kill_indexer()
+                shell.disconnect()
             elif error_condition == "reboot_server":
                 shell = RemoteMachineShellConnection(node)
                 shell.reboot_node()
@@ -201,12 +206,14 @@ class OPD:
                 self.cluster_util.start_server(node)
             elif error_condition == "enable_firewall":
                 self.cluster_util.stop_firewall_on_node(node)
-
-        for node in self.cluster.kv_nodes + [self.cluster.master]:
-            self.check_warmup_complete(node)
-            result = self.cluster_util.wait_for_ns_servers_or_assert([node],
-                                                                     wait_time=1200)
-            self.assertTrue(result, "Server warmup failed")
+        if error_condition == "kill_memcached":
+            for node in self.cluster.kv_nodes + [self.cluster.master]:
+                self.check_warmup_complete(node)
+                result = self.cluster_util.wait_for_ns_servers_or_assert([node],
+                                                                         wait_time=1200)
+                self.assertTrue(result, "Server warmup failed")
+        elif error_condition == "kill_indexer":
+            self.recover_indexer()
 
     def rebalance(self, nodes_in=0, nodes_out=0, services=[],
                   retry_get_process_num=3000):
@@ -215,13 +222,13 @@ class OPD:
         self.nodes_cluster.remove(self.cluster.master)
         self.servs_out = list()
         services = services or ["kv"]
-        print "KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes]
-        print "CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes]
-        print "INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes]
-        print "FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes]
-        print "QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes]
-        print "EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes]
-        print "AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers]
+        print("KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes])
+        print("CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes])
+        print("INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes])
+        print("FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes])
+        print("QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes])
+        print("EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes])
+        print("AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers])
         if nodes_out:
             if "cbas" in services:
                 servers = random.sample(self.cluster.cbas_nodes, nodes_out)
@@ -277,10 +284,10 @@ class OPD:
         if "index" in services:
             services=["index,n1ql"] * len(services)
 
-        print "Servers coming in : %s with services: %s" % ([server.ip for server in self.servs_in], services)
-        print "Servers going out : %s" % ([server.ip for server in self.servs_out])
+        print("Servers coming in : %s with services: %s" % ([server.ip for server in self.servs_in], services))
+        print("Servers going out : %s" % ([server.ip for server in self.servs_out]))
         self.available_servers.extend(self.servs_out)
-        print "NEW AVAILABLE nodes for cluster: %s" % ([server.ip for server in self.available_servers])
+        print("NEW AVAILABLE nodes for cluster: %s" % ([server.ip for server in self.available_servers]))
         if nodes_in == nodes_out:
             self.vbucket_check = False
 
@@ -380,22 +387,24 @@ class OPD:
             bucket.end = bucket.create_end
 
             bucket.final_items += (abs(bucket.create_end - bucket.create_start)) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
-        print "================{}=================".format(bucket.name)
-        print "Read Start: %s" % bucket.read_start
-        print "Read End: %s" % bucket.read_end
-        print "Update Start: %s" % bucket.update_start
-        print "Update End: %s" % bucket.update_end
-        print "Expiry Start: %s" % bucket.expire_start
-        print "Expiry End: %s" % bucket.expire_end
-        print "Delete Start: %s" % bucket.delete_start
-        print "Delete End: %s" % bucket.delete_end
-        print "Create Start: %s" % bucket.create_start
-        print "Create End: %s" % bucket.create_end
-        print "Final Start: %s" % bucket.start
-        print "Final End: %s" % bucket.end
-        print "================{}=================".format(bucket.name)
+        print("================{}=================".format(bucket.name))
+        print("Read Start: %s" % bucket.read_start)
+        print("Read End: %s" % bucket.read_end)
+        print("Update Start: %s" % bucket.update_start)
+        print("Update End: %s" % bucket.update_end)
+        print("Expiry Start: %s" % bucket.expire_start)
+        print("Expiry End: %s" % bucket.expire_end)
+        print("Delete Start: %s" % bucket.delete_start)
+        print("Delete End: %s" % bucket.delete_end)
+        print("Create Start: %s" % bucket.create_start)
+        print("Create End: %s" % bucket.create_end)
+        print("Final Start: %s" % bucket.start)
+        print("Final End: %s" % bucket.end)
+        print("================{}=================".format(bucket.name))
 
-    def _loader_dict(self, cluster, buckets, overRidePattern=None, cmd={}, skip_default=True):
+    def _loader_dict(self, cluster, buckets, overRidePattern=None, cmd={},
+                     skip_default=True,
+                     overWriteValType=None):
         self.loader_map = dict()
         self.default_pattern = [100, 0, 0, 0, 0]
         buckets = buckets or cluster.buckets
@@ -404,75 +413,59 @@ class OPD:
             for scope in bucket.scopes.keys():
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
                     workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
-                    valType = workloads[i % len(workloads)]["valType"]
+                    valType = overWriteValType or workloads[i % len(workloads)]["valType"]
+                    dim = workloads[i % len(workloads)].get("dim", self.dim)
                     if scope == CbServer.system_scope:
                         continue
                     if collection == "_default" and scope == "_default" and skip_default:
                         continue
-                    ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
-                                          cmd.get("keySize", self.key_size),
-                                          cmd.get("docSize", bucket.loadDefn.get("doc_size")),
-                                          cmd.get("cr", pattern[0]),
-                                          cmd.get("rd", pattern[1]),
-                                          cmd.get("up", pattern[2]),
-                                          cmd.get("dl", pattern[3]),
-                                          cmd.get("ex", pattern[4]),
-                                          cmd.get("workers", self.process_concurrency),
-                                          cmd.get("ops", bucket.loadDefn.get("ops")),
-                                          cmd.get("loadType", None),
-                                          cmd.get("keyType", self.key_type),
-                                          cmd.get("valueType", valType),
-                                          cmd.get("validate", False),
-                                          cmd.get("gtm", False),
-                                          cmd.get("deleted", False),
-                                          cmd.get("mutated", 0),
-                                          cmd.get("model", self.model),
-                                          cmd.get("mockVector", self.mockVector),
-                                          cmd.get("dim", self.dim),
-                                          cmd.get("base64", self.base64)
-                                          )
-                    hm = HashMap()
-                    hm.putAll({DRConstants.create_s: bucket.create_start,
-                               DRConstants.create_e: bucket.create_end,
-                               DRConstants.update_s: bucket.update_start,
-                               DRConstants.update_e: bucket.update_end,
-                               DRConstants.expiry_s: bucket.expire_start,
-                               DRConstants.expiry_e: bucket.expire_end,
-                               DRConstants.delete_s: bucket.delete_start,
-                               DRConstants.delete_e: bucket.delete_end,
-                               DRConstants.read_s: bucket.read_start,
-                               DRConstants.read_e: bucket.read_end})
-                    dr = DocRange(hm)
-                    ws.dr = dr
-                    dg = DocumentGenerator(ws, self.key_type, valType)
-                    self.loader_map.update({bucket.name+scope+collection: dg})
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=cluster.master.ip, server_port=cluster.master.port,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope, collection_name=collection,
+                        key_prefix=self.key, key_size=self.key_size, doc_size=256,
+                        key_type=self.key_type, value_type=valType,
+                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
+                        delete_percent=pattern[3], expiry_percent=pattern[4],
+                        create_start_index=bucket.create_start , create_end_index=bucket.create_end,
+                        read_start_index=bucket.read_start, read_end_index=bucket.read_end,
+                        update_start_index=bucket.update_start, update_end_index=bucket.update_end,
+                        delete_start_index=bucket.delete_start, delete_end_index=bucket.delete_end,
+                        expiry_start_index=bucket.expiry_start, expiry_end_index=bucket.expiry_end,
+                        process_concurrency=1, task_identifier="", ops=bucket.loadDefn.get("ops"),
+                        suppress_error_table=False,
+                        track_failures=True,
+                        mutate=0,
+                        elastic=False, model=self.model, mockVector=self.mockVector, dim=dim, base64=self.base64)
+                    self.loader_map.update({bucket.name+scope+collection: loader})
 
     def wait_for_doc_load_completion(self, cluster, tasks, wait_for_stats=True):
-        self.doc_loading_tm.getAllTaskResult()
         for task in tasks:
-            task.result = True
-            unique_str = "{}:{}:{}:".format(task.sdk.bucket, task.sdk.scope, task.sdk.collection)
-            for optype, failures in task.failedMutations.items():
-                for failure in failures:
-                    if failure is not None:
-                        print("Test Retrying {}: {}{} -> {}".format(optype, unique_str, failure.id(), failure.err().getClass().getSimpleName()))
-                        try:
-                            if optype == "create":
-                                task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions)
-                            if optype == "update":
-                                task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions)
-                            if optype == "delete":
-                                task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
-                        except (ServerOutOfMemoryException, TimeoutException) as e:
-                            print("Retry {} failed for key: {} - {}".format(optype, failure.id(), e))
-                            task.result = False
-                        except (DocumentNotFoundException, DocumentExistsException) as e:
-                            pass
-            # try:
-            #     task.sdk.disconnectCluster()
-            # except Exception as e:
-            #     print(e)
-            self.assertTrue(task.result, "Task Failed: {}".format(task.taskName))
+            task.result = self.doc_loading_tm.get_task_result(task)
+            # if task.result is False:
+            #     unique_str = "{}:{}:{}:".format(task.sdk.bucket, task.sdk.scope, task.sdk.collection)
+            #     for optype, failures in task.fail.items():
+            #         for failure in failures:
+            #             if failure is not None:
+            #                 print("Test Retrying {}: {}{} -> {}".format(optype, unique_str, failure.id(), failure.err().getClass().getSimpleName()))
+            #                 try:
+            #                     if optype == "create":
+            #                         task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions)
+            #                     if optype == "update":
+            #                         task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions)
+            #                     if optype == "delete":
+            #                         task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
+            #                 except (ServerOutOfMemoryException, TimeoutException) as e:
+            #                     print("Retry {} failed for key: {} - {}".format(optype, failure.id(), e))
+            #                     task.result = False
+            #                 except (DocumentNotFoundException, DocumentExistsException) as e:
+            #                     pass
+            #     try:
+            #         task.sdk.disconnectCluster()
+            #     except Exception as e:
+            #         print(e)
+            # self.assertTrue(task.result, "Task Failed: {}".format(task.taskName))
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
@@ -487,12 +480,78 @@ class OPD:
                     self.get_gdb()
                 raise e
 
+    def load_sift_data(self, wait_for_load=True,
+                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
+                     wait_for_stats=True,
+                     override_num_items=None):
+        cmd = {}
+        tasks = list()
+        buckets = buckets or cluster.buckets
+        coll_order = self.input.param("coll_order", 1)
+        for bucket in buckets:
+            pattern = overRidePattern or bucket.loadDefn.get("pattern")
+            for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
+                collections = list(bucket.scopes[scope].collections.keys())
+                if "_default" in collections:
+                    collections.remove("_default")
+                for i, collection in enumerate(sorted(collections)):
+                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                    if coll_order == -1:
+                        workloads = list(reversed(workloads))
+                    workload = workloads[i % len(workloads)]
+                    valType = workload["valType"]
+                    dim = workload.get("dim", self.dim)
+                    if collection == "_default" and scope == "_default" and skip_default:
+                        continue
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=cluster.master.ip, server_port=cluster.master.port,
+                        generator=None, op_type=None,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope, collection_name=collection,
+                        key_prefix=self.key_prefix, key_size=self.key_size, doc_size=256,
+                        key_type=self.key_type, value_type=valType,
+                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
+                        delete_percent=pattern[3], expiry_percent=pattern[4],
+                        create_start_index=0 , create_end_index=workload.get("num_items"),
+                        read_start_index=0, read_end_index=workload.get("num_items"),
+                        update_start_index=0, update_end_index=workload.get("num_items"),
+                        delete_start_index=0, delete_end_index=workload.get("num_items"),
+                        touch_start_index=0, touch_end_index=0,
+                        replace_start_index=0, replace_end_index=0,
+                        expiry_start_index=0, expiry_end_index=workload.get("num_items"),
+                        process_concurrency=self.process_concurrency,
+                        task_identifier="", ops=bucket.loadDefn.get("ops"),
+                        suppress_error_table=False,
+                        track_failures=True,
+                        mutate=0,
+                        elastic=False, model=self.model, mockVector=self.mockVector, dim=dim, base64=self.base64,
+                        base_vectors_file_path=bucket.loadDefn.get("baseFilePath"),
+                        sift_url="ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz")
+                    loader.create_doc_load_task()
+                    self.doc_loading_tm.add_new_task(loader)
+                    tasks.append(loader)
+                    i -= 1
+        if wait_for_load:
+            self.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
+            self.get_memory_footprint()
+        else:
+            return tasks
+
+        if validate_data:
+            self.data_validation(cluster, skip_default=skip_default)
+
+        self.bucket_util.print_bucket_stats(cluster)
+        self.cluster_util.print_cluster_stats(cluster)
+
     def get_gdb(self):
         for node in self.cluster.kv_nodes:
             gdb_shell = RemoteMachineShellConnection(node)
             gdb_out = gdb_shell.execute_command('gdb -p `(pidof memcached)` -ex "thread apply all bt" -ex detach -ex quit')[0]
-            print node.ip
-            print gdb_out
+            print (node.ip)
+            print (gdb_out)
             gdb_shell.disconnect()
 
     def data_validation(self, cluster, skip_default=True):
@@ -501,9 +560,6 @@ class OPD:
             self.log.info("Validating Active/Replica Docs")
             cmd = dict()
             self.ops_rate = self.input.param("ops_rate", 2000)
-            # master = Server(self.cluster.master.ip, self.cluster.master.port,
-            #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
-            #                 str(self.cluster.master.memcached_port))
             self.loader_map = dict()
             for bucket in cluster.buckets:
                 for scope in bucket.scopes.keys():
@@ -516,44 +572,42 @@ class OPD:
                             continue
                         for op_type in bucket.loadDefn.get("load_type"):
                             cmd.update({"deleted": False})
-                            hm = HashMap()
+                            hm = dict()
                             if op_type == "create":
-                                hm.putAll({DRConstants.read_s: bucket.create_start,
-                                           DRConstants.read_e: bucket.create_end})
+                                hm.putAll({"read_s": bucket.create_start,
+                                           "read_e": bucket.create_end})
                             elif op_type == "update":
-                                hm.putAll({DRConstants.read_s: bucket.update_start,
-                                           DRConstants.read_e: bucket.update_end})
+                                hm.putAll({"read_s": bucket.update_start,
+                                           "read_e": bucket.update_end})
                             elif op_type == "delete":
-                                hm.putAll({DRConstants.read_s: bucket.delete_start,
-                                           DRConstants.read_e: bucket.delete_end})
+                                hm.putAll({"read_s": bucket.delete_start,
+                                           "read_e": bucket.delete_end})
                                 cmd.update({"deleted": True})
                             elif op_type == "expiry":
-                                hm.putAll({DRConstants.read_s: bucket.expire_start,
-                                           DRConstants.read_e: bucket.expire_end})
+                                hm.putAll({"read_s": bucket.expire_start,
+                                           "read_e": bucket.expire_end})
                                 cmd.update({"deleted": True})
                             else:
                                 continue
-                            dr = DocRange(hm)
-                            ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
-                                                  cmd.get("keySize", self.key_size),
-                                                  cmd.get("docSize", bucket.loadDefn.get("doc_size")),
-                                                  cmd.get("cr", 0),
-                                                  cmd.get("rd", 100),
-                                                  cmd.get("up", 0),
-                                                  cmd.get("dl", 0),
-                                                  cmd.get("ex", 0),
-                                                  cmd.get("workers", pc),
-                                                  cmd.get("ops", bucket.original_ops),
-                                                  cmd.get("loadType", None),
-                                                  cmd.get("keyType", self.key_type),
-                                                  cmd.get("valueType", valType),
-                                                  cmd.get("validate", True),
-                                                  cmd.get("gtm", False),
-                                                  cmd.get("deleted", False),
-                                                  cmd.get("mutated", 0))
-                            ws.dr = dr
-                            dg = DocumentGenerator(ws, self.key_type, valType)
-                            self.loader_map.update({bucket.name+scope+collection+op_type: dg})
+                            ws = dict({"keyPrefix": self.key,
+                                                  "keySize": self.key_size,
+                                                  "docSize": bucket.loadDefn.get("doc_size"),
+                                                  "cr": 0,
+                                                  "rd": 100,
+                                                  "up": 0,
+                                                  "dl": 0,
+                                                  "ex": 0,
+                                                  "workers": pc,
+                                                  "ops": bucket.original_ops,
+                                                  "loadType": None,
+                                                  "keyType": self.key_type,
+                                                  "valueType": valType,
+                                                  "validate": True,
+                                                  "gtm": False,
+                                                  "deleted": False,
+                                                  "mutated": 0})
+                            ws.update(hm)
+                            self.loader_map.update({bucket.name+scope+collection+op_type: ws})
 
             tasks = list()
             i = pc
@@ -568,17 +622,17 @@ class OPD:
                             for op_type in bucket.loadDefn.get("load_type"):
                                 if op_type not in ["create", "update", "delete", "expiry"]:
                                     continue
-                                # client = NewSDKClient(master, bucket.name, scope, collection)
-                                # client.initialiseSDK()
-                                # self.sleep(1)
-                                taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
-                                task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
-                                                        cluster.sdk_client_pool, "NONE",
-                                                        self.maxttl, self.time_unit,
-                                                        self.track_failures, 0)
-                                task.set_collection_for_load(bucket.name, scope, collection)
-                                tasks.append(task)
-                                self.doc_loading_tm.submit(task)
+                                # # client = NewSDKClient(master, bucket.name, scope, collection)
+                                # # client.initialiseSDK()
+                                # # self.sleep(1)
+                                # taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
+                                # task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
+                                #                         cluster.sdk_client_pool, "NONE",
+                                #                         self.maxttl, self.time_unit,
+                                #                         self.track_failures, 0)
+                                # task.set_collection_for_load(bucket.name, scope, collection)
+                                # tasks.append(task)
+                                # self.doc_loading_tm.submit(task)
                                 i -= 1
             return tasks
 
@@ -603,10 +657,12 @@ class OPD:
 
     def perform_load(self, wait_for_load=True,
                      validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
-                     wait_for_stats=True):
+                     wait_for_stats=True,
+                     overWriteValType=None):
         self.get_memory_footprint()
         buckets = buckets or cluster.buckets
-        self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default)
+        self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default,
+                          overWriteValType=overWriteValType)
         # master = Server(self.cluster.master.ip, self.cluster.master.port,
         #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
         #                 str(self.cluster.master.memcached_port))
@@ -622,18 +678,20 @@ class OPD:
                             continue
                         if collection == "_default" and scope == "_default" and skip_default:
                             continue
+                        loader = self.loader_map[bucket.name+scope+collection]
+                        loader.create_doc_load_task()
                         # client = NewSDKClient(master, bucket.name, scope, collection)
                         # client.initialiseSDK()
                         # self.sleep(1)
-                        taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
-                        task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                                                cluster.sdk_client_pool, self.esClient,
-                                                self.durability_level,
-                                                self.maxttl, self.time_unit,
-                                                self.track_failures, 0)
-                        task.set_collection_for_load(bucket.name, scope, collection)
-                        tasks.append(task)
-                        self.doc_loading_tm.submit(task)
+                        # taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
+                        # task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
+                        #                         cluster.sdk_client_pool, self.esClient,
+                        #                         self.durability_level,
+                        #                         self.maxttl, self.time_unit,
+                        #                         self.track_failures, 0)
+                        # task.set_collection_for_load(bucket.name, scope, collection)
+                        # tasks.append(task)
+                        self.doc_loading_tm.add_new_task(loader)
                         i -= 1
 
         if wait_for_load:
@@ -695,10 +753,19 @@ class OPD:
         self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
         return kvstore, wal, keyTree, seqTree
 
+    def print_stats_loop(self, cluster, step=300):
+        while not self.stop_run:
+            try:
+                self.print_stats(cluster)
+            except:
+                pass
+            time.sleep(step)
+
     def print_stats(self, cluster):
         self.bucket_util.print_bucket_stats(cluster)
         self.cluster_util.print_cluster_stats(cluster)
-        self.print_crud_stats(cluster.buckets)
+        if self.val_type != "siftBigANN":
+            self.print_crud_stats(cluster.buckets)
         for bucket in cluster.buckets:
             self.get_bucket_dgm(cluster, bucket)
             if bucket.storageBackend == Bucket.StorageBackend.magma and \
@@ -708,13 +775,13 @@ class OPD:
                     self.check_fragmentation_using_kv_stats(bucket)
 
     def PrintStep(self, msg=None):
-        print "\n"
-        print "\t", "#"*60
-        print "\t", "#"
-        print "\t", "#  %s" % msg
-        print "\t", "#"
-        print "\t", "#"*60
-        print "\n"
+        print("\n")
+        print("\t" + "#" * 60)
+        print("\t" + "#")
+        print("\t" + "#  %s" % msg)
+        print("\t" + "#")
+        print("\t" + "#" * 60)
+        print("\n")
 
     def check_fragmentation_using_kv_stats(self, bucket, servers=None):
         result = dict()
@@ -800,7 +867,7 @@ class OPD:
         while expected_progress < 100:
             expected_progress = 20 * i
             reached = self.cluster_util.rebalance_reached(
-                self.cluster, expected_progress)
+                self.cluster.master, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
@@ -814,8 +881,9 @@ class OPD:
             i += 1
         return rebalance_task
 
-    def abort_rebalance(self, rebalance, error_type="kill_memcached"):
+    def abort_rebalance(self, rebalance, error_type="kill_memcached", nodes=None):
         self.sleep(30, "Let the rebalance begin!")
+        nodes = nodes or self.cluster.nodes_in_cluster
         rest = RestConnection(self.cluster.master)
         i = 1
         expected_progress = 20
@@ -823,14 +891,14 @@ class OPD:
         while expected_progress < 80:
             expected_progress = 20 * i
             reached = self.cluster_util.rebalance_reached(
-                self.cluster, expected_progress, wait_step=10, num_retry=3600)
+                self.cluster.master, expected_progress, wait_step=10, num_retry=3600)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 
             if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Abort rebalance")
-                self._induce_error(error_type, self.cluster.nodes_in_cluster)
-                result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+                self._induce_error(error_type, nodes)
+                result = self.check_coredump_exist(nodes)
                 if result:
                     self.task_manager.abort_all_tasks()
                     self.doc_loading_tm.abortAllTasks()
@@ -839,7 +907,7 @@ class OPD:
                         "CRASH | CRITICAL | WARN messages found in cb_logs")
                 self.sleep(60, "Sleep after error introduction")
                 self._recover_from_error(error_type)
-                result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+                result = self.check_coredump_exist(nodes)
                 if result:
                     self.task_manager.abort_all_tasks()
                     self.doc_loading_tm.abortAllTasks()
@@ -850,7 +918,7 @@ class OPD:
                     self.task_manager.get_task_result(rebalance_task)
                 except RebalanceFailedException:
                     pass
-                if rebalance.result:
+                if rebalance_task.result:
                     self.log.error("Rebalance passed/finished which is not expected")
                     self.log.info("Rebalance % after rebalance finished = {}".
                                   format(expected_progress))
@@ -863,15 +931,53 @@ class OPD:
                         retry_get_process_num=3000)
                     self.sleep(120, "Let the rebalance begin after abort")
                     self.log.info("Rebalance % = {}".
-                                  format(self.rest._rebalance_progress()))
+                                  format(rest._rebalance_progress()))
             i += 1
         return rebalance_task
+
+    def crash_indexer(self, nodes=None, num_kills=1, graceful=False):
+        self.crash_count = 0
+        if not nodes:
+            nodes = self.cluster.index_nodes
+
+        while self.crash_count < self.crashes:
+            sleep = random.randint(60, 120)
+            self.sleep(sleep,
+                       "Iteration:{} waiting to kill memc on all nodes".
+                       format(self.crash_count))
+            self.kill_memcached(num_kills=num_kills,
+                                graceful=graceful, wait=True,
+                                services=["kv"])
+            self.check_index_pending_mutations()
+            self.kill_memcached(nodes, num_kills=num_kills,
+                                graceful=graceful, wait=True,
+                                services=["indexer"])
+            self.recover_indexer()
+            self.check_index_pending_mutations()
+            self.crash_count += 1
+        self.sleep(300)
+
+    def recover_indexer(self):
+        for bucket in self.cluster.buckets:
+            d = defaultdict(list)
+            for key, val in bucket.indexes.items():
+                _, _, _, _, c = val
+                d[c].append(key)
+            rest = GsiHelper(self.cluster.master, self.log)
+            status = False
+            for collection in sorted(d.keys()):
+                for index_name in sorted(d.get(collection)):
+                    status = rest.polling_create_index_status(
+                        bucket, index_name, 1200)
+                    print("index: {}, status: {}".format(index_name, status))
+                    if status is True:
+                        self.log.info("2i index is ready: {}".format(index_name))
 
     def crash_memcached(self, nodes=None, num_kills=1, graceful=False):
         self.stop_crash = False
         self.crash_count = 0
         if not nodes:
-            nodes = self.cluster.kv_nodes + [self.cluster.master]
+            nodes = self.cluster.kv_nodes
 
         while not self.stop_crash:
             sleep = random.randint(60, 120)
@@ -886,9 +992,9 @@ class OPD:
         self.sleep(300)
 
     def kill_memcached(self, servers=None, num_kills=1,
-                       graceful=False, wait=True):
+                       graceful=False, wait=True, services=["kv"]):
         if not servers:
-            servers = self.cluster.kv_nodes + [self.cluster.master]
+            servers = self.cluster.kv_nodes
 
         for server in servers:
             for _ in range(num_kills):
@@ -897,12 +1003,14 @@ class OPD:
                 shell = RemoteMachineShellConnection(server)
                 if graceful:
                     shell.restart_couchbase()
-                else:
+                if "kv" in services:
                     shell.kill_memcached()
+                if "indexer" in services:
+                    shell.kill_indexer()
                 shell.disconnect()
             self.sleep(5, "Sleep for 5 seconds before killing memc on next node.")
 
-        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+        result = self.check_coredump_exist(servers)
         if result:
             self.stop_crash = True
             self.task_manager.abort_all_tasks()
@@ -911,7 +1019,7 @@ class OPD:
                 result,
                 "CRASH | CRITICAL | WARN messages found in cb_logs")
 
-        if wait:
+        if wait and "kv" in services:
             for server in servers:
                 self.check_warmup_complete(server)
 
@@ -977,14 +1085,38 @@ class OPD:
                         self.query_table.set_headers(["Bucket",
                                                       "Query",
                                                       "Count",
-                                                      "Avg Execution Time(ms)"])
+                                                      "nProbe",
+                                                      "Filtering(M)",
+                                                      "Avg Execution Time(ms)",
+                                                      "Latest 1K - Avg Execution Time(ms)",
+                                                      "Avg Accuracy",
+                                                      "Avg Recall"
+                                                      ])
+                        if ql.esClient is not None:
+                            self.query_table.headers.extend(["ES Avg Execution Time(ms)",
+                                                             "ES Avg Recall"])
                         try:
-                            for query in sorted(ql.query_stats.keys()):
-                                if ql.query_stats[query][1] > 0:
-                                    self.query_table.add_row([str(ql.bucket.name),
-                                                              ql.bucket.query_map[query][0],
-                                                              ql.query_stats[query][1],
-                                                              ql.query_stats[query][0]/ql.query_stats[query][1]])
+                            for query, _ in sorted(ql.bucket.query_map.items(), key=lambda x: x[1]["identifier"]):
+                                with ql.query_stats[query][5]:
+                                    if ql.query_stats[query][1] > 0:
+                                        self.query_table.add_row(
+                                            [str(ql.bucket.name),
+                                             ql.bucket.query_map[query]["identifier"],
+                                             ql.query_stats[query][1],
+                                             ql.bucket.query_map[query]["vector_defn"].get("nProbe"),
+                                             ql.query_stats[query][4],
+                                             round(ql.query_stats[query][0]/ql.query_stats[query][1], 2),
+                                             round(sum(ql.query_stats[query][8][-1000:])/min(1000,len(ql.query_stats[query][8][-1000:])), 2),
+                                             round(ql.query_stats[query][2]/ql.query_stats[query][1], 2),
+                                             round(ql.query_stats[query][3]/ql.query_stats[query][1], 2)
+                                             ]
+                                            )
+                                        if ql.esClient is not None:
+                                            self.query_table.rows[-1].extend(
+                                                [str(round(ql.query_stats[query][6]/ql.query_stats[query][1], 2)),
+                                                 str(round(ql.query_stats[query][7]/ql.query_stats[query][1], 2))
+                                                 ]
+                                                )
                         except Exception as e:
                             print(e)
                         self.table.add_row([
@@ -1104,3 +1236,49 @@ class OPD:
                         temp_server.cbas_port = 18095
                     nodes.append(temp_server)
                 cluster.refresh_object(nodes)
+
+    def trigger_rollback(self):
+        mem_only_items = 100000
+        rollbacks = 0
+        while rollbacks < 20:
+            self.PrintStep("Running Rollback: %s" % rollbacks)
+            for i, node in enumerate(self.cluster.kv_nodes):
+                self.key = "rollback_docs_%s_%s-" % (rollbacks, i)
+                # Stopping persistence on NodeA
+                for bucket in self.cluster.buckets:
+                    mem_client = MemcachedClientHelper.direct_client(
+                        node, bucket)
+                    mem_client.stop_persistence()
+
+                if self.val_type == "siftBigANN":
+                    self.load_sift_data(cluster=self.cluster,
+                                  buckets=self.cluster.buckets,
+                                  overRidePattern=[100,0,0,0,0],
+                                  validate_data=False,
+                                  wait_for_stats=False,
+                                  override_num_items=mem_only_items)
+                else:
+                    self.normal_load()
+
+                self.check_index_pending_mutations()
+                # Kill memcached on NodeA to trigger rollback on other Nodes
+                shell = RemoteMachineShellConnection(node)
+                shell.kill_memcached()
+
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    self.cluster.buckets[0],
+                    servers=[node],
+                    wait_time=self.wait_timeout * 10))
+                self.sleep(10, "Not Required, but waiting for 10s after warm up")
+                self.check_index_pending_mutations()
+                result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+                if result:
+                    self.stop_crash = True
+                    self.task_manager.abort_all_tasks()
+                    self.doc_loading_tm.abortAllTasks()
+                    self.assertFalse(
+                        result,
+                        "CRASH | CRITICAL | WARN messages found in cb_logs")
+            rollbacks += 1
+
+        self.key = self.input.param("key", "test_docs-")

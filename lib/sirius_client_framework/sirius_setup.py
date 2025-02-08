@@ -45,8 +45,9 @@ class SiriusSetup(object):
 
         print(f"Starting Sirius Java client on port '{port}'")
         fp = open("logs/sirius_run.log", "w")
-        cmd = ["java", "-jar",
+        cmd = ["java", "-cp",
                f"{doc_loader_path}/target/magmadocloader/magmadocloader.jar",
+               "RestServer.RestApplication",
                f"--server.port={port}"]
         SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 

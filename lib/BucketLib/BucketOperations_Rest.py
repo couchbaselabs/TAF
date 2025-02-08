@@ -405,6 +405,7 @@ class BucketHelper(BucketRestApi):
                        in response.text)):
                 sleep(1, "Bucket still exists, will retry..")
             else:
+                self.log.critical("Failed to create bucket: {0}".format(response.text))
                 return False
         else:
             self.log.warning("Failed creating the bucket after {0} secs"

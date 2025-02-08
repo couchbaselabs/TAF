@@ -121,7 +121,7 @@ class HelperLib(object):
         parser.add_argument("-l", "--log-level",
                             dest="loglevel", default="INFO",
                             choices=["DEBUG", "INFO", "WARNING", "CRITICAL"])
-        parser.add_argument("--launch_java_doc_loader", action="store_true",
+        parser.add_argument("-jdl", "--launch_java_doc_loader", action="store_true",
                             dest="launch_java_doc_loader", default=False,
                             help="If enabled, will start Java:DocLoader in bg")
         parser.add_argument("--launch_sirius_process", action="store_true",
@@ -130,7 +130,7 @@ class HelperLib(object):
         parser.add_argument("--launch_sirius_docker", action="store_true",
                             dest="launch_sirius_docker", default=False,
                             help="If enabled, will start Sirius as subprocess")
-        parser.add_argument("--sirius_url", dest="sirius_url",
+        parser.add_argument("-surl", "--sirius_url", dest="sirius_url",
                             default="http://localhost:4000",
                             help="Target")
         options = parser.parse_args()

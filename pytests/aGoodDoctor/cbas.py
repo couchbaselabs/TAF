@@ -13,7 +13,9 @@ from sdk_client3 import SDKClient
 from global_vars import logger
 from py_constants.cb_constants.CBServer import CbServer
 import itertools
-from n1ql import execute_statement_on_n1ql
+from .n1ql import execute_statement_on_n1ql
+from couchbase.analytics import AnalyticsOptions, AnalyticsScanConsistency, AnalyticsStatus
+from couchbase.exceptions import CouchbaseException, TimeoutException, AmbiguousTimeoutException, RequestCanceledException
 
 datasets = ['create dataset {} on {}.{}.{};']
 
@@ -80,33 +82,32 @@ def execute_statement_on_cbas(client, statement,
         raise Exception(str(e))
 
 
-def execute_via_sdk(client, statement, readonly=False,
-                    client_context_id=None):
-    options = AnalyticsOptions.analyticsOptions()
-    options.scanConsistency(AnalyticsScanConsistency.NOT_BOUNDED)
-    options.readonly(readonly)
+def execute_via_sdk(client, statement, readonly=False, client_context_id=None):
+    options = AnalyticsOptions(scan_consistency=AnalyticsScanConsistency.NOT_BOUNDED, readonly=readonly)
     if client_context_id:
-        options.clientContextId(client_context_id)
+        options.client_context_id = client_context_id
 
     output = {}
-    result = client.analytics_query(statement, options)
-
-    output["status"] = result.metaData().status()
-    output["metrics"] = result.metaData().metrics()
-
     try:
-        output["results"] = result.rowsAsObject()
-    except:
-        output["results"] = None
+        result = client.analytics_query(statement, options)
+        output["status"] = result.meta_data().status
+        output["metrics"] = result.meta_data().metrics
 
-    if str(output['status']) == AnalyticsStatus.FATAL:
-        msg = output['errors'][0]['msg']
-        if "Job requirement" in msg and "exceeds capacity" in msg:
-            raise Exception("Capacity cannot meet job requirement")
-    elif output['status'] == AnalyticsStatus.SUCCESS:
-        output["errors"] = None
-    else:
-        raise Exception("Analytics Service API failed")
+        try:
+            output["results"] = result.rows()
+        except CouchbaseException:
+            output["results"] = None
+
+        if str(output['status']) == AnalyticsStatus.FATAL:
+            msg = output['errors'][0]['msg']
+            if "Job requirement" in msg and "exceeds capacity" in msg:
+                raise Exception("Capacity cannot meet job requirement")
+        elif output['status'] == AnalyticsStatus.SUCCESS:
+            output["errors"] = None
+        else:
+            raise Exception("Analytics Service API failed")
+    except CouchbaseException as e:
+        raise Exception(f"Failed to execute analytics query: {e}")
 
     return output
 
@@ -160,7 +161,7 @@ class DoctorCBAS():
                                 q += 1
                                 continue
                             query = queryType[q % len(queryType)].format(dataset)
-                            print query
+                            print(query)
                             b.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
                             query_count += 1
                             b.cbas_queries.append((query, queryType[q % len(queryType)]))
@@ -223,20 +224,7 @@ class DoctorCBAS():
                            .format(ds_info[1], ds_info[2], ds_info[3], _status,
                                    json.loads(str(n1ql_results))[0]["$1"]))
 
-            status = False
-            stop_time = time.time() + timeout
-            while time.time() < stop_time:
-                statement = "select count(*) count from {};".format(dataset)
-                _status, _, _, results, _ = execute_statement_on_cbas(statement)
-                self.log.debug("dataset: {}, status: {}, count: {}"
-                               .format(dataset, _status,
-                                       json.loads(str(results))[0]["count"]))
-
-                if json.loads(str(results))[0]["count"] == json.loads(str(n1ql_results))[0]["$1"]:
-                    self.log.info("CBAS dataset is ready: {}".format(dataset))
-                    status = True
-                    break
-                time.sleep(5)
+            status = self.some_method(n1ql_results, dataset, timeout)
             if status is False:
                 return status
         return status
@@ -309,15 +297,16 @@ class CBASQueryLoad:
                         self.success_count.next()
                 else:
                     self.failed_count.next()
-            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+            except (TimeoutException, AmbiguousTimeoutException, UnambiguousTimeoutException) as e:
                 pass
             except RequestCanceledException as e:
                 pass
             except CouchbaseException as e:
                 pass
-            except (Exception, PlanningFailureException) as e:
-                print e
-                self.error_count.next()
+            except PlanningFailureException as e:
+                pass
+            except Exception as e:
+                pass
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
@@ -333,3 +322,22 @@ class CBASQueryLoad:
             end = time.time()
             if end - start < 1:
                 time.sleep(end - start)
+
+    def some_method(self, n1ql_results, dataset, timeout):
+        status = False
+        stop_time = time.time() + timeout
+        while time.time() < stop_time:
+            statement = "select count(*) count from {};".format(dataset)
+            _status, _, _, results, _ = execute_statement_on_cbas(statement)
+            self.log.debug("dataset: {}, status: {}, count: {}"
+                           .format(dataset, _status,
+                                   json.loads(str(results))[0]["count"]))
+
+            if json.loads(str(results))[0]["count"] == json.loads(str(n1ql_results))[0]["$1"]:
+                self.log.info("CBAS dataset is ready: {}".format(dataset))
+                status = True
+                break
+            time.sleep(5)
+        if status is False:
+            return status
+        return status

@@ -48,8 +48,8 @@ class DoctorBKRS():
             self.cbbackupmgr, archive, repo, self.cluster.master.ip, username, password)
         print(bkup_cmd)
         o, r = shell.execute_command(bkup_cmd)
-        print o
-        print r
+        print(o)
+        print(r)
         shell.disconnect()
         return o
 

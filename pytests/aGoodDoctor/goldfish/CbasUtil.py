@@ -13,7 +13,9 @@ import time
 from CbasLib.CBASOperations import CBASHelper
 from global_vars import logger
 from table_view import TableView
-
+from couchbase.analytics import AnalyticsQuery, AnalyticsOptions, AnalyticsScanConsistency, AnalyticsStatus
+from couchbase.exceptions import (TimeoutException, AmbiguousTimeoutException, UnambiguousTimeoutException,
+                                  RequestCanceledException, CouchbaseException, PlanningFailureException)
 
 datasets = ['create dataset {} on {}.{}.{};']
 
@@ -82,21 +84,19 @@ def execute_statement_on_cbas(client, statement,
 
 def execute_via_sdk(client, statement, readonly=False,
                     client_context_id=None):
-    options = AnalyticsOptions.analyticsOptions()
-    options.scanConsistency(AnalyticsScanConsistency.NOT_BOUNDED)
-    options.readonly(readonly)
+    options = AnalyticsOptions(scan_consistency=AnalyticsScanConsistency.NOT_BOUNDED, readonly=readonly)
     if client_context_id:
-        options.clientContextId(client_context_id)
+        options.client_context_id = client_context_id
 
     output = {}
     result = client.analytics_query(statement, options)
 
-    output["status"] = result.metaData().status()
-    output["metrics"] = result.metaData().metrics()
+    output["status"] = result.meta_data().status
+    output["metrics"] = result.meta_data().metrics
 
     try:
-        output["results"] = result.rowsAsObject()
-    except:
+        output["results"] = result.rows()
+    except Exception as e:
         output["results"] = None
 
     if str(output['status']) == AnalyticsStatus.FATAL:
@@ -124,17 +124,18 @@ class DoctorCBAS():
             if dataSource.loadDefn["valType"] == "Hotel":
                 queryType = HotelQueries
             # create collection
-            dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0])
+            collections = dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0])
             q = 0
             while q < dataSource.loadDefn.get("cbas")[1]:
-                if queryType[q % len(queryType)] in dataSource.query_map.keys():
+                coll = collections[q % dataSource.loadDefn.get("cbas")[0]]
+                if queryType[q % len(queryType)] + dataSource.link_name in dataSource.query_map.keys():
                     q += 1
                     continue
-                query = queryType[q % len(queryType)].format(dataSource.cbas_collections[q % len(dataSource.cbas_collections)])
-                print query
-                dataSource.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
+                query = queryType[q % len(queryType)].format(coll)
+                print(query)
+                dataSource.query_map[queryType[q % len(queryType)] + dataSource.link_name] = ["Q%s_%s" % (query_count, coll)]
                 query_count += 1
-                dataSource.cbas_queries.append((query, queryType[q % len(queryType)]))
+                dataSource.cbas_queries.append((query, queryType[q % len(queryType)] + dataSource.link_name))
                 q += 1
             if dataSource.type != "s3":
                 self.connect_link(cluster, dataSource.link_name)
@@ -154,9 +155,10 @@ class DoctorCBAS():
     def drop_links(self, cluster, databases):
         client = cluster.SDKClients[0].cluster
         for database in databases:
-            statement = "drop link %s" % database.link_name
-            status, _, _, _, _ = execute_statement_on_cbas(client, statement)
-            self.log.info("Dropping link %s is %s" % (database.link_name, status))
+            for link in database.links:
+                statement = "drop link %s" % link
+                status, _, _, _, _ = execute_statement_on_cbas(client, statement)
+                self.log.info("Dropping link %s is %s" % (link, status))
 
     def drop_collections(self, cluster, databases):
         client = cluster.SDKClients[0].cluster
@@ -301,8 +303,13 @@ class CBASQueryLoad:
                 # print original_query
                 status, metrics, _, results, _ = execute_statement_on_cbas(
                     self.cluster_conn, query, client_context_id)
-                self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
-                self.query_stats[original_query][1] += 1
+                try:
+                    self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
+                    self.query_stats[original_query][1] += 1
+                except KeyError:
+                    self.query_stats[original_query] = [0, 0]
+                    self.query_stats[original_query][0] = metrics.executionTime().toNanos()/1000000.0
+                    self.query_stats[original_query][1] = 1
                 if status == AnalyticsStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
@@ -313,15 +320,14 @@ class CBASQueryLoad:
                         self.success_count.next()
                 else:
                     self.failed_count.next()
-            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+            except (TimeoutException, AmbiguousTimeoutException, UnambiguousTimeoutException) as e:
                 pass
             except RequestCanceledException as e:
                 pass
             except CouchbaseException as e:
                 pass
             except (Exception, PlanningFailureException) as e:
-                print e
-                self.error_count.next()
+                pass
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:

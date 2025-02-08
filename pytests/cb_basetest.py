@@ -134,6 +134,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.dim = self.input.param("dim", 384)
         self.fts_index_type = self.input.param("fts_index_type", "vector")
         self.base64 = self.input.param("base64", False)
+        self.xattr = self.input.param("xattr", False)
         self.esClient = None
         self.mutate = self.input.param("mutate", 0)
         # End of doc specific parameters

@@ -44,6 +44,7 @@ class SiriusCouchbaseLoader(object):
                  bucket=None,
                  scope_name="_default", collection_name="_default",
                  key_prefix="test_doc-", key_size=10, doc_size=256,
+                 key_type="SimpleKey", value_type="SimpleValue",
                  create_percent=0, read_percent=0, update_percent=0,
                  delete_percent=0, expiry_percent=0,
                  create_start_index=0, create_end_index=0,
@@ -67,7 +68,10 @@ class SiriusCouchbaseLoader(object):
                  iterations=1,
                  validate_docs=False, validate_deleted_docs=False,
                  mutate=0,
-                 create_path=False, is_xattr=False, is_sys_xattr=False):
+                 create_path=False, is_xattr=False, is_sys_xattr=False,
+                 elastic=False, es_server=None, es_api_key=None, es_similarity=None,
+                 base_vectors_file_path=None, sift_url=None,
+                 model=None, mockVector=False, dim=128, base64=False):
         """
         Gateway to start doc loading using Java SDK.
         Have common params for both storage_tests and regular test.
@@ -110,9 +114,11 @@ class SiriusCouchbaseLoader(object):
         self.vbuckets = CbServer.total_vbuckets
 
         # Key / Doc properties
+        self.key_type = key_type
         self.key_prefix = key_prefix
         self.key_size = key_size
         self.doc_size = doc_size
+        self.value_type = value_type
         self.mutate = mutate
 
         # Set indexes for regular load
@@ -145,6 +151,19 @@ class SiriusCouchbaseLoader(object):
         self.subdoc_read_start_index = subdoc_read_start_index
         self.subdoc_read_end_index = subdoc_read_end_index
 
+        self.elastic = elastic
+        self.es_server = es_server
+        self.es_api_key = es_api_key
+        self.es_similarity = es_similarity
+        self.base_vectors_file_path = base_vectors_file_path
+        self.sift_url = sift_url
+        self.model = model
+        self.mockVector = mockVector
+        self.dim = dim
+        self.base64 = base64
+        self.mutate_field = None
+        self.mutation_timeout = 0
+        
         # Flags for validation
         self.validate_docs = validate_docs
         self.validate_deleted_docs = validate_deleted_docs
@@ -325,20 +344,14 @@ class SiriusCouchbaseLoader(object):
         return response.ok, json_response
 
     def create_doc_load_task(self):
-        key_type = "RandomKey"
-        value_type = "SimpleValue"
-
         if self.iterations != 1:
-            key_type = "CircularKey"
+            self.key_type = "CircularKey"
         if self.subdoc_percent != 0:
-            value_type = "SimpleSubDocValue"
+            self.value_type = "SimpleSubDocValue"
 
         api = f"{SiriusSetup.sirius_url}/doc_load"
+        sift_api = f"{SiriusSetup.sirius_url}/sift_doc_load"
         data = {
-            "server_ip": self.ip,
-            "server_port": self.port,
-            "username": self.username,
-            "password": self.password,
             "bucket_name": self.bucket.name,
             "scope_name": self.scope,
             "collection_name": self.collection,
@@ -389,8 +402,8 @@ class SiriusCouchbaseLoader(object):
             "key_prefix": self.key_prefix,
             "key_size": self.key_size,
             "doc_size": self.doc_size,
-            "key_type": key_type,
-            "value_type": value_type,
+            "key_type": self.key_type,
+            "value_type": self.value_type,
             "mutate": self.mutate,
             "create_path": self.create_path,
             "is_subdoc_xattr": self.is_xattr,
@@ -409,8 +422,23 @@ class SiriusCouchbaseLoader(object):
 
             "validate_docs": self.validate_docs,
             "validate_deleted_docs": self.validate_deleted_docs,
+
+            "elastic": self.elastic,
+            "es_server": self.es_server,
+            "es_api_key": self.es_api_key,
+            "es_similarity": self.es_similarity,
+            "base_vectors_file_path": self.base_vectors_file_path,
+            "sift_url": self.sift_url,
+            "model": self.model, 
+            "mockVector": self.mockVector,
+            "dim": self.dim,
+            "base64": self.base64,
+            "mutate_field": self.mutate_field,
+            "mutation_timeout": self.mutation_timeout
         }
         data = self.__flatten_param_to_str(data)
+        if self.value_type == "siftBigANN":
+            api = sift_api
         response = requests.post(api, data,
                                  headers=self.get_headers(), timeout=10)
         json_response = None

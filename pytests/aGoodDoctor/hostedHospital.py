@@ -51,6 +51,7 @@ class Murphy(BaseTestCase, hostedOPD):
 
     def setUp(self):
         BaseTestCase.setUp(self)
+        hostedOPD.__init__(self)
         self.init_doc_params()
 
         self.num_collections = self.input.param("num_collections", 1)
@@ -309,6 +310,7 @@ class Murphy(BaseTestCase, hostedOPD):
                             ql.start_query_load()
                             self.ql.append(ql)
                     self.drIndex.start_index_stats(cluster)
+                    self.drIndex.start_update_stats(cluster)
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
@@ -334,7 +336,6 @@ class Murphy(BaseTestCase, hostedOPD):
                                               dim=self.dim, base64=self.base64)
                             ql.start_query_load()
                             self.ftsQL.append(ql)
-            self.sleep(3600, "Check fts vector query status during 0 load")
 
         self.mutation_perc = self.input.param("mutation_perc", 100)
         self.tasks = list()
@@ -351,7 +352,7 @@ class Murphy(BaseTestCase, hostedOPD):
                 if cluster.fts_nodes:
                     self.sleep(3600, "Check fts vector query status during %s KV load" % self.input.param("rebl_ops_rate", 5000))
 
-        self.sleep(10)
+        self.sleep(300)
 
         upgrade = self.input.capella.get("upgrade_image")
         if upgrade:
@@ -495,6 +496,7 @@ class Murphy(BaseTestCase, hostedOPD):
                         self.restart_query_load(cluster, num=-query_upscale)
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
+                self.sleep(600)
                 for service in self.rebl_services:
                     rebalance_tasks = list()
                     config = self.rebalance_config(service, self.rebl_nodes)
@@ -519,7 +521,6 @@ class Murphy(BaseTestCase, hostedOPD):
                 self.PrintStep("Step 6.{}: Scale Disk with Loading of docs".
                                format(self.loop))
                 self.loop += 1
-                time.sleep(5*60)
                 if self.rebalance_type == "all" or self.rebalance_type == "disk":
                     # Rebalance 1 - Disk Upgrade
                     for service_group in self.rebl_services:

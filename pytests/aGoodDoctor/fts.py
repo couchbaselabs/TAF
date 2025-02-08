@@ -21,6 +21,10 @@ from global_vars import logger
 from elasticsearch import EsClient
 from py_constants.cb_constants.CBServer import CbServer
 import traceback
+from couchbase.exceptions import RequestCanceledException, CouchbaseException
+from couchbase.search import SearchOptions, SearchQuery, SearchRequest, VectorSearch, VectorQuery
+from couchbase.exceptions import TimeoutException, AmbiguousTimeoutException, UnambiguousTimeoutException, RateLimitedException
+
 
 
 NimbusPQueries = [
@@ -280,7 +284,7 @@ class FTSQueryLoad:
                         except SocketTimeoutException as e:
                             self.esClient = EsClient(self.esClient.serverUrl, self.esClient.apiKey)
                             self.esClient.initializeSDK()
-                            print e
+                            print(e)
                         esResult = json.loads(str(esResult).encode().decode())
                         accuracy = 0
                         recall = 0
@@ -304,9 +308,9 @@ class FTSQueryLoad:
             except CouchbaseException as e:
                 pass
             except RateLimitedException as e:
-                print e
+                print(e)
             except Exception as e:
-                print e
+                print(e)
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
@@ -371,5 +375,9 @@ class FTSQueryLoad:
         """
         Executes a statement on CBAS using the REST API using REST Client
         """
-        result = self.cluster_conn.searchQuery(index, query)
-        return result
+        try:
+            result = self.cluster_conn.search_query(index, query, SearchOptions())
+            return result
+        except CouchbaseException as e:
+            self.log.error(f"Failed to execute FTS query: {e}")
+            raise
