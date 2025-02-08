@@ -359,6 +359,54 @@ class ClusterUtils:
             raise Exception("Profile type mismatch")
         return profiles[0]
 
+    def get_cluster_stats(self, server):
+        """
+        Reads cluster nodes statistics using `pools/default` rest GET method
+        :return stat_dict: Dictionary of CPU & Memory status each cluster node
+        """
+        stat_dict = dict()
+
+        # MB-60705 - On adding the node, pools/default is returning unknown for a while
+        # Adding a retry mechanism in case pools/default returns unknown
+        # TODO - Remove the retry mechanism once MB-60705 gets resolved
+        retry = 0
+        max_retry = 5
+        while retry <  max_retry:
+            pools_default_res = RestConnection(server).get_pools_default()
+            if pools_default_res == "unknown pool":
+                retry += 1
+                continue
+            else:
+                break
+
+        if 'nodes' in pools_default_res:
+            for node_stat in pools_default_res['nodes']:
+                stat_dict[node_stat['hostname']] = dict()
+                stat_dict[node_stat['hostname']]['version'] = node_stat['version']
+                stat_dict[node_stat['hostname']]['services'] = node_stat['services']
+                stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get(
+                    'cpu_utilization_rate')
+                stat_dict[node_stat['hostname']]['clusterMembership'] = node_stat['clusterMembership']
+                stat_dict[node_stat['hostname']]['recoveryType'] = node_stat['recoveryType']
+                stat_dict[node_stat['hostname']]['mem_free'] = node_stat['systemStats'].get('mem_free')
+                stat_dict[node_stat['hostname']]['mem_total'] = node_stat['systemStats'].get('mem_total')
+                stat_dict[node_stat['hostname']]['swap_mem_used'] = node_stat['systemStats'].get('swap_used')
+                stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats'].get('swap_total')
+                stat_dict[node_stat['hostname']]['active_item_count'] = 0
+                stat_dict[node_stat['hostname']]['replica_item_count'] = 0
+                if node_stat['version'][:5] >= '7.5.0' and 'serverGroup' in node_stat:
+                    stat_dict[node_stat['hostname']]['serverGroup'] = \
+                        node_stat['serverGroup']
+                if 'curr_items' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['active_item_count'] = node_stat['interestingStats']['curr_items']
+                if 'vb_replica_curr_items' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['replica_item_count'] = node_stat['interestingStats'][
+                        'vb_replica_curr_items']
+                if 'couch_docs_actual_disk_size' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['couch_docs_actual_disk_size'] = node_stat['interestingStats'][
+                        'couch_docs_actual_disk_size']
+        return stat_dict
+
     # Returns the highest version, highest build and
     # list of nodes with the highest version and build in the cluster
     def get_higher_version_nodes(self, cluster):

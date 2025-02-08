@@ -15,6 +15,7 @@ from copy import deepcopy
 from sdk_client3 import SDKClient
 import zlib
 from httplib import IncompleteRead
+import csv
 
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from _threading import Lock
@@ -8659,3 +8660,197 @@ class RestBasedDocLoaderAbstract(Task):
             self.test_log.error(e)
             self.set_exception(e)
         self.complete_task()
+
+class MonitorClusterStatsTask(Task):
+    def __init__(self, cluster, monitor_stats=list(), period=1, timeout=None, store_csv=False, csv_dir=None):
+        super(MonitorClusterStatsTask, self).__init__("StatsMonitorTask{}_{}".format(cluster.name, time.time()))
+        self.cluster = cluster
+        self.sleep = period
+        self.monitor_stats = monitor_stats
+        self.stop_task = False
+        self.timeout = timeout
+        self.result_set = dict()
+        self.store_csv = store_csv
+        self.csv_dir = csv_dir
+
+        if len(self.monitor_stats) == 0:
+            # Pick all the stats that can be monitored
+            self.monitor_stats = ["node_cpu_utilization",
+                                  "node_memory_free",
+                                  "bucket_item_count",
+                                  "bucket_disk_used",
+                                  "bucket_memory_used",
+                                  "index_total_disk_size",
+                                  "index_memory_used"]
+
+        for stat in self.monitor_stats:
+            self.result_set[stat] = list()
+
+    def end_task(self):
+        self.stop_task = True
+
+    def complete_task(self):
+        self.completed = True
+        self.end_time = time.time()
+        self.log.info("Thread '{}' completed".format(self.thread_name))
+
+        if self.store_csv:
+            for stat in self.result_set:
+                csv_path = os.path.join(self.csv_dir, stat + str(time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime(time.time()))) + ".csv")
+                self._generate_csv(self.result_set[stat], csv_path)
+                self.test_log.info("CSV file for the monitored stat {} generated at {}".format(stat, csv_path))
+
+
+
+    def _generate_csv(self, data, csv_path):
+        flattened_data = []
+        all_columns = set()
+
+        for entry in data:
+            _, columns = entry
+            all_columns.update(columns.keys())
+
+        sorted_columns = sorted(all_columns)
+
+        for entry in data:
+            time, columns = entry
+            flattened_data.append([time] + [columns.get(column, None) for column in sorted_columns])
+
+        if len(sorted_columns) != 0:
+            with open(csv_path, mode='w') as file:
+                writer = csv.writer(file)
+                writer.writerow(["Time"] + sorted_columns)
+                writer.writerows(flattened_data)
+
+    def _monitor_index_stats(self):
+        monitored_stats = ["index_total_disk_size", "index_memory_used"]
+        flag = False
+        for stat in monitored_stats:
+            if stat in self.monitor_stats:
+                flag = True
+                break
+
+        if not flag:
+            return
+
+        index_total_disk_size = dict()
+        index_memory_used = dict()
+
+        for server in self.cluster.index_nodes:
+            index_stats = GsiHelper(server, self.log).get_index_stats()
+
+            memory_used = index_stats["memory_used"]
+            total_disk_size = index_stats["total_disk_size"]
+
+            index_memory_used[server.ip] = memory_used
+            index_total_disk_size[server.ip] = total_disk_size
+
+            self.test_log.debug("Index stats for server {} - Memory used: {}, Total disk size: {}".format(server.ip, memory_used, total_disk_size))
+
+        if "index_total_disk_size" in self.monitor_stats:
+            self.result_set["index_total_disk_size"].append([time.time(), index_total_disk_size])
+
+        if "index_memory_used" in self.monitor_stats:
+            self.result_set["index_memory_used"].append([time.time(), index_memory_used])
+
+    def _monitor_bucket_stats(self):
+        monitored_stats = ["bucket_item_count", "bucket_disk_used", "bucket_memory_used"]
+        flag = False
+        for stat in monitored_stats:
+            if stat in self.monitor_stats:
+                flag = True
+                break
+
+        if not flag:
+            return
+
+        rest = RestConnection(self.cluster.master)
+
+        bucket_item_count = dict()
+        bucket_disk_used = dict()
+        bucket_memory_used = dict()
+
+        for bucket in self.cluster.buckets:
+            bucket_info = rest.get_bucket_details(bucket_name=bucket.name)
+
+            item_count = bucket_info["basicStats"]["itemCount"]
+            disk_used = bucket_info["basicStats"]["diskUsed"]
+            memory_used = bucket_info["basicStats"]["memUsed"]
+
+            bucket_item_count[bucket.name] = item_count
+            bucket_disk_used[bucket.name] = disk_used
+            bucket_memory_used[bucket.name] = memory_used
+
+            self.test_log.debug("Bucket stats for bucket {} - Item count: {}, Disk used: {}, Memory used: {}".format(bucket.name, item_count, disk_used, memory_used))
+
+        if "bucket_item_count" in self.monitor_stats:
+            self.result_set["bucket_item_count"].append([time.time(), bucket_item_count])
+
+        if "bucket_disk_used" in self.monitor_stats:
+            self.result_set["bucket_disk_used"].append([time.time(), bucket_disk_used])
+
+        if "bucket_memory_used" in self.monitor_stats:
+            self.result_set["bucket_memory_used"].append([time.time(), bucket_memory_used])
+
+    def _monitor_node_stats(self):
+        # Add disk utilzation general of each node
+        monitored_stats = ["node_cpu_utilization", "node_memory_free"]
+        flag = False
+        for stat in monitored_stats:
+            if stat in self.monitor_stats:
+                flag = True
+                break
+
+        if not flag:
+            return
+
+        cluster_stats = global_vars.cluster_util.get_cluster_stats(self.cluster.master)
+
+        node_cpu_utilization = dict()
+        node_mem_free = dict()
+
+        for node in cluster_stats:
+            cpu_utilization = cluster_stats[node]["cpu_utilization"]
+            memory_free = cluster_stats[node]["mem_free"]
+
+            node_cpu_utilization[node] = cpu_utilization
+            node_mem_free[node] = memory_free
+
+            self.test_log.debug("Node stats for node {} - CPU utilization: {}, Memory free: {}".format(node, cpu_utilization, memory_free))
+
+        if "node_cpu_utilization" in self.monitor_stats:
+            self.result_set["node_cpu_utilization"].append([time.time(), node_cpu_utilization])
+
+        if "node_memory_free" in self.monitor_stats:
+            self.result_set["node_memory_free"].append([time.time(), node_mem_free])
+
+    def call(self):
+        self.start_task()
+
+        end = None
+        if self.timeout:
+            end = time.time() + self.timeout
+
+        self.stop_task = self.stop_task or (end != None and time.time() > end)
+
+        while not self.stop_task:
+            try:
+                # Monitor general node stats
+                self._monitor_node_stats()
+
+                # Monitor bucket stats
+                self._monitor_bucket_stats()
+
+                # Monitor index stats
+                self._monitor_index_stats()
+
+                # Sleep before fetching next stats
+                sleep(self.sleep, log_type="infra")
+
+                self.stop_task = self.stop_task or (end != None and time.time() > end)
+            except Exception as e:
+                self.log.error("Exception occurred during : {}".format(str(e)))
+                self.set_exception(e)
+
+        self.complete_task()
+        return self.result_set
