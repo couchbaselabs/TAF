@@ -596,7 +596,7 @@ class CollectionBase(ClusterSetup):
         CollectionBase.over_ride_bucket_template_params(
             test_obj, test_obj.bucket_storage, buckets_spec)
         if test_obj.enable_encryption_at_rest:
-            buckets_spec[Bucket.encryptionAtRestSecretId] = test_obj.encryption_at_rest_id
+            buckets_spec[Bucket.encryptionAtRestKeyId] = test_obj.encryption_at_rest_id
             buckets_spec[Bucket.encryptionAtRestDekRotationInterval] = \
                 test_obj.encryptionAtRestDekRotationInterval
             test_obj.log.info("Encryption at rest enabled")
