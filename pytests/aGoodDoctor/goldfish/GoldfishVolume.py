@@ -20,6 +20,8 @@ from datasources import s3, CouchbaseRemoteCluster
 from table_view import TableView
 import random
 import string
+import json
+from CbasLib.CBASOperations_Rest import CBASHelper
 
 
 class Columnar(BaseTestCase, hostedOPD):
@@ -173,7 +175,7 @@ class Columnar(BaseTestCase, hostedOPD):
     def setup_columnar_sdk_clients(self, columnar):
         columnar.SDKClients = list()
         master = Server(columnar.srv, columnar.master.port,
-                        columnar.master.rest_username, columnar.master.rest_password,
+                        columnar.db_users[0].username, columnar.db_users[0].password,
                         str(columnar.master.memcached_port))
         client = SDKClient(master, "None")
         client.connectCluster()
@@ -251,12 +253,39 @@ class Columnar(BaseTestCase, hostedOPD):
                             ql.start_query_load()
                             self.cbasQL.append(ql)
 
+    def cluster_state_monitor(self, cluster):
+        while not self.stop_run:
+            try:
+                status, content, _ = CBASHelper(cluster.master).get_cluster_details()
+                if status:
+                    cluster.cbas_cc_node.ip = json.loads(content)["ccNodeName"].split(":")[0]
+                    cluster.master.ip = cluster.cbas_cc_node.ip
+                    state = json.loads(content)["state"]
+                    if state != "ACTIVE":
+                        cluster.state = state
+                        self.log.critical("Columnar cluster state is {}".format(state))
+                    elif cluster.state != "ACTIVE":
+                        self.log.critical("Columnar cluster state is {}".format(state))
+                        cluster.state = state
+            except Exception as e:
+                print(e)
+                import traceback
+                traceback.print_exc()
+            self.sleep(30)
+
+
     def test_rebalance(self):
+        scaling = self.input.param("scaling", True)
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
                 cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
                                                kwargs={"cluster": cluster})
                 cpu_monitor.start()
+                
+                state_monitor = threading.Thread(target=self.cluster_state_monitor,
+                                               kwargs={"cluster": cluster})
+                state_monitor.start()
+                
         self.infra_setup()
         self.sleep(0)
         self.mutate = 0
@@ -290,37 +319,38 @@ class Columnar(BaseTestCase, hostedOPD):
                             args=(columnar, [dataSource], self.index_timeout))
                         th.start()
                         self.ingestion_ths.append(th)
-            self.sleep(300, "Wait for ingestion start before triggering scaling cycle")
-            iterations = self.input.param("iterations", 1)
-            nodes = self.num_nodes_in_columnar_instance
-            for i in range(iterations-1, -1, -1):
-                self.PrintStep("Scaling IN operation: %s" % str(i+1))
-                tasks = list()
-                nodes = nodes/2
-                for tenant in self.tenants:
-                    for cluster in tenant.columnar_instances:
-                        self.cluster_util.print_cluster_stats(cluster)
-                        _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
-                        self.task_manager.add_new_task(_task)
-                        tasks.append(_task)
-                # self.wait_for_rebalances(tasks)
-                for task in tasks:
-                    self.task_manager.get_task_result(task)
-                    self.assertTrue(task.result, "Scaling IN columnar failed!")
-                self.sleep(60)
-            for i in range(0, iterations):
-                self.PrintStep("Scaling OUT operation: %s" % str(i+1))
-                tasks = list()
-                nodes = nodes*2
-                for tenant in self.tenants:
-                    for cluster in tenant.columnar_instances:
-                        self.cluster_util.print_cluster_stats(cluster)
-                        _task = ScaleColumnarInstance(self.pod, tenant, cluster,
-                                                      nodes,
-                                                      timeout=self.wait_timeout)
-                        self.task_manager.add_new_task(_task)
-                        tasks.append(_task)
-                # self.wait_for_rebalances(tasks)
+            if scaling:
+                self.sleep(300, "Wait for ingestion start before triggering scaling cycle")
+                iterations = self.input.param("iterations", 1)
+                nodes = self.num_nodes_in_columnar_instance
+                for i in range(iterations-1, -1, -1):
+                    self.PrintStep("Scaling IN operation: %s" % str(i+1))
+                    tasks = list()
+                    nodes = nodes/2
+                    for tenant in self.tenants:
+                        for cluster in tenant.columnar_instances:
+                            self.cluster_util.print_cluster_stats(cluster)
+                            _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
+                            self.task_manager.add_new_task(_task)
+                            tasks.append(_task)
+                    # self.wait_for_rebalances(tasks)
+                    for task in tasks:
+                        self.task_manager.get_task_result(task)
+                        self.assertTrue(task.result, "Scaling IN columnar failed!")
+                    self.sleep(60)
+                for i in range(0, iterations):
+                    self.PrintStep("Scaling OUT operation: %s" % str(i+1))
+                    tasks = list()
+                    nodes = nodes*2
+                    for tenant in self.tenants:
+                        for cluster in tenant.columnar_instances:
+                            self.cluster_util.print_cluster_stats(cluster)
+                            _task = ScaleColumnarInstance(self.pod, tenant, cluster,
+                                                          nodes,
+                                                          timeout=self.wait_timeout)
+                            self.task_manager.add_new_task(_task)
+                            tasks.append(_task)
+                    # self.wait_for_rebalances(tasks)
                 for task in tasks:
                     self.task_manager.get_task_result(task)
                     self.assertTrue(task.result, "Scaling OUT columnar failed!")

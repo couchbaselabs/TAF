@@ -20,6 +20,8 @@ import subprocess
 import shlex
 from table_view import TableView
 from constants.cloud_constants.capella_constants import AWS
+import json
+from CbasLib.CBASOperations_Rest import CBASHelper
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -172,6 +174,10 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
+            status, content, _ = CBASHelper(instance.master).get_cluster_details()
+            if status:
+                instance.cbas_cc_node.ip = json.loads(content)["ccNodeName"].split(":")[0]
+                instance.state = json.loads(content)["state"]
             count = 0
             analytics_admin_user = None
             while not analytics_admin_user and count < 5:

@@ -90,6 +90,9 @@ class MongoDB(object):
             self.log.info("connectors are deployed properly!! Check for the topics")
 
     def create_link(self, cluster):
+        while cluster.state != "ACTIVE":
+            time.sleep(60)
+            continue
         rest = CBASHelper(cluster.master)
         kafka_details = {
             "dataverse": "Default",
@@ -119,6 +122,9 @@ class MongoDB(object):
         raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
 
     def create_cbas_collections(self, cluster, num_collections=None):
+        while cluster.state != "ACTIVE":
+            time.sleep(60)
+            continue
         client = cluster.SDKClients[0].cluster
         num_collections = num_collections or len(self.collections)
         i = 0
@@ -192,6 +198,9 @@ class CouchbaseRemoteCluster(object):
         pass
 
     def create_link(self, columnar):
+        while columnar.state != "ACTIVE":
+            time.sleep(60)
+            continue
         rest = CBASHelper(columnar.master)
         params = {
             "dataverse": "Default",
@@ -209,6 +218,9 @@ class CouchbaseRemoteCluster(object):
             raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
 
     def create_cbas_collections(self, columnar, remote_collections=None):
+        while columnar.state != "ACTIVE":
+            time.sleep(60)
+            continue
         i = 0
         client = columnar.SDKClients[0].cluster
         # self.cbas_collections = list()
@@ -243,7 +255,7 @@ class s3(object):
         self.dataset = "external"
         self.collections = list()
         self.primary_key = None
-        self.region = "us-east-1"
+        self.region = "us-west-2"
         self.type = "s3"
         self.link_name = "s3_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
         self.links = [self.link_name]
@@ -257,16 +269,23 @@ class s3(object):
             self.collections.append("volCollection" + str(i))
 
     def create_link(self, cluster):
+        while cluster.state != "ACTIVE":
+            time.sleep(60)
+            continue
         self.log.info("creating link over s3")
         rest = CBASHelper(cluster.master)
         params = {'dataverse': 'Default', "name": self.link_name, "type": "s3", 'accessKeyId': self.accessKeyId,
                   'secretAccessKey': self.secretAccessKey,
-                  "region": self.region}
+                  "region": self.region,
+                  "crossRegion": True}
         result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
         if not result:
             raise Exception("Status: %s, content: %s, Errors: %s".format(status, content, errors))
 
     def create_cbas_collections(self, cluster, external_collections=None):
+        while cluster.state != "ACTIVE":
+            time.sleep(60)
+            continue
         client = cluster.SDKClients[0].cluster
         num_collections = external_collections or len(self.collections)
         new_collections = list()
@@ -285,6 +304,9 @@ class s3(object):
         return new_collections
 
     def copy_from_s3_into_standalone(self, cluster, standalone_collections=1):
+        while cluster.state != "ACTIVE":
+            time.sleep(60)
+            continue
         client = cluster.SDKClients[0].cluster
         num_collections = standalone_collections or len(self.collections)
         self.log.info("creating standalone collections - datasource is s3")

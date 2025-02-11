@@ -223,7 +223,7 @@ class CBASHelper(RestConnection):
         # In case of SET action we can set logging level of a specific logger
         # and pass log_level as text string in body
         if log_level:
-           params = log_level
+            params = log_level
 
         status, content, response = self._http_request(
             api, method=method, params=params, headers=headers,
@@ -349,8 +349,8 @@ class CBASHelper(RestConnection):
         return status, content, response
 
     def fetch_pending_mutation_on_cbas_cluster(self, port=9110, method="GET",
-                                               username="None",
-                                               password="None"):
+                                               username=None,
+                                               password=None):
         if not username:
             username = self.username
         if not password:
@@ -508,48 +508,16 @@ class CBASHelper(RestConnection):
         if method.lower() == "get":
             api += "?{0}".format(params)
             params = ""
+        response = requests.request(method,api,headers=headers,data=params,verify=False)
         try:
-            status, content, response = self._http_request(
-                api, method, headers=headers, params=params, timeout=timeout)
-            try:
-                content = json.loads(content)
-            except Exception:
-                pass
-            errors = list()
-            if not status:
-                if not content:
-                    errors.append({"msg": "Request Rejected", "code": 0 })
-                else:
-                    if isinstance(content,dict):
-                        if "errors" in content:
-                            if isinstance(content["errors"], list):
-                                errors.extend(content["errors"])
-                            else:
-                                errors.append({"msg": content["errors"], "code": 0 })
-                        elif "error" in content:
-                            errors.append({"msg": content["error"], "code": 0 })
-                    else:
-                        content = content.split(":")
-                        errors.append({"msg": content[1], "code": content[0] })
-            if hasattr(response, "status"):
-                status_code = response.status
-            elif hasattr(response, "status_code"):
-                status_code = response.status_code
-            return status, status_code, content, errors
-        except Exception as err:
-            self.log.error("Exception occured while calling rest APi through httplib2.")
-            self.log.error("Exception msg - (0)".format(str(err)))
-            self.log.info("Retrying again with requests module")
-            response = requests.request(method,api,headers=headers,data=params,verify=False)
-            try:
-                content = response.json()
-            except Exception:
-                content = response.content
-            errors = list()
-            if response.status_code in [200, 201, 202]:
-                return True, response.status_code, content, errors
-            else:
-                return False, response.status_code, content, content["errors"]
+            content = response.json()
+        except Exception:
+            content = response.content
+        errors = list()
+        if response.status_code in [200, 201, 202]:
+            return True, response.status_code, content, errors
+        else:
+            return False, response.status_code, content, content["errors"]
 
     @staticmethod
     def analytics_replica_settings(logger, node, method="GET", params="",
@@ -616,3 +584,15 @@ class CBASHelper(RestConnection):
                 return True, response.status_code, content, errors
             else:
                 return False, response.status_code, content, content["errors"]
+
+    def get_cluster_details(self, username=None, password=None, timeout=120):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        headers = self._create_capi_headers(username, password)
+        api = self.cbas_base_url + "/analytics/cluster"
+
+        status, content, response = self._http_request(
+            api, method="GET", headers=headers, timeout=timeout)
+        return status, content, response

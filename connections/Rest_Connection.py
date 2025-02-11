@@ -207,10 +207,13 @@ class RestConnection(object):
         return ""
 
     def urllib_request(self, api, method='GET', headers=None,
-                       params={}, timeout=300, verify=False):
-        session = requests.Session()
+                       params={}, timeout=300, verify=False,
+                       session=None):
+        if session is None:
+            session = requests.Session()
         headers = headers or self.get_headers_for_content_type_json()
-        params = json.dumps(params)
+        if type(params) == dict:
+            params = json.dumps(params)
         try:
             if method == "GET":
                 resp = session.get(api, params=params, headers=headers,
@@ -224,6 +227,9 @@ class RestConnection(object):
             elif method == "PUT":
                 resp = session.put(api, data=params, headers=headers,
                                    timeout=timeout, verify=verify)
+            elif method == "PATCH":
+                resp = session.patch(api, data=params, headers=headers,
+                                         timeout=timeout, verify=verify)
             return resp
         except requests.exceptions.HTTPError as errh:
             self.log.error("HTTP Error {0}".format(errh))
@@ -236,26 +242,10 @@ class RestConnection(object):
 
     def _urllib_request(self, api, method='GET', params='', headers=None,
                         timeout=300, verify=False, session=None):
-        if session is None:
-            session = requests.Session()
         end_time = time.time() + timeout
         while True:
             try:
-                if method == "GET":
-                    response = session.get(api, params=params, headers=headers,
-                                           timeout=timeout, verify=verify)
-                elif method == "POST":
-                    response = session.post(api, data=params, headers=headers,
-                                            timeout=timeout, verify=verify)
-                elif method == "DELETE":
-                    response = session.delete(api, data=params, headers=headers,
-                                              timeout=timeout, verify=verify)
-                elif method == "PUT":
-                    response = session.put(api, data=params, headers=headers,
-                                           timeout=timeout, verify=verify)
-                elif method == "PATCH":
-                    response = session.patch(api, data=params, headers=headers,
-                                             timeout=timeout, verify=verify)
+                response = self.urllib_request(api, method, headers, params, timeout, verify, session)
                 status = response.status_code
                 content = response.content
                 if status in [200, 201, 202, 204]:

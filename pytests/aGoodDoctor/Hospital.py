@@ -980,20 +980,21 @@ class Murphy(BaseTestCase, OPD):
         self.mutations = False
         self.doc_loading_tm.abortAllTasks()
 
+    def end_step_checks(self):
+        self.print_stats(self.cluster)
+        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+        if result:
+            self.stop_crash = True
+            self.task.jython_task_manager.abort_all_tasks()
+            self.assertFalse(
+                result,
+                "CRASH | CRITICAL | WARN messages found in cb_logs")
+
     def ClusterOpsVolume(self):
         self.loop = 1
 
         self.initial_setup()
 
-        def end_step_checks():
-            self.print_stats(self.cluster)
-            result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-            if result:
-                self.stop_crash = True
-                self.task.jython_task_manager.abort_all_tasks()
-                self.assertFalse(
-                    result,
-                    "CRASH | CRITICAL | WARN messages found in cb_logs")
 
         self.loop = 0
         while self.loop < self.iterations:
@@ -1023,7 +1024,7 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
     
                 ###################################################################
                 '''
@@ -1047,7 +1048,7 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
     
                 ###################################################################
                 '''
@@ -1071,7 +1072,7 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
     
                 ###################################################################
                 '''
@@ -1096,7 +1097,7 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
     
                 ###################################################################
                 '''
@@ -1184,7 +1185,7 @@ class Murphy(BaseTestCase, OPD):
                 print "QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes]
                 print "EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes]
                 print "AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers]
-                end_step_checks()
+                self.end_step_checks()
                 if service == "kv":
                     self.bucket_util.compare_failovers_logs(
                         self.cluster,
@@ -1215,7 +1216,7 @@ class Murphy(BaseTestCase, OPD):
     
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                    end_step_checks()
+                    self.end_step_checks()
     
                 ###################################################################
                 '''
@@ -1287,7 +1288,7 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
                 if service == "kv":
                     self.bucket_util.compare_failovers_logs(
                         self.cluster,
@@ -1366,7 +1367,7 @@ class Murphy(BaseTestCase, OPD):
                     validate_bucket_ranking=False)
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
     
                 self.bucket_util.compare_failovers_logs(
                     self.cluster,
@@ -1414,7 +1415,7 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
     
                 ####################################################################
                 '''
@@ -1442,7 +1443,7 @@ class Murphy(BaseTestCase, OPD):
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                end_step_checks()
+                self.end_step_checks()
     
     
             #######################################################################

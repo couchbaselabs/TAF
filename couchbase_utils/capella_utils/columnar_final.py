@@ -13,9 +13,11 @@ from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
 import pprint
 import socket
+from CbasLib.CBASOperations_Rest import CBASHelper
 
 
 class ColumnarInstance:
+    state = None
 
     def __init__(self, tenant_id, project_id, instance_name=None,
                  instance_id=None, cluster_id=None, instance_endpoint=None,
@@ -55,8 +57,17 @@ class ColumnarInstance:
         self.eventing_nodes = list()
         self.backup_nodes = list()
         self.nodes_in_cluster = list()
+        status, content, _ = CBASHelper(servers[0]).get_cluster_details()
+        cc_node = None
+        if status:
+            result = json.loads(content)
+            cc_node = result["ccNodeName"].split(":")[0]
+            ColumnarInstance.state = result["state"]
 
         for server in servers:
+            if cc_node and cc_node == server.ip:
+                self.cbas_cc_node = server
+                self.master = server
             server.type = self.type
             if self.type != "default":
                 server.memcached_port = "11207"
@@ -73,7 +84,6 @@ class ColumnarInstance:
             if "Search" in server.services or "fts" in server.services:
                 self.fts_nodes.append(server)
             self.nodes_in_cluster.append(server)
-        self.master = self.kv_nodes[0]
 
 
 class DBUser:
@@ -136,9 +146,9 @@ class ColumnarRBACUtil:
                                                     username, password,
                                                     role_ids=[analytics_admin_role.id])
         instance.db_users.append(analytics_admin_user)
-        for server in instance.servers:
-            server.rest_username = username
-            server.rest_password = password
+        # for server in instance.servers:
+        #     server.rest_username = username
+        #     server.rest_password = password
         return analytics_admin_user
 
     def create_privileges_payload(self, resources_privileges_map=[]):
