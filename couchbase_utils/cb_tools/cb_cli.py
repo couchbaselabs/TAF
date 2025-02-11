@@ -204,23 +204,70 @@ class CbCli(CbCmdBase):
             raise Exception(str(error))
         return output
 
-    def enable_dp(self):
+    def encryption_at_rest(self, action, **params):
         """
-        Method to enable developer-preview
+        Method to manage encryption at rest settings.
 
-        Raise:
-        Exception(if any) during command execution
+        :param action: The action to perform (add-key, list-keys, get-settings)
+        :param params: Additional parameters for add-key action
+        :return: Command output
         """
-        cmd = "echo 'y' | %s enable-developer-preview --enable " \
-              "-c %s:%s -u %s -p %s" \
-              % (self.cbstatCmd, "localhost", self.port,
-                 self.username, self.password)
+        cmd = "%s setting-encryption -c %s:%s -u %s -p %s" % (
+            self.cbstatCmd, "localhost", self.port, self.username,
+            self.password)
+
+        if action == "add-key":
+            if 'key_name' not in params or 'key_type' not in params or 'encrypt_with' not in params:
+                raise ValueError(
+                    "key_name, key_type, usage, and encrypt_with are required for adding a key.")
+            cmd += " --add-key --name {0} --key-type {1} ".format(
+                params['key_name'], params['key_type'])
+
+            if 'auto_rotate_every' in params and 'auto_rotate_start_on' in params:
+                cmd += " --auto-rotate-every {0} --auto-rotate-start-on {1}".format(
+                    params['auto_rotate_every'],
+                    params['auto_rotate_start_on'])
+            else:
+                cmd += " --auto-rotate-every 30 --auto-rotate-start-on now"
+
+            cmd += " --encrypt-with-{0}".format(params['encrypt_with'])
+
+            # Handle different usages
+            if 'kek_usage' in params:
+                cmd += " --kek-usage"
+            if 'config_usage' in params:
+                cmd += " --config-usage"
+            if 'log_usage' in params:
+                cmd += " --log-usage"
+            if 'audit_usage' in params:
+                cmd += " --audit-usage"
+            if 'all_bucket_usage' in params:
+                cmd += " --all-bucket-usage"
+            if 'bucket_usage' in params:
+                for bucket in params['bucket_usage']:
+                    cmd += " --bucket-usage {0}".format(bucket)
+            if 'cloud_key_arn' in params:
+                cmd += " --cloud-key-arn {0}".format(params['cloud_key_arn'])
+            if 'cloud_region' in params:
+                cmd += " --cloud-region {0}".format(params['cloud_region'])
+            if 'cloud_auth_by_instance_metadata' in params:
+                cmd += " --cloud-auth-by-instance-metadata"
+
+        elif action == "list-keys":
+            cmd += " --list-keys"
+
+        elif action == "get-settings":
+            cmd += " --get"
+
+        else:
+            raise ValueError(
+                "Invalid action specified. Use 'add-key', 'list-keys', or 'get-settings'.")
+
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
-        if "SUCCESS: Cluster is in developer preview mode" not in str(output):
-            raise Exception("Expected output not seen: %s" % output)
+        return output
 
     def auto_failover(self, enable_auto_fo=1,
                       fo_timeout=None, max_failovers=None,
