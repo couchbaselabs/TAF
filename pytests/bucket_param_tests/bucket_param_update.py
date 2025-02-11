@@ -1,10 +1,13 @@
 import json
+import datetime
 
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.bucket import Bucket
+from cb_tools.cb_cli import CbCli
 from BucketLib.BucketOperations import BucketHelper
 from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.durability_helper import DurabilityHelper
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from pytests.bucket_collections.collections_base import CollectionBase
@@ -1029,6 +1032,59 @@ class BucketParamTest(ClusterSetup):
                 self.log.error(
                     "Caught expected exception for params %s: %s" % (
                         params, e))
+
+    def test_encryption_at_rest(self):
+        next_rotation_seconds = self.input.param("next_rotation_time",
+                                                 3600)
+        next_rotation_time = (datetime.datetime.utcnow() +
+                              datetime.timedelta(seconds=next_rotation_seconds)).isoformat()
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cb_cli = CbCli(shell)
+
+        # Create keys for logs/config and bucket with different usages
+        result = cb_cli.encryption_at_rest('add-key', key_name='log_key',
+                                           key_type='auto-generated',
+                                           log_usage=True,
+                                           encrypt_with='master-password',
+                                           auto_rotate_start_on=next_rotation_time,
+                                           auto_rotate_every=80)
+        self.assertTrue(result, "Failed to create log_key")
+
+        result = cb_cli.encryption_at_rest('add-key', key_name='config_key',
+                                           key_type='auto-generated',
+                                           config_usage=True,
+                                           encrypt_with='master-password',
+                                           auto_rotate_start_on=next_rotation_time,
+                                           auto_rotate_every=80)
+        self.assertTrue(result, "Failed to create config_key")
+
+        result = cb_cli.encryption_at_rest('add-key', key_name='bucket_key',
+                                           key_type='auto-generated',
+                                           encrypt_with='master-password',
+                                           all_bucket_usage=True,
+                                           auto_rotate_start_on=next_rotation_time,
+                                           auto_rotate_every=80)
+        self.assertTrue(result, "Failed to create bucket_key")
+
+        # Verify keys using list-keys
+        keys = cb_cli.encryption_at_rest('list-keys')
+
+        keys = ''.join(keys)
+        json_keys = json.loads(keys)
+
+        key_names = [item['name'] for item in json_keys]
+
+        # Check if the specific keys are present
+        self.assertTrue("log_key" in key_names, "log_key not found in keys")
+        self.assertTrue("bucket_key" in key_names, "bucket_key not found in "
+                                                   "keys")
+        self.assertTrue("config_key" in key_names, "config_key not found in "
+                                                   "keys")
+
+        # Verify bucket encryption
+        settings = cb_cli.encryption_at_rest('get-settings')
+        self.assertTrue('bucket_key' in settings['encryption_keys'],
+                        "bucket_key not found in encryption settings")
 
     def test_MB_34947(self):
         # Update already Created docs with async_writes
