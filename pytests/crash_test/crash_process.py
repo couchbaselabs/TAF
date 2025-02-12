@@ -513,7 +513,7 @@ class CrashTest(BaseTestCase):
                 vbucket_stats = cbstats_obj.vbucket_details(bucket_name=bucket.name)
                 ht_mem_used_replica_stat = cbstats_obj.get_stats(
                   bucket_name=bucket.name, stat_name="memory",
-                  field_to_grep="ht_mem_used_replica")
+                  field_to_grep="ht_mem_used_inactive")
                 ht_mem_used_replica_stat = ht_mem_used_replica_stat[0][0].strip("\n").split(" ")[-1]
                 vbucket_mem_used = 0
                 for vbucket in vbucket_stats:
