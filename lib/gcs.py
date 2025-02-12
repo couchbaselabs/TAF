@@ -9,7 +9,7 @@ class GCS:
         credentials = credentials
         self.client = storage.Client.from_service_account_info(info=credentials)
 
-    def create_gcs_bucket(self, bucket_name, location="US"):
+    def create_bucket(self, bucket_name, location="US"):
         try:
             bucket = self.client.bucket(bucket_name)
             self.client.create_bucket(bucket, location=location)
@@ -32,7 +32,7 @@ class GCS:
             self.logger.error(f"Failed to empty bucket '{bucket_name}': {e}")
             return False
 
-    def delete_gcs_bucket(self, bucket_name):
+    def delete_bucket(self, bucket_name):
         try:
             self.empty_gcs_bucket(bucket_name)
             bucket = self.client.bucket(bucket_name)
@@ -63,3 +63,33 @@ class GCS:
             self.logger.info(f"File {blob_name} downloaded to {destination_file_name}.")
         except Exception as e:
             self.logger.error(f"Failed to download file from bucket '{bucket_name}': {e}")
+
+    def delete_folder(self, bucket_name, folder_path):
+        """
+        Deletes a folder and its contents in a GCS bucket.
+
+        :param bucket_name: <str> Name of the GCS bucket.
+        :param folder_path: <str> Path to the folder inside the bucket (must end with '/').
+
+        Example:
+            delete_folder_in_gcs("my-gcs-bucket", "folder_to_delete/")
+        """
+        try:
+            bucket = self.client.bucket(bucket_name)
+            blobs = bucket.list_blobs(prefix=folder_path)  # Get all objects within the folder
+
+            count = 0
+            for blob in blobs:
+                blob.delete()
+                count += 1
+                self.logger.info(f"Deleted {blob.name} from '{bucket_name}'")
+
+            if count == 0:
+                self.logger.warning(f"No files found in '{folder_path}' inside bucket '{bucket_name}'")
+
+            self.logger.info(f"Folder '{folder_path}' and its contents deleted successfully.")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to delete folder '{folder_path}' in bucket '{bucket_name}': {e}")
+            return False
+

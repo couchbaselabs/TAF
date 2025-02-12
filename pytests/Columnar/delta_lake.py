@@ -6,6 +6,7 @@ Created on 8-November-2024
 
 import concurrent.futures
 import json
+import os
 import time
 
 from awsLib.S3 import S3
@@ -13,12 +14,15 @@ from Columnar.columnar_base import ColumnarBaseTest
 from copy import deepcopy
 from delta_lake_util.delta_lake_util import DeltaLakeUtils
 from deepdiff import DeepDiff
+from gcs import GCS
 
+gcs_certificate = os.getenv('gcp_access_file')
 
 class DeltaLakeDatasets(ColumnarBaseTest):
 
     def setUp(self):
         super(DeltaLakeDatasets, self).setUp()
+        self.link_type = self.input.param("external_link_source", "s3")
 
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.tenant.columnar_instances[0]
@@ -31,14 +35,22 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                 self.columnar_spec_name),
             external_collection_file_formats=[self.input.param("file_format")])
 
-        self.s3_obj = S3(self.aws_access_key, self.aws_secret_key,
-                         region=self.aws_region)
+        if self.link_type == "gcs":
+            with open(gcs_certificate, 'r') as file:
+                # Load JSON data from file
+                credentials = json.load(file)
+                self.blob_object = GCS(credentials)
+        else:
+            self.blob_object = S3(self.aws_access_key, self.aws_secret_key,
+                                  region=self.aws_region)
 
         # Create delta lake util object and initialise spark session which
         # will be used to perform operation on Delta Lake table.
-        self.delta_lake_util = DeltaLakeUtils()
-        self.delta_lake_util.create_spark_session(
-            self.aws_access_key, self.aws_secret_key)
+        if self.link_type == "gcs":
+            self.delta_lake_util = DeltaLakeUtils("gcs",{"gcs_service_account_path": gcs_certificate})
+        elif self.link_type == "s3":
+            self.delta_lake_util = DeltaLakeUtils("s3", {"aws_access_key": self.aws_access_key,
+                                                         "aws_secret_key":self.aws_secret_key})
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -47,39 +59,45 @@ class DeltaLakeDatasets(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
         for bucket in self.delta_table_info:
-            self.s3_obj.delete_bucket(bucket)
+            self.blob_object.delete_bucket(bucket)
 
         super(DeltaLakeDatasets, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage="Teardown")
 
     def setup_delta_lake_infra(
-            self, num_s3_bucket=1, num_delta_tables_per_bucket=1, 
+            self, num_blob_bucket=1, num_delta_tables_per_bucket=1,
             load_data=True, num_docs=1000, doc_size=1024,
             include_date_time_fields=False, include_decimal=False):
         self.delta_table_info = dict()
-        for i in range(0, num_s3_bucket):
-            aws_bucket_name = "columnar-delta-lake-regression-" + str(
+        for i in range(0, num_blob_bucket):
+            blob_bucket_name = "columnar-delta-lake-regression-" + str(
                 int(time.time()))
             for j in range(5):
                 try:
-                    self.log.info(f"Creating S3 bucket {aws_bucket_name}")
-                    if self.s3_obj.create_bucket(
-                            aws_bucket_name, self.aws_region):
-                        self.delta_table_info[aws_bucket_name] = list()
-                        break
+                    self.log.info(f"Creating {self.link_type} bucket {blob_bucket_name}")
+                    if self.link_type == "gcs":
+                        if self.blob_object.create_bucket(
+                                blob_bucket_name):
+                            self.delta_table_info[blob_bucket_name] = list()
+                            break
+                    else:
+                        if self.blob_object.create_bucket(
+                                blob_bucket_name, self.aws_region):
+                            self.delta_table_info[blob_bucket_name] = list()
+                            break
                 except Exception as e:
                     self.log.error(
-                        "Creating S3 bucket - {0} in region {1}. "
-                        "Failed.".format(
-                            aws_bucket_name, self.aws_region))
+                        "Creating {0} bucket - {1} in region {2}. "
+                        "Failed.".format(self.link_type,
+                            blob_bucket_name, self.aws_region))
                     self.log.error(str(e))
             # If load_data is False, this will just create dummy entries in 
             # the self.delta_table_info dict, actual table will be created when 
             # we write data.
             for k in range(0, num_delta_tables_per_bucket):
                 delta_table_name = f"delta_table_{k}/"
-                self.delta_table_info[aws_bucket_name].append(delta_table_name)
+                self.delta_table_info[blob_bucket_name].append(delta_table_name)
                 if load_data:
                     # Write in batches of 1000 docs for faster execution and
                     # to prevent overloading memory.
@@ -96,7 +114,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                             ))
                         self.delta_lake_util.write_data_into_table(
                             data=data_to_write,
-                            s3_bucket_name=aws_bucket_name,
+                            bucket_name=blob_bucket_name,
                             delta_table_path=delta_table_name)
                         start = end
                         doc_remaining = num_docs - end
@@ -108,19 +126,19 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                             break
 
     def perform_CRUD_on_data_in_delta_table(
-            self, s3_bucket_name, delta_table_path, num_docs_to_create=0,
+            self, blob_bucket_name, delta_table_path, num_docs_to_create=0,
             doc_size=1024, delete_condition=None, update_condition=None,
             updated_values={}):
 
         if delete_condition:
             self.delta_lake_util.delete_data_from_table(
-                s3_bucket_name=s3_bucket_name,
+                bucket_name=blob_bucket_name,
                 delta_table_path=delta_table_path,
                 delete_condition=delete_condition)
 
         if update_condition and updated_values:
             self.delta_lake_util.update_data_in_table(
-                s3_bucket_name=s3_bucket_name,
+                bucket_name=blob_bucket_name,
                 delta_table_path=delta_table_path, data_updates=updated_values,
                 update_condition=update_condition)
 
@@ -136,7 +154,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                         document_size=doc_size,
                         include_reviews_field=False))
                 self.delta_lake_util.write_data_into_table(
-                    data=data_to_write, s3_bucket_name=s3_bucket_name,
+                    data=data_to_write, bucket_name=blob_bucket_name,
                     delta_table_path=delta_table_path)
                 start = end
                 doc_remaining = num_docs_to_create - end
@@ -149,7 +167,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
 
     def test_create_query_drop_external_datasets_on_delta_lake_table(self):
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -162,9 +180,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -196,7 +214,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
     def test_run_query_on_collection_while_performing_CRUD_on_associated_table(
             self):
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -209,9 +227,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -283,7 +301,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
     def test_run_query_on_collection_post_performing_CRUD_on_associated_table(
             self):
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -296,9 +314,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -332,7 +350,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
 
         for dataset in datasets:
             self.perform_CRUD_on_data_in_delta_table(
-                s3_bucket_name=dataset.dataset_properties[
+                blob_bucket_name=dataset.dataset_properties[
                     "external_container_name"],
                 delta_table_path=dataset.dataset_properties[
                     "path_on_external_container"],
@@ -361,7 +379,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
     def test_run_query_on_collection_after_restoring_old_version_of_associated_table(
             self):
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -374,9 +392,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -410,7 +428,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
 
         for dataset in datasets:
             self.perform_CRUD_on_data_in_delta_table(
-                s3_bucket_name=dataset.dataset_properties[
+                blob_bucket_name=dataset.dataset_properties[
                     "external_container_name"],
                 delta_table_path=dataset.dataset_properties[
                     "path_on_external_container"],
@@ -469,7 +487,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
     def test_run_query_on_collection_post_performing_vacuum_on_associated_table(
             self):
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -482,9 +500,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -523,7 +541,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
     def test_run_query_on_collection_while_performing_vacuum_on_associated_table(
             self):
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -536,9 +554,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -608,7 +626,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
     def test_run_query_on_collection_while_deleting_the_associated_table(
             self):
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -621,9 +639,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -667,7 +685,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                     f"select value ds from {dataset.full_name} as ds")
 
                 delete_table_job = executor.submit(
-                    self.s3_obj.delete_folder,
+                    self.blob_object.delete_folder,
                     dataset.dataset_properties["external_container_name"],
                     dataset.dataset_properties["path_on_external_container"]
                 )
@@ -697,9 +715,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 self.columnar_spec["external_dataset"][
                     "external_dataset_properties"].append(dataset_properties)
@@ -710,7 +728,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
             self.fail(msg)
 
         dataset = self.cbas_util.get_all_dataset_objs("external")[0]
-        link = self.cbas_util.get_all_link_objs("s3")[0]
+        link = self.cbas_util.get_all_link_objs(self.link_type)[0]
 
         testcases = [
             {
@@ -809,7 +827,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
         decimal_to_double = self.input.param("decimal_to_double", True)
 
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -822,9 +840,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 if decimal_to_double:
                     dataset_properties["convert_decimal_to_double"] = 1
@@ -867,7 +885,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
         timestamp_to_long = self.input.param("timestamp_to_long", True)
 
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -880,9 +898,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 if timestamp_to_long:
                     dataset_properties["timestamp_to_long"] = 1
@@ -920,7 +938,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
         date_to_int = self.input.param("date_to_int", True)
 
         self.setup_delta_lake_infra(
-            num_s3_bucket=self.input.param("num_s3_bucket", 1),
+            num_blob_bucket=self.input.param("num_blob_bucket", 1),
             num_delta_tables_per_bucket=self.input.param(
                 "num_delta_tables_per_bucket", 1),
             load_data=True,
@@ -933,9 +951,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                                           "external_dataset_properties"][0])
         self.columnar_spec["external_dataset"][
             "external_dataset_properties"] = list()
-        for s3_bucket in self.delta_table_info:
-            for delta_table in self.delta_table_info[s3_bucket]:
-                dataset_properties["external_container_name"] = s3_bucket
+        for blob_bucket in self.delta_table_info:
+            for delta_table in self.delta_table_info[blob_bucket]:
+                dataset_properties["external_container_name"] = blob_bucket
                 dataset_properties["path_on_external_container"] = delta_table
                 if date_to_int:
                     dataset_properties["date_to_int"] = 1

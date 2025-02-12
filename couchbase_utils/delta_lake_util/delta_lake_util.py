@@ -3,306 +3,236 @@ Created on 6-Nov-2024
 
 @author: Umang Agrawal
 
-Utility for using delta lake
-The spark configuration in this utility is tied to following python module
-versions-
-delta-spark  3.2.1
-pyspark      3.5.3
-supports following required jar packages
-org.apache.hadoop:hadoop-aws:3.3.4
-org.apache.hadoop:hadoop-common:3.3.4
-com.amazonaws:aws-java-sdk-bundle:1.12.262
-If using different version of delta-spark or pyspark, please update jar
-package versions accordingly.
+Utility for using Delta Lake with Apache Spark for both AWS S3 & Google Cloud Storage (GCS).
+This utility supports:
+- delta-spark  3.2.1
+- pyspark      3.5.3
+- Required JARs:
+  - org.apache.hadoop:hadoop-aws:3.3.4
+  - org.apache.hadoop:hadoop-common:3.3.4
+  - com.amazonaws:aws-java-sdk-bundle:1.12.262
+  - com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.5
 """
 
 import json
 import logging
 import os
 import pyspark
-
-from delta import *
+from pyspark.sql import SparkSession
+from delta import configure_spark_with_delta_pip
+from delta.tables import DeltaTable
 from cbas_utils.cbas_utils_columnar import BaseUtil
 
 
-class DeltaLakeUtils(object):
+class DeltaLakeUtils:
     """
-    Utility to create apache spark session and use it to perform action on
-    delta lake tables.
+    Utility to create Apache Spark session for both AWS S3 and GCS.
+    Allows data operations on Delta Lake tables.
     """
 
-    def __init__(self):
+    def __init__(self, storage_type, credentials, sql_partitions=4, cores_to_use=2):
+        """
+        Initialize DeltaLakeUtils for AWS S3 or Google Cloud Storage (GCS).
+
+        :param storage_type: <str> Either "s3" for AWS S3 or "gcs" for Google Cloud Storage.
+        :param credentials: <dict> Dictionary containing authentication details.
+        :param sql_partitions: <int> Number of Spark partitions.
+        :param cores_to_use: <int> Number of cores to use for Spark.
+        """
         self.log = logging.getLogger(__name__)
         self.spark_session = None
+        self.storage_type = storage_type.lower()
+        self.sql_partitions = sql_partitions
+        self.cores_to_use = cores_to_use
+
         os.environ["SPARK_LOCAL_HOSTNAME"] = "127.0.0.1"
 
-    @staticmethod
-    def format_s3_path(s3_bucket, delta_table_folder_path):
-        return f"s3a://{s3_bucket}/{delta_table_folder_path}"
+        # Initialize Spark session based on storage type
+        if self.storage_type == "s3":
+            self.create_spark_session_s3(
+                aws_access_key=credentials.get("aws_access_key"),
+                aws_secret_key=credentials.get("aws_secret_key"),
+            )
+        elif self.storage_type == "gcs":
+            self.create_spark_session_gcs(
+                gcs_service_account_path=credentials.get("gcs_service_account_path")
+            )
+        else:
+            raise ValueError("Invalid storage type. Use 's3' for AWS S3 or 'gcs' for Google Cloud Storage.")
 
-    def create_spark_session(self, aws_access_key, aws_secret_key,
-                             sql_partitions=4, cores_to_use=2):
+    @staticmethod
+    def format_storage_path(storage_type, bucket_name, delta_table_path):
         """
-        Create an Apache spark session.
-        :param aws_access_key <str> Access key for AWS S3
-        :param aws_secret_key <str> Secret access key for AWS S3
-        :param sql_partitions <int>
-        :param cores_to_use <int> Number of cores utilized by Spark
+        Format storage path dynamically for S3 or GCS.
+
+        :param storage_type: <str> Either "s3" or "gcs".
+        :param bucket_name: <str> Bucket name.
+        :param delta_table_path: <str> Path to the Delta table.
+        :return: <str> Formatted storage path.
+        """
+        if storage_type == "s3":
+            return f"s3a://{bucket_name}/{delta_table_path}"
+        elif storage_type == "gcs":
+            return f"gs://{bucket_name}/{delta_table_path}"
+        else:
+            raise ValueError("Invalid storage type. Use 's3' for AWS S3 or 'gcs' for Google Cloud Storage.")
+
+    def create_spark_session_s3(self, aws_access_key, aws_secret_key):
+        """
+        Create an Apache Spark session configured for AWS S3.
         """
         app_name = BaseUtil.generate_name(max_length=10)
         conf = (
             pyspark.conf.SparkConf()
             .setAppName(app_name)
-            .set(
-                "spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-            )
-            .set("spark.sql.extensions",
-                 "io.delta.sql.DeltaSparkSessionExtension")
+            .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+            .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
             .set("spark.hadoop.fs.s3a.access.key", aws_access_key)
-            .set("spark.hadoop.fs.s3a.secret.key",
-                 aws_secret_key)
-            .set("spark.sql.shuffle.partitions", str(sql_partitions))
-            .set("spark.databricks.delta.retentionDurationCheck.enabled",
-                 "false")
-            .setMaster(f"local[{cores_to_use}]")
-            # replace the * with your desired number of cores. * for use all.
+            .set("spark.hadoop.fs.s3a.secret.key", aws_secret_key)
+            .set("spark.sql.shuffle.partitions", str(self.sql_partitions))
+            .set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+            .setMaster(f"local[{self.cores_to_use}]")
         )
+
         extra_packages = [
             "org.apache.hadoop:hadoop-aws:3.3.4",
             "org.apache.hadoop:hadoop-common:3.3.4",
             "com.amazonaws:aws-java-sdk-bundle:1.12.262",
         ]
-        builder = pyspark.sql.SparkSession.builder.appName("MyApp").config(
-            conf=conf)
-        self.spark_session = configure_spark_with_delta_pip(
-            builder, extra_packages=extra_packages
-        ).getOrCreate()
+
+        builder = SparkSession.builder.appName("MyApp").config(conf=conf)
+        self.spark_session = configure_spark_with_delta_pip(builder, extra_packages=extra_packages).getOrCreate()
+
+    def create_spark_session_gcs(self, gcs_service_account_path):
+        """
+        Create an Apache Spark session configured for Google Cloud Storage (GCS).
+        """
+        app_name = BaseUtil.generate_name(max_length=10)
+        conf = (
+            pyspark.conf.SparkConf()
+            .setAppName(app_name)
+            .set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+            .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+            .set("spark.hadoop.fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
+            .set("spark.hadoop.fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS")
+            .set("google.cloud.auth.service.account.enable", "true")
+            .set("spark.hadoop.google.cloud.auth.service.account.json.keyfile", gcs_service_account_path)
+            .set("spark.sql.shuffle.partitions", str(self.sql_partitions))
+            .set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+            .setMaster(f"local[{self.cores_to_use}]")
+        )
+
+        extra_packages = [
+            "org.apache.hadoop:hadoop-common:3.3.4",
+            "com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.5",
+        ]
+
+        builder = SparkSession.builder.appName("MyApp").config(conf=conf)
+        self.spark_session = configure_spark_with_delta_pip(builder, extra_packages=extra_packages).getOrCreate()
 
     def close_spark_session(self):
         """
-        Closes an Apache spark session
+        Closes an Apache Spark session.
         """
         if self.spark_session:
             self.spark_session.stop()
 
-    def write_data_into_table(self, data, s3_bucket_name, delta_table_path,
-                              write_mode="append"):
+    def write_data_into_table(self, data, bucket_name, delta_table_path, write_mode="append"):
         """
-        Write data into Delta Lake table.
-        :param data <list of json objects> Data to be written in Delta-Lake 
-        table.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path <str> full path on S3 where the delta lake
-        table is present (create if not exists). Format folder/
-        :param write_mode <str> Write mode, Accepted values - overwrite and 
-        append
+        Write data into a Delta Lake table.
         """
         try:
             dataframe = self.spark_session.createDataFrame(data)
             dataframe.write.format("delta").mode(write_mode).save(
-                self.format_s3_path(s3_bucket_name, delta_table_path))
+                self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+            )
             return True
         except Exception as err:
             self.log.error(str(err))
             return False
 
-    def read_data_from_table(self, s3_bucket_name, delta_table_path):
+    def read_data_from_table(self, bucket_name, delta_table_path):
         """
-        Reads Data from Delta lake table.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path: <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :return: List of json abjects.
-        Note - Use it for reading small size data, since everything is kept
-        in memory.
+        Reads Data from a Delta Lake table.
         """
         delta_df = self.spark_session.read.format("delta").load(
-            self.format_s3_path(s3_bucket_name, delta_table_path))
-        # Convert Spark DataFrame to JSON strings and collect as a list
+            self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+        )
         json_strings = delta_df.toJSON().collect()
+        return [json.loads(record) for record in json_strings]
 
-        # Convert JSON strings to dictionaries
-        json_data = [json.loads(record) for record in json_strings]
-        return json_data
-
-    def stream_data_from_table(self, s3_bucket_name, delta_table_path,
-                               stream_processing_function=None):
+    def list_all_table_versions(self, bucket_name, delta_table_path):
         """
-        Streams Data from Delta lake table.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path: <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :param stream_processing_function <func> Function that performs some
-        action or validation on stream of data being read. Function should
-        accept a list of dict.
-        :return:
-        """
-        # Read the Delta table as a streaming DataFrame
-        streaming_df = self.spark_session.readStream.format("delta").load(
-            self.format_s3_path(s3_bucket_name, delta_table_path))
-
-        # Define a function to process each batch
-        def process_batch(batch_df, batch_id):
-            self.log.info(f"Processing batch ID: {batch_id}")
-
-            # Convert Spark DataFrame to JSON strings and collect as a list
-            json_strings = batch_df.toJSON().collect()
-
-            # Convert JSON strings to dictionaries
-            json_data = [json.loads(record) for record in json_strings]
-            stream_processing_function(json_data)
-
-        # Use foreachBatch to process each batch in the stream
-        query = streaming_df.writeStream \
-            .foreachBatch(process_batch) \
-            .outputMode("append") \
-            .start()
-
-        # Wait for the streaming query to finish
-        query.awaitTermination()
-
-    def stream_data_into_json_file(self, s3_bucket_name, delta_table_path,
-                                   output_file_path):
-        """
-        Streams Data from Delta lake table and stores in a json file.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path: <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :param output_file_path <str> Path of the json file where the read
-        data is to be stored.
-        :return:
-        """
-        # Read the Delta table as a streaming DataFrame
-        streaming_df = self.spark_session.readStream.format("delta").load(
-            self.format_s3_path(s3_bucket_name, delta_table_path))
-
-        def append_to_single_json(batch_df, batch_id):
-            self.log.info(f"Processing batch ID: {batch_id}")
-            # Convert batch DataFrame to JSON records
-            json_data = batch_df.toJSON().collect()
-
-            # Append each record to a single JSON file
-            with open(output_file_path, "a") as f:
-                for record in json_data:
-                    json.dump(json.loads(record), f)
-                    f.write("\n")  # Write as newline-delimited JSON
-
-        # Stream data from Delta Lake and apply foreachBatch
-        query = streaming_df.writeStream \
-            .foreachBatch(append_to_single_json) \
-            .outputMode("append") \
-            .start()
-
-        query.awaitTermination()
-
-    def list_all_table_versions(self, s3_bucket_name, delta_table_path):
-        """
-        List all versions of delta table.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :return: List if table versions
+        List all versions of a Delta table.
         """
         delta_table = DeltaTable.forPath(
-            self.spark_session, self.format_s3_path(
-                s3_bucket_name, delta_table_path))
-        history_df = delta_table.history()
-        versions = history_df.select("version").rdd.flatMap(
-            lambda x: x).collect()
-        self.log.debug(f"Delta table {delta_table_path} has following "
-                       f"versions {versions}")
+            self.spark_session, self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+        )
+        versions = delta_table.history().select("version").rdd.flatMap(lambda x: x).collect()
         return versions
 
-    def restore_previous_version_of_delta_table(
-            self, s3_bucket_name, delta_table_path, version_to_restore):
+    def restore_previous_version_of_delta_table(self, bucket_name, delta_table_path, version_to_restore):
         """
-        Restore Delta Lake table to previous version.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path: <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :param version_to_restore: <int> version number to which the table
-        has to be restored to.
-        :return:
+        Restore Delta Lake table to a previous version.
         """
-
         delta_table = DeltaTable.forPath(
-            self.spark_session, self.format_s3_path(
-                s3_bucket_name, delta_table_path))
+            self.spark_session, self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+        )
         delta_table.restoreToVersion(version_to_restore)
 
-    def perform_vacuum_on_delta_lake_table(
-            self, s3_bucket_name, delta_table_path, retention_time=0):
+    def perform_vacuum_on_delta_lake_table(self, bucket_name, delta_table_path, retention_time=0):
         """
-        Performs vacuum on Delta lake table.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :param retention_time: <float/int> retention time in minutes
-        :return:
+        Performs vacuum on Delta Lake table.
+        :param bucket_name <str>: Name of the S3/GCS bucket where the Delta table is present.
+        :param delta_table_path <str>: Full path on S3/GCS where the Delta Lake table is present. Format: folder/
+        :param retention_time <float/int>: Retention time in minutes.
         """
         delta_table = DeltaTable.forPath(
-            self.spark_session,
-            self.format_s3_path(s3_bucket_name, delta_table_path))
-        retention_time_hrs = round(retention_time/60, 2)
+            self.spark_session, self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+        )
+        retention_time_hrs = round(retention_time / 60, 2)
         delta_table.vacuum(retentionHours=retention_time_hrs)
 
-    def delete_data_from_table(self, s3_bucket_name, delta_table_path,
-                               delete_condition=None):
+    def delete_data_from_table(self, bucket_name, delta_table_path, delete_condition=None):
         """
-        Deletes data from Delta lake table based on some condition. If no
-        condition is specifed then deletes all data.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path: <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :param delete_condition: <str> predicate using SQL formatted string.
-        Eg - "age > 5"
-        :return:
+        Deletes data from Delta Lake table based on a condition.
+        If no condition is specified, deletes all data.
+
+        :param bucket_name <str>: Name of the S3/GCS bucket where the Delta table is present.
+        :param delta_table_path <str>: Full path on S3/GCS where the Delta Lake table is present. Format: folder/
+        :param delete_condition <str>: Predicate using SQL formatted string. Eg - "age > 5"
         """
         delta_table = DeltaTable.forPath(
-            self.spark_session,
-            self.format_s3_path(s3_bucket_name, delta_table_path))
+            self.spark_session, self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+        )
         delta_table.delete(delete_condition)
 
-    def update_data_in_table(self, s3_bucket_name, delta_table_path,
-                             data_updates, update_condition=None):
+    def update_data_in_table(self, bucket_name, delta_table_path, data_updates, update_condition=None):
         """
-        Deletes data from Delta lake table based on some condition. If no
-        condition is specifed then deletes all data.
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path: <str> full path on S3 where the delta lake
-        table is present. Format folder/
-        :param data_updates <dict> Fields and their updated values.
-        :param update_condition: <str> predicate using SQL formatted string.
-        Eg - "age > 5"
-        :return:
+        Updates data in Delta Lake table based on a condition.
+
+        :param bucket_name <str>: Name of the S3/GCS bucket where the Delta table is present.
+        :param delta_table_path <str>: Full path on S3/GCS where the Delta Lake table is present. Format: folder/
+        :param data_updates <dict>: Fields and their updated values.
+        :param update_condition <str>: Predicate using SQL formatted string. Eg - "age > 5"
         """
         delta_table = DeltaTable.forPath(
-            self.spark_session,
-            self.format_s3_path(s3_bucket_name, delta_table_path))
+            self.spark_session, self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+        )
         delta_table.update(condition=update_condition, set=data_updates)
 
-    def get_doc_count_in_table(self, s3_bucket_name, delta_table_path):
+    def get_doc_count_in_table(self, bucket_name, delta_table_path):
         """
-        Gets total number of rows/documents in Delta lake table
-        :param s3_bucket_name <str> Name of the S3 bucket where the delta 
-        table is present.
-        :param delta_table_path: <str> full path on S3 where the delta lake
-        table is present. Format folder/
+        Gets total number of rows/documents in Delta Lake table.
+
+        :param bucket_name <str>: Name of the S3/GCS bucket where the Delta table is present.
+        :param delta_table_path <str>: Full path on S3/GCS where the Delta Lake table is present. Format: folder/
+        :return: <int> Number of documents in the Delta table.
         """
-        # Load the Delta table
         delta_table = DeltaTable.forPath(
-            self.spark_session,
-            self.format_s3_path(s3_bucket_name, delta_table_path))
+            self.spark_session, self.format_storage_path(self.storage_type, bucket_name, delta_table_path)
+        )
 
         # Use DeltaTable API to get the count of records
         return int(delta_table.toDF().count())
+

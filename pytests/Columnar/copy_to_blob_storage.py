@@ -73,7 +73,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 elif self.link_type == "gcs":
                     self.sink_blob_bucket_name = "copy-to-gcs-" + str(random.randint(1, 100000))
                     self.log.info("Creating gcs bucket : {}".format(self.sink_blob_bucket_name))
-                    if self.gcs_client.create_gcs_bucket(self.sink_blob_bucket_name):
+                    if self.gcs_client.create_bucket(self.sink_blob_bucket_name):
                         break
 
             except Exception as e:
@@ -155,7 +155,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                             region=self.aws_region):
                         break
                 elif self.link_type == "gcs":
-                    if self.gcs_client.delete_gcs_bucket(self.sink_blob_bucket_name):
+                    if self.gcs_client.delete_bucket(self.sink_blob_bucket_name):
                         break
             except Exception as e:
                 self.log.error("Unable to delete blob bucket - {0}".format(
