@@ -91,7 +91,17 @@ echo "####################################"
 jython_path=/opt/jython/bin/jython
 jython_pip=/opt/jython/bin/pip
 
-# Clean up the gradle logs folder which bloat up the disk space
+# To kill Orphan Python / magmaloader.jar
+ps -ef | grep 'python testrunner.py' | awk '$3 == 1 {print $2}' | xargs kill -9
+ps -ef | grep 'java -jar' | grep 'magmadocloader' | awk '$3 == 1 {print $2}' | xargs kill -9
+
+# Reclaim disk space from gradle files
+for i in `ls /tmp/gradle*.bin`; do
+  lsof $i > /dev/null
+  if [ $? -eq 1 ]; then
+    rm -f $i
+  fi
+done
 for file in `find ~/.gradle/ -name "*.out.log"`
 do
     lsof_line_count=`lsof $file | grep -v COMMAND | wc -l`
@@ -336,4 +346,5 @@ fi
 
 # To reduce the disk consumption post run
 rm -rf .git b build conf guides pytests
-docker system  prune -f
+# To clean any available space from docker
+docker system prune -f
