@@ -512,7 +512,7 @@ class CrashTest(ClusterSetup):
                 vbucket_stats = cbstats_obj.vbucket_details(bucket_name=bucket.name)
                 mem_stats = cbstats_obj.all_stats(bucket.name, "memory")
                 cbstats_obj.disconnect()
-                ht_mem_used_replica_stat = mem_stats["ht_mem_used_replica"]
+                ht_mem_used_replica_stat = mem_stats["ht_mem_used_inactive"]
                 vbucket_mem_used = 0
                 for vbucket in vbucket_stats:
                     if vbucket_stats[vbucket]["type"] == "replica":
