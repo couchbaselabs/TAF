@@ -2411,14 +2411,18 @@ class basic_ops(ClusterSetup):
 
     def test_unlock_key(self):
         """
-        Ref: MB-58088 / MB-59060 / MB-59746
+        Ref: MB-58088 / MB-59060 / MB-59746 / MB-64973
         """
         def validate_unlock_exception(t_key, d_cas, expected_errors):
             try:
                 client.collection.unlock(t_key, d_cas)
             except AmbiguousTimeoutException as e:
                 if "KV_TEMPORARY_FAILURE" in str(e):
-                    self.fail("Key '{}' - KV_TEMPORARY_FAILURE".format(t_key))
+                    if return_tmpfail_val == "false":
+                        self.fail(f"Key '{t_key}' - KV_TEMPORARY_FAILURE")
+                    else:
+                        # Expected since not_locked_returns_tmpfail is enabled
+                        pass
             except CouchbaseException as e:
                 err_found = False
                 for exp_err in expected_errors:
@@ -2437,60 +2441,112 @@ class basic_ops(ClusterSetup):
         else:
             client = SDKClient(self.cluster, bucket)
 
-        not_locked_msgs = ["Requested resource is not locked", "NOT_LOCKED"]
-        self.log.info("Test for multiple doc-unlock")
-        result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
-        original_cas = result["cas"]
-        result = client.collection.get_and_lock(
-            key_1, SDKOptions.get_duration(15, "seconds"))
-        locked_cas = result.cas
-        self.assertNotEqual(original_cas, locked_cas, "CAS not updated")
-        client.collection.unlock(key_1, locked_cas)
-        validate_unlock_exception(key_1, locked_cas, not_locked_msgs)
-        result = client.crud(DocLoading.Bucket.DocOps.READ, key_1)
-        cas_after_unlock = result["cas"]
-        self.assertEqual(original_cas, cas_after_unlock, "CAS updated")
+        nodes = {"shell": dict(),
+                 "cbstats": dict()}
 
-        self.log.info("Testing unlock without lock")
-        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2, {})["cas"]
-        validate_unlock_exception(key_2, cas, not_locked_msgs)
+        rest = ClusterRestAPI(self.cluster.master)
+        # Create required shell and cbstats connections
+        for kv_node in self.cluster.kv_nodes:
+            nodes["shell"][kv_node] = RemoteMachineShellConnection(kv_node)
+            nodes["shell"][kv_node].enable_diag_eval_on_non_local_hosts()
+            nodes["cbstats"][kv_node] = Cbstats(kv_node)
 
-        self.log.info("Testing with expired key")
-        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
-                          key_3, {}, exp=2)["cas"]
-        self.sleep(3, "Wait for doc_to_expire")
-        validate_unlock_exception(key_3, cas,
-                                  SDKException.DocumentNotFoundException)
+        for index, return_tmpfail_val in enumerate(["false", "true", "false"]):
+            self.log.info(f"Flusing {bucket.name} to test"
+                          f" return_tmpfail_val={return_tmpfail_val}")
+            self.bucket_util.flush_bucket(self.cluster, bucket)
+            self.sleep(5, "Wait for flush to complete")
 
-        # Test with evicted docs
-        self.log.info("Testing evicted keys with lock expired")
-        client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
-        client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2, {})
-        doc_1_cas = client.collection.get_and_lock(
-            key_1, SDKOptions.get_duration(15, "seconds")).cas
-        doc_2_cas = client.collection.get_and_lock(
-            key_2, SDKOptions.get_duration(15, "seconds")).cas
-        doc_3_cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
-                                key_3, {}, exp=10)["cas"]
-        self.log.info("Loading more docs for eviction to get trigger")
-        doc_gen = doc_generator("non_ttl_keys", 0, 1000000,
-                                key_size=20, doc_size=1024)
-        load_task = self.task.async_load_gen_docs(
-            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
-            durability=self.durability_level, timeout_secs=self.sdk_timeout,
-            batch_size=100, process_concurrency=4, print_ops_rate=False,
-            load_using=self.load_docs_using)
-        self.task_manager.get_task_result(load_task)
-        self.log.info("Validating unlock outcome with eviction")
-        validate_unlock_exception(key_1, doc_1_cas, not_locked_msgs)
-        validate_unlock_exception(key_2, doc_2_cas, not_locked_msgs)
-        validate_unlock_exception(key_3, doc_3_cas,
-                                  SDKException.DocumentNotFoundException)
-        # Invalid CAS test
-        validate_unlock_exception(key_1, doc_1_cas+1, not_locked_msgs)
-        validate_unlock_exception(key_2, doc_2_cas+1, not_locked_msgs)
-        validate_unlock_exception(key_3, doc_3_cas+1,
-                                  SDKException.DocumentNotFoundException)
+            # MB-64973: index==0 is default value in server side
+            if index != 0:
+                self.log.info("Setting not_locked_returns_tmpfail="
+                              f" {return_tmpfail_val}")
+                rest.ns_bucket_update_bucket_props(
+                    bucket.name,
+                    f"not_locked_returns_tmpfail={return_tmpfail_val}")
+                for kv_node in self.cluster.kv_nodes:
+                    nodes["shell"][kv_node].restart_couchbase()
+
+                self.sleep(15, "Wait for servers to restart")
+                okay = True
+                for kv_node in self.cluster.kv_nodes:
+                    okay = self.cluster_util.wait_for_ns_servers(
+                        kv_node, wait_time=60) and okay
+                self.assertTrue(okay, "Servers not fully up")
+
+            if return_tmpfail_val == "true":
+                not_locked_msgs = ["key_value_temporary_failure"]
+            else:
+                not_locked_msgs = ["Requested resource is not locked",
+                                   "NOT_LOCKED"]
+
+            for kv_node in self.cluster.kv_nodes:
+                all_stats = nodes["cbstats"][kv_node].all_stats(bucket.name)
+                if all_stats["ep_not_locked_returns_tmpfail"] \
+                        != return_tmpfail_val:
+                    self.fail(f"{kv_node.ip} - "
+                              f"Unexpected val {return_tmpfail_val}")
+
+            self.log.info("Test for multiple doc-unlock")
+            result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+            original_cas = result["cas"]
+            result = client.collection.get_and_lock(
+                key_1, SDKOptions.get_duration(15, "seconds"))
+            locked_cas = result.cas
+            self.assertNotEqual(original_cas, locked_cas, "CAS not updated")
+            client.collection.unlock(key_1, locked_cas)
+            validate_unlock_exception(key_1, locked_cas, not_locked_msgs)
+            result = client.crud(DocLoading.Bucket.DocOps.READ, key_1)
+            cas_after_unlock = result["cas"]
+            self.assertEqual(original_cas, cas_after_unlock, "CAS updated")
+
+            self.log.info("Testing unlock without lock")
+            cas = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2,
+                              {})["cas"]
+            validate_unlock_exception(key_2, cas, not_locked_msgs)
+
+            self.log.info("Testing with expired key")
+            cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
+                              key_3, {}, exp=2)["cas"]
+            self.sleep(3, "Wait for doc_to_expire")
+            validate_unlock_exception(key_3, cas,
+                                      SDKException.DocumentNotFoundException)
+
+            # Test with evicted docs
+            self.log.info("Testing evicted keys with lock expired")
+            client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+            client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2, {})
+            doc_1_cas = client.collection.get_and_lock(
+                key_1, SDKOptions.get_duration(15, "seconds")).cas
+            doc_2_cas = client.collection.get_and_lock(
+                key_2, SDKOptions.get_duration(15, "seconds")).cas
+            doc_3_cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
+                                    key_3, {}, exp=10)["cas"]
+            self.log.info("Loading more docs for eviction to get trigger")
+            doc_gen = doc_generator("non_ttl_keys", 0, 1000000,
+                                    key_size=20, doc_size=1024)
+            load_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+                durability=self.durability_level,
+                timeout_secs=self.sdk_timeout,
+                batch_size=100, process_concurrency=4, print_ops_rate=False,
+                load_using=self.load_docs_using)
+            self.task_manager.get_task_result(load_task)
+            self.log.info("Validating unlock outcome with eviction")
+            validate_unlock_exception(key_1, doc_1_cas, not_locked_msgs)
+            validate_unlock_exception(key_2, doc_2_cas, not_locked_msgs)
+            validate_unlock_exception(key_3, doc_3_cas,
+                                      SDKException.DocumentNotFoundException)
+            # Invalid CAS test
+            validate_unlock_exception(key_1, doc_1_cas+1, not_locked_msgs)
+            validate_unlock_exception(key_2, doc_2_cas+1, not_locked_msgs)
+            validate_unlock_exception(key_3, doc_3_cas+1,
+                                      SDKException.DocumentNotFoundException)
+
+        self.log.info("Closing client connections")
+        for kv_node in self.cluster.kv_nodes:
+            nodes["shell"][kv_node].disconnect()
+            nodes["cbstats"][kv_node].disconnect()
 
     def test_mutate_prepare_evict(self):
         """
