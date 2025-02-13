@@ -448,7 +448,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         for num_events in [0, max_plus_1]:
             self.log.info("Testing max_event_count=%s" % num_events)
-            status = self.rest.update_auto_failover_settings(
+            status, _ = self.rest.update_auto_failover_settings(
                 enable_failover, timeout_val, max_count=max_plus_1)
             self.assertFalse(status, "Able to set max events=%s" % num_events)
             self.validate_failover_settings(
@@ -553,7 +553,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.fail("Failure during failover operation")
 
             # Enable back prev auto_fo settings
-            self.sleep(15, "Wait before enabling back auto-fo")
+            self.sleep(60, "Wait before enabling back auto-fo")
             self.rest.update_auto_failover_settings(
                 enabled="true", timeout=self.timeout, max_count=self.max_count,
                 failover_preserve_durability=self.preserve_durability_during_auto_fo)
