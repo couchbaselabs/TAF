@@ -646,11 +646,11 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
 
         self.cbas_util.run_jobs_in_parallel(jobs, results, 1, True)
         self.cbas_util.run_jobs_in_parallel(maintenance_job, maintenance_result, 1, True)
-        while not jobs.empty() and len(results) != 1:
+        while not jobs.empty() or len(results) != 1:
             if not all(results):
                 self.log.error("Operations failed during upgrade")
 
-        while not maintenance_job.empty() and len(maintenance_result) != 1:
+        while not maintenance_job.empty() or len(maintenance_result) != 1:
             pass
 
         if not all(maintenance_result):
