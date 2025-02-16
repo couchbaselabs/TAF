@@ -10,6 +10,8 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.query.query_api import QueryRestAPI
+from cb_server_rest_util.index.index_api import IndexRestAPI
 from rebalance_utils.rebalance_util import RebalanceUtil
 import testconstants
 from StatsLib.StatsOperations import StatsHelper
@@ -361,8 +363,8 @@ class UpgradeTests(UpgradeBase):
                                 query = 'CREATE INDEX `{0}` ON `{1}`.`{2}`.`{3}`(`{4}` include missing)'.format(
                                             index_name, bucket.name, scope.name, col.name, "name")
                                 query += ' WITH { "num_replica":1 };'
-                                client_query = RestConnection(self.cluster.query_nodes[0])
-                                result = client_query.query_tool(query)
+                                client_query = QueryRestAPI(self.cluster.query_nodes[0])
+                                result = client_query.run_query(query)
                                 self.log.info(f"Result for creation of index "
                                               f"{index_name}={result['status']}")
                                 if result['status'] == 'success':
@@ -540,10 +542,10 @@ class UpgradeTests(UpgradeBase):
             self.create_new_bucket_post_upgrade_and_load_data()
 
         if self.include_indexing_query and self.enable_shard_affinity:
-            rest = RestConnection(self.cluster.index_nodes[0])
+            rest = IndexRestAPI(self.cluster.index_nodes[0])
             self.log.info("Enabling file based index rebalance")
-            rest.set_indexer_params(redistributeIndexes='true',
-                                    enableShardAffinity='true')
+            rest.rest.set_gsi_settings(redistributeIndexes='true',
+                                       enableShardAffinity='true')
             self.log.info("Building a few more indexes...")
             self.create_secondary_indexes(partitioned=True, replica=False,
                                           index_suffix='new_part_index',
@@ -2229,13 +2231,13 @@ class UpgradeTests(UpgradeBase):
 
     def create_primary_indexes(self):
         bucket = self.cluster.buckets[0]
-        self.query_client = RestConnection(self.cluster.query_nodes[0])
+        self.query_client = QueryRestAPI(self.cluster.query_nodes[0])
         self.log.info("Creating primary indexes..")
         for scope in self.bucket_util.get_active_scopes(bucket):
             for col in self.bucket_util.get_active_collections(bucket, scope.name):
                 primary_index_query = "CREATE PRIMARY INDEX ON `{0}`.`{1}`.`{2}`".format(
                     bucket.name, scope.name, col.name)
-                result = self.query_client.query_tool(primary_index_query)
+                result = self.query_client.run_query(primary_index_query)
                 self.log.info("Result for creation of index = {0}".format(result['status']))
                 if result['status'] == 'success':
                     self.index_count += 1
@@ -2251,7 +2253,7 @@ class UpgradeTests(UpgradeBase):
             primary_index_query = 'CREATE PRIMARY INDEX `{0}` ON `{1}`.`{2}`.`{3}`'.format(
                 part_idx_name, bucket.name, "_default", col.name)
             primary_index_query += ' PARTITION BY HASH(META().id) WITH {"num_partition": 8};'
-            result = self.query_client.query_tool(primary_index_query)
+            result = self.query_client.run_query(primary_index_query)
             self.log.info("Result for creation of index {0} = {1}".format(part_idx_name,
                                                                     result['status']))
             if result['status'] == 'success':
@@ -2275,7 +2277,7 @@ class UpgradeTests(UpgradeBase):
                     query += ' PARTITION BY HASH(META().id) WITH {"num_partition": 8};'
                 if replica:
                     query += ' WITH { "num_replica":1 };'
-                result = self.query_client.query_tool(query)
+                result = self.query_client.run_query(query)
                 self.log.info("Result for creation of index {0} = {1}".format(idx_name,
                                                                     result['status']))
                 if result['status'] == 'success':
@@ -2449,7 +2451,7 @@ class UpgradeTests(UpgradeBase):
         for idx_query in indexes:
             idx_name = idx_prefix + str(count)
             self.log.info("Index query = {}".format(idx_query))
-            result = self.query_client.query_tool(idx_query)
+            result = self.query_client.run_query(idx_query)
             self.log.info("Result for creation of {0} = {1}".format(idx_name, result))
             if result['status'] == 'success':
                 self.index_count += 1
@@ -2462,10 +2464,10 @@ class UpgradeTests(UpgradeBase):
             self.spec_bucket[MetaConstants.NUM_SCOPES_PER_BUCKET] * \
                 self.spec_bucket[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]
         index_query_node = self.cluster.index_nodes[0]
-        rest = RestConnection(index_query_node)
+        rest = IndexRestAPI(index_query_node)
         self.log.info("Setting indexer params")
         if self.redistribute_indexes:
-            rest.set_indexer_params(redistributeIndexes='true')
+            rest.set_gsi_settings(redistributeIndexes='true')
         sdk_client = SDKClient(self.cluster, None,
                                servers=[index_query_node])
         self.create_primary_indexes()
