@@ -448,7 +448,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             description="Amazing Cloud",
             single_az=False,
             provider=self.provider,
-            region=self.region,
+            region=self.region if self.provider == "aws" else self.gcp_region,
             timezone=Cluster.Timezone.PT,
             plan=self.package,
             version=self.input.capella.get("server_version", None),
