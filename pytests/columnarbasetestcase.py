@@ -3,6 +3,7 @@ Created on Oct 14, 2023
 
 @author: umang.agrawal
 """
+import re
 import cluster_utils.cluster_ready_functions
 import global_vars
 import random
@@ -19,6 +20,13 @@ from TestInput import TestInputSingleton
 from capella_utils.dedicated import CapellaUtils
 
 
+def transform_couchbase_version(aws_version):
+    """
+    Changes the build name from aws to gcp
+    Example: couchbase-columnar-1.1.0-XXXX-arm64-v1.1.0 to couchbase-columnar-1-1-0-XXXX-arm64-v1-1-0
+    """
+    return re.sub(r'(\d+)\.(\d+)\.(\d+)', r'\1-\2-\3', aws_version)
+
 class ColumnarBaseTest(ProvisionedBaseTestCase):
     def setUp(self):
         super(ColumnarBaseTest, self).setUp()
@@ -34,7 +42,10 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         """
         self.instance_type = self.input.param("instance_type",
                                               "4vCPUs:32GB").split(":")
+        provider = self.input.param("columnar_provider", "aws")
         self.columnar_image = self.capella.get("columnar_image", None)
+        if provider == "gcp":
+            self.columnar_image = transform_couchbase_version(self.columnar_image)
 
         # Utility objects
         self.columnar_utils = ColumnarUtils(self.log)
