@@ -300,7 +300,7 @@ if [ "$?" -eq 0 ]; then
   export PATH=/usr/local/go/bin:$PATH
 
   set -x
-  python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
+  python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p "$parameters" --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
   status=$?
   set +x
