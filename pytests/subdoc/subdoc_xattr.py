@@ -314,7 +314,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
         # Read full doc and validate
         result = self.client.crud("read", self.doc_id)
-        self.assertEqual(result, value["value"],
+        self.assertEqual(result["value"]["v"], value["v"],
                          "Document value mismatch: %s != %s" % (result, value))
 
         # Read sub_doc for validating the value
