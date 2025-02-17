@@ -21,17 +21,32 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
 
-        self.doc_count_per_format = {
-            "json": 7920000, "parquet": 7920000,
-            "csv": 7920000, "tsv": 7920000, "avro": 7920000}
+        self.link_type = self.input.param("external_link_source", "s3")
 
-        self.files_to_use_in_include = {
-            "json": [["*/file_1.json"], 7800000],
-            "csv": [["*/file_2.csv"], 7800000],
-            "tsv": [["*/file_3.tsv"], 7800000],
-            "parquet": [["*/file_5.parquet"], 7800000],
-            "avro": [["*/file_4.avro"], 7800000]
-        }
+        if self.link_type == "s3":
+            self.files_to_use_in_include = {
+                "json": [["*/file_1.json"], 7800000],
+                "csv": [["*/file_2.csv"], 7800000],
+                "tsv": [["*/file_3.tsv"], 7800000],
+                "parquet": [["*/file_5.parquet"], 7800000],
+                "avro": [["*/file_4.avro"], 7800000]
+            }
+        else:
+            self.files_to_use_in_include = {
+                "json": [["*/file_1.json"], 120000],
+                "csv": [["*/file_2.csv"], 120000],
+                "tsv": [["*/file_3.tsv"], 120000],
+                "parquet": [["*/file_5.parquet"], 120000],
+                "avro": [["*/file_4.avro"], 120000]
+            }
+        if self.link_type == "s3":
+            self.doc_count_per_format = {
+                "json": 7920000, "parquet": 7920000,
+                "csv": 7920000, "tsv": 7920000, "avro": 7920000}
+        else:
+            self.doc_count_per_format = {
+                "json": 240000, "parquet": 120000,
+                "csv": 240000, "tsv": 240000, "avro": 240000}
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -67,7 +82,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             "standalone_collection_properties"] = self.columnar_spec[
             "external_dataset"]["external_dataset_properties"]
 
-        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+        self.columnar_spec["standalone_dataset"]["data_source"] = [self.link_type]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
@@ -104,9 +119,15 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy into command failure")
 
-        doc_count = {
-            "json": 1560000, "csv": 1560000, "tsv": 1560000, "parquet": 1560000
-        }
+        if self.link_type == "s3":
+            doc_count = {
+                "json": 1560000, "csv": 1560000, "tsv": 1560000, "parquet": 1560000
+            }
+        else:
+            doc_count = {
+                "json": 120000, "csv": 120000, "tsv": 120000, "parquet": 120000
+            }
+
         jobs = Queue()
         results = []
 
@@ -156,8 +177,6 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             "standalone_collection_properties"] = self.columnar_spec[
             "external_dataset"]["external_dataset_properties"]
 
-        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
-
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
 
@@ -166,6 +185,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             dataset_properties["include"] = self.files_to_use_in_include[file_format][0]
         else:
             dataset_properties["include"] = "*.{0}".format(file_format)
+
+        self.columnar_spec["standalone_dataset"]["data_source"] = [self.link_type]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
@@ -245,7 +266,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             "standalone_collection_properties"] = self.columnar_spec[
             "external_dataset"]["external_dataset_properties"]
 
-        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+        self.columnar_spec["standalone_dataset"]["data_source"] = [self.link_type]
 
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
@@ -304,7 +325,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             "standalone_collection_properties"] = self.columnar_spec[
             "external_dataset"]["external_dataset_properties"]
 
-        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+        self.columnar_spec["standalone_dataset"]["data_source"] = [self.link_type]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
@@ -339,7 +360,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             "standalone_collection_properties"] = self.columnar_spec[
             "external_dataset"]["external_dataset_properties"]
 
-        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+        self.columnar_spec["standalone_dataset"]["data_source"] = [self.link_type]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.columnar_cluster, self.columnar_spec, self.bucket_util, False)
@@ -397,7 +418,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             "standalone_collection_properties"] = self.columnar_spec[
             "external_dataset"]["external_dataset_properties"]
 
-        self.columnar_spec["standalone_dataset"]["data_source"] = ["s3"]
+        self.columnar_spec["standalone_dataset"]["data_source"] = [self.link_type]
 
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
