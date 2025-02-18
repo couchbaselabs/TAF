@@ -236,6 +236,7 @@ class UpgradeBase(BaseTestCase):
             node_service = None
             if self.services_init and len(self.services_init) > index:
                 node_service = self.services_init[index + 1].split(',')
+                node_service = ",".join(node_service)
             ClusterRestAPI(self.cluster.master).add_node(
                 server.ip, username=server.rest_username,
                 password=server.rest_password,
