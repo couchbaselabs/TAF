@@ -10,10 +10,10 @@ from queue import Queue
 from Columnar.columnar_base import ColumnarBaseTest
 
 
-class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
+class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
 
     def setUp(self):
-        super(CopyIntoStandaloneCollectionFromS3, self).setUp()
+        super(CopyIntoStandaloneCollectionFromBlobStorage, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
         self.columnar_cluster = self.tenant.columnar_instances[0]
@@ -60,7 +60,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.columnar_cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
-        super(CopyIntoStandaloneCollectionFromS3, self).tearDown()
+        super(CopyIntoStandaloneCollectionFromBlobStorage, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def test_create_copyinto_query_using_path_drop_standalone_collection(self):
