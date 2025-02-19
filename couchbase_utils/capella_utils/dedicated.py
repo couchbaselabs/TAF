@@ -193,14 +193,13 @@ class CapellaUtils(object):
         while retry < 5:
             try:
                 CapellaUtils.allow_my_ip(pod, tenant, cluster_id, True)
-                time.sleep(2* 10 * retry)
                 break
             except Exception as err:
                 CapellaUtils.log.error(str(err))
                 retry += 1
                 if retry < 5:
                     CapellaUtils.log.info("Retrying to add IP to allow list")
-                    time.sleep(30)
+                    time.sleep(30 * retry)
                 else:
                     raise Exception(str(err))
         servers = CapellaUtils.get_nodes(pod, tenant, cluster_id)
