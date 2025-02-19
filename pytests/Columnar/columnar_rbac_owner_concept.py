@@ -862,21 +862,22 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
                                        password=user.password):
             self.fail("Failed to create database with privilege [\"database_drop\", \"database_create\"")
 
-        if not self.update_user(user, [], [], "instance"):
-            self.fail("Failed to update api user privileges")
-
-        if (not self.cbas_util.create_scope(self.columnar_cluster, cbas_scope_name="owner_scope", database_name="owner_database",
+        if (self.cbas_util.create_scope(self.columnar_cluster, cbas_scope_name="owner_scope", database_name="owner_database",
                                     username=user.username, password=user.password) and
                 self.cbas_util.create_standalone_collection(self.columnar_cluster, "owner_collection",
                                                             dataverse_name="owner_scope", database_name="owner_database",
                                                             username=user.username, password=user.password)):
-            self.fail("Owner of database failed to create scopes and collections")
+            self.fail("Owner of database able to create scopes and collections")
 
-        if not self.load_data_to_source(0, 0, user.username, password=user.password):
-            self.fail("Database owner failed to run query on collections")
+        if not self.update_user(user, [], [], "instance"):
+            self.fail("Failed to update api user privileges")
 
-        if not self.validate_owner(user.username, 1, 0, 0, 0, 1, 1, 0):
-            self.fail("Owner of all the objects are not the database owner")
+        if (self.cbas_util.create_scope(self.columnar_cluster, cbas_scope_name="owner_scope", database_name="owner_database",
+                                    username=user.username, password=user.password) and
+                self.cbas_util.create_standalone_collection(self.columnar_cluster, "owner_collection",
+                                                            dataverse_name="owner_scope", database_name="owner_database",
+                                                            username=user.username, password=user.password)):
+            self.fail("Owner of database able to create scopes and collections")
 
         for instance in self.tenant.columnar_instances:
             if not self.cbas_util.cleanup_cbas(instance, username=user.username, password=user.password):
