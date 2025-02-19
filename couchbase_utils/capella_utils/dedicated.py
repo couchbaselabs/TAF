@@ -193,6 +193,7 @@ class CapellaUtils(object):
         while retry < 5:
             try:
                 CapellaUtils.allow_my_ip(pod, tenant, cluster_id, True)
+                time.sleep(2* 10 * retry)
                 break
             except Exception as err:
                 CapellaUtils.log.error(str(err))
