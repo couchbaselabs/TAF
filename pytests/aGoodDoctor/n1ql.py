@@ -96,7 +96,8 @@ HotelQueries = ["select meta().id from {} where country is not null and `type` i
                 "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
                 "SELECT * from {} where `name` is not null limit 100",
                 "SELECT * from {} where city like \"San%\" limit 100",
-                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = $country limit 100"]
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = $country limit 100",
+                "SELECT ARRAY_AGG({{h.name, r.ratings.Overall}}) AS reviews FROM {} h UNNEST reviews AS r limit 100"]
 
 HotelQueriesParams = [{},
                       {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
@@ -503,7 +504,7 @@ class DoctorN1QL():
     def update_index_stats(self, cluster, interval=1200):
         for bucket in cluster.buckets:
             for idx_name, idx_details in bucket.indexes.items():
-                update_q = "UPDATE STATISTICS FOR INDEX {0}.{1}.{2}.{3}".format(
+                update_q = "UPDATE STATISTICS FOR INDEX {3} on {0}.{1}.{2}".format(
                     idx_details[2], idx_details[3], idx_details[4], idx_name)
                 try:
                     execute_statement_on_n1ql(self.sdkClients[idx_details[2]+idx_details[3]], update_q)
