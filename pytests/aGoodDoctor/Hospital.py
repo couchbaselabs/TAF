@@ -375,6 +375,8 @@ class Murphy(BaseTestCase, OPD):
         self.mutations = False
         self.stop_run = True
         self.stop_crash = True
+        if self.cluster.index_nodes:
+            self.drIndex.discharge_N1QL()
         for task in self.ql:
             task.stop_query_load()
         for task in self.ftsQL:
@@ -1203,7 +1205,7 @@ class Murphy(BaseTestCase, OPD):
                         servers=self.cluster.kv_nodes,
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std, total_vbuckets=self.cluster.vbuckets)
+                        std=std)
         
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
@@ -1306,7 +1308,7 @@ class Murphy(BaseTestCase, OPD):
                         servers=self.cluster.kv_nodes,
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std, total_vbuckets=self.cluster.vbuckets)
+                        std=std)
 
                 ###################################################################
                 '''
@@ -1385,7 +1387,7 @@ class Murphy(BaseTestCase, OPD):
                     servers=self.cluster.kv_nodes,
                     buckets=self.cluster.buckets,
                     num_replicas=self.num_replicas,
-                    std=std, total_vbuckets=self.cluster.vbuckets)
+                    std=std)
 
                 ###################################################################
                 '''
@@ -1842,7 +1844,7 @@ class Murphy(BaseTestCase, OPD):
             self.check_index_pending_mutations()
 
     def check_index_pending_mutations(self):
-        while True:
+        while self.stop_run is False:
             check = False
             for node in self.cluster.index_nodes:
                 try:

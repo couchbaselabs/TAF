@@ -16,6 +16,7 @@ from global_vars import logger
 from custom_exceptions.exception import ServerUnavailableException
 
 import requests
+import httplib2
 
 
 class RestConnection(object):
