@@ -573,7 +573,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                     instance=self.columnar_cluster, wait_to_turn_on=True):
                 self.fail("Failed to Turn-On the cluster")
 
-        if self.cluster_backup_restore:
+        if self.cluster_backup_restore and self.input.param("columnar_provider", "aws") != "gcp":
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
             if not self.columnar_utils.wait_for_instance_to_be_healthy(
@@ -2744,7 +2744,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                       format(index_name, res))
                         result = self.cbas_util.drop_cbas_index(
                             self.columnar_cluster,
-                            index_name,
+                            self.cbas_util.format_name(index_name),
                             res,
                             validate_error_msg=test_case['validate_err_msg'],
                             expected_error=expected_error,

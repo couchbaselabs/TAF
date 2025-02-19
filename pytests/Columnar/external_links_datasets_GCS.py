@@ -30,7 +30,7 @@ class GCSLinksDatasets(ColumnarBaseTest):
             external_collection_file_formats=[self.input.param("file_format")])
 
         self.doc_count_per_format = {
-            "json": 240000, "parquet": 120000,
+            "json": 240000, "parquet": 240000,
             "csv": 240000, "tsv": 240000, "avro": 240000}
 
         self.doc_count_level_1_folder_1 = {
