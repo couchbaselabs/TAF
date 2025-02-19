@@ -160,6 +160,7 @@ class OnOff(ColumnarBaseTest):
                 instance=self.columnar_cluster, wait_to_turn_on=True):
             self.fail("Failed to Turn-On the cluster")
 
+        self.cbas_util.wait_for_cbas_to_recover(self.columnar_cluster)
         for collection in remote_datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
                     self.columnar_cluster, collection.full_name,
@@ -246,6 +247,8 @@ class OnOff(ColumnarBaseTest):
                 project_id=self.tenant.project_id,
                 instance=self.columnar_cluster, wait_to_turn_on=True):
             self.fail("Failed to Turn-On the cluster")
+
+        self.cbas_util.wait_for_cbas_to_recover(self.columnar_cluster)
 
         if not self.columnar_utils.scale_instance(
                 self.pod, self.tenant, self.tenant.project_id,
@@ -591,6 +594,8 @@ class OnOff(ColumnarBaseTest):
                 project_id=self.tenant.project_id,
                 instance=self.columnar_cluster, timeout=3600):
             self.fail("Failed to turn off the instance")
+
+        self.cbas_util.wait_for_cbas_to_recover(self.columnar_cluster)
 
         for collection in remote_datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
