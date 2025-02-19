@@ -351,10 +351,10 @@ class Columnar(BaseTestCase, hostedOPD):
                             self.task_manager.add_new_task(_task)
                             tasks.append(_task)
                     # self.wait_for_rebalances(tasks)
-                for task in tasks:
-                    self.task_manager.get_task_result(task)
-                    self.assertTrue(task.result, "Scaling OUT columnar failed!")
-                self.sleep(60)
+                    for task in tasks:
+                        self.task_manager.get_task_result(task)
+                        self.assertTrue(task.result, "Scaling OUT columnar failed!")
+                    self.sleep(60)
             for th in self.ingestion_ths:
                 th.join()
 
