@@ -4,6 +4,7 @@ from datetime import datetime
 from collections_helper.collections_spec_constants import MetaCrudParams
 from BucketLib.bucket import Bucket
 from pytests.bucket_collections.collections_base import CollectionBase
+from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
@@ -294,4 +295,225 @@ class EncryptionAtRest(CollectionBase):
         self.__perform_doc_ops("PERSIST_TO_MAJORITY")
         self.crash_th.join()
 
+    def test_system_event_logs(self):
 
+        def check_keys_values(event, search_json):
+            for key, value in search_json.items():
+                if isinstance(value, dict):
+                    if not check_keys_values(event.get(key, {}), value):
+                        return False
+                elif event.get(key) != value:
+                    return False
+            return True
+
+        def search_and_verify(events, to_verify):
+            for verify in to_verify:
+                flag = 0
+                search_key = verify["search_key"]
+                search_value = verify["search_value"]
+                for event in events:
+                    if event.get(search_key) == search_value:
+                        if check_keys_values(event, verify["attributes"]):
+                            flag = 1
+                            break
+                if flag == 0:
+                    not_find.append(verify)
+
+        self.event_rest_helper = SystemEventRestHelper(
+            self.cluster.nodes_in_cluster)
+
+        to_verify = [
+            {
+                "search_key": "description",
+                "search_value": "Encryption at rest DEK rotated",
+                "attributes": {
+                    "extra_attributes": {
+                        "kind": "logDek"
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption key changed",
+                "attributes": {
+                    "extra_attributes": {
+                        "encryption_key_name": self.log_secret_name,
+                        "new_settings": {
+                            "data": {
+                                "autoRotation": False,
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption key changed",
+                "attributes": {
+                    "extra_attributes": {
+                        "encryption_key_name": self.conf_secret_name,
+                        "new_settings": {
+                            "data": {
+                                "autoRotation": False,
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption key changed",
+                "attributes": {
+                    "extra_attributes": {
+                        "encryption_key_name": "renamed_key",
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption at rest DEK rotated",
+                "attributes": {
+                    "extra_attributes": {
+                        "kind": "configDek"
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption key created",
+                "attributes": {
+                    "extra_attributes": {
+                        "encryption_key_name": self.conf_secret_name
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption key created",
+                "attributes": {
+                    "extra_attributes": {
+                        "encryption_key_name": self.log_secret_name
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption key created",
+                "attributes": {
+                    "extra_attributes": {
+                        "name": "EncryptionSecret"
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption at rest settings changed",
+                "attributes": {
+                    "extra_attributes": {
+                        "new_settings": {
+                            "config": {
+                                "dekLifetime": 100,
+                                "dekRotationInterval": 100,
+                            },
+                            "log": {
+                                "dekLifetime": 0,
+                                "dekRotationInterval": 100,
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption at rest settings changed",
+                "attributes": {
+                    "extra_attributes": {
+                        "new_settings": {
+                            "log": {
+                                "encryptionMethod": "disabled"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Bucket configuration changed",
+                "attributes": {
+                    "extra_attributes": {
+                        "new_settings": {
+                            "encryption_dek_lifetime": 60,
+                            "encryption_dek_rotation_interval": 60
+                        }
+                    }
+                }
+            }
+        ]
+
+        bucket_helper = BucketHelper(self.cluster.master)
+        not_find = []
+        rest = RestConnection(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            bucket_helper.change_bucket_props(
+                bucket,
+                encryptionAtRestKeyId=0,
+                encryptionAtRestDekRotationInterval=60,
+                encryptionAtRestDekLifetime=60
+            )
+        params = bucket_helper.create_secret_params(
+            secret_type="auto-generated-aes-key-256",
+            name=self.log_secret_name,
+            usage=["log-encryption"],
+            autoRotation=False,
+            rotationIntervalInSeconds=60
+        )
+        status, response = rest.modify_secret(self.temp_log_secret_id, params)
+        self.assertTrue(status, "Failed to modify log secret")
+
+        params = bucket_helper.create_secret_params(
+            secret_type="auto-generated-aes-key-256",
+            name=self.conf_secret_name,
+            usage=["config-encryption"],
+            autoRotation=False,
+            rotationIntervalInSeconds=60
+        )
+        status, response = rest.modify_secret(self.temp_config_secret_id,
+                                              params)
+        self.assertTrue(status, "Failed to modify config secret")
+
+        params = bucket_helper.create_secret_params(
+            secret_type="auto-generated-aes-key-256",
+            name="renamed_key",
+            usage=["bucket-encryption-*"],
+            autoRotation=False,
+            rotationIntervalInSeconds=60
+        )
+        status, response = rest.modify_secret(0, params)
+        self.assertTrue(status, "Failed to modify renamed key secret")
+
+        params = {
+            "log.encryptionMethod": "disabled",
+            "log.encryptionKeyId": -1,
+        }
+        status, response = rest.configure_encryption_at_rest(params)
+        self.assertTrue(status, "Failed to configure encryption at rest")
+
+        for bucket in self.cluster.buckets:
+            bucket_helper.change_bucket_props(
+                bucket,
+                encryptionAtRestKeyId=-1,
+                encryptionAtRestDekRotationInterval=60,
+                encryptionAtRestDekLifetime=60
+            )
+        status, response = rest.delete_secret(0)
+        self.assertFalse(status, "Should not be able to delete default secret")
+        status, response = rest.delete_secret(self.temp_log_secret_id)
+        self.assertFalse(status,
+                         "Should not be able to delete current log secret")
+
+        self.sleep(100, "waiting for event to be generated")
+        events = self.event_rest_helper.get_events(server=self.cluster.master,
+                                                   events_count=30000)
+        events = events["events"]
+        search_and_verify(events, to_verify)
+        self.assertTrue(len(not_find) == 0, "Not found: %s" % not_find)
