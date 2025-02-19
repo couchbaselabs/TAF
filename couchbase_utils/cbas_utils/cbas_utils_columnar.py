@@ -6618,17 +6618,21 @@ class CbasUtil(CBOUtil):
         This method will delete all the analytics entities on the specified
         cluster
         """
+        state = True
         try:
             # Drop all views
             for view in self.get_all_views_from_metadata(cluster):
                 if not self.drop_analytics_view(cluster, view, username=username, password=password):
                     self.log.error(f"Failed to drop View {view}")
+                    state = False
+
             # Drop all UDFs
             for udf in self.get_all_udfs_from_metadata(cluster):
                 if not self.drop_udf(
                         cluster, CBASHelper.format_name(udf[0]), None, None, udf[1],
                 username=username, password=password):
                     self.log.error("Unable to drop UDF {0}".format(udf[0]))
+                    state = False
 
             # Drop all indexes
             for idx in self.get_all_indexes_from_metadata(cluster):
@@ -6637,11 +6641,13 @@ class CbasUtil(CBOUtil):
                                             ".".join(idx_split[:-1]), username=username, password=password):
                     self.log.error(
                         "Unable to drop Index {0}".format(idx))
+                    state = False
 
             # Drop all Synonyms
             for syn in self.get_all_synonyms_from_metadata(cluster):
                 if not self.drop_analytics_synonym(cluster, syn, username=username, password=password):
                     self.log.error("Unable to drop Synonym {0}".format(syn))
+                    state = False
 
             # Disconnect all remote links
             remote_links = self.get_all_links_from_metadata(cluster, "couchbase")
@@ -6649,6 +6655,7 @@ class CbasUtil(CBOUtil):
                 if not self.disconnect_link(cluster, remote_link, username=username, password=password):
                     self.log.error(
                         "Unable to disconnect Link {0}".format(remote_link))
+                    state = False
 
             # Disconnect all Kafka links
             kafka_links = self.get_all_links_from_metadata(cluster, "kafka")
@@ -6656,29 +6663,34 @@ class CbasUtil(CBOUtil):
                 if not self.disconnect_link(cluster, kafka_link, username=username, password=password):
                     self.log.error(
                         "Unable to disconnect Link {0}".format(kafka_link))
+                    state = False
 
             # Drop all datasets
             for ds in self.get_all_datasets_from_metadata(cluster):
                 if not self.drop_dataset(cluster, ds, username=username, password=password):
                     self.log.error("Unable to drop Dataset {0}".format(ds))
+                    state = False
 
             for lnk in self.get_all_links_from_metadata(cluster):
                 if not self.drop_link(cluster, lnk, username=username, password=password):
                     self.log.error("Unable to drop Link {0}".format(lnk))
+                    state = False
 
             for dv in self.get_all_dataverses_from_metadata(cluster):
                 if dv != "Default.Default":
                     if not self.drop_dataverse(cluster, dv, username=username, password=password):
                         self.log.error("Unable to drop Dataverse {0}".format(dv))
+                        state = False
 
             for db in self.get_all_databases_from_metadata(cluster):
                 if db != "Default":
                     if not self.drop_database(cluster, db, username=username, password=password):
                         self.log.error("Unable to drop Database {0}".format(db))
+                        state = False
         except Exception as e:
             self.log.info(str(e))
             return False
-        return True
+        return state
 
     def get_replica_number_from_settings(
             self, node, method="GET", param="", username=None, password=None,
