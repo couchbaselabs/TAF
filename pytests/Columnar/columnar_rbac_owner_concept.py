@@ -442,8 +442,9 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
                     project_id=self.tenant.project_id,
                     instance=self.columnar_cluster, wait_to_turn_on=True):
                 self.fail("Failed to Turn-On the cluster")
+            self.cbas_util.wait_for_cbas_to_recover(self.columnar_cluster)
 
-        if self.cluster_backup_restore:
+        if self.cluster_backup_restore and self.input.param("columnar_provider", "aws") != "gcp":
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
             if not self.columnar_utils.wait_for_instance_to_be_healthy(
