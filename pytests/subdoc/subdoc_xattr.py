@@ -1749,7 +1749,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                                    shell,
                                    node=target_node)
 
-        self.client.crud(DocLoading.Bucket.DocOps.CREATE, doc_key, "{}",
+        self.client.crud(DocLoading.Bucket.DocOps.CREATE, doc_key, {},
                          timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS)
         self.client.crud("subdoc_insert",
                          doc_key, ["exists_path", 1],
