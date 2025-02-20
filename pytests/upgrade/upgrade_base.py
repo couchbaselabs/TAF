@@ -57,6 +57,7 @@ class UpgradeBase(BaseTestCase):
         self.server_index_to_fail = self.input.param("server_index_to_fail",
                                                      None)
         self.key_size = self.input.param("key_size", 8)
+        self.doc_size = self.input.param("doc_size", 2048)
         self.range_scan_task = self.input.param("range_scan_task", None)
         self.expect_range_scan_exceptions = self.input.param("expect_range_scan_exceptions",
                                                              ["com.couchbase.client.core.error.FeatureNotAvailableException: "
@@ -75,7 +76,7 @@ class UpgradeBase(BaseTestCase):
         self.cluster_profile = self.input.param("cluster_profile", None)
 
         #### Spec File Parameters ####
-
+        self.use_java_loader = self.input.param("use_java_loader", False)
         self.spec_name = self.input.param("bucket_spec", "single_bucket.default")
         self.initial_data_spec = self.input.param("initial_data_spec", "initial_load")
         self.sub_data_spec = self.input.param("sub_data_spec", "subsequent_load_magma")
@@ -243,36 +244,37 @@ class UpgradeBase(BaseTestCase):
             res = rest.set_retry_rebalance_settings(body)
             self.log.info("Rebalance retry settings = {}".format(res))
 
-        # Creating buckets from spec file
-        if not self.large_doc_upgrade:
-            CollectionBase.deploy_buckets_from_spec_file(self)
-        else:
-            self.create_bucket_for_large_doc_upgrades()
+        if not self.use_java_loader:
+            # Creating buckets from spec file
+            if not self.large_doc_upgrade:
+                CollectionBase.deploy_buckets_from_spec_file(self)
+            else:
+                self.create_bucket_for_large_doc_upgrades()
 
-        # Validating that the fragmentation value has been set
-        if self.fragmentation is not None:
-            for bucket in self.cluster.buckets:
-                bucket_helper = BucketHelper(self.cluster.master)
-                if bucket.storageBackend == Bucket.StorageBackend.magma:
-                    bucket_stats = bucket_helper.get_bucket_json(bucket.name)
-                    frag_val = bucket_stats["autoCompactionSettings"] \
-                                           ["magmaFragmentationPercentage"]
-                    self.log.info("Bucket: {}, Fragmentation value: {}".\
-                                  format(bucket.name, frag_val))
-                    self.assertEqual(int(frag_val), self.fragmentation,
-                                     "Fragmentation value does not match")
+            # Validating that the fragmentation value has been set
+            if self.fragmentation is not None:
+                for bucket in self.cluster.buckets:
+                    bucket_helper = BucketHelper(self.cluster.master)
+                    if bucket.storageBackend == Bucket.StorageBackend.magma:
+                        bucket_stats = bucket_helper.get_bucket_json(bucket.name)
+                        frag_val = bucket_stats["autoCompactionSettings"] \
+                                            ["magmaFragmentationPercentage"]
+                        self.log.info("Bucket: {}, Fragmentation value: {}".\
+                                    format(bucket.name, frag_val))
+                        self.assertEqual(int(frag_val), self.fragmentation,
+                                        "Fragmentation value does not match")
 
-        self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
-            self.spec_name)
-        if "buckets" not in self.spec_bucket:
-            self.items_per_col = self.spec_bucket[MetaConstants.NUM_ITEMS_PER_COLLECTION]
-        else:
-            self.items_per_col = self.spec_bucket["buckets"]["bucket-0"][
-                                                MetaConstants.NUM_ITEMS_PER_COLLECTION]
+            self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
+                self.spec_name)
+            if "buckets" not in self.spec_bucket:
+                self.items_per_col = self.spec_bucket[MetaConstants.NUM_ITEMS_PER_COLLECTION]
+            else:
+                self.items_per_col = self.spec_bucket["buckets"]["bucket-0"][
+                                                    MetaConstants.NUM_ITEMS_PER_COLLECTION]
 
-        # Adding RBAC user
-        self.bucket_util.add_rbac_user(self.cluster.master)
-        self.bucket = self.cluster.buckets[0]
+            # Adding RBAC user
+            self.bucket_util.add_rbac_user(self.cluster.master)
+            self.bucket = self.cluster.buckets[0]
 
         if self.enable_tls:
             self.enable_verify_tls(self.cluster.master)
@@ -281,34 +283,36 @@ class UpgradeBase(BaseTestCase):
                     #node.memcached_port = CbServer.ssl_memcached_port (MB-47567)
                     node.port = CbServer.ssl_port
 
-        # Create clients in SDK client pool
-        CollectionBase.create_clients_for_sdk_pool(self)
+        if not self.use_java_loader:
+            # Create clients in SDK client pool
+            CollectionBase.create_clients_for_sdk_pool(self)
 
-        if self.dur_level == "majority":
-            for bucket in self.cluster.buckets:
-                if bucket.name == "bucket-1":
-                    self.bucket_util.update_bucket_property(self.cluster.master,
-                                    bucket,
-                                    bucket_durability=Bucket.DurabilityMinLevel.MAJORITY)
+            if self.dur_level == "majority":
+                for bucket in self.cluster.buckets:
+                    if bucket.name == "bucket-1":
+                        self.bucket_util.update_bucket_property(self.cluster.master,
+                                        bucket,
+                                        bucket_durability=Bucket.DurabilityMinLevel.MAJORITY)
 
-        # Load initial async_write docs into the cluster
-        self.PrintStep("Initial doc generation process starting...")
-        CollectionBase.load_data_from_spec_file(self, self.initial_data_spec,
-                                                validate_docs=True)
-        self.log.info("Initial doc generation completed")
+            # Load initial async_write docs into the cluster
+            self.PrintStep("Initial doc generation process starting...")
+            CollectionBase.load_data_from_spec_file(self, self.initial_data_spec,
+                                                    validate_docs=True)
+            self.log.info("Initial doc generation completed")
 
-        # Verify initial doc load count
-        if "collections" in self.cluster_features:
-            self.bucket_util.validate_docs_per_collections_all_buckets(
-                self.cluster)
-        else:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
-            self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                      self.num_items)
-        self.sleep(30, "Wait for num_items to get reflected")
+            # Verify initial doc load count
+            if "collections" in self.cluster_features:
+                self.bucket_util.validate_docs_per_collections_all_buckets(
+                    self.cluster)
+            else:
+                self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                            self.cluster.buckets)
+                self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                        self.num_items)
+            self.sleep(30, "Wait for num_items to get reflected")
 
-        self.bucket_util.print_bucket_stats(self.cluster)
+            self.bucket_util.print_bucket_stats(self.cluster)
+
         self.spare_node = self.cluster.servers[self.nodes_init]
 
         self.gen_load = doc_generator(self.key, 0, self.num_items,
@@ -547,7 +551,7 @@ class UpgradeBase(BaseTestCase):
         self.cluster_util.print_cluster_stats(self.cluster)
 
         # Monitor failover rebalance
-        rebalance_passed = rest.monitorRebalance()
+        rebalance_passed = rest.monitorRebalance(progress_count=3600)
         if not rebalance_passed:
             self.log_failure("Graceful failover rebalance failed")
             return
@@ -579,11 +583,13 @@ class UpgradeBase(BaseTestCase):
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
 
+        self.sleep(30, "Waiting 30 seconds for orchestrator selection to complete")
+
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
 
         self.perform_collection_ops_load(self.collection_spec)
-        rebalance_passed = rest.monitorRebalance()
+        rebalance_passed = rest.monitorRebalance(progress_count=3600)
         if not rebalance_passed:
             self.log_failure("Graceful failover rebalance failed")
             return
@@ -644,13 +650,15 @@ class UpgradeBase(BaseTestCase):
         )
         self.sleep(10)
 
-        if self.upgrade_with_data_load:
+        if self.upgrade_with_data_load and not self.use_java_loader:
             update_task = self.load_during_rebalance(self.sub_data_spec, async_load=True)
             if self.include_indexing_query:
                 self.run_queries_during_rebalance(node_to_upgrade)
             self.task_manager.get_task_result(update_task)
 
-        self.perform_collection_ops_load(self.collection_spec)
+        if not self.use_java_loader:
+            self.perform_collection_ops_load(self.collection_spec)
+
         self.task_manager.get_task_result(rebalance_passed)
         if rebalance_passed.result is True:
             self.log.info("Swap Rebalance passed")

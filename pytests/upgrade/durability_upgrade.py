@@ -13,14 +13,13 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from constants.sdk_constants.java_client import SDKConstants
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
-from bucket_utils.bucket_ready_functions import CollectionUtils
+from bucket_utils.bucket_ready_functions import CollectionUtils, DocLoaderUtils
 from sdk_client3 import SDKClient, SDKClientPool
 from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
 from bucket_collections.collections_base import CollectionBase
 from BucketLib.BucketOperations import BucketHelper
 from gsiLib.gsiHelper import GsiHelper
-
 
 class UpgradeTests(UpgradeBase):
     def setUp(self):
@@ -364,7 +363,7 @@ class UpgradeTests(UpgradeBase):
 
                 # Halt further upgrade if test has failed during current upgrade
                 if self.test_failure is not None:
-                    break
+                    self.fail("Test failed during upgrade")
                 ### Fetching the next node to upgrade ###
                 node_to_upgrade = self.fetch_node_to_upgrade()
                 itr += 1
@@ -2205,14 +2204,14 @@ class UpgradeTests(UpgradeBase):
             self.create_primary_partitioned_indexes()
             self.log.info("Creating partitioned indexes...")
             self.create_secondary_indexes(partitioned=True, replica=False,
-                                            index_suffix='sec_part_index',
-                                            field='name')
+                                          index_suffix='sec_part_index',
+                                          field='name')
             self.log.info("Creating secondary indexes on the field 'body' ")
             self.create_secondary_indexes(index_suffix='sec_body_index',
-                                            field='body')
+                                          field='body')
             self.log.info("Creating secondary indexes on the field 'mutation_type' ")
             self.create_secondary_indexes(index_suffix='sec_mutation_index',
-                                            field='mutation_type')
+                                          field='mutation_type')
         CollectionBase.create_indexes_for_all_collections(self, sdk_client)
         self.index_count += total_coll_in_bucket
         new_collection_docs = 1000000

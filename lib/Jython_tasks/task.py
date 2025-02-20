@@ -8700,8 +8700,6 @@ class MonitorClusterStatsTask(Task):
                 self._generate_csv(self.result_set[stat], csv_path)
                 self.test_log.info("CSV file for the monitored stat {} generated at {}".format(stat, csv_path))
 
-
-
     def _generate_csv(self, data, csv_path):
         flattened_data = []
         all_columns = set()
