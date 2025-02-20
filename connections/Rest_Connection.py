@@ -242,10 +242,26 @@ class RestConnection(object):
 
     def _urllib_request(self, api, method='GET', params='', headers=None,
                         timeout=300, verify=False, session=None):
+        if session is None:
+            session = requests.Session()
         end_time = time.time() + timeout
         while True:
             try:
-                response = self.urllib_request(api, method, headers, params, timeout, verify, session)
+                if method == "GET":
+                    response = session.get(api, params=params, headers=headers,
+                                           timeout=timeout, verify=verify)
+                elif method == "POST":
+                    response = session.post(api, data=params, headers=headers,
+                                            timeout=timeout, verify=verify)
+                elif method == "DELETE":
+                    response = session.delete(api, data=params, headers=headers,
+                                              timeout=timeout, verify=verify)
+                elif method == "PUT":
+                    response = session.put(api, data=params, headers=headers,
+                                           timeout=timeout, verify=verify)
+                elif method == "PATCH":
+                    response = session.patch(api, data=params, headers=headers,
+                                             timeout=timeout, verify=verify)
                 status = response.status_code
                 content = response.content
                 if status in [200, 201, 202, 204]:
