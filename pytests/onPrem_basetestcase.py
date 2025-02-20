@@ -156,7 +156,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         num_vb = self.vbuckets or CbServer.total_vbuckets
         if len(self.input.clusters) > 1:
             # Multi cluster setup
-            for _, nodes in self.input.clusters.iteritems():
+            for _, nodes in self.input.clusters.items():
                 cluster_name = cluster_name_format % counter_index
                 tem_cluster = CBCluster(name=cluster_name, servers=nodes,
                                         vbuckets=num_vb)
