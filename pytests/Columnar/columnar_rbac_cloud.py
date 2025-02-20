@@ -100,7 +100,7 @@ class ColumnarRBAC(ColumnarBaseTest):
             self.columnar_spec_name)
 
         self.aws_region = "us-west-1"
-        self.s3_source_bucket = "columnar-sanity-test-data-mohsin"
+        self.s3_source_bucket = "columnar-functional-sanity-test-data"
         self.sink_s3_bucket_name = None
 
         self.create_different_organization_roles()
