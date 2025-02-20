@@ -990,7 +990,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                             use_only_existing_dv=True,
                             paths_on_external_container=None,
                             database=database_name,
-                            dataverse=scope_name)[0]
+                            dataverse=scope_name, link_type=self.input.param("external_link_source", "s3"))[0]
 
                         expected_error = self.ACCESS_DENIED_ERR
                         result = self.create_external_dataset(
