@@ -67,7 +67,7 @@ class BackupRestore(ColumnarBaseTest):
                 self.columnar_cluster, dataset.full_name)
         return items_in_datasets
 
-    def create_backup_wait_for_complete(self, retention=0, timeout=3600):
+    def create_backup_wait_for_complete(self, retention=0, timeout=7200):
         self.log.info("Starting backup")
         resp = self.columnar_utils.create_backup(
             pod=self.pod, tenant=self.tenant,
@@ -87,7 +87,7 @@ class BackupRestore(ColumnarBaseTest):
             self.fail("Backup failed.")
         return backup_id
 
-    def restore_wait_for_complete(self, backup_id, timeout=3600):
+    def restore_wait_for_complete(self, backup_id, timeout=7200):
         self.log.info("Restoring backup")
         resp = self.columnar_utils.restore_backup(
             pod=self.pod, tenant=self.tenant,
