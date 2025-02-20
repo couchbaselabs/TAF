@@ -1090,7 +1090,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                             use_only_existing_dv=True,
                             paths_on_external_container=None,
                             database=database_name,
-                            dataverse=scope_name)[0]
+                            dataverse=scope_name, link_type=self.input.param("external_link_source", "s3"))[0]
 
                         expected_error = self.ACCESS_DENIED_ERR
                         result = self.create_external_dataset(external_coll_obj)
@@ -1187,7 +1187,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                     use_only_existing_dv=True,
                     paths_on_external_container=None,
                     database="Default",
-                    dataverse="Default")[0]
+                    dataverse="Default", link_type=self.input.param("external_link_source", "s3"))[0]
                 cmd = self.generate_external_dataset_cmd(external_coll_obj)
                 execute_commands.append(cmd)
 
@@ -1244,7 +1244,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                     use_only_existing_dv=True,
                     paths_on_external_container=None,
                     database="Default",
-                    dataverse="Default")[0]
+                    dataverse="Default", link_type=self.input.param("external_link_source", "s3"))[0]
                 result = self.create_external_dataset(external_coll_obj)
                 if not result:
                     self.fail("Failed to create external collection {}".
