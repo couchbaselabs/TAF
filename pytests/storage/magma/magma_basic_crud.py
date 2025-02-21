@@ -343,7 +343,7 @@ class BasicCrudTests(MagmaBaseTest):
                 self.cluster.master, self.buckets[0],
                 scope_name, {"name": collection_name})
             self.sleep(2)
-        collections = self.buckets[0].scopes[scope_name].collections.keys()
+        collections = list(self.buckets[0].scopes[scope_name].collections.keys())
         if self.num_collections > 1 and scope_name is CbServer.default_scope:
             collections.remove(CbServer.default_collection)
         self.log.info("List of collections {}".format(collections))
@@ -411,6 +411,7 @@ class BasicCrudTests(MagmaBaseTest):
                       the configured fragementaion value")
 
         # # # # Delete  3/4th docs in a single collection # # # #
+        self.log.info("Deleting 3/4th docs in a single collection , the collections are {}".format(collections))
         self.doc_ops = "delete"
         self.log.info("For deletion collection picked is {} \
         ".format(collections[-1]))
