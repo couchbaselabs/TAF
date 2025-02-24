@@ -119,6 +119,8 @@ class DeltaLakeUtils:
             .set("spark.hadoop.google.cloud.auth.service.account.json.keyfile", gcs_service_account_path)
             .set("spark.sql.shuffle.partitions", str(self.sql_partitions))
             .set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+            .set("spark.driver.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
+            .set("spark.executor.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
             .setMaster(f"local[{self.cores_to_use}]")
         )
 
@@ -127,7 +129,7 @@ class DeltaLakeUtils:
             "com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.5",
         ]
 
-        builder = SparkSession.builder.appName("MyApp").config(conf=conf)
+        builder = SparkSession.builder.appName(app_name).config(conf=conf)
         self.spark_session = configure_spark_with_delta_pip(builder, extra_packages=extra_packages).getOrCreate()
 
     def close_spark_session(self):

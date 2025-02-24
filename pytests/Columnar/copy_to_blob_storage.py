@@ -8,17 +8,21 @@ import json
 import os.path
 import os
 import random
+import time
 from queue import Queue
 
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
-from Jython_tasks.sirius_task import CouchbaseUtil
 from itertools import combinations, product
 from gcs import GCS
 
 from awsLib.s3_data_helper import perform_S3_operation
 from Columnar.mini_volume_code_template import MiniVolume
+from sirius_client_framework.sirius_constants import SiriusCodes
+from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
+from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
+from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
 
 
 def pairs(*lists):
@@ -1613,24 +1617,107 @@ class CopyToBlobStorage(ColumnarBaseTest):
             bucket_ram_quota=1024)
 
     def test_mini_volume_copy_to_blob_storage(self):
-        self.columnarAPI = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
-        self.remote_cluster_setup()
-        self.base_setup()
-        self.remote_start = self.remote_end = 0
         self.copy_to_s3_job = Queue()
         self.copy_to_s3_results = []
-        self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
+        self.mongo_util = MongoUtil(
+            task_manager=self.task_manager,
+            hostname=self.input.param("mongo_hostname"),
+            username=self.input.param("mongo_username"),
+            password=self.input.param("mongo_password")
+        )
+
+        # Initialize variables for Kafka
+        self.kafka_topic_prefix = f"on_off_{int(time.time())}"
+
+        # Initializing Confluent util and Confluent cluster object.
+        self.confluent_util = ConfluentUtils(
+            cloud_access_key=self.input.param("confluent_cloud_access_key"),
+            cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+        self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
+            kafka_cluster_id=self.input.param("confluent_cluster_id"),
+            topic_prefix=self.kafka_topic_prefix)
+        if not self.confluent_cluster_obj:
+            self.fail("Unable to initialize Confluent Kafka cluster object")
+
+        # Initializing KafkaConnect Util and kafka connect server hostnames
+        self.kafka_connect_util = KafkaConnectUtil()
+        kafka_connect_hostname = self.input.param('kafka_connect_hostname')
+        self.kafka_connect_hostname_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_CDC_PORT}")
+        self.kafka_connect_hostname_non_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_NON_CDC_PORT}")
+
+        self.kafka_topics = {
+            "confluent": {
+                "MONGODB": [
+                    {
+                        "topic_name": "do-not-delete-mongo-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": True,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                    {
+                        "topic_name": "do-not-delete-mongo-non-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": False,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                ],
+                "POSTGRESQL": [],
+                "MYSQLDB": []
+            }
+        }
+
+        # creating bucket scope and collections for remote collection
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster,
+            self.input.param("num_buckets", 1))
+
+        self.setup_infra_for_mongo()
+        confluent_kafka_cluster_details = [
+            self.confluent_util.generate_confluent_kafka_cluster_detail(
+                brokers_url=self.confluent_cluster_obj.bootstrap_server,
+                auth_type="PLAIN", encryption_type="TLS",
+                api_key=self.confluent_cluster_obj.cluster_access_key,
+                api_secret=self.confluent_cluster_obj.cluster_secret_key)]
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"],
+            confluent_kafka_cluster_details=confluent_kafka_cluster_details,
+            external_dbs=["MONGODB"],
+            kafka_topics=self.kafka_topics)
+
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"name": "string", "email": "string"}]
+        self.columnar_spec["index"]["indexed_fields"] = ["price:double"]
+        self.columnar_spec["kafka_dataset"]["primary_key"] = [
+            {"_id": "string"}]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
+        start_time = time.time()
+        self.mini_volume = MiniVolume(self)
         self.mini_volume.calculate_volume_per_source()
-        # initiate copy to kv
+        # initiate copy to blob storage
         for i in range(1, 5):
             if i % 2 == 0:
                 self.mini_volume.run_processes(i, 2 ** (i - 1), False)
             else:
                 self.mini_volume.run_processes(i, 2 ** (i + 1), False)
-            self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
             self.mini_volume.stop_process()
-            self.mini_volume.stop_crud_on_data_sources()
-            self.cbas_util.wait_for_data_ingestion_in_the_collections(self.columnar_cluster)
+
             datasets = self.cbas_util.get_all_dataset_objs()
             s3_link = self.cbas_util.get_all_link_objs(self.link_type)[0]
             for j in range(len(datasets)):
@@ -1643,8 +1730,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                           "destination_link_name": s3_link.full_name,
                                           "path": path, "analytics_timeout": 10000000, "timeout": 10000000}))
             self.log.info("Running copy to S3")
+            time.sleep(180)
             self.cbas_util.run_jobs_in_parallel(
                 self.copy_to_s3_job, self.copy_to_s3_results, self.sdk_clients_per_user, async_run=False)
 
             if not all(self.copy_to_s3_results):
                 self.log.error("Some documents were not inserted")
+
+        self.log.info("Time taken to run mini-volume: {} minutes".format((time.time() - start_time) / 60))
+        self.log.info("Mini-Volume for backup-restore finished")

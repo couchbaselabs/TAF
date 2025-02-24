@@ -8,8 +8,12 @@ from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
-from Jython_tasks.sirius_task import CouchbaseUtil
 from Columnar.mini_volume_code_template import MiniVolume
+
+from sirius_client_framework.sirius_constants import SiriusCodes
+from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
+from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
+from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
 
 
 def pairs(unique_pairs, datasets):
@@ -913,7 +917,7 @@ class CopyToKv(ColumnarBaseTest):
 
     def create_copy_to_kv_all_datasets(self, datasets, copy_to_kv_job, copy_to_kv_collections, remote_links):
         for dataset in datasets:
-            if type(remote_links, list):
+            if isinstance(remote_links, list):
                 remote_link = random.choice(remote_links)
             else:
                 remote_link = remote_links
@@ -929,14 +933,200 @@ class CopyToKv(ColumnarBaseTest):
                                 {"cluster": self.columnar_cluster, "collection_name": dataset.name,
                                  "database_name": dataset.database_name,
                                  "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                                 "link_name": remote_link.full_name, "analytics_timeout": 1000000}))
+                                 "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 1000000}))
+
+    def setup_infra_for_mongo(self):
+        """
+        This method will create a mongo collection, load initial data into it
+        and deploy connectors for streaming both cdc and non-cdc data from
+        confluent and AWS MSK kafka
+        :return:
+        """
+        self.log.info("Creating Collections on Mongo")
+        self.mongo_collections = {}
+        self.mongo_db_name = f"TAF_on_off_mongo_db_{int(time.time())}"
+        for i in range(1, self.input.param("num_mongo_collections") + 1):
+            self.mongo_coll_name = f"TAF_on_off_mongo_coll_{i}"
+
+            self.log.info(f"Creating collection {self.mongo_db_name}."
+                          f"{self.mongo_coll_name}")
+            if not self.mongo_util.create_mongo_collection(
+                    self.mongo_db_name, self.mongo_coll_name):
+                self.fail(
+                    f"Error while creating mongo collection {self.mongo_db_name}."
+                    f"{self.mongo_coll_name}")
+            self.mongo_collections[f"{self.mongo_db_name}.{self.mongo_coll_name}"] = 0
+
+        self.log.info(f"Loading docs in mongoDb collection "
+                      f"{self.mongo_db_name}.{self.mongo_coll_name}")
+        mongo_doc_loading_task = self.mongo_util.load_docs_in_mongo_collection(
+            database=self.mongo_db_name, collection=self.mongo_coll_name,
+            start=0, end=self.no_of_docs,
+            doc_template=SiriusCodes.Templates.PRODUCT,
+            doc_size=self.doc_size, sdk_batch_size=1000,
+            wait_for_task_complete=True)
+        if not mongo_doc_loading_task.result:
+            self.fail(f"Failed to load docs in mongoDb collection "
+                      f"{self.mongo_db_name}.{self.mongo_coll_name}")
+        else:
+            self.mongo_collections[
+                f"{self.mongo_db_name}.{self.mongo_coll_name}"] = \
+                mongo_doc_loading_task.success_count
+
+        self.log.info("Generating Connector config for Mongo CDC")
+        self.cdc_connector_name = f"mongo_{self.kafka_topic_prefix}_cdc"
+        cdc_connector_config = KafkaConnectUtil.generate_mongo_connector_config(
+            mongo_connection_str=self.mongo_util.loader.connection_string,
+            mongo_collections=list(self.mongo_collections.keys()),
+            topic_prefix=self.kafka_topic_prefix + "_cdc",
+            partitions=32, cdc_enabled=True)
+
+        self.log.info("Generating Connector config for Mongo Non-CDC")
+        self.non_cdc_connector_name = f"mongo_{self.kafka_topic_prefix}_non_cdc"
+        non_cdc_connector_config = (
+            KafkaConnectUtil.generate_mongo_connector_config(
+                mongo_connection_str=self.mongo_util.loader.connection_string,
+                mongo_collections=list(self.mongo_collections.keys()),
+                topic_prefix=self.kafka_topic_prefix + "_non_cdc",
+                partitions=32, cdc_enabled=False))
+
+        self.log.info("Deploying CDC connectors to stream data from mongo to "
+                      "Confluent")
+        if self.confluent_util.deploy_connector(
+                self.cdc_connector_name, cdc_connector_config,
+                self.kafka_connect_hostname_cdc_confluent):
+            self.confluent_cluster_obj.connectors[
+                self.cdc_connector_name] = cdc_connector_config
+        else:
+            self.fail("Failed to deploy connector for confluent")
+
+        self.log.info("Deploying Non-CDC connectors to stream data from mongo "
+                      "to Confluent")
+        if self.confluent_util.deploy_connector(
+                self.non_cdc_connector_name, non_cdc_connector_config,
+                self.kafka_connect_hostname_non_cdc_confluent):
+            self.confluent_cluster_obj.connectors[
+                self.non_cdc_connector_name] = non_cdc_connector_config
+        else:
+            self.fail("Failed to deploy connector for confluent")
+
+        for mongo_collection_name, num_items in self.mongo_collections.items():
+            for kafka_type in ["confluent"]:
+                self.kafka_topics[kafka_type]["MONGODB"].extend(
+                    [
+                        {
+                            "topic_name": f"{self.kafka_topic_prefix + '_cdc'}."
+                                          f"{mongo_collection_name}",
+                            "key_serialization_type": "json",
+                            "value_serialization_type": "json",
+                            "cdc_enabled": True,
+                            "source_connector": "DEBEZIUM",
+                            "num_items": num_items
+                        },
+                        {
+                            "topic_name": f"{self.kafka_topic_prefix + '_non_cdc'}."
+                                          f"{mongo_collection_name}",
+                            "key_serialization_type": "json",
+                            "value_serialization_type": "json",
+                            "cdc_enabled": False,
+                            "source_connector": "DEBEZIUM",
+                            "num_items": num_items
+                        }
+                    ]
+                )
 
     def mini_volume_copy_to_kv(self):
-        self.remote_start = 0
-        self.remote_end = 0
-
         self.copy_to_kv_job = Queue()
-        self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
+        self.mongo_util = MongoUtil(
+            task_manager=self.task_manager,
+            hostname=self.input.param("mongo_hostname"),
+            username=self.input.param("mongo_username"),
+            password=self.input.param("mongo_password")
+        )
+
+        # Initialize variables for Kafka
+        self.kafka_topic_prefix = f"on_off_{int(time.time())}"
+
+        # Initializing Confluent util and Confluent cluster object.
+        self.confluent_util = ConfluentUtils(
+            cloud_access_key=self.input.param("confluent_cloud_access_key"),
+            cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+        self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
+            kafka_cluster_id=self.input.param("confluent_cluster_id"),
+            topic_prefix=self.kafka_topic_prefix)
+        if not self.confluent_cluster_obj:
+            self.fail("Unable to initialize Confluent Kafka cluster object")
+
+        # Initializing KafkaConnect Util and kafka connect server hostnames
+        self.kafka_connect_util = KafkaConnectUtil()
+        kafka_connect_hostname = self.input.param('kafka_connect_hostname')
+        self.kafka_connect_hostname_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_CDC_PORT}")
+        self.kafka_connect_hostname_non_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_NON_CDC_PORT}")
+
+        self.kafka_topics = {
+            "confluent": {
+                "MONGODB": [
+                    {
+                        "topic_name": "do-not-delete-mongo-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": True,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                    {
+                        "topic_name": "do-not-delete-mongo-non-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": False,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                ],
+                "POSTGRESQL": [],
+                "MYSQLDB": []
+            }
+        }
+
+        # creating bucket scope and collections for remote collection
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster,
+            self.input.param("num_buckets", 1))
+
+        self.setup_infra_for_mongo()
+        confluent_kafka_cluster_details = [
+            self.confluent_util.generate_confluent_kafka_cluster_detail(
+                brokers_url=self.confluent_cluster_obj.bootstrap_server,
+                auth_type="PLAIN", encryption_type="TLS",
+                api_key=self.confluent_cluster_obj.cluster_access_key,
+                api_secret=self.confluent_cluster_obj.cluster_secret_key)]
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=["json"],
+            confluent_kafka_cluster_details=confluent_kafka_cluster_details,
+            external_dbs=["MONGODB"],
+            kafka_topics=self.kafka_topics)
+
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"name": "string", "email": "string"}]
+        self.columnar_spec["index"]["indexed_fields"] = ["price:double"]
+        self.columnar_spec["kafka_dataset"]["primary_key"] = [
+            {"_id": "string"}]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
+        start_time = time.time()
+        self.mini_volume = MiniVolume(self)
         self.mini_volume.calculate_volume_per_source()
         # initiate copy to kv
         for i in range(1, 5):
@@ -944,10 +1134,8 @@ class CopyToKv(ColumnarBaseTest):
                 self.mini_volume.run_processes(i, 2 ** (i - 1), False)
             else:
                 self.mini_volume.run_processes(i, 2 ** (i + 1), False)
-            self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
-            self.mini_volume.stop_process()
-            self.mini_volume.stop_crud_on_data_sources()
-            self.cbas_util.wait_for_ingestion_complete()
+                self.mini_volume.stop_process()
+
             datasets = self.cbas_util.get_all_dataset_objs()
             remote_link = self.cbas_util.get_all_link_objs("couchbase")
             self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
@@ -963,7 +1151,6 @@ class CopyToKv(ColumnarBaseTest):
 
             validation_results = []
             self.validate_copy_to_kv_result(datasets, copy_to_kv_collections, remote_link, validation_results)
-            self.mini_volume.stop_process(query_pass=True)
-            self.delete_capella_bucket(self.provisioned_bucket_id)
 
+        self.log.info("Time taken to run mini-volume: {} minutes".format((time.time() - start_time) / 60))
         self.log.info("Copy to KV mini volume finish")

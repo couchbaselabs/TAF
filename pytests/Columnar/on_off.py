@@ -38,7 +38,7 @@ class OnOff(ColumnarBaseTest):
                                        self.tenant.pwd, '')
 
         self.no_of_docs = self.input.param("no_of_docs", 1000)
-        
+
         if len(self.tenant.clusters) > 0:
             self.remote_cluster = self.tenant.clusters[0]
             self.couchbase_doc_loader = CouchbaseUtil(
@@ -47,59 +47,6 @@ class OnOff(ColumnarBaseTest):
                 username=self.remote_cluster.master.rest_username,
                 password=self.remote_cluster.master.rest_password,
             )
-
-        self.mongo_util = MongoUtil(
-            task_manager=self.task_manager,
-            hostname=self.input.param("mongo_hostname"),
-            username=self.input.param("mongo_username"),
-            password=self.input.param("mongo_password")
-        )
-
-        # Initialize variables for Kafka
-        self.kafka_topic_prefix = f"on_off_{int(time.time())}"
-
-        # Initializing Confluent util and Confluent cluster object.
-        self.confluent_util = ConfluentUtils(
-                cloud_access_key=self.input.param("confluent_cloud_access_key"),
-                cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
-        self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
-                kafka_cluster_id=self.input.param("confluent_cluster_id"),
-                topic_prefix=self.kafka_topic_prefix)
-        if not self.confluent_cluster_obj:
-                self.fail("Unable to initialize Confluent Kafka cluster object")
-
-        # Initializing KafkaConnect Util and kafka connect server hostnames
-        self.kafka_connect_util = KafkaConnectUtil()
-        kafka_connect_hostname = self.input.param('kafka_connect_hostname')
-        self.kafka_connect_hostname_cdc_confluent = (
-                f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_CDC_PORT}")
-        self.kafka_connect_hostname_non_cdc_confluent = (
-                f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_NON_CDC_PORT}")
-
-        self.kafka_topics = {
-            "confluent": {
-                "MONGODB": [
-                    {
-                        "topic_name": "do-not-delete-mongo-cdc.Product_Template.10GB",
-                        "key_serialization_type": "json",
-                        "value_serialization_type": "json",
-                        "cdc_enabled": True,
-                        "source_connector": "DEBEZIUM",
-                        "num_items": 10000000
-                    },
-                    {
-                        "topic_name": "do-not-delete-mongo-non-cdc.Product_Template.10GB",
-                        "key_serialization_type": "json",
-                        "value_serialization_type": "json",
-                        "cdc_enabled": False,
-                        "source_connector": "DEBEZIUM",
-                        "num_items": 10000000
-                    },
-                ],
-                "POSTGRESQL": [],
-                "MYSQLDB": []
-            }
-        }
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
@@ -155,7 +102,7 @@ class OnOff(ColumnarBaseTest):
         if hasattr(self, "remote_cluster"):
             self.delete_all_buckets_from_capella_cluster(
                 self.tenant, self.remote_cluster)
-        
+
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.columnar_cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
@@ -202,14 +149,12 @@ class OnOff(ColumnarBaseTest):
                 f"{self.mongo_db_name}.{self.mongo_coll_name}"] = \
                 mongo_doc_loading_task.success_count
 
-
-
         self.log.info("Generating Connector config for Mongo CDC")
         self.cdc_connector_name = f"mongo_{self.kafka_topic_prefix}_cdc"
         cdc_connector_config = KafkaConnectUtil.generate_mongo_connector_config(
             mongo_connection_str=self.mongo_util.loader.connection_string,
             mongo_collections=list(self.mongo_collections.keys()),
-            topic_prefix=self.kafka_topic_prefix+"_cdc",
+            topic_prefix=self.kafka_topic_prefix + "_cdc",
             partitions=32, cdc_enabled=True)
 
         self.log.info("Generating Connector config for Mongo Non-CDC")
@@ -246,7 +191,7 @@ class OnOff(ColumnarBaseTest):
                 self.kafka_topics[kafka_type]["MONGODB"].extend(
                     [
                         {
-                            "topic_name": f"{self.kafka_topic_prefix+'_cdc'}."
+                            "topic_name": f"{self.kafka_topic_prefix + '_cdc'}."
                                           f"{mongo_collection_name}",
                             "key_serialization_type": "json",
                             "value_serialization_type": "json",
@@ -255,7 +200,7 @@ class OnOff(ColumnarBaseTest):
                             "num_items": num_items
                         },
                         {
-                            "topic_name": f"{self.kafka_topic_prefix+'_non_cdc'}."
+                            "topic_name": f"{self.kafka_topic_prefix + '_non_cdc'}."
                                           f"{mongo_collection_name}",
                             "key_serialization_type": "json",
                             "value_serialization_type": "json",
@@ -928,6 +873,60 @@ class OnOff(ColumnarBaseTest):
             self.fail(error)
 
     def test_mini_volume_on_off(self):
+
+        self.mongo_util = MongoUtil(
+            task_manager=self.task_manager,
+            hostname=self.input.param("mongo_hostname"),
+            username=self.input.param("mongo_username"),
+            password=self.input.param("mongo_password")
+        )
+
+        # Initialize variables for Kafka
+        self.kafka_topic_prefix = f"on_off_{int(time.time())}"
+
+        # Initializing Confluent util and Confluent cluster object.
+        self.confluent_util = ConfluentUtils(
+            cloud_access_key=self.input.param("confluent_cloud_access_key"),
+            cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+        self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
+            kafka_cluster_id=self.input.param("confluent_cluster_id"),
+            topic_prefix=self.kafka_topic_prefix)
+        if not self.confluent_cluster_obj:
+            self.fail("Unable to initialize Confluent Kafka cluster object")
+
+        # Initializing KafkaConnect Util and kafka connect server hostnames
+        self.kafka_connect_util = KafkaConnectUtil()
+        kafka_connect_hostname = self.input.param('kafka_connect_hostname')
+        self.kafka_connect_hostname_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_CDC_PORT}")
+        self.kafka_connect_hostname_non_cdc_confluent = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_NON_CDC_PORT}")
+
+        self.kafka_topics = {
+            "confluent": {
+                "MONGODB": [
+                    {
+                        "topic_name": "do-not-delete-mongo-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": True,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                    {
+                        "topic_name": "do-not-delete-mongo-non-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": False,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                ],
+                "POSTGRESQL": [],
+                "MYSQLDB": []
+            }
+        }
+
         # creating bucket scope and collections for remote collection
         self.create_bucket_scopes_collections_in_capella_cluster(
             self.tenant, self.remote_cluster,
@@ -964,7 +963,6 @@ class OnOff(ColumnarBaseTest):
             self.fail(msg)
 
         start_time = time.time()
-        self.sirius_url = self.input.param("sirius_url", "http://127.0.0.1:4000")
         self.mini_volume = MiniVolume(self)
         self.mini_volume.calculate_volume_per_source()
         for i in range(1, 5):
@@ -974,6 +972,7 @@ class OnOff(ColumnarBaseTest):
                 self.mini_volume.run_processes(i, 2 ** (i + 1), False)
 
             self.mini_volume.stop_process()
+
             docs_in_collections_before = self.dataset_count()
             self.cbas_util.disconnect_links(self.columnar_cluster, self.columnar_spec)
             self.cbas_util.connect_links(self.columnar_cluster, self.columnar_spec)
@@ -990,10 +989,10 @@ class OnOff(ColumnarBaseTest):
                     project_id=self.tenant.project_id,
                     instance=self.columnar_cluster, wait_to_turn_on=False):
                 self.fail("Failed to Turn-On the cluster")
-
+            self.cbas_util.wait_for_cbas_to_recover(self.columnar_cluster)
             self.columnar_utils.update_columnar_instance_obj(
                 self.pod, self.tenant, self.columnar_cluster)
             docs_in_collection_after = self.dataset_count()
             if docs_in_collection_after != docs_in_collections_before:
                 self.fail("Doc count mismatch after on/off")
-        self.log.info("Time taken to run mini-volume: {} minutes".format((time.time() - start_time)/60))
+        self.log.info("Time taken to run mini-volume: {} minutes".format((time.time() - start_time) / 60))
