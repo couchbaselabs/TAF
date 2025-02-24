@@ -20,4 +20,4 @@
 [submodule "JavaDocLoader"]
 	path = DocLoader
 	url = https://github.com/couchbaselabs/DocLoader.git
-	branch = rest_support
+	branch = main
