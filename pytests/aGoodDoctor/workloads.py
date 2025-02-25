@@ -92,7 +92,7 @@ siftBigANN = {
     "doc_size": _input.param("doc_size", 1024),
     "pattern": [0, 0, 100, 0, 0], # CRUDE
     "load_type": ["update"],
-    "2iQPS": 1,
+    "2iQPS": _input.param("qps", 50),
     "ftsQPS": 10,
     "cbasQPS": 10,
     "collections_defn": [

@@ -26,7 +26,7 @@ from threading import Lock
 from TestInput import TestInputSingleton
 import faker
 from couchbase.n1ql import QueryScanConsistency, QueryStatus
-from couchbase.exceptions import (CouchbaseException, TimeoutException, AmbiguousTimeoutException,
+from couchbase.exceptions import (UnAmbiguousTimeoutException, CouchbaseException, TimeoutException, AmbiguousTimeoutException,
                                   RequestCanceledException, InternalServerFailureException, QueryIndexAlreadyExistsException)
 from couchbase.options import QueryOptions
 from elasticsearch import Elasticsearch, ConnectionTimeout
@@ -330,14 +330,14 @@ class DoctorN1QL():
                                 self.idx_q = indexType[i % len(indexType)]
                                 if partitions:
                                     vector_fields = "'num_partition': {}, ".format(partitions) + vector_fields
-                                    # self.idx_q = indexType[i % len(indexType)].format(
-                                    #     index_name=idx_name, collection=c, vector=vector_fields)
-                                else:
-                                    # self.idx_q = indexType[i % len(indexType)].format(
-                                    #     index_name=idx_name, collection=c, vector=vector_fields)
-                                    self.idx_q = self.idx_q.replace('PARTITION BY HASH(meta().id)', "")
-                                self.idx_q = indexType[i % len(indexType)].format(
+                                    self.idx_q = indexType[i % len(indexType)].format(
                                         index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
+                                else:
+                                    self.idx_q = indexType[i % len(indexType)].format(
+                                        index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
+                                    self.idx_q = self.idx_q.replace('PARTITION BY HASH(meta().id)', "")
+                                # self.idx_q = indexType[i % len(indexType)].format(
+                                #         index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
                             else:
                                 self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             print (self.idx_q)
@@ -650,6 +650,9 @@ class QueryLoad:
                         self.query_stats[query][7] += recall_es
                     if self.bucket.loadDefn.get("valType") == "siftBigANN" and validate_item_count:
                         results = [result.get("id") for result in list(results)]
+                        # print(f"Query Vector: {vector_float}")
+                        # print(f"Actual: {results}")
+                        # print(f"ExpectedGT: {groudtruth}")
                         if len(results) != expected_count:
                             self.log.critical("Expected Count:{}, Actual Count:{}".format(expected_count, len(results)))
                             next(self.failed_count)
