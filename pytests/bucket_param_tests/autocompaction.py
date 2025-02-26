@@ -139,12 +139,11 @@ class AutoCompactionTests(CollectionBase):
             dbFragmentThresholdPercentage=percent_threshold,
             viewFragmentThresholdPercentage=None)
 
-        rest = RestConnection(server_info)
         items = 0
         if (output and
                 MIN_COMPACTION_THRESHOLD <= percent_threshold <= max_run):
             node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
-            info = rest.get_nodes_self()
+            info = self.cluster_util.get_nodes_self(server_info)
             available_ram = info.memoryQuota * node_ram_ratio / 2
             items = (int(available_ram * 1000) / 2) / item_size
 

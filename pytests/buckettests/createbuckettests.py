@@ -12,6 +12,9 @@ from custom_exceptions.exception import BucketCreationException
 from BucketLib.bucket import Bucket
 from shell_util.remote_connection import RemoteMachineShellConnection
 
+from sdk_client3 import SDKClient
+from sdk_constants.java_client import SDKConstants
+
 
 class CreateBucketTests(ClusterSetup):
     def setUp(self):
@@ -54,10 +57,14 @@ class CreateBucketTests(ClusterSetup):
             tasks = list()
             self.log.info(f"Perform {op_type} for {self.num_items} items")
             for t_bucket in self.cluster.buckets:
+                durability_level = self.durability_level
+                if t_bucket.bucketType == Bucket.Type.EPHEMERAL:
+                    durability_level = SDKConstants.DurabilityLevel.MAJORITY
+
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, t_bucket, load_gen, op_type,
                     load_using=self.load_docs_using,
-                    durability=self.durability_level,
+                    durability=durability_level,
                     process_concurrency=2,
                     suppress_error_table=False,
                     print_ops_rate=False))
