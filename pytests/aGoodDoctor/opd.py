@@ -1342,3 +1342,29 @@ class OPD:
             rollbacks += 1
 
         self.key = self.input.param("key", "test_docs-")
+
+    def check_index_pending_mutations(self, cluster):
+        while True:
+            check = False
+            for node in cluster.index_nodes:
+                try:
+                    stats = GsiHelper(node, self.log).get_bucket_index_stats()
+                    for bucket in cluster.buckets:
+                        bucket = bucket.name
+                        if bucket == "MAINT_STREAM":
+                            continue
+                        for scope in stats[bucket]:
+                            for collection in stats[bucket][scope]:
+                                for idx in stats[bucket][scope][collection]:
+                                    self.log.info(":".join([
+                                        bucket, scope, collection, 
+                                        idx, "num_docs_pending", 
+                                        str(stats[bucket][scope][collection][idx]["num_docs_pending"])]))
+                                    if stats[bucket][scope][collection][idx]["num_docs_pending"] > 0:
+                                        check = True
+                except Exception as e:
+                    self.log.critical(e)
+            if check:
+                self.sleep(30, "Wait for index mutations pending")
+            else:
+                break

@@ -9,7 +9,8 @@ import threading
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from pytests.basetestcase import BaseTestCase
 from constants.cb_constants.CBServer import CbServer
-from workloads import default, nimbus, vector_load
+from workloads import default, nimbus, vector_load, hotel_vector, siftBigANN
+from utils.common import FileDownload
 try:
     from fts import DoctorFTS, FTSQueryLoad
 except:
@@ -195,9 +196,19 @@ class Murphy(BaseTestCase, hostedOPD):
                 load["pattern"] = [0, 80, 0, 0, 20]
                 load["load_type"] = ["read", "expiry"]
 
+        self.siftFileName = None
         if self.vector:
             self.load_defn = list()
-            self.load_defn.append(vector_load)
+            if self.input.param("services").find("index") != -1:
+                if self.val_type == "Hotel":
+                    self.load_defn.append(hotel_vector)
+                if self.val_type == "siftBigANN":
+                    self.load_defn.append(siftBigANN)
+                    self.siftFileName = FileDownload.checkDownload(
+                        siftBigANN.get("baseFilePath"),
+                        "ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz")
+            else:
+                self.load_defn.append(vector_load)
 
         #######################################################################
         for tenant in self.tenants:
@@ -228,6 +239,11 @@ class Murphy(BaseTestCase, hostedOPD):
             for cluster in tenant.xdcr_clusters:
                 if not self.skip_init:
                     self.create_buckets(self.pod, tenant, cluster, sdk_init=False)
+        coll_id = self.input.param("collection_id", False)
+        if coll_id and self.val_type == "siftBigANN":
+            coll_id = coll_id.split(",")
+            for bucket in cluster.buckets:
+                bucket.loadDefn["collections_defn"] = [defn for defn in bucket.loadDefn["collections_defn"] if defn.get("collection_id") in coll_id]
 
         self.skip_read_on_error = True
         self.suppress_error_table = True
@@ -252,47 +268,58 @@ class Murphy(BaseTestCase, hostedOPD):
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
         '''
-        tasks = list()
-        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
-        for tenant in self.tenants:
-            i = 0
-            for cluster in tenant.clusters:
-                for bucket in cluster.buckets:
-                    self.generate_docs(doc_ops=["create"],
-                                       create_start=0,
-                                       create_end=bucket.loadDefn.get("num_items")/2,
-                                       bucket=bucket)
-                if not self.skip_init:
-                    tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
-                    if self.xdcr_remote_clusters > 0:
-                        self.drXDCR.set_up_replication(tenant, source_cluster=cluster, destination_cluster=tenant.xdcr_clusters[i],
-                                     source_bucket=cluster.buckets[0].name,
-                                     destination_bucket=tenant.xdcr_clusters[i].buckets[0].name,)
+        if self.val_type == "siftBigANN":
+            self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
+            if not self.skip_init:
+                for tenant in self.tenants:
+                    for cluster in tenant.clusters:
+                        self.load_sift_data(cluster=cluster,
+                                          buckets=cluster.buckets,
+                                          overRidePattern=[100,0,0,0,0],
+                                          validate_data=False,
+                                          wait_for_stats=False)
+        else:
+            tasks = list()
+            self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
+            for tenant in self.tenants:
+                i = 0
+                for cluster in tenant.clusters:
+                    for bucket in cluster.buckets:
+                        self.generate_docs(doc_ops=["create"],
+                                           create_start=0,
+                                           create_end=bucket.loadDefn.get("num_items")/2,
+                                           bucket=bucket)
+                    if not self.skip_init:
+                        tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
+                        if self.xdcr_remote_clusters > 0:
+                            self.drXDCR.set_up_replication(tenant, source_cluster=cluster, destination_cluster=tenant.xdcr_clusters[i],
+                                         source_bucket=cluster.buckets[0].name,
+                                         destination_bucket=tenant.xdcr_clusters[i].buckets[0].name,)
+                    i += 1
+            for tenant in self.tenants:
+                i = 0
+                for cluster in tenant.clusters:
+                    if tasks:
+                        self.wait_for_doc_load_completion(cluster, tasks[i])
                 i += 1
-        for tenant in self.tenants:
-            i = 0
-            for cluster in tenant.clusters:
-                if tasks:
-                    self.wait_for_doc_load_completion(cluster, tasks[i])
-            i += 1
-
-        tasks = list()
-        self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
-        for tenant in self.tenants:
-            for cluster in tenant.clusters:
-                for bucket in cluster.buckets:
-                    self.generate_docs(doc_ops=["create"],
-                                       create_start=bucket.loadDefn.get("num_items")/2,
-                                       create_end=bucket.loadDefn.get("num_items"),
-                                       bucket=bucket)
-                if not self.skip_init:
-                    tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
-        for tenant in self.tenants:
-            i = 0
-            for cluster in tenant.clusters:
-                if tasks:
-                    self.wait_for_doc_load_completion(cluster, tasks[i])
-            i += 1
+    
+            tasks = list()
+            self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    for bucket in cluster.buckets:
+                        self.generate_docs(doc_ops=["create"],
+                                           create_start=bucket.loadDefn.get("num_items")/2,
+                                           create_end=bucket.loadDefn.get("num_items"),
+                                           bucket=bucket)
+                    if not self.skip_init:
+                        tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
+            for tenant in self.tenants:
+                i = 0
+                for cluster in tenant.clusters:
+                    if tasks:
+                        self.wait_for_doc_load_completion(cluster, tasks[i])
+                i += 1
 
         tasks = list()
         for tenant in self.tenants:
@@ -315,15 +342,20 @@ class Murphy(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 if cluster.index_nodes:
-                    self.drIndex.create_indexes(cluster.buckets)
+                    self.drIndex.create_indexes(cluster.buckets, base64=self.base64, xattr=self.xattr)
                     self.drIndex.build_indexes(cluster, cluster.buckets, wait=True)
+                    self.check_index_pending_mutations(cluster)
+                    self.log.info("Index ingestion completed")
                     for bucket in cluster.buckets:
                         if bucket.loadDefn.get("2iQPS", 0) > 0:
-                            ql = QueryLoad(bucket)
+                            self.log.info("Starting Query load")
+                            ql = QueryLoad(bucket, self.mockVector,
+                                           validate_item_count=self.input.param("validate_query_results", True),
+                                           esClient=self.esClient, log_fail=True)
                             ql.start_query_load()
                             self.ql.append(ql)
-                    self.drIndex.start_index_stats(cluster)
                     self.drIndex.start_update_stats(cluster)
+                    self.drIndex.start_index_stats(cluster)
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
@@ -350,22 +382,32 @@ class Murphy(BaseTestCase, hostedOPD):
                             ql.start_query_load()
                             self.ftsQL.append(ql)
 
+        self.PrintStep("Running Query workload for 5 mins with NO mutations")
+        self.sleep(self.input.param("steady_state_workload_sleep", 300))
+
         self.mutation_perc = self.input.param("mutation_perc", 100)
         self.tasks = list()
         for tenant in self.tenants:
             for cluster in tenant.clusters:
-                for bucket in cluster.buckets:
-                    bucket.original_ops = bucket.loadDefn["ops"]
-                    bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-                    self.generate_docs(bucket=bucket)
-                self.tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets))
+                if self.val_type == "siftBigANN":
+                    self.mutations = True
+                    self.mutation_th = threading.Thread(target=self.sift_mutations,
+                                                        kwargs={"cluster": cluster})
+                    self.mutation_th.start()
+        
+                    self.PrintStep("Running Query workload during mutations")
+                    self.restart_query_load(cluster, 0)
+                    self.sleep(self.input.param("steady_state_workload_sleep", 300))
+                else:
+                    self.mutations = True
+                    self.mutation_th = threading.Thread(target=self.normal_mutations,
+                                                        kwargs={"cluster": cluster})
+                    self.mutation_th.start()
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 if cluster.fts_nodes:
                     self.sleep(3600, "Check fts vector query status during %s KV load" % self.input.param("rebl_ops_rate", 5000))
-
-        self.sleep(300)
 
         upgrade = self.input.capella.get("upgrade_image")
         if upgrade:
@@ -382,7 +424,9 @@ class Murphy(BaseTestCase, hostedOPD):
                         self.pod, tenant, cluster, config, timeout=24*60*60)
                     rebalance_tasks.append(rebalance_task)
             self.wait_for_rebalances(rebalance_tasks)
-        self.sleep(self.input.param("steady_state_workload_sleep", 120))
+            self.PrintStep("Running Steady State Query workload post upgrade")
+            self.restart_query_load(cluster, 0)
+            self.sleep(self.input.param("steady_state_workload_sleep", 300))
 
     def test_cluster_on_off(self):
         if self.turn_cluster_off:
@@ -699,3 +743,53 @@ class Murphy(BaseTestCase, hostedOPD):
                 if cluster.eventing_nodes:
                     self.drEventing.print_eventing_stats(cluster)
         self.assertTrue(self.query_result, "Please check the logs for query failures")
+
+
+    def normal_mutations(self, cluster):
+        self.create_perc = 25
+        self.update_perc = 25
+        self.delete_perc = 25
+        self.expiry_perc = 25
+        self.read_perc = 25
+        self.mutation_perc = self.input.param("mutation_perc", 100)
+        self.doc_ops = self.input.param("doc_ops", "")
+        pattern = None
+        if self.doc_ops:
+            self.doc_ops = self.doc_ops.split(":")
+            perc = 100/len(self.doc_ops)
+            self.expiry_perc = perc if "expiry" in self.doc_ops else 0
+            self.create_perc = perc if "create" in self.doc_ops else 0
+            self.update_perc = perc if "update" in self.doc_ops else 0
+            self.delete_perc = perc if "delete" in self.doc_ops else 0
+            self.read_perc = perc if "read" in self.doc_ops else 0
+            pattern = [self.create_perc, self.read_perc, self.update_perc, self.delete_perc, self.expiry_perc]
+        while self.mutations:
+            self.mutate += 1
+            for bucket in cluster.buckets:
+                bucket.loadDefn["pattern"] = pattern or bucket.loadDefn.get("pattern")
+                bucket.loadDefn["load_type"] = self.doc_ops if self.doc_ops else bucket.loadDefn.get("load_type")
+                self.generate_docs(bucket=bucket)
+                bucket.original_ops = bucket.loadDefn["ops"]
+                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
+                pprint.pprint(bucket.loadDefn)
+            self.perform_load(wait_for_load=True, cluster=cluster)
+            self.check_index_pending_mutations(cluster)
+
+    def sift_mutations(self, cluster):
+        while self.mutations:
+            self.expiry_perc = 0
+            self.create_perc = 0
+            self.update_perc = 100
+            self.delete_perc = 0
+            self.read_perc = 0
+            self.mutate += 1
+            for bucket in cluster.buckets:
+                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
+                self.gtm = False
+            self.load_sift_data(
+                cluster=cluster,
+                buckets=cluster.buckets,
+                validate_data=False,
+                wait_for_stats=False,
+                wait_for_load=True)
+            self.check_index_pending_mutations(cluster)

@@ -536,6 +536,7 @@ class QueryLoad:
     queryVectors = []
 
     def __init__(self, bucket, mockVector=True, validate_item_count=False, esClient=None, log_fail=True):
+        self.log = logger.get("infra")
         self.mockVector = mockVector
         self.base64 = False
         self.validate_item_count = validate_item_count
@@ -546,6 +547,7 @@ class QueryLoad:
             for meta in self.queries_meta:
                 gt = meta["gt"][0]
                 if gt not in QueryLoad.groundTruths.keys():
+                    self.log.info("Reading gt file in memory: %s" % gt)
                     QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(siftBigANN.get("baseFilePath"), gt))})
             self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0] for idx, query in enumerate(self.queries)}
         else:
@@ -558,7 +560,6 @@ class QueryLoad:
         self.timeout_count = itertools.count()
         self.total_query_count = itertools.count()
         self.stop_run = False
-        self.log = logger.get("infra")
         self.cluster_conn = self.queries_meta[0]["sdk"]
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         self.failures = 0

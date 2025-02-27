@@ -228,7 +228,7 @@ class Murphy(BaseTestCase, OPD):
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
 
         coll_id = self.input.param("collection_id", False)
-        if coll_id:
+        if coll_id and self.val_type == "siftBigANN":
             coll_id = coll_id.split(",")
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["collections_defn"] = [defn for defn in bucket.loadDefn["collections_defn"] if defn.get("collection_id") in coll_id]
@@ -543,7 +543,7 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.index_nodes:
             self.drIndex.create_indexes(self.cluster.buckets, base64=self.base64, xattr=self.xattr)
             self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
-            self.check_index_pending_mutations()
+            self.check_index_pending_mutations(self.cluster)
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("2iQPS", 0) > 0:
                     ql = QueryLoad(bucket, self.mockVector,
@@ -586,7 +586,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.PrintStep("Running Query workload during mutations")
             self.restart_query_load(self.cluster, 0)
-            self.sleep(self.input.param("steady_state_workload_sleep", 120))
+            self.sleep(self.input.param("steady_state_workload_sleep", 300))
         else:
             self.mutations = True
             self.mutation_th = threading.Thread(target=self.normal_mutations)
@@ -1811,7 +1811,7 @@ class Murphy(BaseTestCase, OPD):
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
                 pprint.pprint(bucket.loadDefn)
             self.perform_load(wait_for_load=True, cluster=self.cluster)
-            self.check_index_pending_mutations()
+            self.check_index_pending_mutations(self.cluster)
 
     def sift_mutations(self):
         while self.mutations:
@@ -1830,30 +1830,4 @@ class Murphy(BaseTestCase, OPD):
                 validate_data=False,
                 wait_for_stats=False,
                 wait_for_load=True)
-            self.check_index_pending_mutations()
-
-    def check_index_pending_mutations(self):
-        while True:
-            check = False
-            for node in self.cluster.index_nodes:
-                try:
-                    stats = GsiHelper(node, self.log).get_bucket_index_stats()
-                    for bucket in self.cluster.buckets:
-                        bucket = bucket.name
-                        if bucket == "MAINT_STREAM":
-                            continue
-                        for scope in stats[bucket]:
-                            for collection in stats[bucket][scope]:
-                                for idx in stats[bucket][scope][collection]:
-                                    self.log.info(":".join([
-                                        bucket, scope, collection, 
-                                        idx, "num_docs_pending", 
-                                        str(stats[bucket][scope][collection][idx]["num_docs_pending"])]))
-                                    if stats[bucket][scope][collection][idx]["num_docs_pending"] > 0:
-                                        check = True
-                except Exception as e:
-                    self.log.critical(e)
-            if check:
-                self.sleep(30, "Wait for index mutations pending")
-            else:
-                break
+            self.check_index_pending_mutations(self.cluster)
