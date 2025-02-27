@@ -74,10 +74,33 @@ HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`
                 'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
+
+HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
+                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`='Hotel' limit 100",
+                "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
+                "WITH city_price AS (SELECT city, price FROM {} WHERE country = 'Bulgaria' and price > 500 limit 1000) SELECT h.city, h.price FROM city_price as h;",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
+                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
+                "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
+                "SELECT * from {} where `name` is not null limit 100",
+                "SELECT * from {} where phone like \"San%\" limit 100",
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
+
+HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
                 'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Inn USING GSI WITH {{ "defer_build": true}};',
                 'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Hostel USING GSI WITH {{ "defer_build": true}};',
                 'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Place USING GSI WITH {{ "defer_build": true}};',
@@ -336,8 +359,6 @@ class DoctorN1QL():
                                     self.idx_q = indexType[i % len(indexType)].format(
                                         index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
                                     self.idx_q = self.idx_q.replace('PARTITION BY HASH(meta().id)', "")
-                                # self.idx_q = indexType[i % len(indexType)].format(
-                                #         index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
                             else:
                                 self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             print (self.idx_q)
@@ -523,6 +544,7 @@ class QueryLoad:
     queryVectors = []
 
     def __init__(self, bucket, mockVector=True, validate_item_count=False, esClient=None, log_fail=True):
+        self.log = logger.get("infra")
         self.mockVector = mockVector
         self.base64 = False
         self.validate_item_count = validate_item_count
@@ -533,6 +555,7 @@ class QueryLoad:
             for meta in self.queries_meta:
                 gt = meta["gt"][0]
                 if gt not in QueryLoad.groundTruths.keys():
+                    self.log.info("Reading gt file in memory: %s" % gt)
                     QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(siftBigANN.get("baseFilePath"), gt))})
             self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock(), 0, 0] for idx, query in enumerate(self.queries)}
         else:
@@ -545,7 +568,6 @@ class QueryLoad:
         self.timeout_count = itertools.count()
         self.total_query_count = itertools.count()
         self.stop_run = False
-        self.log = logger.get("infra")
         self.cluster_conn = self.queries_meta[0]["sdk"]
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         self.failures = 0
@@ -650,9 +672,6 @@ class QueryLoad:
                         self.query_stats[query][7] += recall_es
                     if self.bucket.loadDefn.get("valType") == "siftBigANN" and validate_item_count:
                         results = [result.get("id") for result in list(results)]
-                        # print(f"Query Vector: {vector_float}")
-                        # print(f"Actual: {results}")
-                        # print(f"ExpectedGT: {groudtruth}")
                         if len(results) != expected_count:
                             self.log.critical("Expected Count:{}, Actual Count:{}".format(expected_count, len(results)))
                             next(self.failed_count)

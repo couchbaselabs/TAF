@@ -88,7 +88,7 @@ siftBigANN = {
     "baseFilePath": _input.param("baseFilePath", "/root/bigann"),
     "scopes": 1,
     "collections": _input.param("collections", 2),
-    "ops": _input.param("ops_rate", 1000),
+    "ops": _input.param("ops_rate", 50000),
     "doc_size": _input.param("doc_size", 1024),
     "pattern": [0, 0, 100, 0, 0], # CRUDE
     "load_type": ["update"],
