@@ -105,7 +105,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         if instance_ids:
             instance_ids = instance_ids.split(',')
 
-        provider = self.input.param("columnar_provider", "aws")
+        provider = self.input.param("columnar_provider", "aws").lower()
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):
                 populate_columnar_instance_obj(self.tenant, instance_ids[i])

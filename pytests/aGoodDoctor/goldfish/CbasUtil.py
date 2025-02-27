@@ -9,13 +9,15 @@ import random
 from threading import Thread
 import threading
 import time
+import traceback
 
 from CbasLib.CBASOperations import CBASHelper
 from global_vars import logger
 from table_view import TableView
-from couchbase.analytics import AnalyticsQuery, AnalyticsOptions, AnalyticsScanConsistency, AnalyticsStatus
-from couchbase.exceptions import (TimeoutException, AmbiguousTimeoutException, UnambiguousTimeoutException,
-                                  RequestCanceledException, CouchbaseException, PlanningFailureException)
+from couchbase.analytics import AnalyticsScanConsistency, AnalyticsStatus
+from couchbase.exceptions import (TimeoutException, UnAmbiguousTimeoutException, AmbiguousTimeoutException,
+                                  RequestCanceledException, CouchbaseException)
+from couchbase.options import AnalyticsOptions
 
 datasets = ['create dataset {} on {}.{}.{};']
 
@@ -90,12 +92,13 @@ def execute_via_sdk(client, statement, readonly=False,
 
     output = {}
     result = client.analytics_query(statement, options)
-
-    output["status"] = result.meta_data().status
-    output["metrics"] = result.meta_data().metrics
-
     try:
-        output["results"] = result.rows()
+        output["results"] = [row for row in result.rows()]
+        output["status"] = result.metadata().status()
+        output["metrics"] = result.metadata().metrics()
+    except CouchbaseException as e:
+        traceback.print_exc()
+        raise e
     except Exception as e:
         output["results"] = None
 
@@ -176,7 +179,6 @@ class DoctorCBAS():
 
     def wait_for_link_disconnect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
-        rest = CBASHelper(cluster.master)
         client = random.choice(cluster.SDKClients).cluster
         while time.time() < st_time + timeout:
             time.sleep(10)
@@ -193,7 +195,6 @@ class DoctorCBAS():
 
     def wait_for_link_connect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
-        rest = CBASHelper(cluster.master)
         client = random.choice(cluster.SDKClients).cluster
         while time.time() < st_time + timeout:
             time.sleep(10)
@@ -213,27 +214,51 @@ class DoctorCBAS():
 
     def wait_for_ingestion(self, cluster, databases, timeout=86400):
         client = cluster.SDKClients[0].cluster
-        results = list()
+        _results = list()
         def check_in_th(collection, items):
             status = False
             stop_time = time.time() + timeout
+            # while time.time() < stop_time:
+            #     if cluster.state == "ACTIVE":
+            #         try:
+            #             rest = CBASHelper(cluster.cbas_cc_node)
+            #             _, _, response = rest.fetch_pending_mutation_on_cbas_cluster()
+            #             if response.status_code in [200, 201, 202]:
+            #                 result = json.loads(response.content, encoding='utf-8')
+            #                 keys = []
+            #                 for key in result["Default"].keys():
+            #                     keys.append(str(key))
+            #                 if collection not in keys or result["Default"][collection] == 0:
+            #                     break
+            #                 else:
+            #                     self.log.debug("dataset: {}, status: {}, pending count: {}, expected count: {}"
+            #                                .format(collection, response.status_code,
+            #                                        result["Default"][collection],
+            #                                        items))
+            #         except:
+            #             break                
+            #     time.sleep(random.randint(60,120))
+                    
             while time.time() < stop_time:
                 statement = "select count(*) cnt from {};".format(collection)
                 try:
-                    _status, _, _, results, _ = execute_statement_on_cbas(client, statement)
-                    self.log.debug("dataset: {}, status: {}, actual count: {}, expected count: {}"
-                                   .format(collection, _status,
-                                           json.loads(str(results))[0]["cnt"],
-                                           items))
-                    if json.loads(str(results))[0]["cnt"] >= items:
-                        self.log.info("CBAS dataset is ready: {}".format(collection))
-                        results.append(True)
-                        break
-                except:
-                    pass
-                time.sleep(5)
+                    if cluster.state == "ACTIVE":
+                        _status, _, _, results, _ = execute_statement_on_cbas(client, statement)
+                        self.log.debug("dataset: {}, status: {}, actual count: {}, expected count: {}"
+                                       .format(collection, _status,
+                                               results[0]["cnt"],
+                                               items))
+                        if results[0]["cnt"] >= items:
+                            self.log.info("CBAS dataset is ready: {}".format(collection))
+                            status = True
+                            break
+                except (TimeoutException, AmbiguousTimeoutException, RequestCanceledException,
+                        CouchbaseException, Exception) as e:
+                    self.log.critical(str(e))
+                    traceback.print_exc()
+                time.sleep(random.randint(60,120))
             if status is False:
-                results.append(status)
+                _results.append(status)
         ths = list()
         for database in databases:
             for collection in database.cbas_collections:
@@ -244,7 +269,9 @@ class DoctorCBAS():
                 ths.append(th)
         for th in ths:
             th.join()
-        return False not in results
+        for database in databases:
+            self.disconnect_link(cluster, database.link_name)
+        return False not in _results
 
 
 class CBASQueryLoad:
@@ -263,6 +290,7 @@ class CBASQueryLoad:
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("cbasQPS")
         self.query_stats = {key[1]: [0, 0] for key in self.queries}
         self.failures = 0
+        self.cluster = cluster
         self.cluster_conn = random.choice(cluster.SDKClients).cluster
 
     def start_query_load(self):
@@ -290,12 +318,15 @@ class CBASQueryLoad:
         name = threading.currentThread().getName()
         i = 0
         while not self.stop_run:
+            if self.cluster.state != "ACTIVE":
+                time.sleep(60)
+                continue
             client_context_id = name + "_" + str(i)
             i += 1
             start = time.time()
             e = ""
             try:
-                self.total_query_count.next()
+                next(self.total_query_count)
                 query_tuple = self.queries[i%len(self.queries)]
                 query = query_tuple[0]
                 original_query = query_tuple[1]
@@ -304,34 +335,36 @@ class CBASQueryLoad:
                 status, metrics, _, results, _ = execute_statement_on_cbas(
                     self.cluster_conn, query, client_context_id)
                 try:
-                    self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
+                    self.query_stats[original_query][0] += metrics.execution_time().total_seconds()*1000.0
                     self.query_stats[original_query][1] += 1
                 except KeyError:
                     self.query_stats[original_query] = [0, 0]
-                    self.query_stats[original_query][0] = metrics.executionTime().toNanos()/1000000.0
+                    self.query_stats[original_query][0] = metrics.execution_time().total_seconds()*1000.0
                     self.query_stats[original_query][1] = 1
                 if status == AnalyticsStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
-                            self.failed_count.next()
+                            next(self.failed_count)
                         else:
-                            self.success_count.next()
+                            next(self.success_count)
                     else:
-                        self.success_count.next()
+                        next(self.success_count)
                 else:
-                    self.failed_count.next()
-            except (TimeoutException, AmbiguousTimeoutException, UnambiguousTimeoutException) as e:
-                pass
-            except RequestCanceledException as e:
-                pass
-            except CouchbaseException as e:
-                pass
-            except (Exception, PlanningFailureException) as e:
-                pass
+                    next(self.failed_count)
+            # except (TimeoutException, AmbiguousTimeoutException, UnAmbiguousTimeoutException) as ex:
+            #     e = ex
+            # except RequestCanceledException as ex:
+            #     e = ex
+            except CouchbaseException as ex:
+                e = ex
+            # except (Exception) as ex:
+            #     e = ex
+                self.log.critical(e)
+                next(self.error_count)
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
-                self.timeout_count.next()
+                next(self.timeout_count)
             elif str(e).find("RequestCanceledException") != -1:
                 self.failures += self.cancel_count.next()
             elif str(e).find("CouchbaseException") != -1:

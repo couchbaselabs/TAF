@@ -314,7 +314,7 @@ class SDKClient(object):
             else:
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
-                if server.type == "columnar":
+                if server.type in ["columnar", "dedicated"]:
                     hosts.append(framework_cb_cluster_obj.srv)
                 else:
                     hosts.append(server.ip)

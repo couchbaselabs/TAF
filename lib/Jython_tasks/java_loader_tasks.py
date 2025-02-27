@@ -161,7 +161,7 @@ class SiriusCouchbaseLoader(object):
         self.mockVector = mockVector
         self.dim = dim
         self.base64 = base64
-        self.mutate_field = None
+        self.mutate_field = ""
         self.mutation_timeout = 0
 
         # Flags for validation
@@ -328,7 +328,7 @@ class SiriusCouchbaseLoader(object):
         api = f"{SiriusSetup.sirius_url}/create_clients"
         data = {
             "server_ip": server.ip,
-            "server_port": server.port,
+            "server_port": server.memcached_port,
             "username": username,
             "password": password,
             "bucket_name": bucket_name,

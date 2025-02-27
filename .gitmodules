@@ -1,6 +1,7 @@
 [submodule "lib/capellaAPI"]
 	path = lib/capellaAPI
 	url = https://github.com/couchbaselabs/CapellaRESTAPIs
+	branch = master
 [submodule "platform_utils/ssh_util"]
 	path = platform_utils/ssh_util
 	url = https://github.com/couchbaselabs/ssh_util

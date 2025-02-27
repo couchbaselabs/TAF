@@ -646,3 +646,15 @@ class CBASHelper(RestConnection):
                 return True, response.status_code, content, errors
             else:
                 return False, response.status_code, content, content["errors"]
+
+    def get_cluster_details(self, username=None, password=None, timeout=120):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        headers = self._create_capi_headers(username, password)
+        api = self.cbas_base_url + "/analytics/cluster"
+
+        status, content, response = self._http_request(
+            api, method="GET", headers=headers, timeout=timeout)
+        return status, content, response

@@ -8,6 +8,7 @@ class CouchbaseCluster:
         self.username = username
         self.password = password
         self.paths = paths
+        self.srv = None
         self.master = servers[0]
         self.ram_settings = dict()
         self.servers = servers

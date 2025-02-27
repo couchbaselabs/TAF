@@ -5,16 +5,19 @@ Created on 30-Aug-2021
 '''
 import time
 
-from opd import OPD
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from py_constants.cb_constants.CBServer import CbServer
+
+from .opd import OPD
 from membase.api.rest_client import RestConnection
 import random
 import string
 from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils
 import threading
-from workloads import default, nimbus, vector_load
+from .workloads import default, nimbus, vector_load
 from bucket_utils.bucket_ready_functions import CollectionUtils
-from constants.cb_constants.CBServer import CbServer
+from Jython_tasks.task_manager import TaskManager
 from custom_exceptions.exception import ServerUnavailableException
 
 
@@ -36,17 +39,6 @@ class hostedOPD(OPD):
                 pass
             time.sleep(step)
 
-    def create_sdk_client_pool(self, cluster, buckets, req_clients_per_bucket):
-        for bucket in buckets:
-            self.log.info("Using SDK endpoint %s" % cluster.srv)
-            server = Server(cluster.srv, cluster.master.port,
-                            cluster.master.rest_username,
-                            cluster.master.rest_password,
-                            str(cluster.master.memcached_port))
-            cluster.sdk_client_pool.create_clients(bucket.name, server, req_clients_per_bucket)
-            bucket.clients = cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
-        self.sleep(1, "Wait for SDK client pool to warmup")
-
     def create_buckets(self, pod, tenant, cluster, sdk_init=True):
         self.PrintStep("Step 2: Create required buckets and collections.")
         self.log.info("Create CB buckets")
@@ -63,7 +55,7 @@ class hostedOPD(OPD):
             suffix = ''.join([random.choice(string.ascii_uppercase + string.digits) for _ in range(5)])
             bucket = Bucket(
                 {Bucket.name: buckets[i] + str(i) + "_%s" % suffix,
-                 Bucket.ramQuotaMB: ramQuota / self.num_buckets,
+                 Bucket.ramQuotaMB: ramQuota // self.num_buckets,
                  Bucket.maxTTL: self.bucket_ttl,
                  Bucket.replicaNumber: self.num_replicas,
                  Bucket.storageBackend: self.bucket_storage,
@@ -88,10 +80,13 @@ class hostedOPD(OPD):
             cluster.buckets.append(bucket)
         if sdk_init:
             num_clients = self.input.param("clients_per_db",
-                                           min(5, bucket.loadDefn.get("collections")))
+                                            min(5, bucket.loadDefn.get("collections")))
             for bucket in cluster.buckets:
-                self.create_sdk_client_pool(cluster, [bucket],
-                                            num_clients)
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    cluster.master, cluster.master.rest_username,
+                    cluster.master.rest_password,
+                    bucket.name, req_clients=num_clients)
+                self.create_sdk_client_pool(cluster, [bucket], 1)
         self.create_required_collections(cluster)
 
     def setup_buckets(self):
@@ -125,9 +120,13 @@ class hostedOPD(OPD):
                 else:
                     for i, bucket in enumerate(cluster.buckets):
                         bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
-                        cluster.sdk_client_pool = SDKClientPool()
+                        # cluster.sdk_client_pool = SDKClientPool()
                         num_clients = self.input.param("clients_per_db",
                                                        min(5, bucket.loadDefn.get("collections")))
+                        SiriusCouchbaseLoader.create_clients_in_pool(
+                            cluster.master, cluster.master.rest_username,
+                            cluster.master.rest_password,
+                            bucket.name, req_clients=num_clients)
                         self.create_sdk_client_pool(cluster, [bucket],
                                                     num_clients)
                         for scope in bucket.scopes.keys():
@@ -163,7 +162,7 @@ class hostedOPD(OPD):
                 for bucket in cluster.buckets:
                     self.generate_docs(doc_ops=["create"],
                                        create_start=0,
-                                       create_end=bucket.loadDefn.get("num_items")/2,
+                                       create_end=bucket.loadDefn.get("num_items")//2,
                                        bucket=bucket)
                 if not self.skip_init:
                     tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
@@ -185,7 +184,7 @@ class hostedOPD(OPD):
             for cluster in tenant.clusters:
                 for bucket in cluster.buckets:
                     self.generate_docs(doc_ops=["create"],
-                                       create_start=bucket.loadDefn.get("num_items")/2,
+                                       create_start=bucket.loadDefn.get("num_items")//2,
                                        create_end=bucket.loadDefn.get("num_items"),
                                        bucket=bucket)
                 if not self.skip_init:

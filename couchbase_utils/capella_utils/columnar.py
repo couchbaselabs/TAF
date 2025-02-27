@@ -13,9 +13,11 @@ from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from TestInput import TestInputServer
+from CbasLib.CBASOperations_Rest import CBASHelper
 
 
 class ColumnarInstance:
+    state = None
 
     def __init__(self, tenant_id, project_id, instance_name=None,
                  instance_id=None, cluster_id=None, instance_endpoint=None,
@@ -52,8 +54,17 @@ class ColumnarInstance:
         self.eventing_nodes = list()
         self.backup_nodes = list()
         self.nodes_in_cluster = list()
+        status, content, _ = CBASHelper(servers[0]).get_cluster_details()
+        cc_node = None
+        if status:
+            result = json.loads(content)
+            cc_node = result["ccNodeName"].split(":")[0]
+            ColumnarInstance.state = result["state"]
 
         for server in servers:
+            if cc_node and cc_node == server.ip:
+                self.cbas_cc_node = server
+                self.master = server
             server.type = self.type
             if self.type != "default":
                 server.memcached_port = "11207"
@@ -70,7 +81,6 @@ class ColumnarInstance:
             if "Search" in server.services or "fts" in server.services:
                 self.fts_nodes.append(server)
             self.nodes_in_cluster.append(server)
-        self.master = self.kv_nodes[0]
 
 
 class DBUser:
@@ -445,7 +455,7 @@ class ColumnarUtils:
                     raise Exception(str(resp.content))
                 deployment_options = resp.json()
                 instance_config["cidr"] = deployment_options["suggestedCidr"]
-
+                print(instance_config)
                 resp = columnar_api.create_columnar_instance(
                     tenant.id, tenant.project_id, instance_config)
                 instance_id = None
@@ -551,8 +561,8 @@ class ColumnarUtils:
             columnar_instance_info["data"]["name"],
             columnar_instance_info["data"]["description"], nodes)
         if resp.status_code != 202:
-            self.log.error("Unable to scale columnar instance {0}".format(
-                instance.name))
+            self.log.error("Unable to scale columnar instance {0} - {1}".format(
+                instance.name, resp.content))
             return None
         return resp
 
@@ -772,7 +782,7 @@ class ColumnarUtils:
             tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
         resp = columnar_api.create_analytics_admin_user(instance.instance_id)
         if resp.status_code == 200:
-            self.log.info("Created user couchbase-cloud-qe")
+            self.log.info("Created user: %s: %s" % (resp.json()["username"], resp.json()["password"]))
             return resp.json()["username"], resp.json()["password"]
         elif resp.status_code == 422 and resp.json()[
             "errorType"] == "ErrDataplaneUserNameExists":
@@ -863,6 +873,10 @@ class ColumnarUtils:
             instance.servers.append(temp_server)
         instance.nodes_in_cluster = instance.servers
         instance.cbas_cc_node = instance.servers[0]
+        instance.master.srv = instance.master.ip
+        instance.refresh_object(instance.servers)
+        instance.master.ip = instance.cbas_cc_node.ip
+        instance.master.hostname = instance.cbas_cc_node.hostname
 
     def list_backups(self, pod, tenant, project_id, instance):
         columnar_api = ColumnarAPI(

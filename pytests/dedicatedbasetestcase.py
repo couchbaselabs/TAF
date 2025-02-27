@@ -86,8 +86,8 @@ class CapellaBaseTest(CouchbaseBaseTest):
             "analytics": self.input.param("cbas_disk", 200),
             "eventing": self.input.param("eventing_disk", 200)
             }
-        self.region = self.input.param("region", AWS.Region.US_WEST_2)
-        self.gcp_region = self.input.param("gcp_region", GCP.Region.US_EAST_1)
+        self.region = self.input.param("region", AWS.Region.US_WEST_2).lower()
+        self.gcp_region = self.input.param("gcp_region", GCP.Region.US_EAST_1).lower()
         storage_type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd" if provider == "gcp" else "P6"
         self.storage_type = self.input.param("type", storage_type).lower()
         if provider == "aws":

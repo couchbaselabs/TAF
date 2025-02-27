@@ -334,7 +334,7 @@ class OPD:
             if read_end is not None:
                 bucket.read_end = read_end
             else:
-                bucket.read_end = bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
+                bucket.read_end = bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
 
         if "update" in doc_ops:
             if update_start is not None:
@@ -344,7 +344,7 @@ class OPD:
             if update_end is not None:
                 bucket.update_end = update_end
             else:
-                bucket.update_end = bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
+                bucket.update_end = bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
             self.mutate += 1
 
         if "delete" in doc_ops:
@@ -355,7 +355,7 @@ class OPD:
             if delete_end is not None:
                 bucket.delete_end = delete_end
             else:
-                bucket.delete_end = bucket.start + bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
+                bucket.delete_end = bucket.start + bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
             bucket.final_items -= (bucket.delete_end - bucket.delete_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
 
         if "expiry" in doc_ops:
@@ -369,7 +369,7 @@ class OPD:
             if expire_end is not None:
                 bucket.expire_end = expire_end
             else:
-                bucket.expire_end = bucket.expire_start + bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
+                bucket.expire_end = bucket.expire_start + bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
             bucket.end = bucket.expire_end
             # bucket.final_items -= (bucket.expire_end - bucket.expire_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
 
@@ -419,6 +419,7 @@ class OPD:
                         continue
                     if collection == "_default" and scope == "_default" and skip_default:
                         continue
+                    per_coll_ops = bucket.loadDefn.get("ops")//(len(bucket.scopes[scope].collections.keys()) - 1)
                     loader = SiriusCouchbaseLoader(
                         server_ip=cluster.master.ip, server_port=cluster.master.port,
                         username="Administrator", password="password",
@@ -432,8 +433,8 @@ class OPD:
                         read_start_index=bucket.read_start, read_end_index=bucket.read_end,
                         update_start_index=bucket.update_start, update_end_index=bucket.update_end,
                         delete_start_index=bucket.delete_start, delete_end_index=bucket.delete_end,
-                        expiry_start_index=bucket.expiry_start, expiry_end_index=bucket.expiry_end,
-                        process_concurrency=1, task_identifier="", ops=bucket.loadDefn.get("ops"),
+                        expiry_start_index=bucket.expire_start, expiry_end_index=bucket.expire_end,
+                        process_concurrency=5, task_identifier="", ops=per_coll_ops,
                         suppress_error_table=False,
                         track_failures=True,
                         mutate=0,
@@ -465,7 +466,7 @@ class OPD:
             #         task.sdk.disconnectCluster()
             #     except Exception as e:
             #         print(e)
-            # self.assertTrue(task.result, "Task Failed: {}".format(task.taskName))
+            self.assertTrue(task.result, "Task Failed: {}".format(task.thread_name))
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
@@ -663,36 +664,20 @@ class OPD:
         buckets = buckets or cluster.buckets
         self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default,
                           overWriteValType=overWriteValType)
-        # master = Server(self.cluster.master.ip, self.cluster.master.port,
-        #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
-        #                 str(self.cluster.master.memcached_port))
         tasks = list()
-        i = self.process_concurrency
-        while i > 0:
-            for bucket in buckets:
-                for scope in bucket.scopes.keys():
+        for bucket in buckets:
+            for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
+                for collection in bucket.scopes[scope].collections.keys():
                     if scope == CbServer.system_scope:
                         continue
-                    for collection in bucket.scopes[scope].collections.keys():
-                        if scope == CbServer.system_scope:
-                            continue
-                        if collection == "_default" and scope == "_default" and skip_default:
-                            continue
-                        loader = self.loader_map[bucket.name+scope+collection]
-                        loader.create_doc_load_task()
-                        # client = NewSDKClient(master, bucket.name, scope, collection)
-                        # client.initialiseSDK()
-                        # self.sleep(1)
-                        # taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
-                        # task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                        #                         cluster.sdk_client_pool, self.esClient,
-                        #                         self.durability_level,
-                        #                         self.maxttl, self.time_unit,
-                        #                         self.track_failures, 0)
-                        # task.set_collection_for_load(bucket.name, scope, collection)
-                        # tasks.append(task)
-                        self.doc_loading_tm.add_new_task(loader)
-                        i -= 1
+                    if collection == "_default" and scope == "_default" and skip_default:
+                        continue
+                    loader = self.loader_map[bucket.name+scope+collection]
+                    loader.create_doc_load_task()
+                    self.doc_loading_tm.add_new_task(loader)
+                    tasks.append(loader)
 
         if wait_for_load:
             self.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
@@ -1270,7 +1255,7 @@ class OPD:
                     servers=[node],
                     wait_time=self.wait_timeout * 10))
                 self.sleep(10, "Not Required, but waiting for 10s after warm up")
-                self.check_index_pending_mutations()
+                self.check_index_pending_mutations(self.cluster)
                 result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
                 if result:
                     self.stop_crash = True
@@ -1282,3 +1267,29 @@ class OPD:
             rollbacks += 1
 
         self.key = self.input.param("key", "test_docs-")
+
+    def check_index_pending_mutations(self, cluster):
+        while True:
+            check = False
+            for node in cluster.index_nodes:
+                try:
+                    stats = GsiHelper(node, self.log).get_bucket_index_stats()
+                    for bucket in cluster.buckets:
+                        bucket = bucket.name
+                        if bucket == "MAINT_STREAM":
+                            continue
+                        for scope in stats[bucket]:
+                            for collection in stats[bucket][scope]:
+                                for idx in stats[bucket][scope][collection]:
+                                    self.log.info(":".join([
+                                        bucket, scope, collection, 
+                                        idx, "num_docs_pending", 
+                                        str(stats[bucket][scope][collection][idx]["num_docs_pending"])]))
+                                    if stats[bucket][scope][collection][idx]["num_docs_pending"] > 0:
+                                        check = True
+                except Exception as e:
+                    self.log.critical(e)
+            if check:
+                self.sleep(30, "Wait for index mutations pending")
+            else:
+                break
