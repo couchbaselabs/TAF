@@ -6391,8 +6391,8 @@ class BucketUtils(ScopeUtils):
                         "collection": collection_name,
                         "nodesAggregation": "sum",
                         "start": start_time, "end": end_time}
-        content = StatsHelper(cluster.master). \
-            get_range_api_metrics(metric_name, label_values=label_values)
+        _, content = ClusterRestAPI(cluster.master). \
+            get_stats_for_metric(metric_name, label_values=label_values)
         item_count = content["data"][0]["values"][-1][-1]
         return int(item_count)
 

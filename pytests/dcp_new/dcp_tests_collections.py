@@ -343,7 +343,7 @@ class DcpTestCase(DCPBase):
 
         list_uid = []
         total_items = 0
-        for self.bucket_name, scope_dict in collections.iteritems():
+        for self.bucket_name, scope_dict in collections.items():
             bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                      self.bucket_name)
             scope_dict = scope_dict["scopes"]

@@ -212,7 +212,7 @@ class OpsChangeCasTests(CollectionBase):
 
         collections = BucketUtils.get_random_collections(
                                     self.cluster.buckets, 2, 2, 1)
-        for bucket_name, scope_dict in collections.iteritems():
+        for bucket_name, scope_dict in collections.items():
             bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                      bucket_name)
             for scope_name, collection_dict in scope_dict["scopes"].items():
@@ -275,7 +275,7 @@ class OpsChangeCasTests(CollectionBase):
         client = self.cluster.sdk_client_pool.get_client_for_bucket(self.bucket)
         collections = BucketUtils.get_random_collections([self.bucket],
                                                          2, 2, 1)
-        for bucket_name, scope_dict in collections.iteritems():
+        for bucket_name, scope_dict in collections.items():
             for scope_name, collection_dict in scope_dict["scopes"].items():
                 for c_name, c_data in collection_dict["collections"].items():
                     self.log.info("CAS test on collection %s: %s"
@@ -350,7 +350,7 @@ class OpsChangeCasTests(CollectionBase):
         collections = BucketUtils.get_random_collections([self.bucket],
                                                          2, 2, 1)
         threads = list()
-        for bucket_name, scope_dict in collections.iteritems():
+        for bucket_name, scope_dict in collections.items():
             bucket_obj = self.bucket_util.get_bucket_obj(
                 self.cluster.buckets, bucket_name)
             for scope_name, collection_dict in scope_dict["scopes"].items():

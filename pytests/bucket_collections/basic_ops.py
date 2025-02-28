@@ -689,7 +689,7 @@ class BasicOps(CollectionBase):
         collections = BucketUtils.get_random_collections(
             self.cluster.buckets, 10, 10, 1)
         # delete collection
-        for bucket_name, scope_dict in collections.iteritems():
+        for bucket_name, scope_dict in collections.items():
             bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             scope_dict = scope_dict["scopes"]
@@ -700,7 +700,7 @@ class BasicOps(CollectionBase):
                                                 bucket,
                                                 scope_name, c_name)
         # recreate collection
-        for bucket_name, scope_dict in collections.iteritems():
+        for bucket_name, scope_dict in collections.items():
             bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             scope_dict = scope_dict["scopes"]
@@ -765,7 +765,7 @@ class BasicOps(CollectionBase):
             self.cluster.buckets, 10, 10, 1)
         bucket_name = None
         # Delete collections
-        for bucket_name, scope_dict in collections.iteritems():
+        for bucket_name, scope_dict in collections.items():
             bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             scope_dict = scope_dict["scopes"]
@@ -777,7 +777,7 @@ class BasicOps(CollectionBase):
         # Trigger compaction
         self.bucket_util.wait_till_compaction_end(
             self.cluster.master, bucket_name,
-            timeout=(self.wait_timeout*10))
+            self.wait_timeout*10)
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
@@ -962,7 +962,7 @@ class BasicOps(CollectionBase):
             print(scope_data["collections"])
             if scope_data["collections"]:
                 scope_name = t_scope
-                collection_name = scope_data["collections"].keys()[0]
+                collection_name = list(scope_data["collections"].keys())[0]
                 break
 
         self.num_items = \
