@@ -1,4 +1,5 @@
 import threading
+import json
 
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
@@ -338,6 +339,66 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+
+    def validate_encryption_operations(self, expected_to_fail=True):
+        """Validate encryption key creation and assignment."""
+        rest = RestConnection(self.cluster.master)
+
+        self.log.info(
+            "Starting encryption validation, expected_to_fail=%s",
+            expected_to_fail)
+
+        # Try creating a secret
+        bucket_helper = BucketHelper(self.cluster.master)
+        params = bucket_helper.create_secret_params(
+            secret_type="cb-server-managed-aes-key-256",
+            name="TestSecretAutoRotationOn",
+            usage=["bucket-encryption-*"],
+            autoRotation=True,
+            rotationIntervalInSeconds=60
+        )
+        self.log.info("Sending request to create secret with params: %s",
+                      params)
+        status, response = rest.create_secret(params)
+        self.log.info("Secret creation status=%s, response=%s", status,
+                      response)
+
+        if expected_to_fail:
+            self.assertFalse(status,
+                             "Encryption key creation should fail before full upgrade")
+        else:
+            self.assertTrue(status,
+                            "Encryption key creation should succeed after upgrade")
+
+        if status:
+            response_dict = json.loads(response)
+            secret_id = response_dict.get('id')
+            self.log.info("Created secret ID=%s", secret_id)
+
+            bucket_helper = BucketHelper(self.cluster.master)
+            bucket = self.cluster.buckets[0]
+
+            self.log.info(
+                "Attempting to assign encryption key %s to bucket %s",
+                secret_id, bucket.name)
+            status = bucket_helper.change_bucket_props(bucket,
+                                                       encryptionAtRestKeyId=secret_id)
+            self.log.info("Encryption key assignment status=%s", status)
+
+            if expected_to_fail:
+                self.assertFalse(status,
+                                 "Should not be able to set encryption before full upgrade")
+            else:
+                self.assertTrue(status,
+                                "Should be able to set encryption after upgrade")
+
+            self.log.info("Deleting created secret ID=%s", secret_id)
+            rest.delete_secret(secret_id)
+            self.log.info("Secret ID=%s deleted successfully", secret_id)
+
+        self.log.info(
+            "Encryption validation completed, expected_to_fail=%s",
+            expected_to_fail)
 
     def add_system_scope_to_all_buckets(self):
         for bucket in self.cluster.buckets:
