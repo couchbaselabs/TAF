@@ -566,7 +566,7 @@ class OPD:
                                                       0,
                                                       self.siftFileName
                                                       )
-                                step = (steps[k+1] - steps[k])/self.process_concurrency;
+                                step = (min(steps[k+1], end_offset) - steps[k])/self.process_concurrency;
                                 start = steps[k] + step * i;
                                 end = min(steps[k] + step * (i+1), end_offset);
                                 hm = HashMap()
@@ -1330,7 +1330,7 @@ class OPD:
                     servers=[node],
                     wait_time=self.wait_timeout * 10))
                 self.sleep(10, "Not Required, but waiting for 10s after warm up")
-                self.check_index_pending_mutations()
+                self.check_index_pending_mutations(self.cluster)
                 result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
                 if result:
                     self.stop_crash = True
