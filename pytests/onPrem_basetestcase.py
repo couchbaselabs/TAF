@@ -801,16 +801,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
         is_single_node_server = len(self.servers) == 1
         for _, cluster in self.cb_clusters.items():
-            rest = RestConnection(cluster.master)
-            nodes = rest.get_nodes(inactive_added=True,
-                                   inactive_failed=True)
+            rest = ClusterRestAPI(cluster.master)
+            nodes = self.cluster_util.get_nodes(cluster.master, inactive_added=True,
+                                                inactive_failed=True)
             # Creating cluster_util object to handle multi_cluster scenario
             status = self.cluster_util.trigger_cb_collect_on_cluster(
                 rest, nodes,
                 is_single_node_server)
 
             if status is True:
-                self.cluster_util.wait_for_cb_collect_to_complete(self.cluster)
+                self.cluster_util.wait_for_cb_collect_to_complete(cluster)
                 self.cluster_util.copy_cb_collect_logs(
                     nodes, cluster, log_path)
             else:
