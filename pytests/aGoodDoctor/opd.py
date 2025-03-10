@@ -1320,7 +1320,7 @@ class OPD:
                 else:
                     self.normal_load()
 
-                self.check_index_pending_mutations()
+                self.check_index_pending_mutations(self.cluster)
                 # Kill memcached on NodeA to trigger rollback on other Nodes
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
