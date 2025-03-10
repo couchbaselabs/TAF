@@ -16,6 +16,7 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 from membase.api.rest_client import RestConnection
 from cb_tools.cbstats import Cbstats
+from cb_tools.cbepctl import Cbepctl
 import time
 from custom_exceptions.exception import RebalanceFailedException,\
     ServerUnavailableException
@@ -502,6 +503,7 @@ class OPD:
                     if coll_order == -1:
                         workloads = list(reversed(workloads))
                     workload = workloads[i % len(workloads)]
+                    items = override_num_items or workload.get("num_items")
                     valType = workload["valType"]
                     dim = workload.get("dim", self.dim)
                     if collection == "_default" and scope == "_default" and skip_default:
@@ -516,13 +518,13 @@ class OPD:
                         key_type=self.key_type, value_type=valType,
                         create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
                         delete_percent=pattern[3], expiry_percent=pattern[4],
-                        create_start_index=0 , create_end_index=workload.get("num_items"),
-                        read_start_index=0, read_end_index=workload.get("num_items"),
-                        update_start_index=0, update_end_index=workload.get("num_items"),
-                        delete_start_index=0, delete_end_index=workload.get("num_items"),
+                        create_start_index=0 , create_end_index=items,
+                        read_start_index=0, read_end_index=items,
+                        update_start_index=0, update_end_index=items,
+                        delete_start_index=0, delete_end_index=items,
                         touch_start_index=0, touch_end_index=0,
                         replace_start_index=0, replace_end_index=0,
-                        expiry_start_index=0, expiry_end_index=workload.get("num_items"),
+                        expiry_start_index=0, expiry_end_index=items,
                         process_concurrency=self.process_concurrency,
                         task_identifier="", ops=bucket.loadDefn.get("ops"),
                         suppress_error_table=False,
@@ -1223,50 +1225,58 @@ class OPD:
                 cluster.refresh_object(nodes)
 
     def trigger_rollback(self):
-        mem_only_items = 100000
+        mem_only_items = 1000000
         rollbacks = 0
+        for i, node in enumerate(self.cluster.kv_nodes):
+            # Stopping persistence on NodeA
+            for bucket in self.cluster.buckets:
+                shell = RemoteMachineShellConnection(node)
+                Cbepctl(shell).persistence(bucket.name, "stop")
         while rollbacks < 20:
             self.PrintStep("Running Rollback: %s" % rollbacks)
+            self.key_prefix = "rollback_docs_%s-" % (rollbacks)
+                # mem_client = MemcachedClientHelper.direct_client(
+                #     node, bucket)
+                # mem_client.stop_persistence()
+
+            if self.val_type == "siftBigANN":
+                self.load_sift_data(cluster=self.cluster,
+                                buckets=self.cluster.buckets,
+                                overRidePattern=[100,0,0,0,0],
+                                validate_data=False,
+                                wait_for_stats=False,
+                                override_num_items=mem_only_items)
+            else:
+                self.normal_load()
+
+            self.check_index_pending_mutations(self.cluster)
+
+            # Kill memcached on Nodes to trigger rollback on other Nodes
             for i, node in enumerate(self.cluster.kv_nodes):
-                self.key = "rollback_docs_%s_%s-" % (rollbacks, i)
-                # Stopping persistence on NodeA
-                for bucket in self.cluster.buckets:
-                    mem_client = MemcachedClientHelper.direct_client(
-                        node, bucket)
-                    mem_client.stop_persistence()
-
-                if self.val_type == "siftBigANN":
-                    self.load_sift_data(cluster=self.cluster,
-                                  buckets=self.cluster.buckets,
-                                  overRidePattern=[100,0,0,0,0],
-                                  validate_data=False,
-                                  wait_for_stats=False,
-                                  override_num_items=mem_only_items)
-                else:
-                    self.normal_load()
-
-                self.check_index_pending_mutations()
-                # Kill memcached on NodeA to trigger rollback on other Nodes
                 shell = RemoteMachineShellConnection(node)
                 shell.kill_memcached()
 
-                self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    self.cluster.buckets[0],
-                    servers=[node],
-                    wait_time=self.wait_timeout * 10))
-                self.sleep(10, "Not Required, but waiting for 10s after warm up")
-                self.check_index_pending_mutations(self.cluster)
-                result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-                if result:
-                    self.stop_crash = True
-                    self.task_manager.abort_all_tasks()
-                    self.doc_loading_tm.abortAllTasks()
-                    self.assertFalse(
-                        result,
-                        "CRASH | CRITICAL | WARN messages found in cb_logs")
+            self.assertTrue(self.bucket_util._wait_warmup_completed(
+                self.cluster.buckets[0],
+                servers=[node],
+                wait_time=self.wait_timeout * 10))
+            self.sleep(10, "Not Required, but waiting for 10s after warm up")
+            self.check_index_pending_mutations(self.cluster)
+            result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+            if result:
+                self.stop_crash = True
+                self.task_manager.abort_all_tasks()
+                self.doc_loading_tm.abortAllTasks()
+                self.assertFalse(
+                    result,
+                    "CRASH | CRITICAL | WARN messages found in cb_logs")
             rollbacks += 1
+        for i, node in enumerate(self.cluster.kv_nodes):
+            # Stopping persistence on NodeA
+            for bucket in self.cluster.buckets:
+                Cbepctl(shell).persistence(bucket.name, "start")
 
-        self.key = self.input.param("key", "test_docs-")
+        self.key_prefix = self.input.param("key", "test_docs-")
 
     def check_index_pending_mutations(self, cluster):
         while True:
