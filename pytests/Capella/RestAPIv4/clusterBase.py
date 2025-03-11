@@ -17,7 +17,7 @@ class ClusterBase(APIBase):
 
         # update the access key and secret key for capellaAPI object,
         # so that is it being used for api auth.
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         # Create project.
         # The project ID will be used to create API keys for roles that
@@ -137,7 +137,7 @@ class ClusterBase(APIBase):
         # Delete the project that was created.
         if self.delete_projects(
                 self.organisation_id, [self.project_id],
-                self.org_owner_key["token"]
+                self.curr_owner_key
         ):
             failures.append("Error while deleting project {}".format(
                 self.project_id))

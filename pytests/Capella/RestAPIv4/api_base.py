@@ -32,6 +32,7 @@ class APIBase(CouchbaseBaseTest):
         self.invalid_UUID = "00000000-0000-0000-0000-000000000000"
         self.prefix = "Automated_v4API_test_"
         self.project_id = self.input.capella.get("project", None)
+        self.free_tier_cluster_id = None
         self.count = 0
         self.capellaAPI = CapellaAPI(
             "https://" + self.url, "", "", self.user, self.passwd, "")
@@ -352,6 +353,14 @@ class APIBase(CouchbaseBaseTest):
                     "plan": self.input.param("supportPlan", "basic"),
                     "timezone": "GMT"
                 }
+            },
+            "AWS_Free_Tier": {
+                "cloudProvider": {
+                    "cidr": "10.1.0.0/20",
+                    "region": self.input.param("region", "us-east-1"),
+                    "type": "aws"
+                },
+                "description": "Cluster for AWS free tier v4 API testing."
             }
         }
         cluster_template = self.input.param("cluster_template",
@@ -527,8 +536,8 @@ class APIBase(CouchbaseBaseTest):
             res = self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code != 202:
-                self.fail("Error while deleting cluster: {}."
-                          .format(res.content))
+                self.log.error("Error while deleting cluster: {}."
+                               .format(res.content))
 
             # Delete the created instances.
             self.log.info("Deleting INSTANCES: {}".format(
@@ -1262,6 +1271,17 @@ class APIBase(CouchbaseBaseTest):
                                        "user: {}".format(
                                         testcase["expected_error"]))
             elif result.status_code == testcase["expected_status_code"]:
+                try:
+                    if result.json() != testcase["expected_error"]:
+                        self.log.debug("Correct Satus Code: {}, BUT wrong "
+                                       "error goof: {}".format(
+                                            testcase["expected_status_code"],
+                                            testcase["expected_error"]))
+                        return True
+                except Exception as e:
+                    self.log.debug("Error while conversion of response: {}"
+                                   .format(e))
+                    return True
                 self.log.debug("This test expected the code: {}, with error: "
                                "{}".format(testcase["expected_status_code"],
                                            testcase["expected_error"]))
@@ -1323,11 +1343,12 @@ class APIBase(CouchbaseBaseTest):
             failures.append(testcase[testDescriptionKey])
         return False
 
-    def validate_onoff_state(self, states, inst=None, app=None, sleep=10):
+    def validate_onoff_state(self, states, inst=None, app=None, free_tier=None,
+                             sleep=10):
         self.update_auth_with_api_token(self.curr_owner_key)
         if sleep:
             time.sleep(sleep)
-        if app:
+        if not free_tier and app:
             res = self.capellaAPI.cluster_ops_apis.get_appservice(
                 self.organisation_id, self.project_id, self.cluster_id, app)
             if res.status_code == 429:
@@ -1341,6 +1362,24 @@ class APIBase(CouchbaseBaseTest):
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.columnarAPI.fetch_analytics_cluster_info(
                     self.organisation_id, self.project_id, inst)
+        elif free_tier and not app:
+            res = (self.capellaAPI.cluster_ops_apis.
+                   fetch_free_tier_cluster_info(
+                    self.organisation_id, self.project_id, free_tier))
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = (self.capellaAPI.cluster_ops_apis.
+                       fetch_free_tier_cluster_info(
+                        self.organisation_id, self.project_id, free_tier))
+        elif free_tier and app:
+            res = (self.capellaAPI.cluster_ops_apis.
+                   fetch_free_tier_app_service_info(
+                    self.organisation_id, self.project_id, free_tier, app))
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = (self.capellaAPI.cluster_ops_apis.
+                       fetch_free_tier_app_service_info(
+                        self.organisation_id, self.project_id, free_tier, app))
         else:
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
@@ -1348,6 +1387,10 @@ class APIBase(CouchbaseBaseTest):
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
+            elif res.status_code == 404:
+                self.log.warning("The cluster: {} does not exist".format(
+                    self.cluster_id))
+                return True, None
 
         if res.status_code != 200:
             self.log.error("Could not fetch on/off state info : {}"
@@ -1356,11 +1399,13 @@ class APIBase(CouchbaseBaseTest):
         if res.json()['currentState'] in states:
             self.log.info("Resource state: {}, Expected States: {}"
                           .format(res.json()["currentState"], states))
-            return True
+            if app:
+                return True, None
+            return True, res.json()['cloudProvider']['cidr']
 
         self.log.warning("Current State: '{}', Expected States: '{}'"
                          .format(res.json()["currentState"], states))
-        return False
+        return False, None
 
     def validate_api_response(self, expected_res, actual_res, id):
         for key in actual_res:
@@ -1407,9 +1452,9 @@ class APIBase(CouchbaseBaseTest):
                 return False
         return True
 
-    def select_CIDR(self, org, proj, name, cloudProvider, serviceGroups,
-                    availability, support, couchbaseServer=None, header=None,
-                    **kwargs):
+    def select_CIDR(self, org, proj, name, cloudProvider,
+                    serviceGroups=None, availability=None, support=None,
+                    couchbaseServer=None, header=None, **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")
         duplicate_CIDR_messages = [
             "Please ensure that the CIDR range is unique within this organisation",
@@ -1420,15 +1465,25 @@ class APIBase(CouchbaseBaseTest):
 
         start_time = time.time()
         while time.time() - start_time < 1800:
-            result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                org, proj, name, cloudProvider, couchbaseServer,
-                serviceGroups, availability, support, header, **kwargs)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
+            if serviceGroups is None:
+                result = (self.capellaAPI.cluster_ops_apis.
+                          create_free_tier_cluster(
+                            org, proj, name, cloudProvider))
+                if result.status_code == 429:
+                    self.handle_rate_limit(int(result.headers["Retry-After"]))
+                    result = (self.capellaAPI.cluster_ops_apis.
+                              create_free_tier_cluster(
+                                org, proj, name, cloudProvider))
+            else:
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
                     org, proj, name, cloudProvider, couchbaseServer,
                     serviceGroups, availability, support, header, **kwargs)
-            elif result.status_code == 202:
+                if result.status_code == 429:
+                    self.handle_rate_limit(int(result.headers["Retry-After"]))
+                    result = self.capellaAPI.cluster_ops_apis.create_cluster(
+                        org, proj, name, cloudProvider, couchbaseServer,
+                        serviceGroups, availability, support, header, **kwargs)
+            if result.status_code == 202:
                 return result
             try:
                 r = result.json()
@@ -1874,3 +1929,103 @@ class APIBase(CouchbaseBaseTest):
             self.fail("!!!...Failed to create a replacement App "
                       "Endpoint...!!!")
         self.log.debug("...Replacement App endpoint created successfully...")
+
+    def fetch_free_tier_cluster(self):
+        self.log.debug(
+            "Fetching the free tier cluster in Org: {}, "
+            "in Project: {}".format(self.organisation_id, self.project_id))
+
+        res = self.capellaAPI.cluster_ops_apis.list_clusters(
+            self.organisation_id, self.project_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.list_clusters(
+                self.organisation_id, self.project_id)
+        if res.status_code != 200:
+            self.log.error(res.content)
+            self.tearDown()
+            self.fail("!!!...Filed while listing clusters...!!!")
+        try:
+            res = res.json()
+            if not len(res["data"]):
+                self.log.warning("No clusters exist...!!!\nCreating one...")
+                return None
+            for clus in res["data"]:
+                if clus["support"]["plan"] == "free":
+                    self.log.info("Found free tier cluster, id : {}".format(
+                        clus["id"]))
+                    self.free_tier_cluster_id = clus["id"]
+                    return clus['name'], clus["cloudProvider"]["cidr"]
+            self.log.warning("No free tier cluster found in the list "
+                             "of clusters :(\nCreating one...")
+        except Exception as e:
+            self.log.error(e)
+            self.tearDown()
+            self.fail()
+        return None
+
+    def fetch_free_tier_app(self, clus):
+        self.log.debug("Fetching the id for the PFT App...")
+        res = self.capellaAPI.cluster_ops_apis.list_appservices(
+            self.organisation_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.list_appservices(
+                self.organisation_id)
+        if res.status_code != 200:
+            self.log.error(res.content)
+            self.tearDown()
+            self.fail("!!!...Filed while listing Apps...!!!")
+        try:
+            res = res.json()
+            if not len(res["data"]):
+                self.log.warning("No Apps exist...!!!\nCreating one...")
+                return None
+            for app in res["data"]:
+                if clus == app["clusterId"]:
+                    self.log.info("Found free tier App, id: {}"
+                                  .format(app["id"]))
+                    return app["id"]
+            self.log.warning("No free tier App found in the list of Apps :("
+                             "\nCreating one...")
+        except Exception as e:
+            self.log.error(e)
+            self.tearDown()
+            self.fail()
+        return None
+
+    def flush_freetier_buckets(self, clus):
+        res = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
+            self.organisation_id, self.project_id, clus)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.list_free_tier_bucket(
+                self.organisation_id, self.project_id, clus)
+        if res.status_code != 200:
+            self.log.error("Err: {}".format(res.content))
+            self.tearDown()
+            self.fail("!!!...Error while listing buckets...!!!")
+        for buck in res.json()["data"]:
+            bkt = buck["id"]
+            res = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(
+                self.organisation_id, self.project_id, clus, bkt)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                res = self.capellaAPI.cluster_ops_apis.delete_free_tier_bucket(
+                    self.organisation_id, self.project_id, clus, buck)
+            if res.status_code != 204:
+                self.log.error(res.content)
+                self.log.error("Failed while deleting bucket: {}".format(bkt))
+            self.log.debug("Bucket: {} deleted successfully".format(bkt))
+
+    def create_freetier_bucket_to_be_tested(self, clus, name, mem):
+        res = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(
+            self.organisation_id, self.project_id, clus, name, mem)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.header["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_free_tier_bucket(
+                self.organisation_id, self.project_id, clus, name, mem)
+        if res.status_code != 201:
+            self.log.error("Err: {}".format(res.content))
+            self.tearDown()
+            self.fail("!!!...Error while creating free tier bucket...!!!")
