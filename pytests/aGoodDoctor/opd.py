@@ -1008,12 +1008,12 @@ class OPD:
             self.kill_memcached(num_kills=num_kills,
                                 graceful=graceful, wait=True,
                                 services=["kv"])
-            self.check_index_pending_mutations()
+            self.check_index_pending_mutations(self.cluster)
             self.kill_memcached(nodes, num_kills=num_kills,
                                 graceful=graceful, wait=True,
                                 services=["indexer"])
             self.recover_indexer()
-            self.check_index_pending_mutations()
+            self.check_index_pending_mutations(self.cluster)
             self.crash_count += 1
         self.sleep(300)
 
