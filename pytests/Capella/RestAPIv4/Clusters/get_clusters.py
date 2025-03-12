@@ -42,10 +42,12 @@ class GetCluster(GetProject):
         self.log.info("Checking for CLUSTER {} to be stable."
                       .format(self.cluster_id))
         start_time = time.time()
-        while not self.validate_onoff_state(["healthy", "turnedOff"]):
+        resp,_ = self.validate_onoff_state(["healthy", "turnedOff"])
+        while not resp:
             if time.time() > 1800 + start_time:
                 self.tearDown()
                 self.fail("!!!...Cluster didn't deploy within 30mins...!!!")
+            resp,_ = self.validate_onoff_state(["healthy", "turnedOff"])
         self.log.info("Successfully deployed Cluster.")
 
         # Let the app service be created in the background meanwhile the

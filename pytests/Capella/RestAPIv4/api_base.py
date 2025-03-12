@@ -495,10 +495,12 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("Polling CLUSTER: {}".format(
                 self.capella["clusters"]["cluster_id"]))
             start_time = time.time()
-            while not self.validate_onoff_state(["healthy"]):
+            res,_ = self.validate_onoff_state(["healthy"])
+            while not res:
                 if time.time() > 1800 + start_time:
                     self.fail("!!!...Cluster didn't stabilize within half an "
                               "hour...!!!")
+                res,_ = self.validate_onoff_state(["healthy"])
 
             # Delete the app service if it was a part of the tests.
             if self.capella["clusters"]["app_id"] and not isinstance(
@@ -507,13 +509,18 @@ class APIBase(CouchbaseBaseTest):
                 self.log.info("Polling APP SERVICE: {}".format(
                     self.capella["clusters"]["app_id"]))
                 start_time = time.time()
-                while not self.validate_onoff_state(
+
+                res,_ = self.validate_onoff_state(
                         ["healthy", "turnedOff"],
-                        app=self.capella["clusters"]["app_id"]):
+                        app=self.capella["clusters"]["app_id"])
+                while not res:
                     if time.time() > 1800 + start_time:
                         self.fail("!!!...App Service didn't stabilize within "
                                   "half an hour...!!!")
                     self.log.info("...Waiting further...")
+                    res, _ = self.validate_onoff_state(
+                        ["healthy", "turnedOff"],
+                        app=self.capella["clusters"]["app_id"])
 
                 # Delete App Service
                 self.log.info("Deleting App Service: {}".format(

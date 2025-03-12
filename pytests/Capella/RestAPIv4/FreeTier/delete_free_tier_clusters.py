@@ -15,6 +15,10 @@ class DeleteFreeTier(GetFreeTier):
 
     def tearDown(self):
         super(DeleteFreeTier, self).tearDown()
+        if self.wait_for_deletion(clus_id=self.free_tier_cluster_id):
+            self.log.debug("Free Tier cluster deleted successfully")
+        else:
+            self.fail("Failed to delete the Free Tier cluster : {}".format(self.free_tier_cluster_id))
 
     def test_api_path(self):
         testcases = [

@@ -32,11 +32,12 @@ class GetAppService(GetCluster):
         self.log.info("Checking for APP SVC {} to be stable."
                       .format(self.app_service_id))
         start_time = time.time()
-        while not self.validate_onoff_state(["healthy", "turnedOff"],
-                                            app=self.app_service_id):
+        resp,_ = self.validate_onoff_state(["healthy", "turnedOff"],app=self.app_service_id)
+        while not resp:
             if time.time() > 1800 + start_time:
                 self.tearDown()
                 self.fail("!!!...App Svc didn't deploy within 30mins...!!!")
+            resp,_ = self.validate_onoff_state(["healthy", "turnedOff"],app=self.app_service_id)
         self.log.info("Successfully deployed App Svc.")
 
         self.log.debug("...Creating a bucket for the App Endpoint to be "
