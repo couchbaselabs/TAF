@@ -402,7 +402,7 @@ class DoctorN1QL():
                                     )
                                 if gt:
                                     b.query_map[query].update({"gt": gt[q]})
-                                if workload.get("es"):
+                                if workload.get("es") and q < len(workload.get("es")):
                                     b.query_map[query].update({"es": workload.get("es")[q]})
                                 # b.queries.append((query, self.sdkClients[b.name+s], unformatted_q, vector_defn, dim))
                             q += 1
