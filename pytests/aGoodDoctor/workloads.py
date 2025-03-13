@@ -112,34 +112,40 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "bhive_indexes": [
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 ],
             "indexes_base64": [
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 ],
             "queries_base64": [
                 'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10'
                 ],
             "groundTruths":[
                 ("idx_1M.ivecs", "1/10"),
                 ("idx_2M.ivecs", "2/10"),
                 ("idx_5M.ivecs", "5/10"),
+                ("idx_10M.ivecs", "10/10")
                 ],
-            "2i": [_input.param("gsi_indexes", 3),
-                   _input.param("gsi_queries", 3)],
+            "2i": [_input.param("gsi_indexes", 4),
+                   _input.param("gsi_queries", 4)],
             "es": [{"brand.keyword": "Nike", "color.keyword": "Green", "size":5}, {"brand.keyword": "Nike", "color.keyword": "Green"}, {"brand.keyword": "Nike"}]
         },
         {
@@ -158,40 +164,46 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "bhive_indexes": [
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (country, brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (country, brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {bucket}.{scope}.{collection} where country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where country="USA" AND brand="Nike" AND color="Green" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where country="USA" AND brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
-                'SELECT id from {bucket}.{scope}.{collection} where country="USA" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10'
+                'SELECT id from {bucket}.{scope}.{collection} where country="USA" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 ],
             "indexes_base64": [
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `brand`, `color`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries_base64": [
                 'SELECT id from {bucket}.{scope}.{collection} where country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where country="USA" AND brand="Nike" AND color="Green" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where country="USA" AND brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
-                'SELECT id from {bucket}.{scope}.{collection} where country="USA" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10'
+                'SELECT id from {bucket}.{scope}.{collection} where country="USA" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} where ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 ],
             "groundTruths":[
                 ("idx_1M.ivecs", "1/20"),
                 ("idx_2M.ivecs", "2/20"),
                 ("idx_5M.ivecs", "5/20"),
                 ("idx_10M.ivecs", "10/20"),
+                ("idx_20M.ivecs", "20/20"),
                 ],
-            "2i": [_input.param("gsi_indexes", 4),
-                   _input.param("gsi_queries", 4)],
+            "2i": [_input.param("gsi_indexes", 5),
+                   _input.param("gsi_queries", 5)],
         },
         {
             "collection_id": "50M",
@@ -211,13 +223,15 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`,`country`, `brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`,`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 ],
             "bhive_indexes": [
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (category, country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (category, country, brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (category, country, brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (category, country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -225,6 +239,7 @@ siftBigANN = {
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" AND country="USA" AND brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" AND country="USA" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 ],
             "indexes_base64": [
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
@@ -232,6 +247,7 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`,`country`, `brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`,`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`category`,decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries_base64": [
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
@@ -239,6 +255,7 @@ siftBigANN = {
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" AND country="USA" AND brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" AND country="USA" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10'
                 ],
             "groundTruths":[
                 ("idx_1M.ivecs", "1/50"),
@@ -246,9 +263,10 @@ siftBigANN = {
                 ("idx_5M.ivecs", "5/50"),
                 ("idx_10M.ivecs", "10/50"),
                 ("idx_20M.ivecs", "20/50"),
+                ("idx_50M.ivecs", "50/50"),
                 ],
-            "2i": [_input.param("gsi_indexes", 5),
-                   _input.param("gsi_queries", 5)],
+            "2i": [_input.param("gsi_indexes", 6),
+                   _input.param("gsi_queries", 6)],
         },
         {
             "collection_id": "100M",
@@ -269,6 +287,7 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`type`, `category`,`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`type`, `category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`type`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "bhive_indexes": [
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (type, category, country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
@@ -276,7 +295,8 @@ siftBigANN = {
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (type, category, country, brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (type, category, country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (type, category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (type, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (type, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -285,6 +305,7 @@ siftBigANN = {
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" AND category="Shoes" AND country="USA" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" AND category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 ],
             "indexes_base64": [
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`type`, `category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
@@ -293,6 +314,7 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`type`, `category`,`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`type`, `category`,decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`type`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries_base64": [
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
@@ -301,6 +323,7 @@ siftBigANN = {
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" AND category="Shoes" AND country="USA" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" AND category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where `type`="Casual" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10'
                 ],
             "groundTruths":[
                 ("idx_1M.ivecs", "1/100"),
@@ -309,9 +332,10 @@ siftBigANN = {
                 ("idx_10M.ivecs", "10/100"),
                 ("idx_20M.ivecs", "20/100"),
                 ("idx_50M.ivecs", "50/100"),
+                ("idx_100M.ivecs", "100/100"),
                 ],
-            "2i": [_input.param("gsi_indexes", 6),
-                   _input.param("gsi_queries", 6)],
+            "2i": [_input.param("gsi_indexes", 7),
+                   _input.param("gsi_queries", 7)],
             "es": [{"type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green", "size":5},
                    {"type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green"},
                    {"type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike"},
@@ -340,6 +364,7 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`review`, `type`, `category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`review`, `type`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`review`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "bhive_indexes": [
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (review, type, category, country, brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
@@ -348,7 +373,8 @@ siftBigANN = {
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (review, type, category, country, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (review, type, category, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (review, type, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
-                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (review, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (review, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -358,6 +384,7 @@ siftBigANN = {
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 AND `type`="Casual" AND category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 AND `type`="Casual" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
                 ],
             "indexes_base64": [
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
@@ -367,6 +394,7 @@ siftBigANN = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`review`, `type`, `category`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`review`, `type`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`review`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
                 ],
             "queries_base64": [
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
@@ -376,6 +404,7 @@ siftBigANN = {
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 AND `type`="Casual" AND category="Shoes" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 AND `type`="Casual" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 'SELECT id from {bucket}.{scope}.{collection} where review=1.0 ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
                 ],
             "groundTruths":[
                 ("idx_1M.ivecs", "1/200"),
@@ -385,9 +414,10 @@ siftBigANN = {
                 ("idx_20M.ivecs", "20/200"),
                 ("idx_50M.ivecs", "50/200"),
                 ("idx_100M.ivecs", "100/200"),
+                ("idx_200M.ivecs", "200/200"),
                 ],
-            "2i": [_input.param("gsi_indexes", 6),
-                   _input.param("gsi_queries", 6)],
+            "2i": [_input.param("gsi_indexes", 7),
+                   _input.param("gsi_queries", 7)],
             "es": [{"review": 1.0, "type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green", "size":5},
                    {"review": 1.0, "type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green"},
                    {"review": 1.0, "type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike"},
