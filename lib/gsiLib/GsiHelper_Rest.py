@@ -368,16 +368,37 @@ class GsiHelper(RestConnection):
                 self.log.debug("{} is not present in stats key".format(bucket_name))
         return index_completed
 
-    def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10):
+    def polling_for_index_training(self, bucket=None, index=None, timeout=60, sleep_time=10):
         self.log.info("Starting polling for index:"+str(index))
         for x in range(timeout):
             result = self.index_status()
             if bucket.name in result:
-                if result[bucket.name].get(index):
-                    if result[bucket.name][index]['status'] == 'Ready':
+                if index in result[bucket.name].keys():
+                    self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
+                    if result[bucket.name][index]['status'] not in ("Training", "Created"):
+                        self.log.info("2i index is trained: {}".format(index))
+                        self.log.info("Index {} training is completed in {}".format(index, str(x*sleep_time)))
                         return True
+            else:
+                self.log.info("Index {} not found with iteration {}".format(index, str(x)))
             sleep(sleep_time)
-            self.log.info("Index {} not found with iteration {}".format(index, str(x)))
+        return False
+
+    def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10, status="Ready"):
+        self.polling_for_index_training(bucket, index, timeout=timeout/10)
+        self.log.info("Starting polling for index:"+str(index))
+        for x in range(timeout):
+            result = self.index_status()
+            if bucket.name in result:
+                if index in result[bucket.name].keys():
+                    self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
+                    if result[bucket.name][index]['status'] == status or result[bucket.name][index]['status'] == "Ready":
+                        self.log.info("2i index is ready: {}".format(index))
+                        self.log.info("Index {} build is completed in {}".format(index, str(x*sleep_time)))
+                        return True
+            else:
+                self.log.info("Index {} not found with iteration {}".format(index, str(x)))
+            sleep(sleep_time)
         return False
 
     def polling_delete_index(self, bucket=None, index=None, timeout=100):
