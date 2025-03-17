@@ -157,7 +157,8 @@ class DeleteCollection(GetCollection):
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
                 "/{}/collections"
-            if self.validate_testcase(result, [204], testcase, failures):
+            self.validate_testcase(result, [204], testcase, failures)
+            if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
                 self.collection_name = self.create_collection_to_be_tested(
                     self.organisation_id, self.project_id,
@@ -187,7 +188,8 @@ class DeleteCollection(GetCollection):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id, self.scope_name,
                     self.collection_name, header)
-            if self.validate_testcase(result, [204], testcase, failures):
+            self.validate_testcase(result, [204], testcase, failures)
+            if result.status_code == 204:
                 self.log.debug("Deletion Successful.")
                 self.collection_name = self.create_collection_to_be_tested(
                     self.organisation_id, self.project_id,
