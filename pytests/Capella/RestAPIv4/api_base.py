@@ -4,6 +4,8 @@ Created on June 28, 2023
 @author: umang.agrawal
 """
 
+from cgi import test
+import re
 import copy
 import time
 import string
@@ -1279,12 +1281,47 @@ class APIBase(CouchbaseBaseTest):
                                         testcase["expected_error"]))
             elif result.status_code == testcase["expected_status_code"]:
                 try:
-                    if result.json() != testcase["expected_error"]:
-                        self.log.debug("Correct Satus Code: {}, BUT wrong "
-                                       "error goof: {}".format(
+                    if result.content and result.content.strip(): # checking if the response is not empty
+                        try:
+                            result_json = result.json()
+                            expected_error = testcase["expected_error"]
+                            if isinstance(expected_error, dict):
+                                if not self._compare_error_dict(result_json, expected_error):
+                                    self.log.error("Correct Satus Code: {}, BUT wrong "
+                                                   "error goof: {}".format(
+                                                    testcase["expected_status_code"],
+                                                    expected_error))
+                                    self.log.warning("Failure : {}".format(result_json))
+                                    failures.append(testcase[testDescriptionKey])
+                            else:
+                                if str(expected_error) not in str(result_json):
+                                    self.log.error("Correct Satus Code: {}, BUT wrong "
+                                                   "error goof: {}".format(
+                                                    testcase["expected_status_code"],
+                                                    expected_error))
+                                    self.log.warning("Failure : {}".format(result_json))
+                                    failures.append(testcase[testDescriptionKey])
+
+                        except ValueError:
+                            result_text = result.content.decode('utf-8', errors='replace')
+                            expected_error = re.sub(r'\s+', '', str(testcase["expected_error"]))
+                            result_text = re.sub(r'\s+', '', result_text)
+                            if expected_error not in result_text:
+                                self.log.error("Correct Status Code: {}, BUT expected error '{}' "
+                                      "not found in non-JSON response".format(
+                                    testcase["expected_status_code"],
+                                    testcase["expected_error"]))
+                                self.log.warning("Failure : {}".format(result_text))
+                                failures.append(testcase[testDescriptionKey])
+                    else:
+                        # handle the empty response case
+                        if testcase["expected_error"]:
+                            self.log.error("Correct Satus Code: {}, BUT got empty response "
+                                           "instead of expected error: {}".format(
                                             testcase["expected_status_code"],
                                             testcase["expected_error"]))
-                        return True
+                            self.log.warning("Failure : {}".format(result))
+                            failures.append(testcase[testDescriptionKey])
                 except Exception as e:
                     self.log.debug("Error while conversion of response: {}"
                                    .format(e))
@@ -1292,6 +1329,7 @@ class APIBase(CouchbaseBaseTest):
                 self.log.debug("This test expected the code: {}, with error: "
                                "{}".format(testcase["expected_status_code"],
                                            testcase["expected_error"]))
+                self.log.debug("Response : {}".format(result))
             return False
 
         if result.status_code in success_codes:
@@ -1324,24 +1362,6 @@ class APIBase(CouchbaseBaseTest):
             self.log.error("Expected NO ERRORS but got {}".format(result))
             self.log.error(result.content)
             failures.append(testcase[testDescriptionKey])
-        elif result.status_code == testcase["expected_status_code"]:
-            try:
-                result = result.json()
-                for key in result:
-                    if result[key] != testcase["expected_error"][key]:
-                        self.log.error("Status != {}, Error validation Failure"
-                                       " : {}".format(
-                                        success_codes,
-                                        testcase[testDescriptionKey]))
-                        self.log.warning("Failure : {}".format(result))
-                        failures.append(testcase[testDescriptionKey])
-                        break
-            except (Exception,):
-                if str(testcase["expected_error"]) not in result.content:
-                    self.log.error("Response type not JSON, Failure : {}"
-                                   .format(testcase[testDescriptionKey]))
-                    self.log.warning(result.content)
-                    failures.append(testcase[testDescriptionKey])
         else:
             self.log.error("Expected HTTP status code {}, Actual HTTP status "
                            "code {}".format(testcase["expected_status_code"],
@@ -1349,6 +1369,29 @@ class APIBase(CouchbaseBaseTest):
             self.log.warning("Result : {}".format(result.content))
             failures.append(testcase[testDescriptionKey])
         return False
+
+    def _compare_error_dict(self, result_json, expected_error):
+        """
+        Compare two error dictionaries.
+        """
+        for key in expected_error:
+            if key not in expected_error:
+                return False
+
+            expected_value = expected_error[key]
+            actual_value = result_json[key]
+
+            # String comparison
+            if isinstance(expected_value, str) or isinstance(actual_value, str):
+                expected_str = str(expected_value).strip().replace("'", "")
+                actual_str = str(actual_value).strip().replace("'", "")
+                if expected_str not in actual_str and actual_str not in expected_str:
+                    return False
+            # Direct comparison
+            elif expected_value != actual_value:
+                return False
+
+        return True
 
     def validate_onoff_state(self, states, inst=None, app=None, free_tier=None,
                              sleep=10):
