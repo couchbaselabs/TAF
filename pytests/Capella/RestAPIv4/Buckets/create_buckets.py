@@ -430,7 +430,7 @@ class CreateBucket(GetBucket):
                                    "Sequence Number (seqno) or Last Write "
                                    "Wins (lww).".format(value)
                     }
-                elif key == "memoryAllocationInMb" and value < 100:
+                elif key == "memoryAllocationInMb" and value < 100 and self.expected_res["storageBackend"] == "couchstore":
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 6023,
@@ -442,6 +442,19 @@ class CreateBucket(GetBucket):
                         "message": "Cannot create bucket. The requested size "
                                    "of the bucket is less than the minimum "
                                    "amount of 100MB."
+                    }
+                elif key == "memoryAllocationInMb" and value < 100 and self.expected_res["storageBackend"] == "magma":
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 6022,
+                        "hint": "Cannot create Magma bucket. The requested "
+                                "size of the Magma bucket is less than the minimum "
+                                "amount of 1024MB. Please choose a larger size for "
+                                "the Magma bucket.",
+                        "httpStatusCode": 422,
+                        "message": "Cannot create Magma bucket. The "
+                                   "requested size of the Magma bucket "
+                                   "is less than the minimum amount of 1024MB."
                     }
                 elif key == "replicas":
                     testcase["expected_status_code"] = 422
@@ -456,7 +469,7 @@ class CreateBucket(GetBucket):
                             "message": "The replica count provided for the "
                                        "buckets is not valid. The minimum "
                                        "number of replicas is (1)."
-                        }
+                       }
                     elif value > 3:
                         testcase["expected_error"] = {
                             "code": 6006,

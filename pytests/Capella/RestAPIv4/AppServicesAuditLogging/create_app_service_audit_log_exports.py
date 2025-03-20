@@ -5,6 +5,7 @@ Created on August 06, 2024
 """
 
 import copy
+import sys
 from pytests.Capella.RestAPIv4.AppServicesAuditLogging\
     .get_app_service_audit_log_export_by_ids import GetAuditLogExports
 
@@ -300,8 +301,9 @@ class PostAuditLogExports(GetAuditLogExports):
         for key in self.expected_res:
             if key not in ["start", "end"]:
                 continue
+            max_float = sys.float_info.max
             values = [
-                "", "abc", 1, 1e1000, -1, 0, None,
+                "", "abc", 1, max_float, -1, 0, None,
                 self.generate_random_string(special_characters=False),
                 self.generate_random_string(5000, False)
             ]
@@ -325,20 +327,16 @@ class PostAuditLogExports(GetAuditLogExports):
                 }
                 if isinstance(val, type(None)):
                     testcase["expected_status_code"] = 422
-                    if key == "end":
-                        testcase["expected_error"] = {
-                            "code": 422,
-                            "hint": "Please review your request and ensure "
-                                    "that all required parameters are "
-                                    "correctly provided.",
-                            "httpStatusCode": 422,
-                            "message": "Audit Logging Export Request is too "
-                                       "old. Cannot request logs older than "
-                                       "30 days."
-                        }
-                    if key == "start":
-                        testcase["expected_error"]["message"] = \
-                            "Requested start time is after the end time."
+                    testcase["expected_error"] = {
+                        "code": 11066,
+                        "hint": "Date/Time format in the payload is "
+                                "incorrect.",
+                        "httpStatusCode": 422,
+                        "message": "Audit Logging Export Request made "
+                                   "with an invalid date format or "
+                                   "null values. Please follow this "
+                                   "format 2022-09-04T00:56:07.000Z."
+                    }
                 testcases.append(testcase)
         failures = list()
         for testcase in testcases:

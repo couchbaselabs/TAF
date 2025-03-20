@@ -8,7 +8,6 @@ import copy
 import re
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
-
 class PostEndpointCommand(GetCluster):
 
     def setUp(self, nomenclature="PrivateEndpointCommands_POST"):
@@ -273,13 +272,22 @@ class PostEndpointCommand(GetCluster):
                 testcase[key] = value
                 testcase["desc"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
-                if value == "" or key == "vpcID" and value is None:
+                if key == "vpcID" and (value == "" or value is None):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
                         "hint": "The request was malformed or invalid.",
                         "httpStatusCode": 400,
                         "message": "Bad Request. Error: The VPC ID provided "
+                                   "is invalid.."
+                    }
+                elif key == "subnetIDs" and value is None :
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 1000,
+                        "hint": "The request was malformed or invalid.",
+                        "httpStatusCode": 400,
+                        "message": "Bad Request. Error: The Subnet ID provided "
                                    "is invalid.."
                     }
                 elif (
