@@ -106,6 +106,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
             "config_encryption_at_rest_id", None)
         self.enable_log_encryption_at_rest = self.input.param(
             "enable_log_encryption_at_rest", False)
+        self.enable_audit_encryption_at_rest = self.input.param(
+            "enable_audit_encryption_at_rest", False)
+        self.audit_encryption_at_rest_id = self.input.param(
+            "audit_encryption_at_rest_id", False)
         self.log_encryption_at_rest_id = self.input.param(
             "log_encryption_at_rest_id", False)
         self.secret_rotation_interval = self.input.param(
@@ -116,6 +120,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             "log_dekLifetime", CbServer.secret_rotation_interval_in_seconds)
         self.config_dekRotationInterval = self.input.param(
             "config_dekRotationInterval", CbServer.encryption_at_rest_dek_rotation_interval)
+        self.audit_dekRotationInterval = self.input.param(
+            "audit_dekRotationInterval",
+            CbServer.encryption_at_rest_dek_rotation_interval)
+        self.audit_dekLifetime = self.input.param(
+            "audit_dekLifetime",
+            CbServer.encryption_at_rest_dek_rotation_interval)
         self.log_dekRotationInterval = self.input.param(
             "log_dekRotationInterval", CbServer.encryption_at_rest_dek_rotation_interval)
         self.secret_id = self.input.param("secret_id", None)
@@ -451,6 +461,31 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     "Log encryption at rest status: {0}".format(status))
                 self.assertTrue(status,
                                 "Failed to set valid log encryption values")
+            if self.enable_audit_encryption_at_rest:
+                self.log.info("Initializing audit encryption at rest")
+                log_params = ClusterUtils.create_secret_params(
+                    name="AuditEncryptionSecret",
+                    usage=["audit-encryption"],
+                    rotationIntervalInSeconds=self.secret_rotation_interval
+                )
+                rest = RestConnection(self.cluster.master)
+                status, response = rest.create_secret(log_params)
+                response_dict = json.loads(response)
+                self.audit_encryption_at_rest_id = response_dict.get('id')
+                self.log.info("Audit encryption at rest ID: {0}".format(
+                    self.audit_encryption_at_rest_id))
+                valid_params = {
+                    "audit.encryptionMethod": "encryptionKey",
+                    "audit.encryptionKeyId": self.audit_encryption_at_rest_id,
+                    "audit.dekLifetime": self.audit_dekLifetime,
+                    "audit.dekRotationInterval": self.audit_dekRotationInterval
+                }
+                status, response = rest.configure_encryption_at_rest(
+                    valid_params)
+                self.log.info(
+                    "Audit encryption at rest status: {0}".format(status))
+                self.assertTrue(status,
+                                "Failed to set valid Audit encryption values")
 
             if self.use_https:
                 if ClusterRun.is_enabled:
