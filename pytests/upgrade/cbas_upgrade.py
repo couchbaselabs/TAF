@@ -279,6 +279,7 @@ class UpgradeTests(UpgradeBase):
         # This key_value can be same as spec file key value.
         # This way the CRUD ops will consider these docs as well.
         self.key = self.input.param("key", "test_collections")
+        self.key = self.key.replace("-", "")
         for bucket in self.cluster.buckets:
             gen_load = doc_generator(
                 self.key, self.num_items, self.num_items*2,
