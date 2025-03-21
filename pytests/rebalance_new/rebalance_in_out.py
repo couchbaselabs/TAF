@@ -651,13 +651,14 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             # Rebalance is stopped at 20%, 40% and 60% completion
             retry = 0
             for expected_progress in (20, 40, 60):
-                self.log.info("STOP/START SWAP REBALANCE PHASE WITH PROGRESS {0}%"
-                              .format(expected_progress))
+                self.log.info(f"Stop/Start swap rebance during"
+                              f" {expected_progress}%")
                 while True:
-                    progress = self.cluster_util.get_rebalance_status_and_progress(self.cluster)[0]
+                    progress = \
+                        self.cluster_util.get_rebalance_status_and_progress(
+                            self.cluster)[1]
                     if progress < 0:
-                        self.log.error("rebalance progress code : {0}"
-                                       .format(progress))
+                        self.log.error(f"Rebalance progress: {progress}")
                         break
                     elif progress == 100:
                         self.log.warn("Rebalance has already reached 100%")
@@ -668,9 +669,8 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         stopped = rest.stop_rebalance()
                         self.assertTrue(stopped, msg="unable to stop rebalance")
                         self.sleep(20)
-                        rebalance_task = self.task.async_rebalance(self.cluster,
-                                                                   [],
-                                                                   toBeEjectedNodes)
+                        rebalance_task = self.task.async_rebalance(
+                            self.cluster, [], toBeEjectedNodes)
                         break
                     elif retry > 100:
                         break
