@@ -100,7 +100,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             columnar_spec=self.cbas_util.get_columnar_spec(
                 self.columnar_spec_name),
             remote_cluster=self.remote_cluster,
-            external_collection_file_formats=["json"])
+            external_collection_file_formats=["json", "parquet", "csv"])
 
         if self.input.param("primary_key", None) is not None:
             self.columnar_spec["standalone_dataset"]["primary_key"] = json.loads(self.input.param("primary_key"))
@@ -497,7 +497,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                        "dataverse_name": datasets[i].dataverse_name, "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_blob_bucket_name,
                        "destination_link_name": blob_storage_link.full_name, "path": path, "partition_alias": "country",
-                       "partition_by": "ally.country"}))
+                       "partition_by": "ally.country", "file_format": self.columnar_spec["file_format"]}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -510,17 +510,16 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                          self.sink_blob_bucket_name: self.aws_region},
                                                                      paths_on_external_container=[
                                                                          path_on_external_container_int],
-                                                                     file_format="json")[0]
+                                                                     file_format=self.columnar_spec["file_format"])[0]
         if not self.create_external_dataset(dataset_obj_int):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
         path_on_external_container_string = "{copy_dataset:string}/{country:string}"
-        dataset_obj_string = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
-                                                                        external_container_names={
-                                                                            self.sink_blob_bucket_name: self.aws_region},
-                                                                        paths_on_external_container=[
-                                                                            path_on_external_container_string],
-                                                                        file_format="json")[0]
+        dataset_obj_string = self.cbas_util.create_external_dataset_obj(
+            self.columnar_cluster, link_type=self.link_type,
+            external_container_names={self.sink_blob_bucket_name: self.aws_region},
+            paths_on_external_container=[path_on_external_container_string],
+            file_format=self.columnar_spec["file_format"])[0]
         if not self.create_external_dataset(dataset_obj_string):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
@@ -583,7 +582,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_blob_bucket_name,
                        "destination_link_name": blob_storage_link.full_name, "path": path, "timeout": 3600,
-                       "analytics_timeout": 3600, "compression": "gzip"}))
+                       "analytics_timeout": 3600, "compression": "gzip",
+                       "file_format": self.columnar_spec["file_format"]}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -595,7 +595,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
                                                                      path_on_external_container],
-                                                                 file_format="json")[0]
+                                                                 file_format=self.columnar_spec["file_format"])[0]
         if not self.create_external_dataset(dataset_obj):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
@@ -660,7 +660,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_blob_bucket_name,
                        "destination_link_name": blob_storage_link.full_name, "path": path, "timeout": 3600,
-                       "analytics_timeout": 3600, "compression": "gzip", "max_object_per_file": max_object_per_file}))
+                       "analytics_timeout": 3600, "compression": "gzip", "max_object_per_file": max_object_per_file,
+                       "file_format": self.columnar_spec["file_format"]}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -672,7 +673,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
                                                                      path_on_external_container],
-                                                                 file_format="json")[0]
+                                                                 file_format=self.columnar_spec["file_format"])[0]
         if not self.create_external_dataset(dataset_obj):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
@@ -907,7 +908,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                          self.s3_source_bucket: self.aws_region},
                                                                      paths_on_external_container=[
                                                                          path_on_external_container],
-                                                                     file_format="json")[0]
+                                                                     file_format=self.columnar_spec["file_format"])[0]
 
             if not self.create_external_dataset(dataset_obj):
                 self.fail("Failed to create external dataset on destination blob storage bucket")
@@ -934,7 +935,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                      self.sink_blob_bucket_name: self.aws_region},
                                                                  paths_on_external_container=[
                                                                      path_on_external_container],
-                                                                 file_format="json")[0]
+                                                                 file_format=self.columnar_spec["file_format"])[0]
 
         if not self.create_external_dataset(dataset_obj):
             self.fail("Failed to create external dataset on destination blob storage bucket")
