@@ -105,14 +105,12 @@ class PutAppEndpoints(GetAppEndpoints):
                     self.appEndpointName, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "The Update App Endpoint payload name does not "
+                               "match the App Endpoint name in the URL"
                 }
             }
         ]
@@ -368,7 +366,8 @@ class PutAppEndpoints(GetAppEndpoints):
                     "userXattrKey", "name", "bucket"
                 ] and not isinstance(v, str) or
                       k == "deltaSync" and not isinstance(v, bool) or
-                      k == "scopes" and not isinstance(v, dict)):
+                      k == "scopes" and not (isinstance(v, dict) or
+                                             v is None)):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -380,7 +379,7 @@ class PutAppEndpoints(GetAppEndpoints):
                                    "the request due to something that is "
                                    "perceived to be a client error."
                     }
-                elif k == "scopes" and (v == {} or v is None):
+                elif k == "scopes" and v == {} :
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 422,
@@ -388,6 +387,17 @@ class PutAppEndpoints(GetAppEndpoints):
                                 "all required parameters are correctly "
                                 "provided.",
                         "httpStatusCode": 422,
+                        "message": "App Endpoint Scopes config is empty or "
+                                   "has more than one scope"
+                    }
+                elif k == "scopes" and  v is None:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 400,
                         "message": "App Endpoint Scopes config is empty or "
                                    "has more than one scope"
                     }

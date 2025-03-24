@@ -413,7 +413,7 @@ class CreateBucket(GetBucket):
                                 "valid durability level for the bucket.",
                         "httpStatusCode": 422,
                         "message": "The durability level {} provided is not "
-                                   "supported. The supported level are 'none',"
+                                   "supported. The supported levels are 'none',"
                                    " 'majority', 'persistToMajority', and "
                                    "'majorityAndPersistActive'.".format(value)
                     }
