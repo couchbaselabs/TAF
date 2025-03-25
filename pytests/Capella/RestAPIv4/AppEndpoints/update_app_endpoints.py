@@ -362,12 +362,10 @@ class PutAppEndpoints(GetAppEndpoints):
                         "message": "User Xattr key is too long. Max length "
                                    "is 128 characters."
                     }
-                elif (k in [
-                    "userXattrKey", "name", "bucket"
-                ] and not isinstance(v, str) or
-                      k == "deltaSync" and not isinstance(v, bool) or
-                      k == "scopes" and not (isinstance(v, dict) or
-                                             v is None)):
+                elif (k in ["userXattrKey", "bucket"] and not isinstance(v, str)) or \
+                     (k == "name" and not isinstance(v, str) and v is not None) or \
+                     (k == "deltaSync" and not isinstance(v, bool)) or \
+                     (k == "scopes" and not (isinstance(v, dict) or v is None)):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -410,6 +408,17 @@ class PutAppEndpoints(GetAppEndpoints):
                                 "provided.",
                         "httpStatusCode": 422,
                         "message": "App Endpoint name is empty"
+                    }
+                elif k == "name" and v is None:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 400,
+                        "message": "The Update App Endpoint payload name does "
+                                   "not match the App Endpoint name in the URL"
                     }
                 elif k == "name":
                     testcase["expected_status_code"] = 422
