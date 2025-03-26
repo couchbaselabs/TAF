@@ -588,10 +588,25 @@ class CollectionBase(ClusterSetup):
         CollectionBase.over_ride_bucket_template_params(
             test_obj, test_obj.bucket_storage, buckets_spec)
         if test_obj.enable_encryption_at_rest:
-            buckets_spec[Bucket.encryptionAtRestSecretId] = test_obj.encryption_at_rest_id
+            buckets_spec[
+                Bucket.encryptionAtRestKeyId] = test_obj.encryption_at_rest_id
             buckets_spec[Bucket.encryptionAtRestDekRotationInterval] = \
                 test_obj.encryptionAtRestDekRotationInterval
-            test_obj.log.info("Encryption at rest enabled")
+            for bucket in buckets_spec["buckets"]:
+                if buckets_spec["buckets"][bucket][Bucket.bucketType] != \
+                        Bucket.Type.EPHEMERAL:
+                    buckets_spec["buckets"][bucket][
+                        Bucket.encryptionAtRestKeyId] = test_obj.encryption_at_rest_id
+                    buckets_spec["buckets"][bucket][Bucket.encryptionAtRestDekRotationInterval] = \
+                        test_obj.encryptionAtRestDekRotationInterval
+                    test_obj.log.info("Encryption at rest enabled for bucket: %s"   % bucket)
+                else:
+                    buckets_spec["buckets"][bucket][
+                        Bucket.encryptionAtRestKeyId] = -1
+                    test_obj.log.info(
+                        "Encryption at rest kept disabled  for ephemeral "
+                        "bucket: %s" % bucket)
+
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
 
