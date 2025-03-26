@@ -391,5 +391,5 @@ class CollectionsTTL(CollectionBase):
             client.select_collection(scope, col)
             client.crud(DocLoading.Bucket.DocOps.UPDATE, key, {},
                         preserve_expiry=True, exp=60)
-            result = client.read(key, populate_value=False, with_expiry=True)
+            result = client.read(key, with_expiry=True)
             self.assertTrue(result["ttl_present"], "TTL not present")
