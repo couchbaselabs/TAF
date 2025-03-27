@@ -260,7 +260,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                      xattr=self.xattr)
             self.assertFalse(failed_items, "Xattr read failed")
             self.assertEqual(expected_val,
-                             json.loads(str(success[self.doc_id]["value"][0])),
+                             type(expected_val)(success[self.doc_id]["value"][0]),
                              "Sub_doc value mismatch: %s != %s"
                              % (success[self.doc_id]["value"][0],
                                 expected_val))
@@ -639,8 +639,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
         self.assertTrue(failure)
 
-        self.__read_doc_and_validate({'value_inner':2}, "my.inner")
-        self.__read_doc_and_validate({'value':1,"inner":{"value_inner":2}},
+        self.__read_doc_and_validate({"value_inner":2}, "my.inner")
+        self.__read_doc_and_validate({"value":1,"inner":{"value_inner":2}},
                                      "my")
         self.assertTrue(initial_cas != updated_cas_1, "CAS not updated")
         self.assertTrue(updated_cas_1 != updated_cas_2, "CAS not updated")
