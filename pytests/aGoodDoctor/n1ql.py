@@ -255,7 +255,8 @@ class DoctorN1QL():
         self.stop_run = False
         self.query_failure = False
 
-    def create_indexes(self, buckets, skip_index=False, base64=False, xattr=False):
+    def create_indexes(self, buckets, skip_index=False, base64=False, xattr=False,
+                       combinational=False):
         for b in buckets:
             # counter = 0
             b.indexes = dict()
@@ -302,7 +303,10 @@ class DoctorN1QL():
                         queryParams = HotelQueriesVectorParams
                         # prev_valType = valType
                     if valType == "siftBigANN":
-                        if base64:
+                        if combinational:
+                            indexType = siftBigANN.get("mix_indexes") or siftBigANN.get("indexes")
+                            queryType = siftBigANN.get("mix_queries") or siftBigANN.get("queries")
+                        elif base64:
                             indexType = workload.get("indexes_base64")
                             queryType = workload.get("queries_base64")
                         elif TestInputSingleton.input.param("bhive", False):
@@ -315,7 +319,6 @@ class DoctorN1QL():
                             indexType = [index.replace("`embedding`", "meta().xattrs.embedding") for index in indexType]
                             queryType = [query.replace("embedding", "meta().xattrs.embedding") for query in queryType]
                         queryParams = SIFTQueriesVectorParams
-                        # prev_valType = valType
                     i = 0
                     q = 0
                     while i < workload.get("2i")[0] or q < workload.get("2i")[1]:

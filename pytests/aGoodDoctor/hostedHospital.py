@@ -342,7 +342,9 @@ class Murphy(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 if cluster.index_nodes:
-                    self.drIndex.create_indexes(cluster.buckets, base64=self.base64, xattr=self.xattr)
+                    self.combinational = self.input.param("combinational", False)
+                    self.drIndex.create_indexes(cluster.buckets, base64=self.base64, xattr=self.xattr,
+                                                combinational=self.combinational)
                     self.drIndex.build_indexes(cluster, cluster.buckets, wait=True)
                     self.check_index_pending_mutations(cluster)
                     self.log.info("Index ingestion completed")
