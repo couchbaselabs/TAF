@@ -555,7 +555,9 @@ class Murphy(BaseTestCase, OPD):
                     self.cbasQL.append(ql)
 
         if self.cluster.index_nodes:
-            self.drIndex.create_indexes(self.cluster.buckets, base64=self.base64, xattr=self.xattr)
+            self.combinational = self.input.param("combinational", False)
+            self.drIndex.create_indexes(self.cluster.buckets, base64=self.base64, xattr=self.xattr,
+                                        combinational=self.combinational)
             self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
             self.check_index_pending_mutations(self.cluster)
             for bucket in self.cluster.buckets:
