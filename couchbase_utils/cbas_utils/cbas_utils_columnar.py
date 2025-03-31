@@ -2860,7 +2860,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             file_format="json", redact_warning=None, header=None,
             null_string=None, include=None, exclude=None, parse_json_string=0,
             convert_decimal_to_double=0, timezone="",
-            embed_filter_values=None, timestamp_to_long=0, date_to_int=0):
+            embed_filter_values=None, timestamp_to_long=0, date_to_int=0, csv_type=None):
 
         cmd = "CREATE EXTERNAL DATASET"
 
@@ -2877,6 +2877,9 @@ class External_Dataset_Util(Remote_Dataset_Util):
 
         if object_construction_def:
             cmd += "({0})".format(object_construction_def)
+
+        if csv_type:
+            cmd += " (" + csv_type + ")"
 
         cmd += " ON `{0}` AT {1}".format(external_container_name, link_name)
 
@@ -2934,6 +2937,10 @@ class External_Dataset_Util(Remote_Dataset_Util):
                         with_parameters["decimal-to-double"] = True
                     else:
                         with_parameters["decimal-to-double"] = False
+
+            if with_parameters["format"] == "csv":
+                with_parameters["header"] = False
+
             if embed_filter_values:
                 with_parameters["embed-filter-values"] = embed_filter_values
 
@@ -2951,7 +2958,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             timezone="", validate_error_msg=False, username=None,
             password=None, expected_error=None, expected_error_code=None,
             timeout=300, analytics_timeout=300, embed_filter_values=None,
-            timestamp_to_long=0, date_to_int=0):
+            timestamp_to_long=0, date_to_int=0, csv_type=None):
         """
         Creates a dataset for an external resource like AWS S3 bucket /
         Azure container / GCP buckets.
@@ -3010,6 +3017,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
         1 - Set to True.
         2 - Explicitly Set to False
         :return True/False
+        :param type str, the datatypes for copying to in csv format.
         """
 
         cmd = self.generate_create_external_dataset_cmd(
@@ -3018,7 +3026,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             path_on_external_container, file_format, redact_warning, header,
             null_string, include, exclude, parse_json_string,
             convert_decimal_to_double, timezone, embed_filter_values,
-            timestamp_to_long, date_to_int)
+            timestamp_to_long, date_to_int, csv_type)
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -6912,8 +6920,13 @@ class CbasUtil(CBOUtil):
                                 alias_identifier=None, destination_bucket=None,
                                 destination_link_name=None, path=None, partition_by=None,
                                 partition_alias=None, compression=None, order_by=None,
-                                max_object_per_file=None, file_format=None):
+                                max_object_per_file=None, file_format=None, copy_to_type=None,
+                                items=None):
         cmd = "COPY "
+
+        if file_format == "csv":
+            cmd += f"( SELECT {items} FROM "
+
         if source_definition_query:
             cmd = cmd + "( {0} ) ".format(source_definition_query)
         elif database_name and dataverse_name and collection_name:
@@ -6922,6 +6935,9 @@ class CbasUtil(CBOUtil):
             cmd = cmd + "{0}.{1} ".format(dataverse_name, collection_name)
         else:
             cmd = cmd + "{0} ".format(collection_name)
+
+        if file_format == "csv":
+            cmd += ") "
 
         if alias_identifier:
             cmd += "AS {0} ".format(alias_identifier)
@@ -6965,10 +6981,52 @@ class CbasUtil(CBOUtil):
             for key in over:
                 cmd += "{0} {1} ".format(key, over[key])
             cmd += " ) "
+
+        if file_format == "csv":
+            cmd += f"TYPE ({{{copy_to_type}}}) "
+
         if len(with_dict) > 0:
             cmd += "WITH " + json.dumps(with_dict)
 
         return cmd
+
+    def generate_type_for_copy_to_cmd_csv_format(self, collection_name, cluster, username=None,
+                                                 password=None, timeout=300, analytics_timeout=300):
+        """
+        Generate the copy to and create dataset types when doing a copy to using csv file type.
+
+        param: collection_name str, Name of the collection.
+        param: cluster, Cluster object to run the query on.
+        param: username str, username to be used
+        param: password str, password to be used.
+        """
+
+        available_types = ["boolean", "string", "int", "float", "double", "long", "datetime", "date", "bigint"]
+        cmd = """SELECT myTypes.name AS fieldName, get_type(myTypes.`value`) 
+        AS fieldType FROM (
+        SELECT VALUE myPairs 
+        FROM OBJECT_PAIRS((
+        SELECT VALUE {} FROM  {} LIMIT 1)[0]) 
+        AS myPairs) 
+        AS myTypes;""".format(collection_name, collection_name)
+
+        try:
+            status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
+                cluster, cmd, username=username, password=password, timeout=timeout,
+                analytics_timeout=analytics_timeout)
+        except Exception as e:
+            self.log.error(f"Unable to execute query to get the type for copy to csv format: {e}")
+            return None
+
+        type_dict = {}
+        for object_pair in results:
+            if object_pair['fieldType'] in available_types and object_pair['fieldName'] != "type":
+                type_dict[object_pair['fieldName']] = object_pair['fieldType']
+        copy_to_type = ", ".join(f"{key}: {value}" for key, value in type_dict.items())
+        create_dataset_type = copy_to_type.replace(":", "")
+        items = ','.join(type_dict.keys())
+
+        return items, copy_to_type, create_dataset_type
 
     def copy_to_s3(
             self, cluster, collection_name=None, dataverse_name=None,
@@ -6979,18 +7037,24 @@ class CbasUtil(CBOUtil):
             max_object_per_file=None, file_format=None, username=None,
             password=None, timeout=300, analytics_timeout=300,
             validate_error_msg=None, expected_error=None,
-            expected_error_code=None):
+            expected_error_code=None, copy_to_type=None,
+            items=None):
 
         cmd = self.generate_copy_to_s3_cmd(collection_name, dataverse_name,
                                            database_name, source_definition_query,
                                            alias_identifier, destination_bucket,
                                            destination_link_name, path, partition_by,
                                            partition_alias, compression, order_by,
-                                           max_object_per_file, file_format)
+                                           max_object_per_file, file_format, copy_to_type, items)
 
-        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
-            cluster, cmd, username=username, password=password, timeout=timeout,
-            analytics_timeout=analytics_timeout)
+        try:
+            status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
+                cluster, cmd, username=username, password=password, timeout=timeout,
+                analytics_timeout=analytics_timeout)
+        except Exception as e:
+            self.log.error(e)
+            raise e
+
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(status, errors,
                                                                expected_error, expected_error_code)

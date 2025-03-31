@@ -191,7 +191,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         super(CopyToBlobStorage, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
-    def create_external_dataset(self, dataset_obj):
+    def create_external_dataset(self, dataset_obj, csv_type=None):
         if self.cbas_util.create_dataset_on_external_resource(
                 self.columnar_cluster, dataset_obj.name,
                 dataset_obj.dataset_properties[
@@ -223,7 +223,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                     "timezone"],
                 False, None, None, None, None,
                 timeout=300,
-                analytics_timeout=300):
+                analytics_timeout=300,
+                csv_type=csv_type):
             return True
         return False
 
@@ -488,6 +489,17 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.log.error("Not all docs were inserted")
         results = []
 
+        items, copy_to_type, create_dataset_type = None, None, None
+
+        if self.columnar_spec["file_format"] == "csv":
+            items, copy_to_type, create_dataset_type = self.cbas_util.generate_type_for_copy_to_cmd_csv_format(
+                collection_name=datasets[0].name,
+                cluster=self.columnar_cluster,
+            )
+        copy_string = False
+        if "country: string" in copy_to_type:
+            copy_string = True
+
         # initiate copy command
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
@@ -497,7 +509,9 @@ class CopyToBlobStorage(ColumnarBaseTest):
                        "dataverse_name": datasets[i].dataverse_name, "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_blob_bucket_name,
                        "destination_link_name": blob_storage_link.full_name, "path": path, "partition_alias": "country",
-                       "partition_by": "ally.country", "file_format": self.columnar_spec["file_format"]}))
+                       "partition_by": "ally.country", "file_format": self.columnar_spec["file_format"],
+                       "copy_to_type": copy_to_type, "items": items}))
+
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -511,7 +525,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                      paths_on_external_container=[
                                                                          path_on_external_container_int],
                                                                      file_format=self.columnar_spec["file_format"])[0]
-        if not self.create_external_dataset(dataset_obj_int):
+        if not self.create_external_dataset(dataset_obj_int, csv_type=create_dataset_type):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
         path_on_external_container_string = "{copy_dataset:string}/{country:string}"
@@ -520,7 +534,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             external_container_names={self.sink_blob_bucket_name: self.aws_region},
             paths_on_external_container=[path_on_external_container_string],
             file_format=self.columnar_spec["file_format"])[0]
-        if not self.create_external_dataset(dataset_obj_string):
+        if not self.create_external_dataset(dataset_obj_string, csv_type=create_dataset_type):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
         # verification step
@@ -531,7 +545,10 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 status, metrics, errors, result, _, _ \
                     = self.cbas_util.execute_statement_on_cbas_util(self.columnar_cluster, statement)
                 country_name = (result[0])[CBASHelper.unformat_name(datasets[i].name)]["country"]
+
                 if isinstance(country_name, int):
+                    if copy_string:
+                        continue
                     statement = "select count(*) from {0} where country = {1}".format(datasets[i].full_name,
                                                                                       country_name)
                     dynamic_statement = ("select count(*) from {0} where copy_dataset = \"{1}\" and "
@@ -540,6 +557,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                         = self.cbas_util.execute_statement_on_cbas_util(self.columnar_cluster, dynamic_statement)
                     result_val = result[0]['$1']
                 else:
+                    if not copy_string:
+                        continue
                     statement = "select count(*) from {0} where country = \"{1}\"".format(datasets[i].full_name,
                                                                                           str(country_name))
                     dynamic_statement = ("select count(*) from {0} where copy_dataset = \"{1}\" "
@@ -573,17 +592,28 @@ class CopyToBlobStorage(ColumnarBaseTest):
         if not all(results):
             self.log.error("Some documents were not inserted")
 
+        items, copy_to_type, create_dataset_type = None, None, None
+
+        if self.columnar_spec["file_format"] == "csv":
+            items, copy_to_type, create_dataset_type = self.cbas_util.generate_type_for_copy_to_cmd_csv_format(
+                collection_name=datasets[0].name,
+                cluster=self.columnar_cluster,
+            )
+
         results = []
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             jobs.put((self.cbas_util.copy_to_s3,
                       {"cluster": self.columnar_cluster, "collection_name": datasets[i].name,
+                       "alias_identifier": "ally",
                        "dataverse_name": datasets[i].dataverse_name,
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_blob_bucket_name,
                        "destination_link_name": blob_storage_link.full_name, "path": path, "timeout": 3600,
                        "analytics_timeout": 3600, "compression": "gzip",
-                       "file_format": self.columnar_spec["file_format"]}))
+                       "file_format": self.columnar_spec["file_format"],
+                       "copy_to_type": copy_to_type, "items": items}))
+
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -596,7 +626,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                  paths_on_external_container=[
                                                                      path_on_external_container],
                                                                  file_format=self.columnar_spec["file_format"])[0]
-        if not self.create_external_dataset(dataset_obj):
+        if not self.create_external_dataset(dataset_obj, csv_type=create_dataset_type):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
         files = []
@@ -651,17 +681,27 @@ class CopyToBlobStorage(ColumnarBaseTest):
         if not all(results):
             self.log.error("Some documents were not inserted")
 
+        items, copy_to_type, create_dataset_type = None, None, None
+
+        if self.columnar_spec["file_format"] == "csv":
+            items, copy_to_type, create_dataset_type = self.cbas_util.generate_type_for_copy_to_cmd_csv_format(
+                collection_name=datasets[0].name,
+                cluster=self.columnar_cluster,
+            )
         results = []
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             jobs.put((self.cbas_util.copy_to_s3,
                       {"cluster": self.columnar_cluster, "collection_name": datasets[i].name,
+                       "alias_identifier": "ally",
                        "dataverse_name": datasets[i].dataverse_name,
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_blob_bucket_name,
                        "destination_link_name": blob_storage_link.full_name, "path": path, "timeout": 3600,
                        "analytics_timeout": 3600, "compression": "gzip", "max_object_per_file": max_object_per_file,
-                       "file_format": self.columnar_spec["file_format"]}))
+                       "file_format": self.columnar_spec["file_format"],
+                       "copy_to_type": copy_to_type, "items": items}))
+
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -674,7 +714,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                  paths_on_external_container=[
                                                                      path_on_external_container],
                                                                  file_format=self.columnar_spec["file_format"])[0]
-        if not self.create_external_dataset(dataset_obj):
+        if not self.create_external_dataset(dataset_obj, csv_type=create_dataset_type):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
         files = []
@@ -902,6 +942,26 @@ class CopyToBlobStorage(ColumnarBaseTest):
         path_on_external_container = "{country:string}"
         # create external dataset on the blob storage bucket
         no_of_dynamic_collection = self.input.param("no_of_dynamic_collection", 1)
+
+        copy_to_type = (
+            "name: string, email: string, characters_with_spaces: string, "
+            "characters_without_spaces: string, document_size: bigint, address: string, "
+            "free_parking: boolean, city: string, url: string, phone: bigint, "
+            "price: double, avg_rating: double, free_breakfast: boolean, mutated: double, "
+            "padding: string, country: string"
+        )
+
+        create_dataset_type = (
+            "name string, email string, characters_with_spaces string, "
+            "characters_without_spaces string, document_size bigint, address string, "
+            "free_parking boolean, city string, url string, phone bigint, "
+            "price double, avg_rating double, free_breakfast boolean, mutated double, "
+            "padding string, country string"
+        )
+
+        items = ("name,email,characters_with_spaces,characters_without_spaces,document_size,address,free_parking,city,"
+                 "url,phone,price,avg_rating,free_breakfast,mutated,padding,country")
+
         for i in range(no_of_dynamic_collection):
             dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                      external_container_names={
@@ -910,13 +970,14 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                          path_on_external_container],
                                                                      file_format=self.columnar_spec["file_format"])[0]
 
-            if not self.create_external_dataset(dataset_obj):
+            if not self.create_external_dataset(dataset_obj, csv_type=create_dataset_type):
                 self.fail("Failed to create external dataset on destination blob storage bucket")
 
         datasets = self.cbas_util.get_all_dataset_objs("external")
         blob_storage_link = self.cbas_util.get_all_link_objs(self.link_type)[0]
         jobs = Queue()
         results = []
+
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             query = "select * from {0} where country = \"{1}\"".format(datasets[i].full_name, "Dominican Republic")
@@ -924,7 +985,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                       {"cluster": self.columnar_cluster, "source_definition_query": query, "alias_identifier": "ally",
                        "destination_bucket": self.sink_blob_bucket_name,
                        "destination_link_name": blob_storage_link.full_name, "path": path, "timeout": 3600,
-                       "analytics_timeout": 3600}))
+                       "analytics_timeout": 3600,
+                       "copy_to_type": copy_to_type, "items": items}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -937,7 +999,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                      path_on_external_container],
                                                                  file_format=self.columnar_spec["file_format"])[0]
 
-        if not self.create_external_dataset(dataset_obj):
+        if not self.create_external_dataset(dataset_obj, csv_type=create_dataset_type):
             self.fail("Failed to create external dataset on destination blob storage bucket")
 
         results = []
