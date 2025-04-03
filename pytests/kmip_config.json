@@ -1,0 +1,6 @@
+{
+  "kmip_ip": "172.23.104.199",
+  "certs": {
+    "path": "/etc/pykmip/certs/"
+  }
+}

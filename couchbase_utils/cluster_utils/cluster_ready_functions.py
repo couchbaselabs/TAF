@@ -176,21 +176,28 @@ class ClusterUtils:
                              autoRotation=True, rotationIntervalInDays=60,
                              rotationIntervalInSeconds=None, keyARN=None,
                              region=None, useIMDS=None, credentialsFile=None,
-                             configFile=None, profile=None):
+                             configFile=None, profile=None,
+                             caSelection=None, reqTimeoutMs=None,
+                             encryptionApproach=None, encryptWith=None,
+                             encryptWithKeyId=None, activeKey=None,
+                             keyPath=None, certPath=None, keyPassphrase=None,
+                             host=None, port=None):
         if usage is None:
             usage = ["bucket-encryption-*"]
 
-        data = {
-            "autoRotation": autoRotation,
-            "rotationIntervalInDays": rotationIntervalInDays
-        }
+        data = {}
+        if host is None:
+            data = {
+                "autoRotation": autoRotation,
+                "rotationIntervalInDays": rotationIntervalInDays
+            }
 
-        if rotationIntervalInSeconds is not None:
-            data["nextRotationTime"] = (datetime.utcnow() + timedelta(
-                seconds=rotationIntervalInSeconds)).isoformat() + "Z"
-        else:
-            data["nextRotationTime"] = (datetime.utcnow() + timedelta(
-                days=rotationIntervalInDays)).isoformat() + "Z"
+            if rotationIntervalInSeconds is not None:
+                data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                    seconds=rotationIntervalInSeconds)).isoformat() + "Z"
+            else:
+                data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                    days=rotationIntervalInDays)).isoformat() + "Z"
 
         if keyARN is not None:
             data["keyARN"] = keyARN
@@ -204,6 +211,29 @@ class ClusterUtils:
             data["configFile"] = configFile
         if profile is not None:
             data["profile"] = profile
+
+        if caSelection is not None:
+            data["caSelection"] = caSelection
+        if reqTimeoutMs is not None:
+            data["reqTimeoutMs"] = reqTimeoutMs
+        if encryptionApproach is not None:
+            data["encryptionApproach"] = encryptionApproach
+        if encryptWith is not None:
+            data["encryptWith"] = encryptWith
+        if encryptWithKeyId is not None:
+            data["encryptWithKeyId"] = encryptWithKeyId
+        if activeKey is not None:
+            data["activeKey"] = activeKey
+        if keyPath is not None:
+            data["keyPath"] = keyPath
+        if certPath is not None:
+            data["certPath"] = certPath
+        if keyPassphrase is not None:
+            data["keyPassphrase"] = keyPassphrase
+        if host is not None:
+            data["host"] = host
+        if port is not None:
+            data["port"] = port
 
         params = {
             "type": secret_type,

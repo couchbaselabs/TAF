@@ -96,10 +96,31 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
         self.encryption_level = self.input.param("encryption_level", "all")
+        self.private_key_passphrase = self.input.param(
+            "private_key_passphrase", None)
+        config_path = os.path.join(os.path.dirname(__file__), "kmip_config.json")
+        with open(config_path, "r") as f:
+            kmip_config = json.load(f)
+        self.kmip_ip = kmip_config["kmip_ip"]
+        self.kmip_password =  self.input.param(
+            "KMIP_for_log_encryption", None)
+        self.kmip_cert_path = kmip_config["certs"]["path"]
+        self.client_certs_path = "/etc/couchbase/certs"
+        self.create_KMIP_secret= self.input.param(
+            "create_KMIP_secret", False)
+        self.KMIP_for_log_encryption = self.input.param(
+            "KMIP_for_log_encryption", False)
+        self.KMIP_for_config_encryption = self.input.param(
+            "KMIP_for_config_encryption", False)
+        self.KMIP_for_data_encryption = self.input.param(
+            "KMIP_for_data_encryption", False)
+        self.KMIP_for_audit_encryption = self.input.param(
+            "KMIP_for_audit_encryption", False)
         self.enable_encryption_at_rest = self.input.param(
             "enable_encryption_at_rest", False)
         self.encryption_at_rest_id = self.input.param(
             "encryption_at_rest_id", None)
+        self.KMIP_id = self.input.param("KMIP_id", None)
         self.enable_config_encryption_at_rest = self.input.param(
             "enable_config_encryption_at_rest", False)
         self.config_encryption_at_rest_id = self.input.param(
@@ -397,6 +418,30 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.enable_tls_on_nodes()
 
             # Creating encryption keys
+            rest = RestConnection(self.cluster.master)
+            if self.create_KMIP_secret:
+                params = ClusterUtils.create_secret_params(
+                    name="kmip",
+                    secret_type="kmip-aes-key-256",
+                    usage=["KEK-encryption", "bucket-encryption",
+                           "config-encryption", "log-encryption",
+                           "audit-encryption"],
+                    caSelection="useCbCa",
+                    reqTimeoutMs=5000,
+                    encryptionApproach="useGet",
+                    encryptWith="nodeSecretManager",
+                    encryptWithKeyId=-1,
+                    activeKey={"kmipId": "0"},
+                    keyPath=self.kmip_cert_path+"new-client-key-pkcs8.pem",
+                    certPath=self.kmip_cert_path+"/etc/couchbase/certs"
+                                                 "/client-cert.pem",
+                    keyPassphrase=self.kmip_password,
+                    host=self.kmip_ip,
+                    port=5696
+                )
+                status, response = rest.create_secret(params)
+                response_dict = json.loads(response)
+                self.KMIP_id = response_dict.get('id')
             if self.enable_encryption_at_rest:
                 self.log.info("Initializing encryption at rest")
                 log_params = ClusterUtils.create_secret_params(
@@ -421,11 +466,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 status, response = rest.create_secret(log_params)
                 response_dict = json.loads(response)
                 self.config_encryption_at_rest_id = response_dict.get('id')
+                if self.KMIP_for_config_encryption:
+                    self.config_encryption_at_rest_id = self.KMIP_id
                 self.log.info("Config encryption at rest ID: {0}".format(
                     self.config_encryption_at_rest_id))
                 valid_params = {
                     "config.encryptionMethod": "encryptionKey",
-                    "config.encryptionKeyId": self.config_encryption_at_rest_id,
+                    "config.encryptionKeyId": self.KMIP_id,
                     "config.dekLifetime": self.config_dekLifetime,
                     "config.dekRotationInterval": self.config_dekRotationInterval
                 }
@@ -447,6 +494,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 status, response = rest.create_secret(log_params)
                 response_dict = json.loads(response)
                 self.log_encryption_at_rest_id = response_dict.get('id')
+                if self.KMIP_for_log_encryption:
+                    self.log_encryption_at_rest_id = self.KMIP_id
                 self.log.info("Log encryption at rest ID: {0}".format(
                     self.log_encryption_at_rest_id))
                 valid_params = {
@@ -472,6 +521,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 status, response = rest.create_secret(log_params)
                 response_dict = json.loads(response)
                 self.audit_encryption_at_rest_id = response_dict.get('id')
+                if self.KMIP_for_audit_encryption:
+                    self.audit_encryption_at_rest_id = self.KMIP_id
                 self.log.info("Audit encryption at rest ID: {0}".format(
                     self.audit_encryption_at_rest_id))
                 valid_params = {
@@ -853,6 +904,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
+            if self.create_KMIP_secret:
+                self.get_KMIP_certificate(server)
             ClusterUtils.flush_network_rules(server)
             if not server.index_path:
                 server.index_path = server.data_path
@@ -904,6 +957,30 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 rest = RestConnection(server)
                 rest.set_jre_path(self.jre_path)
         return quota
+
+    def get_KMIP_certificate(self, node):
+        shell = RemoteMachineShellConnection(node)
+        try:
+            mkdir_command = "mkdir -p " + self.client_certs_path
+            shell.execute_command(mkdir_command)
+            install_sshpass = "yum install -y sshpass || apt install -y sshpass"
+            shell.execute_command(install_sshpass)
+            scp_command = (
+                "sshpass -p '{pw}' scp -r "
+                "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+                "root@{ip}:{path}* "
+                "{dest}"
+            ).format(
+                pw=self.kmip_password,
+                ip=self.kmip_ip,
+                dest=self.client_certs_path,
+                path=self.kmip_cert_path
+            )
+            output = shell.execute_command(scp_command)
+            chown_command = "chown -R couchbase:couchbase " + self.client_certs_path
+            shell.execute_command(chown_command)
+        finally:
+            shell.disconnect()
 
     def fetch_cb_collect_logs(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
