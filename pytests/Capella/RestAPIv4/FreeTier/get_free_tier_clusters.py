@@ -55,6 +55,17 @@ class GetFreeTier(GetProject):
             self.expected_res['name'], self.expected_res["cloudProvider"][
                 "cidr"] = self.fetch_free_tier_cluster()
             self.expected_res["id"] = self.free_tier_cluster_id
+            res, _ = self.validate_onoff_state(["turnedOff","turningOff"],
+                                              free_tier=self.free_tier_cluster_id,)
+            while res :
+                self.log.debug("turning on the Cluster from it's turned "
+                               "off state")
+                self.capellaAPI.cluster_ops_apis.turn_free_tier_cluster_on(
+                    self.organisation_id, self.project_id,
+                    self.free_tier_cluster_id,False)
+                res, _ = self.validate_onoff_state(["turnedOff", "turningOff"],
+                                                   free_tier=self.free_tier_cluster_id, sleep=10)
+            self.wait_for_deployment(clus_id=self.free_tier_cluster_id)
             return
         if res.status_code != 202:
             self.log.error("Err: {}".format(res.content))

@@ -31,6 +31,8 @@ class GetFreeTierApp(GetFreeTier):
                 self.free_tier_cluster_id)
         elif res.status_code == 202:
             self.free_tier_app_id = res.json()["id"]
+            self.wait_for_deployment(clus_id=self.free_tier_cluster_id,
+                                     app_svc_id=self.free_tier_app_id)
         else:
             self.log.error(res.content)
             self.tearDown()

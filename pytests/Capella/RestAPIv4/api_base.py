@@ -1555,7 +1555,16 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("...Waiting further...")
             time.sleep(5)
 
-            if app_svc_id:
+            if app_svc_id and clus_id:
+                state = self.capellaAPI.cluster_ops_apis.get_appservice(
+                    self.organisation_id, self.project_id, clus_id,
+                    app_svc_id)
+                if state.status_code == 429:
+                    self.handle_rate_limit(int(state.headers['Retry-After']))
+                    state = self.capellaAPI.cluster_ops_apis.get_appservice(
+                        self.organisation_id, self.project_id, clus_id,
+                        app_svc_id)
+            elif app_svc_id:
                 state = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, self.project_id, self.cluster_id,
                     app_svc_id)

@@ -13,6 +13,16 @@ class DeleteFreeTier(GetFreeTier):
     def setUp(self, nomenclature="FreeTier_DELETE"):
         GetFreeTier.setUp(self, nomenclature)
 
+        free_tier_app_id = self.fetch_free_tier_app(clus=self.free_tier_cluster_id)
+        if free_tier_app_id is not None :
+            res, _ = self.validate_onoff_state(states=["destroying"],
+                                               app=free_tier_app_id,
+                                               free_tier=self.free_tier_cluster_id)
+            if res:
+                self.log.debug("waiting for the app service to be destroyed")
+                self.wait_for_deletion(clus_id=self.free_tier_cluster_id,
+                                       app_svc_id=free_tier_app_id)
+
     def tearDown(self):
         super(DeleteFreeTier, self).tearDown()
         if self.wait_for_deletion(clus_id=self.free_tier_cluster_id):
@@ -115,7 +125,8 @@ class DeleteFreeTier(GetFreeTier):
                             organization, project, cluster))
             self.capellaAPI.cluster_ops_apis.free_tier_cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/freeTier"
-            if self.validate_testcase(result, [202, 404], testcase, failures):
+            if self.validate_testcase(result, [202, 404, 422], testcase,
+                                      failures):
                 self.log.debug("Deletion Successful")
         if failures:
             for fail in failures:

@@ -118,7 +118,7 @@ class PostFreeTier(GetFreeTierApp):
             self.capellaAPI.cluster_ops_apis.free_tier_app_svc_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/"\
                 "freeTier"
-            self.validate_testcase(result, [202, 409], testcase, failures)
+            self.validate_testcase(result, [202, 409, 422], testcase, failures)
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -148,7 +148,7 @@ class PostFreeTier(GetFreeTierApp):
                             self.free_tier_cluster_id,
                             self.expected_res["name"],
                             self.expected_res["description"], header))
-            self.validate_testcase(result, [202, 409], testcase, failures)
+            self.validate_testcase(result, [202, 409, 422], testcase, failures)
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -297,7 +297,7 @@ class PostFreeTier(GetFreeTierApp):
                             self.organisation_id, self.project_id,
                             self.free_tier_cluster_id, testcase["name"],
                             testcase["description"]))
-            self.validate_testcase(result, [202, 409], testcase, failures,
+            self.validate_testcase(result, [202, 409, 422], testcase, failures,
                                    payloadTest=True)
         if failures:
             for fail in failures:

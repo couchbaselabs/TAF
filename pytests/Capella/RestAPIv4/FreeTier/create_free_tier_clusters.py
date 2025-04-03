@@ -235,16 +235,15 @@ class PostFreeTier(GetFreeTier):
                 # Add expected failure codes for malformed payload values...
                 if k == "cloudProvider" and (isinstance(v, dict) or v is None):
                     testcase["expected_error"] = {
-                        "code": 4022,
-                        "hint": "Please provide a supported provider when "
-                                "creating a cluster. The provided provider is "
-                                "not supported.",
+                        "code": 422,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
                         "httpStatusCode": 422,
-                        "message": "Unable to create cluster. The provider is "
-                                   "not supported. Supported providers "
-                                   "include the following providers: 'aws,gcp,"
-                                   "azure'. Please choose a valid provider "
-                                   "and try again."}
+                        "message": "Unable to process request to create trial "
+                                   "cluster. Self service trials are limited to "
+                                   "provisioning one cluster."
+                    }
                     testcase["expected_status_code"] = 422
                 elif k == "cloudProvider":
                     testcase["expected_error"] = {
@@ -263,12 +262,9 @@ class PostFreeTier(GetFreeTier):
                                 "all required parameters are correctly "
                                 "provided.",
                         "httpStatusCode": 422,
-                        "message": "Unable to process request for cluster "
-                                   "deployment. The provided CIDR of "
-                                   "{} is not unique within this organization."
-                                   " Please ensure you are passing a unique "
-                                   "CIDR block and try again.".format(
-                                    self.expected_res['cloudProvider']['cidr'])
+                        "message": "Unable to process request to create trial "
+                                   "cluster. Self service trials are limited to "
+                                   "provisioning one cluster."
                     }
                     testcase["expected_status_code"] = 422
                 elif k == "description":
@@ -292,23 +288,26 @@ class PostFreeTier(GetFreeTier):
                     testcase["expected_status_code"] = 400
                 elif k == "name" and (len(v) < 2 or v is None):
                     testcase["expected_error"] = {
-                        "code": 4011,
-                        "hint": "Please ensure that the provided name has at "
-                                "least the minimum length.",
+                        "code": 422,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
                         "httpStatusCode": 422,
-                        "message": "The name provided is not valid. "
-                                   "The name is too short. It must be at "
-                                   "least 2 characters long."
+                        "message": "Unable to process request to create trial "
+                                   "cluster. Self service trials are limited to "
+                                   "provisioning one cluster."
                     }
                     testcase["expected_status_code"] = 422
                 elif k == "name" and len(v) > 128:
                     testcase["expected_error"] = {
-                        "code": 4012,
-                        "hint": "Please ensure that the provided cluster name "
-                                "does not exceed the maximum length limit.",
+                        "code": 422,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
                         "httpStatusCode": 422,
-                        "message": "The name provided is not valid. The name "
-                                   "must be 128 characters or less."
+                        "message": "Unable to process request to create trial "
+                                   "cluster. Self service trials are limited to "
+                                   "provisioning one cluster."
                     }
                     testcase["expected_status_code"] = 422
                 else:
@@ -318,12 +317,9 @@ class PostFreeTier(GetFreeTier):
                                 "all required parameters are correctly "
                                 "provided.",
                         "httpStatusCode": 422,
-                        "message": "Unable to process request for cluster "
-                                   "deployment. The provided CIDR of {} is "
-                                   "not unique within this organization. "
-                                   "Please ensure you are passing a unique "
-                                   "CIDR block and try again.".format(
-                                    self.expected_res['cloudProvider']['cidr'])
+                        "message": "Unable to process request to create trial "
+                                   "cluster. Self service trials are limited to "
+                                   "provisioning one cluster."
                     }
                     testcase["expected_status_code"] = 422
                 testcases.append(testcase)

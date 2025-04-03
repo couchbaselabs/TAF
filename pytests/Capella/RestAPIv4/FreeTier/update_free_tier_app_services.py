@@ -329,20 +329,20 @@ class PutFreeTier(GetFreeTierApp):
                     }
                     if len(v) < 2:
                         testcase["expected_error"] = {
-                            "code": 4011,
-                            "hint": "Please ensure that the provided name has "
-                                    "at least the minimum length.",
-                            "message": "The name provided is not valid. The "
-                                       "name is too short. It must be at least"
-                                       " 2 characters long."}
+                            "code": 422,
+                            "hint": "Please review your request and ensure "
+                                    "that all required parameters are "
+                                    "correctly provided.",
+                            "message": "App service name is too short. It must "
+                                       "be at least 2 characters long."}
                     elif len(v) > 128:
                         testcase["expected_error"] = {
-                            "code": 4012,
-                            "hint": "Please ensure that the provided cluster "
-                                    "name does not exceed the maximum length "
-                                    "limit.",
-                            "message": "The name provided is not valid. The "
-                                       "name must be 128 characters or less."
+                            "code": 422,
+                            "hint": "Please review your request and ensure "
+                                    "that all required parameters are "
+                                    "correctly provided.",
+                            "message": "App service name must be 128 "
+                                       "characters or less."
                         }
                     testcase["expected_status_code"] = 422
                 elif k == 'description' and len(v) > 280:

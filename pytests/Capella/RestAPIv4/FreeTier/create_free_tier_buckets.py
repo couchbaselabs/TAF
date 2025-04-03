@@ -315,7 +315,7 @@ class PostFreeTier(GetFreeTierBucket):
                                        "due to the bucket size exceeding the "
                                        "maximum allowed by the cluster. The "
                                        "requested bucket size requires "
-                                       "(100300) MB of memory but the maximum "
+                                       "(100000) MB of memory but the maximum "
                                        "allocations available on the bucket "
                                        "is (1547)."
                         }
