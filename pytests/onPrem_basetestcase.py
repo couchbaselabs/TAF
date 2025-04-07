@@ -125,7 +125,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             CbServer.encryption_at_rest_dek_rotation_interval)
         self.audit_dekLifetime = self.input.param(
             "audit_dekLifetime",
-            CbServer.encryption_at_rest_dek_rotation_interval)
+            CbServer.encryption_at_rest_dek_lifetime_interval)
         self.log_dekRotationInterval = self.input.param(
             "log_dekRotationInterval", CbServer.encryption_at_rest_dek_rotation_interval)
         self.secret_id = self.input.param("secret_id", None)
