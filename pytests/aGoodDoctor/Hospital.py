@@ -324,6 +324,10 @@ class Murphy(BaseTestCase, OPD):
         if enableInMemoryCompression is False:
             self.sleep(0, "sleep before setting indexer params")
             self.gsi_rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": False})
+        reranking = self.input.param("reranking", False)
+        if reranking is False:
+            self.sleep(0, "sleep before setting indexer params")
+            self.gsi_rest.set_index_settings({"indexer.scan.vector.rerank_factor": 0})
         # self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
