@@ -25,8 +25,9 @@ class GetFreeTierApp(GetFreeTier):
                    create_free_tier_app_service(
                     self.organisation_id, self.project_id,
                     self.free_tier_cluster_id, self.expected_res["name"]))
-        if res.status_code == 409:
-            self.log.warning("A free tier App already exists..")
+        if res.status_code == 422:
+            self.log.warning("A free tier App already exists.. "
+                             "response: {0}".format(res.status_code))
             self.free_tier_app_id = self.fetch_free_tier_app(
                 self.free_tier_cluster_id)
         elif res.status_code == 202:
