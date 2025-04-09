@@ -546,7 +546,7 @@ class QueryLoad:
         self.bucket = bucket
         self.queries = [item[0] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
         self.queries_meta = [item[1] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
-        if not mockVector:
+        if self.bucket.loadDefn.get("valType") == "siftBigANN":
             for meta in self.queries_meta:
                 gt = meta["gt"][0]
                 if gt not in QueryLoad.groundTruths.keys():
@@ -589,7 +589,7 @@ class QueryLoad:
         count = 100
         if self.bucket.loadDefn.get("collections_defn")[0].get("vector"):
             method = self._run_vector_query
-            if not self.mockVector and not QueryLoad.queryVectors:
+            if self.bucket.loadDefn.get("valType") == "siftBigANN" and not QueryLoad.queryVectors:
                 QueryLoad.queryVectors = self.read_query_vecs(siftBigANN.get("baseFilePath") + "/bigann_query.bvecs")
                 count = 1000
         for i in range(0, self.concurrent_queries_to_run):
@@ -741,9 +741,10 @@ class QueryLoad:
                 exec_time = metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[query][0] += exec_time
                 self.query_stats[query][1] += 1
-                self.query_stats[query][8].append(exec_time)
-                if len(self.query_stats[query][8]) > 1000:
-                    self.query_stats[query][8].pop(0)
+                with self.query_stats[query][5]:
+                    self.query_stats[query][8].append(exec_time)
+                    if len(self.query_stats[query][8]) > 1000:
+                        self.query_stats[query][8].pop(0)
                 if status == QueryStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
