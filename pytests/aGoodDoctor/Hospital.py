@@ -550,6 +550,7 @@ class Murphy(BaseTestCase, OPD):
                                         combinational=self.combinational)
             self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
             self.check_index_pending_mutations(self.cluster)
+            self.end_step_checks(" after initial index build is completed")
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("2iQPS", 0) > 0:
                     ql = QueryLoad(bucket, self.mockVector,
@@ -581,6 +582,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.PrintStep("Running Query workload for 5 mins with NO mutations")
         self.sleep(self.input.param("steady_state_workload_sleep", 300))
+        self.end_step_checks(" queries withOUT mutations")
 
         if self.rollback:
             self.trigger_rollback()
@@ -593,6 +595,7 @@ class Murphy(BaseTestCase, OPD):
             self.PrintStep("Running Query workload during mutations")
             self.restart_query_load(self.cluster, 0)
             self.sleep(self.input.param("steady_state_workload_sleep", 300))
+            self.end_step_checks(" queries with mutations")
         else:
             self.mutations = True
             self.mutation_th = threading.Thread(target=self.normal_mutations)
@@ -986,7 +989,9 @@ class Murphy(BaseTestCase, OPD):
         self.mutations = False
         self.doc_loading_tm.abortAllTasks()
 
-    def end_step_checks(self):
+    def end_step_checks(self, msg=None):
+        if msg:
+            self.log.info("Checking for crashes/panics after {}".format(msg))
         self.print_stats(self.cluster)
         result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
         if result:
