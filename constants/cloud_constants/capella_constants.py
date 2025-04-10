@@ -96,6 +96,19 @@ class GCP(object):
 class AZURE(object):
     __str__ = "azure"
     compute = [
+        "Standard_D4s_v4",
+        "Standard_D8s_v4",
+        "Standard_D16s_v4",
+        "Standard_D32s_v4",
+        "Standard_D48s_v4",
+        "Standard_D64s_v4",
+        "Standard_E4s_v4",
+        "Standard_E8s_v4",
+        "Standard_E16s_v4",
+        "Standard_E20s_v4",
+        "Standard_E32s_v4",
+        "Standard_E48s_v4",
+        "Standard_E64s_v4",
         "Standard_D4s_v5",
         "Standard_D8s_v5",
         "Standard_D16s_v5",
