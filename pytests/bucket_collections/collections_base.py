@@ -594,10 +594,14 @@ class CollectionBase(ClusterSetup):
                 test_obj.encryptionAtRestDekRotationInterval
             if "buckets" in buckets_spec:
                 for bucket in buckets_spec["buckets"]:
+                    if test_obj.KMIP_for_data_encryption:
+                        encryption_ID = test_obj.KMIP_id
+                    else:
+                        encryption_ID = test_obj.encryption_at_rest_id
                     if buckets_spec["buckets"][bucket][Bucket.bucketType] != \
                             Bucket.Type.EPHEMERAL:
                         buckets_spec["buckets"][bucket][
-                            Bucket.encryptionAtRestKeyId] = test_obj.encryption_at_rest_id
+                            Bucket.encryptionAtRestKeyId] = encryption_ID
                         buckets_spec["buckets"][bucket][
                             Bucket.encryptionAtRestDekRotationInterval] = \
                             test_obj.encryptionAtRestDekRotationInterval
