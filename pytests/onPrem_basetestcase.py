@@ -96,16 +96,20 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
         self.encryption_level = self.input.param("encryption_level", "all")
-        self.private_key_passphrase = self.input.param(
-            "private_key_passphrase", None)
+        self.private_key_passphrase = self.input.param("private_key_passphrase", None)
+        self.kmip_key_uuid = self.input.param("kmip_key_uuid", None)
         config_path = os.path.join(os.path.dirname(__file__), "kmip_config.json")
         with open(config_path, "r") as f:
             kmip_config = json.load(f)
         self.kmip_ip = kmip_config["kmip_ip"]
-        self.kmip_password =  self.input.param(
-            "KMIP_for_log_encryption", None)
+        self.kmip_host_name = kmip_config["host_name"]
+        self.kmip_password = self.input.param("kmip_password", None)
         self.kmip_cert_path = kmip_config["certs"]["path"]
-        self.client_certs_path = "/etc/couchbase/certs"
+        self.KMIP_pkcs8_file_name = self.input.param(
+            "KMIP_pkcs8_file_name", "client-key-pkcs8.pem")
+        self.KMIP_cert_file_name = self.input.param(
+            "KMIP_cert_file_name", "client3-cert.pem")
+        self.client_certs_path = "/etc/couchbase/certs/"
         self.create_KMIP_secret= self.input.param(
             "create_KMIP_secret", False)
         self.KMIP_for_log_encryption = self.input.param(
@@ -138,7 +142,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.config_dekLifetime = self.input.param(
             "config_dekLifetime", CbServer.secret_rotation_interval_in_seconds)
         self.log_dekLifetime = self.input.param(
-            "log_dekLifetime", CbServer.secret_rotation_interval_in_seconds)
+            "log_dekLifetime", CbServer.encryption_at_rest_dek_lifetime_interval)
         self.config_dekRotationInterval = self.input.param(
             "config_dekRotationInterval", CbServer.encryption_at_rest_dek_rotation_interval)
         self.audit_dekRotationInterval = self.input.param(
@@ -426,17 +430,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     usage=["KEK-encryption", "bucket-encryption",
                            "config-encryption", "log-encryption",
                            "audit-encryption"],
-                    caSelection="useCbCa",
+                    caSelection="useSysAndCbCa",
                     reqTimeoutMs=5000,
                     encryptionApproach="useGet",
                     encryptWith="nodeSecretManager",
                     encryptWithKeyId=-1,
-                    activeKey={"kmipId": "0"},
-                    keyPath=self.kmip_cert_path+"new-client-key-pkcs8.pem",
-                    certPath=self.kmip_cert_path+"/etc/couchbase/certs"
-                                                 "/client-cert.pem",
-                    keyPassphrase=self.kmip_password,
-                    host=self.kmip_ip,
+                    activeKey={"kmipId": self.kmip_key_uuid},
+                    keyPath=self.client_certs_path + self.KMIP_pkcs8_file_name,
+                    certPath=self.client_certs_path + self.KMIP_cert_file_name,
+                    keyPassphrase=self.private_key_passphrase,
+                    host=self.kmip_host_name,
                     port=5696
                 )
                 status, response = rest.create_secret(params)
