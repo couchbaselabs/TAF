@@ -458,32 +458,44 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.aws_bucket_region = self.input.param("aws_bucket_region", None)
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
+        self.aws_endpoint = self.input.param("aws_endpoint", None)
+
+        self.columnar_aws_access_key = self.input.param("columnar_aws_access_key", None)
+        self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key", None)
+        self.columnar_aws_bucket_region = self.input.param("columnar_aws_bucket_region", None)
+        self.columnar_aws_session_token = self.input.param("columnar_aws_session_token", "")
+        self.columnar_aws_bucket_created = False
+        self.columnar_aws_endpoint = self.input.param("columnar_aws_endpoint", None)
         if (self.analytics_compute_storage_separation or
-                CbServer.cluster_profile == "columnar"):
-            self.s3_obj = S3(self.aws_access_key, self.aws_secret_key,
-                             region=self.aws_bucket_region)
+                CbServer.cluster_profile == "columnar" or cluster.master.type == "columnar"):
+            services_mem_quota_percent = dict()
+            services_mem_quota_percent[CbServer.Services.CBAS] = 80
+            services_mem_quota_percent[CbServer.Services.KV] = 10
+            self.columnar_s3_obj = S3(self.columnar_aws_access_key, self.columnar_aws_secret_key,
+                             region=self.columnar_aws_bucket_region,
+                             endpoint_url=self.columnar_aws_endpoint)
             for i in range(5):
                 try:
-                    self.aws_bucket_name = "columnar-build-sanity-" + str(int(
+                    self.columnar_aws_bucket_name = "columnar-build-sanity-" + str(int(
                         time.time()))
                     self.log.info("Creating S3 bucket")
-                    self.aws_bucket_created = self.s3_obj.create_bucket(
-                        self.aws_bucket_name, self.aws_bucket_region)
+                    self.columnar_aws_bucket_created = self.columnar_s3_obj.create_bucket(
+                        self.columnar_aws_bucket_name, self.columnar_aws_bucket_region)
                     break
                 except Exception as e:
                     self.log.error(
                         "Creating S3 bucket - {0} in region {1}. "
                         "Failed.".format(
-                            self.aws_bucket_name, self.aws_bucket_region))
+                            self.columnar_aws_bucket_name, self.columnar_aws_bucket_region))
                     self.log.error(str(e))
-            if not self.aws_bucket_created:
+            if not self.columnar_aws_bucket_created:
                 self.fail("Unable to create S3 bucket.")
             self.log.info("Adding aws bucket credentials to analytics")
             status = self.configure_compute_storage_separation_for_analytics(
-                server=cluster.master, aws_access_key=self.aws_access_key,
-                aws_secret_key=self.aws_secret_key,
-                aws_bucket_name=self.aws_bucket_name,
-                aws_bucket_region=self.aws_bucket_region)
+                server=cluster.master, aws_access_key=self.columnar_aws_access_key,
+                aws_secret_key=self.columnar_aws_secret_key,
+                aws_bucket_name=self.columnar_aws_bucket_name,
+                aws_bucket_region=self.columnar_aws_bucket_region)
             if not status:
                 self.fail("Failed to put aws credentials to analytics, "
                           "request error")
@@ -640,14 +652,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if cluster.sdk_client_pool:
                 cluster.sdk_client_pool.shutdown()
 
-        # delete aws bucket that was created for compute storage separation
-        if (self.analytics_compute_storage_separation and
-                self.aws_bucket_created):
-            self.log.info("Deleting AWS S3 bucket - {}".format(
-                self.aws_bucket_name))
-            if not self.s3_obj.delete_bucket(self.aws_bucket_name):
-                self.log.error("AWS bucket failed to delete")
-
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if self.skip_teardown_cleanup:
             self.log.debug("Skipping tearDownEverything")
@@ -672,7 +676,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.shutdown_task_manager()
 
     def tearDownEverything(self, reset_cluster_env_vars=True):
-        for _, cluster in self.cb_clusters.items():
+        for cluster_name, cluster in self.cb_clusters.items():
             try:
                 test_failed = self.is_test_failed()
                 if test_failed:
@@ -707,6 +711,19 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     # Remove buckets to avoid failures while updating vb config
                     self.bucket_util.delete_all_buckets(cluster)
                     self.cluster_util.reset_env_variables(cluster)
+
+            self.log.info("Delete all buckets and rebalance out "
+                          "other nodes from '%s'" % cluster_name)
+            self.cluster_util.cluster_cleanup(cluster,
+                                                self.bucket_util)
+            # delete aws bucket that was created for compute storage separation
+            if (self.analytics_compute_storage_separation and
+                    self.columnar_aws_bucket_created):
+                self.log.info("Deleting AWS S3 bucket - {}".format(
+                    self.columnar_aws_bucket_created))
+                if not self.columnar_s3_obj.delete_bucket(self.columnar_aws_bucket_name):
+                    self.log.error("AWS bucket failed to delete")
+
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
         self.infra_log.info("==========================================")
@@ -1188,7 +1205,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
         status, content = rest.update_analytics_settings(
             blob_storage_bucket=aws_bucket_name,
             blob_storage_region=aws_bucket_region, blob_storage_prefix="",
-            blob_storage_scheme="s3")
+            blob_storage_scheme="s3",
+            profile=server.type,
+            endpoint_url=self.columnar_aws_endpoint)
         if not status:
             self.log.error(str(content))
             return False

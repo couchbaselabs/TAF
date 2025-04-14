@@ -280,9 +280,8 @@ class SDKClient(object):
         # Following params will be passed to create_conn() and
         # no need of them post connection. So having these as local variables
         # Used during Cluster.connect() call
-        hosts = list()
         # Cluster_run: Used for cluster connection
-        server_list = list()
+        hosts = list()
 
         if not servers:
             servers = [framework_cb_cluster_obj.master]
@@ -308,25 +307,23 @@ class SDKClient(object):
                               % bucket.serverless.nebula_endpoint.ip)
 
         for server in servers:
-            server_list.append((server.ip, int(server.port)))
             if CbServer.use_https:
                 self.scheme = "couchbases"
             else:
                 self.scheme = "couchbase"
-            if not ClusterRun.is_enabled:
-                if server.type in ["columnar", "dedicated"]:
-                    hosts.append(framework_cb_cluster_obj.srv)
-                else:
-                    hosts.append(server.ip)
+            if server.type in ["columnar", "dedicated"] and framework_cb_cluster_obj.srv is not None:
+                hosts.append(framework_cb_cluster_obj.srv)
+            else:
+                hosts.append(server.ip)
 
         start_time = time.time()
-        self.__create_conn(framework_cb_cluster_obj, servers, hosts)
+        self.__create_conn(hosts)
         if bucket is not None:
             self.log.debug("SDK connection to bucket: {} took {}s".format(
                 bucket.name, time.time()-start_time))
         SDKClient.sdk_connections += 1
 
-    def __create_conn(self, cluster, servers, hosts):
+    def __create_conn(self, hosts):
         if self.bucket:
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
         # Having 'None' will enable us to test without sending any

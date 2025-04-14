@@ -766,6 +766,7 @@ class Database_Util(BaseUtil):
             else:
                 name = database_spec.get("name_key") + "_{0}".format(
                     str(i))
+            self.log.info("Creating database {0} on {1}".format(name, cluster.cbas_cc_node))
             results.append(self.create_database(
                 cluster, self.format_name(name), if_not_exists=True,
                 timeout=cbas_spec.get("api_timeout", 300),
@@ -1747,6 +1748,8 @@ class RemoteLink_Util(Link_Util):
         properties_size = len(properties)
 
         for i in range(1, num_of_remote_links + 1):
+            db = random.choice(list(self.databases.values()))
+            dv = random.choice(list(db.dataverses.values()))
             if link_spec.get("name_key", "random").lower() == "random":
                 name = self.generate_name()
             else:
@@ -1754,7 +1757,7 @@ class RemoteLink_Util(Link_Util):
 
             link = Remote_Link(
                 name=name, properties=properties[i % properties_size])
-
+            link.properties["dataverse"] = dv.name
             if not self.create_remote_link(
                     cluster, link.properties, create_if_not_exists=True,
                     timeout=cbas_spec.get("api_timeout", 300), username=username, password=password):
@@ -1841,9 +1844,8 @@ class ExternalLink_Util(RemoteLink_Util):
         :param create_if_not_exists bool, check link exists before creation
         :param timeout int, REST API timeout
         """
-        self.log.info(
-            "Creating link - {0}".format(
-                link_properties["name"]))
+        self.log.info("Creating external link {0} from {1}".format(
+            link_properties["name"], link_properties))
         return self.create_link(
             cluster, link_properties, username, password, validate_error_msg,
             expected_error, expected_error_code, create_if_not_exists,
@@ -2358,10 +2360,13 @@ class Dataset_Util(KafkaLink_Util):
                            "in CBAS datasets %s" % num_items)
             actual_doc_count = self.get_num_items_in_cbas_dataset(cluster, dataset_name)
             if num_items == actual_doc_count:
-                self.log.debug("Data ingestion completed in %s seconds." %
+                self.log.info("Data ingestion completed in %s seconds." %
                                (time.time() - start_time))
                 return True
             else:
+                self.log.info(f"Data ingestion not completed yet. "
+                              "Actual Count: {actual_doc_count}, Expected Count: {num_items}")
+                self.log.debug("Sleeping for 10 seconds")
                 sleep(2)
 
         self.log.error(
@@ -3258,10 +3263,10 @@ class External_Dataset_Util(Remote_Dataset_Util):
                         "api_timeout", 300),
                     analytics_timeout=cbas_spec.get(
                         "cbas_timeout", 300),
-                    timestamp_to_long=dataset_obj.dataset_properties[
-                        "timestamp_to_long"],
-                    date_to_int=dataset_obj.dataset_properties[
-                        "date_to_int"]
+                    timestamp_to_long=dataset_obj.dataset_properties.get(
+                        "timestamp_to_long", 0),
+                    date_to_int=dataset_obj.dataset_properties.get(
+                        "date_to_int", 0)
                 ))
             if results[-1]:
                 dataverse.external_datasets[
@@ -4233,7 +4238,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 dataset_spec["standalone_collection_properties"][
                     i % len(dataset_spec["standalone_collection_properties"])],
                 0, storage_format)
-
+            self.log.info("Creating standalone collection {0} on {1}".format(
+                dataset_obj.full_name, cluster.cbas_cc_node))
             results.append(
                 self.create_standalone_collection(
                     cluster=cluster, collection_name=name,
@@ -4400,6 +4406,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 value_serialization_type=selected_topic["value_serialization_type"],
                 cdc_source_connector=selected_topic["source_connector"])
 
+            self.log.info("Creating standalone collection {0} on kafka links {1}"
+                          .format(dataset_obj.full_name, link.name))
             if not self.create_standalone_collection_using_links(
                     cluster=cluster, collection_name=name,
                     ddl_format=creation_method, if_not_exists=False,
@@ -6630,70 +6638,80 @@ class CbasUtil(CBOUtil):
         try:
             # Drop all views
             for view in self.get_all_views_from_metadata(cluster):
+                self.log.info(f"Attempting to drop View: {view}")
                 if not self.drop_analytics_view(cluster, view, username=username, password=password):
-                    self.log.error(f"Failed to drop View {view}")
+                    self.log.error(f"Failed to drop View: {view}")
                     state = False
 
             # Drop all UDFs
             for udf in self.get_all_udfs_from_metadata(cluster):
+                self.log.info(f"Attempting to drop UDF: {udf[0]}")
                 if not self.drop_udf(
                         cluster, CBASHelper.format_name(udf[0]), None, None, udf[1],
-                username=username, password=password):
-                    self.log.error("Unable to drop UDF {0}".format(udf[0]))
+                        username=username, password=password):
+                    self.log.error(f"Unable to drop UDF: {udf[0]}")
                     state = False
 
             # Drop all indexes
             for idx in self.get_all_indexes_from_metadata(cluster):
+                self.log.info(f"Attempting to drop Index: {idx}")
                 idx_split = idx.split(".")
                 if not self.drop_cbas_index(cluster, idx_split[-1],
                                             ".".join(idx_split[:-1]), username=username, password=password):
-                    self.log.error(
-                        "Unable to drop Index {0}".format(idx))
+                    self.log.error(f"Unable to drop Index: {idx}")
                     state = False
 
             # Drop all Synonyms
             for syn in self.get_all_synonyms_from_metadata(cluster):
+                self.log.info(f"Attempting to drop Synonym: {syn}")
                 if not self.drop_analytics_synonym(cluster, syn, username=username, password=password):
-                    self.log.error("Unable to drop Synonym {0}".format(syn))
+                    self.log.error(f"Unable to drop Synonym: {syn}")
                     state = False
 
             # Disconnect all remote links
             remote_links = self.get_all_links_from_metadata(cluster, "couchbase")
             for remote_link in remote_links:
+                self.log.info(f"Attempting to disconnect Remote Link: {remote_link}")
                 if not self.disconnect_link(cluster, remote_link, username=username, password=password):
-                    self.log.error(
-                        "Unable to disconnect Link {0}".format(remote_link))
+                    self.log.error(f"Unable to disconnect Remote Link: {remote_link}")
                     state = False
 
             # Disconnect all Kafka links
             kafka_links = self.get_all_links_from_metadata(cluster, "kafka")
             for kafka_link in kafka_links:
+                self.log.info(f"Attempting to disconnect Kafka Link: {kafka_link}")
                 if not self.disconnect_link(cluster, kafka_link, username=username, password=password):
-                    self.log.error(
-                        "Unable to disconnect Link {0}".format(kafka_link))
+                    self.log.error(f"Unable to disconnect Kafka Link: {kafka_link}")
                     state = False
 
             # Drop all datasets
             for ds in self.get_all_datasets_from_metadata(cluster):
+                self.log.info(f"Attempting to drop Dataset: {ds}")
                 if not self.drop_dataset(cluster, ds, username=username, password=password):
-                    self.log.error("Unable to drop Dataset {0}".format(ds))
+                    self.log.error(f"Unable to drop Dataset: {ds}")
                     state = False
 
+            # Drop all links
             for lnk in self.get_all_links_from_metadata(cluster):
+                self.log.info(f"Attempting to drop Link: {lnk}")
                 if not self.drop_link(cluster, lnk, username=username, password=password):
-                    self.log.error("Unable to drop Link {0}".format(lnk))
+                    self.log.error(f"Unable to drop Link: {lnk}")
                     state = False
 
+            # Drop all dataverses
             for dv in self.get_all_dataverses_from_metadata(cluster):
                 if dv != "Default.Default":
+                    self.log.info(f"Attempting to drop Dataverse: {dv}")
                     if not self.drop_dataverse(cluster, dv, username=username, password=password):
-                        self.log.error("Unable to drop Dataverse {0}".format(dv))
+                        self.log.error(f"Unable to drop Dataverse: {dv}")
                         state = False
 
+            # Drop all databases
             for db in self.get_all_databases_from_metadata(cluster):
                 if db != "Default":
+                    self.log.info(f"Attempting to drop Database: {db}")
                     if not self.drop_database(cluster, db, username=username, password=password):
-                        self.log.error("Unable to drop Database {0}".format(db))
+                        self.log.error(f"Unable to drop Database: {db}")
                         state = False
         except Exception as e:
             self.log.info(str(e))

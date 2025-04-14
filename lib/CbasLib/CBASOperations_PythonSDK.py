@@ -98,16 +98,19 @@ class CBASHelper(object):
 
     def create_remote_link_obj(self, link_properties):
         try:
-            remote_link_obj = CouchbaseRemoteAnalyticsLink(link_properties["dataverse"], link_properties["name"])
-            remote_link_obj._hostname = link_properties["hostname"]
-            remote_link_obj._username = link_properties["username"]
-            remote_link_obj._password = link_properties["password"]
+            _hostname = link_properties["hostname"]
+            _username = link_properties["username"]
+            _password = link_properties["password"]
             encryption = AnalyticsEncryptionLevel.FULL \
                 if link_properties["encryption"] == "full" \
                 else AnalyticsEncryptionLevel.NONE
-            remote_link_obj._encryption = CouchbaseAnalyticsEncryptionSettings(encryption_level=encryption,
+            _encryption = CouchbaseAnalyticsEncryptionSettings(encryption_level=encryption,
                                                                                certificate=link_properties[
                                                                                    "certificate"])
+            remote_link_obj = CouchbaseRemoteAnalyticsLink(link_properties["dataverse"],
+                                                           link_properties["name"],
+                                                           _hostname, _encryption,
+                                                           _username, _password,)
             self.log.debug("Remote Link SDK object - {0}".format(remote_link_obj.__dict__))
             return remote_link_obj
         except Exception as err:

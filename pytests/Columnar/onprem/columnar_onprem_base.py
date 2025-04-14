@@ -4,7 +4,8 @@ Created on 4-April-2024
 @author: umang.agrawal@couchbase.com
 """
 from cbas.cbas_base import CBASBaseTest
-from cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
+from couchbase_utils.cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 
 class ColumnarOnPremBase(CBASBaseTest):
@@ -13,11 +14,79 @@ class ColumnarOnPremBase(CBASBaseTest):
         super(ColumnarOnPremBase, self).setUp()
         self.use_sdk_for_cbas = self.input.param("use_sdk_for_cbas", False)
 
-        self.aws_region = self.input.param("aws_region", "ap-south-1")
-        self.s3_source_bucket = self.input.param("s3_source_bucket", None)
+        self.aws_region = self.input.param("aws_region", "us-west-1")
+        self.s3_source_bucket = self.input.param("s3_source_bucket", "columnar-functional-sanity-test-data")
+        self.columnar_cbas_utils = columnarCBASUtil(
+            self.task, self.use_sdk_for_cbas)
+        
+        for cluster in self.cb_clusters.values():
+            cluster.srv = None
+            if hasattr(cluster, "cbas_cc_node"):
+                self.analytics_cluster = cluster
+            else:
+                self.remote_cluster = cluster
 
     def tearDown(self):
         super(ColumnarOnPremBase, self).tearDown()
+
+    def load_remote_collections(self, cluster, buckets=None):
+        buckets = buckets or cluster.buckets
+        thread_count = 0
+        for bucket in buckets:
+            for scope in bucket.scopes.keys():
+                if scope == "_system":
+                    continue
+                for collection in bucket.scopes[scope].collections.keys():
+                    thread_count = 1
+        per_coll_ops = self.input.param("ops_rate", 20000)//thread_count
+
+        for bucket in buckets:
+            pattern = [100, 0, 0, 0, 0]
+            for scope in bucket.scopes.keys():
+                for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+                    valType = "Hotel"
+                    if scope == "_system":
+                        continue
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=cluster.master.ip, server_port=cluster.master.port,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope, collection_name=collection,
+                        key_prefix="test_docs-", key_size=20, doc_size=256,
+                        key_type="SimpleKey", value_type=valType,
+                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
+                        delete_percent=pattern[3], expiry_percent=pattern[4],
+                        create_start_index=0, create_end_index=self.num_items,
+                        read_start_index=0, read_end_index=0,
+                        update_start_index=0, update_end_index=0,
+                        delete_start_index=0, delete_end_index=0,
+                        expiry_start_index=0, expiry_end_index=0,
+                        process_concurrency=1, task_identifier="", ops=per_coll_ops,
+                        suppress_error_table=False,
+                        track_failures=True,
+                        mutate=0,
+                        elastic=False, model=self.model, mockVector=self.mockVector, dim=self.dim, base64=self.base64)
+                    loader.create_doc_load_task()
+                    self.task_manager.add_new_task(loader)
+                    loader.result = self.task_manager.get_task_result(loader)
+                    if loader.fail_count == self.num_items:
+                        self.fail("Doc loading failed for {0}.{1}.{2}"
+                                    .format(bucket.name,
+                                            scope,
+                                            collection))
+                    else:
+                        if loader.fail_count > 0:
+                            self.log.error(
+                                "{0} Docs failed to load "
+                                "for {1}.{2}.{3}"
+                                .format(loader.fail_count,
+                                        bucket.name, scope,
+                                        collection))
+                            bucket.scopes[scope].collections[collection].num_items = (
+                                    self.num_items -
+                                    loader.fail_count)
+                        else:
+                            bucket.scopes[scope].collections[collection].num_items = self.num_items
 
     """
     This method populates the columnar spec that will be used create 

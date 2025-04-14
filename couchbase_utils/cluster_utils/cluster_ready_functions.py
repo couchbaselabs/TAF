@@ -700,10 +700,12 @@ class ClusterUtils:
 
     def cleanup_cluster(self, cluster, master=None):
         master = master or cluster.master
-        xdcr_helper = XDCRUtils(master)
-        xdcr_helper.remove_all_replications()
-        xdcr_helper.remove_all_remote_clusters()
-        xdcr_helper.remove_all_recoveries()
+        self.log.debug("Cleaning up cluster {0}".format(master))
+        if master.type != "columnar":
+            xdcr_helper = XDCRUtils(master)
+            xdcr_helper.remove_all_replications()
+            xdcr_helper.remove_all_remote_clusters()
+            xdcr_helper.remove_all_recoveries()
         self.is_ns_server_running(master, timeout_in_seconds=120)
         nodes = self.get_otp_nodes(master)
         cluster_rest = ClusterRestAPI(master)

@@ -6,9 +6,12 @@ Created on 25-OCTOBER-2023
 import time
 
 from queue import Queue
-
-from Columnar.columnar_base import ColumnarBaseTest
-
+from TestInput import TestInputSingleton
+runtype = TestInputSingleton.input.param("runtype", "default").lower()
+if runtype == "columnar":
+    from Columnar.columnar_base import ColumnarBaseTest
+else:
+    from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
 
 class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
 
@@ -16,8 +19,12 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
         super(CopyIntoStandaloneCollectionFromBlobStorage, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.columnar_cluster = self.tenant.columnar_instances[0]
+        if runtype == "columnar":
+            self.columnar_cluster = self.tenant.columnar_instances[0]
+        else:
+            self.columnar_cluster = self.cluster
 
+        self.columnar_spec_name = self.input.param("columnar_spec_name", None)
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
 

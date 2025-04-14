@@ -619,12 +619,13 @@ class Dataverse_Util(BaseUtil):
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, dataverse_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
-                dataverses_created = list(
-                    map(lambda dv: dv.encode('utf-8'), results))
+            if (status == 'success' or status.encode('utf-8') == 'success') and results:
+                dataverses_created = results
                 break
-            sleep(12, "Wait for atleast one dataverse to be created")
             retries -= 1
+            if retries > 0:
+                sleep(12, "Wait for atleast one dataverse to be created")
+                self.log.info("Dataverses not created yet. Retrying...")
         return dataverses_created
 
 
@@ -2732,8 +2733,9 @@ class Dataset_Util(Link_Util):
                     datasets_created = list(
                         map(lambda dv: dv.encode('utf-8'), results))
                 break
-            sleep(12, "Wait for atleast one dataset to be created")
             retries -= 1
+            if retries > 0:
+                sleep(12, "Wait for atleast one dataset to be created")
         return datasets_created
 
     def create_datasets_for_tpch(self, cluster):
@@ -3045,8 +3047,10 @@ class Synonym_Util(Dataset_Util):
                     map(lambda result: CBASHelper.format_name(*result),
                         results))
                 break
-            sleep(12, "Wait for atleast one synonym to be created")
             retries -= 1
+            if retries > 0:
+                sleep(12, "Wait for atleast one synonym to be created")
+                self.log.debug("Synonyms not created yet. Retrying...")
         return synonyms_created
 
     def get_dataset_obj_for_synonym(
@@ -3390,8 +3394,10 @@ class Index_Util(Synonym_Util):
                 indexes_created = list(
                     map(lambda idx: idx.encode('utf-8'), results))
                 break
-            sleep(12, "Wait for atleast one index to be created")
             retries -= 1
+            if retries > 0:
+                sleep(12, "Wait for atleast one index to be created")
+                self.log.debug("Indexes not created yet. Retrying...")
         return indexes_created
 
 
@@ -5387,7 +5393,7 @@ class CBASRebalanceUtil(object):
                 self.bucket_util.validate_docs_per_collections_all_buckets(cluster)
 
     def get_failover_count(self, cluster):
-        cluster_status = cluster.rest.cluster_status()
+        _, cluster_status = cluster.rest.cluster.cluster_details()
         failover_count = 0
         # check for inactiveFailed
         for node in cluster_status['nodes']:
@@ -5408,7 +5414,7 @@ class CBASRebalanceUtil(object):
             time.sleep(20)
         time_end = time.time()
         if actual_failover_count != expected_failover_count:
-            self.log.info(cluster.rest.print_UI_logs())
+            self.log.info(self.cluster_util.print_UI_logs(cluster.master))
 
         if actual_failover_count == expected_failover_count:
             self.log.info("{0} nodes failed over as expected in {1} seconds"
@@ -5473,7 +5479,7 @@ class CBASRebalanceUtil(object):
 
         def pick_node(cluster, target_nodes, how_many=1):
             picked = list()
-            node_status = cluster.rest.node_statuses()
+            node_status = self.cluster_util.get_nodes(cluster.master)
             for i in range(how_many):
                 for node in node_status:
                     if node.ip == target_nodes[i].ip:
@@ -5485,37 +5491,39 @@ class CBASRebalanceUtil(object):
         # Mark Node for failover
         if failover_type == "Graceful":
             chosen = pick_node(cluster, cluster_kv_nodes, kv_nodes)
+            otpNodes = [x.id for x in chosen]
             if all_at_once:
-                fail_over_status = fail_over_status and cluster.rest.fail_over(
-                    [x.id for x in chosen], graceful=False, all_at_once=True)
+                fail_over_status = fail_over_status and \
+                    cluster.rest.cluster.perform_graceful_failover(otpNodes)
             else:
-                for node in chosen:
-                    fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        node.id, graceful=False, all_at_once=False)
+                for node in otpNodes:
+                    fail_over_status = fail_over_status and \
+                    cluster.rest.cluster.perform_graceful_failover(node)
             failover_count += kv_nodes
             kv_failover_nodes.extend(chosen)
         else:
             if kv_nodes and cluster_kv_nodes:
                 chosen = pick_node(cluster, cluster_kv_nodes, kv_nodes)
+                otpNodes = [x.id for x in chosen]
                 if all_at_once:
-                    fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        [x.id for x in chosen], graceful=False,
-                        all_at_once=True)
+                    fail_over_status = fail_over_status and \
+                        cluster.rest.cluster.perform_graceful_failover(otpNodes)
                 else:
-                    for node in chosen:
-                        fail_over_status = fail_over_status and cluster.rest.fail_over(
-                            node.id, graceful=False, all_at_once=False)
+                    for node in otpNodes:
+                        fail_over_status = fail_over_status and \
+                        cluster.rest.cluster.perform_graceful_failover(node)
                 failover_count += kv_nodes
                 kv_failover_nodes.extend(chosen)
             if cbas_nodes and cluster_cbas_nodes:
                 chosen = pick_node(cluster, cluster_cbas_nodes, cbas_nodes)
+                otpNodes = [x.id for x in chosen]
                 if all_at_once:
-                    fail_over_status = fail_over_status and cluster.rest.fail_over(
-                        [x.id for x in chosen], graceful=False, all_at_once=True)
+                    fail_over_status = fail_over_status and \
+                        cluster.rest.cluster.perform_graceful_failover(otpNodes)
                 else:
-                    for node in chosen:
-                        fail_over_status = fail_over_status and cluster.rest.fail_over(
-                            node.id, graceful=False, all_at_once=False)
+                    for node in otpNodes:
+                        fail_over_status = fail_over_status and \
+                        cluster.rest.cluster.perform_graceful_failover(node)
                 failover_count += cbas_nodes
                 cbas_failover_nodes.extend(chosen)
                 if reset_cbas_cc:
@@ -5565,18 +5573,19 @@ class CBASRebalanceUtil(object):
                 return rebalance_task
         else:
             node_ids = dict()
-            for node in cluster.rest.get_nodes(inactive_added=True,
-                                               inactive_failed=True):
+            for node in self.cluster_util.get_nodes(cluster.master,
+                                                    inactive_added=True,
+                                                    inactive_failed=True):
                 node_ids[node.ip] = node.id
 
             if action == "FullRecovery":
                 for node in kv_failover_nodes + cbas_failover_nodes:
-                    cluster.rest.set_recovery_type(
-                        otpNode=node_ids[node.ip], recoveryType="full")
+                    cluster.rest.cluster.set_failover_recovery_type(
+                        otp_node=node_ids[node.ip], recovery_type="full")
             elif action == "DeltaRecovery":
                 for node in kv_failover_nodes:
-                    cluster.rest.set_recovery_type(
-                        otpNode=node_ids[node.ip], recoveryType="delta")
+                    cluster.rest.cluster.set_failover_recovery_type(
+                        otp_node=node_ids[node.ip], recovery_type="delta")
             rebalance_task = self.task.async_rebalance(
                 cluster, [], [], retry_get_process_num=200)
             if wait_for_complete:

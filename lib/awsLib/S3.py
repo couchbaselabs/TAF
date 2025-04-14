@@ -10,13 +10,15 @@ import json
 
 class AWSBase(object):
 
-    def __init__(self, access_key, secret_key, session_token=None):
+    def __init__(self, access_key, secret_key, session_token=None,
+                 endpoint_url=None):
         import logging
         logging.basicConfig()
         self.logger = logging.getLogger("AWS_Util")
+        self.endpoint_url = endpoint_url
         self.create_session(access_key, secret_key, session_token)
 
-    def create_session(self, access_key, secret_key, session_token=None):
+    def create_session(self, access_key, secret_key, session_token):
         """
         Create a session to AWS using the credentials provided.
         If no credentials are provided then, credentials are read from
@@ -50,10 +52,11 @@ class AWSBase(object):
         """
         try:
             if region is None:
-                return self.aws_session.client(service_name)
+                return self.aws_session.client(service_name, endpoint_url=self.endpoint_url)
             else:
                 return self.aws_session.client(
-                    service_name, region_name=region)
+                    service_name, region_name=region,
+                    endpoint_url=self.endpoint_url)
         except ClientError as e:
             self.logger.error(e)
 
@@ -63,7 +66,8 @@ class AWSBase(object):
         service.
         """
         try:
-            return self.aws_session.resource(resource_name)
+            return self.aws_session.resource(resource_name,
+                                             endpoint_url=self.endpoint_url)
         except Exception as e:
             self.logger.error(e)
 
@@ -81,8 +85,8 @@ class AWSBase(object):
 class S3(AWSBase):
 
     def __init__(self, access_key, secret_key, session_token=None,
-                 region=None):
-        super(S3, self).__init__(access_key, secret_key, session_token)
+                 region=None, endpoint_url=None):
+        super(S3, self).__init__(access_key, secret_key, session_token, endpoint_url)
         self.s3_client = self.create_service_client(
             service_name="s3", region=region)
         self.s3_resource = self.create_service_resource(resource_name="s3")

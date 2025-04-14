@@ -174,6 +174,7 @@ class SiriusCouchbaseLoader(object):
         # Result params
         self.success = dict()
         self.fail = dict()
+        self.fail_count = 0
 
         if ops is None:
             self.ops = 20000
@@ -495,6 +496,7 @@ class SiriusCouchbaseLoader(object):
                 ok = ok and response.ok and json_resp["status"]
                 if "fail" in json_resp:
                     self.fail.update(json_resp["fail"])
+                    self.fail_count = len(self.fail)
             except Exception as e:
                 print(e)
 

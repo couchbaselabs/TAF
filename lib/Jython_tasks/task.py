@@ -7720,17 +7720,10 @@ class NodeInitializeTask(Task):
                 "maxParallelReplicaIndexers",
                 str(self.maxParallelReplicaIndexers).lower())
 
-        t_services = self.services
-        if isinstance(t_services, list):
-            t_services = ",".join(self.services)
-        elif t_services is None:
-            t_services = CbServer.Services.KV
-
         cluster_init_params = {
             "hostname": self.server.ip,
             "username": username,
             "password": password,
-            "services": t_services,
             "memory_quota": service_quota["memoryQuota"],
             "index_memory_quota": service_quota["indexMemoryQuota"],
             "eventing_memory_quota": service_quota["eventingMemoryQuota"],
@@ -7742,6 +7735,23 @@ class NodeInitializeTask(Task):
             "eventing_path": self.server.eventing_path,
             "indexer_storage_mode": self.gsi_type,
         }
+        t_services = self.services
+        if t_services == CbServer.Services.COLUMNAR or\
+            CbServer.Services.COLUMNAR in t_services or\
+                self.server.type == CbServer.Services.COLUMNAR:
+            cluster_init_params.update({
+                "services": ''})
+            cluster_init_params.pop("index_memory_quota")
+            cluster_init_params.pop("eventing_memory_quota")
+            cluster_init_params.pop("fts_memory_quota")
+        elif isinstance(t_services, list):
+            t_services = ",".join(self.services)
+            cluster_init_params.update({
+                "services": t_services})
+        elif t_services is None:
+            t_services = CbServer.Services.KV
+            cluster_init_params.update({
+                "services": t_services})
         if self.cluster_edition == "community":
             for k_to_remove in ["fts_memory_quota",
                                 "eventing_memory_quota",

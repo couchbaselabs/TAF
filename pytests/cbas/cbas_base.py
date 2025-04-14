@@ -2,7 +2,6 @@
 Created on 04-Jun-2021
 @author: Umang Agrawal
 '''
-import copy
 
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
@@ -17,6 +16,10 @@ from tpch_utils.tpch_utils import TPCHUtil
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from sdk_client3 import SDKClient
 from cb_server_rest_util.rest_client import RestConnection
+import time
+from awsLib.S3 import S3
+from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
+from columnarbasetestcase import ColumnarBaseTest
 
 
 class CBASBaseTest(BaseTestCase):
@@ -106,6 +109,10 @@ class CBASBaseTest(BaseTestCase):
         cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
         cluster.servers = [
             server for server in self.servers if server.type == "default"]
+        if self.input.param("runtype", "default") == "onprem-columnar"\
+            and self.num_of_clusters == 1:
+            cluster.servers = [
+                server for server in self.servers if server.type == "columnar"]
 
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
@@ -160,10 +167,6 @@ class CBASBaseTest(BaseTestCase):
             # Construct dict of mem. quota percent / mb per service
             mem_quota_percent = dict()
 
-            if self.analytics_compute_storage_separation:
-                # Construct dict of mem. quota percent per service
-                mem_quota_percent[CbServer.Services.CBAS] = 80
-                mem_quota_percent[CbServer.Services.KV] = 10
 
             servers = [
                 server for server in self.servers if server.type == "columnar"]
@@ -174,13 +177,21 @@ class CBASBaseTest(BaseTestCase):
             self.cb_clusters[cluster_name] = cluster
             cluster.kv_nodes.append(cluster.master)
 
+            if self.analytics_compute_storage_separation:
+                # Construct dict of mem. quota percent per service
+                mem_quota_percent[CbServer.Services.CBAS] = 80
+                mem_quota_percent[CbServer.Services.KV] = 10
+
+            services = self.services_init[i][0]
+            # if self.input.param("runtype", "default") == "onprem-columnar":
+            #     services = ""
             self.initialize_cluster(
-                cluster_name, cluster, services=self.services_init[i][0],
+                cluster_name, cluster, services=services,
                 services_mem_quota_percent=mem_quota_percent
             )
-            cluster.master.services = self.services_init[i][0].replace(":", ",")
+            cluster.master.services = ["kv", "cbas"]
 
-            if "cbas" in cluster.master.services:
+            if "cbas" in cluster.master.services or "columnar" in cluster.master.services:
                 cluster.cbas_nodes.append(cluster.master)
 
             if self.input.param("cluster_ip_family", ""):
@@ -239,6 +250,7 @@ class CBASBaseTest(BaseTestCase):
         self.num_retries = self.input.param("num_retries", 1)
 
         self.cbas_spec_name = self.input.param("cbas_spec", None)
+        self.columnar_spec_name = self.input.param("columnar_spec_name", None)
 
         self.expected_error = self.input.param("error", None)
 
@@ -316,6 +328,7 @@ class CBASBaseTest(BaseTestCase):
                     services=[
                         server.services for server in cluster.servers[
                                                       1:self.nodes_init[i]]])
+                cluster.available_servers = cluster.servers[self.nodes_init[i]:]
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
@@ -469,6 +482,18 @@ class CBASBaseTest(BaseTestCase):
 
             self.bucket_util.add_rbac_user(cluster.master)
 
+        for cluster in sorted(self.cb_clusters.values(), key=lambda x: x.name):
+            cluster.srv = None
+            if hasattr(cluster, "cbas_cc_node"):
+                self.analytics_cluster = cluster
+            else:
+                self.remote_cluster = cluster
+                self.analytics_cluster = cluster
+        self.sdk_clients_per_user = self.input.param("sdk_clients_per_user", 1)
+        ColumnarBaseTest.init_sdk_pool_object(
+            self.analytics_cluster, self.sdk_clients_per_user,
+            self.analytics_cluster.master.rest_username,
+            self.analytics_cluster.master.rest_password)
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 

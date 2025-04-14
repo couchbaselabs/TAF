@@ -536,6 +536,7 @@ class CBASHelper(RestConnection):
             api += "?{0}".format(params)
             params = ""
         try:
+            self.log.debug("Calling rest API {0} with params {1}".format(api, params))
             status, content, response = self._http_request(
                 api, method, headers=headers, params=params, timeout=timeout)
             try:

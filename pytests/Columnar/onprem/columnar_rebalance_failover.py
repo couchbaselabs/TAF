@@ -33,10 +33,11 @@ import json
 import random
 import time
 from queue import Queue
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
-from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
+from .columnar_onprem_base import ColumnarOnPremBase
 from couchbase_utils.security_utils.x509main import x509main
-from columnarbasetest import ColumnarBaseTest
+from columnarbasetestcase import ColumnarBaseTest
 from cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
 
 # Imports for Sirius data loaders
@@ -47,7 +48,7 @@ from Jython_tasks.sirius_task import WorkLoadTask
 from sirius_client_framework.sirius_constants import SiriusCodes
 
 
-class E2EBuildVerification(ColumnarOnPremBase):
+class ColumnarRebalanceFailover(ColumnarOnPremBase):
     """
     This test is meant to validate columnar server build before promoting
     it to AMI for Capella Columnar
@@ -61,18 +62,11 @@ class E2EBuildVerification(ColumnarOnPremBase):
         "csv": 7800000, "tsv": 7800000, "avro": 7800000}
 
     def setUp(self):
-        super(E2EBuildVerification, self).setUp()
-
+        super(ColumnarRebalanceFailover, self).setUp()
         self.columnar_spec_name = self.input.param(
-            "columnar_spec_name", "sanity.on-prem.bvf_e2e")
+            "columnar_spec_name", "bvf_e2e")
         self.columnar_spec = self.columnar_cbas_utils.get_columnar_spec(
             self.columnar_spec_name)
-
-        for cluster_name, cluster in self.cb_clusters.items():
-            if hasattr(cluster, "cbas_cc_node"):
-                self.analytics_cluster = cluster
-            else:
-                self.remote_cluster = cluster
 
         self.sdk_clients_per_user = self.input.param("sdk_clients_per_user", 1)
         ColumnarBaseTest.init_sdk_pool_object(
@@ -95,7 +89,7 @@ class E2EBuildVerification(ColumnarOnPremBase):
                 self.copy_to_s3_bucket))
             if not self.s3_obj.delete_bucket(self.copy_to_s3_bucket):
                 self.log.error("AWS bucket failed to delete")
-        super(E2EBuildVerification, self).tearDown()
+        super(ColumnarRebalanceFailover, self).tearDown()
 
     def build_cbas_columnar_infra(self):
         num_databases = self.input.param("num_db", 1)
@@ -207,6 +201,278 @@ class E2EBuildVerification(ColumnarOnPremBase):
                 remote_clusters=[self.remote_cluster]):
             self.fail("Error while creating analytics entities.")
 
+    def test_basic_ingestion(self):
+        self.log.info("Creating Buckets, Scopes and Collection on Remote "
+                      "cluster.")
+        self.collectionSetUp(cluster=self.remote_cluster, load_data=False, create_sdk_clients=False)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                        self.remote_cluster.master.rest_password,
+                        bucket.name, req_clients=1)
+        self.log.info("Started Doc loading on remote cluster")
+        copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
+        copy_to_kv_dest_collections = list()
+
+        self.load_remote_collections(self.remote_cluster)
+        self.log.info("Creating analytics entities")
+        self.build_cbas_columnar_infra()
+
+        # wait for initial ingestion to complete.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+    def test_basic_with_rebalance_in(self):
+        self.log.info("Creating Buckets, Scopes and Collection on Remote "
+                      "cluster.")
+        self.collectionSetUp(cluster=self.remote_cluster, load_data=False, create_sdk_clients=False)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                        self.remote_cluster.master.rest_password,
+                        bucket.name, req_clients=1)
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_remote_collections(self.remote_cluster)
+        self.log.info("Creating analytics entities")
+        self.build_cbas_columnar_infra()
+
+        # wait for initial ingestion to complete.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+        self.log.info("Rebalance-In a KV+CBAS node in analytics cluster")
+        rebalance_task, self.analytics_cluster.available_servers = self.rebalance_util.rebalance(
+            cluster=self.analytics_cluster, cbas_nodes_in=1,
+            available_servers=self.analytics_cluster.available_servers,
+            in_node_services="kv,cbas")
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.analytics_cluster, True, True):
+            self.fail("Error while rebalance-In KV+CBAS node in analytics "
+                      "cluster")
+        #Check for items counts post rebalance.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+    def test_basic_with_rebalance_out(self):
+        self.log.info("Creating Buckets, Scopes and Collection on Remote "
+                      "cluster.")
+        self.collectionSetUp(cluster=self.remote_cluster, load_data=False, create_sdk_clients=False)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                        self.remote_cluster.master.rest_password,
+                        bucket.name, req_clients=1)
+        self.log.info("Started Doc loading on remote cluster")
+        copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
+        copy_to_kv_dest_collections = list()
+
+        self.load_remote_collections(self.remote_cluster)
+        self.log.info("Creating analytics entities")
+        self.build_cbas_columnar_infra()
+
+        # wait for initial ingestion to complete.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+        self.log.info("Rebalance-Out a KV+CBAS node in analytics cluster")
+        rebalance_task, self.analytics_cluster.available_servers = self.rebalance_util.rebalance(
+            cluster=self.analytics_cluster, cbas_nodes_out=1,
+            available_servers=self.analytics_cluster.available_servers)
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.analytics_cluster, True, True):
+            self.fail("Error while Rebalance-Out KV+CBAS node in analytics "
+                      "cluster")
+        #Check for items counts post rebalance.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+    def test_basic_with_rebalance_in_out(self):
+        self.log.info("Creating Buckets, Scopes and Collection on Remote "
+                      "cluster.")
+        self.collectionSetUp(cluster=self.remote_cluster, load_data=False, create_sdk_clients=False)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                        self.remote_cluster.master.rest_password,
+                        bucket.name, req_clients=1)
+        self.log.info("Started Doc loading on remote cluster")
+        copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
+        copy_to_kv_dest_collections = list()
+
+        self.load_remote_collections(self.remote_cluster)
+        self.log.info("Creating analytics entities")
+        self.build_cbas_columnar_infra()
+
+        # wait for initial ingestion to complete.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+        self.log.info("Rebalance-In a KV+CBAS node in analytics cluster")
+        rebalance_task, self.analytics_cluster.available_servers = self.rebalance_util.rebalance(
+            cluster=self.analytics_cluster, cbas_nodes_in=1,
+            cbas_nodes_out=1,
+            available_servers=self.analytics_cluster.available_servers,
+            in_node_services="kv,cbas")
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.analytics_cluster, True, True):
+            self.fail("Error while rebalance-In KV+CBAS node in analytics "
+                      "cluster")
+
+        #Check for items counts post rebalance.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+    def test_basic_with_failover_full_recovery(self):
+        self.log.info("Creating Buckets, Scopes and Collection on Remote "
+                      "cluster.")
+        self.collectionSetUp(cluster=self.remote_cluster, load_data=False, create_sdk_clients=False)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                        self.remote_cluster.master.rest_password,
+                        bucket.name, req_clients=1)
+        self.log.info("Started Doc loading on remote cluster")
+        copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
+        copy_to_kv_dest_collections = list()
+
+        self.load_remote_collections(self.remote_cluster)
+        self.log.info("Creating analytics entities")
+        self.build_cbas_columnar_infra()
+
+        # wait for initial ingestion to complete.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+        self.log.info("Failover with add back a KV+CBAS node in analytics cluster")
+        self.analytics_cluster.available_servers, kv_failover_nodes, cbas_failover_nodes = \
+            self.rebalance_util.failover(
+                cluster=self.analytics_cluster, cbas_nodes=1,
+                action="FullRecovery", available_servers=self.analytics_cluster.available_servers)
+        #Check for items counts post failover.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+    def test_basic_with_failover_delta_recovery(self):
+        self.log.info("Creating Buckets, Scopes and Collection on Remote "
+                      "cluster.")
+        self.collectionSetUp(cluster=self.remote_cluster, load_data=False, create_sdk_clients=False)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                        self.remote_cluster.master.rest_password,
+                        bucket.name, req_clients=1)
+        self.log.info("Started Doc loading on remote cluster")
+        copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
+        copy_to_kv_dest_collections = list()
+
+        self.load_remote_collections(self.remote_cluster)
+        self.log.info("Creating analytics entities")
+        self.build_cbas_columnar_infra()
+
+        # wait for initial ingestion to complete.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+        self.log.info("Failover with add back a KV+CBAS node in analytics cluster")
+        self.analytics_cluster.available_servers, kv_failover_nodes, cbas_failover_nodes = \
+            self.rebalance_util.failover(
+                cluster=self.analytics_cluster, cbas_nodes=1,
+                action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers)
+        #Check for items counts post failover.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
+    def test_basic_with_failover_rebalance_out(self):
+        self.log.info("Creating Buckets, Scopes and Collection on Remote "
+                        "cluster.")
+        self.collectionSetUp(cluster=self.remote_cluster, load_data=False, create_sdk_clients=False)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                        self.remote_cluster.master.rest_password,
+                        bucket.name, req_clients=1)
+        self.log.info("Started Doc loading on remote cluster")
+        copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
+        copy_to_kv_dest_collections = list()
+
+        self.load_remote_collections(self.remote_cluster)
+        self.log.info("Creating analytics entities")
+        self.build_cbas_columnar_infra()
+
+        # wait for initial ingestion to complete.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+        self.log.info("Rebalance-Out a KV+CBAS node in analytics cluster")
+        self.analytics_cluster.available_servers, _, _ = \
+            self.rebalance_util.failover(
+            cluster=self.analytics_cluster, cbas_nodes=1,
+            action="RebalanceOut", available_servers=self.analytics_cluster.available_servers)
+        #Check for items counts post failover.
+        self.log.info("Waiting for initial ingestion into Remote dataset")
+        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
+            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+                    self.analytics_cluster, dataset.full_name,
+                    dataset.num_of_items, 3600):
+                self.fail("FAILED: Initial ingestion into {}.".format(
+                    dataset.full_name))
+
     def test_e2e_sanity(self):
 
         initial_operation_config = WorkloadOperationConfig(
@@ -224,10 +490,10 @@ class E2EBuildVerification(ColumnarOnPremBase):
         copy_to_kv_dest_collections = list()
 
         for remote_bucket in self.remote_cluster.buckets:
-            for scope_name, scope in remote_bucket.scopes.iteritems():
+            for scope_name, scope in remote_bucket.scopes.items():
                 if scope_name != "_system":
                     for collection_name, collection in (
-                            scope.collections.iteritems()):
+                            scope.collections.items()):
                         if remote_bucket.name == copy_to_kv_bucket.name:
                             copy_to_kv_dest_collections.append(
                                 "{0}.{1}.{2}".format(
