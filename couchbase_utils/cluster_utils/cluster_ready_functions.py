@@ -592,7 +592,7 @@ class ClusterUtils:
             master = cluster.master
         rest = RestConnection(master)
         if rest._rebalance_progress_status() == 'running':
-            self.kill_memcached(self.cluster)
+            self.kill_memcached(cluster)
             self.log.warning("Rebalance still running, test should be verified")
             stopped = rest.stop_rebalance()
             if not stopped:
