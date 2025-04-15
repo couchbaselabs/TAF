@@ -304,8 +304,8 @@ class DoctorN1QL():
                         # prev_valType = valType
                     if valType == "siftBigANN":
                         if combinational:
-                            indexType = siftBigANN.get("mix_indexes") or siftBigANN.get("indexes")
-                            queryType = siftBigANN.get("mix_queries") or siftBigANN.get("queries")
+                            indexType = workload.get("mix_indexes") or workload.get("indexes")
+                            queryType = workload.get("mix_queries") or workload.get("queries")
                         elif base64:
                             indexType = workload.get("indexes_base64")
                             queryType = workload.get("queries_base64")
