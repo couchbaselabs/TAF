@@ -306,6 +306,7 @@ class hostedOPD(OPD):
     def cbcollect_logs(self, tenant, cluster_id, log_id=""):
         CapellaUtils.trigger_log_collection(self.pod, tenant, cluster_id,
                                             log_id=log_id)
+        time.sleep(10)
         table = TableView(self.log.info)
         table.add_row(["URL"])
         task = CapellaUtils.check_logs_collect_status(self.pod, tenant, cluster_id)
