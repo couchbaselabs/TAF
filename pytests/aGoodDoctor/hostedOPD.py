@@ -7,6 +7,7 @@ import time
 
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server, SDKClientPool
+from table_view import TableView
 from opd import OPD
 from membase.api.rest_client import RestConnection
 import random
@@ -301,3 +302,13 @@ class hostedOPD(OPD):
         for task in rebalance_tasks:
             self.task_manager.get_task_result(task)
             self.assertTrue(task.result, "Cluster Upgrade Failed...")
+
+    def cbcollect_logs(self, tenant, cluster_id, log_id=""):
+        CapellaUtils.trigger_log_collection(self.pod, tenant, cluster_id,
+                                            log_id=log_id)
+        table = TableView(self.log.info)
+        table.add_row(["URL"])
+        task = CapellaUtils.check_logs_collect_status(self.pod, tenant, cluster_id)
+        for _, logInfo in sorted(task["perNode"].items()):
+            table.add_row([logInfo["url"]])
+        table.display("Cluster: {}".format(cluster_id))

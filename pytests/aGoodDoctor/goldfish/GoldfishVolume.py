@@ -303,6 +303,7 @@ class Columnar(BaseTestCase, hostedOPD):
         while loop > 0:
             loop -= 1
             self.ingestion_ths = list()
+            ingestion_result = list()
 
             # Create new collections
             for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
@@ -310,13 +311,15 @@ class Columnar(BaseTestCase, hostedOPD):
                     for columnar in tenant.columnar_instances:
                         self.drCBAS.disconnect_link(columnar, dataSource.link_name)
                         self.sleep(60, "wait after previous link disconnect")
+                        self.cbcollect_logs(tenant, cluster.cluster_id, log_id="1")
                         dataSource.link_name = "{}_".format(dataSource.type) + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
                         dataSource.links.append(dataSource.link_name)
                         dataSource.loadDefn.get("cbas")[1] = dataSource.loadDefn.get("cbas")[1] + self.default_workload.get("cbas")[1]
                         self.drCBAS.create_links(columnar, [dataSource])
                         th = threading.Thread(
                             target=self.drCBAS.wait_for_ingestion,
-                            args=(columnar, [dataSource], self.index_timeout))
+                            args=(columnar, [dataSource], self.index_timeout,
+                                  ingestion_result))
                         th.start()
                         self.ingestion_ths.append(th)
             if scaling:
@@ -357,6 +360,10 @@ class Columnar(BaseTestCase, hostedOPD):
                     self.sleep(1800, "Lets the ingestion/query running for 30 mins post scaling")
             for th in self.ingestion_ths:
                 th.join()
+            if False in ingestion_result:
+                for tenant in self.tenants:
+                    for columnar in tenant.columnar_instances:
+                        self.cbcollect_logs(tenant, cluster.cluster_id, log_id="2")
 
         for ql in self.cbasQL:
             ql.stop_query_load()

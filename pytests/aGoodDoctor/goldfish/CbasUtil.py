@@ -216,9 +216,8 @@ class DoctorCBAS():
     def discharge_CBAS(self):
         self.stop_run = True
 
-    def wait_for_ingestion(self, cluster, databases, timeout=86400):
+    def wait_for_ingestion(self, cluster, databases, timeout=86400, ingestion_result=list()):
         client = cluster.SDKClients[0].cluster
-        _results = list()
         def check_in_th(collection, items):
             status = False
             stop_time = time.time() + timeout
@@ -271,7 +270,7 @@ class DoctorCBAS():
                     traceback.print_exc()
                 time.sleep(random.randint(60,120))
             if status is False:
-                _results.append(status)
+                ingestion_result.append(status)
         ths = list()
         for database in databases:
             for collection in database.cbas_collections:
@@ -282,7 +281,7 @@ class DoctorCBAS():
                 ths.append(th)
         for th in ths:
             th.join()
-        return False not in _results
+        return False not in ingestion_result
 
 
 class CBASQueryLoad:

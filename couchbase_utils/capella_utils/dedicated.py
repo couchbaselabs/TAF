@@ -631,9 +631,8 @@ class CapellaUtils(object):
                                  tenant.user,
                                  tenant.pwd,
                                  pod.TOKEN)
-        log_id = {"ticketId": log_id}
         resp = capella_api.trigger_log_collection(cluster_id,
-                                                  log_id=log_id)
+                                                  ticketId=log_id)
         if resp.status_code != 201:
             CapellaUtils.log.critical("Logs collection failed:{}".
                                       format(resp.status_code))
