@@ -340,7 +340,7 @@ class Columnar(BaseTestCase, hostedOPD):
                     for task in tasks:
                         self.task_manager.get_task_result(task)
                         self.assertTrue(task.result, "Scaling IN columnar failed!")
-                    self.sleep(1800, "Lets the ingestion/query running for 30 mins post scaling")
+                    self.sleep(600, "Lets the ingestion/query running for 10 mins post scaling")
                 for i in range(0, iterations):
                     self.PrintStep("Scaling OUT operation: %s" % str(i+1))
                     tasks = list()
@@ -357,13 +357,14 @@ class Columnar(BaseTestCase, hostedOPD):
                     for task in tasks:
                         self.task_manager.get_task_result(task)
                         self.assertTrue(task.result, "Scaling OUT columnar failed!")
-                    self.sleep(1800, "Lets the ingestion/query running for 30 mins post scaling")
+                    self.sleep(600, "Lets the ingestion/query running for 10 mins post scaling")
             for th in self.ingestion_ths:
                 th.join()
             if False in ingestion_result:
                 for tenant in self.tenants:
                     for columnar in tenant.columnar_instances:
                         self.cbcollect_logs(tenant, cluster.cluster_id, log_id="2")
+                self.fail("Ingestion on some of the collections is hung. Please check the logs...")
 
         for ql in self.cbasQL:
             ql.stop_query_load()
