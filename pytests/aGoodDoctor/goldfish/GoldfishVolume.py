@@ -339,8 +339,10 @@ class Columnar(BaseTestCase, hostedOPD):
                     # self.wait_for_rebalances(tasks)
                     for task in tasks:
                         self.task_manager.get_task_result(task)
+                        self.cbcollect_logs(task.tenant, task.cluster.cluster_id)
                         self.assertTrue(task.result, "Scaling IN columnar failed!")
                     self.sleep(600, "Lets the ingestion/query running for 10 mins post scaling")
+                    
                 for i in range(0, iterations):
                     self.PrintStep("Scaling OUT operation: %s" % str(i+1))
                     tasks = list()
@@ -356,6 +358,7 @@ class Columnar(BaseTestCase, hostedOPD):
                     # self.wait_for_rebalances(tasks)
                     for task in tasks:
                         self.task_manager.get_task_result(task)
+                        self.cbcollect_logs(task.tenant, task.cluster.cluster_id)
                         self.assertTrue(task.result, "Scaling OUT columnar failed!")
                     self.sleep(600, "Lets the ingestion/query running for 10 mins post scaling")
             for th in self.ingestion_ths:
