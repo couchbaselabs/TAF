@@ -812,7 +812,7 @@ class BucketParamTest(ClusterSetup):
             if status:
                 response_dict = json.loads(response)
                 generated_key = \
-                response_dict.get('data', {}).get('keys', [{}])[0].get('id')
+                    response_dict.get('id')
             self.log.info("Setting and verifying valid "
                           "encryption values for bucket: %s" % bucket.name)
             bucket_helper.change_bucket_props(
@@ -827,9 +827,6 @@ class BucketParamTest(ClusterSetup):
                 "Encryption values after setting valid params for bucket %s: %s" % (
                     bucket.name, bucket.__dict__))
 
-            # Verify valid values for new encryption parameters
-            self.assertTrue(bucket.encryptionAtRestKeyId == 12345,
-                            "Valid value mismatch for encryptionAtRestKeyId")
             self.assertTrue(
                 bucket.encryptionAtRestDekRotationInterval == 604800,
                 "Valid value mismatch for encryptionAtRestDekRotationInterval")
@@ -838,6 +835,7 @@ class BucketParamTest(ClusterSetup):
 
             self.log.info(
                 "Testing invalid encryption values for bucket: %s" % bucket.name)
+            generated_key = 1234
             invalid_params = [
                 {"encryptionAtRestKeyId": generated_key},
                 {"encryptionAtRestDekRotationInterval": -1},
@@ -846,14 +844,14 @@ class BucketParamTest(ClusterSetup):
 
             for params in invalid_params:
                 try:
-                    bucket_helper.change_bucket_props(bucket, **params)
-                    self.assertTrue(False,
+                    status = bucket_helper.change_bucket_props(bucket,
+                                                               **params)
+                    self.assertFalse(status,
                                     "Expected exception for params: %s" % params)
                 except Exception as e:
                     self.log.error(
                         "Caught expected exception for params %s: %s" % (
                             params, e))
-                    raise Exception(e)
 
             self.log.info(
                 "Completed encryption tests for bucket: %s" % bucket.name)

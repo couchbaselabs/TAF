@@ -595,9 +595,11 @@ class CollectionBase(ClusterSetup):
         # Process params to over_ride values if required
         CollectionBase.over_ride_bucket_template_params(
             test_obj, test_obj.bucket_storage, buckets_spec)
-        if test_obj.enable_encryption_at_rest and buckets_spec[Bucket.bucketType] != Bucket.Type.EPHEMERAL:
-            buckets_spec[
-                Bucket.encryptionAtRestKeyId] = test_obj.encryption_at_rest_id
+        if test_obj.enable_encryption_at_rest and \
+                buckets_spec.get(Bucket.bucketType, Bucket.Type.MEMBASE) \
+                != Bucket.Type.EPHEMERAL:
+            buckets_spec[Bucket.encryptionAtRestKeyId] = \
+                test_obj.encryption_at_rest_id
             buckets_spec[Bucket.encryptionAtRestDekRotationInterval] = \
                 test_obj.encryptionAtRestDekRotationInterval
             if "buckets" in buckets_spec:
@@ -606,7 +608,7 @@ class CollectionBase(ClusterSetup):
                         encryption_ID = test_obj.KMIP_id
                     else:
                         encryption_ID = test_obj.encryption_at_rest_id
-                    if buckets_spec["buckets"][bucket][Bucket.bucketType] != \
+                    if bucket.get(Bucket.bucketType, Bucket.Type.MEMBASE) != \
                             Bucket.Type.EPHEMERAL:
                         buckets_spec["buckets"][bucket][
                             Bucket.encryptionAtRestKeyId] = encryption_ID

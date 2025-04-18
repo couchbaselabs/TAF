@@ -461,7 +461,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if self.enable_config_encryption_at_rest:
                 self.log.info("Initializing config encryption at rest")
                 log_params = ClusterUtils.create_secret_params(
-                    name="LogEncryptionSecret",
+                    name="ConfigEncryptionSecret",
                     usage=["config-encryption"],
                     rotationIntervalInSeconds=self.secret_rotation_interval
                 )
@@ -475,7 +475,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.config_encryption_at_rest_id))
                 valid_params = {
                     "config.encryptionMethod": "encryptionKey",
-                    "config.encryptionKeyId": self.KMIP_id,
+                    "config.encryptionKeyId": self.config_encryption_at_rest_id,
                     "config.dekLifetime": self.config_dekLifetime,
                     "config.dekRotationInterval": self.config_dekRotationInterval
                 }
@@ -489,7 +489,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if self.enable_log_encryption_at_rest:
                 self.log.info("Initializing log encryption at rest")
                 log_params = ClusterUtils.create_secret_params(
-                    name="ConfigEncryptionSecret",
+                    name="LogEncryptionSecret",
                     usage=["log-encryption"],
                     rotationIntervalInSeconds=self.secret_rotation_interval
                 )

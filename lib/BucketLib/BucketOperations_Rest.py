@@ -47,7 +47,7 @@ class BucketHelper(RestConnection):
                              encryptionApproach=None, encryptWith=None,
                              encryptWithKeyId=None, activeKey=None,
                              keyPath=None, certPath=None, keyPassphrase=None,
-                             host=None, port=5696):
+                             host=None, port=None):
         if usage is None:
             usage = ["bucket-encryption-*"]
 

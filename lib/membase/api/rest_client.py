@@ -104,19 +104,11 @@ class RestConnection(newRC):
 
     def validate_for_encryption_at_rest_issues(self, bucket):
         api = self.baseUrl + 'pools/default/buckets/' + str(bucket)
-        temp_fail_keywords = ["pending"]
 
         def get_bucket_info():
             status, content, header = self._http_request(api, 'GET')
             return status, content
 
-        def has_temp_fail_issues(issues):
-            for issue in issues:
-                for detail in issue['issues']:
-                    if any(keyword in detail['details'] for keyword in
-                           temp_fail_keywords):
-                        return True
-            return False
         status, content = get_bucket_info()
         if status:
             data = json.loads(content)
@@ -124,15 +116,14 @@ class RestConnection(newRC):
             if not issues:
                 return []
             else:
-                if has_temp_fail_issues(issues):
-                    sleep(10, "waiting temp issue for encryption issues to be "
-                              "resolved")
-                    status, content = get_bucket_info()
-                    if status:
-                        data = json.loads(content)
-                        issues = self.check_encryption_issues(data)
-                        if not issues:
-                            return []
+                sleep(10, "waiting temp issue for encryption issues to be "
+                          "resolved")
+                status, content = get_bucket_info()
+                if status:
+                    data = json.loads(content)
+                    issues = self.check_encryption_issues(data)
+                    if not issues:
+                        return []
                 return issues
         else:
             return None

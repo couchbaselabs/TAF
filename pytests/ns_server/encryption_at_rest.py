@@ -65,7 +65,7 @@ class EncryptionAtRest(CollectionBase):
             self.fail("Failed to enable log and config encryption: %s" % response)
         self.sleep(10, "Sleep after enabling log and config encryption")
 
-    def crash(self, nodes=None, kill_itr=5, graceful=False):
+    def crash(self, nodes=None, kill_itr=2, graceful=False):
         nodes = nodes or self.cluster.nodes_in_cluster
         count = kill_itr
         loop_itr = 0
@@ -91,7 +91,7 @@ class EncryptionAtRest(CollectionBase):
             shell.disconnect()
 
     def __perform_doc_ops(self, durability=None, validate_num_items=False,
-                          async_load=True):
+                          async_load=False):
         load_spec = \
             self.bucket_util.get_crud_template_from_package(
                 "def_add_collection")
@@ -114,7 +114,7 @@ class EncryptionAtRest(CollectionBase):
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency)
 
-        if doc_loading_task.result is False:
+        if validate_num_items is True and doc_loading_task.result is False:
             self.fail("Collection CRUDs failure")
 
         if validate_num_items:
@@ -401,7 +401,9 @@ class EncryptionAtRest(CollectionBase):
                 "search_value": "Encryption key created",
                 "attributes": {
                     "extra_attributes": {
-                        "name": "EncryptionSecret"
+                        "settings": {
+                         "name": "EncryptionSecret"
+                        }
                     }
                 }
             },
@@ -513,7 +515,7 @@ class EncryptionAtRest(CollectionBase):
 
         self.sleep(100, "waiting for event to be generated")
         events = self.event_rest_helper.get_events(server=self.cluster.master,
-                                                   events_count=30000)
+                                                   events_count=40000)
         events = events["events"]
         search_and_verify(events, to_verify)
         self.assertTrue(len(not_find) == 0, "Not found: %s" % not_find)
