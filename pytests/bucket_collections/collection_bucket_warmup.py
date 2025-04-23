@@ -65,7 +65,7 @@ class BucketWarmup(CollectionBase):
             while retry > 0:
                 scope_dict = self.bucket_util.get_random_scopes(
                                     self.cluster.buckets, 1, 1)
-                self.scope_name = scope_dict[self.bucket.name]["scopes"].keys()[0]
+                self.scope_name = list(scope_dict[self.bucket.name]["scopes"].keys())[0]
                 if self.scope_name != "_default":
                     break
                 retry -= 1
@@ -81,8 +81,8 @@ class BucketWarmup(CollectionBase):
             collections = self.bucket_util.get_random_collections(
                                     self.cluster.buckets, 1, 1, 1)
             scope_dict = collections[self.bucket.name]["scopes"]
-            self.scope_name = scope_dict.keys()[0]
-            self.collection_name = scope_dict[self.scope_name]["collections"].keys()[0]
+            self.scope_name = list(scope_dict.keys())[0]
+            self.collection_name = list(scope_dict[self.scope_name]["collections"].keys())[0]
             self.drop_collection()
             self.log.info("drop collection succeeded")
 

@@ -408,10 +408,10 @@ class CrashTest(CollectionBase):
                 load_using=self.load_docs_using)
 
         if action == "create":
-            create_collection(self.client_type, self.bucket,
+            create_collection(use_client, self.bucket,
                               self.scope_name, self.collection_name)
         elif action == "remove":
-            remove_collection(self.client_type, self.bucket,
+            remove_collection(use_client, self.bucket,
                               self.scope_name, self.collection_name)
 
         if crash_during == "post_action":
