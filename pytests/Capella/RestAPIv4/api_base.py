@@ -14,6 +14,8 @@ import base64
 import itertools
 import threading
 from datetime import datetime
+from logging import exception
+
 from pytests.cb_basetest import CouchbaseBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
@@ -1972,22 +1974,38 @@ class APIBase(CouchbaseBaseTest):
 
         return instance_deletion_failed
 
-    def create_app_endpoint_to_be_tested(self, app_svc_id, name, deltaSync,
-                                         bucket, scopes, xattr):
-        res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+    def create_app_endpoint_oidc_Provider_to_be_tested(self, app_svc_id,
+                                                       app_endpoint_name, Admin_user):
+        oidc_overrides = {
+            "issuer": Admin_user["issuer"],
+            "clientId": Admin_user["clientId"]
+        }
+
+        res = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
             self.organisation_id, self.project_id, self.cluster_id,
-            app_svc_id, name, deltaSync, bucket, scopes, xattr)
+            app_svc_id, app_endpoint_name, **oidc_overrides)
         if res.status_code == 429:
-            self.handle_rate_limit(res.headers-["Retry-After"])
-            res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_app_endpoint_o_i_d_c_provider(
                 self.organisation_id, self.project_id, self.cluster_id,
-                app_svc_id, name, deltaSync, bucket, scopes, xattr)
+                app_svc_id, app_endpoint_name, **oidc_overrides)
         if res.status_code != 201:
             self.log.error(res.content)
             self.tearDown()
             self.fail("!!!...Failed to create a replacement App "
                       "Endpoint...!!!")
-        self.log.debug("...Replacement App endpoint created successfully...")
+        self.log.debug("...Replacement OIDC provider created successfully...")
+        try:
+            oidcProviderId = res.json().get("providerId")
+            if not oidcProviderId:
+                raise KeyError("providerId not found in response JSON.")
+        except (ValueError, KeyError) as e:
+            self.log.error(
+                "Failed to extract providerId from response: {}".format(
+                    res.content))
+            self.tearDown()
+            self.fail("!!!...Failed to retrieve providerId...!!!")
+        return oidcProviderId
 
     def fetch_free_tier_cluster(self):
         self.log.debug(
@@ -2088,3 +2106,24 @@ class APIBase(CouchbaseBaseTest):
             self.log.error("Err: {}".format(res.content))
             self.tearDown()
             self.fail("!!!...Error while creating free tier bucket...!!!")
+
+    def flush_oidcProviders(self, project_id, cluster_id, app_service_id,
+                           appEndpointName, oidcProviderId):
+        self.update_auth_with_api_token(self.curr_owner_key)
+
+        oidProvider_Deletion_Failed = False
+        res = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
+            self.organisation_id, project_id, cluster_id, app_service_id,
+            appEndpointName, oidcProviderId)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.delete_app_endpoint_o_i_d_c_provider(
+                self.organisation_id, project_id, cluster_id, app_service_id,
+                appEndpointName, oidcProviderId)
+        if res.status_code != 202:
+            self.log.warning("Error while deleting OidcProvider {}".format(
+                oidcProviderId))
+            self.log.error("Response: {}".format(res.content))
+            oidProvider_Deletion_Failed = True
+
+        return oidProvider_Deletion_Failed
