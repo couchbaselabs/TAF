@@ -213,8 +213,18 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
                                         % default_cluster_index]
-        CbServer.enterprise_edition = \
-            self.cluster_util.is_enterprise_edition(self.cluster)
+        try:
+            CbServer.enterprise_edition = \
+                self.cluster_util.is_enterprise_edition(self.cluster)
+        except Exception as e:
+            # If unable to determine if the cluster is enterprise edition
+            # or not, check if its columnar cluster
+            self.log.error(e)
+            self.log.error("Unable to determine if the cluster is "
+                           "enterprise edition or not. Check if its columnar cluster")
+            if self.cluster.master.type == "columnar" or \
+                    CbServer.cluster_profile == "columnar":
+                CbServer.enterprise_edition = True
         if CbServer.enterprise_edition:
             self.cluster.edition = "enterprise"
         else:

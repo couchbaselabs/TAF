@@ -263,7 +263,7 @@ class ClusterUtils:
                 raise Exception("Unable to read /pools/default API")
 
             for node in result["nodes"]:
-                if node["version"].split("-")[-1] != "enterprise":
+                if node["version"].split("-")[-1] not in ("enterprise", "columnar"):
                     return False
             return True
 
