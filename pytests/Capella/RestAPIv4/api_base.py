@@ -1931,6 +1931,22 @@ class APIBase(CouchbaseBaseTest):
 
         return collections_deletion_failed
 
+    def flush_appservices_admin_user(self, project_id, cluster_id,
+                                   app_service_id, admin_id):
+        self.update_auth_with_api_token(self.curr_owner_key)
+        self.log.debug("flushing admin user :{}".format(admin_id))
+
+        res = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
+            self.organisation_id, project_id, cluster_id, app_service_id, admin_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers['Retry-After']))
+            res = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
+                self.organisation_id, project_id, cluster_id, app_service_id,
+                admin_id)
+        if res.status_code != 202 :
+            self.log.warning("Failure to delete Admin user: {}".format(admin_id))
+            self.log.error("Response: {}".format(res.content))
+
     def create_columnar_instance_to_be_tested(self):
         self.update_auth_with_api_token(self.curr_owner_key)
 
@@ -2006,6 +2022,40 @@ class APIBase(CouchbaseBaseTest):
             self.tearDown()
             self.fail("!!!...Failed to retrieve providerId...!!!")
         return oidcProviderId
+
+    def create_app_service_admin_user_to_be_tested(self,project_id, cluster_id,
+                                         app_svc_id, **kwargs):
+        res = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
+            self.organisation_id,
+            project_id,
+            cluster_id,
+            app_svc_id,
+            **kwargs
+        )
+
+        if res.status_code == 429:
+            self.handle_rate_limit(res.headers.get("Retry-After"))
+            res = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(
+                self.organisation_id,
+                project_id,
+                cluster_id,
+                app_svc_id,
+                **kwargs
+            )
+        if res.status_code != 201:
+            self.log.error("App Service admin user creation failed: {}".format(res.content))
+            self.tearDown()
+            self.fail("!!!...Failed to create App Service admin user to be "
+                      "tested...!!!")
+
+        self.log.debug("...App Service admin user created successfully...")
+
+        try: 
+            return res.json().get("id")
+        except Exception as e:
+            self.log.error("Error occured: {}".format(e))
+            self.log.error("App Service admin user creation failed: {}".format(res.content))
+        return None
 
     def fetch_free_tier_cluster(self):
         self.log.debug(
