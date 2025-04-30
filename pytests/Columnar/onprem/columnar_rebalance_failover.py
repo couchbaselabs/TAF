@@ -385,6 +385,7 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         self.analytics_cluster.available_servers, kv_failover_nodes, cbas_failover_nodes = \
             self.rebalance_util.failover(
                 cluster=self.analytics_cluster, cbas_nodes=1,
+                failover_type=self.input.param("failover_type", "Hard"),
                 action="FullRecovery", available_servers=self.analytics_cluster.available_servers)
         #Check for items counts post failover.
         self.log.info("Waiting for initial ingestion into Remote dataset")
