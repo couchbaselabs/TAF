@@ -123,7 +123,11 @@ class S3(AWSBase):
         """
         try:
             bucket_deleted = False
-            if retry_attempt < max_retry:
+            while retry_attempt < max_retry:
+                retry_attempt += 1
+                self.logger.info(
+                    "Attempting to delete bucket: {}. Attempt: {}".format(
+                        bucket_name, retry_attempt + 1))
                 if bucket_name in self.list_existing_buckets():
                     if self.empty_bucket(bucket_name):
                         response = self.s3_resource.Bucket(
@@ -131,18 +135,11 @@ class S3(AWSBase):
                         if (response["ResponseMetadata"]["HTTPStatusCode"] ==
                                 204):
                             bucket_deleted = True
-                    if not bucket_deleted:
-                        self.delete_bucket(
-                            bucket_name, max_retry, retry_attempt + 1)
-                    else:
+                    if bucket_deleted:
                         return bucket_deleted
-                else:
-                    return False
-            else:
-                return False
         except Exception as e:
             self.logger.error(e)
-            return False
+        return False
 
     def delete_file(self, bucket_name, file_path, version_id=None):
         """
