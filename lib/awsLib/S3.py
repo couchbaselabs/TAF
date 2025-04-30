@@ -14,6 +14,8 @@ class AWSBase(object):
                  endpoint_url=None):
         import logging
         logging.basicConfig()
+        logging.getLogger('boto3').setLevel(logging.ERROR)
+        logging.getLogger('botocore').setLevel(logging.ERROR)
         self.logger = logging.getLogger("AWS_Util")
         self.endpoint_url = endpoint_url
         self.create_session(access_key, secret_key, session_token)
@@ -122,21 +124,16 @@ class S3(AWSBase):
         :param retry_attempt
         """
         try:
-            bucket_deleted = False
-            while retry_attempt < max_retry:
-                retry_attempt += 1
-                self.logger.info(
-                    "Attempting to delete bucket: {}. Attempt: {}".format(
-                        bucket_name, retry_attempt + 1))
-                if bucket_name in self.list_existing_buckets():
-                    if self.empty_bucket(bucket_name):
-                        response = self.s3_resource.Bucket(
-                            bucket_name).delete()
-                        if (response["ResponseMetadata"]["HTTPStatusCode"] ==
-                                204):
-                            bucket_deleted = True
-                    if bucket_deleted:
-                        return bucket_deleted
+            self.logger.info(
+                "Attempting to delete bucket: {}".format(
+                    bucket_name))
+            if bucket_name in self.list_existing_buckets():
+                if self.empty_bucket(bucket_name):
+                    response = self.s3_resource.Bucket(
+                        bucket_name).delete()
+                    if (response["ResponseMetadata"]["HTTPStatusCode"] ==
+                            204):
+                        return True
         except Exception as e:
             self.logger.error(e)
         return False
@@ -216,8 +213,8 @@ class S3(AWSBase):
                 if is_empty:
                     return True
                 else:
-                    timeout -= 5
-                    time.sleep(5)
+                    timeout -= 30
+                    time.sleep(30)
             return False
         except Exception as e:
             self.logger.error(e)
