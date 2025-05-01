@@ -7736,9 +7736,9 @@ class NodeInitializeTask(Task):
             "indexer_storage_mode": self.gsi_type,
         }
         t_services = self.services
-        if t_services == CbServer.Services.COLUMNAR or\
+        if t_services and (t_services == CbServer.Services.COLUMNAR or\
             CbServer.Services.COLUMNAR in t_services or\
-                self.server.type == CbServer.Services.COLUMNAR:
+                self.server.type == CbServer.Services.COLUMNAR):
             cluster_init_params.update({
                 "services": ''})
             cluster_init_params.pop("index_memory_quota")
