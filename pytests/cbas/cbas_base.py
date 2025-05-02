@@ -139,12 +139,12 @@ class CBASBaseTest(BaseTestCase):
                 self.fail("Unable to modify memory setting for remote cluster")
 
         # Force disable TLS to avoid initial connection issues
-        tasks = [self.node_utils.async_disable_tls(server)
-                 for server in self.servers]
-        for task in tasks:
-            self.task_manager.get_task_result(task)
-        for server in self.servers:
-            self.set_ports_for_server(server, "non_ssl")
+        # tasks = [self.node_utils.async_disable_tls(server)
+        #          for server in self.servers]
+        # for task in tasks:
+        #     self.task_manager.get_task_result(task)
+        # for server in self.servers:
+        #     self.set_ports_for_server(server, "non_ssl")
         CbServer.use_https = False
 
         """
