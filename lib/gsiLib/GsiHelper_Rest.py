@@ -385,7 +385,7 @@ class GsiHelper(RestConnection):
         return False
 
     def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10, status="Ready"):
-        self.polling_for_index_training(bucket, index, timeout=timeout/10)
+        self.polling_for_index_training(bucket, index, timeout=timeout//10)
         self.log.info("Starting polling for index:"+str(index))
         for x in range(timeout):
             result = self.index_status()
