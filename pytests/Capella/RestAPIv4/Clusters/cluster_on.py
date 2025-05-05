@@ -113,13 +113,15 @@ class ClusterOn(GetCluster):
                 "/v4/organizations/{}/projects/{}/clusters/{}/activationState"
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
-                while not self.validate_onoff_state(
-                        ["turningOn", "healthy"], sleep=1):
-                    if time.time() < 1800 + start_time:
-                        continue
-                    self.log.error("Status == {}, State incorrect: {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
+                res, _ = self.validate_onoff_state(
+                    ["turningOn", "healthy"], sleep=1)
+                while not res:
+                    if time.time() > 1800 + start_time:
+                        break
+                    res, _ = self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1)
+
+                if not res:
                     self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
@@ -148,13 +150,15 @@ class ClusterOn(GetCluster):
                     False, headers=header)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
-                while not self.validate_onoff_state(
-                        ["turningOn", "healthy"], sleep=1):
-                    if time.time() < 1800 + start_time:
-                        continue
-                    self.log.error("Status == {}, State incorrect: {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
+                res, _ = self.validate_onoff_state(
+                    ["turningOn", "healthy"], sleep=1)
+                while not res:
+                    if time.time() > 1800 + start_time:
+                        break
+                    res, _ = self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1)
+
+                if not res:
                     self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
@@ -251,13 +255,15 @@ class ClusterOn(GetCluster):
                     testcase["clusterID"], False, **kwarg)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
-                while not self.validate_onoff_state(
-                        ["turningOn", "healthy"], sleep=1):
-                    if time.time() < 1800 + start_time:
-                        continue
-                    self.log.error("Status == {}, State incorrect: {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
+                res, _ = self.validate_onoff_state(
+                    ["turningOn", "healthy"], sleep=1)
+                while not res:
+                    if time.time() > 1800 + start_time:
+                        break
+                    res, _ = self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1)
+
+                if not res:
                     self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
@@ -296,13 +302,15 @@ class ClusterOn(GetCluster):
             if self.validate_testcase(result, [409, 202], testcase,
                                       failures, payloadTest=True):
                 start_time = time.time()
-                while not self.validate_onoff_state(
-                        ["turningOn", "healthy"], sleep=1):
-                    if time.time() < 1800 + start_time:
-                        continue
-                    self.log.error("Status == {}, State incorrect: {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
+                res, _ = self.validate_onoff_state(
+                    ["turningOn", "healthy"], sleep=1)
+                while not res:
+                    if time.time() > 1800 + start_time:
+                        break
+                    res, _ = self.validate_onoff_state(
+                        ["turningOn", "healthy"], sleep=1)
+
+                if not res:
                     self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 

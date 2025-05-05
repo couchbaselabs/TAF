@@ -63,9 +63,14 @@ class GetAppService(GetCluster):
                 self.log.error("Error : {}".format(res.content))
                 self.tearDown()
                 self.fail("!!!..Bucket creation failed...!!!")
-        self.app_endpoint_bucket_id = res.json()['id']
+        self.log.debug("bucket creation was successful!,  "
+                       "Response: {}".format(res.content))
+        try:
+            self.app_endpoint_bucket_id = res.json()['id']
+        except Exception as e:
+            self.log.error("error occurred: {}, "
+                           "Response: {}".format(e,res.content))
         self.app_endpoint_bucket_name = "bucketForAppEndpoint"
-
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
         super(GetAppService, self).tearDown()

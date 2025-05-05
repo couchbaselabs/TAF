@@ -137,8 +137,8 @@ class AppServiceOff(GetAppService):
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}" \
                 "/activationState"
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(["turningOff", "turnedOff"],
-                                                 app=self.app_service_id):
+                res, _ = self.validate_onoff_state(["turningOff", "turnedOff"],app=self.app_service_id)
+                if not res:
                     failures.append(testcase["description"])
 
         if failures:
@@ -165,8 +165,8 @@ class AppServiceOff(GetAppService):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, headers=header)
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(["turningOff", "turnedOff"],
-                                                 app=self.app_service_id):
+                res, _ = self.validate_onoff_state(["turningOff", "turnedOff"],app=self.app_service_id)
+                if not res:
                     failures.append(testcase["description"])
 
         if failures:
@@ -277,8 +277,8 @@ class AppServiceOff(GetAppService):
                     testcase["clusterID"], testcase['appServiceID'], **kwarg)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(["turningOff", "turnedOff"],
-                                                 app=self.app_service_id):
+                res, _ = self.validate_onoff_state(["turningOff", "turnedOff"],app=self.app_service_id)
+                if not res:
                     failures.append(testcase["description"])
 
         if failures:

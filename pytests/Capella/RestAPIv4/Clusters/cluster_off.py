@@ -112,14 +112,18 @@ class ClusterOff(GetCluster):
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/activationState"
             if self.validate_testcase(result, [409, 202], testcase, failures):
+                self.log.debug("response: {}".format(result.status_code))
+                self.log.debug("response content: {}".format(result.content))
                 start_time = time.time()
-                while not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"], sleep=1):
-                    if time.time() < 1800 + start_time:
-                        continue
-                    self.log.error("Status == {}, State incorrect: {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
+                res, _ = self.validate_onoff_state(
+                        ["turningOff", "turnedOff"], sleep=1)
+                while not res:
+                    if time.time() > 1800 + start_time:
+                        break
+                    res, _ = self.validate_onoff_state(
+                        ["turningOff", "turnedOff"], sleep=1)
+
+                if not res:
                     self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
@@ -148,13 +152,15 @@ class ClusterOff(GetCluster):
                     headers=header)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
-                while not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"], sleep=1):
-                    if time.time() < 1800 + start_time:
-                        continue
-                    self.log.error("Status == {}, State incorrect: {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
+                res, _ = self.validate_onoff_state(
+                    ["turningOff", "turnedOff"], sleep=1)
+                while not res:
+                    if time.time() > 1800 + start_time:
+                        break
+                    res, _ = self.validate_onoff_state(
+                        ["turningOff", "turnedOff"], sleep=1)
+
+                if not res:
                     self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
@@ -251,13 +257,14 @@ class ClusterOff(GetCluster):
                     testcase["clusterID"], **kwarg)
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 start_time = time.time()
-                while not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"], sleep=1):
-                    if time.time() < 1800 + start_time:
-                        continue
-                    self.log.error("Status == {}, State incorrect: {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
+                res, _ = self.validate_onoff_state(["turningOff", "turnedOff"], sleep=1)
+                while not res:
+                    if time.time() > 1800 + start_time:
+                        break
+                    res, _ = self.validate_onoff_state(
+                        ["turningOff", "turnedOff"], sleep=1)
+
+                if not res:
                     self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
 
