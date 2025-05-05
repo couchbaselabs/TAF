@@ -465,17 +465,23 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # analytics in serverless mode
         self.aws_access_key = self.input.param("aws_access_key", None)
         self.aws_secret_key = self.input.param("aws_secret_key", None)
-        self.aws_bucket_region = self.input.param("aws_bucket_region", None)
+        self.aws_bucket_region = self.input.param("aws_bucket_region", None) or \
+            self.input.param("aws_region", None) or "us-west-1"
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
         self.aws_endpoint = self.input.param("aws_endpoint", None)
 
-        self.columnar_aws_access_key = self.input.param("columnar_aws_access_key", None)
-        self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key", None)
-        self.columnar_aws_bucket_region = self.input.param("columnar_aws_bucket_region", None)
-        self.columnar_aws_session_token = self.input.param("columnar_aws_session_token", "")
+        self.columnar_aws_access_key = self.input.param("columnar_aws_access_key",
+                                                        self.aws_access_key)
+        self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key",
+                                                        self.aws_secret_key)
+        self.columnar_aws_bucket_region = self.input.param("columnar_aws_bucket_region",
+                                                           self.aws_bucket_region)
+        self.columnar_aws_session_token = self.input.param("columnar_aws_session_token",
+                                                           self.aws_session_token)
         self.columnar_aws_bucket_created = False
-        self.columnar_aws_endpoint = self.input.param("columnar_aws_endpoint", None)
+        self.columnar_aws_endpoint = self.input.param("columnar_aws_endpoint",
+                                                      self.aws_endpoint)
         if (self.analytics_compute_storage_separation or
                 CbServer.cluster_profile == "columnar" or cluster.master.type == "columnar"):
             services_mem_quota_percent = dict()

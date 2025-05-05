@@ -17,7 +17,7 @@ class CBASHelper(RestConnection):
         super(CBASHelper, self).__init__(cbas_node)
 
         self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
-        if CbServer.use_https or cbas_node.type == "columnar":
+        if CbServer.use_https:
             self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
 
 

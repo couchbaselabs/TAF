@@ -145,7 +145,7 @@ class CBASBaseTest(BaseTestCase):
         #     self.task_manager.get_task_result(task)
         # for server in self.servers:
         #     self.set_ports_for_server(server, "non_ssl")
-        CbServer.use_https = False
+        # CbServer.use_https = False
 
         """
         Since BaseTestCase will initialize at least one cluster, we need to
@@ -218,9 +218,10 @@ class CBASBaseTest(BaseTestCase):
 
         # Enforce tls on nodes of all clusters
         self.enable_tls_on_nodes()
-        for server in self.servers:
-            self.set_ports_for_server(server, "ssl")
-        CbServer.use_https = True
+        if self.use_https:
+            for server in self.servers:
+                self.set_ports_for_server(server, "ssl")
+            CbServer.use_https = True
 
         """
         KV infra to be created per cluster.
