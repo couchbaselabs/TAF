@@ -280,7 +280,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
     def create_realm(self, team_id):
         body = {
-            'connectionOptionsSAML': {
+            "saml": {
                 'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
                                   "/exk7dwu0sfh6bR27M5d7/sso/saml",
                 'signingCertificate': "{0}".format(self.get_cert()),
@@ -291,6 +291,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
             'standard': 'SAML 2.0',
             'disableGroupMapping': False,
             'defaultTeamId': team_id
+
         }
 
         self.log.info("Creating realm")
@@ -301,7 +302,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
     def test_create_realm_with_diff_payload(self):
         # 1. metadataXML - valid
         body = {
-            'connectionOptionsSAML': {
+            "saml": {
                 'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
                                   "/exk7dwu0sfh6bR27M5d7/sso/saml",
                 'signingCertificate': "{0}".format(self.get_cert()),
@@ -312,6 +313,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
             'standard': 'SAML 2.0',
             'disableGroupMapping': False,
             'defaultTeamId': self.team_id
+
         }
 
         realm_resp = self.sso.create_realm(self.tenant_id, body)
@@ -394,13 +396,18 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         data = json.loads(realms_resp.content)
         no_realms = len(data['data'])
         body = {
-            'connectionOptionsSAML': {
-                'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
-                                                          self.get_certificate())
+            "saml": {
+                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
+                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signingCertificate': "{0}".format(self.get_cert()),
+                "signatureAlgorithm": "rsa-sha256",
+                "digestAlgorithm": "sha256",
+                "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
             },
             'standard': 'SAML 2.0',
-            'vendor': 'Okta',
+            'disableGroupMapping': False,
             'defaultTeamId': self.team_id
+
         }
         create_more = limit - no_realms
         while create_more:
@@ -412,13 +419,18 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
     def test_create_realm_unauthz(self):
         body = {
-            'connectionOptionsSAML': {
-                'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
-                                                          self.get_certificate())
+            "saml": {
+                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
+                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signingCertificate': "{0}".format(self.get_cert()),
+                "signatureAlgorithm": "rsa-sha256",
+                "digestAlgorithm": "sha256",
+                "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
             },
             'standard': 'SAML 2.0',
-            'vendor': 'Okta',
+            'disableGroupMapping': False,
             'defaultTeamId': self.team_id
+
         }
 
         # user without sufficient permissions
@@ -929,9 +941,10 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.log.info("SSO Service URL: {0}".format(sso_service))
 
         body = {
-            'connectionOptionsSAML': {
-                'signInEndpoint': sso_service,
-                'signingCertificate': "{0}".format(formatted_certificate),
+            "saml": {
+                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
+                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signingCertificate': "{0}".format(self.get_cert()),
                 "signatureAlgorithm": "rsa-sha256",
                 "digestAlgorithm": "sha256",
                 "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
@@ -939,6 +952,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
             'standard': 'SAML 2.0',
             'disableGroupMapping': False,
             'defaultTeamId': self.team_id
+
         }
 
         realm_resp = self.sso.create_realm(self.tenant_id, body)

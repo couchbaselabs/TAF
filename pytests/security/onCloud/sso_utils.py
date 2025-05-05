@@ -214,7 +214,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
         url = "{}/v2/organizations/{}/realms".format(self.internal_url, tenant_id)
         request_body = {
-            'connectionOptionsSAML': {
+            "saml": {
                 'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
                                   "/exk7dwu0sfh6bR27M5d7/sso/saml",
                 'signingCertificate': "{0}".format(self.get_cert()),
@@ -225,6 +225,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
             'standard': 'SAML 2.0',
             'disableGroupMapping': False,
             'defaultTeamId': team_id
+
         }
 
         return self.capella.do_internal_request(url, method="POST", params=json.dumps(request_body))
@@ -448,7 +449,8 @@ class SsoUtils:
         """
         List SSO users of the given realm id
         """
-        url = "{0}/v2/auth/sso/{1}/users?page=1&perPage=1&sortBy=name&sortDirection=asc".format("https://" + self.url, realm_id)
+        url = "{0}/v2/auth/sso/{1}/users?page=1&perPage=1&sortBy=name&sortDirection=asc".format("https://" + self.url,
+                                                                                                realm_id)
         resp = self.capella_api.do_internal_request(url, method="GET")
         return resp
 
