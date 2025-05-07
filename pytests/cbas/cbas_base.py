@@ -72,17 +72,6 @@ class CBASBaseTest(BaseTestCase):
         """
         self.services_init = [x.split("-") for x in services_init]
 
-        """
-        Number of nodes per cluster. Parameter value format
-        num_nodes_cluster1|num_nodes_cluster2|....
-        | -> separates number of nodes per cluster.
-        """
-        if not isinstance(self.input.param("nodes_init", 1), int):
-            self.nodes_init = [int(x) for x in self.input.param(
-                "nodes_init", 1).split("|")]
-        else:
-            self.nodes_init = [self.input.param("nodes_init", 1)]
-
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
                           % (self._testMethodName, self._testMethodDoc))
@@ -107,18 +96,34 @@ class CBASBaseTest(BaseTestCase):
         servers in that cluster.
         """
         cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
-        cluster.servers = [
-            server for server in self.servers if server.type == "default"]
-        if self.input.param("runtype", "default") == "onprem-columnar"\
-            and self.num_of_clusters == 1:
-            cluster.servers = [
-                server for server in self.servers if server.type == "columnar"]
+        if self.num_of_clusters == 1:
+            if cluster.master.type != "columnar":
+                self.num_of_clusters = 2
+                cluster.servers = [
+                    server for server in self.servers if server.type == "default"]
+            elif self.input.param("runtype", "default") == "onprem-columnar":
+                cluster.servers = [
+                    server for server in self.servers if server.type == "columnar"]
 
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
         cluster.rest = RestConnection(cluster.master)
         cluster.rest.activate_service_api(["cbas", "security"])
+
+        """
+        Number of nodes per cluster. Parameter value format
+        num_nodes_cluster1|num_nodes_cluster2|....
+        | -> separates number of nodes per cluster.
+        """
+        if not isinstance(self.input.param("nodes_init", 1), int):
+            self.nodes_init = [int(x) for x in self.input.param(
+                "nodes_init", 1).split("|")]
+        elif self.num_of_clusters > 1:
+            self.nodes_init = [1] * self.num_of_clusters
+        else:
+            self.nodes_init = [self.input.param("nodes_init", 1)]
+
 
         """
         For the remote cluster set max memory for KV
@@ -182,7 +187,7 @@ class CBASBaseTest(BaseTestCase):
                 mem_quota_percent[CbServer.Services.CBAS] = 80
                 mem_quota_percent[CbServer.Services.KV] = 10
 
-            services = self.services_init[i][0]
+            services = "kv:cbas"
             # if self.input.param("runtype", "default") == "onprem-columnar":
             #     services = ""
             self.initialize_cluster(
