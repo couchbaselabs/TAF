@@ -1223,7 +1223,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             blob_storage_region=aws_bucket_region, blob_storage_prefix="",
             blob_storage_scheme="s3",
             profile=server.type,
-            endpoint_url=self.columnar_aws_endpoint)
+            endpoint_url=self.columnar_aws_endpoint,
+            blob_storage_list_eventually_consistent=\
+                self.input.param("eventually_consistentcy", False),
+            blob_storage_force_path_style=\
+                self.input.param("force_path_style", False))
         if not status:
             self.log.error(str(content))
             return False

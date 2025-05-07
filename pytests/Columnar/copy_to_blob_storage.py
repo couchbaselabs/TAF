@@ -12,7 +12,6 @@ import time
 from queue import Queue
 
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
-from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from itertools import combinations, product
 from gcs import GCS
@@ -23,7 +22,12 @@ from sirius_client_framework.sirius_constants import SiriusCodes
 from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
 from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
-
+from TestInput import TestInputSingleton
+runtype = TestInputSingleton.input.param("runtype", "default").lower()
+if runtype == "columnar":
+    from Columnar.columnar_base import ColumnarBaseTest
+else:
+    from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
 
 def pairs(*lists):
     for t in combinations(lists, 2):
@@ -42,16 +46,17 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
     def setUp(self):
         super(CopyToBlobStorage, self).setUp()
-        self.columnar_cluster = self.tenant.columnar_instances[0]
         self.remote_cluster = None
-        if len(self.tenant.clusters) > 0:
-            self.remote_cluster = self.tenant.clusters[0]
-            self.couchbase_doc_loader = CouchbaseUtil(
-                task_manager=self.task_manager,
-                hostname=self.remote_cluster.master.ip,
-                username=self.remote_cluster.master.rest_username,
-                password=self.remote_cluster.master.rest_password,
-            )
+        if runtype == "columnar":
+            self.columnar_cluster = self.tenant.columnar_instances[0]
+            if len(self.tenant.clusters) > 0:
+                self.remote_cluster = self.tenant.clusters[0]
+                self.couchbase_doc_loader = CouchbaseUtil(
+                    task_manager=self.task_manager,
+                    hostname=self.remote_cluster.master.ip,
+                    username=self.remote_cluster.master.rest_username,
+                    password=self.remote_cluster.master.rest_password,
+                )
         self.no_of_docs = self.input.param("no_of_docs", 1000)
         self.sink_blob_bucket_name = None
         self.link_type = self.input.param("external_link_source", "s3")

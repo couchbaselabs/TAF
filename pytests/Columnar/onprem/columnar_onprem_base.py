@@ -23,6 +23,7 @@ class ColumnarOnPremBase(CBASBaseTest):
             cluster.srv = None
             if hasattr(cluster, "cbas_cc_node"):
                 self.analytics_cluster = cluster
+                self.columnar_cluster = cluster
             else:
                 self.remote_cluster = cluster
 
