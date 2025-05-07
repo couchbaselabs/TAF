@@ -1841,11 +1841,12 @@ class ClusterUtils:
                                          "'%s'" % cb_collect_status)
                     status = True
                     break
+                else:
+                    sleep(20, "CB collect still running", log_type="infra")
             else:
                 if cb_collect_response is None:
                     self.log.warning("Empty response from cbcollect API")
-                retry += 1
-                sleep(10, "CB collect still running", log_type="infra")
+            retry += 1
         return status
 
     def copy_cb_collect_logs(self, nodes, cluster, log_path):

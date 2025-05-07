@@ -300,5 +300,5 @@ class ColumnarOnPremBase(CBASBaseTest):
         if columnar_spec["index"]["no_of_indexes"] > 0:
             columnar_spec["index"]["indexed_fields"] = [
                 "id:string", "id:string-product_name:string"]
-
+        columnar_spec["file_format"] = self.input.param("file_format", "json")
         return columnar_spec
