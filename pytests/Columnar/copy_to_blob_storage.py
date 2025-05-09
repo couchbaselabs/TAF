@@ -502,7 +502,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 cluster=self.columnar_cluster,
             )
         copy_string = False
-        if "country: string" in copy_to_type:
+        if copy_to_type and "country: string" in copy_to_type:
             copy_string = True
 
         # initiate copy command
@@ -954,7 +954,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             "free_parking: boolean, city: string, url: string, phone: bigint, "
             "price: double, avg_rating: double, free_breakfast: boolean, mutated: double, "
             "padding: string, country: string"
-        )
+        ) if self.columnar_spec["file_format"] == "csv" else None
 
         create_dataset_type = (
             "name string, email string, characters_with_spaces string, "
@@ -962,7 +962,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             "free_parking boolean, city string, url string, phone bigint, "
             "price double, avg_rating double, free_breakfast boolean, mutated double, "
             "padding string, country string"
-        )
+        ) if self.columnar_spec["file_format"] == "csv" else None
 
         items = ("name,email,characters_with_spaces,characters_without_spaces,document_size,address,free_parking,city,"
                  "url,phone,price,avg_rating,free_breakfast,mutated,padding,country")
