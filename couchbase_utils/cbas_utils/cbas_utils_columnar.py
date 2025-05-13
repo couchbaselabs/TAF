@@ -7026,7 +7026,7 @@ class CbasUtil(CBOUtil):
         FROM OBJECT_PAIRS((
         SELECT VALUE {} FROM  {} LIMIT 1)[0]) 
         AS myPairs) 
-        AS myTypes;""".format(collection_name, collection_name)
+        AS myTypes;""".format(collection_name.split(".")[-1], collection_name)
 
         try:
             status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(

@@ -498,7 +498,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         if self.columnar_spec["file_format"] == "csv":
             items, copy_to_type, create_dataset_type = self.cbas_util.generate_type_for_copy_to_cmd_csv_format(
-                collection_name=datasets[0].name,
+                collection_name=datasets[0].full_name,
                 cluster=self.columnar_cluster,
             )
         copy_string = False
@@ -601,7 +601,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         if self.columnar_spec["file_format"] == "csv":
             items, copy_to_type, create_dataset_type = self.cbas_util.generate_type_for_copy_to_cmd_csv_format(
-                collection_name=datasets[0].name,
+                collection_name=datasets[0].full_name,
                 cluster=self.columnar_cluster,
             )
 
@@ -690,7 +690,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         if self.columnar_spec["file_format"] == "csv":
             items, copy_to_type, create_dataset_type = self.cbas_util.generate_type_for_copy_to_cmd_csv_format(
-                collection_name=datasets[0].name,
+                collection_name=datasets[0].full_name,
                 cluster=self.columnar_cluster,
             )
         results = []
