@@ -598,7 +598,8 @@ class CollectionBase(ClusterSetup):
                         encryption_ID = test_obj.KMIP_id
                     else:
                         encryption_ID = test_obj.encryption_at_rest_id
-                    if buckets_spec["buckets"][bucket][Bucket.bucketType] != \
+                    if buckets_spec["buckets"][bucket].get(Bucket.bucketType,
+                                                          Bucket.Type.MEMBASE) != \
                             Bucket.Type.EPHEMERAL:
                         buckets_spec["buckets"][bucket][
                             Bucket.encryptionAtRestKeyId] = encryption_ID

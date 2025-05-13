@@ -6,6 +6,8 @@ Created on Sep 26, 2017
 
 import copy
 import json
+import random
+import string
 import re
 import time
 import os
@@ -142,6 +144,12 @@ class ClusterUtils:
         self.input = TestInputSingleton.input
         self.task_manager = task_manager
         self.log = logger.get("test")
+
+    @staticmethod
+    def generate_random_name(prefix, length=8):
+        chars = string.ascii_letters + string.digits
+        suffix = ''.join(random.choice(chars) for _ in range(length))
+        return prefix + suffix
 
     @staticmethod
     def create_secret_params(secret_type="auto-generated-aes-key-256",
