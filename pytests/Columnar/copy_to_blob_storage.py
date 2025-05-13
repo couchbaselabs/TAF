@@ -1807,3 +1807,73 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         self.log.info("Time taken to run mini-volume: {} minutes".format((time.time() - start_time) / 60))
         self.log.info("Mini-Volume for backup-restore finished")
+
+
+    def test_create_copyTo_from_standalone_collection_nested_array(self):
+        self.base_setup()
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        blob_storage_link = self.cbas_util.get_all_link_objs(self.link_type)[0]
+        no_of_docs = self.input.param("no_of_docs", 1000)
+
+        # insert nested array in the standalone collection
+        jobs = Queue()
+        results = []
+        self.log.info("Adding {} documents in standalone dataset. Default doc size is 1KB".format(no_of_docs))
+        for dataset in datasets:
+            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                      {"cluster": self.columnar_cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
+                       "no_of_docs": no_of_docs, "nested_level": 3}))
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Some documents were not inserted")
+
+        # COPY TO s3 in parquet format
+        results = []
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            jobs.put((self.cbas_util.copy_to_s3,
+                      {"cluster": self.columnar_cluster, "collection_name": datasets[i].name,
+                       "dataverse_name": datasets[i].dataverse_name, "database_name": datasets[i].database_name,
+                       "destination_bucket": self.sink_blob_bucket_name,
+                       "destination_link_name": blob_storage_link.full_name, "file_format": self.columnar_spec["file_format"],
+                       "path": path}))
+
+        self.cbas_util.run_jobs_in_parallel(
+                jobs, results, self.sdk_clients_per_user, async_run=False)
+        if not all(results):
+            self.fail("Copy to blob storage statement failure")
+
+
+        # Create external dataset on the blob storage bucket
+        path_on_external_container = "{copy_dataset:string}"
+        dataset_obj = self.cbas_util.create_external_dataset_obj(
+            self.columnar_cluster, link_type=self.link_type,
+            external_container_names={
+                self.sink_blob_bucket_name: self.aws_region},
+            paths_on_external_container=[path_on_external_container],
+            file_format="parquet")[0]
+        if not self.create_external_dataset(dataset_obj):
+            self.fail("Failed to create external dataset on destination blob storage bucket")
+
+
+        # Verify the data in dataset and blob storage (s3)
+        results = []
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
+            status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.columnar_cluster,
+                                                                                                  statement)
+            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.columnar_cluster,
+                                                                                datasets[i].full_name)
+            if result[0]['$1'] != doc_count_in_dataset:
+                self.log.error("Document count mismatch in blob storage dataset {0} and dataset {1}".format(
+                    dataset_obj.full_name, datasets[i].full_name
+                ))
+            results.append(result[0]['$1'] == doc_count_in_dataset)
+
+        if not all(results):
+            self.fail("The document count does not match in dataset and blob storage")
+        self.log.info("Nested array COPY TO blob storage finished")

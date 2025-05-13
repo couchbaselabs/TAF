@@ -3300,7 +3300,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             return data
 
     def generate_docs(self, document_size=256000, country_type="string",
-                      include_country=True, include_reviews_field=True,
+                      include_country=True, nested_level=0, include_reviews_field=True,
                       include_date_time_fields=False,
                       include_decimal_field=False):
         """
@@ -3312,6 +3312,22 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             hotel.generate_document(document_size, country_type, include_country)
             doc = json.loads(json.dumps(hotel.__dict__, default=lambda o: o.__dict__, ensure_ascii=False))
             del hotel
+
+            # Added nested fields
+            current_level = doc
+            i = 0
+            while i < nested_level:
+                current_level["level_" + str(i)] = {
+                    "name": f"Level {i}",
+                    "id": i,
+                    "status": "active" if i % 2 == 1 else "inactive",
+                    "created_at": str(datetime.now()),
+                    "child": {} if i < nested_level-1 else ""
+                }
+                # Move to the next level
+                current_level = current_level["level_" + str(i)]["child"]
+                i += 1
+
             doc = self.convert_unicode_to_string(doc)
             if include_decimal_field:
                 doc["decimal_field"] = Decimal(random.uniform(0, 10))
@@ -3332,14 +3348,15 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         return doc
 
     class GenerateDocsCallable:
-        def __init__(self, instance, document_size, country_type, include_country):
+        def __init__(self, instance, document_size, country_type, include_country, nested_level):
             self.instance = instance
             self.document_size = document_size
             self.country_type = country_type
             self.include_country = include_country
+            self.nested_level = nested_level
 
         def call(self):
-            return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
+            return self.instance.generate_docs(self.document_size, self.country_type, self.include_country, self.nested_level)
 
     def doc_operations_standalone_collection_sirius(self, task_manager, collection_name, dataverse_name, database_name,
                                                     connection_string, start, end, sdk_batch_size=25, doc_size=1024,
@@ -3366,7 +3383,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self, cluster, collection_name, dataverse_name, database_name,
             no_of_docs, document_size=1024, batch_size=500,
             max_concurrent_batches=10, country_type="string",
-            include_country=True, analytics_timeout=1800, timeout=1800, username=None, password=None):
+            include_country=True, analytics_timeout=1800, timeout=1800, username=None, password=None, nested_level=0):
         """
         Load documents to a standalone collection.
         """
@@ -3380,7 +3397,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
                 for j in range(batch_start, batch_end):
                     tasks.append(self.GenerateDocsCallable(
-                        self, document_size, country_type, include_country))
+                        self, document_size, country_type, include_country, nested_level))
 
                 batch_docs = []
                 futures = executor.map(lambda task: task.call(), tasks)
