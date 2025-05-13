@@ -425,7 +425,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             rest = RestConnection(self.cluster.master)
             if self.create_KMIP_secret:
                 params = ClusterUtils.create_secret_params(
-                    name="kmip",
+                    name=ClusterUtils.generate_random_name(
+                        "kmip"),
                     secret_type="kmip-aes-key-256",
                     usage=["KEK-encryption", "bucket-encryption",
                            "config-encryption", "log-encryption",
@@ -448,7 +449,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if self.enable_encryption_at_rest:
                 self.log.info("Initializing encryption at rest")
                 log_params = ClusterUtils.create_secret_params(
-                    name="EncryptionSecret",
+                    name = ClusterUtils.generate_random_name(
+                        "EncryptionSecret"),
                     rotationIntervalInSeconds=self.secret_rotation_interval
                 )
                 rest = RestConnection(self.cluster.master)
@@ -461,7 +463,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if self.enable_config_encryption_at_rest:
                 self.log.info("Initializing config encryption at rest")
                 log_params = ClusterUtils.create_secret_params(
-                    name="ConfigEncryptionSecret",
+                    name = ClusterUtils.generate_random_name(
+                        "ConfigEncryptionSecret"),
                     usage=["config-encryption"],
                     rotationIntervalInSeconds=self.secret_rotation_interval
                 )
@@ -489,7 +492,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if self.enable_log_encryption_at_rest:
                 self.log.info("Initializing log encryption at rest")
                 log_params = ClusterUtils.create_secret_params(
-                    name="LogEncryptionSecret",
+                    name=ClusterUtils.generate_random_name(
+                        "LogEncryptionSecret"),
                     usage=["log-encryption"],
                     rotationIntervalInSeconds=self.secret_rotation_interval
                 )
@@ -516,7 +520,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if self.enable_audit_encryption_at_rest:
                 self.log.info("Initializing audit encryption at rest")
                 log_params = ClusterUtils.create_secret_params(
-                    name="AuditEncryptionSecret",
+                    name=ClusterUtils.generate_random_name(
+                        "AuditEncryptionSecret"),
                     usage=["audit-encryption"],
                     rotationIntervalInSeconds=self.secret_rotation_interval
                 )
