@@ -25,10 +25,7 @@ class PutAccessControlFunction(GetAppEndpoints):
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/accessControlFunction",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/accessControlFunctio",

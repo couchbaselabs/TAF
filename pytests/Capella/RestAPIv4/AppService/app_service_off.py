@@ -24,10 +24,7 @@ class AppServiceOff(GetAppService):
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/"
                        "appservices/{}/activationState",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace activationState with activation in "
                                "URI",

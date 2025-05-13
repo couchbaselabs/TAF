@@ -29,10 +29,7 @@ class ListCollection(GetCollection):
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/buckets/"
                        "{}/scopes/{}/collections/",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace collections with collection in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/bucket/"

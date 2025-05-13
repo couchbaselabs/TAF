@@ -26,10 +26,7 @@ class DeleteClusterSchedule(GetClusterSchedule):
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/"
                        "onOffSchedule",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace onOffSchedule with onOff in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/onOff",
