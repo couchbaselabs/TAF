@@ -7719,11 +7719,13 @@ class NodeInitializeTask(Task):
             rest.set_internal_settings(
                 "maxParallelReplicaIndexers",
                 str(self.maxParallelReplicaIndexers).lower())
-
+        t_services = self.services
+        self.log.info("t_services: %s", t_services)
         cluster_init_params = {
             "hostname": self.server.ip,
             "username": username,
             "password": password,
+            "services": t_services,
             "memory_quota": service_quota["memoryQuota"],
             "index_memory_quota": service_quota["indexMemoryQuota"],
             "eventing_memory_quota": service_quota["eventingMemoryQuota"],
@@ -7735,7 +7737,7 @@ class NodeInitializeTask(Task):
             "eventing_path": self.server.eventing_path,
             "indexer_storage_mode": self.gsi_type,
         }
-        t_services = self.services
+
         if t_services and (t_services == CbServer.Services.COLUMNAR or\
             CbServer.Services.COLUMNAR in t_services or\
                 self.server.type == CbServer.Services.COLUMNAR):
@@ -7744,11 +7746,11 @@ class NodeInitializeTask(Task):
             cluster_init_params.pop("index_memory_quota")
             cluster_init_params.pop("eventing_memory_quota")
             cluster_init_params.pop("fts_memory_quota")
-        elif isinstance(t_services, list):
+        elif isinstance(t_services, list) and t_services:
             t_services = ",".join(self.services)
             cluster_init_params.update({
                 "services": t_services})
-        elif t_services is None:
+        elif t_services in [None, [], '']:
             t_services = CbServer.Services.KV
             cluster_init_params.update({
                 "services": t_services})
@@ -7762,7 +7764,9 @@ class NodeInitializeTask(Task):
 
                                 "indexer_storage_mode"]:
                 cluster_init_params.pop(k_to_remove)
+        self.log.info("cluster_init_params: %s", cluster_init_params)
         status, content = rest.initialize_cluster(**cluster_init_params)
+        self.log.info("status: %s, content: %s", status, content)
         self.set_result(status)
         if status is False:
             self.set_exception(Exception(str(content)))

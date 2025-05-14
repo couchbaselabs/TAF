@@ -474,6 +474,8 @@ def main():
     parser.add_argument(
         "session_token", help="session token for aws")
     parser.add_argument(
+        "endpoint_url", help="endpoint url for aws")
+    parser.add_argument(
         "--region", help="AWS region")
     parser.add_argument(
         "--upload_file", nargs=2,
@@ -500,6 +502,8 @@ def main():
 
     if args.session_token:
         s3_obj = S3(args.access_key, args.secret_key, args.session_token)
+    elif args.endpoint_url:
+        s3_obj = S3(args.access_key, args.secret_key, endpoint_url=args.endpoint_url)
     else:
         s3_obj = S3(args.access_key, args.secret_key)
 

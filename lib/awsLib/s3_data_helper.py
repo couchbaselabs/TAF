@@ -18,7 +18,8 @@ def perform_S3_operation(**kwargs):
     aws_util_file_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "S3.py"))
     arguements = ["python3", aws_util_file_path, kwargs.get("aws_access_key"),
-                  kwargs.get("aws_secret_key"), kwargs.get("aws_session_token", "")]
+                  kwargs.get("aws_secret_key"), kwargs.get("aws_session_token", ""),
+                  kwargs.get("endpoint_url", "")]
 
     if kwargs.get("get_regions", False):
         arguements.append("--get_regions")
@@ -69,6 +70,8 @@ def perform_S3_operation(**kwargs):
     if error and "import sitecustomize" not in str(error):
         raise Exception(str(error))
     else:
+        if error:
+            print(f"error: {error}")
         result = json.loads(output)
         return result["result"]
 

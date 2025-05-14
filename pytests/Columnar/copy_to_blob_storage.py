@@ -73,6 +73,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                     self.sink_blob_bucket_name = "copy-to-blob-" + str(random.randint(1, 100000))
                     self.log.info("Creating S3 bucket for : {}".format(self.sink_blob_bucket_name))
                     self.sink_bucket_created = perform_S3_operation(
+                        endpoint_url=self.aws_endpoint,
                         aws_access_key=self.aws_access_key,
                         aws_secret_key=self.aws_secret_key,
                         aws_session_token=self.aws_session_token,
@@ -127,13 +128,15 @@ class CopyToBlobStorage(ColumnarBaseTest):
         for i in range(5):
             try:
                 if self.link_type == "s3":
+                    self.log.info("Emptying S3 bucket - {0}".format(self.sink_blob_bucket_name))
                     if perform_S3_operation(
                             aws_access_key=self.aws_access_key,
                             aws_secret_key=self.aws_secret_key,
                             aws_session_token=self.aws_session_token,
                             empty_bucket=True,
                             bucket_name=self.sink_blob_bucket_name,
-                            region=self.aws_region):
+                            region=self.aws_region,
+                            endpoint_url=self.aws_endpoint):
                         break
                 else:
                     if self.gcs_client.empty_gcs_bucket(self.sink_blob_bucket_name):
@@ -161,7 +164,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                             aws_session_token=self.aws_session_token,
                             delete_bucket=True,
                             bucket_name=self.sink_blob_bucket_name,
-                            region=self.aws_region):
+                            region=self.aws_region,
+                            endpoint_url=self.aws_endpoint):
                         break
                 elif self.link_type == "gcs":
                     if self.gcs_client.delete_bucket(self.sink_blob_bucket_name):
@@ -641,6 +645,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          region=self.aws_region,
                                          aws_session_token=self.aws_session_token,
                                          bucket_name=self.sink_blob_bucket_name,
+                                         endpoint_url=self.aws_endpoint,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
@@ -729,6 +734,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                      region=self.aws_region,
                                      aws_session_token=self.aws_session_token,
                                      bucket_name=self.sink_blob_bucket_name,
+                                     endpoint_url=self.aws_endpoint,
                                      get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
@@ -1084,6 +1090,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                       region=self.aws_region,
                                                                       aws_session_token=self.aws_session_token,
                                                                       bucket_name=self.sink_blob_bucket_name,
+                                                                      endpoint_url=self.aws_endpoint,
                                                                       get_bucket_objects=True)]
         elif self.link_type == "gcs":
             verification_file = [str(x) for x in self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)]
@@ -1098,6 +1105,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          region=self.aws_region,
                                          aws_session_token=self.aws_session_token,
                                          bucket_name=self.sink_blob_bucket_name,
+                                         endpoint_url=self.aws_endpoint,
                                          download_file=True, src_path=file_to_download,
                                          dest_path=dest_path
                                          )
@@ -1191,6 +1199,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                       region=self.aws_region,
                                                                       aws_session_token=self.aws_session_token,
                                                                       bucket_name=self.sink_blob_bucket_name,
+                                                                      endpoint_url=self.aws_endpoint,
                                                                       get_bucket_objects=True)]
         elif self.link_type == "gcs":
             verification_file = [str(x) for x in self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)]
@@ -1205,6 +1214,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          region=self.aws_region,
                                          aws_session_token=self.aws_session_token,
                                          bucket_name=self.sink_blob_bucket_name,
+                                         endpoint_url=self.aws_endpoint,
                                          download_file=True, src_path=file_to_download,
                                          dest_path=dest_path
                                          )
@@ -1290,6 +1300,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         external_link_obj = \
             self.cbas_util.create_external_link_obj(self.columnar_cluster, accessKeyId=self.aws_access_key,
                                                     secretAccessKey=self.aws_secret_key,
+                                                    serviceEndpoint=self.aws_endpoint,
                                                     regions=["us-west-1"])[0]
         if not self.cbas_util.create_external_link(self.columnar_cluster, external_link_obj.properties):
             self.fail("Failed to create S3 link on different region")
@@ -1432,6 +1443,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          aws_secret_key=self.aws_secret_key,
                                          region=self.aws_region,
                                          aws_session_token=self.aws_session_token,
+                                         endpoint_url=self.aws_endpoint,
                                          bucket_name=self.sink_blob_bucket_name,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
@@ -1523,6 +1535,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          aws_secret_key=self.aws_secret_key,
                                          region=self.aws_region,
                                          aws_session_token=self.aws_session_token,
+                                         endpoint_url=self.aws_endpoint,
                                          bucket_name=self.sink_blob_bucket_name,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
@@ -1578,6 +1591,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          aws_secret_key=self.aws_secret_key,
                                          region=self.aws_region,
                                          aws_session_token=self.aws_session_token,
+                                         endpoint_url=self.aws_endpoint,
                                          bucket_name=self.sink_blob_bucket_name,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":

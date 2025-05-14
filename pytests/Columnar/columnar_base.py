@@ -334,7 +334,7 @@ class ColumnarBaseTest(BaseTestCase):
                 "region": self.aws_region,
                 "accessKeyId": self.aws_access_key,
                 "secretAccessKey": self.aws_secret_key,
-                "serviceEndpoint": None
+                "serviceEndpoint": self.aws_endpoint
             }]
 
         # Updating Kafka Links Spec

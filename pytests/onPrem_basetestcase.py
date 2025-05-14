@@ -494,7 +494,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 try:
                     self.columnar_aws_bucket_name = "columnar-build-sanity-" + str(int(
                         time.time()))
-                    self.log.info("Creating S3 bucket")
+                    self.log.info("Creating S3 bucket {}".format(self.columnar_aws_bucket_name))
                     self.columnar_aws_bucket_created = self.columnar_s3_obj.create_bucket(
                         self.columnar_aws_bucket_name, self.columnar_aws_bucket_region)
                     break
@@ -732,13 +732,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
                           "other nodes from '%s'" % cluster_name)
             self.cluster_util.cluster_cleanup(cluster,
                                                 self.bucket_util)
-            # delete aws bucket that was created for compute storage separation
-            if (self.analytics_compute_storage_separation and
-                    self.columnar_aws_bucket_created):
-                self.log.info("Deleting AWS S3 bucket - {}".format(
-                    self.columnar_aws_bucket_created))
-                if not self.columnar_s3_obj.delete_bucket(self.columnar_aws_bucket_name):
-                    self.log.error("AWS bucket failed to delete")
+        # delete aws bucket that was created for compute storage separation
+        if (self.analytics_compute_storage_separation and
+                self.columnar_aws_bucket_created):
+            self.log.info("Deleting AWS S3 bucket - {}".format(
+                self.columnar_aws_bucket_name))
+            if not self.columnar_s3_obj.delete_bucket(self.columnar_aws_bucket_name):
+                self.log.error("AWS bucket failed to delete - {}".format(
+                    self.columnar_aws_bucket_name))
 
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
