@@ -465,7 +465,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # analytics in serverless mode
         self.aws_access_key = self.input.param("aws_access_key", None)
         self.aws_secret_key = self.input.param("aws_secret_key", None)
-        self.aws_bucket_region = self.input.param("aws_bucket_region", None) or \
+        self.aws_region = self.input.param("aws_region", None) or \
             self.input.param("aws_region", None) or "us-west-1"
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
@@ -475,8 +475,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                                         self.aws_access_key)
         self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key",
                                                         self.aws_secret_key)
-        self.columnar_aws_bucket_region = self.input.param("columnar_aws_bucket_region",
-                                                           self.aws_bucket_region)
+        self.columnar_aws_region = self.input.param("columnar_aws_region",
+                                                           self.aws_region)
         self.columnar_aws_session_token = self.input.param("columnar_aws_session_token",
                                                            self.aws_session_token)
         self.columnar_aws_bucket_created = False
@@ -488,7 +488,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             services_mem_quota_percent[CbServer.Services.CBAS] = 80
             services_mem_quota_percent[CbServer.Services.KV] = 10
             self.columnar_s3_obj = S3(self.columnar_aws_access_key, self.columnar_aws_secret_key,
-                             region=self.columnar_aws_bucket_region,
+                             region=self.columnar_aws_region,
                              endpoint_url=self.columnar_aws_endpoint)
             for i in range(5):
                 try:
@@ -496,13 +496,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         time.time()))
                     self.log.info("Creating S3 bucket {}".format(self.columnar_aws_bucket_name))
                     self.columnar_aws_bucket_created = self.columnar_s3_obj.create_bucket(
-                        self.columnar_aws_bucket_name, self.columnar_aws_bucket_region)
+                        self.columnar_aws_bucket_name, self.columnar_aws_region)
                     break
                 except Exception as e:
                     self.log.error(
                         "Creating S3 bucket - {0} in region {1}. "
                         "Failed.".format(
-                            self.columnar_aws_bucket_name, self.columnar_aws_bucket_region))
+                            self.columnar_aws_bucket_name, self.columnar_aws_region))
                     self.log.error(str(e))
             if not self.columnar_aws_bucket_created:
                 self.fail("Unable to create S3 bucket.")
@@ -511,7 +511,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 server=cluster.master, aws_access_key=self.columnar_aws_access_key,
                 aws_secret_key=self.columnar_aws_secret_key,
                 aws_bucket_name=self.columnar_aws_bucket_name,
-                aws_bucket_region=self.columnar_aws_bucket_region)
+                aws_bucket_region=self.columnar_aws_region)
             if not status:
                 self.fail("Failed to put aws credentials to analytics, "
                           "request error")

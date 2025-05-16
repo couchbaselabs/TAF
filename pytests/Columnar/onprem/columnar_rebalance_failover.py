@@ -139,7 +139,7 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
             "no_of_external_links"] = num_external_links
         self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
-            "region": self.aws_bucket_region,
+            "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
             "secretAccessKey": self.aws_secret_key,
             "serviceEndpoint": self.aws_endpoint
@@ -158,7 +158,7 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         for prop in self.columnar_spec["external_dataset"][
             "external_dataset_properties"]:
             prop["external_container_name"] = self.s3_source_bucket
-            prop["region"] = self.aws_bucket_region
+            prop["region"] = self.aws_region
             prop["path_on_external_container"] = ("level_{level_no:int}_"
                                                   "folder_{folder_no:int}")
             if prop["file_format"] in ["csv", "tsv"]:
@@ -793,13 +793,13 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                     time.time()))
                 self.log.info("Creating S3 bucket")
                 self.copy_to_s3_bucket_created = self.s3_obj.create_bucket(
-                    self.copy_to_s3_bucket, self.aws_bucket_region)
+                    self.copy_to_s3_bucket, self.aws_region)
                 break
             except Exception as e:
                 self.log.error(
                     "Creating S3 bucket - {0} in region {1}. "
                     "Failed.".format(
-                        self.copy_to_s3_bucket, self.aws_bucket_region))
+                        self.copy_to_s3_bucket, self.aws_region))
                 self.log.error(str(e))
 
         if not self.copy_to_s3_bucket_created:
@@ -833,7 +833,7 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         external_dataset_obj = self.columnar_cbas_utils.create_external_dataset_obj(
             self.analytics_cluster,
             external_container_names={
-                self.copy_to_s3_bucket: self.aws_bucket_region},
+                self.copy_to_s3_bucket: self.aws_region},
             paths_on_external_container=[path_on_external_container],
             file_format="json")[0]
 
