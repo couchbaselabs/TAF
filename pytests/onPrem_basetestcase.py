@@ -939,6 +939,44 @@ class OnPremBaseTest(CouchbaseBaseTest):
             else:
                 return False
 
+        def parse_time_based_pattern(line, pattern, time_threshold):
+            """
+            Parse log line for time-based patterns like 'Slow operation' or 'Slow runtime'
+            Returns True if the pattern is found and the time exceeds threshold
+            """
+            if pattern in line:
+                # Extract time value from the line
+                time_regex = re.compile(r"(\d+(?:\.\d+)?)\s*(?:ms|s|seconds?)")
+                time_match = time_regex.search(line)
+                if time_match:
+                    time_value = float(time_match.group(1))
+                    # Convert to seconds if in milliseconds
+                    if "ms" in line:
+                        time_value = time_value / 1000
+                    return time_value > time_threshold
+            return False
+
+        def check_error_patterns(grep_output, pattern):
+            """
+            Check if grep output matches the error pattern.
+            Returns tuple of (bool, int) where:
+            - bool indicates if pattern was found
+            - int is the index where pattern was found, or -1 if not found
+            """
+            if isinstance(pattern, dict):
+                # Handle time-based pattern
+                if 'string' in pattern and 'time_to_consider_in_seconds' in pattern:
+                    for i, line in enumerate(grep_output):
+                        if parse_time_based_pattern(
+                                line, pattern['string'],
+                                pattern['time_to_consider_in_seconds']):
+                            return True, i
+            else:
+                index = find_index_of(grep_output, pattern)
+                if index != -1:
+                    return True, index
+            return False, -1
+
         for idx, server in enumerate(servers):
             self.log.info(f"{server.ip} - Parsing logs for error/critical "
                           f"string patterns")
@@ -1029,12 +1067,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                             self.data_sets[server] = kvstores
                         if err_pattern is not None:
                             for pattern in err_pattern:
-                                index = find_index_of(grep_output, pattern)
-                                grep_output = grep_output[:index]
-                                if grep_output:
+                                found, index = check_error_patterns(grep_output, pattern)
+                                if found:
                                     self.log.info("unwanted messages in %s" %
                                                   log_file)
                                     if check_logs(grep_output):
+                                        # Truncate output at the first error pattern
+                                        grep_output = grep_output[:index]
                                         self.log.critical(
                                             "%s: Found '%s' logs - %s"
                                             % (server.ip, grep_for_str,

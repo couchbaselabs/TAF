@@ -23,13 +23,21 @@ file_name_patterns:
           - 'XERROR'
           - 'compaction failed for vb'
           - 'Invalid packet header detected'
-            # TODo: Remove the below after MB-45330
+            # Not a bug: Ref: MB-45330
           - 'failed - Already exists'
+      - string: ' WARNING '
+        error_patterns:
+          - string: 'Slow operation'
+            time_to_consider_in_seconds: 10
+          - string: 'Slow runtime'
+            time_to_consider_in_seconds: 10
+          - string: 'Slow scheduling'
+            time_to_consider_in_seconds: 5
+
       #- string: 'WARN'
       #  exclude_patterns:
       #    - 'Slow'
       #    - 'The stream closed early because the conn was disconnected'
-      #      # MB-43121
       #    - 'CouchKVStore::unlinkCouchFile: remove error:'
       #    - 'reason: The stream closed early due to a close stream message'
       #      # MB-43124
