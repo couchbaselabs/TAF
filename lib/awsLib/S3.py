@@ -111,6 +111,7 @@ class S3(AWSBase):
             if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
                 return True
             else:
+                self.logger.error(response)
                 return False
         except Exception as e:
             self.logger.error(e)
