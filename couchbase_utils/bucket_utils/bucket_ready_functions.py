@@ -2221,7 +2221,8 @@ class BucketUtils(ScopeUtils):
             magma_seq_tree_data_block_size=4096,
             vbuckets=None, weight=None, width=None,
             durability_impossible_fallback=None,
-            warmup_behavior=Bucket.WarmupBehavior.BACKGROUND):
+            warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
+            fusion_log_store_uri=""):
         node_info = global_vars.cluster_util.get_nodes_self(cluster.master)
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2264,7 +2265,9 @@ class BucketUtils(ScopeUtils):
              Bucket.width: width,
              Bucket.weight: weight,
              Bucket.durabilityImpossibleFallback: durability_impossible_fallback,
-             Bucket.warmupBehavior: warmup_behavior})
+             Bucket.warmupBehavior: warmup_behavior,
+             Bucket.fusionLogstoreURI: fusion_log_store_uri})
+        print("create_default_bucket bucket_obj", bucket_obj)
         if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
@@ -2643,6 +2646,8 @@ class BucketUtils(ScopeUtils):
                     b_obj.numVBuckets = bucket_spec[Bucket.numVBuckets]
                 if Bucket.warmupBehavior in bucket_spec:
                     b_obj.warmupBehavior = bucket_spec[Bucket.warmupBehavior]
+                if Bucket.fusionLogstoreURI in bucket_spec:
+                    b_obj.fusionLogstoreURI = bucket_spec[Bucket.fusionLogstoreURI]
                 task = self.async_create_database(cluster, b_obj,
                                                   timeout=timeout,
                                                   dataplane_id=dataplane_id)
@@ -2967,7 +2972,8 @@ class BucketUtils(ScopeUtils):
             history_retention_collection_default="true",
             history_retention_bytes=0,
             history_retention_seconds=0,
-            warmup_behavior=Bucket.WarmupBehavior.BACKGROUND):
+            warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
+            fusion_log_store_uri=""):
         success = True
         info = self.cluster_util.get_nodes_self(cluster.master)
         tasks = dict()
@@ -3015,7 +3021,8 @@ class BucketUtils(ScopeUtils):
                         Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
                         Bucket.historyRetentionSeconds: history_retention_seconds,
                         Bucket.historyRetentionBytes: history_retention_bytes,
-                        Bucket.warmupBehavior: warmup_behavior})
+                        Bucket.warmupBehavior: warmup_behavior,
+                        Bucket.fusionLogstoreURI: fusion_log_store_uri})
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1
 
@@ -4989,6 +4996,9 @@ class BucketUtils(ScopeUtils):
 
             if Bucket.warmupBehavior in parsed:
                 bucket.warmupBehavior = parsed[Bucket.warmupBehavior]
+
+            if Bucket.fusionLogstoreURI in parsed:
+                bucket.fusionLogstoreURI = parsed[Bucket.fusionLogstoreURI]
 
             bucket.bucketType = parsed[Bucket.bucketType]
             if Bucket.maxTTL in parsed:

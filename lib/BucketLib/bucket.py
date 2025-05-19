@@ -162,6 +162,7 @@ class Bucket(object):
     magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
     durabilityImpossibleFallback = "durabilityImpossibleFallback"
     warmupBehavior = "warmupBehavior"
+    fusionLogstoreURI = "fusionLogstoreURI"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -274,6 +275,8 @@ class Bucket(object):
             Bucket.durabilityImpossibleFallback, None)
         self.warmupBehavior = new_params.get(
             Bucket.warmupBehavior, None)
+        self.fusionLogstoreURI = new_params.get(
+            Bucket.fusionLogstoreURI, None)
 
         if self.bucketType == Bucket.Type.EPHEMERAL:
             self.evictionPolicy = new_params.get(

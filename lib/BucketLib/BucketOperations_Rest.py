@@ -367,7 +367,8 @@ class BucketHelper(BucketRestApi):
                             Bucket.historyRetentionSeconds,
                             Bucket.magmaKeyTreeDataBlockSize,
                             Bucket.magmaSeqTreeDataBlockSize,
-                            Bucket.durabilityImpossibleFallback]:
+                            Bucket.durabilityImpossibleFallback,
+                            Bucket.fusionLogstoreURI]:
                 val = bucket_params.get(b_param, None)
                 if val is not None:
                     init_params[b_param] = val

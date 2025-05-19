@@ -38,6 +38,13 @@ class StorageBase(BaseTestCase):
                                                Bucket.StorageBackend.magma)
         self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
                                                        Bucket.EvictionPolicy.FULL_EVICTION)
+
+        # Fusion params
+        self.fusion_log_store_uri = self.input.param("fusion_log_store_uri", None)
+        self.fusion_upload_interval = self.input.param("fusion_upload_interval", 60)
+        self.fusion_log_checkpoint_interval = self.input.param("fusion_log_checkpoint_interval", 180)
+        self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
+
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket_name = self.input.param("bucket_name", None)
         self.magma_buckets = self.input.param("magma_buckets", 0)
@@ -106,7 +113,8 @@ class StorageBase(BaseTestCase):
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
                 history_retention_bytes=self.bucket_dedup_retention_bytes,
-                weight=self.bucket_weight, width=self.bucket_width)
+                weight=self.bucket_weight, width=self.bucket_width,
+                fusion_log_store_uri=self.fusion_log_store_uri)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
@@ -124,7 +132,8 @@ class StorageBase(BaseTestCase):
                 autoCompactionDefined=self.autoCompactionDefined,
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
-                history_retention_bytes=self.bucket_dedup_retention_bytes)
+                history_retention_bytes=self.bucket_dedup_retention_bytes,
+                fusion_log_store_uri=self.fusion_log_store_uri)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
         if self.change_magma_quota:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -197,6 +206,13 @@ class StorageBase(BaseTestCase):
             self.log.info("Query is: %s" % self.initial_idx_q)
             result = self.query_client.query_tool(self.initial_idx_q)
             self.assertTrue(result["status"] == "success", "Index query failed!")
+
+        # Override Fusion default settings
+        if self.fusion_log_store_uri != None:
+            for bucket in self.cluster.buckets:
+                self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
+                                            checkpoint_interval=self.fusion_log_checkpoint_interval,
+                                            migration_rate_limit=self.fusion_migration_rate_limit)
 
         # Doc controlling params
         self.key = 'test_docs'
@@ -692,7 +708,8 @@ class StorageBase(BaseTestCase):
                              randomize_value=self.randomize_value,
                              mix_key_size=self.mix_key_size,
                              mutate=mutate,
-                             deep_copy=self.deep_copy)
+                             deep_copy=self.deep_copy,
+                             load_using=self.load_docs_using)
 
     def generate_sub_docs_basic(self, start, end):
         return self.custom_sub_doc_generator(self.key, start, end, key_size=self.key_size)
@@ -807,11 +824,11 @@ class StorageBase(BaseTestCase):
                                            key_size=key_size)
 
     def java_doc_loader(self, scopes=None, collections=None, generator=None, doc_ops=None,
-                        wait=True, process_concurrency=2, skip_default=False, exp_ttl=None):
+                        wait=True, process_concurrency=2, skip_default=False, exp_ttl=None,
+                        validate_docs=False, ops_rate=None):
 
         doc_loading_tasks = list()
-        self.ops_rate = self.input.param("ops_rate", 50000)
-        validate_docs = self.input.param("validate_docs", False)
+        ops_rate = ops_rate if ops_rate is not None else self.ops_rate
         self.doc_loading_tm = TaskManager(self.process_concurrency)
 
         # Mapping operations to their corresponding attributes
@@ -877,7 +894,7 @@ class StorageBase(BaseTestCase):
                             exp=exp_time,
                             process_concurrency=process_concurrency,
                             validate_docs=validate_docs,
-                            ops=self.ops_rate)
+                            ops=ops_rate)
                     _task.create_doc_load_task()
                     self.doc_loading_tm.add_new_task(_task)
                     doc_loading_tasks.append(_task)
@@ -1342,6 +1359,37 @@ class StorageBase(BaseTestCase):
         _, _ = shell.execute_command(cmd)
         self.sleep(30, "Wait after executing pillowfight command")
         shell.disconnect()
+
+
+    def change_fusion_settings(self, bucket, upload_interval, checkpoint_interval, migration_rate_limit):
+
+        interval_settings = f"magma_fusion_upload_interval={upload_interval};magma_fusion_log_checkpoint_interval={checkpoint_interval};magma_fusion_migration_rate_limit={migration_rate_limit}"
+
+        diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{interval_settings}"}}]).' http://localhost:8091/diag/eval"""
+        self.log.info(f"Diag/eval CMD = {diag_eval_cmd}")
+
+        self.log.info(f"Changing Fusion upload interval to {upload_interval} seconds and checkpoint interval to {checkpoint_interval} seconds for bucket: {bucket.name}")
+
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command(diag_eval_cmd)
+            self.log.info(f"Server: {server}, Output: {o}, Error: {e}")
+            ssh.disconnect()
+
+        # Restart couchbase
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command("systemctl restart couchbase-server")
+            ssh.disconnect()
+
+        self.sleep(30, "Wait after restarting Couchbase server")
+
+        cbstats_fusion_cmd = f"/opt/couchbase/bin/cbstats localhost:11210 all -b {bucket.name} -u Administrator -p password | grep fusion"
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command(cbstats_fusion_cmd)
+            self.log.info(f"Server: {server}, Output: {o}, Error: {e}")
+            ssh.disconnect()
 
     def PrintStep(self, msg=None):
         print("\n")

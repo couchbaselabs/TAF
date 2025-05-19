@@ -1,0 +1,17 @@
+{
+    "local": {
+        "accelerator_cli": "/opt/couchbase/bin/fusion/accelerator-cli",
+        "accelerator_binary": "/root/fusion/run_local_accelerator.sh",
+        "manifest_parts": 20,
+        "manifest_dest_path": "/mnt/nfs/share/fusion-manifests",
+        "ssh_username": "root",
+        "ssh_password": "couchbase"
+    },
+    "aws": {
+        "accelerator_cli": "/opt/couchbase/bin/fusion/accelerator-cli",
+        "accelerator_binary": "/home/ubuntu/accelerator/run_accelerator",
+        "manifest_parts": 20,
+        "manifest_dest_path": "s3://fusion-manifests/",
+        "ssh_username": "ubuntu"
+    }
+}
