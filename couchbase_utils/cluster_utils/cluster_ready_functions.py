@@ -263,7 +263,7 @@ class ClusterUtils:
                 raise Exception("Unable to read /pools/default API")
 
             for node in result["nodes"]:
-                if node["version"].split("-")[-1] not in ("enterprise", "columnar"):
+                if node["version"].split("-")[-1] not in ("enterprise", CbServer.Services.COLUMNAR):
                     return False
             return True
 
@@ -317,7 +317,7 @@ class ClusterUtils:
                 if node["version"] == "unknown":
                     got_unknown_version = True
                     break
-                version, build, rel_type = node["version"].split("-")
+                version, build, *rel_type = node["version"].split("-")
                 node_ipaddr = node["hostname"].split(":")[0]
                 if version > highest_version or \
                     (version == highest_version and build > highest_build):

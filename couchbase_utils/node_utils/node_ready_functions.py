@@ -12,7 +12,7 @@ from global_vars import logger
 from membase.api.rest_client import RestConnection
 from cb_tools.cb_cli import CbCli
 from shell_util.remote_connection import RemoteMachineShellConnection
-
+from py_constants.cb_constants.CBServer import CbServer
 """
 An API for scheduling tasks for performing node related operations.
 
@@ -68,7 +68,7 @@ class NodeUtils(object):
         for node in cluster.servers:
             rest = ClusterRestAPI(node)
             version = rest.cluster_info()[1]["implementationVersion"][:3]
-            if float(version) >= 7.6 or node.type == "columnar":
+            if float(version) >= 7.6 or node.type == CbServer.Services.COLUMNAR:
                 status, _ = rest.reset_node()
                 if not status:
                     raise Exception(f"Reset node {node.ip} failed")
