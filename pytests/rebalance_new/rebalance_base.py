@@ -525,12 +525,14 @@ class RebalanceBaseTest(BaseTestCase):
             task = self.task.async_rebalance(
                 self.cluster, [],
                 [self.servers[self.nodes_init - 1]],
-                retry_get_process_num=self.retry_get_process_num)
+                retry_get_process_num=self.retry_get_process_num,
+                network_delay_between_nodes=self.network_delay_between_nodes)
         elif rebalance_operation == "rebalance_in":
             task = self.task.async_rebalance(
                 self.cluster,
                 [self.servers[self.nodes_init]], [],
-                retry_get_process_num=self.retry_get_process_num)
+                retry_get_process_num=self.retry_get_process_num,
+                network_delay_between_nodes=self.network_delay_between_nodes)
         elif rebalance_operation == "swap_rebalance":
             self.rest.add_node(self.cluster.master.rest_username,
                                self.cluster.master.rest_password,
@@ -539,12 +541,14 @@ class RebalanceBaseTest(BaseTestCase):
             task = self.task.async_rebalance(
                 self.cluster, [],
                 [self.servers[self.nodes_init - 1]],
-                retry_get_process_num=self.retry_get_process_num)
+                retry_get_process_num=self.retry_get_process_num,
+                network_delay_between_nodes=self.network_delay_between_nodes)
         elif rebalance_operation == "graceful_failover":
             task = self.task.async_failover([self.cluster.master],
                                             failover_nodes=[self.servers[1]],
                                             graceful=True,
-                                            wait_for_pending=300)
+                                            wait_for_pending=300,
+                                            network_delay_between_nodes=self.network_delay_between_nodes)
         return task
 
     def change_retry_rebalance_settings(self, enabled=True,

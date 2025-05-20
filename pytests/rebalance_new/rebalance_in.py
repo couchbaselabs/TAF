@@ -31,7 +31,8 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
-            self.cluster, servs_in, [])
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.sleep(10)
 
         tasks_info = self.bucket_util._async_load_all_buckets(
@@ -80,7 +81,8 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
-            self.cluster, servs_in, [])
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
 
         self.sleep(10, "wait for rebalance to start")
 
@@ -150,7 +152,9 @@ class RebalanceInTests(RebalanceBaseTest):
 
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
-        rebalance_task = self.task.async_rebalance(self.cluster, servs_in, [])
+        rebalance_task = self.task.async_rebalance(
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
 
         self.sleep(10, "wait for rebalance to start")
 
@@ -283,7 +287,9 @@ class RebalanceInTests(RebalanceBaseTest):
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.cluster.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
-        rebalance = self.task.async_rebalance(self.cluster, servs_in, [], retry_get_process_num=40)
+        rebalance = self.task.async_rebalance(
+            self.cluster, servs_in, [], retry_get_process_num=40,
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
@@ -352,7 +358,9 @@ class RebalanceInTests(RebalanceBaseTest):
         if success_failed_over:
             self.rest.set_recovery_type(otp_node=chosen[0].id,
                                         recovery_type="full")
-        rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
+        rebalance = self.task.async_rebalance(
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(10)
@@ -492,7 +500,8 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
-            self.cluster, servs_in, [])
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
 
         self.sleep(10, "wait for rebalance to start")
 
@@ -558,7 +567,9 @@ class RebalanceInTests(RebalanceBaseTest):
         self.gen_delete = self.get_doc_generator((self.num_items / 2 - 1), (self.num_items / 2 - 1)+self.items)
         self.gen_create = self.get_doc_generator(self.num_items+1, self.num_items+self.items/2)
         servs_in = [self.cluster.servers[i + 1] for i in range(self.nodes_in)]
-        rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
+        rebalance = self.task.async_rebalance(
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
         if self.doc_ops is not None:
             # define which doc's ops will be performed during rebalancing
             # allows multiple of them but one by one
@@ -604,7 +615,9 @@ class RebalanceInTests(RebalanceBaseTest):
         """
         bucket_name = self.cluster.buckets[0]
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
-        rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
+        rebalance = self.task.async_rebalance(
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.sleep(5)
         rand_keys = list()
         rest_cons = list()
@@ -666,7 +679,8 @@ class RebalanceInTests(RebalanceBaseTest):
             tasks_info = dict()
             # Start rebalance task
             rebalance_task = self.task.async_rebalance(
-                self.cluster, self.cluster.servers[i:i + 2], [])
+                self.cluster, self.cluster.servers[i:i + 2], [],
+                network_delay_between_nodes=self.network_delay_between_nodes)
 
             self.sleep(10, "wait for rebalance to start")
             # define which doc_op to perform during rebalance
@@ -901,7 +915,9 @@ class RebalanceInTests(RebalanceBaseTest):
 
         for i in range(iterations_to_try):
             servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
-            rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
+            rebalance = self.task.async_rebalance(
+                self.cluster, servs_in, [],
+                network_delay_between_nodes=self.network_delay_between_nodes)
             self.sleep(self.wait_timeout / 5)
 
             # See that the result of view queries are same as
@@ -929,8 +945,9 @@ class RebalanceInTests(RebalanceBaseTest):
                     self.cluster, self.num_items, timeout=self.wait_timeout)
 
             if reproducer:
-                rebalance = self.task.async_rebalance(self.cluster, [],
-                                                      servs_in)
+                rebalance = self.task.async_rebalance(
+                    self.cluster, [], servs_in,
+                    network_delay_between_nodes=self.network_delay_between_nodes)
                 self.task.jython_task_manager.get_task_result(rebalance)
                 self.assertTrue(rebalance.result, "Rebalance Failed")
                 self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_in))
@@ -998,7 +1015,8 @@ class RebalanceInTests(RebalanceBaseTest):
         query["stale"] = "update_after"
         for i in range(self.nodes_init, self.num_servers, 2):
             rebalance = self.task.async_rebalance(
-                self.cluster, self.cluster.servers[i:i + 2], [])
+                self.cluster, self.cluster.servers[i:i + 2], [],
+                network_delay_between_nodes=self.network_delay_between_nodes)
             self.sleep(self.wait_timeout / 5)
             # Verify the result of view queries are same as expected during the test
             result = self.bucket_util.perform_verify_queries(
@@ -1065,7 +1083,9 @@ class RebalanceInTests(RebalanceBaseTest):
         self.sleep(20)
         shell.start_couchbase()
         shell.disconnect()
-        rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
+        rebalance = self.task.async_rebalance(
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.task.jython_task_manager.get_task_result(rebalance)
         if not rebalance.result:
             self.log.info("rebalance was failed as expected")
@@ -1075,7 +1095,9 @@ class RebalanceInTests(RebalanceBaseTest):
                     wait_time=self.wait_timeout * 10))
 
             self.log.info("second attempt to rebalance")
-            rebalance = self.task.async_rebalance(self.cluster, [], [])
+            rebalance = self.task.async_rebalance(
+                self.cluster, [], [],
+                network_delay_between_nodes=self.network_delay_between_nodes)
             self.task.jython_task_manager.get_task_result(rebalance)
             self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
@@ -1163,7 +1185,9 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster.master, prefix + ddoc_name, 'default',
             with_rebalance=True)
         servs_in = self.cluster.servers[1:self.nodes_in + 1]
-        rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
+        rebalance = self.task.async_rebalance(
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
 
         self.task.jython_task_manager.get_task_result(compaction_task)
         self.assertTrue(compaction_task.result, "Compaction did not happened")
@@ -1193,9 +1217,9 @@ class RebalanceInTests(RebalanceBaseTest):
                                                  self.num_items)
 
         for i in range(self.num_servers)[self.nodes_init:]:
-            rebalance = self.task.async_rebalance(self.cluster,
-                                                  [self.cluster.servers[i]],
-                                                  [])
+            rebalance = self.task.async_rebalance(
+                self.cluster, [self.cluster.servers[i]], [],
+                network_delay_between_nodes=self.network_delay_between_nodes)
             if self.atomicity:
                 self._load_all_buckets_atomicty(self.gen_update, "rebalance_only_update")
                 self.sleep(20)
@@ -1236,8 +1260,10 @@ class RebalanceInTests(RebalanceBaseTest):
         gen_2 = self.get_doc_generator(self.num_items / 2,
                                        self.num_items)
         for i in range(self.num_servers)[1:]:
-            rebalance = self.task.async_rebalance(self.cluster,
-                                                  [self.cluster.servers[i]], [])
+            rebalance = self.task.async_rebalance(
+                self.cluster,
+                [self.cluster.servers[i]], [],
+                network_delay_between_nodes=self.network_delay_between_nodes)
             self._load_all_buckets(self.cluster, self.gen_update, "update", 0)
             self._load_all_buckets(self.cluster, gen_2, "update", 5)
             self.sleep(5)
@@ -1256,7 +1282,8 @@ class RebalanceInTests(RebalanceBaseTest):
         rebalance = self.task.async_rebalance(
             self.cluster,
             self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in],
-            [])
+            [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.sleep(10, "Wait for rebalance have some progress")
         remote = RemoteMachineShellConnection(self.cluster.master)
         cli_command = "setting-cluster"

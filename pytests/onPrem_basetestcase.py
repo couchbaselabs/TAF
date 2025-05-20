@@ -73,6 +73,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # CBAS setting
         self.jre_path = self.input.param("jre_path", None)
         self.enable_dp = self.input.param("enable_dp", False)
+
+        self.network_delay_between_nodes = \
+            self.input.param("network_delay_between_nodes", None)
+        self.network_delay_for_sdk = \
+            self.input.param("network_delay_for_sdk", None)
         # End of cluster info parameters
 
         self.bucket_replica_index = self.input.param("bucket_replica_index",
@@ -216,6 +221,18 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         if self.use_https:
             CbServer.use_https = True
+
+        # Delay param are not 'None', then create dict for each server
+        if self.network_delay_between_nodes is not None:
+            t_val = self.network_delay_between_nodes
+            self.network_delay_between_nodes = dict()
+            for server in self.servers:
+                self.network_delay_between_nodes[server] = t_val
+        if self.network_delay_for_sdk is not None:
+            t_val = self.network_delay_for_sdk
+            self.network_delay_for_sdk = dict()
+            for server in self.servers:
+                self.network_delay_for_sdk[server] = t_val
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
@@ -786,7 +803,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
-            ClusterUtils.flush_network_rules(ssh_sessions[server.ip])
+            ClusterUtils.flush_network_rules(ssh_sessions[server.ip],
+                                             server.default_interface)
             if not server.index_path:
                 server.index_path = server.data_path
             if not server.cbas_path:

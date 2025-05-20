@@ -84,6 +84,27 @@ class NodeUtils(object):
             self.jython_task_manager.get_task_result(task)
         return tasks
 
+    def populate_default_nw_interface_name(self, server):
+        if server.default_interface is None:
+            self.log.debug("Finding default n/w interface for %s" % server.ip)
+            shell = RemoteMachineShellConnection(server)
+            output, err = shell.execute_command(
+                "ip route | grep default | cut -d' ' -f 5")
+            if err:
+                self.log.critical("Unable to find the default interface: %s"
+                                  % err)
+            else:
+                server.default_interface = output[1]
+            shell.disconnect()
+        self.log.info("%s - Default interface :: %s"
+                      % (server.ip, server.default_interface))
+
+    def async_populate_default_nw_interface_name(self, server):
+        task = jython_tasks.FunctionCallTask(
+            self.populate_default_nw_interface_name, server)
+        self.jython_task_manager.schedule(task)
+        return task
+
     def async_enable_dp(self, server):
         task = jython_tasks.FunctionCallTask(self._enable_dp, [server])
         self.jython_task_manager.schedule(task)

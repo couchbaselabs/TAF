@@ -37,7 +37,7 @@ class ServerTasks(object):
 
     def async_failover(self, cluster, failover_nodes=[], graceful=False,
                        use_hostnames=False, wait_for_pending=0, allow_unsafe=False,
-                       all_at_once=False):
+                       all_at_once=False, network_delay_between_nodes=None):
         """
         Asynchronously failover a set of nodes
 
@@ -52,13 +52,15 @@ class ServerTasks(object):
         Returns:
           FailOverTask - A task future that is a handle to the scheduled task
         """
-        _task = jython_tasks.FailoverTask(cluster,
-                                          to_failover=failover_nodes,
-                                          graceful=graceful,
-                                          use_hostnames=use_hostnames,
-                                          wait_for_pending=wait_for_pending,
-                                          allow_unsafe=allow_unsafe,
-                                          all_at_once=all_at_once)
+        _task = jython_tasks.FailoverTask(
+            cluster,
+            to_failover=failover_nodes,
+            graceful=graceful,
+            use_hostnames=use_hostnames,
+            wait_for_pending=wait_for_pending,
+            allow_unsafe=allow_unsafe,
+            all_at_once=all_at_once,
+            network_delay_between_nodes=network_delay_between_nodes)
         self.jython_task_manager.schedule(_task)
         return _task
 
@@ -686,7 +688,8 @@ class ServerTasks(object):
                         add_nodes_server_groups=None,
                         defrag_options=None,
                         validate_bucket_ranking=True,
-                        service_topology=None):
+                        service_topology=None,
+                        network_delay_between_nodes=None):
         """
         Asynchronously rebalances a cluster
 
@@ -698,6 +701,7 @@ class ServerTasks(object):
           service_topology - Dict of
                 service_1: 'otp_node1,otp_node2,..',
                 service_2: 'otp_node2,otp_node3,..'
+          network_delay_between_nodes - Dict of TestInputServer wrt delay to set
         Returns:
           RebalanceTask - A task future that is a handle to the scheduled task
         """
@@ -747,7 +751,8 @@ class ServerTasks(object):
                 add_nodes_server_groups=add_nodes_server_groups,
                 defrag_options=defrag_options,
                 validate_bucket_ranking=validate_bucket_ranking,
-                service_topology=service_topology)
+                service_topology=service_topology,
+                network_delay_between_nodes=network_delay_between_nodes)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -872,7 +877,8 @@ class ServerTasks(object):
                   check_vbucket_shuffling=True, retry_get_process_num=25,
                   add_nodes_server_groups=None,
                   validate_bucket_ranking=True,
-                  service_topology=None):
+                  service_topology=None,
+                  network_delay_between_nodes=None):
         """
         Synchronously rebalances a cluster
 
@@ -883,6 +889,8 @@ class ServerTasks(object):
           use_hostnames - True if nodes should be added using hostnames (Bool)
           services - Services definition per Node, default is None
                      (since Sherlock release)
+          network_delay_between_nodes - Introduce delay between nodes.
+                                        Default: None, No delay to run with
         Returns:
           boolean - Whether or not the rebalance was successful
         """
@@ -894,7 +902,8 @@ class ServerTasks(object):
             retry_get_process_num=retry_get_process_num,
             add_nodes_server_groups=add_nodes_server_groups,
             validate_bucket_ranking=validate_bucket_ranking,
-            service_topology=service_topology)
+            service_topology=service_topology,
+            network_delay_between_nodes=network_delay_between_nodes)
         self.jython_task_manager.get_task_result(_task)
         return _task.result
 

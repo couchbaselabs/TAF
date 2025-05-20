@@ -457,7 +457,8 @@ class RebalanceTask(Task):
                  check_vbucket_shuffling=True,
                  retry_get_process_num=25, add_nodes_server_groups=None,
                  defrag_options=None, validate_bucket_ranking=True,
-                 service_topology=None):
+                 service_topology=None,
+                 network_delay_between_nodes=None):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
             .format(",".join([node.ip for node in to_add]),
@@ -478,6 +479,7 @@ class RebalanceTask(Task):
         self.defrag_options = None
         self.validate_bucket_ranking = validate_bucket_ranking
         self.service_topology = service_topology
+        self.network_delay_between_nodes = network_delay_between_nodes
 
         if isinstance(add_nodes_server_groups, dict):
             """
@@ -638,7 +640,6 @@ class RebalanceTask(Task):
         else:
             return "[%s] %s not yet scheduled" % \
                    (self.thread_name, self.num_items)
-
     def call(self):
         def print_nodes(msg, node_list):
             if len(node_list) == 0:
@@ -647,6 +648,7 @@ class RebalanceTask(Task):
                 "%s: %s" % (msg, ["%s:%s" % (t_node.ip, t_node.port)
                                   for t_node in node_list]))
         self.sleep(10, "Waiting before starting rebalance")
+        delay_enabled = False
         self.start_task()
         try:
             if len(self.to_add) and len(self.to_add) == len(self.to_remove) \
@@ -691,6 +693,13 @@ class RebalanceTask(Task):
             if result is False:
                 self.complete_task()
                 return self.result
+
+            if self.network_delay_between_nodes is not None:
+                self.log.critical("Enabling delay between the nodes")
+                delay_enabled = True
+                global_vars.cluster_util.set_network_delay_between_nodes(
+                    self.network_delay_between_nodes, "enable")
+
             self.state = "triggering"
             self.start_rebalance()
             if self.state == "trigger_failed":
@@ -741,6 +750,10 @@ class RebalanceTask(Task):
             self.result = False
             self.test_log.error(str(e))
             return self.result
+        finally:
+            if delay_enabled:
+                global_vars.cluster_util.set_network_delay_between_nodes(
+                    self.network_delay_between_nodes, "disable")
 
         if CbServer.cluster_profile == "serverless":
             for bucket in self.cluster.buckets:

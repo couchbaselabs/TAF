@@ -94,6 +94,8 @@ class TestInputServer(object):
         self.remote_info = None
         self.use_sudo = False
         self.type = "default"
+        # To store the default n/w interface name (Eg: eth0 / enX0 / ...)
+        self.default_interface = None
 
     def __str__(self):
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)

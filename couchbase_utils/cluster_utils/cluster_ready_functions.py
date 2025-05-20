@@ -144,13 +144,15 @@ class ClusterUtils:
         self.log = logger.get("test")
 
     @staticmethod
-    def flush_network_rules(shell_conn):
+    def flush_network_rules(shell_conn, default_interface_name):
         for command in ["iptables -F",
                         "nft flush ruleset",
                         "nft add table ip filter",
                         "nft add chain ip filter INPUT '{ type filter hook "
-                        "input priority 0; }'"]:
+                        "input priority 0; }'",
+                        "tc qdisc del dev %s root" % default_interface_name]:
             shell_conn.execute_command(command)
+        shell_conn.disconnect()
 
     @staticmethod
     def get_orchestrator_node(node):
@@ -339,6 +341,53 @@ class ClusterUtils:
         self.log.debug("Highest version node : {}".format(highest_version_nodes))
         highest_version_nodes = [node for node in cluster.nodes_in_cluster if node.ip in highest_version_nodes]
         return highest_version, highest_build, highest_version_nodes
+
+    def set_network_delay_between_nodes(self,
+                                        network_delay_between_nodes_dict,
+                                        state):
+        """
+        :param network_delay_between_nodes_dict: Format:
+            {
+                TestInputServer1: <delay_to_set>,
+                TestInputServer2: <delay_to_set>,...
+            }
+            where TestInputServer is the regular server object
+            and delay_to_set is the string like 100ms, 200ms, ..
+        :param state: String with value 'enable' or 'disable'
+        """
+        # Generic command strings
+        remove_delay_cmd = "tc qdisc del dev %s root"
+        add_prio_queue_cmd = "tc qdisc add dev %s root handle 1: prio"
+        set_netem_delay_cmd = \
+            "tc qdisc add dev %s parent 1:1 handle 10: netem delay %s"
+        add_dest_ip_cmd = "tc filter add dev %s parent 1:0 protocol " \
+            + "ip pref 55 u32 match ip dst %s flowid 1:1"
+
+        servers = network_delay_between_nodes_dict.keys()
+        for server_to_set_delay in servers:
+            shell_conn = RemoteMachineShellConnection(server_to_set_delay)
+            if state == "disable":
+                self.log.info("%s - Disabling delay" % server_to_set_delay.ip)
+                shell_conn.execute_command(
+                    remove_delay_cmd % server_to_set_delay.default_interface)
+            else:
+                delay_val_to_set = \
+                    network_delay_between_nodes_dict[server_to_set_delay]
+                self.log.info("%s - Enabling delay of %s" %
+                              (server_to_set_delay.ip, delay_val_to_set))
+                set_delay_cmd = set_netem_delay_cmd \
+                    % (server_to_set_delay.default_interface, delay_val_to_set)
+                # Adds interface to handle delays on the target server
+                shell_conn.execute_command(
+                    add_prio_queue_cmd % server_to_set_delay.default_interface)
+                # Sets given delay using netem
+                shell_conn.execute_command(set_delay_cmd)
+                # This block enables the delay wrt each given server
+                for server in servers:
+                    shell_conn.execute_command(
+                        add_dest_ip_cmd
+                        % (server_to_set_delay.default_interface, server.ip))
+            shell_conn.disconnect()
 
     def get_possible_orchestrator_nodes(self, cluster):
         nodes = list()
