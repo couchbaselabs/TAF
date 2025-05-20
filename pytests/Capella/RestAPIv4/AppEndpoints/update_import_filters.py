@@ -359,7 +359,8 @@ class PutImportFilter(GetAppEndpoints):
         testcases = list()
         for v in [
             "" "abc", self.generate_random_string(special_characters=False),
-            self.generate_random_string(500, special_characters=False),
+            "1" + self.generate_random_string(499, special_characters=False),
+            "A" + self.generate_random_string(499, special_characters=False)
         ]:
             testcase = dict()
             testcase["payload"] = v
@@ -376,6 +377,17 @@ class PutImportFilter(GetAppEndpoints):
                            "defined".format(v)
             }
             testcase["expected_status_code"] = 400
+            if isinstance(v, str) and len(v) > 1 and v[0].isdigit():
+                testcase["expected_error"] = {
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 400,
+                    "message": "bad request: 1 errors:\ncollection \"_default\" "
+                               "import filter error: invalid javascript syntax: "
+                               "(anonymous): Line 1:2 Unexpected token "
+                               "ILLEGAL (and 1 more errors)"
+                }
             testcases.append(testcase)
 
         failures = list()
