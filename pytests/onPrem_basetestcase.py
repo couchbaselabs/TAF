@@ -222,8 +222,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.log.error(e)
             self.log.error("Unable to determine if the cluster is "
                            "enterprise edition or not. Check if its columnar cluster")
-            if self.cluster.master.type == "columnar" or \
-                    CbServer.cluster_profile == "columnar":
+            if self.cluster.master.type == "analytics" or \
+                    CbServer.cluster_profile == "analytics":
                 CbServer.enterprise_edition = True
         if CbServer.enterprise_edition:
             self.cluster.edition = "enterprise"
@@ -483,7 +483,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.columnar_aws_endpoint = self.input.param("columnar_aws_endpoint",
                                                       self.aws_endpoint)
         if (self.analytics_compute_storage_separation or
-                CbServer.cluster_profile == "columnar" or cluster.master.type == "columnar"):
+                CbServer.cluster_profile == "analytics" or cluster.master.type == "analytics"):
             services_mem_quota_percent = dict()
             services_mem_quota_percent[CbServer.Services.CBAS] = 80
             services_mem_quota_percent[CbServer.Services.KV] = 10

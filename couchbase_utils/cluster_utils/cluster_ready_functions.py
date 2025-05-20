@@ -277,7 +277,7 @@ class ClusterUtils:
             rest = ClusterRestAPI(server)
             result = rest.cluster_info()[1]
             version = rest.node_details()[1]["version"][:5]
-            if (server.type != "columnar" and not ClusterRun.is_enabled and
+            if (server.type != "analytics" and not ClusterRun.is_enabled and
                     version < '7.5.0'):
                 profiles.append("default")
             else:
@@ -701,7 +701,7 @@ class ClusterUtils:
     def cleanup_cluster(self, cluster, master=None):
         master = master or cluster.master
         self.log.debug("Cleaning up cluster {0}".format(master))
-        if master.type != "columnar":
+        if master.type != "analytics":
             xdcr_helper = XDCRUtils(master)
             xdcr_helper.remove_all_replications()
             xdcr_helper.remove_all_remote_clusters()

@@ -97,13 +97,13 @@ class CBASBaseTest(BaseTestCase):
         """
         cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
         if self.num_of_clusters == 1:
-            if cluster.master.type != "columnar":
+            if cluster.master.type != "analytics":
                 self.num_of_clusters = 2
                 cluster.servers = [
                     server for server in self.servers if server.type == "default"]
             elif self.input.param("runtype", "default") == "onprem-columnar":
                 cluster.servers = [
-                    server for server in self.servers if server.type == "columnar"]
+                    server for server in self.servers if server.type == "analytics"]
 
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
@@ -174,7 +174,7 @@ class CBASBaseTest(BaseTestCase):
 
 
             servers = [
-                server for server in self.servers if server.type == "columnar"]
+                server for server in self.servers if server.type == "analytics"]
             cluster_name = cluster_name_format % str(i+1)
             cluster = CBCluster(
                 name=cluster_name,
@@ -196,7 +196,7 @@ class CBASBaseTest(BaseTestCase):
             )
             cluster.master.services = ["kv", "cbas"]
 
-            if "cbas" in cluster.master.services or "columnar" in cluster.master.services:
+            if "cbas" in cluster.master.services or "analytics" in cluster.master.services:
                 cluster.cbas_nodes.append(cluster.master)
 
             if self.input.param("cluster_ip_family", ""):

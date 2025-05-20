@@ -7758,10 +7758,8 @@ class NodeInitializeTask(Task):
             for k_to_remove in ["fts_memory_quota",
                                 "eventing_memory_quota",
                                 "cbas_memory_quota",
-
                                 "cbas_path",
                                 "eventing_path",
-
                                 "indexer_storage_mode"]:
                 cluster_init_params.pop(k_to_remove)
         self.log.info("cluster_init_params: %s", cluster_init_params)
