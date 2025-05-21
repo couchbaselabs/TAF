@@ -2364,10 +2364,10 @@ class Dataset_Util(KafkaLink_Util):
                                (time.time() - start_time))
                 return True
             else:
-                self.log.info(f"Data ingestion not completed yet. "
-                              "Actual Count: {actual_doc_count}, Expected Count: {num_items}")
+                self.log.info(f"Data ingestion not completed yet. \
+                Actual Count: {actual_doc_count}, Expected Count: {num_items}")
                 self.log.debug("Sleeping for 10 seconds")
-                sleep(2)
+                sleep(10)
 
         self.log.error(
             "Dataset: {0} Expected Doc Count: {1} Actual Doc Count: "
@@ -3381,29 +3381,21 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
     def load_doc_to_standalone_collection(
             self, cluster, collection_name, dataverse_name, database_name,
-            no_of_docs, document_size=1024, batch_size=500,
+            no_of_docs, document_size=1024, batch_size=1000,
             max_concurrent_batches=10, country_type="string",
             include_country=True, analytics_timeout=1800, timeout=1800, username=None, password=None, nested_level=0):
         """
         Load documents to a standalone collection.
         """
         start = time.time()
-        executor = ThreadPoolExecutor(max_workers=max_concurrent_batches)
-        try:
-            for i in range(0, no_of_docs, batch_size):
+        def generate_docs_and_insert(start, end, batch_size):
+            for i in range(start, end, batch_size):
                 batch_start = i
-                batch_end = min(i + batch_size, no_of_docs)
-                tasks = []
-
-                for j in range(batch_start, batch_end):
-                    tasks.append(self.GenerateDocsCallable(
-                        self, document_size, country_type, include_country, nested_level))
-
+                batch_end = min(i + batch_size, end)
                 batch_docs = []
-                futures = executor.map(lambda task: task.call(), tasks)
-                for future in futures:
-                    batch_docs.append(future)
-
+                self.log.info("Generating docs for batch start: {} and end: {}".format(batch_start, batch_end))
+                for j in range(batch_start, batch_end):
+                    batch_docs.append(self.generate_docs(document_size, country_type, include_country, nested_level))
                 retry_count = 0
                 while retry_count < 3:
                     result = self.insert_into_standalone_collection(
@@ -3419,8 +3411,12 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                         return False
                     else:
                         retry_count += 1
-        finally:
-            executor.shutdown()
+        executor = ThreadPoolExecutor(max_workers=max_concurrent_batches)
+        with executor:
+            step = no_of_docs // max_concurrent_batches
+            for i in range(max_concurrent_batches):
+                executor.submit(generate_docs_and_insert, i * step, (i + 1) * step, batch_size)
+            executor.shutdown(wait=True)
 
         end = time.time()
         time_spent = end - start
@@ -3453,12 +3449,13 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         """
         cmd = self.generate_insert_into_cmd(document, collection_name, database_name,
                                             dataverse_name)
-        self.log.info("Inserting into: {0}.{1}".format(CBASHelper.format_name(dataverse_name),
+        self.log.info("Inserting {0} docs into standalone collection: {1}.{2}".format(len(document),
+                                                       CBASHelper.format_name(dataverse_name),
                                                        CBASHelper.format_name(collection_name)))
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout, client_context_id=client_context_id)
-
+        self.log.debug("Insert into standalone collection time: {}".format(metrics.get("executionTime", 0)))
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)

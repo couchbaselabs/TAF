@@ -30,7 +30,13 @@ class ColumnarOnPremBase(CBASBaseTest):
     def tearDown(self):
         super(ColumnarOnPremBase, self).tearDown()
 
-    def load_remote_collections(self, cluster, buckets=None):
+    def load_remote_collections(self, cluster, buckets=None,
+                                create_start_index=None, create_end_index=None,
+                                read_start_index=None, read_end_index=None,
+                                update_start_index=None, update_end_index=None,
+                                delete_start_index=None, delete_end_index=None,
+                                expiry_start_index=None, expiry_end_index=None,
+                                wait_for_completion=True):
         buckets = buckets or cluster.buckets
         thread_count = 0
         for bucket in buckets:
@@ -38,8 +44,9 @@ class ColumnarOnPremBase(CBASBaseTest):
                 if scope == "_system":
                     continue
                 for collection in bucket.scopes[scope].collections.keys():
-                    thread_count = 1
+                    thread_count += 1
         per_coll_ops = self.input.param("ops_rate", 20000)//thread_count
+        tasks = list()
 
         for bucket in buckets:
             pattern = [100, 0, 0, 0, 0]
@@ -57,11 +64,11 @@ class ColumnarOnPremBase(CBASBaseTest):
                         key_type="SimpleKey", value_type=valType,
                         create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
                         delete_percent=pattern[3], expiry_percent=pattern[4],
-                        create_start_index=0, create_end_index=self.num_items,
-                        read_start_index=0, read_end_index=0,
-                        update_start_index=0, update_end_index=0,
-                        delete_start_index=0, delete_end_index=0,
-                        expiry_start_index=0, expiry_end_index=0,
+                        create_start_index=create_start_index, create_end_index=create_end_index,
+                        read_start_index=read_start_index, read_end_index=read_end_index,
+                        update_start_index=update_start_index, update_end_index=update_end_index,
+                        delete_start_index=delete_start_index, delete_end_index=delete_end_index,
+                        expiry_start_index=expiry_start_index, expiry_end_index=expiry_end_index,
                         process_concurrency=1, task_identifier="", ops=per_coll_ops,
                         suppress_error_table=False,
                         track_failures=True,
@@ -69,25 +76,32 @@ class ColumnarOnPremBase(CBASBaseTest):
                         elastic=False, model=self.model, mockVector=self.mockVector, dim=self.dim, base64=self.base64)
                     loader.create_doc_load_task()
                     self.task_manager.add_new_task(loader)
-                    loader.result = self.task_manager.get_task_result(loader)
-                    if loader.fail_count == self.num_items:
-                        self.fail("Doc loading failed for {0}.{1}.{2}"
-                                    .format(bucket.name,
-                                            scope,
-                                            collection))
-                    else:
-                        if loader.fail_count > 0:
-                            self.log.error(
-                                "{0} Docs failed to load "
-                                "for {1}.{2}.{3}"
-                                .format(loader.fail_count,
-                                        bucket.name, scope,
-                                        collection))
-                            bucket.scopes[scope].collections[collection].num_items = (
-                                    self.num_items -
-                                    loader.fail_count)
-                        else:
-                            bucket.scopes[scope].collections[collection].num_items = self.num_items
+                    tasks.append(loader)
+        if wait_for_completion:
+            self.wait_for_completion(tasks)
+        return tasks
+
+    def wait_for_completion(self, tasks):
+        for loader in tasks:
+            loader.result = self.task_manager.get_task_result(loader)
+            if loader.fail_count == loader.create_end_index:
+                self.fail("Doc loading failed for {0}.{1}.{2}"
+                            .format(loader.bucket.name,
+                                    loader.scope,
+                                    loader.collection))
+            else:
+                if loader.fail_count > 0:
+                    self.log.error(
+                        "{0} Docs failed to load "
+                        "for {1}.{2}.{3}"
+                        .format(loader.fail_count,
+                                loader.bucket.name, loader.scope,
+                                loader.collection))
+                    loader.bucket.scopes[loader.scope].collections[loader.collection].num_items = (
+                            loader.create_end_index -
+                            loader.fail_count)
+                else:
+                    loader.bucket.scopes[loader.scope].collections[loader.collection].num_items = loader.create_end_index
 
     """
     This method populates the columnar spec that will be used create 

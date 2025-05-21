@@ -214,7 +214,8 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
         copy_to_kv_dest_collections = list()
 
-        self.load_remote_collections(self.remote_cluster)
+        self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=0, create_end_index=self.num_items)
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
 
@@ -237,7 +238,8 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                         self.remote_cluster.master.rest_password,
                         bucket.name, req_clients=1)
         self.log.info("Started Doc loading on remote cluster")
-        self.load_remote_collections(self.remote_cluster)
+        self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=0, create_end_index=self.num_items)
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
 
@@ -249,6 +251,10 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                     dataset.num_of_items, 3600):
                 self.fail("FAILED: Initial ingestion into {}.".format(
                     dataset.full_name))
+        tasks = self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=self.num_items,
+                                    create_end_index=self.num_items*2,
+                                    wait_for_completion=False)
         self.log.info("Rebalance-In a KV+CBAS node in analytics cluster")
         rebalance_task, self.analytics_cluster.available_servers = self.rebalance_util.rebalance(
             cluster=self.analytics_cluster, cbas_nodes_in=1,
@@ -259,6 +265,9 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
             self.fail("Error while rebalance-In KV+CBAS node in analytics "
                       "cluster")
         #Check for items counts post rebalance.
+        self.wait_for_completion(tasks)
+        self.columnar_cbas_utils.refresh_remote_dataset_item_count(
+            self.bucket_util)
         self.log.info("Waiting for initial ingestion into Remote dataset")
         for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
             if not self.columnar_cbas_utils.wait_for_ingestion_complete(
@@ -280,7 +289,8 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
         copy_to_kv_dest_collections = list()
 
-        self.load_remote_collections(self.remote_cluster)
+        self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=0, create_end_index=self.num_items)
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
 
@@ -292,7 +302,10 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                     dataset.num_of_items, 3600):
                 self.fail("FAILED: Initial ingestion into {}.".format(
                     dataset.full_name))
-
+        tasks = self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=self.num_items,
+                                    create_end_index=self.num_items*2,
+                                    wait_for_completion=False)
         self.log.info("Rebalance-Out a KV+CBAS node in analytics cluster")
         rebalance_task, self.analytics_cluster.available_servers = self.rebalance_util.rebalance(
             cluster=self.analytics_cluster, cbas_nodes_out=1,
@@ -302,6 +315,9 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
             self.fail("Error while Rebalance-Out KV+CBAS node in analytics "
                       "cluster")
         #Check for items counts post rebalance.
+        self.wait_for_completion(tasks)
+        self.columnar_cbas_utils.refresh_remote_dataset_item_count(
+            self.bucket_util)
         self.log.info("Waiting for initial ingestion into Remote dataset")
         for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
             if not self.columnar_cbas_utils.wait_for_ingestion_complete(
@@ -323,7 +339,8 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
         copy_to_kv_dest_collections = list()
 
-        self.load_remote_collections(self.remote_cluster)
+        self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=0, create_end_index=self.num_items)
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
 
@@ -335,7 +352,10 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                     dataset.num_of_items, 3600):
                 self.fail("FAILED: Initial ingestion into {}.".format(
                     dataset.full_name))
-
+        tasks = self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=self.num_items,
+                                    create_end_index=self.num_items*2,
+                                    wait_for_completion=False)
         self.log.info("Rebalance-In a KV+CBAS node in analytics cluster")
         rebalance_task, self.analytics_cluster.available_servers = self.rebalance_util.rebalance(
             cluster=self.analytics_cluster, cbas_nodes_in=1,
@@ -346,7 +366,9 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                 rebalance_task, self.analytics_cluster, True, True):
             self.fail("Error while rebalance-In KV+CBAS node in analytics "
                       "cluster")
-
+        self.wait_for_completion(tasks)
+        self.columnar_cbas_utils.refresh_remote_dataset_item_count(
+            self.bucket_util)
         #Check for items counts post rebalance.
         self.log.info("Waiting for initial ingestion into Remote dataset")
         for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
@@ -369,7 +391,8 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
         copy_to_kv_dest_collections = list()
 
-        self.load_remote_collections(self.remote_cluster)
+        self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=0, create_end_index=self.num_items)
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
 
@@ -381,6 +404,10 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                     dataset.num_of_items, 3600):
                 self.fail("FAILED: Initial ingestion into {}.".format(
                     dataset.full_name))
+        tasks = self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=self.num_items,
+                                    create_end_index=self.num_items*2,
+                                    wait_for_completion=False)
         self.log.info("Failover with add back a KV+CBAS node in analytics cluster")
         self.analytics_cluster.available_servers, kv_failover_nodes, cbas_failover_nodes = \
             self.rebalance_util.failover(
@@ -388,6 +415,9 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                 failover_type=self.input.param("failover_type", "Hard"),
                 action="FullRecovery", available_servers=self.analytics_cluster.available_servers)
         #Check for items counts post failover.
+        self.wait_for_completion(tasks)
+        self.columnar_cbas_utils.refresh_remote_dataset_item_count(
+            self.bucket_util)
         self.log.info("Waiting for initial ingestion into Remote dataset")
         for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
             if not self.columnar_cbas_utils.wait_for_ingestion_complete(
@@ -409,7 +439,8 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
         copy_to_kv_dest_collections = list()
 
-        self.load_remote_collections(self.remote_cluster)
+        self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=0, create_end_index=self.num_items)
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
 
@@ -421,12 +452,19 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                     dataset.num_of_items, 3600):
                 self.fail("FAILED: Initial ingestion into {}.".format(
                     dataset.full_name))
+        tasks = self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=self.num_items,
+                                    create_end_index=self.num_items*2,
+                                    wait_for_completion=False)
         self.log.info("Failover with add back a KV+CBAS node in analytics cluster")
         self.analytics_cluster.available_servers, kv_failover_nodes, cbas_failover_nodes = \
             self.rebalance_util.failover(
                 cluster=self.analytics_cluster, cbas_nodes=1,
                 action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers)
         #Check for items counts post failover.
+        self.wait_for_completion(tasks)
+        self.columnar_cbas_utils.refresh_remote_dataset_item_count(
+            self.bucket_util)
         self.log.info("Waiting for initial ingestion into Remote dataset")
         for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
             if not self.columnar_cbas_utils.wait_for_ingestion_complete(
@@ -448,7 +486,8 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
         copy_to_kv_bucket = random.choice(self.remote_cluster.buckets)
         copy_to_kv_dest_collections = list()
 
-        self.load_remote_collections(self.remote_cluster)
+        self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=0, create_end_index=self.num_items)
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
 
@@ -460,12 +499,19 @@ class ColumnarRebalanceFailover(ColumnarOnPremBase):
                     dataset.num_of_items, 3600):
                 self.fail("FAILED: Initial ingestion into {}.".format(
                     dataset.full_name))
+        tasks = self.load_remote_collections(self.remote_cluster,
+                                    create_start_index=self.num_items,
+                                    create_end_index=self.num_items*2,
+                                    wait_for_completion=False)
         self.log.info("Rebalance-Out a KV+CBAS node in analytics cluster")
         self.analytics_cluster.available_servers, _, _ = \
             self.rebalance_util.failover(
             cluster=self.analytics_cluster, cbas_nodes=1,
             action="RebalanceOut", available_servers=self.analytics_cluster.available_servers)
         #Check for items counts post failover.
+        self.wait_for_completion(tasks)
+        self.columnar_cbas_utils.refresh_remote_dataset_item_count(
+            self.bucket_util)
         self.log.info("Waiting for initial ingestion into Remote dataset")
         for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
             if not self.columnar_cbas_utils.wait_for_ingestion_complete(
