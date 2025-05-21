@@ -177,7 +177,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             # Single cluster
             cluster_name = cluster_name_format % counter_index
             self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
-                                                       servers=self.servers,
+                                                       servers=[server for server in self.servers if server.type == self.servers[0].type],
                                                        vbuckets=num_vb)
             for index, server in enumerate(
                     self.cb_clusters[cluster_name].servers):
@@ -469,7 +469,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.input.param("aws_region", None) or "us-west-1"
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
-        self.aws_endpoint = self.input.param("aws_endpoint", None)
+        self.aws_endpoint = self.input.param("aws_endpoint", "")
 
         self.columnar_aws_access_key = self.input.param("columnar_aws_access_key",
                                                         self.aws_access_key)
