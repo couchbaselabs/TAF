@@ -62,6 +62,12 @@ class ColumnarBaseTest(BaseTestCase):
         self.aws_region = self.input.param("aws_region", "us-west-1")
         self.aws_endpoint = self.input.param("aws_endpoint", "")
 
+        self.columnar_aws_access_key = self.input.param("columnar_aws_access_key", self.aws_access_key)
+        self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key", self.aws_secret_key)
+        self.columnar_aws_session_token = self.input.param("columnar_aws_session_token", self.aws_session_token)
+        self.columnar_aws_region = self.input.param("columnar_aws_region", self.aws_region)
+        self.columnar_aws_endpoint = self.input.param("columnar_aws_endpoint", self.aws_endpoint)
+
         # For sanity tests we are hard coding the bucket from which the data
         # will be read. This will ensure stable and consistent test runs.
         # Override this variable in your test setup if you want to use a

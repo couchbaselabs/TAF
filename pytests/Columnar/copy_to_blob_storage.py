@@ -71,14 +71,20 @@ class CopyToBlobStorage(ColumnarBaseTest):
             try:
                 if self.link_type == "s3":
                     self.sink_blob_bucket_name = "copy-to-blob-" + str(random.randint(1, 100000))
-                    self.log.info("Creating S3 bucket for : {}".format(self.sink_blob_bucket_name))
+                    self.log.info("Creating S3 bucket for : {0} with endpoint {1} \
+                        using credentials {2}/{3} at region {4}".format(
+                            self.sink_blob_bucket_name,
+                            self.columnar_aws_endpoint,
+                            self.columnar_aws_access_key,
+                            self.columnar_aws_secret_key,
+                            self.columnar_aws_region))
                     self.sink_bucket_created = perform_S3_operation(
-                        endpoint_url=self.aws_endpoint,
-                        aws_access_key=self.aws_access_key,
-                        aws_secret_key=self.aws_secret_key,
-                        aws_session_token=self.aws_session_token,
+                        endpoint_url=self.columnar_aws_endpoint,
+                        aws_access_key=self.columnar_aws_access_key,
+                        aws_secret_key=self.columnar_aws_secret_key,
+                        aws_session_token=self.columnar_aws_session_token,
                         create_bucket=True, bucket_name=self.sink_blob_bucket_name,
-                        region=self.aws_region)
+                        region=self.columnar_aws_region)
                     break
                 elif self.link_type == "gcs":
                     self.sink_blob_bucket_name = "copy-to-gcs-" + str(random.randint(1, 100000))
@@ -130,13 +136,13 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 if self.link_type == "s3":
                     self.log.info("Emptying S3 bucket - {0}".format(self.sink_blob_bucket_name))
                     if perform_S3_operation(
-                            aws_access_key=self.aws_access_key,
-                            aws_secret_key=self.aws_secret_key,
-                            aws_session_token=self.aws_session_token,
+                            aws_access_key=self.columnar_aws_access_key,
+                            aws_secret_key=self.columnar_aws_secret_key,
+                            aws_session_token=self.columnar_aws_session_token,
                             empty_bucket=True,
                             bucket_name=self.sink_blob_bucket_name,
-                            region=self.aws_region,
-                            endpoint_url=self.aws_endpoint):
+                            region=self.columnar_aws_region,
+                            endpoint_url=self.columnar_aws_endpoint):
                         break
                 else:
                     if self.gcs_client.empty_gcs_bucket(self.sink_blob_bucket_name):
@@ -159,13 +165,13 @@ class CopyToBlobStorage(ColumnarBaseTest):
             try:
                 if self.link_type == "s3":
                     if perform_S3_operation(
-                            aws_access_key=self.aws_access_key,
-                            aws_secret_key=self.aws_secret_key,
-                            aws_session_token=self.aws_session_token,
+                            aws_access_key=self.columnar_aws_access_key,
+                            aws_secret_key=self.columnar_aws_secret_key,
+                            aws_session_token=self.columnar_aws_session_token,
                             delete_bucket=True,
                             bucket_name=self.sink_blob_bucket_name,
-                            region=self.aws_region,
-                            endpoint_url=self.aws_endpoint):
+                            region=self.columnar_aws_region,
+                            endpoint_url=self.columnar_aws_endpoint):
                         break
                 elif self.link_type == "gcs":
                     if self.gcs_client.delete_bucket(self.sink_blob_bucket_name):
@@ -640,12 +646,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         files = []
         if self.link_type == "s3":
-            files = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                         aws_secret_key=self.aws_secret_key,
-                                         region=self.aws_region,
-                                         aws_session_token=self.aws_session_token,
+            files = perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                         aws_secret_key=self.columnar_aws_secret_key,
+                                         region=self.columnar_aws_region,
+                                         aws_session_token=self.columnar_aws_session_token,
                                          bucket_name=self.sink_blob_bucket_name,
-                                         endpoint_url=self.aws_endpoint,
+                                         endpoint_url=self.columnar_aws_endpoint,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
@@ -729,12 +735,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         files = []
         if self.link_type == "s3":
-            files = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                     aws_secret_key=self.aws_secret_key,
-                                     region=self.aws_region,
-                                     aws_session_token=self.aws_session_token,
+            files = perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                     aws_secret_key=self.columnar_aws_secret_key,
+                                     region=self.columnar_aws_region,
+                                     aws_session_token=self.columnar_aws_session_token,
                                      bucket_name=self.sink_blob_bucket_name,
-                                     endpoint_url=self.aws_endpoint,
+                                     endpoint_url=self.columnar_aws_endpoint,
                                      get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
@@ -1085,12 +1091,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         verification_file = []
         if self.link_type == "s3":
-            verification_file = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
-                                                                      aws_secret_key=self.aws_secret_key,
-                                                                      region=self.aws_region,
-                                                                      aws_session_token=self.aws_session_token,
+            verification_file = [str(x) for x in perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                                                      aws_secret_key=self.columnar_aws_secret_key,
+                                                                      region=self.columnar_aws_region,
+                                                                      aws_session_token=self.columnar_aws_session_token,
                                                                       bucket_name=self.sink_blob_bucket_name,
-                                                                      endpoint_url=self.aws_endpoint,
+                                                                      endpoint_url=self.columnar_aws_endpoint,
                                                                       get_bucket_objects=True)]
         elif self.link_type == "gcs":
             verification_file = [str(x) for x in self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)]
@@ -1100,12 +1106,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
             file_to_download = [x for x in verification_file if x.startswith(path)][0]
             dest_path = os.path.join(os.path.dirname(__file__), "download.json")
             if self.link_type == "s3":
-                _ = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                         aws_secret_key=self.aws_secret_key,
-                                         region=self.aws_region,
-                                         aws_session_token=self.aws_session_token,
+                _ = perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                         aws_secret_key=self.columnar_aws_secret_key,
+                                         region=self.columnar_aws_region,
+                                         aws_session_token=self.columnar_aws_session_token,
                                          bucket_name=self.sink_blob_bucket_name,
-                                         endpoint_url=self.aws_endpoint,
+                                         endpoint_url=self.columnar_aws_endpoint,
                                          download_file=True, src_path=file_to_download,
                                          dest_path=dest_path
                                          )
@@ -1194,12 +1200,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         verification_file = []
         if self.link_type == "s3":
-            verification_file = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
-                                                                      aws_secret_key=self.aws_secret_key,
-                                                                      region=self.aws_region,
-                                                                      aws_session_token=self.aws_session_token,
+            verification_file = [str(x) for x in perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                                                      aws_secret_key=self.columnar_aws_secret_key,
+                                                                      region=self.columnar_aws_region,
+                                                                      aws_session_token=self.columnar_aws_session_token,
                                                                       bucket_name=self.sink_blob_bucket_name,
-                                                                      endpoint_url=self.aws_endpoint,
+                                                                      endpoint_url=self.columnar_aws_endpoint,
                                                                       get_bucket_objects=True)]
         elif self.link_type == "gcs":
             verification_file = [str(x) for x in self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)]
@@ -1209,12 +1215,12 @@ class CopyToBlobStorage(ColumnarBaseTest):
             file_to_download = [x for x in verification_file if x.startswith(path)][0]
             dest_path = os.path.join(os.path.dirname(__file__), "download.json")
             if self.link_type == "s3":
-                _ = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                         aws_secret_key=self.aws_secret_key,
-                                         region=self.aws_region,
-                                         aws_session_token=self.aws_session_token,
+                _ = perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                         aws_secret_key=self.columnar_aws_secret_key,
+                                         region=self.columnar_aws_region,
+                                         aws_session_token=self.columnar_aws_session_token,
                                          bucket_name=self.sink_blob_bucket_name,
-                                         endpoint_url=self.aws_endpoint,
+                                         endpoint_url=self.columnar_aws_endpoint,
                                          download_file=True, src_path=file_to_download,
                                          dest_path=dest_path
                                          )
@@ -1298,10 +1304,10 @@ class CopyToBlobStorage(ColumnarBaseTest):
         self.log.info("Adding {} documents in standalone dataset. Default doc size is 1KB".format(no_of_docs))
 
         external_link_obj = \
-            self.cbas_util.create_external_link_obj(self.columnar_cluster, accessKeyId=self.aws_access_key,
-                                                    secretAccessKey=self.aws_secret_key,
-                                                    serviceEndpoint=self.aws_endpoint,
-                                                    regions=["us-west-1"])[0]
+            self.cbas_util.create_external_link_obj(self.columnar_cluster, accessKeyId=self.columnar_aws_access_key,
+                                                    secretAccessKey=self.columnar_aws_secret_key,
+                                                    serviceEndpoint=self.columnar_aws_endpoint,
+                                                    regions=[self.columnar_aws_region])[0]
         if not self.cbas_util.create_external_link(self.columnar_cluster, external_link_obj.properties):
             self.fail("Failed to create S3 link on different region")
 
@@ -1439,11 +1445,11 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         files = []
         if self.link_type == "s3":
-            files = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                         aws_secret_key=self.aws_secret_key,
-                                         region=self.aws_region,
-                                         aws_session_token=self.aws_session_token,
-                                         endpoint_url=self.aws_endpoint,
+            files = perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                         aws_secret_key=self.columnar_aws_secret_key,
+                                         region=self.columnar_aws_region,
+                                         aws_session_token=self.columnar_aws_session_token,
+                                         endpoint_url=self.columnar_aws_endpoint,
                                          bucket_name=self.sink_blob_bucket_name,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
@@ -1531,11 +1537,11 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         files = []
         if self.link_type == "s3":
-            files = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                         aws_secret_key=self.aws_secret_key,
-                                         region=self.aws_region,
-                                         aws_session_token=self.aws_session_token,
-                                         endpoint_url=self.aws_endpoint,
+            files = perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                         aws_secret_key=self.columnar_aws_secret_key,
+                                         region=self.columnar_aws_region,
+                                         aws_session_token=self.columnar_aws_session_token,
+                                         endpoint_url=self.columnar_aws_endpoint,
                                          bucket_name=self.sink_blob_bucket_name,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
@@ -1587,11 +1593,11 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         files = []
         if self.link_type == "s3":
-            files = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                         aws_secret_key=self.aws_secret_key,
-                                         region=self.aws_region,
-                                         aws_session_token=self.aws_session_token,
-                                         endpoint_url=self.aws_endpoint,
+            files = perform_S3_operation(aws_access_key=self.columnar_aws_access_key,
+                                         aws_secret_key=self.columnar_aws_secret_key,
+                                         region=self.columnar_aws_region,
+                                         aws_session_token=self.columnar_aws_session_token,
+                                         endpoint_url=self.columnar_aws_endpoint,
                                          bucket_name=self.sink_blob_bucket_name,
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
