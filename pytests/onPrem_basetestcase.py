@@ -465,8 +465,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # analytics in serverless mode
         self.aws_access_key = self.input.param("aws_access_key", None)
         self.aws_secret_key = self.input.param("aws_secret_key", None)
-        self.aws_region = self.input.param("aws_region", None) or \
-            self.input.param("aws_region", None) or "us-west-1"
+        self.aws_region = self.input.param("aws_region", None) or "us-west-1"
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
         self.aws_endpoint = self.input.param("aws_endpoint", "")
