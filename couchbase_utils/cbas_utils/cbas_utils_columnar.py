@@ -3067,9 +3067,11 @@ class External_Dataset_Util(Remote_Dataset_Util):
         for _ in range(no_of_objs):
             external_container = random.choice(list(external_container_names.keys()))
             link = random.choice(all_links)
-            while link_type != "gcs" and link.properties["region"] != external_container_names[
-                external_container]:
+            while link_type != "gcs" and (link.properties["region"] != external_container_names[
+                external_container]):
                 link = random.choice(all_links)
+                if cluster.master.type == "analytics":
+                    break
 
             if use_only_existing_db:
                 if database:
@@ -3220,7 +3222,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                     "external_dataset_properties"][i % len(dataset_spec[
                                                                "external_dataset_properties"])]
                 if link.properties["type"] == "gcs" or link.properties["region"] == dataset_properties.get(
-                        "region", None):
+                        "region", None) or cluster.master.type == "analytics":
                     break
 
             dataset_obj = External_Dataset(
