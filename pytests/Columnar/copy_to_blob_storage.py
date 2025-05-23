@@ -1318,6 +1318,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             jobs.put((self.cbas_util.copy_to_s3,
                       {"cluster": self.columnar_cluster, "collection_name": datasets[i].name,
                        "dataverse_name": datasets[i].dataverse_name,
+                       "database_name": datasets[i].database_name,
                        "destination_bucket": bucket_name,
                        "destination_link_name": external_link_obj.full_name, "path": path, "validate_error_msg": True,
                        "expected_error": "External sink error. "
