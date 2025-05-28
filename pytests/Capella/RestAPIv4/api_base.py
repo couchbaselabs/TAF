@@ -2023,6 +2023,31 @@ class APIBase(CouchbaseBaseTest):
             self.fail("!!!...Failed to retrieve providerId...!!!")
         return oidcProviderId
 
+    def create_app_endpoint_to_be_tested(self, app_svc_id,app_endpoint_name, delta_sync, bucket, scopes, userXattrKey):
+
+        res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+            self.organisation_id, self.project_id, self.cluster_id,
+            app_svc_id,
+            app_endpoint_name, delta_sync,
+            bucket, scopes,
+            userXattrKey)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
+                self.organisation_id, self.project_id, self.cluster_id,
+                app_svc_id,
+                app_endpoint_name, delta_sync,
+                bucket, scopes,
+                userXattrKey)
+        if res.status_code == 412:
+            self.log.debug("App endpoint {} already exists".format(
+                app_endpoint_name))
+        elif res.status_code != 201:
+            self.log.error(res.content)
+            self.fail("!!!...Creating App Endpoint failed...!!!")
+        self.log.info("Created App Endpoint: {} successfully".format(
+            app_endpoint_name))
+
     def create_app_service_admin_user_to_be_tested(self,project_id, cluster_id,
                                          app_svc_id, **kwargs):
         res = self.capellaAPI.cluster_ops_apis.add_app_service_admin_user(

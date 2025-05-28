@@ -39,8 +39,8 @@ class GetAppEndpoints(GetAppService):
                 "headers": [
                     "Content-Type"
                 ],
-                "maxAge": None,
-                "disabled": None
+                "maxAge": 600,
+                "disabled": False
             },
             "console": {
                 "logLevel": "debug",

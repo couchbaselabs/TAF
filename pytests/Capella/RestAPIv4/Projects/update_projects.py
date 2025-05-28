@@ -212,7 +212,7 @@ class UpdateProject(GetProject):
             if key in ["audit", "id"]:
                 continue
             values = [
-                "", 1, 0, 100000, -1, 123.123, self.generate_random_string(),
+                "", 1, 0, 100000, -1, 123.123, self.generate_random_string(special_characters=False),
                 self.generate_random_string(500, special_characters=False),
             ]
             for value in values:
