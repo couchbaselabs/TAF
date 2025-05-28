@@ -331,6 +331,7 @@ class SDKClient(object):
         auth = PasswordAuthenticator(self.username, self.password)
         timeout_opts = ClusterTimeoutOptions(
             kv_timeout=timedelta(seconds=10),
+            analytics_timeout=timedelta(seconds=1200),
             dns_srv_timeout=timedelta(seconds=10))
         cluster_opts = {
             "authenticator": auth,

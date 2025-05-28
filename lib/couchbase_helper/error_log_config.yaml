@@ -77,6 +77,34 @@ file_name_patterns:
       - string: 'invalid last page'
       - string: 'Storage corrupted and unrecoverable'
 
+  - file: 'analytics_*'
+    grep_for:
+      - string: "fata"
+      - string: "Analytics Service is temporarily unavailable"
+      - string: "Failed during startup task"
+      - string: "IllegalStateException"
+      - string: "ACIDException"
+      - string: "MetadataException"
+      - string: "OverflowException"
+      - string: "UnderflowException"
+      - string: "NullPointerException"
+      - string: "StackOverflowException"
+      - string: "Failure closing a closeable resource"
+      - string: "panic"
+      - string: "LEAK: ByteBuf.release() was not called"
+      - string: "failed to migrate metadata partition"
+      - string: "Internal error"
+      - string: "CBAS\\[number\\]"
+      - string: "IllegalReferenceCountException"
+      - string: "ArrayIndexOutOfBoundsException"
+      - string: "java.lang.OutOfMemoryError"
+      - string: "Invalid pinCount"
+    exclude_patterns:
+      - string: 'HYR0010'
+      - string: 'HYR0114'
+      - string: 'HYR0115'
+      - string: 'ASX3110'
+
   - file: '*.log'
 
 common_patterns:

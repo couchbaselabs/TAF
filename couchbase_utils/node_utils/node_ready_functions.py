@@ -63,12 +63,12 @@ class NodeUtils(object):
             self.jython_task_manager.get_task_result(task)
 
     def reset_cluster_nodes(self, cluster_util, cluster):
-        self.log.info("Resetting cluster_nodes")
+        self.log.info(f"Resetting cluster_nodes: {cluster.servers}")
         tasks = list()
         for node in cluster.servers:
             rest = ClusterRestAPI(node)
             version = rest.cluster_info()[1]["implementationVersion"][:3]
-            if float(version) == 0.0 or float(version) >= 7.6 or node.type == "columnar":
+            if float(version) == 0.0 or float(version) >= 7.6 or node.type == CbServer.Services.COLUMNAR:
                 status, _ = rest.reset_node()
                 if not status:
                     raise Exception(f"Reset node {node.ip} failed")

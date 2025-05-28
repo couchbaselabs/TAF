@@ -108,7 +108,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         # Doc specific params
         self.doc_ops = self.input.param("doc_ops", None)
         self.key = self.input.param("key", "docs")
-        self.key_size = self.input.param("key_size", None)
+        self.key_size = self.input.param("key_size", 20)
         self.doc_size = self.input.param("doc_size", 256)
         self.sub_doc_size = self.input.param("sub_doc_size", 10)
         self.doc_type = self.input.param("doc_type", "json")

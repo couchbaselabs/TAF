@@ -158,9 +158,6 @@ class Murphy(BaseTestCase, OPD):
                     self.load_defn.append(hotel_vector)
                 if self.val_type == "siftBigANN":
                     self.load_defn.append(siftBigANN)
-                    # self.siftFileName = FileDownload.checkDownload(
-                    #     siftBigANN.get("baseFilePath"),
-                    #     "ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz")
             else:
                 self.load_defn.append(vector_load)
 
@@ -473,54 +470,6 @@ class Murphy(BaseTestCase, OPD):
             result = self.drBackup.monitor_restore(self.bucket_util, items, timeout=self.restore_timeout)
             self.assertTrue(result, "Restore failed")
 
-    def siftBigANN_load(self):
-        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
-        if not self.skip_init:
-            self.load_sift_data(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[100,0,0,0,0],
-                              validate_data=False,
-                              wait_for_stats=False)
-
-    def normal_load(self):
-        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=0,
-                               create_end=bucket.loadDefn.get("num_items")//2,
-                               bucket=bucket)
-        if not self.skip_init:
-            self.perform_load(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[100,0,0,0,0],
-                              validate_data=False,
-                              wait_for_stats=False)
-
-        self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=bucket.loadDefn.get("num_items")//2,
-                               create_end=bucket.loadDefn.get("num_items"),
-                               bucket=bucket)
-        if not self.skip_init:
-            self.perform_load(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[100,0,0,0,0],
-                              validate_data=False,
-                              wait_for_stats=False)
-
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["update"],
-                               update_start=0,
-                               update_end=bucket.loadDefn.get("num_items"),
-                               bucket=bucket)
-        if not self.skip_init:
-            self.perform_load(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[0,0,100,0,0],
-                              validate_data=False,
-                              wait_for_stats=False)
-
     def initial_setup(self):
         cpu_monitor = threading.Thread(target=self.print_stats_loop,
                                        kwargs={"cluster": self.cluster})
@@ -594,7 +543,8 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
 
-        self.PrintStep("Running Query workload for 5 mins with NO mutations")
+        self.PrintStep("Running Query workload for {} with NO mutations".format(
+            self.input.param("steady_state_workload_sleep", 300)))
         self.sleep(self.input.param("steady_state_workload_sleep", 300))
         self.end_step_checks(" queries withOUT mutations")
 
@@ -606,7 +556,8 @@ class Murphy(BaseTestCase, OPD):
             self.mutation_th = threading.Thread(target=self.sift_mutations)
             self.mutation_th.start()
 
-            self.PrintStep("Running Query workload during mutations")
+            self.PrintStep("Running Query workload for {} during mutations".format(
+                self.input.param("steady_state_workload_sleep", 300)))
             self.restart_query_load(self.cluster, 0)
             self.sleep(self.input.param("steady_state_workload_sleep", 300))
             self.end_step_checks(" queries with mutations")

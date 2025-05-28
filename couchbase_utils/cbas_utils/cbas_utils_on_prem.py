@@ -27,6 +27,7 @@ from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_on_prem import Dataverse, CBAS_Scope, Link, Dataset, \
     CBAS_Collection, Synonym, CBAS_Index
+from rebalance_utils.rebalance_util import RebalanceUtil
 from remote.remote_util import RemoteMachineHelper
 from common_lib import sleep
 from sdk_exceptions import SDKException
@@ -34,6 +35,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from Jython_tasks.task import Task, RunQueriesTask
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
+
 from py_constants import CbServer
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -5489,45 +5491,38 @@ class CBASRebalanceUtil(object):
             return picked
 
         # Mark Node for failover
-        if failover_type == "Graceful":
+        otpNodes = list()
+        if kv_nodes and cluster_kv_nodes:
             chosen = pick_node(cluster, cluster_kv_nodes, kv_nodes)
-            otpNodes = [x.id for x in chosen]
-            if all_at_once:
+            otpNodes.extend([x.id for x in chosen])
+            failover_count += kv_nodes
+            kv_failover_nodes.extend(chosen)
+        if cbas_nodes and cluster_cbas_nodes:
+            chosen = pick_node(cluster, cluster_cbas_nodes, cbas_nodes)
+            cluster.cbas_cc_node = [node for node in cluster.nodes_in_cluster if node.ip not in [x.ip for x in chosen]][0]
+            cluster.master = cluster.cbas_cc_node
+            otpNodes.extend([x.id for x in chosen])
+            failover_count += cbas_nodes
+            cbas_failover_nodes.extend(chosen)
+        if all_at_once:
+            if failover_type == "Graceful":
                 fail_over_status = fail_over_status and \
                     cluster.rest.cluster.perform_graceful_failover(otpNodes)
             else:
-                for node in otpNodes:
-                    fail_over_status = fail_over_status and \
-                    cluster.rest.cluster.perform_graceful_failover(node)
-            failover_count += kv_nodes
-            kv_failover_nodes.extend(chosen)
+                fail_over_status = fail_over_status and \
+                    cluster.rest.cluster.perform_hard_failover(otpNodes)
         else:
-            if kv_nodes and cluster_kv_nodes:
-                chosen = pick_node(cluster, cluster_kv_nodes, kv_nodes)
-                otpNodes = [x.id for x in chosen]
-                if all_at_once:
+            for node in otpNodes:
+                if failover_type == "Graceful":
                     fail_over_status = fail_over_status and \
-                        cluster.rest.cluster.perform_graceful_failover(otpNodes)
-                else:
-                    for node in otpNodes:
-                        fail_over_status = fail_over_status and \
                         cluster.rest.cluster.perform_graceful_failover(node)
-                failover_count += kv_nodes
-                kv_failover_nodes.extend(chosen)
-            if cbas_nodes and cluster_cbas_nodes:
-                chosen = pick_node(cluster, cluster_cbas_nodes, cbas_nodes)
-                otpNodes = [x.id for x in chosen]
-                if all_at_once:
+                else:
                     fail_over_status = fail_over_status and \
-                        cluster.rest.cluster.perform_graceful_failover(otpNodes)
-                else:
-                    for node in otpNodes:
-                        fail_over_status = fail_over_status and \
-                        cluster.rest.cluster.perform_graceful_failover(node)
-                failover_count += cbas_nodes
-                cbas_failover_nodes.extend(chosen)
-                if reset_cbas_cc:
-                    self.reset_cbas_cc_node(cluster)
+                        cluster.rest.cluster.perform_hard_failover(node)
+
+        result = RebalanceUtil(cluster).monitor_rebalance()
+        if not result:
+            self.fail("Failover -> Rebalance failed")
         if kv_nodes or cbas_nodes:
             time.sleep(30)
             self.wait_for_failover_or_assert(cluster, failover_count, timeout)
@@ -5544,6 +5539,8 @@ class CBASRebalanceUtil(object):
             self.perform_action_on_failed_over_nodes(
                 cluster, action, available_servers, kv_failover_nodes,
                 cbas_failover_nodes, wait_for_complete)
+        if reset_cbas_cc:
+            self.reset_cbas_cc_node(cluster)
         return available_servers, kv_failover_nodes, cbas_failover_nodes
 
     def perform_action_on_failed_over_nodes(
@@ -5583,7 +5580,7 @@ class CBASRebalanceUtil(object):
                     cluster.rest.cluster.set_failover_recovery_type(
                         otp_node=node_ids[node.ip], recovery_type="full")
             elif action == "DeltaRecovery":
-                for node in kv_failover_nodes:
+                for node in kv_failover_nodes + cbas_failover_nodes:
                     cluster.rest.cluster.set_failover_recovery_type(
                         otp_node=node_ids[node.ip], recovery_type="delta")
             rebalance_task = self.task.async_rebalance(

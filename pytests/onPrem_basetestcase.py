@@ -475,7 +475,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.aws_region = self.input.param("aws_region", None) or "us-west-1"
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
-        self.aws_endpoint = self.input.param("aws_endpoint", "")
+        self.aws_endpoint = self.input.param("aws_endpoint", None)
 
         self.columnar_aws_access_key = self.input.param("columnar_aws_access_key",
                                                         self.aws_access_key)
@@ -1000,6 +1000,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 for log_file in log_files:
                     log_file = log_file.strip("\n")
                     pattern_to_grep = []
+                    err_pattern = exclude_pattern = []
+                    if 'exclude_patterns' in file_data:
+                        for pattern in file_data['exclude_patterns']:
+                            exclude_pattern.append(pattern['string'])
                     if 'grep_for' in file_data:
                         for grep_pattern_of_log_file in file_data['grep_for']:
                             pattern_to_grep.append(grep_pattern_of_log_file)
@@ -1007,14 +1011,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         pattern_to_grep.append(common_grep_pattern)
                     for grep_pattern in pattern_to_grep:
                         grep_for_str = grep_pattern['string']
-                        err_pattern = exclude_pattern = None
                         if 'error_patterns' in grep_pattern:
                             err_pattern = grep_pattern['error_patterns']
                         if 'exclude_patterns' in grep_pattern:
                             exclude_pattern = grep_pattern['exclude_patterns']
 
                         cmd_to_run = f'grep -r "{grep_for_str}" {log_file}'
-                        if exclude_pattern is not None:
+                        if exclude_pattern:
                             for pattern in exclude_pattern:
                                 cmd_to_run += " | grep -v '%s'" % pattern
 
@@ -1221,17 +1224,18 @@ class OnPremBaseTest(CouchbaseBaseTest):
         :return:
         """
         rest = AnalyticsRestAPI(server)
-
+        self.log.info(f"Setting aws access key id: {aws_access_key}")
         status, content = rest.set_blob_storage_access_key_id(
             access_key_id=aws_access_key)
         if not status:
-            self.log.error(str(content))
+            self.log.error(f"Failed to set aws access key id: {status} {str(content)}")
             return False
 
+        self.log.info(f"Setting aws secret access key: {aws_secret_key}")
         status, content = rest.set_blob_storage_secret_access_key(
             secret_access_key=aws_secret_key)
         if not status:
-            self.log.error(str(content))
+            self.log.error(f"Failed to set aws secret access key: {status} {str(content)}")
             return False
 
         self.log.info("Adding aws bucket config to analytics")
@@ -1246,7 +1250,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             blob_storage_force_path_style=\
                 self.input.param("force_path_style", False))
         if not status:
-            self.log.error(str(content))
+            self.log.error(f"Failed to set aws bucket config to analytics: {status} {str(content)}")
             return False
         return True
 

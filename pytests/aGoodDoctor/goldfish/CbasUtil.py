@@ -3,6 +3,7 @@ Created on 15-Apr-2021
 
 @author: riteshagarwal
 '''
+from datetime import timedelta
 import itertools
 import json
 import random
@@ -16,7 +17,7 @@ from global_vars import logger
 from table_view import TableView
 from couchbase.analytics import AnalyticsScanConsistency, AnalyticsStatus
 from couchbase.exceptions import (TimeoutException, UnAmbiguousTimeoutException, AmbiguousTimeoutException,
-                                  RequestCanceledException, CouchbaseException)
+                                  RequestCanceledException, CouchbaseException, InternalServerFailureException)
 from couchbase.options import AnalyticsOptions
 
 datasets = ['create dataset {} on {}.{}.{};']
@@ -81,23 +82,22 @@ def execute_statement_on_cbas(client, statement,
         return response["status"], metrics, errors, results, handle
 
     except Exception as e:
-        raise Exception(str(e))
+        raise e
 
 
 def execute_via_sdk(client, statement, readonly=False,
                     client_context_id=None):
-    options = AnalyticsOptions(scan_consistency=AnalyticsScanConsistency.NOT_BOUNDED, readonly=readonly)
-    if client_context_id:
-        options.client_context_id = client_context_id
-
+    options = AnalyticsOptions(scan_consistency=AnalyticsScanConsistency.NOT_BOUNDED, readonly=readonly,
+                               client_context_id=client_context_id)
     output = {}
-    result = client.analytics_query(statement, options)
     try:
+        result = client.analytics_query(statement, options)
         output["results"] = [row for row in result.rows()]
         output["status"] = result.metadata().status()
         output["metrics"] = result.metadata().metrics()
     except CouchbaseException as e:
         traceback.print_exc()
+        print(e)
         raise e
     except Exception as e:
         output["results"] = None
@@ -120,14 +120,14 @@ class DoctorCBAS():
         self.log = logger.get("test")
         self.stop_run = False
 
-    def create_links(self, cluster, data_sources):
+    def create_links(self, cluster, data_sources, skip_init=False):
         for dataSource in data_sources:
             query_count = 0
             dataSource.create_link(cluster)
             if dataSource.loadDefn["valType"] == "Hotel":
                 queryType = HotelQueries
             # create collection
-            collections = dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0])
+            collections = dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0], skip_init)
             q = 0
             while q < dataSource.loadDefn.get("cbas")[1]:
                 coll = collections[q % dataSource.loadDefn.get("cbas")[0]]
@@ -351,14 +351,17 @@ class CBASQueryLoad:
                         next(self.success_count)
                 else:
                     next(self.failed_count)
-            # except (TimeoutException, AmbiguousTimeoutException, UnAmbiguousTimeoutException) as ex:
-            #     e = ex
-            # except RequestCanceledException as ex:
-            #     e = ex
+            except (TimeoutException, AmbiguousTimeoutException, UnAmbiguousTimeoutException) as ex:
+                e = ex
+            except RequestCanceledException as ex:
+                e = ex
+            except InternalServerFailureException as ex:
+                e = ex
+                next(self.error_count)
             except CouchbaseException as ex:
                 e = ex
-            # except (Exception) as ex:
-            #     e = ex
+            except (Exception) as ex:
+                e = ex
                 self.log.critical(e)
                 next(self.error_count)
             if str(e).find("TimeoutException") != -1\
@@ -366,9 +369,9 @@ class CBASQueryLoad:
                     or str(e).find("UnambiguousTimeoutException") != -1:
                 next(self.timeout_count)
             elif str(e).find("RequestCanceledException") != -1:
-                self.failures += self.cancel_count.next()
+                self.failures += next(self.cancel_count)
             elif str(e).find("CouchbaseException") != -1:
-                self.failures += self.error_count.next()
+                self.failures += next(self.error_count)
             if str(e).find("no more information available") != -1:
                 self.log.critical(client_context_id + "---->" + query)
                 self.log.critical(e)

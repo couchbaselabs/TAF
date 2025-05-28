@@ -2,6 +2,7 @@ from cb_constants import constants
 
 
 class CouchbaseCluster:
+    state = None
     def __init__(self, name="default", username="Administrator",
                  password="password", paths=None, servers=None, vbuckets=1024):
         self.name = name

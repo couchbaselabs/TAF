@@ -130,6 +130,9 @@ class CBASBaseTest(BaseTestCase):
         """
         if self.num_of_clusters > 1:
             service_memory_config = dict()
+            self.log.info(cluster.master.services)
+            self.log.info(cluster.nodes_in_cluster)
+            self.log.info(cluster.rest.server)
             _, info = cluster.rest.cluster.node_details()
             total_memory = int(info["mcdMemoryReserved"] * 0.8)
             if "index" in cluster.master.services:
@@ -141,7 +144,7 @@ class CBASBaseTest(BaseTestCase):
             status, content = cluster.rest.cluster.configure_memory(
                 service_memory_config)
             if not status:
-                self.fail("Unable to modify memory setting for remote cluster")
+                self.fail("Unable to modify memory setting for remote cluster: {0}".format(content))
 
         # Force disable TLS to avoid initial connection issues
         # tasks = [self.node_utils.async_disable_tls(server)

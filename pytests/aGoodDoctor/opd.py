@@ -435,7 +435,7 @@ class OPD:
                         update_start_index=bucket.update_start, update_end_index=bucket.update_end,
                         delete_start_index=bucket.delete_start, delete_end_index=bucket.delete_end,
                         expiry_start_index=bucket.expire_start, expiry_end_index=bucket.expire_end,
-                        process_concurrency=5, task_identifier="", ops=per_coll_ops,
+                        process_concurrency=self.process_concurrency, task_identifier="", ops=per_coll_ops,
                         suppress_error_table=False,
                         track_failures=True,
                         mutate=0,
@@ -1303,3 +1303,48 @@ class OPD:
                 self.sleep(30, "Wait for index mutations pending")
             else:
                 break
+
+    def siftBigANN_load(self):
+        if not self.skip_init:
+            self.load_sift_data(cluster=self.cluster,
+                              buckets=self.cluster.buckets,
+                              overRidePattern=[100,0,0,0,0],
+                              validate_data=False,
+                              wait_for_stats=False)
+
+    def normal_load(self):
+        for bucket in self.cluster.buckets:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=0,
+                               create_end=bucket.loadDefn.get("num_items")//2,
+                               bucket=bucket)
+        if not self.skip_init:
+            self.perform_load(cluster=self.cluster,
+                              buckets=self.cluster.buckets,
+                              overRidePattern=[100,0,0,0,0],
+                              validate_data=False,
+                              wait_for_stats=False)
+
+        for bucket in self.cluster.buckets:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=bucket.loadDefn.get("num_items")//2,
+                               create_end=bucket.loadDefn.get("num_items"),
+                               bucket=bucket)
+        if not self.skip_init:
+            self.perform_load(cluster=self.cluster,
+                              buckets=self.cluster.buckets,
+                              overRidePattern=[100,0,0,0,0],
+                              validate_data=False,
+                              wait_for_stats=False)
+
+        for bucket in self.cluster.buckets:
+            self.generate_docs(doc_ops=["update"],
+                               update_start=0,
+                               update_end=bucket.loadDefn.get("num_items"),
+                               bucket=bucket)
+        if not self.skip_init:
+            self.perform_load(cluster=self.cluster,
+                              buckets=self.cluster.buckets,
+                              overRidePattern=[0,0,100,0,0],
+                              validate_data=False,
+                              wait_for_stats=False)

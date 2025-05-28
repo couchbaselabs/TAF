@@ -7,6 +7,7 @@ from collections import defaultdict
 import threading
 import time
 
+from cbas_utils.cbas_utils import CbasUtil
 from pytests.basetestcase import BaseTestCase
 from sdk_client3 import SDKClient
 
@@ -62,6 +63,7 @@ class Columnar(BaseTestCase, hostedOPD):
         self.index_timeout = self.input.param("index_timeout", 3600)
         self.load_defn = list()
         self.cbasQL = list()
+        self.query_cancel_ths = list()
         self.stop_run = False
         self.skip_init = self.input.param("skip_init", False)
         self.query_result = True
@@ -89,6 +91,7 @@ class Columnar(BaseTestCase, hostedOPD):
         self.cbasQL = list()
         self.drCBAS = DoctorCBAS()
         self.mongo_workload_tasks = list()
+        self.cbas_util = CbasUtil(self.task_manager)
 
     def setupRemoteCouchbase(self):
         for tenant in self.tenants:
@@ -210,6 +213,8 @@ class Columnar(BaseTestCase, hostedOPD):
         self.stop_run = True
         for ql in self.cbasQL:
             ql.stop_query_load()
+        for th in self.query_cancel_ths:
+            th.join()
         self.sleep(10)
         BaseTestCase.tearDown(self)
 
@@ -256,6 +261,9 @@ class Columnar(BaseTestCase, hostedOPD):
                             ql.start_query_load()
                             self.cbasQL.append(ql)
 
+        if self.input.param("cancel_queries", False):
+            self.cancel_queries_thread()
+
     def cluster_state_monitor(self, cluster):
         while not self.stop_run:
             try:
@@ -276,6 +284,24 @@ class Columnar(BaseTestCase, hostedOPD):
                 traceback.print_exc()
             self.sleep(30)
 
+    def cancel_active_requests(self):
+        while not self.stop_run:
+            for tenant in self.tenants:
+                for cluster in tenant.columnar_instances:
+                    requests = self.cbas_util.get_all_active_requests(cluster)
+                    for request in requests:
+                        if request['state'] == "running" and \
+                            "select" in request['statement'].lower() and \
+                                "active_requests" not in request['statement'].lower() and \
+                                    request['clientContextID'] not in ["", "null", "None", None]:
+                            self.log.info("Cancelling request: %s" % request['statement'])
+                            self.cbas_util.delete_request(cluster, request['clientContextID'])
+            self.sleep(random.randint(5, 10))
+    
+    def cancel_queries_thread(self):
+        th = threading.Thread(target=self.cancel_active_requests)
+        th.start()
+        self.query_cancel_ths.append(th)
 
     def test_rebalance(self):
         scaling = self.input.param("scaling", True)
