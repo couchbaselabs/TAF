@@ -181,6 +181,8 @@ class MagmaBaseTest(StorageBase):
         self.delete_start = 0
         self.expire_end = 0
         self.expire_start = 0
+        self.read_start = 0
+        self.read_end = 0
         doc_ops = doc_ops or self.doc_ops
         doc_ops = doc_ops.split(":")
         perc = 100//len(doc_ops)
@@ -683,3 +685,27 @@ class MagmaBaseTest(StorageBase):
                 kvstore_du = o[0][-1].split('\t')[0]
                 kvstore_path = o[0][-1].split('\t')[1][-10:-1]
                 self.log.info("DU of {0} = {1}".format(kvstore_path, kvstore_du))
+
+
+    def perform_batch_reads(self, num_docs_to_validate=None, batch_size=None, validate_docs=True):
+
+        num_docs_to_validate = num_docs_to_validate or self.num_docs_to_validate
+        validate_batch_size = batch_size or self.validate_batch_size
+
+        self.log.info(f"Performing batch reads, Total docs: {num_docs_to_validate}, Batch Size: {validate_batch_size}")
+        self.doc_ops = "read"
+        self.reset_doc_params()
+        read_start, read_end = 0, min(num_docs_to_validate, validate_batch_size)
+        while read_start < num_docs_to_validate:
+            self.read_start = read_start
+            self.read_end = read_end
+            self.generate_docs()
+            self.log.info(f"Read start = {self.read_start}, Read End = {self.read_end}, Read perc = {self.read_perc}")
+            self.java_doc_loader(wait=True,
+                                skip_default=self.skip_load_to_default_collection,
+                                validate_docs=validate_docs,
+                                ops_rate=self.read_ops_rate,
+                                process_concurrency=self.read_process_concurrency)
+            read_start = read_end
+            read_end = min(read_end + validate_batch_size, num_docs_to_validate)
+            self.sleep(15, "Wait after reading the current batch")

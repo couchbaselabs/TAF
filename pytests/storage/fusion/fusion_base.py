@@ -247,7 +247,18 @@ class FusionBase(BaseTestCase):
 
             o, e = ssh2.execute_command(chronicle_cmd)
             json_str = "\n".join(o)
-            stat = json.loads(json_str)
+            try:
+                stat = json.loads(json_str)
+                if stat["term"] != self.kvstore_stats[bucket][kvstore_num]["term"]:
+                    self.kvstore_stats[bucket][kvstore_num]["term"] = stat["term"]
+                if len(self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"]) == 0 or \
+                    (len(self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"]) > 0 and \
+                    stat["checkpointLogID"] != self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"][-1][0]):
+                    self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"].append([stat["checkpointLogID"], curr_timestamp])
+                if stat["leases"] != self.kvstore_stats[bucket][kvstore_num]["leases"]:
+                    self.kvstore_stats[bucket][kvstore_num]["leases"] = stat["leases"]
+            except Exception as e:
+                self.log.debug(e)
 
             # Do a set difference to see if any log files have been added/deleted
             curr_log_files_set = set(curr_log_files)
@@ -272,15 +283,6 @@ class FusionBase(BaseTestCase):
                     if "tmp" in file:
                         continue
                     self.kvstore_stats[bucket][kvstore_num]["file_deletion"].append([file, curr_timestamp])
-
-            if stat["term"] != self.kvstore_stats[bucket][kvstore_num]["term"]:
-                self.kvstore_stats[bucket][kvstore_num]["term"] = stat["term"]
-            if len(self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"]) == 0 or \
-                (len(self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"]) > 0 and \
-                stat["checkpointLogID"] != self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"][-1][0]):
-                self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"].append([stat["checkpointLogID"], curr_timestamp])
-            if stat["leases"] != self.kvstore_stats[bucket][kvstore_num]["leases"]:
-                self.kvstore_stats[bucket][kvstore_num]["leases"] = stat["leases"]
 
             # prev_timestamp = curr_timestamp
             prev_log_files = curr_log_files
@@ -412,7 +414,7 @@ class FusionBase(BaseTestCase):
         source {self.venv_path}/bin/activate
         pip install --upgrade pip
         pip install paramiko requests
-        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json
+        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time 120
         """
 
         self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout" + str(rebalance_count) + ".txt")
@@ -457,4 +459,3 @@ class FusionBase(BaseTestCase):
                 shell.kill_memcached()
 
             self.sleep(interval, "Sleep before killing memcached")
-

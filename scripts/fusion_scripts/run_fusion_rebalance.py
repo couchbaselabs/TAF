@@ -382,6 +382,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without making actual changes')
     parser.add_argument('--config', default='config.json', help='Path to JSON configuration file')
     parser.add_argument('--env', choices=['aws', 'local'], required=True, help='Environment to run in (aws or local)')
+    parser.add_argument('--sleep-time', type=int, default=0, help='Time to sleep in seconds (default: 0)')
 
     args = parser.parse_args()
 
@@ -390,6 +391,7 @@ def main():
         current_nodes = parse_node_list(args.current_nodes)
         new_nodes = parse_node_list(args.new_nodes)
         validate_nodes(current_nodes, new_nodes)
+        sleep_time = args.sleep_time
 
         rebalancer = RebalanceAutomation(
             base_url=args.base_url,
@@ -421,6 +423,9 @@ def main():
         # Step 5: Upload mounted volumes
         print("Uploading mounted volumes configuration...")
         rebalancer.upload_mounted_volumes(plan_uuid, involved_nodes)
+
+        print(f"Sleeping for {sleep_time} seconds after PrepareRebalance")
+        time.sleep(sleep_time)
 
         # Step 6: Setup new nodes
         print("Setting up new nodes...")

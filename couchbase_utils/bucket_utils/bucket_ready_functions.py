@@ -2268,7 +2268,7 @@ class BucketUtils(ScopeUtils):
              Bucket.warmupBehavior: warmup_behavior})
 
         if fusion_log_store_uri is not None:
-            bucket_obj[Bucket.fusionLogstoreURI] = fusion_log_store_uri
+            bucket_obj.fusionLogstoreURI = fusion_log_store_uri
 
         if cluster.type == "dedicated":
             bucket_params = {

@@ -12,6 +12,7 @@ from Jython_tasks.task_manager import TaskManager
 from basetestcase import BaseTestCase
 from cb_constants import DocLoading
 from cb_constants.CBServer import CbServer
+from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -206,13 +207,6 @@ class StorageBase(BaseTestCase):
             self.log.info("Query is: %s" % self.initial_idx_q)
             result = self.query_client.query_tool(self.initial_idx_q)
             self.assertTrue(result["status"] == "success", "Index query failed!")
-
-        # Override Fusion default settings
-        if self.fusion_log_store_uri != None:
-            for bucket in self.cluster.buckets:
-                self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                            checkpoint_interval=self.fusion_log_checkpoint_interval,
-                                            migration_rate_limit=self.fusion_migration_rate_limit)
 
         # Doc controlling params
         self.key = 'test_docs'
@@ -1361,19 +1355,24 @@ class StorageBase(BaseTestCase):
         shell.disconnect()
 
 
-    def change_fusion_settings(self, bucket, upload_interval, checkpoint_interval, migration_rate_limit):
+    def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None, migration_rate_limit=None):
 
-        interval_settings = f"magma_fusion_upload_interval={upload_interval};magma_fusion_log_checkpoint_interval={checkpoint_interval};magma_fusion_migration_rate_limit={migration_rate_limit}"
+        fusion_settings = ""
+        if upload_interval is not None:
+            fusion_settings += f"magma_fusion_upload_interval={upload_interval};"
+        if checkpoint_interval is not None:
+            fusion_settings += f"magma_fusion_log_checkpoint_interval={checkpoint_interval};"
+        if migration_rate_limit is not None:
+            fusion_settings += f"magma_fusion_migration_rate_limit={migration_rate_limit};"
+        fusion_settings = fusion_settings[:-1] # Trimming the semicolon at the end
 
-        diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{interval_settings}"}}]).' http://localhost:8091/diag/eval"""
-        self.log.info(f"Diag/eval CMD = {diag_eval_cmd}")
-
-        self.log.info(f"Changing Fusion upload interval to {upload_interval} seconds and checkpoint interval to {checkpoint_interval} seconds for bucket: {bucket.name}")
+        diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{fusion_settings}"}}]).' http://localhost:8091/diag/eval"""
+        self.log.info(f"Updating Fusion settings for bucket: {bucket.name}, Diag/Eval CMD: {diag_eval_cmd}")
 
         for server in self.cluster.nodes_in_cluster:
             ssh = RemoteMachineShellConnection(server)
             o, e = ssh.execute_command(diag_eval_cmd)
-            self.log.info(f"Server: {server}, Output: {o}, Error: {e}")
+            self.log.debug(f"Server: {server}, Output: {o}, Error: {e}")
             ssh.disconnect()
 
         # Restart couchbase
@@ -1384,12 +1383,12 @@ class StorageBase(BaseTestCase):
 
         self.sleep(30, "Wait after restarting Couchbase server")
 
-        cbstats_fusion_cmd = f"/opt/couchbase/bin/cbstats localhost:11210 all -b {bucket.name} -u Administrator -p password | grep fusion"
         for server in self.cluster.nodes_in_cluster:
-            ssh = RemoteMachineShellConnection(server)
-            o, e = ssh.execute_command(cbstats_fusion_cmd)
-            self.log.info(f"Server: {server}, Output: {o}, Error: {e}")
-            ssh.disconnect()
+            cbstats = Cbstats(server)
+            result = cbstats.all_stats(bucket.name)
+            self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
+                          f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, "
+                          f"Migration Rate Limit: {result['ep_magma_fusion_migration_rate_limit']}")
 
     def PrintStep(self, msg=None):
         print("\n")

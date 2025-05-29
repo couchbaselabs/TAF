@@ -20,11 +20,13 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.validate_docs = self.input.param("validate_docs", True)
         self.read_ops_rate = self.input.param("read_ops_rate", 10000)
         self.num_docs_to_validate = self.input.param("num_docs_to_validate", 1000000)
+        self.rebalance_num_docs = self.input.param("rebalance_num_docs", 1000000)
         self.read_process_concurrency = self.input.param("read_process_concurrency", 8)
         self.validate_batch_size = self.input.param("validate_batch_size", 500000)
 
         self.crash_during_test = self.input.param("crash_during_test", False)
         self.crash_interval = self.input.param("crash_interval", 120)
+        self.monitor_log_store = self.input.param("monitor_log_store", True)
 
         split_path = self.local_test_path.split("/")
         self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
@@ -42,7 +44,13 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         self.log.info("Running Fusion Data Lifecycle Test")
 
-        monitor_threads = self.start_monitor_dir()
+        # Override Fusion default settings
+        for bucket in self.cluster.buckets:
+            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
+                                        checkpoint_interval=self.fusion_log_checkpoint_interval)
+
+        if self.monitor_log_store:
+            monitor_threads = self.start_monitor_dir()
 
         if self.crash_during_test:
             crash_th = threading.Thread(target=self.kill_memcached_on_nodes, args=[self.crash_interval])
@@ -63,16 +71,53 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 self.update_start = 0
                 self.update_end = self.num_items
                 self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
-                self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}, Update perc = {self.update_perc}")
+                self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}")
                 self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection)
                 num_upsert_iterations -= 1
                 self.sleep(30, "Wait after update workload")
+
+            # Perform reads while log cleaning is happening
+            self.perform_batch_reads()
+
+            # Set Migration Rate Limit to 0 so that extent migration doesn't take place
+            for bucket in self.cluster.buckets:
+                self.change_fusion_settings(bucket, migration_rate_limit=0)
+
+            # Perform a data workload in parallel when rebalance is taking place
+            self.reset_doc_params(doc_ops="create")
+            self.create_start = self.num_items
+            self.create_end = self.create_start + self.rebalance_num_docs
+            self.num_items += self.rebalance_num_docs
+            self.log.info(f"Performing data load during rebalance")
+            self.log.info(f"Create start = {self.create_start}, Create End = {self.create_end}")
+            doc_loading_tasks = self.java_doc_loader(wait=False,
+                                                     skip_default=self.skip_load_to_default_collection,
+                                                     ops_rate=10000, doc_ops="create")
 
             self.log.info("Running a Fusion rebalance")
             nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                                   rebalance_count=num_rebalance_count)
 
+            # Wait for doc load to complete
+            for task in doc_loading_tasks:
+                self.doc_loading_tm.get_task_result(task)
+            self.printOps.end_task()
+
+            if self.num_nodes_to_rebalance_in > 0:
+                self.cluster.nodes_in_cluster.extend(self.cluster.servers[
+                    len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_rebalance_in])
+            elif self.num_nodes_to_rebalance_out > 0:
+                self.cluster.nodes_in_cluster = self.cluster.servers[
+                    :len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_rebalance_out)]
+
             self.validate_log_file_count_size(dir_path=self.fusion_scripts_dir)
+
+            # Perform reads when no extent migration has taken place yet
+            self.perform_batch_reads()
+
+            # Update Migration Rate Limit so that extent migration process starts
+            for bucket in self.cluster.buckets:
+                self.change_fusion_settings(bucket, migration_rate_limit=self.fusion_migration_rate_limit)
 
             extent_migration_array = list()
             self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
@@ -85,32 +130,13 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             for th in extent_migration_array:
                 th.join()
 
-            if self.num_nodes_to_rebalance_in > 0:
-                self.cluster.nodes_in_cluster.extend(self.cluster.servers[
-                    len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_rebalance_in])
-            elif self.num_nodes_to_rebalance_out > 0:
-                self.cluster.nodes_in_cluster = self.cluster.servers[
-                    :len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_rebalance_out)]
-
             self.cluster_util.print_cluster_stats(self.cluster)
 
+            # Deleting guest volumes after extent migration
+            self.log_store_rebalance_cleanup()
+
             self.log.info("Performing a read workload post extent migration")
-            self.doc_ops = "read"
-            self.reset_doc_params()
-            read_start, read_end = 0, min(self.num_docs_to_validate, self.validate_batch_size)
-            while read_start < self.num_docs_to_validate:
-                self.read_start = read_start
-                self.read_end = read_end
-                self.generate_docs()
-                self.log.info(f"Read start = {self.read_start}, Read End = {self.read_end}, Read perc = {self.read_perc}")
-                self.java_doc_loader(wait=True,
-                                    skip_default=self.skip_load_to_default_collection,
-                                    validate_docs=self.validate_docs,
-                                    ops_rate=self.read_ops_rate,
-                                    process_concurrency=self.read_process_concurrency)
-                read_start = read_end
-                read_end = min(read_end + self.validate_batch_size, self.num_docs_to_validate)
-                self.sleep(15, "Wait after reading the current batch")
+            self.perform_batch_reads()
 
             if len(self.cluster.nodes_in_cluster) == len(self.cluster.servers):
                 self.num_nodes_to_rebalance_out = 1
@@ -118,7 +144,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
             num_rebalances_to_perform -= 1
             num_rebalance_count += 1
-            self.log_store_rebalance_cleanup()
 
             self.log.info("Validating item count after rebalance")
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -130,8 +155,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.crash_loop = False
         if self.crash_during_test:
             crash_th.join()
-        for th in monitor_threads:
-            th.join()
+        if self.monitor_log_store:
+            for th in monitor_threads:
+                th.join()
 
         stat_file_path = os.path.join(self.fusion_output_dir, "kvstore_stats.json")
         with open(stat_file_path, "w") as f:
