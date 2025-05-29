@@ -362,7 +362,7 @@ class SsoUtils:
         url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id,
                                                            realm_id)
         body = {"defaultTeamId": team_id}
-        resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
+        resp = self.capella_api.do_internal_request(url, method="PATCH", params=json.dumps(body))
         return resp
 
     def update_realm_name(self, tenant_id, realm_id, realm_name):
@@ -372,7 +372,7 @@ class SsoUtils:
         url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id,
                                                            realm_id)
         body = {"name": realm_name}
-        resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
+        resp = self.capella_api.do_internal_request(url, method="PATCH", params=json.dumps(body))
         return resp
 
     def delete_realm(self, tenant_id, realm_id, keep_users=False):
@@ -470,7 +470,7 @@ class SsoUtils:
         Rotates certificate
         """
         url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id, realm_id)
-        resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
+        resp = self.capella_api.do_internal_request(url, method="PATCH", params=json.dumps(body))
         return resp
 
     def create_okta_application(self, okta_token, okta_account="https://dev-82235514.okta.com/"):

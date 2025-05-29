@@ -840,10 +840,10 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         # Request body to rotate certificate
         def get_request_body(saml_certificate=signingCertificate, saml_endpoint=signInEndpoint):
             body = {
-                'connectionOptionsSAML': {
+                'saml': {
                     'signingCertificate': "{0}".format(saml_certificate),
-                    'signInEndpoint': saml_endpoint
-                }
+                    'signInEndpoint': saml_endpoint},
+                'standard': 'SAML 2.0'
             }
             return body
 
@@ -933,8 +933,9 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
         # Extract SingleSignOnService URL (assuming we want the HTTP-POST binding)
         sso_service = \
-        root.find('.//md:SingleSignOnService[@Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"]', ns).attrib[
-            'Location']
+            root.find('.//md:SingleSignOnService[@Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"]',
+                      ns).attrib[
+                'Location']
 
         # self.log.info extracted and formatted values
         self.log.info("Formatted Certificate: {0}".format(formatted_certificate))
