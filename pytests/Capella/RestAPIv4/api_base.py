@@ -2023,14 +2023,15 @@ class APIBase(CouchbaseBaseTest):
             self.fail("!!!...Failed to retrieve providerId...!!!")
         return oidcProviderId
 
-    def create_app_endpoint_to_be_tested(self, app_svc_id,app_endpoint_name, delta_sync, bucket, scopes, userXattrKey):
+    def create_app_endpoint_to_be_tested(self, app_svc_id,app_endpoint_name,
+                                         delta_sync, bucket, scopes, userXattrKey, cors):
 
         res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
             self.organisation_id, self.project_id, self.cluster_id,
             app_svc_id,
             app_endpoint_name, delta_sync,
             bucket, scopes,
-            userXattrKey)
+            userXattrKey, cors)
         if res.status_code == 429:
             self.handle_rate_limit(int(res.headers["Retry-After"]))
             res = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
@@ -2038,7 +2039,7 @@ class APIBase(CouchbaseBaseTest):
                 app_svc_id,
                 app_endpoint_name, delta_sync,
                 bucket, scopes,
-                userXattrKey)
+                userXattrKey, cors)
         if res.status_code == 412:
             self.log.debug("App endpoint {} already exists".format(
                 app_endpoint_name))

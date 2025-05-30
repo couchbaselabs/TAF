@@ -138,7 +138,7 @@ class PutAppEndpoints(GetAppEndpoints):
                 organization, project, cluster, appService, appEndpointName,
                 self.expected_res["name"], self.expected_res["deltaSync"],
                 self.expected_res["bucket"], self.expected_res["scopes"],
-                self.expected_res["userXattrKey"])
+                self.expected_res["userXattrKey"], self.expected_res["cors"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
@@ -146,7 +146,8 @@ class PutAppEndpoints(GetAppEndpoints):
                     appEndpointName, self.expected_res["name"],
                     self.expected_res["deltaSync"],
                     self.expected_res["bucket"], self.expected_res["scopes"],
-                    self.expected_res["userXattrKey"])
+                    self.expected_res["userXattrKey"],
+                    self.expected_res["cors"])
             self.capellaAPI.cluster_ops_apis.app_endpoints_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints"
@@ -161,18 +162,18 @@ class PutAppEndpoints(GetAppEndpoints):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-                 "organizationOwner", "projectOwner", "projectManager"
+            "organizationOwner", "projectOwner", "projectManager"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
-                self.organisation_id, self.project_id, self.cluster_id, 
+                self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 self.expected_res["name"], self.expected_res["deltaSync"],
                 self.expected_res["bucket"], self.expected_res["scopes"],
-                self.expected_res["userXattrKey"],
+                self.expected_res["userXattrKey"], self.expected_res["cors"],
                 header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
@@ -182,6 +183,7 @@ class PutAppEndpoints(GetAppEndpoints):
                     self.expected_res["name"], self.expected_res["deltaSync"],
                     self.expected_res["bucket"], self.expected_res["scopes"],
                     self.expected_res["userXattrKey"],
+                    self.expected_res["cors"],
                     header)
             self.validate_testcase(result, [204], testcase, failures)
 
@@ -192,11 +194,11 @@ class PutAppEndpoints(GetAppEndpoints):
 
     def test_query_parameters(self):
         self.log.debug(
-                "Correct Params - organization ID: {}, project ID: {}, "
-                "cluster ID: {}, appService ID: {}, "
-                "AppEndpointName: {}".format(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName))
+            "Correct Params - organization ID: {}, project ID: {}, "
+            "cluster ID: {}, appService ID: {}, "
+            "AppEndpointName: {}".format(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.app_service_id, self.appEndpointName))
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
@@ -227,11 +229,11 @@ class PutAppEndpoints(GetAppEndpoints):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
-                    int, bool, float, list, tuple, set, type(None)] for
-                         variable in [
-                             type(combination[0]), type(combination[1]), 
-                             type(combination[2]), type(combination[3]), 
-                             type(combination[4])]):
+                        int, bool, float, list, tuple, set, type(None)] for
+                        variable in [
+                        type(combination[0]), type(combination[1]),
+                        type(combination[2]), type(combination[3]),
+                        type(combination[4])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -317,16 +319,19 @@ class PutAppEndpoints(GetAppEndpoints):
                 testcase["clusterID"], testcase["appServiceID"],
                 testcase["AppEndpointName"], self.expected_res["deltaSync"],
                 self.expected_res["bucket"], self.expected_res["scopes"],
-                self.expected_res["userXattrKey"],
+                self.expected_res["userXattrKey"], self.expected_res["cors"],
                 **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["appServiceID"],
-                    testcase["AppEndpointName"], self.expected_res["deltaSync"],
-                    self.expected_res["bucket"], self.expected_res["scopes"],
+                    testcase["AppEndpointName"],
+                    self.expected_res["deltaSync"],
+                    self.expected_res["bucket"],
+                    self.expected_res["scopes"],
                     self.expected_res["userXattrKey"],
+                    self.expected_res["cors"],
                     **kwarg)
             self.validate_testcase(result, [204], testcase, failures)
 
@@ -374,7 +379,7 @@ class PutAppEndpoints(GetAppEndpoints):
                                    "the request due to something that is "
                                    "perceived to be a client error."
                     }
-                elif k == "scopes" and v == {} :
+                elif k == "scopes" and v == {}:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 422,
@@ -385,7 +390,7 @@ class PutAppEndpoints(GetAppEndpoints):
                         "message": "App Endpoint Scopes config is empty or "
                                    "has more than one scope"
                     }
-                elif k == "scopes" and  v is None:
+                elif k == "scopes" and v is None:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 400,
@@ -470,7 +475,7 @@ class PutAppEndpoints(GetAppEndpoints):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName, testcase["name"],
                 testcase["deltaSync"], testcase["bucket"], testcase["scopes"],
-                testcase["userXattrKey"])
+                testcase["userXattrKey"], self.expected_res["cors"])
             if res.status_code == 429:
                 self.handle_rate_limit(res.headers["Retry-After"])
                 res = self.capellaAPI.cluster_ops_apis.update_app_endpoint(
@@ -478,7 +483,7 @@ class PutAppEndpoints(GetAppEndpoints):
                     self.app_service_id, self.appEndpointName,
                     testcase["name"], testcase["deltaSync"],
                     testcase["bucket"], testcase["scopes"],
-                    testcase["userXattrKey"])
+                    testcase["userXattrKey"], self.expected_res["cors"])
             self.validate_testcase(res, [204], testcase, failures,
                                    payloadTest=True)
             if res.status_code == 204:
@@ -498,7 +503,7 @@ class PutAppEndpoints(GetAppEndpoints):
                 self.app_service_id, self.appEndpointName,
                 self.expected_res["name"], self.expected_res["deltaSync"],
                 self.expected_res["bucket"], self.expected_res["scopes"],
-                self.expected_res["userXattrKey"]
+                self.expected_res["userXattrKey"], self.expected_res["cors"]
             )
         ]]
         self.throttle_test(api_func_list)
@@ -510,7 +515,7 @@ class PutAppEndpoints(GetAppEndpoints):
                 self.app_service_id, self.appEndpointName,
                 self.expected_res["name"], self.expected_res["deltaSync"],
                 self.expected_res["bucket"], self.expected_res["scopes"],
-                self.expected_res["userXattrKey"]
+                self.expected_res["userXattrKey"], self.expected_res["cors"]
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

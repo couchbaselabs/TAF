@@ -451,7 +451,8 @@ class CreateBucket(GetBucket):
                         "httpStatusCode": 422,
                         "message": "Cannot create Magma bucket. The "
                                    "requested size of the Magma bucket "
-                                   "is less than the minimum amount of 1024MB."
+                                   "is less than the minimum amount of 1024MB "
+                                   "for 1024 vbuckets, or 100MB for 128 vbuckets."
                     }
                 elif key == "replicas":
                     testcase["expected_status_code"] = 422

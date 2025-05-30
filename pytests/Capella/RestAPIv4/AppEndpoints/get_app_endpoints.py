@@ -65,7 +65,7 @@ class GetAppEndpoints(GetAppService):
             self.app_service_id,
             self.expected_res["name"], self.expected_res["deltaSync"],
             self.expected_res["bucket"], self.expected_res["scopes"],
-            self.expected_res["userXattrKey"])
+            self.expected_res["userXattrKey"], self.expected_res["cors"])
         if result.status_code == 429:
             self.handle_rate_limit(int(result.headers["Retry-After"]))
             result = self.capellaAPI.cluster_ops_apis.create_app_endpoint(
@@ -73,7 +73,7 @@ class GetAppEndpoints(GetAppService):
                 self.app_service_id,
                 self.expected_res["name"], self.expected_res["deltaSync"],
                 self.expected_res["bucket"], self.expected_res["scopes"],
-                self.expected_res["userXattrKey"])
+                self.expected_res["userXattrKey"], self.expected_res["cors"])
         if result.status_code == 412:
             self.log.debug("App endpoint {} already exists".format(
                 self.expected_res["name"]))
@@ -214,8 +214,8 @@ class GetAppEndpoints(GetAppService):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = (self.capellaAPI.cluster_ops_apis.
                           fetch_app_endpoint_info(
-                            organization, project, cluster, appService,
-                            AppEndpointName))
+                              organization, project, cluster, appService,
+                              AppEndpointName))
             self.capellaAPI.cluster_ops_apis.app_endpoints_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"\
                 "appEndpoints"
@@ -230,24 +230,24 @@ class GetAppEndpoints(GetAppService):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-             "organizationOwner", "projectOwner", "projectDataReader",
-             "projectViewer", "projectDataReaderWriter", "projectManager"
+            "organizationOwner", "projectOwner", "projectDataReader",
+            "projectViewer", "projectDataReaderWriter", "projectManager"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.fetch_app_endpoint_info(
-                self.organisation_id, self.project_id, self.cluster_id, 
+                self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.appEndpointName,
                 header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = (self.capellaAPI.cluster_ops_apis.
                           fetch_app_endpoint_info(
-                            self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id,
-                            self.appEndpointName, header))
+                              self.organisation_id, self.project_id,
+                              self.cluster_id, self.app_service_id,
+                              self.appEndpointName, header))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -257,11 +257,11 @@ class GetAppEndpoints(GetAppService):
 
     def test_query_parameters(self):
         self.log.debug(
-                "Correct Params - organization ID: {}, project ID: {}, "
-                "cluster ID: {}, appService ID: {}, "
-                "AppEndpoint Name: {}".format(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.appEndpointName))
+            "Correct Params - organization ID: {}, project ID: {}, "
+            "cluster ID: {}, appService ID: {}, "
+            "AppEndpoint Name: {}".format(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.app_service_id, self.appEndpointName))
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
@@ -292,11 +292,11 @@ class GetAppEndpoints(GetAppService):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
-                    int, bool, float, list, tuple, set, type(None)] for
-                         variable in [
-                             type(combination[0]), type(combination[1]), 
-                             type(combination[2]), type(combination[3]), 
-                             type(combination[4])]):
+                        int, bool, float, list, tuple, set, type(None)] for
+                        variable in [
+                        type(combination[0]), type(combination[1]),
+                        type(combination[2]), type(combination[3]),
+                        type(combination[4])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -386,10 +386,10 @@ class GetAppEndpoints(GetAppService):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = (self.capellaAPI.cluster_ops_apis.
                           fetch_app_endpoint_info(
-                            testcase["organizationID"], testcase["projectID"],
-                            testcase["clusterID"], testcase["appServiceID"],
-                            testcase["AppEndpointName"],
-                            **kwarg))
+                              testcase["organizationID"], testcase["projectID"],
+                              testcase["clusterID"], testcase["appServiceID"],
+                              testcase["AppEndpointName"],
+                              **kwarg))
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
