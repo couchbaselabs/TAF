@@ -2222,7 +2222,7 @@ class BucketUtils(ScopeUtils):
             vbuckets=None, weight=None, width=None,
             durability_impossible_fallback=None,
             warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
-            fusion_log_store_uri=""):
+            fusion_log_store_uri=None):
         node_info = global_vars.cluster_util.get_nodes_self(cluster.master)
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2265,9 +2265,11 @@ class BucketUtils(ScopeUtils):
              Bucket.width: width,
              Bucket.weight: weight,
              Bucket.durabilityImpossibleFallback: durability_impossible_fallback,
-             Bucket.warmupBehavior: warmup_behavior,
-             Bucket.fusionLogstoreURI: fusion_log_store_uri})
-        print("create_default_bucket bucket_obj", bucket_obj)
+             Bucket.warmupBehavior: warmup_behavior})
+
+        if fusion_log_store_uri is not None:
+            bucket_obj[Bucket.fusionLogstoreURI] = fusion_log_store_uri
+
         if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
