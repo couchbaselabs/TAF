@@ -1,11 +1,12 @@
-from com.jcraft.jsch import JSchException
-from com.jcraft.jsch import JSch
-from org.python.core.util import FileUtil
-from java.time import Duration
-from com.couchbase.client.java import Cluster, ClusterOptions
-from com.couchbase.client.java.env import ClusterEnvironment
-from com.couchbase.client.core.env import TimeoutConfig, IoConfig
+from datetime import timedelta
+import paramiko
+
+from couchbase.auth import PasswordAuthenticator
+from couchbase.cluster import Cluster
+from couchbase.options import (ClusterOptions, ClusterTimeoutOptions)
 import sys
+
+
 failed = []
 
 
@@ -15,56 +16,50 @@ disable_firewall = "systemctl stop firewalld; systemctl disable firewalld; ls -l
 ulimit_cmd = "ulimit -n 500000;echo \"* soft nofile 500000\" > /etc/security/limits.conf;echo \"* hard nofile 500000\" >> /etc/security/limits.conf;"
 
 def run(command, server):
-    output = []
-    error = []
-    jsch = JSch()
-    session = jsch.getSession("root", server, 22)
-    session.setPassword("couchbase")
-    session.setConfig("StrictHostKeyChecking", "no")
     try:
-        session.connect(10000)
-    except JSchException:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(server, username="root", password="couchbase", timeout=2)
+        
+        stdin, stdout, stderr = ssh.exec_command(command, timeout=2)
+        output = stdout.read().decode('utf-8').strip()
+        error = stderr.read().decode('utf-8').strip()
+        
+        ssh.close()
+        return output, error
+        
+    except Exception as e:
         failed.append(server)
-    try:
-        _ssh_client = session.openChannel("exec")
-        _ssh_client.setInputStream(None)
-        _ssh_client.setErrStream(None)
-
-        instream = _ssh_client.getInputStream()
-        errstream = _ssh_client.getErrStream()
-        _ssh_client.setCommand(command)
-        _ssh_client.connect()
-        fu1 = FileUtil.wrap(instream)
-        for line in fu1.readlines():
-            output.append(line)
-        fu1.close()
-
-        fu2 = FileUtil.wrap(errstream)
-        for line in fu2.readlines():
-            error.append(line)
-        fu2.close()
-        _ssh_client.disconnect()
-        session.disconnect()
-    except JSchException as e:
-        print("JSch exception on %s: %s" % (server, str(e)))
-    return output, error
+        return None, str(e)
 
 
 def execute(cmd="df -h | grep data"):
-    cluster_env = ClusterEnvironment.builder().ioConfig(IoConfig.numKvConnections(25)).timeoutConfig(TimeoutConfig.builder().connectTimeout(Duration.ofSeconds(20)).kvTimeout(Duration.ofSeconds(10)))
-    cluster_options = ClusterOptions.clusterOptions("Administrator", "esabhcuoc").environment(cluster_env.build())
-    cluster = Cluster.connect("172.23.104.162", cluster_options)
-    STATEMENT = "select meta().id from `QE-server-pool` where os='centos' and 'magmareg' in poolId;"
+    auth = PasswordAuthenticator("Administrator", "esabhcuoc")
+    timeout_opts = ClusterTimeoutOptions(
+            kv_timeout=timedelta(seconds=10),
+            analytics_timeout=timedelta(seconds=1200),
+            dns_srv_timeout=timedelta(seconds=10))
+    cluster_opts = {
+            "authenticator": auth,
+            "enable_tls": False,
+            "timeout_options": timeout_opts,
+        }
+
+    cluster_opts = ClusterOptions(**cluster_opts)
+    connection_string = "{0}://{1}".format("couchbase", "172.23.104.162")
+    cluster = Cluster.connect(connection_string,
+                                cluster_opts)
+
+    STATEMENT = "select meta().id, os from `QE-server-pool`"
     result = cluster.query(STATEMENT);
 
     count = 1
-    for server in result.rowsAsObject():
-        server = server.get("id")
-        print("--+--+--+--+-- %s. SERVER: %s --+--+--+--+--" % (count, server))
+    for server in result.rows():
+        print("--+--+--+--+-- %s. SERVER: %s --+--+--+--+--" % (count, server.get("id")))
         count += 1
-        output, error = run(cmd, server)
+        output, error = run("cat /etc/*-release | grep -e DISTRIB_DESCRIPTION -e PRETTY_NAME", server.get("id"))
         if output:
-            print(output)
+            print("Expected OS: %s, Actual OS: %s" % (server.get("os"), output))
         if error:
             print(error)
 try:
