@@ -450,7 +450,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_cluster_info(cluster_id)
+        resp = capella_api.get_cluster_info(tenant.id, tenant.projects[0], cluster_id)
 
         if resp.status_code != 200:
             CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
@@ -502,7 +502,7 @@ class CapellaUtils(object):
     @staticmethod
     def get_cluster_srv(pod, tenant, cluster_id):
         content = CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
-        return content.get("endpointsSrv")
+        return content.get("data").get("connect").get("srv")
 
     @staticmethod
     def get_nodes(pod, tenant, cluster_id):
