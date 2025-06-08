@@ -101,6 +101,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.mongo_workload_tasks = list()
         self.bucket_history_retention_bytes = self.input.param("bucket_history_retention_bytes", 0)
         self.bucket_history_retention_seconds = self.input.param("bucket_history_retention_seconds", 0)
+        self.steady_state_workload_sleep = self.input.param("steady_state_workload_sleep", 600)
 
     def setupRemoteCouchbase(self):
         # Updating Remote Links Spec
@@ -165,8 +166,9 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
     def update_cluster_state(self, cluster):
         status, content, _ = CBASHelper(cluster.master).get_cluster_details()
         if status:
-            cluster.cbas_cc_node.ip = json.loads(content)["ccNodeName"].split(":")[0]
-            cluster.master.ip = cluster.cbas_cc_node.ip
+            cc_ip = json.loads(content)["ccNodeName"].split(":")[0]
+            cluster.cbas_cc_node = [server for server in cluster.servers if server.ip == cc_ip][0]
+            cluster.master = cluster.cbas_cc_node
             state = json.loads(content)["state"]
             cluster.state = state
 
@@ -175,8 +177,9 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             try:
                 status, content, _ = CBASHelper(cluster.master).get_cluster_details()
                 if status:
-                    cluster.cbas_cc_node.ip = json.loads(content)["ccNodeName"].split(":")[0]
-                    cluster.master.ip = cluster.cbas_cc_node.ip
+                    cc_ip = json.loads(content)["ccNodeName"].split(":")[0]
+                    cluster.cbas_cc_node = [server for server in cluster.servers if server.ip == cc_ip][0]
+                    cluster.master = cluster.cbas_cc_node
                     state = json.loads(content)["state"]
                     if state != "ACTIVE" or cluster.state != "ACTIVE":
                         self.log.critical("Columnar cluster state is {}".format(state))
@@ -245,9 +248,11 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.infra_setup()
 
         # Create new collections
-        self.ingestion_ths = list()
-        for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
-            self.drCBAS.disconnect_link(self.analytics_cluster, dataSource.link_name)
+        loop = self.input.param("loop", 10)
+        while loop > 0:
+            self.ingestion_ths = list()
+            for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
+                self.drCBAS.disconnect_link(self.analytics_cluster, dataSource.link_name)
             self.sleep(60, "wait after previous link disconnect")
             dataSource.link_name = "{}_".format(dataSource.type) + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
             dataSource.links.append(dataSource.link_name)
@@ -258,109 +263,124 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 args=(self.analytics_cluster, [dataSource], self.index_timeout))
             th.start()
             self.ingestion_ths.append(th)
-            
-        self.PrintStep("Step 1: Rebalance-In a KV+CBAS node in analytics cluster")
-        rebalance_task, self.analytics_cluster.available_servers = \
-            self.rebalance_util.rebalance(
-            cluster=self.analytics_cluster, cbas_nodes_in=1,
-            available_servers=self.analytics_cluster.available_servers,
-            in_node_services="kv,cbas")
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task, self.analytics_cluster, True, True):
-            self.fail("Error while Rebalance-In KV+CBAS node in analytics "
-                      "cluster")
 
-        self.PrintStep("Step 2: Rebalance-Out a KV+CBAS node in analytics cluster")
-        rebalance_task, self.analytics_cluster.available_servers = \
-            self.rebalance_util.rebalance(
-            cluster=self.analytics_cluster, cbas_nodes_out=1,
-            available_servers=self.analytics_cluster.available_servers)
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task, self.analytics_cluster, True, True):
-            self.fail("Error while Rebalance-Out KV+CBAS node in analytics "
-                      "cluster")
-        self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+            self.PrintStep("Step 1: Rebalance-In a KV+CBAS node in analytics cluster")
+            rebalance_task, self.analytics_cluster.available_servers = \
+                self.rebalance_util.rebalance(
+                cluster=self.analytics_cluster, cbas_nodes_in=1,
+                available_servers=self.analytics_cluster.available_servers,
+                in_node_services="kv,cbas")
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.analytics_cluster, True, True):
+                self.fail("Error while Rebalance-In KV+CBAS node in analytics "
+                        "cluster")
+            self.sleep(self.steady_state_workload_sleep,
+                       "Wait after rebalance in for {} seconds".format(self.steady_state_workload_sleep))
 
-        self.PrintStep("Step 3: Rebalance-swap a KV+CBAS node in analytics cluster")
-        rebalance_task, self.analytics_cluster.available_servers = \
-            self.rebalance_util.rebalance(
-            cluster=self.analytics_cluster, cbas_nodes_in=1, cbas_nodes_out=1,
-            available_servers=self.analytics_cluster.available_servers,
-            in_node_services="kv,cbas")
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task, self.analytics_cluster, True, True):
-            self.fail("Error while Rebalance-Swap KV+CBAS node in analytics "
-                      "cluster")
-        self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+            self.PrintStep("Step 2: Rebalance-Out a KV+CBAS node in analytics cluster")
+            rebalance_task, self.analytics_cluster.available_servers = \
+                self.rebalance_util.rebalance(
+                cluster=self.analytics_cluster, cbas_nodes_out=1,
+                available_servers=self.analytics_cluster.available_servers)
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.analytics_cluster, True, True):
+                self.fail("Error while Rebalance-Out KV+CBAS node in analytics "
+                        "cluster")
+            self.sleep(self.steady_state_workload_sleep,
+                       "Wait after rebalance out for {} seconds".format(self.steady_state_workload_sleep))
+            self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
 
-        self.PrintStep("Step 4: HardFailover+DeltaRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
-        self.analytics_cluster.available_servers, _, _ = \
-            self.rebalance_util.failover(
-            cluster=self.analytics_cluster, cbas_nodes=1,
-            action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers,
-            failover_type="Hard")
-            
-        self.PrintStep("Step 5: HardFailover+FullRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
-        self.analytics_cluster.available_servers, _, _ = \
-            self.rebalance_util.failover(
-            cluster=self.analytics_cluster, cbas_nodes=1,
-            action="FullRecovery", available_servers=self.analytics_cluster.available_servers,
-            failover_type="Hard")
-            
-        self.PrintStep("Step 6: HardFailover+RebalanceOut a KV+CBAS node in analytics cluster")
-        self.analytics_cluster.available_servers, _, _ = \
-            self.rebalance_util.failover(
-            cluster=self.analytics_cluster, cbas_nodes=1,
-            action="RebalanceOut", available_servers=self.analytics_cluster.available_servers,
-            failover_type="Hard")
-        self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
-            
-        self.PrintStep("Step 7: Rebalance-In a KV+CBAS node in analytics cluster")
-        rebalance_task, self.analytics_cluster.available_servers = \
-            self.rebalance_util.rebalance(
-            cluster=self.analytics_cluster, cbas_nodes_in=1,
-            available_servers=self.analytics_cluster.available_servers,
-            in_node_services="kv,cbas")
-        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                rebalance_task, self.analytics_cluster, True, True):
-            self.fail("Error while Rebalance-In KV+CBAS node in analytics "
-                      "cluster")
-            
-        # self.PrintStep("Step 8: GracefulFailover+DeltaRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
-        # self.analytics_cluster.available_servers, _, _ = \
-        #     self.rebalance_util.failover(
-        #     cluster=self.analytics_cluster, cbas_nodes=1,
-        #     action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers,
-        #     failover_type="Graceful")
-            
-        # self.PrintStep("Step 9: GracefulFailover+FullRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
-        # self.analytics_cluster.available_servers, _, _ = \
-        #     self.rebalance_util.failover(
-        #     cluster=self.analytics_cluster, cbas_nodes=1,
-        #     action="FullRecovery", available_servers=self.analytics_cluster.available_servers,
-        #     failover_type="Graceful")
-            
-        # self.PrintStep("Step 10: GracefulFailover+RebalanceOut a KV+CBAS node in analytics cluster")
-        # self.analytics_cluster.available_servers, _, _ = \
-        #     self.rebalance_util.failover(
-        #     cluster=self.analytics_cluster, cbas_nodes=1,
-        #     action="RebalanceOut", available_servers=self.analytics_cluster.available_servers,
-        #     failover_type="Graceful")
-            
-        # self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+            self.PrintStep("Step 3: Rebalance-swap a KV+CBAS node in analytics cluster")
+            rebalance_task, self.analytics_cluster.available_servers = \
+                self.rebalance_util.rebalance(
+                cluster=self.analytics_cluster, cbas_nodes_in=1, cbas_nodes_out=1,
+                available_servers=self.analytics_cluster.available_servers,
+                in_node_services="kv,cbas")
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.analytics_cluster, True, True):
+                self.fail("Error while Rebalance-Swap KV+CBAS node in analytics "
+                        "cluster")
+            self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+            self.sleep(self.steady_state_workload_sleep,
+                       "Wait after rebalance swap for {} seconds".format(self.steady_state_workload_sleep))
 
-        # self.PrintStep("Step 11: Rebalance-In a KV+CBAS node in analytics cluster")
-        # rebalance_task, self.analytics_cluster.available_servers = \
-        #     self.rebalance_util.rebalance(
-        #     cluster=self.analytics_cluster, cbas_nodes_in=1,
-        #     available_servers=self.analytics_cluster.available_servers,
-        #     in_node_services="kv,cbas")
-        # if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-        #         rebalance_task, self.analytics_cluster, True, True):
-        #     self.fail("Error while Rebalance-In KV+CBAS node in analytics "
-        #               "cluster")
-        for th in self.ingestion_ths:
-            th.join()
-        self.stop_run = True
-        for th in self.query_cancel_ths:
-            th.join()
+            self.PrintStep("Step 4: HardFailover+DeltaRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
+            self.analytics_cluster.available_servers, _, _ = \
+                self.rebalance_util.failover(
+                cluster=self.analytics_cluster, cbas_nodes=1,
+                action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers,
+                failover_type="Hard")
+            self.sleep(self.steady_state_workload_sleep,
+                       "Wait after hard failover and delta recovery for {} seconds".format(self.steady_state_workload_sleep))
+                
+            self.PrintStep("Step 5: HardFailover+FullRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
+            self.analytics_cluster.available_servers, _, _ = \
+                self.rebalance_util.failover(
+                cluster=self.analytics_cluster, cbas_nodes=1,
+                action="FullRecovery", available_servers=self.analytics_cluster.available_servers,
+                failover_type="Hard")
+            self.sleep(self.steady_state_workload_sleep,
+                       "Wait after hard failover and full recovery for {} seconds".format(self.steady_state_workload_sleep))
+                
+            self.PrintStep("Step 6: HardFailover+RebalanceOut a KV+CBAS node in analytics cluster")
+            self.analytics_cluster.available_servers, _, _ = \
+                self.rebalance_util.failover(
+                cluster=self.analytics_cluster, cbas_nodes=1,
+                action="RebalanceOut", available_servers=self.analytics_cluster.available_servers,
+                failover_type="Hard")
+            self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+            self.sleep(self.steady_state_workload_sleep,
+                       "Wait after hard failover and rebalance out for {} seconds".format(self.steady_state_workload_sleep))
+                
+            self.PrintStep("Step 7: Rebalance-In a KV+CBAS node in analytics cluster")
+            rebalance_task, self.analytics_cluster.available_servers = \
+                self.rebalance_util.rebalance(
+                cluster=self.analytics_cluster, cbas_nodes_in=1,
+                available_servers=self.analytics_cluster.available_servers,
+                in_node_services="kv,cbas")
+            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                    rebalance_task, self.analytics_cluster, True, True):
+                self.fail("Error while Rebalance-In KV+CBAS node in analytics "
+                        "cluster")
+            self.sleep(self.steady_state_workload_sleep,
+                       "Wait after rebalance in for {} seconds".format(self.steady_state_workload_sleep))
+                
+            # self.PrintStep("Step 8: GracefulFailover+DeltaRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
+            # self.analytics_cluster.available_servers, _, _ = \
+            #     self.rebalance_util.failover(
+            #     cluster=self.analytics_cluster, cbas_nodes=1,
+            #     action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers,
+            #     failover_type="Graceful")
+                
+            # self.PrintStep("Step 9: GracefulFailover+FullRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
+            # self.analytics_cluster.available_servers, _, _ = \
+            #     self.rebalance_util.failover(
+            #     cluster=self.analytics_cluster, cbas_nodes=1,
+            #     action="FullRecovery", available_servers=self.analytics_cluster.available_servers,
+            #     failover_type="Graceful")
+                
+            # self.PrintStep("Step 10: GracefulFailover+RebalanceOut a KV+CBAS node in analytics cluster")
+            # self.analytics_cluster.available_servers, _, _ = \
+            #     self.rebalance_util.failover(
+            #     cluster=self.analytics_cluster, cbas_nodes=1,
+            #     action="RebalanceOut", available_servers=self.analytics_cluster.available_servers,
+            #     failover_type="Graceful")
+                
+            # self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+
+            # self.PrintStep("Step 11: Rebalance-In a KV+CBAS node in analytics cluster")
+            # rebalance_task, self.analytics_cluster.available_servers = \
+            #     self.rebalance_util.rebalance(
+            #     cluster=self.analytics_cluster, cbas_nodes_in=1,
+            #     available_servers=self.analytics_cluster.available_servers,
+            #     in_node_services="kv,cbas")
+            # if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+            #         rebalance_task, self.analytics_cluster, True, True):
+            #     self.fail("Error while Rebalance-In KV+CBAS node in analytics "
+            #               "cluster")
+            for th in self.ingestion_ths:
+                th.join()
+            self.stop_run = True
+            for th in self.query_cancel_ths:
+                th.join()
+        loop -= 1

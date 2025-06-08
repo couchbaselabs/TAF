@@ -198,6 +198,7 @@ class CBASBaseTest(BaseTestCase):
                 services_mem_quota_percent=mem_quota_percent
             )
             cluster.master.services = ["kv", "cbas"]
+            cluster.nodes_in_cluster.append(cluster.master)
 
             if "cbas" in cluster.master.services or "analytics" in cluster.master.services:
                 cluster.cbas_nodes.append(cluster.master)

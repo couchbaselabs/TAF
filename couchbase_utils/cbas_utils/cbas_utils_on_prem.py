@@ -35,6 +35,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from Jython_tasks.task import Task, RunQueriesTask
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
+from cb_server_rest_util.rest_client import RestConnection as NewRestConnection
 
 from py_constants import CbServer
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -5184,8 +5185,6 @@ class CBASRebalanceUtil(object):
                                             check_cbas_running=False,
                                             reset_cluster_servers=True):
         self.task.jython_task_manager.get_task_result(task)
-        if reset_cluster_servers:
-            cluster.servers = cluster.nodes_in_cluster
         if hasattr(cluster, "cbas_cc_node"):
             self.reset_cbas_cc_node(cluster)
         if task.result and hasattr(cluster, "cbas_nodes"):
@@ -5229,9 +5228,9 @@ class CBASRebalanceUtil(object):
         # and we don't have a way to recover from that
         if cbas_nodes_out > 0:
             cluster.cbas_cc_node = [node for node in cluster.nodes_in_cluster if node not in cbas_server_out][0]
+            cluster.master = cluster.cbas_cc_node
+            cluster.rest = NewRestConnection(cluster.cbas_cc_node)
         servs_out = random.sample(cluster_kv_nodes, kv_nodes_out) + cbas_server_out
-
-        cluster.servers.extend(servs_in)
 
         if kv_nodes_in == kv_nodes_out:
             self.vbucket_check = False
@@ -5253,13 +5252,6 @@ class CBASRebalanceUtil(object):
         available_servers = [servs for servs in available_servers if
                              servs not in servs_in]
         available_servers += servs_out
-
-        cluster.nodes_in_cluster.extend(servs_in)
-        nodes_in_cluster = [server for server in cluster.nodes_in_cluster if
-                            server not in servs_out]
-        cluster.nodes_in_cluster = nodes_in_cluster
-
-        # cluster.servers = nodes_in_cluster
 
         return rebalance_task, available_servers
 
@@ -5504,27 +5496,32 @@ class CBASRebalanceUtil(object):
             failover_count += kv_nodes
             kv_failover_nodes.extend(chosen)
         if cbas_nodes and cluster_cbas_nodes:
+            self.log.info("Cbas nodes in cluster: {0}".format(cluster_cbas_nodes))
             chosen = pick_node(cluster, cluster_cbas_nodes, cbas_nodes)
+            self.log.info("Cbas nodes selected for failover: {0}".format(chosen))
             cluster.cbas_cc_node = [node for node in cluster.nodes_in_cluster if node.ip not in [x.ip for x in chosen]][0]
             cluster.master = cluster.cbas_cc_node
+            cluster.rest = NewRestConnection(cluster.cbas_cc_node)
+            cluster.rest.activate_service_api(["cbas", "security"])
+            self.log.info("Temporary CBAS CC node: {0}".format(cluster.cbas_cc_node))
             otpNodes.extend([x.id for x in chosen])
             failover_count += cbas_nodes
             cbas_failover_nodes.extend(chosen)
         if all_at_once:
             if failover_type == "Graceful":
                 fail_over_status = fail_over_status and \
-                    cluster.rest.cluster.perform_graceful_failover(otpNodes)
+                    cluster.rest.cluster.perform_graceful_failover(otpNodes, timeout=3600)
             else:
                 fail_over_status = fail_over_status and \
-                    cluster.rest.cluster.perform_hard_failover(otpNodes)
+                    cluster.rest.cluster.perform_hard_failover(otpNodes, timeout=3600)
         else:
             for node in otpNodes:
                 if failover_type == "Graceful":
                     fail_over_status = fail_over_status and \
-                        cluster.rest.cluster.perform_graceful_failover(node)
+                        cluster.rest.cluster.perform_graceful_failover(node, timeout=3600)
                 else:
                     fail_over_status = fail_over_status and \
-                        cluster.rest.cluster.perform_hard_failover(node)
+                        cluster.rest.cluster.perform_hard_failover(node, timeout=3600)
 
         result = RebalanceUtil(cluster).monitor_rebalance()
         if not result:

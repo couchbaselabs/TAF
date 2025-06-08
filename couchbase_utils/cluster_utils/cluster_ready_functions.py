@@ -1140,19 +1140,19 @@ class ClusterUtils:
         for service_type, node_list in service_map.items():
             if service_type == constants.Services.KV:
                 append_nodes_to_list(node_list, cluster.kv_nodes)
-            elif service_type == constants.Services.INDEX:
+            if service_type == constants.Services.INDEX:
                 append_nodes_to_list(node_list, cluster.index_nodes)
-            elif service_type == constants.Services.N1QL:
+            if service_type == constants.Services.N1QL:
                 append_nodes_to_list(node_list, cluster.query_nodes)
-            elif service_type == constants.Services.CBAS:
+            if service_type == constants.Services.CBAS:
                 append_nodes_to_list(node_list, cluster.cbas_nodes)
-            elif service_type == constants.Services.EVENTING:
+            if service_type == constants.Services.EVENTING:
                 append_nodes_to_list(node_list, cluster.eventing_nodes)
-            elif service_type == constants.Services.FTS:
+            if service_type == constants.Services.FTS:
                 append_nodes_to_list(node_list, cluster.fts_nodes)
-            elif service_type == constants.Services.BACKUP:
+            if service_type == constants.Services.BACKUP:
                 append_nodes_to_list(node_list, cluster.backup_nodes)
-            elif service_type == constants.Services.SERVICELESS:
+            if service_type == constants.Services.SERVICELESS:
                 append_nodes_to_list(node_list, cluster.serviceless_nodes)
 
     def get_nodes_from_services_map(self, cluster, service_type="n1ql",

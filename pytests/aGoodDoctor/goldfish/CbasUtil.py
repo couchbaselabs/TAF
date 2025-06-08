@@ -96,8 +96,7 @@ def execute_via_sdk(client, statement, readonly=False,
         output["status"] = result.metadata().status()
         output["metrics"] = result.metadata().metrics()
     except CouchbaseException as e:
-        traceback.print_exc()
-        print(e)
+        # print(e)
         raise e
     except Exception as e:
         output["results"] = None
