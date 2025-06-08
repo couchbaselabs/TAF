@@ -5227,7 +5227,7 @@ class CBASRebalanceUtil(object):
         # Temporarily set the cbas_cc_node to a node that is not being removed
         # This is to avoid the case where the cbas_cc_node is also being removed
         # and we don't have a way to recover from that
-        if cbas_server_out > 0:
+        if cbas_nodes_out > 0:
             cluster.cbas_cc_node = [node for node in cluster.nodes_in_cluster if node not in cbas_server_out][0]
         servs_out = random.sample(cluster_kv_nodes, kv_nodes_out) + cbas_server_out
 
