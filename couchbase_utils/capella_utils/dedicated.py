@@ -497,7 +497,7 @@ class CapellaUtils(object):
     @staticmethod
     def get_cluster_state(pod, tenant, cluster_id):
         content = CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
-        return content.get("status")
+        return content.get("data").get("status").get("state")
 
     @staticmethod
     def get_cluster_srv(pod, tenant, cluster_id):
