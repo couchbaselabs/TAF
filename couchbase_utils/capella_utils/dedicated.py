@@ -248,7 +248,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.delete_cluster(cluster.id)
+        resp = capella_api.delete_cluster_internal(tenant.id, tenant.projects[0], cluster.id)
         if resp.status_code != 202:
             raise Exception("Deleting Capella Cluster Failed.")
 

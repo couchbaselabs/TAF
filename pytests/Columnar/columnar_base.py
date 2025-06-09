@@ -11,6 +11,7 @@ from BucketLib.bucket import Bucket
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from BucketLib.BucketOperations import BucketHelper
 import json
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 
 class ColumnarBaseTest(BaseTestCase):
@@ -519,3 +520,78 @@ class ColumnarBaseTest(BaseTestCase):
                 "id:string", "id:string-product_name:string"]
         columnar_spec["file_format"] = self.input.param("file_format", "json")
         return columnar_spec
+
+    def load_doc_to_remote_collections(self, cluster, valType, buckets=None,
+                                create_start_index=None, create_end_index=None,
+                                read_start_index=None, read_end_index=None,
+                                update_start_index=None, update_end_index=None,
+                                delete_start_index=None, delete_end_index=None,
+                                expiry_start_index=None, expiry_end_index=None,
+                                wait_for_completion=True, create_percent=100,
+                                       read_percent=0, update_percent=0, delete_percent=0, expiry_percent=0):
+        buckets = buckets or cluster.buckets
+        thread_count = 0
+        for bucket in buckets:
+            for scope in bucket.scopes.keys():
+                if scope == "_system":
+                    continue
+                for collection in bucket.scopes[scope].collections.keys():
+                    thread_count += 1
+        per_coll_ops = self.input.param("ops_rate", 20000)//thread_count
+        tasks = list()
+
+        for bucket in buckets:
+            pattern = [create_percent, read_percent, update_percent, delete_percent, expiry_percent]
+            for scope in bucket.scopes.keys():
+                for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+                    valType = valType
+                    if scope == "_system":
+                        continue
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=cluster.master.ip, server_port=cluster.master.port,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope, collection_name=collection,
+                        key_prefix="test_docs-", key_size=20, doc_size=256,
+                        key_type="SimpleKey", value_type=valType,
+                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
+                        delete_percent=pattern[3], expiry_percent=pattern[4],
+                        create_start_index=create_start_index, create_end_index=create_end_index,
+                        read_start_index=read_start_index, read_end_index=read_end_index,
+                        update_start_index=update_start_index, update_end_index=update_end_index,
+                        delete_start_index=delete_start_index, delete_end_index=delete_end_index,
+                        expiry_start_index=expiry_start_index, expiry_end_index=expiry_end_index,
+                        process_concurrency=1, task_identifier="", ops=per_coll_ops,
+                        suppress_error_table=False,
+                        track_failures=True,
+                        mutate=0,
+                        elastic=False, model=self.model, mockVector=self.mockVector, dim=self.dim, base64=self.base64)
+                    loader.create_doc_load_task()
+                    self.task_manager.add_new_task(loader)
+                    tasks.append(loader)
+
+        if wait_for_completion:
+            self.wait_for_completion(tasks)
+        return tasks
+
+    def wait_for_completion(self, tasks):
+        for loader in tasks:
+            loader.result = self.task_manager.get_task_result(loader)
+            if loader.fail_count == loader.create_end_index:
+                self.fail("Doc loading failed for {0}.{1}.{2}"
+                            .format(loader.bucket.name,
+                                    loader.scope,
+                                    loader.collection))
+            else:
+                if loader.fail_count > 0:
+                    self.log.error(
+                        "{0} Docs failed to load "
+                        "for {1}.{2}.{3}"
+                        .format(loader.fail_count,
+                                loader.bucket.name, loader.scope,
+                                loader.collection))
+                    loader.bucket.scopes[loader.scope].collections[loader.collection].num_items = (
+                            loader.create_end_index -
+                            loader.fail_count)
+                else:
+                    loader.bucket.scopes[loader.scope].collections[loader.collection].num_items = loader.create_end_index
