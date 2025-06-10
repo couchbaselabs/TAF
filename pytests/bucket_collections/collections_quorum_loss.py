@@ -167,6 +167,7 @@ class CollectionsQuorumLoss(CollectionBase):
         for node in nodes:
             if self.failover_action == "stop_server":
                 self.cluster_util.start_server(self.cluster, node)
+                self.sleep(30, "Wait for server to start after failure")
             elif self.failover_action == "firewall":
                 self.cluster_util.stop_firewall_on_node(self.cluster, node)
             elif self.failover_action == "stop_memcached":
@@ -174,6 +175,7 @@ class CollectionsQuorumLoss(CollectionBase):
             elif self.failover_action == "kill_erlang":
                 self.cluster_util.stop_server(self.cluster, node)
                 self.cluster_util.start_server(self.cluster, node)
+                self.sleep(30, "Wait for server to start after failure")
         self.sleep(10, "Wait after removing failure")
 
     def shuffle_nodes_between_two_zones(self):
