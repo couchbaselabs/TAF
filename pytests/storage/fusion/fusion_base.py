@@ -1,3 +1,4 @@
+from collections import deque
 import json
 import os
 import subprocess
@@ -85,6 +86,9 @@ class FusionBase(BaseTestCase):
 
         self.monitor = True
         self.crash_loop = False
+
+    def tearDown(self):
+        super(FusionBase, self).tearDown()
 
 
     def setup_nfs_server(self):
@@ -210,14 +214,23 @@ class FusionBase(BaseTestCase):
 
     def get_timestamp_dirs(self, ssh, dir):
 
-        cmd = f"date +%s; ls -ltr {dir} | awk '{{print $9}}'"
+        cmd = f"date +%s; stat -c '%s %Y %n' {dir}/*"
         output, _ = ssh.execute_command(cmd)
         timestamp = int(output[0].strip())
-        dirs = [dir.strip() for dir in output[2:]]
 
-        return timestamp, dirs
+        log_dict = dict()
+        for line in output[1:]:
+            line_split = line.strip().split(" ")
+            log_file = line_split[-1].split("/")[-1]
+            if "tmp" in log_file:
+                continue
+            log_file_size = int(line_split[0])
+            timestamp = int(line_split[1])
+            log_dict[log_file] = [log_file_size, timestamp]
 
-    def monitor_kvstores(self, bucket, dir, interval=1):
+        return timestamp, log_dict
+
+    def monitor_kvstores(self, bucket, dir, interval=1, validate=False):
 
         ssh = RemoteMachineShellConnection(self.nfs_server)
 
@@ -227,8 +240,14 @@ class FusionBase(BaseTestCase):
         self.kvstore_stats[bucket][kvstore_num]["term"] = -1
         self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"] = list()
         self.kvstore_stats[bucket][kvstore_num]["leases"] = list()
-        self.kvstore_stats[bucket][kvstore_num]["file_creation"] = list()
-        self.kvstore_stats[bucket][kvstore_num]["file_deletion"] = list()
+        self.kvstore_stats[bucket][kvstore_num]["file_creation"] = deque([], maxlen=5)
+        self.kvstore_stats[bucket][kvstore_num]["file_deletion"] = deque([], maxlen=5)
+
+        self.kvstore_violations[bucket][kvstore_num]["file_creation"] = list()
+        self.kvstore_violations[bucket][kvstore_num]["file_deletion"] = list()
+        self.kvstore_violations[bucket][kvstore_num]["file_size"] = list()
+        self.kvstore_violations[bucket][kvstore_num]["file_name"] = list()
+
 
         i = 0
         tmp_arr = dir.split("/")
@@ -243,7 +262,7 @@ class FusionBase(BaseTestCase):
         prev_log_files = list()
 
         while self.monitor:
-            curr_timestamp, curr_log_files = self.get_timestamp_dirs(ssh, dir)
+            curr_timestamp, curr_log_dict = self.get_timestamp_dirs(ssh, dir)
 
             o, e = ssh2.execute_command(chronicle_cmd)
             json_str = "\n".join(o)
@@ -260,6 +279,7 @@ class FusionBase(BaseTestCase):
             except Exception as e:
                 self.log.debug(e)
 
+            curr_log_files = list(curr_log_dict.keys())
             # Do a set difference to see if any log files have been added/deleted
             curr_log_files_set = set(curr_log_files)
             prev_log_files_set = set(prev_log_files)
@@ -271,27 +291,45 @@ class FusionBase(BaseTestCase):
 
             if len(diff1) != 0:
                 for file in list(diff1):
-                    if "tmp" in file:
-                        continue
-                    full_file_path = os.path.join(dir, file)
-                    cmd2 = f"stat --format='%Y' {full_file_path}"
-                    timestamp_output, _  = ssh.execute_command(cmd2)
-                    file_creation_timestamp = int(timestamp_output[0].strip())
-                    self.kvstore_stats[bucket][kvstore_num]["file_creation"].append([file, file_creation_timestamp])
+                    file_creation_timestamp = curr_log_dict[file][1]
+                    log_file_size = curr_log_dict[file][0]
+                    if validate:
+                        # Timestamp validation
+                        if len(self.kvstore_stats[bucket][kvstore_num]["file_creation"]) > 0:
+                            prev_timestamp = self.kvstore_stats[bucket][kvstore_num]["file_creation"][-1][1]
+                            time_diff = curr_timestamp-prev_timestamp
+                            if time_diff > self.fusion_upload_interval:
+                                self.kvstore_violations[bucket][kvstore_num]["file_creation"].append([file, prev_timestamp, curr_timestamp, time_diff])
+
+                            # Log Size Validation
+                            if log_file_size > 104857600:
+                                self.kvstore_violations[bucket][kvstore_num]["file_size"].append([file, log_file_size])
+
+                            # Log file naming validation
+                            prev_file_name = self.kvstore_stats[bucket][kvstore_num]["file_creation"][-1][0]
+                            expected_log_name = "log-" + str(self.kvstore_stats[bucket][kvstore_num]["term"]) + "." + str(int(prev_file_name.split(".")[1]) + 1)
+                            if file != expected_log_name:
+                                self.kvstore_violations[bucket][kvstore_num]["file_name"].append([file, expected_log_name])
+
+                    self.kvstore_stats[bucket][kvstore_num]["file_creation"].append([file, file_creation_timestamp, log_file_size])
+
             if len(diff2) != 0:
                 for file in list(diff2):
-                    if "tmp" in file:
-                        continue
-                    self.kvstore_stats[bucket][kvstore_num]["file_deletion"].append([file, curr_timestamp])
+                    log_file_checkpoint = self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"][-1][0]
+                    self.kvstore_stats[bucket][kvstore_num]["file_deletion"].append([file, log_file_checkpoint, curr_timestamp])
+                    if validate:
+                        checkpoint_log_id = int(log_file_checkpoint.split(".")[1])
+                        log_file_delete_num = int(file.split(".")[1])
+                        if log_file_delete_num >= checkpoint_log_id:
+                            self.kvstore_violations[bucket][kvstore_num]["file_deletions"].append([file, log_file_checkpoint])
 
-            # prev_timestamp = curr_timestamp
             prev_log_files = curr_log_files
             time.sleep(interval)
 
         ssh.disconnect()
         ssh2.disconnect()
 
-    def start_monitor_dir(self):
+    def start_monitor_dir(self, validate=False):
 
         monitor_threads = list()
 
@@ -300,7 +338,7 @@ class FusionBase(BaseTestCase):
 
             for dir in kvstore_dirs:
                 self.log.debug(f"Bucket: {bucket}, Monitoring dir: {dir} for log file creation/deletion and chronicle metadata updates")
-                monitor_th = threading.Thread(target=self.monitor_kvstores, args=[bucket.name, dir])
+                monitor_th = threading.Thread(target=self.monitor_kvstores, args=[bucket.name, dir, 1, validate])
                 monitor_threads.append(monitor_th)
                 monitor_th.start()
 

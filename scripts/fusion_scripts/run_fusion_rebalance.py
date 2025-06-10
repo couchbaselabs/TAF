@@ -62,10 +62,6 @@ class RebalanceAutomation:
         print(f"Executing: {explanation}")
         print(f"Command: {cmd}")
 
-        if self.dry_run:
-            print("[DRY RUN] Command would be executed")
-            return None
-
         try:
             result = subprocess.run(
                 cmd,
@@ -93,12 +89,6 @@ class RebalanceAutomation:
         keep_nodes = ','.join(f'ns_1@{node}' for node in self.new_nodes)
         url = f"{self.base_url}{API_PREPARE_REBALANCE}"
 
-        if self.dry_run:
-            print("[DRY RUN] Run this command:")
-            print(f"curl -X POST '{url}' -u '{self.auth[0]}:{self.auth[1]}' -d 'keepNodes={keep_nodes}' | json_pp > {REBALANCE_PLAN_FILE}")
-            # Return prefixed node names for dry run as well
-            return "dummy-uuid-for-dry-run", [f'ns_1@{node}' for node in self.new_nodes]
-
         try:
             response = requests.post(url, auth=self.auth, data={'keepNodes': keep_nodes})
             response.raise_for_status()
@@ -121,11 +111,6 @@ class RebalanceAutomation:
             raise FileNotFoundError(f"Rebalance plan file {REBALANCE_PLAN_FILE} not found")
 
         cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.config['manifest_parts']}"
-        if self.dry_run:
-            print("[DRY RUN] Run these commands:")
-            print(f"mkdir -p {MANIFEST_OUTPUT_DIR}")
-            print(cmd)
-            return
         self._execute_command(cmd, "Splitting rebalance manifest")
 
     def sync_manifests(self):
@@ -144,10 +129,6 @@ class RebalanceAutomation:
                 os.makedirs(self.config['manifest_dest_path'])
             cmd = f"cp -rp {MANIFEST_OUTPUT_DIR}/* {self.config['manifest_dest_path']}"
 
-        if self.dry_run:
-            print("[DRY RUN] Run this command:")
-            print(cmd)
-            return
         self._execute_command(cmd, "Syncing manifest parts to destination")
 
     def upload_mounted_volumes(self, plan_uuid: str, involved_nodes: List[str]):
@@ -170,11 +151,6 @@ class RebalanceAutomation:
                 for node in involved_nodes
             ]
         }
-
-        if self.dry_run:
-            print("[DRY RUN] Run this command:")
-            print(f"curl -X POST '{url}?planUUID={plan_uuid}' -u '{self.auth[0]}:{self.auth[1]}' -H 'Content-Type: application/json' -d '{json.dumps(nodes_config)}'")
-            return 200
 
         try:
             response = requests.post(
@@ -244,12 +220,6 @@ class RebalanceAutomation:
             print("No new nodes to setup")
             return
 
-        if self.dry_run:
-            print("[DRY RUN] Run these commands in parallel:")
-            for node in nodes_to_setup:
-                print(f"ssh {self.config['ssh_username']}@{node} '{self.config['accelerator_binary']} ns_1@{node}'")
-            return
-
         # Run setups in parallel using a thread pool
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes_to_setup)) as executor:
             future_to_node = {executor.submit(self._setup_single_node, node): node for node in nodes_to_setup}
@@ -280,12 +250,6 @@ class RebalanceAutomation:
             'planUUID': plan_uuid
         }
 
-        if self.dry_run:
-            print("[DRY RUN] Run this command:")
-            data_params = '&'.join(f"{k}={v}" for k, v in data.items() if v)
-            print(f"curl -X POST '{url}' -u '{self.auth[0]}:{self.auth[1]}' -d '{data_params}'")
-            return 200
-
         try:
             response = requests.post(url, auth=self.auth, data=data)
             response.raise_for_status()
@@ -297,11 +261,6 @@ class RebalanceAutomation:
     def _configure_node_data_path(self, node: str) -> None:
         """Initialize node with the data path."""
         url = f"http://{node}:8091{API_NODE_INIT}"
-
-        if self.dry_run:
-            print(f"[DRY RUN] Would initialize node {node}:")
-            print(f"curl -X POST '{url}' -u '{self.auth[0]}:{self.auth[1]}' -d 'dataPath={DATA_PATH}'")
-            return
 
         try:
             print(f"Initializing node {node}...")
@@ -327,17 +286,6 @@ class RebalanceAutomation:
             return
 
         url = f"{self.base_url}{API_ADD_NODE}"
-
-        if self.dry_run:
-            print("[DRY RUN] For each new node, would:")
-            for node in nodes_to_add:
-                print(f"1. Configure data path:")
-                print(f"   curl -X POST 'http://{node}:8091{API_NODE_INIT}' -u '{self.auth[0]}:{self.auth[1]}' -d 'dataPath={DATA_PATH}'")
-                print(f"2. Add node to cluster:")
-                print(f"   curl -X POST '{url}' -u '{self.auth[0]}:{self.auth[1]}' "
-                      f"-d 'hostname=https://{node}:{NODE_PORT}' "
-                      f"-d 'user={self.auth[0]}' -d 'password={self.auth[1]}'")
-            return
 
         for node in nodes_to_add:
             try:
@@ -443,5 +391,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
