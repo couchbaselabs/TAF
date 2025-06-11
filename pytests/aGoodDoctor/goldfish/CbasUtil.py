@@ -48,6 +48,63 @@ HotelIndexes = [
     "create index {0} on {1}(price:double)",
     "create index {0} on {1}(avg_rating:double)"]
 
+HeterogeneousQueries = [
+    """SELECT COUNT(*) as total_documents,
+       COUNT(key_0) as has_key_0,
+       COUNT(key_1) as has_key_1, 
+       COUNT(key_2) as has_key_2,
+       COUNT(key_3) as has_key_3,
+       COUNT(key_4) as has_key_4,
+       AVG(OBJECT_LENGTH(0)) as avg_fields_per_doc
+    FROM {0};""",
+
+    """SELECT "key_0" as key_name,
+       COUNT(CASE WHEN is_string(key_0) THEN 1 END) as string_count,
+       COUNT(CASE WHEN is_number(key_0) THEN 1 END) as number_count,
+       COUNT(CASE WHEN is_boolean(key_0) THEN 1 END) as boolean_count,
+       COUNT(CASE WHEN is_array(key_0) THEN 1 END) as array_count,
+       COUNT(CASE WHEN is_object(key_0) THEN 1 END) as object_count,
+       COUNT(CASE WHEN is_null(key_0) THEN 1 END) as null_count
+    FROM {0}
+    WHERE key_0 IS NOT MISSING
+
+    UNION ALL
+
+    SELECT "key_1" as key_name,
+        COUNT(CASE WHEN is_string(key_1) THEN 1 END),
+        COUNT(CASE WHEN is_number(key_1) THEN 1 END),
+        COUNT(CASE WHEN is_boolean(key_1) THEN 1 END),
+        COUNT(CASE WHEN is_array(key_1) THEN 1 END),
+        COUNT(CASE WHEN is_object(key_1) THEN 1 END),
+        COUNT(CASE WHEN is_null(key_1) THEN 1 END)
+    FROM {0}
+    WHERE key_1 IS NOT MISSING
+
+    UNION ALL
+
+    SELECT "key_2" as key_name,
+        COUNT(CASE WHEN is_string(key_2) THEN 1 END),
+        COUNT(CASE WHEN is_number(key_2) THEN 1 END),
+        COUNT(CASE WHEN is_boolean(key_2) THEN 1 END),
+        COUNT(CASE WHEN is_array(key_2) THEN 1 END),
+        COUNT(CASE WHEN is_object(key_2) THEN 1 END),
+        COUNT(CASE WHEN is_null(key_2) THEN 1 END)
+    FROM {0}
+    WHERE key_2 IS NOT MISSING;""",
+    
+    """SELECT SUBSTR(string_val, 1, 6) as pattern,
+       COUNT(*) as frequency,
+       MIN(TONUMBER(SUBSTR(string_val, 7))) as min_number,
+       MAX(TONUMBER(SUBSTR(string_val, 7))) as max_number,
+       AVG(TONUMBER(SUBSTR(string_val, 7))) as avg_number
+    FROM {0} as ds
+    UNNEST [ds.key_0, ds.key_1, ds.key_2, ds.key_3, ds.key_4] as string_val
+    WHERE is_string(string_val) 
+    AND string_val LIKE "value_%"
+    GROUP BY SUBSTR(string_val, 1, 6);
+    """
+    
+]
 
 def execute_statement_on_cbas(client, statement,
                               client_context_id=None):
@@ -125,6 +182,8 @@ class DoctorCBAS():
             dataSource.create_link(cluster)
             if dataSource.loadDefn["valType"] == "Hotel":
                 queryType = HotelQueries
+            elif dataSource.loadDefn["valType"] == "RandomlyNestedJson":
+                queryType = HeterogeneousQueries
             # create collection
             collections = dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0], skip_init)
             q = 0

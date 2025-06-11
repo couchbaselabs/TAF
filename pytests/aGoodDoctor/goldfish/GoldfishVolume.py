@@ -68,7 +68,7 @@ class Columnar(BaseTestCase, hostedOPD):
         self.skip_init = self.input.param("skip_init", False)
         self.query_result = True
         self.default_workload = {
-            "valType": "Hotel",
+            "valType": self.input.param("valType", "Hotel"),
             "database": 1,
             "collections": self.input.param("collections", 1),
             "scopes": 1,
