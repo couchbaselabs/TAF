@@ -34,7 +34,8 @@ class DCPBase(CollectionBase):
         self.enable_stream_id = self.input.param("enable_stream_id", False)
         #         vbuckets = self.input.param("vbuckets", 0)
         #         if len(vbuckets) == 1:
-        self.vbuckets = range(1024)
+
+        self.vbuckets = range(self.bucket.num_vbuckets)
         #         else:
         #             self.vbuckets = vbuckets.split(",")
         self.start_seq_no_list = self.input.param("start", [0] * len(self.vbuckets))
@@ -437,7 +438,7 @@ class DCPBase(CollectionBase):
             filter_json.append('')
 
         for f in filter_json:
-            for index in xrange(0, len(self.vb_list)):
+            for index in range(0, len(self.vb_list)):
                 if self.stream_req_info:
                     self.log.info('Stream to vbucket %s on node %s with seq no %s and uuid %s' \
                                   % (self.vb_list[index], self.get_node_of_dcp_client_connection(
@@ -514,6 +515,7 @@ class DCPBase(CollectionBase):
         return self.add_streams([vb], new_seq_no, self.end_seq_no, new_uuid, self.vb_retry, self.filter_file)
 
     def select_dcp_client(self, vb):
+
         main_node_id = self.vb_map[vb][0]
 
         # TODO: Adding support if not my vbucket received to use replica node.

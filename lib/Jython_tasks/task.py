@@ -4939,7 +4939,7 @@ class BucketCreateTask(Task):
             if self.result is False:
                 self.test_log.critical("Bucket %s creation failed"
                                        % self.bucket.name)
-            elif self.bucket.num_vbuckets is None:
+            elif not self.bucket.num_vbuckets:
                 # Set num_vbuckets to default it not provided by the user
                 if (self.bucket.bucketType == Bucket.Type.MEMBASE and
                         self.bucket.storageBackend == Bucket.StorageBackend.magma):
@@ -5084,13 +5084,13 @@ class BucketCreateFromSpecTask(Task):
                 self.set_exception(
                     BucketCreationException(ip=self.bucket_helper.ip,
                                             bucket_name=self.bucket_obj.name))
-            elif self.bucket_obj.num_vbuckets is None:
+            elif not self.bucket_obj.num_vbuckets:
                 # Set num_vbuckets to default it not provided by the user
                 if (self.bucket_obj.bucketType == Bucket.Type.MEMBASE and
                         self.bucket_obj.storageBackend == Bucket.StorageBackend.magma):
-                    self.bucket_obj.numVBuckets = CbServer.magma_default_vbuckets
+                    self.bucket_obj.num_vbuckets = CbServer.magma_default_vbuckets
                 else:
-                    self.bucket_obj.numVBuckets = CbServer.total_vbuckets
+                    self.bucket_obj.num_vbuckets = CbServer.total_vbuckets
                 if CbServer.cluster_profile == "serverless":
                     self.bucket_obj.numVBuckets = CbServer.Serverless.VB_COUNT
         # catch and set all unexpected exceptions
