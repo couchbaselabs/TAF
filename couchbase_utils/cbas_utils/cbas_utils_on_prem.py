@@ -5552,6 +5552,11 @@ class CBASRebalanceUtil(object):
             wait_for_complete=True):
         # Perform the action
         if action == "RebalanceOut":
+            servs_out = [node for node in cluster.nodes_in_cluster for
+                            fail_node in (kv_failover_nodes + cbas_failover_nodes)
+                            if node.ip == fail_node.ip]
+
+            available_servers += servs_out
             rebalance_task = self.task.async_rebalance(
                 cluster, [], kv_failover_nodes + cbas_failover_nodes,
                 check_vbucket_shuffling=self.vbucket_check,
@@ -5562,13 +5567,6 @@ class CBASRebalanceUtil(object):
                         rebalance_task, cluster):
                     raise Exception(
                         "Rebalance failed while rebalancing nodes after failover")
-                time.sleep(10)
-                servs_out = [node for node in cluster.nodes_in_cluster for
-                             fail_node in (kv_failover_nodes + cbas_failover_nodes)
-                             if node.ip == fail_node.ip]
-                cluster.server = cluster.nodes_in_cluster
-                available_servers += servs_out
-                time.sleep(10)
             else:
                 return rebalance_task
         else:
