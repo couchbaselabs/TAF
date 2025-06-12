@@ -5539,7 +5539,7 @@ class CBASRebalanceUtil(object):
                                node.ip]
 
         if action and fail_over_status:
-            self.perform_action_on_failed_over_nodes(
+            available_servers, _, _ = self.perform_action_on_failed_over_nodes(
                 cluster, action, available_servers, kv_failover_nodes,
                 cbas_failover_nodes, wait_for_complete)
         if reset_cbas_cc:
