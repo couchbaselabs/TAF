@@ -438,7 +438,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 jobs.put((self.cbas_util.load_doc_to_standalone_collection,
                           {"cluster": self.columnar_cluster, "collection_name": dataset.name,
                            "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
-                           "no_of_docs": self.doc_size}))
+                           "no_of_docs": self.no_of_docs}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)

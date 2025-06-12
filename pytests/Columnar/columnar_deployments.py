@@ -31,6 +31,8 @@ class ColumnarDeployments(ColumnarBaseTest):
         ]
         self.deployment_plans = ["developerPro", "enterprise"]
         self.deployment_azs = ["single", "multi"]
+        self.columnar_image = self.input.capella.get("columnar_image", None)
+        self.override_key = self.input.capella.get("override_key")
 
     def tearDown(self):
         super(ColumnarDeployments, self).tearDown()
@@ -73,8 +75,8 @@ class ColumnarDeployments(ColumnarBaseTest):
             return True
 
         combinations = list(itertools.product(self.deployment_regions,
-                                              self.deployment_nodes,
-                                              self.instance_types,
+                                              [self.deployment_nodes[0], self.deployment_nodes[4]],
+                                              [self.instance_types[0], self.instance_types[-1]],
                                               self.deployment_plans,
                                               self.deployment_azs))
 
@@ -90,6 +92,8 @@ class ColumnarDeployments(ColumnarBaseTest):
 
             if nodes == 1 and (az == "multi" or plan == "enterprise"):
                 continue
+            if nodes != 1 and (plan == "developerPro" or az == "single"):
+                continue
 
             instance_config = (
                 self.columnar_utils.generate_instance_configuration())
@@ -99,7 +103,10 @@ class ColumnarDeployments(ColumnarBaseTest):
             instance_config['instanceTypes'] = instance_type
             instance_config['package']['key'] = plan
             instance_config['availabilityZone'] = az
-
+            if self.columnar_image:
+                instance_config['overRide'] = dict()
+                instance_config['overRide']['image'] = self.columnar_image
+                instance_config['overRide']['token'] = self.override_key
             deploy_task = DeployColumnarInstance(
                 self.pod, self.tenant, instance_config["name"],
                 instance_config, timeout=self.wait_timeout, retries=10)

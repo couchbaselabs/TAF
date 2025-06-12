@@ -12,6 +12,7 @@ from sirius_client_framework.sirius_constants import SiriusCodes
 from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
 from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
+from couchbase_utils.kafka_util.msk_utils import MSKUtils
 
 
 def convert_pacific_to_utc(pacific_time):
@@ -50,6 +51,7 @@ class OnOff(ColumnarBaseTest):
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
+        self.columnar_spec = self.cbas_util.get_columnar_spec(self.columnar_spec_name)
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -107,7 +109,7 @@ class OnOff(ColumnarBaseTest):
                 self.columnar_cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
 
-        # super(ColumnarBaseTest, self).tearDown()
+        super(OnOff, self).tearDown()
         self.log_setup_status(
             self.__class__.__name__, "Finished", stage="Teardown")
 
@@ -119,6 +121,80 @@ class OnOff(ColumnarBaseTest):
         :return:
         """
         self.log.info("Creating Collections on Mongo")
+        self.mongo_util = MongoUtil(
+            task_manager=self.task_manager,
+            hostname=self.input.param("mongo_hostname"),
+            username=self.input.param("mongo_username"),
+            password=self.input.param("mongo_password")
+        )
+
+        # Initialize variables for Kafka
+        self.kafka_topic_prefix = f"on_off_{int(time.time())}"
+
+        # Initializing Confluent util and Confluent cluster object.
+        self.confluent_util = ConfluentUtils(
+            cloud_access_key=self.input.param("confluent_cloud_access_key"),
+            cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+        self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
+            kafka_cluster_id=self.input.param("confluent_cluster_id"),
+            topic_prefix=self.kafka_topic_prefix)
+        if not self.confluent_cluster_obj:
+            self.fail("Unable to initialize Confluent Kafka cluster object")
+
+
+        # Initialize variables for Kafka
+        self.msk_kafka_topic_prefix = f"aws_msk_regression_{int(time.time())}"
+
+        # Initializing AWS_MSK util and AWS_MSK cluster object.
+        self.msk_util = MSKUtils(
+            access_key=self.aws_access_key, secret_key=self.aws_secret_key,
+            region=self.input.param("msk_region", "us-east-1"))
+        self.msk_cluster_obj = self.msk_util.generate_msk_cluster_object(
+            msk_cluster_name=self.input.param("msk_cluster_name"),
+            topic_prefix=self.msk_kafka_topic_prefix,
+            sasl_username=self.input.param("msk_username"),
+            sasl_password=self.input.param("msk_password"))
+        if not self.msk_cluster_obj:
+            self.fail("Unable to initialize AWS Kafka cluster object")
+
+        # Initializing KafkaConnect Util and kafka connect server hostnames
+        self.kafka_connect_util = KafkaConnectUtil()
+        kafka_connect_hostname = self.input.param('kafka_connect_hostname')
+        self.kafka_connect_hostname_cdc_confluent = (
+                f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_CDC_PORT}")
+        self.kafka_connect_hostname_non_cdc_confluent = (
+                f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_NON_CDC_PORT}")
+
+        self.kafka_connect_hostname_cdc_msk = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.AWS_MSK_CDC_PORT}")
+        self.kafka_connect_hostname_non_cdc_msk = (
+            f"{kafka_connect_hostname}:{KafkaConnectUtil.AWS_MSK_NON_CDC_PORT}")
+
+        self.kafka_topics = {
+            "confluent": {
+                "MONGODB": [
+                    {
+                        "topic_name": "do-not-delete-mongo-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": True,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                    {
+                        "topic_name": "do-not-delete-mongo-non-cdc.Product_Template.10GB",
+                        "key_serialization_type": "json",
+                        "value_serialization_type": "json",
+                        "cdc_enabled": False,
+                        "source_connector": "DEBEZIUM",
+                        "num_items": 10000000
+                    },
+                ],
+                "POSTGRESQL": [],
+                "MYSQLDB": []
+            }
+        }
+
         self.mongo_collections = {}
         self.mongo_db_name = f"TAF_on_off_mongo_db_{int(time.time())}"
         for i in range(1, self.input.param("num_mongo_collections") + 1):
