@@ -150,11 +150,6 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         else:
             self.normal_load()
 
-        # self.generate_docs(doc_ops=["create"],
-        #                    create_start=0,
-        #                    create_end=self.num_items)
-        # self.perform_load(cluster=self.remote_cluster, validate_data=False)
-
     def tearDown(self):
         self.stop_run = True
         for ql in self.cbasQL:
@@ -237,6 +232,16 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         th = threading.Thread(target=self.cancel_active_requests)
         th.start()
         self.query_cancel_ths.append(th)
+        
+    def live_kv_workload(self):
+        self.log.info("Creating live KV workload")
+        while not self.stop_run:
+            self.tasks = list()
+            for bucket in self.remote_cluster.buckets:
+                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
+                self.generate_docs(bucket=bucket)
+                self.perform_load(cluster=self.remote_cluster, wait_for_load=True, validate_data=False)
+            self.sleep(10)
 
     def test_columnar_volume(self):
         self.update_cluster_state(self.analytics_cluster)
@@ -246,10 +251,14 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.log.info("Creating Buckets, Scopes and Collection on Remote "
                         "cluster.")
         self.infra_setup()
+        kv_workload_thread = threading.Thread(target=self.live_kv_workload)
+        kv_workload_thread.start()
+        self.sleep(10)
 
         # Create new collections
         loop = self.input.param("loop", 10)
         while loop > 0:
+            self.log.info("Strating test iteration: {}".format(loop))
             self.ingestion_ths = list()
             for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
                 self.drCBAS.disconnect_link(self.analytics_cluster, dataSource.link_name)
@@ -383,4 +392,6 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             self.stop_run = True
             for th in self.query_cancel_ths:
                 th.join()
-        loop -= 1
+            loop -= 1
+        self.stop_run = True
+        kv_workload_thread.join()
