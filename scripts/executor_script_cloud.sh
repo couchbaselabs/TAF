@@ -295,12 +295,20 @@ if [ "$?" -eq 0 ]; then
   pyenv local $PYENV_VERSION
   cat 3.10.14/testexec.$$.ini
   # Find free port on this machine to use for this run
-  sirius_port=49152 ; while [ "$(ss -tulpn | grep LISTEN | grep $sirius_port | wc -l)" -ne 0 ]; do sirius_port=$((sirius_port+1)) ; done
+  starting_ports=(49152 49162 49172 49182 49192 49202 49212 49222 49232)
+  num_scripts_running=$(ps -ef | grep '/tmp/jenkins' | grep -v 'grep ' | wc -l)
+  sirius_port=${starting_ports[$num_scripts_running]} ; while [ "$(ss -tulpn | grep LISTEN | grep $sirius_port | wc -l)" -ne 0 ]; do sirius_port=$((sirius_port+1)) ; done
   echo "Will use $sirius_port for starting sirius"
   export PATH=/usr/local/go/bin:$PATH
-
   set -x
-  python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p "$parameters" --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
+  load_docs_using=$(echo "$parameters" | grep -oP 'load_docs_using=\K[^,]*')
+  if [[ "$load_docs_using" == "sirius_java_sdk" ]]; then
+    echo "Using Sirius Java SDK to load documents."
+    python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p "$parameters" --launch_java_doc_loader --sirius_url http://localhost:$sirius_port ${rerun_params}
+  else
+    echo "Using default doc loader."
+    python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p "$parameters" --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
+  fi
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
   status=$?
   set +x
