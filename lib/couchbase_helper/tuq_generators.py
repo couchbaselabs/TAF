@@ -582,7 +582,7 @@ class JsonGenerator:
         join_mo = xrange(1, 12 + 1)
         join_day = xrange(1, 28 + 1)
         templates = []
-        for i in range(start, docs_per_day):
+        for i in xrange(start, docs_per_day):
             random.seed(i)
             month = random.choice(join_mo)
             prefix = "_employee"+str(i)
@@ -600,7 +600,7 @@ class JsonGenerator:
             template.put("join_day" , random.choice(join_day))
             template.put("email" , email)
             template.put("job_title" , random.choice(types))
-            template.put("test_rate" , range(1, 10))
+            template.put("test_rate" , xrange(1, 10))
             template.put("skills" , random.sample(skills, 2))
             template.put("vms" , [vms])
             templates.append(template)
@@ -632,8 +632,8 @@ class JsonGenerator:
         join_mo = xrange(1, 12 + 1)
         join_day = xrange(1, 28 + 1)
         is_manager = [True,False]
-        salary = range(10000, 200000)
-        emp_id = range(0, 10000)
+        salary = xrange(10000, 200000)
+        emp_id = xrange(0, 10000)
         count = 1
         templates = []
 #             languanges_known = {}
@@ -706,7 +706,7 @@ class JsonGenerator:
         template += '"address" : {7} }}'
         count = 1
         templates = []
-        for i in range(start, docs_per_day):
+        for i in xrange(start, docs_per_day):
             random.seed(count)
             month = random.choice(join_mo)
             prefix = "employee" + str(i)
@@ -759,7 +759,7 @@ class JsonGenerator:
         join_day = self._shuffle(xrange(1, 28 + 1),isShuffle)
         count = 1
         templates = []
-        for i in range(start, docs_per_day):
+        for i in xrange(start, docs_per_day):
             random.seed(count)
             dest = random.choice(all_airports)
             year = random.choice(join_yr)
@@ -896,8 +896,8 @@ class JsonGenerator:
         count = 1
         templates = []
         sales = [200000, 400000, 600000, 800000]
-        rate = [x * 0.1 for x in range(0, 10)]
-        for i in range(start, docs_per_day):
+        rate = [x * 0.1 for x in xrange(0, 10)]
+        for i in xrange(start, docs_per_day):
             contact = "contact_"+ str(random.random()*10000000)
             name ="name_"+ str(random.random()*100000)
             year = random.choice(join_yr)
@@ -928,7 +928,7 @@ class JsonGenerator:
                               start=0, docs_per_day=1, end=None):
         if end is None:
             end = docs_per_day
-        age = range(start, end)
+        age = xrange(start, end)
         name = ['a' * value_size]
         template = JsonObject.create()
         template.put("age", age)
@@ -971,7 +971,7 @@ class JsonGenerator:
                 "Mor123", "Mal123", "Nor123"]
         end = docs_per_day
         templates = []
-        for i in range(start, end):
+        for i in xrange(start, end):
             countries = []
             codes = []
             random.seed(i)
@@ -1027,11 +1027,11 @@ class JsonGenerator:
                     "Mindanao, Philippines", "Philippine Islands region", "Halmahera, Indonesia",
                     "Newberry Caldera area, Oregon", "south of Africa", "south of the Mariana Islands", "Ascension Island region"]
         Magnitude = [1.1, 1.9, 2.3, 4, 6, 7.2, 5.3, 3.7, 9.2, 7.1, 6.3, 6.7, 6.5]
-        Depth = range(10, 40)
-        Version = range(3)
-        NST = range(1, 10)
+        Depth = xrange(10, 40)
+        Version = xrange(3)
+        NST = xrange(1, 10)
         templates = []
-        for i in range(start, end):
+        for i in xrange(start, end):
             random.seed(i)
             prefix = "{0}-{1}".format(key_prefix,i)
             template = JsonObject.create()
@@ -1084,7 +1084,7 @@ class JsonGenerator:
                    '"address":{4}, "travel_history":{5}, "travel_history_code":{6}, "travel_details":{7},' \
                    '"booking":{8}, "credit_cards":{9}, "secret_combination":{10}, "countries_visited":{11}, ' \
                    '"question_values":{12}}}'
-        for i in range(docs_per_day):
+        for i in xrange(docs_per_day):
             name = random.choice(FIRST_NAMES)
             age = random.randint(25, 70)
             last_name = random.choice(LAST_NAMES)
@@ -1101,16 +1101,16 @@ class JsonGenerator:
             address["contact"] = "{0} {1}".format(name, last_name)
             address["country"] = "India"
             address["postal_code"] = "{0}".format(random.randint(560071, 560090))
-            credit_cards = [random.randint(-1000000, 9999999) for i in range(random.randint(3, 7))]
-            secret_combo = [''.join(random.choice(string.lowercase) for i in range(7)),
+            credit_cards = [random.randint(-1000000, 9999999) for i in xrange(random.randint(3, 7))]
+            secret_combo = [''.join(random.choice(string.lowercase) for i in xrange(7)),
                             random.randint(1000000, 9999999)]
-            travel_history = [random.choice(COUNTRIES[:9]) for i in range(1, 11)]
+            travel_history = [random.choice(COUNTRIES[:9]) for i in xrange(1, 11)]
             travel_history_code = [COUNTRY_CODE[COUNTRIES.index(i)] for i in travel_history]
             travel_details = [{"country": travel_history[i], "code": travel_history_code[i]}
-                              for i in range(len(travel_history))]
+                              for i in xrange(len(travel_history))]
             countries_visited = list(set(travel_history))
             booking = {"source": random.choice(COUNTRIES), "destination": random.choice(COUNTRIES)}
-            confirm_question_values = [random.choice(bool_vals) for i in range(5)]
+            confirm_question_values = [random.choice(bool_vals) for i in xrange(5)]
             prefix = "airline_record_" + str(random.random()*100000)
             template = JsonObject.create()
             template.put("name", [name])
