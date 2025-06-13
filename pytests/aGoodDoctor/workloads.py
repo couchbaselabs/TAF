@@ -6,38 +6,114 @@ Created on Mar 29, 2024
 from TestInput import TestInputSingleton
 
 _input = TestInputSingleton.input
-
-
+        
 default = {
-    "valType": _input.param("val_type", "SimpleValue"),
-    "scopes": 1,
+    "key_prefix": "test_docs-",
+    "key_size": 32,
+    "key_type": _input.param("key_type", "SimpleKey"),
+    "valType": _input.param("valType", "Hotel"),
     "collections": _input.param("collections", 2),
+    "scopes": 1,
     "num_items": _input.param("num_items", 50000000),
     "start": 0,
     "end": _input.param("num_items", 50000000),
     "ops": _input.param("ops_rate", 50000),
     "doc_size": _input.param("doc_size", 1024),
-    "pattern": [0, 50, 50, 0, 0], # CRUDE
-    "load_type": ["read", "update"],
-    "2iQPS": 10,
-    "ftsQPS": 10,
-    "cbasQPS": 10,
+    "doc_op_percentages": {"create": 0, "update": 50, "delete": 0, "read": 50, "expiry": 0},
+    "2iQPS": _input.param("2iQPS", 10),
+    "ftsQPS": _input.param("ftsQPS", 10),
+    "cbasQPS": _input.param("cbasQPS", 10),
     "collections_defn": [
         {
             "valType": _input.param("val_type", "SimpleValue"),
-            "2i": [_input.param("gsi_indexes", 2),
-                   _input.param("gsi_queries", 2)],
-            "FTS": [_input.param("fts_indexes", 2),
-                    _input.param("fts_queries", 2)],
-            "cbas": [_input.param("cbas_indexes", 2),
-                     _input.param("cbas_datasets", 2),
-                     _input.param("cbas_queries", 2)]
+            "2i": {"num_queries": _input.param("2i_queries", 2),
+                   "num_indexes": _input.param("2i_indexes", 2)},
+            "FTS": {"num_queries": _input.param("fts_queries", 2),
+                    "num_indexes": _input.param("fts_indexes", 2)},
+            "cbas": {"num_collections": _input.param("cbas_collections", 2),
+                     "num_queries": _input.param("cbas_queries", 5),
+                     "num_indexes": _input.param("cbas_indexes", 0)},
             }
         ]
     }
-        
-nimbus = {
+
+Hotel = {
+    "key_prefix": "test_docs-",
+    "key_size": 20,
+    "key_type": _input.param("key_type", "SimpleKey"),
     "valType": "Hotel",
+    "scopes": 1,
+    "collections": 2,
+    "num_items": _input.param("num_items", 1000000000),
+    "start": 0,
+    "end": _input.param("num_items", 1000000000),
+    "ops": _input.param("ops_rate", 100000),
+    "doc_size": 1024,
+    "doc_op_percentages": {"create": 0, "update": 50, "delete": 0, "read": 50, "expiry": 0},
+    "2iQPS": _input.param("2iQPS", 300),
+    "ftsQPS": _input.param("ftsQPS", 100),
+    "cbasQPS": _input.param("cbasQPS", 100),
+    "collections_defn": [
+        {
+            "valType": "Hotel",
+            "2i": {"num_queries": _input.param("2i_queries", 2),
+                   "num_indexes": _input.param("2i_indexes", 3)},
+            "FTS": {"num_queries": _input.param("fts_queries", 0),
+                    "num_indexes": _input.param("fts_indexes", 0)},
+            "cbas": {"num_collections": _input.param("cbas_collections", 0),
+                     "num_queries": _input.param("cbas_queries", 0),
+                     "num_indexes": _input.param("cbas_indexes", 0)},
+            "indexes": [
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Inn USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Hostel USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Place USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Center USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Hotel USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Motel USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Suites USING GSI WITH {{ "defer_build": true}};'
+                ],
+            "queries": [
+                "select meta().id from {bucket}.{scope}.{collection} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
+                "select price, country from {bucket}.{scope}.{collection} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`= $type limit 100",
+                "select city,country from {bucket}.{scope}.{collection} where free_breakfast=True and free_parking=True order by country,city limit 100",
+                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {bucket}.{scope}.{collection} WHERE country = $country GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {bucket}.{scope}.{collection} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country=$country limit 100",
+                "SELECT h.name, h.city, r.author FROM {bucket}.{scope}.{collection} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
+                "SELECT COUNT(1) AS cnt FROM {bucket}.{scope}.{collection} WHERE city LIKE 'North%'",
+                "SELECT h.name,h.country,h.city,h.price FROM {bucket}.{scope}.{collection} AS h WHERE h.price IS NOT NULL limit 100",
+                "SELECT * from {bucket}.{scope}.{collection} where `name` is not null limit 100",
+                "SELECT * from {bucket}.{scope}.{collection} where city like \"San%\" limit 100",
+                "SELECT * FROM {bucket}.{scope}.{collection} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = $country limit 100",
+                "SELECT ARRAY_AGG({{h.name, r.ratings.Overall}}) AS reviews FROM {bucket}.{scope}.{collection} h UNNEST reviews AS r limit 100"
+                ],
+            "queryParams": [
+                {"country": "faker.address().country()"},
+                {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {"country": "faker.address().country()", "city": "faker.address().city()"}
+                ]
+            }
+        ]
+}
+
+nimbus = {
+    "key_prefix": "test_docs-",
+    "key_size": 20,
+    "key_type": _input.param("key_type", "SimpleKey"),
+    "valType": _input.param("valType", "Hotel"),
     "scopes": 1,
     "collections": 2,
     "num_items": _input.param("num_items", 1500000000),
@@ -45,57 +121,127 @@ nimbus = {
     "end": _input.param("num_items", 1500000000),
     "ops": _input.param("ops_rate", 100000),
     "doc_size": 1024,
-    "pattern": [0, 50, 50, 0, 0],  # CRUDE
-    "load_type": ["read", "update"],
-    "2iQPS": 300,
-    "ftsQPS": 100,
-    "cbasQPS": 100,
+    "doc_op_percentages": {"create": 0, "update": 50, "delete": 0, "read": 50, "expiry": 0},
+    "2iQPS": _input.param("2iQPS", 300),
+    "ftsQPS": _input.param("ftsQPS", 100),
+    "cbasQPS": _input.param("cbasQPS", 100),
     "collections_defn": [
         {
             "valType": "NimbusP",
-            "2i": [2, 3],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0],
+            "2i": {"num_queries": _input.param("2i_queries", 2),
+                   "num_indexes": _input.param("2i_indexes", 3)},
+            "FTS": {"num_queries": _input.param("fts_queries", 0),
+                    "num_indexes": _input.param("fts_indexes", 0)},
+            "cbas": {"num_collections": _input.param("cbas_collections", 0),
+                     "num_queries": _input.param("cbas_queries", 0),
+                     "num_indexes": _input.param("cbas_indexes", 0)},
             "indexes": [
-                'CREATE INDEX {}{} ON {}(`uid`, `lastMessageDate` DESC,`unreadCount`, `lastReadDate`, `conversationId`) PARTITION BY hash(`uid`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};'
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`uid`, `lastMessageDate` DESC,`unreadCount`, `lastReadDate`, `conversationId`) PARTITION BY hash(`uid`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};'
                 ],
             "queries": [
-                'SELECT meta().id, conversationId, lastMessageDate, lastReadDate, unreadCount FROM {} WHERE uid = $uid ORDER BY lastMessageDate DESC LIMIT $N;',
-                'SELECT uid, conversationId FROM {} WHERE conversationId IN [$conversationId1, $conversationId2]',
-                'SELECT COUNT(*) AS nb FROM {}  WHERE uid=$uid AND unreadCount>0'
+                'SELECT meta().id, conversationId, lastMessageDate, lastReadDate, unreadCount FROM {bucket}.{scope}.{collection} WHERE uid = $uid ORDER BY lastMessageDate DESC LIMIT $N;',
+                'SELECT uid, conversationId FROM {bucket}.{scope}.{collection} WHERE conversationId IN [$conversationId1, $conversationId2]',
+                'SELECT COUNT(*) AS nb FROM {bucket}.{scope}.{collection}  WHERE uid=$uid AND unreadCount>0'
+                ],
+            "queryParams": [
+                {"uid": "faker.random_int(min=1, max=1000000000)"},
+                {"conversationId1": "faker.random_int(min=1, max=1000000000)", "conversationId2": "faker.random_int(min=1, max=1000000000)"},
+                {"uid": "faker.random_int(min=1, max=1000000000)"}
                 ]
             },
         {
             "valType": "NimbusM",
-            "2i": [1, 2],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0],
+            "2i": {"num_queries": _input.param("2i_queries", 1),
+                   "num_indexes": _input.param("2i_indexes", 2)},
+            "FTS": {"num_queries": _input.param("fts_queries", 0),
+                    "num_indexes": _input.param("fts_indexes", 0)},
+            "cbas": {"num_collections": _input.param("cbas_collections", 0),
+                     "num_queries": _input.param("cbas_queries", 0),
+                     "num_indexes": _input.param("cbas_indexes", 0)},
             "indexes": [
-                'CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`conversationId`, (distinct (array `u` for `u` in `showTo` end)), `timestamp` DESC) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};'
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`conversationId`, (distinct (array `u` for `u` in `showTo` end)), `timestamp` DESC) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};'
                 ],
             "queries": [
-                'SELECT meta().id AS _id, uid, type, content, url, timestamp, width, height, clickable, roomId, roomTitle, roomStreamers, actions, pixel FROM {} WHERE conversationId = $conversationId ORDER BY timestamp DESC LIMIT $N',
-                'SELECT COUNT(*) AS nb FROM {} WHERE conversationId = $conversationId'
+                'SELECT meta().id AS _id, uid, type, content, url, timestamp, width, height, clickable, roomId, roomTitle, roomStreamers, actions, pixel FROM {bucket}.{scope}.{collection} WHERE conversationId = $conversationId ORDER BY timestamp DESC LIMIT $N',
+                'SELECT COUNT(*) AS nb FROM {bucket}.{scope}.{collection} WHERE conversationId = $conversationId'
+                ],
+            "queryParams": [
+                {"conversationId": "faker.random_int(min=1, max=1000000000)"},
+                {"conversationId": "faker.random_int(min=1, max=1000000000)"}
                 ]
             }
         ]
     }
 
 siftBigANN = {
+    "key_prefix": "test_docs-",
+    "key_size": 32,
+    "key_type": _input.param("key_type", "SimpleKey"),
     "valType": "siftBigANN",
     "baseFilePath": _input.param("baseFilePath", "/root/bigann"),
     "scopes": 1,
     "collections": _input.param("collections", 2),
     "ops": _input.param("ops_rate", 50000),
     "doc_size": _input.param("doc_size", 1024),
-    "pattern": [0, 0, 100, 0, 0], # CRUDE
-    "load_type": ["update"],
-    "2iQPS": _input.param("qps", 50),
-    "ftsQPS": 10,
-    "cbasQPS": 10,
+    "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
+    "2iQPS": _input.param("2iQPS", 50),
+    "ftsQPS": _input.param("ftsQPS", 10),
+    "cbasQPS": _input.param("cbasQPS", 10),
     "collections_defn": [
+        {
+            "collection_id": "1M",
+            "num_items": 1000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "indexes": [
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (brand, color, size, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (brand, color, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (brand, id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (id) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                ],
+            "queries": [
+                'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(embedding, $vector, "{similarity}", {nProbe}) limit 10',
+                ],
+            "indexes_base64": [
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, `color`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+                ],
+            "queries_base64": [
+                'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" AND size=5 ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" AND color="Green" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} where brand="Nike" ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10',
+                'SELECT id from {bucket}.{scope}.{collection} ORDER BY APPROX_VECTOR_DISTANCE(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 10'
+                ],
+            "groundTruths":[
+                ("idx_1M.ivecs", "1/1"),
+                ("idx_1M.ivecs", "1/1"),
+                ("idx_1M.ivecs", "1/1"),
+                ("idx_1M.ivecs", "1/1")
+                ],
+            "2i": {"num_queries": _input.param("2i_queries", 4),
+                   "num_indexes": _input.param("2i_indexes", 4)},
+            "es": [{"brand.keyword": "Nike", "color.keyword": "Green", "size":5}, {"brand.keyword": "Nike", "color.keyword": "Green"}, {"brand.keyword": "Nike"}]
+        },
         {
             "collection_id": "10M",
             "num_items": 10000000,
@@ -156,8 +302,8 @@ siftBigANN = {
                 ("idx_5M.ivecs", "5/10"),
                 ("idx_10M.ivecs", "10/10")
                 ],
-            "2i": [_input.param("gsi_indexes", 4),
-                   _input.param("gsi_queries", 4)],
+            "2i": {"num_queries": _input.param("2i_queries", 4),
+                   "num_indexes": _input.param("2i_indexes", 4)},
             "es": [{"brand.keyword": "Nike", "color.keyword": "Green", "size":5}, {"brand.keyword": "Nike", "color.keyword": "Green"}, {"brand.keyword": "Nike"}]
         },
         {
@@ -221,8 +367,8 @@ siftBigANN = {
                 ("idx_10M.ivecs", "10/20"),
                 ("idx_20M.ivecs", "20/20"),
                 ],
-            "2i": [_input.param("gsi_indexes", 5),
-                   _input.param("gsi_queries", 5)],
+            "2i": {"num_queries": _input.param("2i_queries", 5),
+                   "num_indexes": _input.param("2i_indexes", 5)},
         },
         {
             "collection_id": "50M",
@@ -292,8 +438,8 @@ siftBigANN = {
                 ("idx_20M.ivecs", "20/50"),
                 ("idx_50M.ivecs", "50/50"),
                 ],
-            "2i": [_input.param("gsi_indexes", 6),
-                   _input.param("gsi_queries", 6)],
+            "2i": {"num_queries": _input.param("2i_queries", 6),
+                   "num_indexes": _input.param("2i_indexes", 6)},
         },
         {
             "collection_id": "100M",
@@ -370,8 +516,8 @@ siftBigANN = {
                 ("idx_50M.ivecs", "50/100"),
                 ("idx_100M.ivecs", "100/100"),
                 ],
-            "2i": [_input.param("gsi_indexes", 7),
-                   _input.param("gsi_queries", 7)],
+            "2i": {"num_queries": _input.param("2i_queries", 7),
+                   "num_indexes": _input.param("2i_indexes", 7)},
             "es": [{"type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green", "size":5},
                    {"type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green"},
                    {"type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike"},
@@ -462,8 +608,8 @@ siftBigANN = {
                 ("idx_100M.ivecs", "100/200"),
                 ("idx_200M.ivecs", "200/200"),
                 ],
-            "2i": [_input.param("gsi_indexes", 7),
-                   _input.param("gsi_queries", 7)],
+            "2i": {"num_queries": _input.param("2i_queries", 7),
+                   "num_indexes": _input.param("2i_indexes", 7)},
             "es": [{"review": 1.0, "type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green", "size":5},
                    {"review": 1.0, "type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike", "color.keyword": "Green"},
                    {"review": 1.0, "type.keyword": "Casual","category.keyword": "Shoes", "country.keyword": "USA", "brand.keyword": "Nike"},
@@ -551,8 +697,8 @@ siftBigANN = {
                 # ("idx_100M.ivecs", "100/500"),
                 # ("idx_200M.ivecs", "200/500"),
                 ],
-            "2i": [_input.param("gsi_indexes", 5),
-                   _input.param("gsi_queries", 5)],
+            "2i": {"num_queries": _input.param("2i_queries", 5),
+                   "num_indexes": _input.param("2i_indexes", 5)},
         },
         {
             "collection_id": "1B",
@@ -627,8 +773,8 @@ siftBigANN = {
                 # ("idx_500M.ivecs", "500/1B"),
                 # ("idx_1000M.ivecs", "1B/1B")
                 ],
-            "2i": [_input.param("gsi_indexes", 1),
-                   _input.param("gsi_queries", 6)],
+            "2i": {"num_queries": _input.param("2i_queries", 6),
+                   "num_indexes": _input.param("2i_indexes", 1)},
         },
     ]
 }
@@ -703,188 +849,8 @@ hotel_vector = {
                 'SELECT * from {collection} where city like \"San%\" ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
                 'SELECT avg_rating, price, country, city from {collection} where `avg_rating`>4 and price<1000 and country=$country and city=$city ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) LIMIT 100'
                 ],
-            "2i": [_input.param("gsi_indexes", 2),
-                   _input.param("gsi_queries", 2)]
+            "2i": {"num_queries": _input.param("2i_queries", 2),
+                   "num_indexes": _input.param("2i_indexes", 2)}
             },
         ],
-    }
-
-vector_load = {
-    "valType": "Vector",
-    "scopes": 1,
-    "collections": _input.param("collections", 2),
-    "num_items": _input.param("num_items", 5000000),
-    "start": 0,
-    "end": _input.param("num_items", 5000000),
-    "ops": _input.param("ops_rate", 5000),
-    "doc_size": 1024,
-    "pattern": [0, 0, 100, 0, 0], # CRUDE
-    "load_type": ["update"],
-    "2iQPS": 10,
-    "ftsQPS": _input.param("ftsQPS", 10),
-    "cbasQPS": 0,
-    "collections_defn": [
-        {
-            "valType": "Vector",
-            "2i": [2, 2],
-            "FTS": [2, 2],
-            "cbas": [2, 2, 2]
-            }
-        ]
-    }
-
-quartz1 = {
-    "name": "archive",
-    "ramQuotaMB": 1024,
-    "valType": "Hotel",
-    "scopes": 1,
-    "collections": 1,
-    "num_items": 5000000,
-    "start": 0,
-    "end": 5000000,
-    "ops": _input.param("ops_rate", 10000),
-    "doc_size": 1024,
-    "pattern": [10, 0, 80, 10, 0],  # CRUDE
-    "load_type": ["create", "update", "delete"],
-    "2iQPS": 5,
-    "ftsQPS": 0,
-    "cbasQPS": 0,
-    "collections_defn": [
-        {
-            "valType": "Hotel",
-            "2i": [5, 5],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0]
-            }
-        ]
-    }
-
-quartz2 = {
-    "name": "backend",
-    "ramQuotaMB": 40960,
-    "valType": "Hotel",
-    "scopes": 1,
-    "collections": 1,
-    "num_items": 14000000,
-    "start": 0,
-    "end": 14000000,
-    "ops": _input.param("ops_rate", 10000),
-    "doc_size": 1024,
-    "pattern": [10, 0, 80, 10, 0],  # CRUDE
-    "load_type": ["create", "update", "delete"],
-    "2iQPS": 5,
-    "ftsQPS": 0,
-    "cbasQPS": 0,
-    "collections_defn": [
-        {
-            "valType": "Hotel",
-            "2i": [15, 10],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0]
-            }
-        ]
-    }
-
-quartz3 = {
-    "name": "export",
-    "ramQuotaMB": 3072,
-    "valType": "SimpleValue",
-    "scopes": 1,
-    "collections": 1,
-    "num_items": 2000000,
-    "start": 0,
-    "end": 2000000,
-    "ops": _input.param("ops_rate", 10000),
-    "doc_size": 1024,
-    "pattern": [10, 0, 80, 10, 0],  # CRUDE
-    "load_type": ["create", "update", "delete"],
-    "2iQPS": 5,
-    "ftsQPS": 0,
-    "cbasQPS": 0,
-    "collections_defn": [
-        {
-            "valType": "SimpleValue",
-            "2i": [9, 9],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0]
-            }
-        ]
-    }
-
-quartz4 = {
-    "name": "import",
-    "ramQuotaMB": 10240,
-    "valType": "Hotel",
-    "scopes": 1,
-    "collections": 1,
-    "num_items": 1200000,
-    "start": 0,
-    "end": 1200000,
-    "ops": _input.param("ops_rate", 10000),
-    "doc_size": 1024,
-    "pattern": [10, 0, 80, 10, 0],  # CRUDE
-    "load_type": ["create", "update", "delete"],
-    "2iQPS": 5,
-    "ftsQPS": 0,
-    "cbasQPS": 0,
-    "collections_defn": [
-        {
-            "valType": "Hotel",
-            "2i": [5, 5],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0]
-            }
-        ]
-    }
-
-quartz5 = {
-    "name": "sync",
-    "ramQuotaMB": 40960,
-    "valType": "Hotel",
-    "scopes": 1,
-    "collections": 1,
-    "num_items": 20000000,
-    "start": 0,
-    "end": 20000000,
-    "ops": _input.param("ops_rate", 10000),
-    "doc_size": 1024,
-    "pattern": [10, 0, 80, 10, 0],  # CRUDE
-    "load_type": ["create", "update", "delete"],
-    "2iQPS": 5,
-    "ftsQPS": 0,
-    "cbasQPS": 0,
-    "collections_defn": [
-        {
-            "valType": "Hotel",
-            "2i": [100, 10],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0]
-            }
-        ]
-    }
-
-quartz6 = {
-    "name": "timelines",
-    "ramQuotaMB": 81920,
-    "valType": "SimpleValue",
-    "scopes": 1,
-    "collections": 1,
-    "num_items": 8000000,
-    "start": 0,
-    "end": 8000000,
-    "ops": _input.param("ops_rate", 10000),
-    "doc_size": 1024,
-    "pattern": [10, 0, 80, 10, 0],  # CRUDE
-    "load_type": ["create", "update", "delete"],
-    "2iQPS": 0,
-    "ftsQPS": 0,
-    "cbasQPS": 0,
-    "collections_defn": [
-        {
-            "valType": "SimpleValue",
-            "2i": [0, 0],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0]
-            }
-        ]
     }

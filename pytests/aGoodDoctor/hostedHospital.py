@@ -22,7 +22,7 @@ from hostedOnOff import DoctorHostedOnOff
 from hostedEventing import DoctorEventing
 from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
 import time
-from bucket_utils.bucket_ready_functions import CollectionUtils
+from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 import pprint
 from elasticsearch import EsClient
 from hostedOPD import hostedOPD
@@ -255,7 +255,7 @@ class Murphy(BaseTestCase, hostedOPD):
             if not self.skip_init:
                 for tenant in self.tenants:
                     for cluster in tenant.clusters:
-                        self.load_sift_data(cluster=cluster,
+                        JavaDocLoaderUtils.load_sift_data(cluster=cluster,
                                           buckets=cluster.buckets,
                                           overRidePattern=[100,0,0,0,0],
                                           validate_data=False,
@@ -266,44 +266,17 @@ class Murphy(BaseTestCase, hostedOPD):
             for tenant in self.tenants:
                 i = 0
                 for cluster in tenant.clusters:
-                    for bucket in cluster.buckets:
-                        self.generate_docs(doc_ops=["create"],
-                                           create_start=0,
-                                           create_end=bucket.loadDefn.get("num_items")/2,
-                                           bucket=bucket)
                     if not self.skip_init:
-                        tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
+                        JavaDocLoaderUtils.load_data(cluster=cluster,
+                                          buckets=cluster.buckets,
+                                          overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},
+                                          validate_data=False,
+                                          wait_for_stats=False)
                         if self.xdcr_remote_clusters > 0:
                             self.drXDCR.set_up_replication(tenant, source_cluster=cluster, destination_cluster=tenant.xdcr_clusters[i],
                                          source_bucket=cluster.buckets[0].name,
                                          destination_bucket=tenant.xdcr_clusters[i].buckets[0].name,)
-                    i += 1
-            for tenant in self.tenants:
-                i = 0
-                for cluster in tenant.clusters:
-                    if tasks:
-                        self.wait_for_doc_load_completion(cluster, tasks[i])
-                i += 1
-    
-            tasks = list()
-            self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
-            for tenant in self.tenants:
-                for cluster in tenant.clusters:
-                    for bucket in cluster.buckets:
-                        self.generate_docs(doc_ops=["create"],
-                                           create_start=bucket.loadDefn.get("num_items")/2,
-                                           create_end=bucket.loadDefn.get("num_items"),
-                                           bucket=bucket)
-                    if not self.skip_init:
-                        tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
-            for tenant in self.tenants:
-                i = 0
-                for cluster in tenant.clusters:
-                    if tasks:
-                        self.wait_for_doc_load_completion(cluster, tasks[i])
-                i += 1
 
-        tasks = list()
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 if cluster.cbas_nodes:
@@ -730,50 +703,29 @@ class Murphy(BaseTestCase, hostedOPD):
 
 
     def normal_mutations(self, cluster):
-        self.create_perc = 25
-        self.update_perc = 25
-        self.delete_perc = 25
-        self.expiry_perc = 25
-        self.read_perc = 25
-        self.mutation_perc = self.input.param("mutation_perc", 100)
-        self.doc_ops = self.input.param("doc_ops", "")
-        pattern = None
-        if self.doc_ops:
-            self.doc_ops = self.doc_ops.split(":")
-            perc = 100/len(self.doc_ops)
-            self.expiry_perc = perc if "expiry" in self.doc_ops else 0
-            self.create_perc = perc if "create" in self.doc_ops else 0
-            self.update_perc = perc if "update" in self.doc_ops else 0
-            self.delete_perc = perc if "delete" in self.doc_ops else 0
-            self.read_perc = perc if "read" in self.doc_ops else 0
-            pattern = [self.create_perc, self.read_perc, self.update_perc, self.delete_perc, self.expiry_perc]
         while self.mutations:
             self.mutate += 1
             for bucket in cluster.buckets:
-                bucket.loadDefn["pattern"] = pattern or bucket.loadDefn.get("pattern")
-                bucket.loadDefn["load_type"] = self.doc_ops if self.doc_ops else bucket.loadDefn.get("load_type")
-                self.generate_docs(bucket=bucket)
                 bucket.original_ops = bucket.loadDefn["ops"]
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
                 pprint.pprint(bucket.loadDefn)
-            self.perform_load(wait_for_load=True, cluster=cluster)
+            JavaDocLoaderUtils.load_data(cluster=cluster,
+                                          buckets=cluster.buckets,
+                                          validate_data=False,
+                                          wait_for_stats=False,
+                                          mutate=self.mutate)
             self.check_index_pending_mutations(cluster)
 
     def sift_mutations(self, cluster):
         while self.mutations:
-            self.expiry_perc = 0
-            self.create_perc = 0
-            self.update_perc = 100
-            self.delete_perc = 0
-            self.read_perc = 0
             self.mutate += 1
             for bucket in cluster.buckets:
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
                 self.gtm = False
-            self.load_sift_data(
-                cluster=cluster,
-                buckets=cluster.buckets,
-                validate_data=False,
-                wait_for_stats=False,
-                wait_for_load=True)
+            JavaDocLoaderUtils.load_sift_data(cluster=cluster,
+                                          buckets=cluster.buckets,
+                                          overRidePattern={"create": 0, "read": 0, "update": 100, "delete": 0, "expiry": 0},
+                                          validate_data=False,
+                                          wait_for_stats=False,
+                                          mutate=self.mutate)
             self.check_index_pending_mutations(cluster)

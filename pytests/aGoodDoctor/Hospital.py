@@ -17,10 +17,9 @@ from py_constants.cb_constants.CBServer import CbServer
 from .cbas import CBASQueryLoad
 from .cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
-from bucket_utils.bucket_ready_functions import CollectionUtils
+from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 from shell_util.remote_connection import RemoteMachineShellConnection
-from .workloads import default, nimbus, vector_load, quartz1, quartz2, quartz3,\
-    quartz5, quartz4, quartz6, hotel_vector, siftBigANN
+from .workloads import Hotel, default, nimbus, hotel_vector, siftBigANN
 import struct
 from index_utils.plasma_stats_util import PlasmaStatsUtil
 from gsiLib.gsiHelper import GsiHelper
@@ -39,28 +38,9 @@ from .xdcr import DoctorXDCR
 
 class Murphy(BaseTestCase, OPD):
 
-    def init_doc_params(self):
-        self.create_perc = self.input.param("create_perc", 100)
-        self.update_perc = self.input.param("update_perc", 20)
-        self.delete_perc = self.input.param("delete_perc", 20)
-        self.expiry_perc = self.input.param("expiry_perc", 20)
-        self.read_perc = self.input.param("read_perc", 20)
-        self.start = 0
-        self.end = 0
-        self.initial_items = self.start
-        self.final_items = self.end
-        self.create_end = 0
-        self.create_start = 0
-        self.update_end = 0
-        self.update_start = 0
-        self.delete_end = 0
-        self.delete_start = 0
-        self.expire_end = 0
-        self.expire_start = 0
 
     def setUp(self):
         BaseTestCase.setUp(self)
-        self.init_doc_params()
 
         self.num_collections = self.input.param("num_collections", 1)
         self.xdcr_collections = self.input.param("xdcr_collections", self.num_collections)
@@ -131,35 +111,19 @@ class Murphy(BaseTestCase, OPD):
             self.esHost = "http://" + self.esHost + ":9200"
         if self.esAPIKey:
             self.esAPIKey = "".join(self.esAPIKey.split(","))
-        
+
         self.load_defn = list()
-        nimbus = self.input.param("nimbus", False)
-        quartz = self.input.param("quartz", False)
-        expiry = self.input.param("expiry", False)
-        self.load_defn.append(default)
-        if nimbus:
-            self.load_defn = list()
-            self.load_defn.append(nimbus)
-
-        if quartz:
-            self.load_defn = list()
-            self.load_defn.extend([quartz1, quartz2, quartz3, quartz4, quartz5, quartz6])
-
-        if expiry:
-            for load in self.load_defn:
-                load["pattern"] = [0, 80, 0, 0, 20]
-                load["load_type"] = ["read", "expiry"]
-
-        self.siftFileName = None
-        if self.vector:
-            self.load_defn = list()
-            if self.index_nodes > 0:
-                if self.val_type == "Hotel":
-                    self.load_defn.append(hotel_vector)
-                if self.val_type == "siftBigANN":
-                    self.load_defn.append(siftBigANN)
+        if self.val_type == "Hotel":
+            if self.vector:
+                self.load_defn.append(hotel_vector)
             else:
-                self.load_defn.append(vector_load)
+                self.load_defn.append(Hotel)
+        elif self.val_type == "siftBigANN":
+            self.load_defn.append(siftBigANN)
+        elif self.val_type == "Nimbus":
+            self.load_defn.append(nimbus)
+        else:
+            self.load_defn.append(default)
 
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
@@ -295,7 +259,6 @@ class Murphy(BaseTestCase, OPD):
 
         if self.index_nodes>0 and self.index_nodes > len(self.cluster.index_nodes):
             self.indexer_mem_quota = self.input.param("indexer_mem_quota", None)
-            self.enableShardAffinity = self.input.param("enableShardAffinity", True)
             if self.indexer_mem_quota:
                 self.rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA:
                                              int(self.indexer_mem_quota
@@ -312,19 +275,22 @@ class Murphy(BaseTestCase, OPD):
                                 validate_bucket_ranking=False)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.index_nodes]
+
+        if self.index_nodes > 0:
+            self.enableShardAffinity = self.input.param("enableShardAffinity", True)
             _ = self.rest.set_indexer_params(redistributeIndexes='true', enableShardAffinity='true',
                                              storageMode=storageModeGSI) \
             if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true',
                                                                           storageMode=storageModeGSI)
-        self.gsi_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
-        enableInMemoryCompression = self.input.param("enableInMemoryCompression", False)
-        if enableInMemoryCompression is False:
-            self.sleep(0, "sleep before setting indexer params")
-            self.gsi_rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": False})
-        reranking = self.input.param("reranking", False)
-        if reranking is False:
-            self.sleep(0, "sleep before setting indexer params")
-            self.gsi_rest.set_index_settings({"indexer.scan.vector.rerank_factor": 0})
+            self.gsi_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+            enableInMemoryCompression = self.input.param("enableInMemoryCompression", False)
+            if enableInMemoryCompression is False:
+                self.sleep(0, "sleep before setting indexer params")
+                self.gsi_rest.set_index_settings({"indexer.plasma.mainIndex.enableInMemoryCompression": False})
+            reranking = self.input.param("reranking", False)
+            if reranking is False:
+                self.sleep(0, "sleep before setting indexer params")
+                self.gsi_rest.set_index_settings({"indexer.scan.vector.rerank_factor": 0})
         # self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
@@ -368,6 +334,7 @@ class Murphy(BaseTestCase, OPD):
                                 num_storage_threads=self.storage_threads)
         self.stop_rebalance = self.input.param("pause_rebalance", False)
         self.log_query_failures = True
+        JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
 
     def tearDown(self):
         for task in self.loader_tasks:
@@ -389,10 +356,9 @@ class Murphy(BaseTestCase, OPD):
     def testKvRangeScan(self):
         self.create_perc = 100
         self.PrintStep("Step 1: Create %s items: %s" % (self.num_items, self.key_type))
-        self.generate_docs(doc_ops=["create"],
-                           create_start=0,
-                           create_end=self.num_items)
-        self.perform_load(validate_data=False)
+        if not self.skip_init:
+            JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets)
+
         self.drN1QL = DoctorN1QL(self.cluster, self.bucket_util,
                                       self.num_indexes, num_query=5, query_without_index=True)
 
@@ -491,10 +457,17 @@ class Murphy(BaseTestCase, OPD):
             self.drEventing.create_eventing_function(self.cluster, file="pytests/aGoodDoctor/vector_xattr.json")
             self.drEventing.lifecycle_operation_for_all_functions(self.cluster, "deploy", "deployed")
 
-        if self.val_type == "siftBigANN":
-            self.siftBigANN_load()
-        else:
-            self.normal_load()
+        if not self.skip_init:
+            if self.val_type == "siftBigANN":
+                JavaDocLoaderUtils.load_sift_data(self.cluster, self.cluster.buckets,
+                                                  overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
+                                                  wait_for_stats=False,
+                                                  validate_data=False)
+            else:
+                JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets,
+                                             overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0})
+        self.print_stats(self.cluster)
+
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets(self.cluster.buckets)
             self.drCBAS.create_indexes(self.cluster.buckets)
@@ -1785,22 +1758,19 @@ class Murphy(BaseTestCase, OPD):
 
     def sift_mutations(self):
         self.loader_tasks = list()
+        for bucket in self.cluster.buckets:
+            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
+            self.gtm = False
+
         while self.mutations:
-            self.expiry_perc = 0
-            self.create_perc = 0
-            self.update_perc = 100
-            self.delete_perc = 0
-            self.read_perc = 0
             self.mutate += 1
-            for bucket in self.cluster.buckets:
-                bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
-                self.gtm = False
-            self.loader_tasks = self.load_sift_data(
+            self.loader_tasks = JavaDocLoaderUtils.load_sift_data(
                 cluster=self.cluster,
                 buckets=self.cluster.buckets,
                 validate_data=False,
                 wait_for_stats=False,
-                wait_for_load=False)
+                wait_for_load=False,
+                mutate=self.mutate)
             for task in self.loader_tasks:
                 self.task_manager.get_task_result(task)
                 self.loader_tasks.remove(task)

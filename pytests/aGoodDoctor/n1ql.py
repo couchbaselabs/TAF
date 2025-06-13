@@ -47,112 +47,6 @@ indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "de
            'CREATE INDEX {}{} ON {}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
            'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true}};']
 
-_HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`price`,`city`,`name`)  PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(DISTINCT ARRAY FLATTEN_KEYS(`r`.`author`,`r`.`ratings`.`Cleanliness`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `country`, `email`, `free_parking`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
-
-_HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
-                "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country limit 100",
-                "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city limit 100",
-                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL limit 100",
-                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 limit 100",
-                "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC  limit 100",
-                "SELECT h.name,h.country,h.city,h.price,DENSE_RANK() OVER (window1) AS `rank` FROM {} AS h WHERE h.price IS NOT NULL WINDOW window1 AS ( PARTITION BY h.country ORDER BY h.price NULLS LAST) limit 100",
-                "SELECT * from {} where `type` is not null limit 100",
-                "SELECT * from {} where phone like \"4%\" limit 100",
-                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country IS NOT NULL limit 100"]
-
-HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
-
-HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
-                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`='Hotel' limit 100",
-                "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
-                "WITH city_price AS (SELECT city, price FROM {} WHERE country = 'Bulgaria' and price > 500 limit 1000) SELECT h.city, h.price FROM city_price as h;",
-                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
-                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
-                "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
-                "SELECT * from {} where `name` is not null limit 100",
-                "SELECT * from {} where phone like \"San%\" limit 100",
-                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
-
-HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Inn USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Hostel USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Place USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Center USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Hotel USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Motel USING GSI WITH {{ "defer_build": true}};',
-                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Suites USING GSI WITH {{ "defer_build": true}};',]
-
-
-HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
-                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`= $type limit 100",
-                "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
-                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = $country GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country=$country limit 100",
-                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
-                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
-                "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
-                "SELECT * from {} where `name` is not null limit 100",
-                "SELECT * from {} where city like \"San%\" limit 100",
-                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = $country limit 100",
-                "SELECT ARRAY_AGG({{h.name, r.ratings.Overall}}) AS reviews FROM {} h UNNEST reviews AS r limit 100"]
-
-HotelQueriesParams = [{},
-                      {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
-                      {},
-                      {"country": "faker.address().country()"},
-                      {},
-                      {},
-                      {},
-                      {},
-                      {},
-                      {"country": "faker.address().country()"}
-                      ]
-
-NimbusPQueriesParams = [{"uid":"str(random.randint(0,1000000)).zfill(32)", "N":"random.randint(100, 1000)"},
-                        {"conversationId1":"str(random.randint(0,1000000)).zfill(36)", "conversationId2":"str(random.randint(0,1000000)).zfill(36)"},
-                        {"uid":"str(random.randint(0,1000000)).zfill(36)"}]
-
-NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(36)", "N":"random.randint(100, 1000)"},
-                        {"conversationId":"str(random.randint(0,1000000)).zfill(36)"}]
-
-HotelQueriesVectorParams = [
-    {"country": "faker.address().country()"},
-    {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
-    {},
-    {},
-    {},
-    {},
-    {},
-    {"country": "faker.address().country()", "city": "faker.address().city()"}
-    ]
-
-SIFTQueriesVectorParams = [{}] * 10
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None,
                               query_params=None, validate=True):
@@ -297,26 +191,10 @@ class DoctorN1QL():
                     if coll_order == -1:
                         workloads = list(reversed(workloads))
                     workload = workloads[collection_num % len(workloads)]
-                    valType = workload["valType"]
+                    valType = workload.get("valType") or b.loadDefn.get("valType")
                     indexType = workload.get("indexes")
                     queryType = workload.get("queries")
-                    queryParams = []
-                    # if valType != prev_valType:
-                    #     counter = 0
-                    if valType == "Hotel" and not workload.get("vector"):
-                        indexType = HotelIndexes
-                        queryType = HotelQueries
-                        queryParams = HotelQueriesParams
-                        # prev_valType = valType
-                    if valType == "NimbusP":
-                        queryParams = NimbusPQueriesParams
-                        # prev_valType = valType
-                    if valType == "NimbusM":
-                        queryParams = NimbusMQueriesParams
-                        # prev_valType = valType
-                    if valType == "Hotel" and workload.get("vector"):
-                        queryParams = HotelQueriesVectorParams
-                        # prev_valType = valType
+                    queryParams = workload.get("queryParams")
                     if valType == "siftBigANN":
                         if combinational:
                             indexType = workload.get("mix_indexes") or workload.get("indexes")
@@ -333,13 +211,14 @@ class DoctorN1QL():
                         if xattr:
                             indexType = [index.replace("`embedding`", "meta().xattrs.embedding") for index in indexType]
                             queryType = [query.replace("embedding", "meta().xattrs.embedding") for query in queryType]
-                        queryParams = SIFTQueriesVectorParams
+                        queryParams = [{}] * workload.get("2i").get("num_queries")
                     i = 0
                     q = 0
-                    while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
-                        if i < workload.get("2i")[0]:
+                    while i < workload.get("2i").get("num_indexes") or q < workload.get("2i").get("num_queries"):
+                        if i < workload.get("2i").get("num_indexes"):
                             vector_defn = {}
                             dim = None
+                            idx_name = b.name.replace("-", "_") + "_idx_" + c + "_" + str(i)
                             if workload.get("vector"):
                                 vector_defn = workload.get("vector")[vector_defn_counter % len(workload.get("vector"))]
                                 dim = workload.get("dim")
@@ -350,7 +229,6 @@ class DoctorN1QL():
                                 description = vector_defn.get("description", "IVF,%s" % vector_defn.get("quantization", "SQ8"))
                                 vector_fields = "'dimension': {}, 'description': '{}', 'similarity': '{}', 'scan_nprobes': {}".format(
                                 dim, description, similarity, nProbe)
-                                idx_name = b.name.replace("-", "_") + "_idx_" + c + "_" + str(i)
                                 partitions = TestInputSingleton.input.param("partitions", None)
                                 self.idx_q = indexType[i % len(indexType)]
                                 if partitions:
@@ -362,9 +240,9 @@ class DoctorN1QL():
                                         index_name=idx_name, bucket=b.name, scope=s, collection=c, vector=vector_fields)
                                     self.idx_q = self.idx_q.replace('PARTITION BY HASH(meta().id)', "")
                             else:
-                                self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
+                                self.idx_q = indexType[i % len(indexType)].format(index_name=idx_name, bucket=b.name, scope=s, collection=c)
                             print (self.idx_q)
-                            b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
+                            b.indexes.update({idx_name: (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             retry = 5
                             if not skip_index:
                                 while retry > 0:
@@ -380,7 +258,7 @@ class DoctorN1QL():
                                         print(e)
                             i += 1
                             vector_defn_counter += 1
-                        if q < workload.get("2i")[1]:
+                        if q < workload.get("2i").get("num_queries"):
                             gt = None
                             unformatted_q = queryType[q % len(queryType)]
                             if workload.get("vector"):
@@ -406,9 +284,7 @@ class DoctorN1QL():
                                     b.query_map[query].update({"gt": gt[q]})
                                 if workload.get("es") and q < len(workload.get("es")):
                                     b.query_map[query].update({"es": workload.get("es")[q]})
-                                # b.queries.append((query, self.sdkClients[b.name+s], unformatted_q, vector_defn, dim))
                             q += 1
-                        # counter += 1
 
             query_tbl = TableView(self.log.info)
             query_tbl.set_headers(["Bucket", "##", "Query"])

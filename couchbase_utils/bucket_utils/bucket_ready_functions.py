@@ -24,6 +24,8 @@ import zlib
 from subprocess import call
 from collections import defaultdict
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from Jython_tasks.task_manager import TaskManager
 import global_vars
 import mc_bin_client
 import memcacheConstants
@@ -96,6 +98,294 @@ Parameters:
     lww = determine the conflict resolution type of the bucket. (Boolean)
 """
 
+class JavaDocLoaderUtils(object):
+    log = logger.get("test")
+    bucket_util = None
+    cluster_util = None
+    process_concurrency = 20
+    doc_loading_tm = None
+
+    def __init__(self, bucket_util, cluster_util):
+        JavaDocLoaderUtils.bucket_util = bucket_util
+        JavaDocLoaderUtils.cluster_util = cluster_util
+        JavaDocLoaderUtils.process_concurrency = TestInputSingleton.input.param("pc", 20)
+        JavaDocLoaderUtils.doc_loading_tm = TaskManager(JavaDocLoaderUtils.process_concurrency)
+
+    @staticmethod
+    def generate_docs(doc_ops=None,
+                      create_end=None, create_start=None,
+                      update_end=None, update_start=None,
+                      delete_end=None, delete_start=None,
+                      expire_end=None, expire_start=None,
+                      read_end=None, read_start=None,
+                      bucket=None):
+        bucket.create_end = 0
+        bucket.create_start = 0
+        bucket.read_end = 0
+        bucket.read_start = 0
+        bucket.update_end = 0
+        bucket.update_start = 0
+        bucket.delete_end = 0
+        bucket.delete_start = 0
+        bucket.expire_end = 0
+        bucket.expire_start = 0
+        try:
+            bucket.final_items
+        except:
+            bucket.final_items = 0
+        bucket.initial_items = bucket.final_items
+        if not hasattr(bucket, "start"):
+            bucket.start = 0
+        if not hasattr(bucket, "end"):
+            bucket.end = 0
+
+        doc_ops = doc_ops or bucket.loadDefn.get("load_type")
+
+        if "read" in doc_ops:
+            bucket.read_start = read_start or 0
+            bucket.read_end = read_end or bucket.loadDefn.get("num_items")//2
+
+        if "update" in doc_ops:
+            bucket.update_start = update_start or 0
+            bucket.update_end = update_end or bucket.loadDefn.get("num_items")//2
+            bucket.mutate += 1
+
+        if "delete" in doc_ops:
+            bucket.delete_start = delete_start or bucket.start
+            bucket.delete_end = delete_end or bucket.start + bucket.loadDefn.get("num_items")//2
+            bucket.final_items -= (bucket.delete_end - bucket.delete_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
+
+        if "expiry" in doc_ops:
+            if bucket.loadDefn.get("maxttl") is None:
+                bucket.loadDefn.maxttl = TestInputSingleton.input.param("maxttl", 10)
+            bucket.expire_start = expire_start or bucket.end
+            bucket.start = bucket.expire_start
+            bucket.expire_end = expire_end or bucket.expire_start + bucket.loadDefn.get("num_items")//2
+            bucket.end = bucket.expire_end
+
+        if "create" in doc_ops:
+            bucket.create_start = create_start or bucket.end
+            bucket.start = bucket.create_start
+
+            bucket.create_end = create_end or bucket.end + (bucket.expire_end - bucket.expire_start) + (bucket.delete_end - bucket.delete_start)
+            bucket.end = bucket.create_end
+
+            bucket.final_items += (abs(bucket.create_end - bucket.create_start)) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
+        print("================{}=================".format(bucket.name))
+        print("Read Start: %s" % bucket.read_start)
+        print("Read End: %s" % bucket.read_end)
+        print("Update Start: %s" % bucket.update_start)
+        print("Update End: %s" % bucket.update_end)
+        print("Expiry Start: %s" % bucket.expire_start)
+        print("Expiry End: %s" % bucket.expire_end)
+        print("Delete Start: %s" % bucket.delete_start)
+        print("Delete End: %s" % bucket.delete_end)
+        print("Create Start: %s" % bucket.create_start)
+        print("Create End: %s" % bucket.create_end)
+        print("Final Start: %s" % bucket.start)
+        print("Final End: %s" % bucket.end)
+        print("================{}=================".format(bucket.name))
+
+    @staticmethod
+    def _loader_dict(cluster, buckets, overRidePattern=None,
+                     key_prefix=None, key_size=None, key_type=None,
+                     model=None, mockVector=None, base64=None,
+                     process_concurrency=None, dim=None,
+                     skip_default=True, mutate=0):
+        loader_map = dict()
+        default_pattern = {"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0}
+        buckets = buckets or cluster.buckets
+        for bucket in buckets:
+            pattern = overRidePattern or bucket.loadDefn.get("doc_op_percentages", default_pattern)
+            for scope in bucket.scopes.keys():
+                for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                    valType = workloads[i % len(workloads)]["valType"]
+                    dim = dim or workloads[i % len(workloads)].get("dim", 128)
+                    key_prefix = key_prefix or bucket.loadDefn.get("key_prefix", "test_docs-")
+                    key_size = key_size or bucket.loadDefn.get("key_size", 20)
+                    key_type = key_type or bucket.loadDefn.get("key_type", "SimpleKey")
+                    model = model or bucket.loadDefn.get("model", "Hotel")
+                    mockVector = mockVector or bucket.loadDefn.get("mockVector", False)
+                    base64 = base64 or bucket.loadDefn.get("base64", False)
+                    process_concurrency = process_concurrency or bucket.loadDefn.get("process_concurrency", 10)
+                    if scope == CbServer.system_scope:
+                        continue
+                    if collection == "_default" and scope == "_default" and skip_default:
+                        continue
+                    per_coll_ops = bucket.loadDefn.get("ops")//(len(bucket.scopes[scope].collections.keys()) - 1)
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=cluster.master.ip, server_port=cluster.master.port,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope, collection_name=collection,
+                        key_prefix=key_prefix, key_size=key_size, doc_size=256,
+                        key_type=key_type, value_type=valType,
+                        create_percent=pattern["create"], read_percent=pattern["read"], update_percent=pattern["update"],
+                        delete_percent=pattern["delete"], expiry_percent=pattern["expiry"],
+                        create_start_index=bucket.create_start , create_end_index=bucket.create_end,
+                        read_start_index=bucket.read_start, read_end_index=bucket.read_end,
+                        update_start_index=bucket.update_start, update_end_index=bucket.update_end,
+                        delete_start_index=bucket.delete_start, delete_end_index=bucket.delete_end,
+                        expiry_start_index=bucket.expire_start, expiry_end_index=bucket.expire_end,
+                        process_concurrency=process_concurrency, task_identifier="", ops=per_coll_ops,
+                        suppress_error_table=False,
+                        track_failures=True,
+                        mutate=mutate,
+                        elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64)
+                    loader_map.update({bucket.name+scope+collection: loader})
+        return loader_map
+
+    @staticmethod
+    def wait_for_doc_load_completion(cluster, tasks, wait_for_stats=True, track_failures=True):
+        for task in tasks:
+            task.result = JavaDocLoaderUtils.doc_loading_tm.get_task_result(task)
+            if not task.result:
+                raise Exception("Task Failed: {}".format(task.thread_name))
+        if wait_for_stats:
+            JavaDocLoaderUtils.bucket_util._wait_for_stats_all_buckets(
+                cluster, cluster.buckets, timeout=28800)
+            if track_failures and cluster.type == "default":
+                for bucket in cluster.buckets:
+                    JavaDocLoaderUtils.bucket_util.verify_stats_all_buckets(
+                        cluster, bucket.final_items, timeout=28800,
+                        buckets=[bucket])
+
+    @staticmethod
+    def perform_load(cluster, buckets, wait_for_load=True,
+                     validate_data=False, overRidePattern=None, skip_default=True,
+                     wait_for_stats=True, mutate=0):
+        loader_map = JavaDocLoaderUtils._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default, mutate=mutate)
+        tasks = list()
+        for bucket in buckets:
+            for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
+                for collection in bucket.scopes[scope].collections.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    if collection == "_default" and scope == "_default" and skip_default:
+                        continue
+                    loader = loader_map[bucket.name+scope+collection]
+                    loader.create_doc_load_task()
+                    JavaDocLoaderUtils.doc_loading_tm.add_new_task(loader)
+                    tasks.append(loader)
+
+        if wait_for_load:
+            JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
+        else:
+            return tasks
+
+        if validate_data:
+            JavaDocLoaderUtils.data_validation(cluster, skip_default=skip_default)
+
+    @staticmethod
+    def load_sift_data(cluster=None, buckets=None, overRidePattern=None, skip_default=True,
+                        wait_for_load=True,
+                        validate_data=False,
+                        wait_for_stats=True,
+                        override_num_items=None,
+                        mutate=0):
+        tasks = list()
+        buckets = buckets or cluster.buckets
+        coll_order = TestInputSingleton.input.param("coll_order", 1)
+        default_pattern = {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0}
+        for bucket in buckets:
+            pattern = overRidePattern or bucket.loadDefn.get("doc_op_percentages", default_pattern)
+            for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
+                collections = list(bucket.scopes[scope].collections.keys())
+                if "_default" in collections:
+                    collections.remove("_default")
+                for i, collection in enumerate(sorted(collections)):
+                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                    if coll_order == -1:
+                        workloads = list(reversed(workloads))
+                    workload = workloads[i % len(workloads)]
+                    items = override_num_items or workload.get("num_items")
+                    key_prefix = bucket.loadDefn.get("key_prefix")
+                    key_size = bucket.loadDefn.get("key_size")
+                    key_type = bucket.loadDefn.get("key_type")
+                    model = bucket.loadDefn.get("model")
+                    mockVector = bucket.loadDefn.get("mockVector")
+                    base64 = bucket.loadDefn.get("base64")
+                    process_concurrency = bucket.loadDefn.get("process_concurrency")
+                    valType = workload["valType"]
+                    dim = workload.get("dim", 128)
+                    if collection == "_default" and scope == "_default" and skip_default:
+                        continue
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=cluster.master.ip, server_port=cluster.master.port,
+                        generator=None, op_type=None,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope, collection_name=collection,
+                        key_prefix=key_prefix, key_size=key_size, doc_size=256,
+                        key_type=key_type, value_type=valType,
+                        create_percent=pattern["create"], read_percent=pattern["read"], update_percent=pattern["update"],
+                        delete_percent=pattern["delete"], expiry_percent=pattern["expiry"],
+                        create_start_index=0 , create_end_index=items,
+                        read_start_index=0, read_end_index=items,
+                        update_start_index=0, update_end_index=items,
+                        delete_start_index=0, delete_end_index=items,
+                        touch_start_index=0, touch_end_index=0,
+                        replace_start_index=0, replace_end_index=0,
+                        expiry_start_index=0, expiry_end_index=items,
+                        process_concurrency=process_concurrency,
+                        task_identifier="", ops=bucket.loadDefn.get("ops"),
+                        suppress_error_table=False,
+                        track_failures=True,
+                        mutate=mutate,
+                        elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64,
+                        base_vectors_file_path=bucket.loadDefn.get("baseFilePath", "/root/bigann_base.bvecs.gz"),
+                        sift_url="ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz")
+                    loader.create_doc_load_task()
+                    JavaDocLoaderUtils.doc_loading_tm.add_new_task(loader)
+                    tasks.append(loader)
+                    i -= 1
+        if wait_for_load:
+            JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
+        else:
+            return tasks
+
+        if validate_data:
+            JavaDocLoaderUtils.data_validation(cluster, skip_default=skip_default)
+
+    @staticmethod
+    def load_data(cluster, buckets=None, overRidePattern=None,
+                  wait_for_load=True,
+                  wait_for_stats=True,
+                  validate_data=False,
+                  update=False,
+                  mutate=0):
+        buckets = buckets or cluster.buckets
+        for bucket in buckets:
+            JavaDocLoaderUtils.generate_docs(doc_ops=["create"],
+                               create_start=0,
+                               create_end=bucket.loadDefn.get("num_items"),
+                               bucket=bucket)
+        
+        JavaDocLoaderUtils.perform_load(cluster=cluster,
+                            buckets=buckets,
+                            overRidePattern=overRidePattern,
+                            validate_data=validate_data,
+                            wait_for_load=wait_for_load,
+                            wait_for_stats=wait_for_stats,
+                            mutate=mutate)
+        if update:
+            for bucket in buckets:
+                JavaDocLoaderUtils.generate_docs(doc_ops=["update"],
+                                   update_start=0,
+                                   update_end=bucket.loadDefn.get("num_items"),
+                                   bucket=bucket)
+            JavaDocLoaderUtils.perform_load(cluster=cluster,
+                              buckets=buckets,
+                              overRidePattern={"create": 0, "read": 0, "update": 100, "delete": 0, "expiry": 0},
+                              validate_data=False,
+                              wait_for_load=wait_for_load,
+                              wait_for_stats=wait_for_stats,
+                              mutate=mutate)
 
 class DocLoaderUtils(object):
     log = logger.get("test")

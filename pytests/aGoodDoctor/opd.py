@@ -11,6 +11,7 @@ import random
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.task_manager import TaskManager
+from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 from sdk_client3 import SDKClient, SDKClientPool
 from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
@@ -301,254 +302,6 @@ class OPD:
 
         return rebalance_task
 
-    def generate_docs(self, doc_ops=None,
-                      create_end=None, create_start=None,
-                      update_end=None, update_start=None,
-                      delete_end=None, delete_start=None,
-                      expire_end=None, expire_start=None,
-                      read_end=None, read_start=None,
-                      bucket=None):
-        bucket.create_end = 0
-        bucket.create_start = 0
-        bucket.read_end = 0
-        bucket.read_start = 0
-        bucket.update_end = 0
-        bucket.update_start = 0
-        bucket.delete_end = 0
-        bucket.delete_start = 0
-        bucket.expire_end = 0
-        bucket.expire_start = 0
-        try:
-            bucket.final_items
-        except:
-            bucket.final_items = 0
-        bucket.initial_items = bucket.final_items
-
-        doc_ops = doc_ops or bucket.loadDefn.get("load_type")
-        self.mutations_to_validate = doc_ops
-
-        if "read" in doc_ops:
-            if read_start is not None:
-                bucket.read_start = read_start
-            else:
-                bucket.read_start = 0
-            if read_end is not None:
-                bucket.read_end = read_end
-            else:
-                bucket.read_end = bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
-
-        if "update" in doc_ops:
-            if update_start is not None:
-                bucket.update_start = update_start
-            else:
-                bucket.update_start = 0
-            if update_end is not None:
-                bucket.update_end = update_end
-            else:
-                bucket.update_end = bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
-            self.mutate += 1
-
-        if "delete" in doc_ops:
-            if delete_start is not None:
-                bucket.delete_start = delete_start
-            else:
-                bucket.delete_start = bucket.start
-            if delete_end is not None:
-                bucket.delete_end = delete_end
-            else:
-                bucket.delete_end = bucket.start + bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
-            bucket.final_items -= (bucket.delete_end - bucket.delete_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
-
-        if "expiry" in doc_ops:
-            if self.maxttl == 0:
-                self.maxttl = self.input.param("maxttl", 10)
-            if expire_start is not None:
-                bucket.expire_start = expire_start
-            else:
-                bucket.expire_start = bucket.end
-            bucket.start = bucket.expire_start
-            if expire_end is not None:
-                bucket.expire_end = expire_end
-            else:
-                bucket.expire_end = bucket.expire_start + bucket.loadDefn.get("num_items")//2 * self.mutation_perc//100
-            bucket.end = bucket.expire_end
-            # bucket.final_items -= (bucket.expire_end - bucket.expire_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
-
-        if "create" in doc_ops:
-            if create_start is not None:
-                bucket.create_start = create_start
-            else:
-                bucket.create_start = bucket.end
-            bucket.start = bucket.create_start
-
-            if create_end is not None:
-                bucket.create_end = create_end
-            else:
-                bucket.create_end = bucket.end + (bucket.expire_end - bucket.expire_start) + (bucket.delete_end - bucket.delete_start)
-            bucket.end = bucket.create_end
-
-            bucket.final_items += (abs(bucket.create_end - bucket.create_start)) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
-        print("================{}=================".format(bucket.name))
-        print("Read Start: %s" % bucket.read_start)
-        print("Read End: %s" % bucket.read_end)
-        print("Update Start: %s" % bucket.update_start)
-        print("Update End: %s" % bucket.update_end)
-        print("Expiry Start: %s" % bucket.expire_start)
-        print("Expiry End: %s" % bucket.expire_end)
-        print("Delete Start: %s" % bucket.delete_start)
-        print("Delete End: %s" % bucket.delete_end)
-        print("Create Start: %s" % bucket.create_start)
-        print("Create End: %s" % bucket.create_end)
-        print("Final Start: %s" % bucket.start)
-        print("Final End: %s" % bucket.end)
-        print("================{}=================".format(bucket.name))
-
-    def _loader_dict(self, cluster, buckets, overRidePattern=None, cmd={},
-                     skip_default=True,
-                     overWriteValType=None):
-        self.loader_map = dict()
-        self.default_pattern = [100, 0, 0, 0, 0]
-        buckets = buckets or cluster.buckets
-        for bucket in buckets:
-            pattern = overRidePattern or bucket.loadDefn.get("pattern", self.default_pattern)
-            for scope in bucket.scopes.keys():
-                for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
-                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
-                    valType = overWriteValType or workloads[i % len(workloads)]["valType"]
-                    dim = workloads[i % len(workloads)].get("dim", self.dim)
-                    if scope == CbServer.system_scope:
-                        continue
-                    if collection == "_default" and scope == "_default" and skip_default:
-                        continue
-                    per_coll_ops = bucket.loadDefn.get("ops")//(len(bucket.scopes[scope].collections.keys()) - 1)
-                    loader = SiriusCouchbaseLoader(
-                        server_ip=cluster.master.ip, server_port=cluster.master.port,
-                        username="Administrator", password="password",
-                        bucket=bucket,
-                        scope_name=scope, collection_name=collection,
-                        key_prefix=self.key, key_size=self.key_size, doc_size=256,
-                        key_type=self.key_type, value_type=valType,
-                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
-                        delete_percent=pattern[3], expiry_percent=pattern[4],
-                        create_start_index=bucket.create_start , create_end_index=bucket.create_end,
-                        read_start_index=bucket.read_start, read_end_index=bucket.read_end,
-                        update_start_index=bucket.update_start, update_end_index=bucket.update_end,
-                        delete_start_index=bucket.delete_start, delete_end_index=bucket.delete_end,
-                        expiry_start_index=bucket.expire_start, expiry_end_index=bucket.expire_end,
-                        process_concurrency=self.process_concurrency, task_identifier="", ops=per_coll_ops,
-                        suppress_error_table=False,
-                        track_failures=self.track_failures,
-                        mutate=0,
-                        elastic=False, model=self.model, mockVector=self.mockVector, dim=dim, base64=self.base64)
-                    self.loader_map.update({bucket.name+scope+collection: loader})
-
-    def wait_for_doc_load_completion(self, cluster, tasks, wait_for_stats=True):
-        for task in tasks:
-            task.result = self.doc_loading_tm.get_task_result(task)
-            # if task.result is False:
-            #     unique_str = "{}:{}:{}:".format(task.sdk.bucket, task.sdk.scope, task.sdk.collection)
-            #     for optype, failures in task.fail.items():
-            #         for failure in failures:
-            #             if failure is not None:
-            #                 print("Test Retrying {}: {}{} -> {}".format(optype, unique_str, failure.id(), failure.err().getClass().getSimpleName()))
-            #                 try:
-            #                     if optype == "create":
-            #                         task.docops.insert(failure.id(), failure.document(), task.sdk.connection, task.setOptions)
-            #                     if optype == "update":
-            #                         task.docops.upsert(failure.id(), failure.document(), task.sdk.connection, task.upsertOptions)
-            #                     if optype == "delete":
-            #                         task.docops.delete(failure.id(), task.sdk.connection, task.removeOptions)
-            #                 except (ServerOutOfMemoryException, TimeoutException) as e:
-            #                     print("Retry {} failed for key: {} - {}".format(optype, failure.id(), e))
-            #                     task.result = False
-            #                 except (DocumentNotFoundException, DocumentExistsException) as e:
-            #                     pass
-            #     try:
-            #         task.sdk.disconnectCluster()
-            #     except Exception as e:
-            #         print(e)
-            self.assertTrue(task.result, "Task Failed: {}".format(task.thread_name))
-        if wait_for_stats:
-            try:
-                self.bucket_util._wait_for_stats_all_buckets(
-                    cluster, cluster.buckets, timeout=28800)
-                if self.track_failures and cluster.type == "default":
-                    for bucket in cluster.buckets:
-                        self.bucket_util.verify_stats_all_buckets(
-                            cluster, bucket.final_items, timeout=28800,
-                            buckets=[bucket])
-            except Exception as e:
-                if self.cluster.type == "default":
-                    self.get_gdb()
-                raise e
-
-    def load_sift_data(self, wait_for_load=True,
-                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
-                     wait_for_stats=True,
-                     override_num_items=None):
-        cmd = {}
-        tasks = list()
-        buckets = buckets or cluster.buckets
-        coll_order = self.input.param("coll_order", 1)
-        for bucket in buckets:
-            pattern = overRidePattern or bucket.loadDefn.get("pattern")
-            for scope in bucket.scopes.keys():
-                if scope == CbServer.system_scope:
-                    continue
-                collections = list(bucket.scopes[scope].collections.keys())
-                if "_default" in collections:
-                    collections.remove("_default")
-                for i, collection in enumerate(sorted(collections)):
-                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
-                    if coll_order == -1:
-                        workloads = list(reversed(workloads))
-                    workload = workloads[i % len(workloads)]
-                    items = override_num_items or workload.get("num_items")
-                    valType = workload["valType"]
-                    dim = workload.get("dim", self.dim)
-                    if collection == "_default" and scope == "_default" and skip_default:
-                        continue
-                    loader = SiriusCouchbaseLoader(
-                        server_ip=cluster.master.ip, server_port=cluster.master.port,
-                        generator=None, op_type=None,
-                        username="Administrator", password="password",
-                        bucket=bucket,
-                        scope_name=scope, collection_name=collection,
-                        key_prefix=self.key_prefix, key_size=self.key_size, doc_size=256,
-                        key_type=self.key_type, value_type=valType,
-                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
-                        delete_percent=pattern[3], expiry_percent=pattern[4],
-                        create_start_index=0 , create_end_index=items,
-                        read_start_index=0, read_end_index=items,
-                        update_start_index=0, update_end_index=items,
-                        delete_start_index=0, delete_end_index=items,
-                        touch_start_index=0, touch_end_index=0,
-                        replace_start_index=0, replace_end_index=0,
-                        expiry_start_index=0, expiry_end_index=items,
-                        process_concurrency=self.process_concurrency,
-                        task_identifier="", ops=bucket.loadDefn.get("ops"),
-                        suppress_error_table=False,
-                        track_failures=self.track_failures,
-                        mutate=0,
-                        elastic=False, model=self.model, mockVector=self.mockVector, dim=dim, base64=self.base64,
-                        base_vectors_file_path=bucket.loadDefn.get("baseFilePath"),
-                        sift_url="ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz")
-                    loader.create_doc_load_task()
-                    self.doc_loading_tm.add_new_task(loader)
-                    tasks.append(loader)
-                    i -= 1
-        if wait_for_load:
-            self.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
-            self.get_memory_footprint()
-        else:
-            return tasks
-
-        if validate_data:
-            self.data_validation(cluster, skip_default=skip_default)
-
-        self.bucket_util.print_bucket_stats(cluster)
-        self.cluster_util.print_cluster_stats(cluster)
-
     def get_gdb(self):
         for node in self.cluster.kv_nodes:
             gdb_shell = RemoteMachineShellConnection(node)
@@ -657,52 +410,6 @@ class OPD:
                 str(abs(bucket.expire_start)) + "-" + str(abs(bucket.expire_end))
                 ])
         self.table.display("Docs statistics")
-
-    def perform_load(self, wait_for_load=True,
-                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
-                     wait_for_stats=True,
-                     overWriteValType=None,
-                     check_core_dumps=True):
-        self.get_memory_footprint()
-        buckets = buckets or cluster.buckets
-        self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default,
-                          overWriteValType=overWriteValType)
-        tasks = list()
-        for bucket in buckets:
-            for scope in bucket.scopes.keys():
-                if scope == CbServer.system_scope:
-                    continue
-                for collection in bucket.scopes[scope].collections.keys():
-                    if scope == CbServer.system_scope:
-                        continue
-                    if collection == "_default" and scope == "_default" and skip_default:
-                        continue
-                    loader = self.loader_map[bucket.name+scope+collection]
-                    loader.create_doc_load_task()
-                    self.doc_loading_tm.add_new_task(loader)
-                    tasks.append(loader)
-
-        if wait_for_load:
-            self.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
-            self.get_memory_footprint()
-        else:
-            return tasks
-
-        if validate_data:
-            self.data_validation(cluster, skip_default=skip_default)
-
-        self.print_stats(cluster)
-
-        if self.cluster.type != "default":
-            return
-        if check_core_dumps:
-            result = self.check_coredump_exist(cluster.nodes_in_cluster)
-            if result:
-                self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
-                if self.assert_crashes_on_load:
-                    self.task_manager.abort_all_tasks()
-                    self.doc_loading_tm.abortAllTasks()
-                    self.assertFalse(result)
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:
@@ -1235,20 +942,17 @@ class OPD:
                 Cbepctl(shell).persistence(bucket.name, "stop")
         while rollbacks < 20:
             self.PrintStep("Running Rollback: %s" % rollbacks)
-            self.key_prefix = "rollback_docs_%s-" % (rollbacks)
-                # mem_client = MemcachedClientHelper.direct_client(
-                #     node, bucket)
-                # mem_client.stop_persistence()
-
+            for bucket in self.cluster.buckets:
+                bucket.loadDefn["key_prefix"] = "rollback_docs_%s-" % (rollbacks)
             if self.val_type == "siftBigANN":
-                self.load_sift_data(cluster=self.cluster,
+                JavaDocLoaderUtils.load_sift_data(cluster=self.cluster,
                                 buckets=self.cluster.buckets,
-                                overRidePattern=[100,0,0,0,0],
+                                overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},
                                 validate_data=False,
                                 wait_for_stats=False,
                                 override_num_items=mem_only_items)
             else:
-                self.normal_load()
+                JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets)
 
             self.check_index_pending_mutations(self.cluster)
 
@@ -1277,7 +981,8 @@ class OPD:
             for bucket in self.cluster.buckets:
                 Cbepctl(shell).persistence(bucket.name, "start")
 
-        self.key_prefix = self.input.param("key", "test_docs-")
+        for bucket in self.cluster.buckets:
+            bucket.loadDefn["key_prefix"] = self.input.param("key", "test_docs-")
 
     def check_index_pending_mutations(self, cluster):
         while not self.stop_run:
@@ -1304,51 +1009,3 @@ class OPD:
                 self.sleep(30, "Wait for index mutations pending")
             else:
                 break
-
-    def siftBigANN_load(self):
-        if not self.skip_init:
-            self.load_sift_data(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[100,0,0,0,0],
-                              validate_data=False,
-                              wait_for_stats=False)
-
-    def normal_load(self, check_core_dumps=True):
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=0,
-                               create_end=bucket.loadDefn.get("num_items")//2,
-                               bucket=bucket)
-        if not self.skip_init:
-            self.perform_load(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[100,0,0,0,0],
-                              validate_data=False,
-                              wait_for_stats=False,
-                              check_core_dumps=check_core_dumps)
-
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=bucket.loadDefn.get("num_items")//2,
-                               create_end=bucket.loadDefn.get("num_items"),
-                               bucket=bucket)
-        if not self.skip_init:
-            self.perform_load(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[100,0,0,0,0],
-                              validate_data=False,
-                              wait_for_stats=False,
-                              check_core_dumps=check_core_dumps)
-
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["update"],
-                               update_start=0,
-                               update_end=bucket.loadDefn.get("num_items"),
-                               bucket=bucket)
-        if not self.skip_init:
-            self.perform_load(cluster=self.cluster,
-                              buckets=self.cluster.buckets,
-                              overRidePattern=[0,0,100,0,0],
-                              validate_data=False,
-                              wait_for_stats=False,
-                              check_core_dumps=check_core_dumps)
