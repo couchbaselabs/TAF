@@ -362,8 +362,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         services_mem_quota_percent=mem_quota_percent)
 
                 # Set this unconditionally
-                RestConnection(cluster.master).set_internalSetting(
-                    "magmaMinMemoryQuota", 256)
+                rest_conn = RestConnection(cluster.master)
+                rest_conn.set_internalSetting("magmaMinMemoryQuota", 256)
+                # To set index_storage_mode = Standard Global Secondary
+                rest_conn.set_indexer_storage_mode("plasma")
                 self.docker_containers = []
                 self.docker = None
                 self.image_id = None

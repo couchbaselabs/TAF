@@ -11,6 +11,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from couchbase_helper.random_query_template import WhereClause
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
+from membase.api.rest_client import RestConnection
 from n1ql_exceptions import N1qlException
 from platform_constants.os_constants import Linux
 from sdk_exceptions import SDKException
@@ -62,6 +63,7 @@ class N1qlBase(CollectionBase):
         self.write_conflict = self.input.param("write_conflict", False)
         self.Kvtimeout = self.input.param("Kvtimeout", None)
         self.memory_quota = self.input.param("memory_quota", 1)
+
         self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
             cluster=self.cluster,
             service_type=CbServer.Services.N1QL,
@@ -505,29 +507,6 @@ class N1qlBase(CollectionBase):
                                 for _ in range(name_len))
         return rand_name
 
-    def validate_keys(self, client, key_value, deleted_key):
-        # create a client
-        # get all the values and validate
-        success, fail = client.get_multi(key_value.keys(), 120)
-        for key, val in success.items():
-            if type(key_value[key]) == JsonObject:
-                expected_val = json.loads(key_value[key].toString())
-            elif isinstance(key_value[key], dict):
-                expected_val = key_value[key]
-            else:
-                expected_val = json.loads(key_value[key])
-            actual_val = json.loads(val['value'].toString())
-            if set(expected_val) != set(actual_val):
-                self.fail("expected %s and actual %s for key %s are not equal"
-                          % (expected_val, actual_val, key))
-        for key, val in fail.items():
-            if key in deleted_key and SDKException.DocumentNotFoundException \
-                    in str(fail[key]["error"]):
-                continue
-        self.log.info("Expected keys: %s, Actual: %s, Deleted: %s"
-                      % (len(success.keys()), len(key_value.keys()),
-                         len(deleted_key)))
-
     def validate_error_during_commit(self, result,
                                       collection_savepoint, savepoint):
         dict_to_verify = {}
@@ -601,30 +580,39 @@ class N1qlBase(CollectionBase):
         5. validate inserted docs
         """
         for collection in bucket_col:
-            self.log.info("validation started for collection %s"%collection)
+            self.log.info("validation started for collection %s" % collection)
             gen_load = doc_gen_list[collection]
-            self.validate_dict = {}
             self.deleted_key = []
             doc_gen = copy.deepcopy(gen_load)
-            while doc_gen.has_next():
-                key, val = next(doc_gen)
-                self.validate_dict[key] = val
+
+            # Track which documents need validation
+            docs_to_validate = set()
+            updated_docs = {}
+            inserted_docs = {}
+
+            # Collect all document IDs that need validation
             for res in results:
                 for savepoint in res[1]:
                     if collection in res[0][savepoint].keys():
+                        # Track deleted docs
                         for key in set(res[0][savepoint][collection]["DELETE"]):
                             self.deleted_key.append(key)
+
+                        # Track inserted docs
                         for key, val in res[0][savepoint][collection]["INSERT"].items():
-                            self.validate_dict[key] = val
+                            inserted_docs[key] = val
+                            docs_to_validate.add(key)
+
+                        # Track updated docs
                         for key, val in res[0][savepoint][collection]["UPDATE"].items():
                             mutated = key.split("=")
                             for t_id in val:
-                                try:
-                                    self.validate_dict[t_id][mutated[0]] = \
-                                        mutated[1]
-                                except:
-                                    self.validate_dict[t_id].put(mutated[0],
-                                                                 mutated[1])
+                                if t_id not in updated_docs:
+                                    updated_docs[t_id] = {}
+                                updated_docs[t_id][mutated[0]] = mutated[1]
+                                docs_to_validate.add(t_id)
+
+            # Get bucket and client for validation
             bucket_collection = collection.split('.')
             if buckets:
                 self.buckets = buckets
@@ -635,7 +623,68 @@ class N1qlBase(CollectionBase):
             sdk_client_pool = sdk_client_pool or self.cluster.sdk_client_pool
             client = sdk_client_pool.get_client_for_bucket(
                 bucket, bucket_collection[1], bucket_collection[2])
-            self.validate_keys(client, self.validate_dict, self.deleted_key)
+
+            # Validate documents
+            success, fail = client.get_multi(list(docs_to_validate), 120)
+            # First validate deleted documents
+            for doc_id in self.deleted_key:
+                if doc_id in success:
+                    self.fail("Document %s should be deleted but still exists" % doc_id)
+                elif doc_id in fail and SDKException.DocumentNotFoundException not in str(fail[doc_id]["error"]):
+                    self.fail("Document %s should be deleted but error is not DocumentNotFoundException" % doc_id)
+
+            # Then validate existing documents
+            for doc_id in docs_to_validate:
+                if doc_id in self.deleted_key:
+                    continue  # Skip deleted documents
+
+                if doc_id in success:
+                    actual_val = json.loads(success[doc_id]['value'].toString())
+
+                    # Get expected value based on operation type
+                    if doc_id in inserted_docs:
+                        expected_val = inserted_docs[doc_id]
+                    else:
+                        # For updated docs, get original value and apply updates
+                        doc_gen.reset()
+                        expected_val = None
+                        while doc_gen.has_next():
+                            key, val = next(doc_gen)
+                            if key == doc_id:
+                                expected_val = val
+                                break
+
+                        if expected_val is None:
+                            # Document not in doc generator but exists in actual results
+                            # This means it was inserted during transaction
+                            self.log.info("Document %s not found in doc generator but exists in actual results" % doc_id)
+                            continue
+
+                        if doc_id in updated_docs:
+                            for field, value in updated_docs[doc_id].items():
+                                try:
+                                    expected_val[field] = value
+                                except:
+                                    expected_val.put(field, value)
+
+                    # Compare values
+                    if isinstance(expected_val, JsonObject):
+                        expected_val = json.loads(expected_val.toString())
+                    elif isinstance(expected_val, dict):
+                        expected_val = expected_val
+                    else:
+                        expected_val = json.loads(expected_val)
+
+                    if set(expected_val) != set(actual_val):
+                        self.fail("expected %s and actual %s for key %s are not equal"
+                                  % (expected_val, actual_val, doc_id))
+                elif doc_id in fail:
+                    if doc_id not in self.deleted_key:
+                        self.fail("Document %s not found but should exist" % doc_id)
+
+            self.log.info("Expected keys: %s, Actual: %s, Deleted: %s"
+                          % (len(success.keys()), len(docs_to_validate),
+                             len(self.deleted_key)))
             sdk_client_pool.release_client(client)
 
     def thread_txn(self, args):
