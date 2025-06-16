@@ -1,4 +1,7 @@
 #!/bin/bash
+cleanup_dir_before_exit() {
+  rm -rf .git b build conf pytests DocLoader lib couchbase_utils test_infra_runner
+}
 
 setup_test_infra_repo_for_installation() {
   git clone https://github.com/couchbaselabs/test_infra_runner --depth 1
@@ -294,6 +297,20 @@ if [ "$?" -eq 0 ]; then
 
   pyenv local $PYENV_VERSION
   cat 3.10.14/testexec.$$.ini
+
+  echo "Building Java doc-loader using mvn"
+  mkdir -p logs
+  cd DocLoader
+  mvn clean compile package > ../logs/sirius_build.log
+  if [ $? -ne 0 ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "   Exiting.. Maven build failed"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    cleanup_dir_before_exit
+    exit 1
+  fi
+  cd ..
+
   # Find free port on this machine to use for this run
   starting_ports=(49152 49162 49172 49182 49192 49202 49212 49222 49232)
   num_scripts_running=$(ps -ef | grep '/tmp/jenkins' | grep -v 'grep ' | wc -l)
