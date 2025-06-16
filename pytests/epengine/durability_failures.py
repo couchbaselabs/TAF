@@ -683,14 +683,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.crud_batch_size,
+            key_size=self.key_size,
             vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
+            key_size=self.key_size,
             vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets, mutate=1)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
+            key_size=self.key_size,
             vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbuckets)
         self.log.info("Done creating doc_generators")
