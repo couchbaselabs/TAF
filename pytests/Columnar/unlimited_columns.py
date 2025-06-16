@@ -5,7 +5,14 @@ Created on 14-July-2025
 """
 
 from queue import Queue
-from Columnar.columnar_base import ColumnarBaseTest
+
+from TestInput import TestInputSingleton
+runtype = TestInputSingleton.input.param("runtype", "default").lower()
+if runtype == "columnar":
+    from Columnar.columnar_base import ColumnarBaseTest
+else:
+    from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
+
 from Jython_tasks.sirius_task import CouchbaseUtil
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from common_lib import sleep
@@ -26,16 +33,6 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
 
     def setUp(self):
         super(UnlimitedColumnsTest, self).setUp()
-        self.columnar_cluster = self.tenant.columnar_instances[0]
-        self.remote_cluster = None
-        if len(self.tenant.clusters) > 0:
-            self.remote_cluster = self.tenant.clusters[0]
-            self.couchbase_doc_loader = CouchbaseUtil(
-                task_manager=self.task_manager,
-                hostname=self.remote_cluster.master.ip,
-                username=self.remote_cluster.master.rest_username,
-                password=self.remote_cluster.master.rest_password,
-            )
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.no_of_columns = self.input.param("no_of_columns", 10000)
@@ -62,25 +59,32 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
         if current_writer != "default":
             self.set_storage_page_zero_writer("default")
 
-        if not self.cbas_util.delete_cbas_infra_created_from_spec(
-            self.columnar_cluster
-        ):
-            self.fail("Error while deleting cbas entities")
+        if hasattr(self, "columnar_spec"):
+            if not self.cbas_util.delete_cbas_infra_created_from_spec(
+                    self.columnar_cluster):
+                self.fail("Error while deleting cbas entities")
 
         if hasattr(self, "remote_cluster") and self.remote_cluster:
-            self.delete_all_buckets_from_capella_cluster(
-                self.tenant, self.remote_cluster
-            )
+            if runtype == "columnar":
+                self.delete_all_buckets_from_capella_cluster(
+                    self.tenant, self.remote_cluster)
 
         super(UnlimitedColumnsTest, self).tearDown()
 
         self.log_setup_status(self.__class__.__name__,
                               "Finished", stage="Teardown")
 
-    def load_remote_collection(self):
-        # creating bucket scope and collections for remote collection
-        self.create_bucket_scopes_collections_in_capella_cluster(
-            self.tenant, self.remote_cluster)
+    def setup_remote_collection(self):
+        self.log.info(f"Starting remote collection setup for runtype: {runtype}")
+        self.log.info(f"Remote cluster: {self.remote_cluster.master.ip if self.remote_cluster else 'None'}")
+        self.log.info(f"Columnar cluster: {self.columnar_cluster.master.ip if self.columnar_cluster else 'None'}")
+        self.log.info(f"Initial doc count: {self.initial_doc_count}")
+
+        if runtype == "columnar":
+            self.create_bucket_scopes_collections_in_capella_cluster(
+                self.tenant, self.remote_cluster)
+        else:
+            self.collectionSetUp(cluster=self.remote_cluster, load_data=False)
 
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
@@ -102,7 +106,7 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
                 bucket.name, req_clients=1)
 
         self.log.info("Started Doc loading on remote cluster")
-        self.load_doc_to_remote_collections(self.remote_cluster, "RandomlyNestedJson",
+        self.load_remote_collections(self.remote_cluster, template="RandomlyNestedJson",
                                             create_start_index=0, create_end_index=self.initial_doc_count)
 
         remote_links = self.cbas_util.get_all_link_objs("couchbase")
@@ -760,13 +764,13 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
         return
 
     """
-    ingest 100K (RandomlyNestedJson) -> query -> verify results
+    ingest 10K (RandomlyNestedJson) -> query -> verify results
     https://jira.issues.couchbase.com/browse/MB-68738
     """
     def test_randomly_nested_json(self):
 
         # ingest data
-        self.load_remote_collection()
+        self.setup_remote_collection()
 
         # validate queries
         datasets = self.cbas_util.get_all_dataset_objs("remote")

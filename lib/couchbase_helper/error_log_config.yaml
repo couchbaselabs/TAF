@@ -78,9 +78,7 @@ file_name_patterns:
 
   - file: 'analytics_info*'
     grep_for:
-      - string: "fata"
-        exclude_patterns:
-          - 'sun.security.ssl.TransportContext.fatal'
+      - string: "FATA"
       - string: "MERGE operation.*failed"
       - string: "Analytics Service is temporarily unavailable"
       - string: "Failed during startup task"
@@ -108,6 +106,7 @@ file_name_patterns:
       - string: 'ASX3110'
       - string: 'ensureSeverGroupsLOCKED'
       - string: 'Active Runtime .* is already registered'
+      - string: 'ClusterControllerRemoteProxy'
 
   - file: '*.log'
 

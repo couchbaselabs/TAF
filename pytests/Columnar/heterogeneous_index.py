@@ -6,11 +6,18 @@ Created on 27-May-2025
 
 from queue import Queue
 
-from Columnar.columnar_base import ColumnarBaseTest
+from TestInput import TestInputSingleton
+runtype = TestInputSingleton.input.param("runtype", "default").lower()
+if runtype == "columnar":
+    from Columnar.columnar_base import ColumnarBaseTest
+else:
+    from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
+
 from Columnar.columnar_rbac_cloud import generate_random_entity_name
 from kafka_util.confluent_utils import ConfluentUtils
 from kafka_util.kafka_connect_util import KafkaConnectUtil
 from cbas_utils.cbas_utils_columnar import CBOUtil
+from cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
 
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.sirius_task import CouchbaseUtil
@@ -89,23 +96,18 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
 
     def setUp(self):
         super(HeterogeneousIndexTest, self).setUp()
-        self.columnar_cluster = self.tenant.columnar_instances[0]
-        self.remote_cluster = None
-        if len(self.tenant.clusters) > 0:
-            self.remote_cluster = self.tenant.clusters[0]
-            self.couchbase_doc_loader = CouchbaseUtil(
-                task_manager=self.task_manager,
-                hostname=self.remote_cluster.master.ip,
-                username=self.remote_cluster.master.rest_username,
-                password=self.remote_cluster.master.rest_password,
-            )
-
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
         self.columnar_spec = self.cbas_util.get_columnar_spec(self.columnar_spec_name)
+
+        # Initialize rebalance utility for onprem tests
+        if runtype == "onprem-columnar":
+            self.rebalance_util = CBASRebalanceUtil(
+                self.cluster_util, self.bucket_util, self.task, False,
+                self.cbas_util)
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -115,23 +117,31 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
 
-        if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.columnar_cluster):
-            self.fail("Error while deleting cbas entities")
+        if hasattr(self, "columnar_spec"):
+            if not self.cbas_util.delete_cbas_infra_created_from_spec(
+                    self.columnar_cluster):
+                self.fail("Error while deleting cbas entities")
 
         if hasattr(self, "remote_cluster") and self.remote_cluster:
-            self.delete_all_buckets_from_capella_cluster(
-                self.tenant, self.remote_cluster)
+            if runtype == "columnar":
+                self.delete_all_buckets_from_capella_cluster(
+                    self.tenant, self.remote_cluster)
 
         super(HeterogeneousIndexTest, self).tearDown()
 
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
-    def load_remote_collection(self):
-        # creating bucket scope and collections for remote collection
-        self.create_bucket_scopes_collections_in_capella_cluster(
-            self.tenant, self.remote_cluster)
+    def setup_remote_collection(self):
+        self.log.info(f"Starting remote collection setup for runtype: {runtype}")
+        self.log.info(f"Remote cluster: {self.remote_cluster.master.ip if self.remote_cluster else 'None'}")
+        self.log.info(f"Columnar cluster: {self.columnar_cluster.master.ip if self.columnar_cluster else 'None'}")
+        self.log.info(f"Initial doc count: {self.initial_doc_count}")
 
+        if runtype == "columnar":
+            self.create_bucket_scopes_collections_in_capella_cluster(
+                self.tenant, self.remote_cluster)
+        else:
+            self.collectionSetUp(cluster=self.remote_cluster, load_data=False)
 
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
@@ -153,7 +163,7 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
                 bucket.name, req_clients=1)
 
         self.log.info("Started Doc loading on remote cluster")
-        self.load_doc_to_remote_collections(self.remote_cluster,"HeterogeneousHotel",
+        self.load_remote_collections(self.remote_cluster, template="HeterogeneousHotel",
                                     create_start_index=0, create_end_index=self.initial_doc_count)
 
         remote_links = self.cbas_util.get_all_link_objs("couchbase")
@@ -804,12 +814,13 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
 
 
     """
-    ingest 1M -> create index -> query -> mutate (delete 50% docs) -> query -> verify results before and after mutate
+    ingest 100k -> create index -> query -> mutate (delete 50% docs) -> query -> verify results before and after mutate
+    onprem: ... -> rebalance -> validate
     """
     def test_mutate_data(self):
 
         # ingest data
-        self.load_remote_collection()
+        self.setup_remote_collection()
 
 
         datasets = self.cbas_util.get_all_dataset_objs("remote")
@@ -855,8 +866,19 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
 
             delete_end_index = self.initial_doc_count // 5
             self.log.info(f"Deleting {delete_end_index} docs from remote cluster")
-            self.load_doc_to_remote_collections(self.remote_cluster, "HeterogeneousHotel",
-                                                    delete_start_index=0, delete_end_index=delete_end_index,create_percent=0,delete_percent=100)
+            self.load_remote_collections(self.remote_cluster, template="HeterogeneousHotel",
+                                    delete_start_index=0, delete_end_index=delete_end_index,
+                                    create_percent=0,delete_percent=100,wait_for_completion=False)
+
+            # Wait for actual metrics to update
+            sleep(30)
+
+            # Update the collection's num_items to reflect the actual count
+            bucket = self.remote_cluster.buckets[0]
+            collection = bucket.scopes['_default'].collections['_default']
+            collection.num_items = self.bucket_util.get_total_items_count_in_a_collection(
+                self.remote_cluster, bucket.name, '_default', '_default')
+            self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
 
 
             # validate query
@@ -865,6 +887,7 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
             success = False
             while retry < max_retries:
                 try:
+                    after_results = dict()
                     for field in cmds.keys():
                         index_name = f"idx_{field}"
                         index_name = self.cbas_util.format_name(index_name)
@@ -874,7 +897,10 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
                         after_results[field] = index_validator.validate_all(cmds[field])
                         self.log.info(f"Validation completed for index_name {index_name} in collection {dataset.name}")
                 except Exception as e:
-                    self.fail(f"Failed to validate index {e}")
+                    self.log.error(f"Failed to validate index during retry {retry}: {e}")
+                    retry += 1
+                    sleep(10)
+                    continue
 
                 success = True
                 for field in before_results.keys():
@@ -892,12 +918,109 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
             if not success:
                 raise AssertionError("Timeout reached; Mutation count does not match")
 
+            # Rebalance logic for onprem tests
+            if runtype == "onprem-columnar" and hasattr(self, 'rebalance_util'):
+                self.log.info("Starting rebalance operations")
+
+                # Scenario: Two separate clusters
+                # Cluster 1 (KV cluster) -> add KV node, then remove old KV node
+                # Cluster 2 (EA cluster) -> add EA node, then remove old EA node
+
+                # Rebalance-In: Add new KV node to KV cluster
+                self.log.info("Rebalance-In a KV node in KV cluster")
+                rebalance_task, self.remote_cluster.available_servers = self.rebalance_util.rebalance(
+                    cluster=self.remote_cluster, kv_nodes_in=1,
+                    available_servers=self.remote_cluster.available_servers,
+                    in_node_services="kv")
+                if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                        rebalance_task, self.remote_cluster, False, True):
+                    self.fail("Error while rebalance-In KV node in KV cluster")
+
+                # Rebalance-In: Add new Columnar node to Columnar cluster
+                self.log.info("Rebalance-In a Columnar node in Columnar cluster")
+                rebalance_task, self.columnar_cluster.available_servers = self.rebalance_util.rebalance(
+                    cluster=self.columnar_cluster, cbas_nodes_in=1,
+                    available_servers=self.columnar_cluster.available_servers,
+                    in_node_services="kv,cbas")
+                if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                        rebalance_task, self.columnar_cluster, True, True):
+                    self.fail("Error while rebalance-In Columnar node in Columnar cluster")
+
+                # Wait for ingestion to stabilize after rebalance-in
+                self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+                self.log.info("Waiting for initial ingestion into Remote dataset")
+                if not self.cbas_util.wait_for_ingestion_complete(
+                        self.columnar_cluster, dataset.full_name,
+                        dataset.num_of_items, 3600):
+                    self.fail("FAILED: Initial ingestion into {}.".format(
+                        dataset.full_name))
+
+                # Rebalance-Out: Remove old KV node from KV cluster
+                self.log.info("Rebalance-Out a KV node from KV cluster")
+                rebalance_task, self.remote_cluster.available_servers = self.rebalance_util.rebalance(
+                    cluster=self.remote_cluster, kv_nodes_out=1,
+                    available_servers=self.remote_cluster.available_servers)
+                if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                        rebalance_task, self.remote_cluster, False, True):
+                    self.fail("Error while rebalance-Out KV node from KV cluster")
+
+                # Rebalance-Out: Remove old Columnar node from Columnar cluster
+                self.log.info("Rebalance-Out a Columnar node from Columnar cluster")
+                rebalance_task, self.columnar_cluster.available_servers = self.rebalance_util.rebalance(
+                    cluster=self.columnar_cluster, cbas_nodes_out=1,
+                    available_servers=self.columnar_cluster.available_servers)
+                if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                        rebalance_task, self.columnar_cluster, True, True):
+                    self.fail("Error while rebalance-Out Columnar node from Columnar cluster")
+
+                # Final validation after rebalance-out
+                self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+                if not self.cbas_util.wait_for_ingestion_complete(
+                        self.columnar_cluster, dataset.full_name,
+                        dataset.num_of_items, 3600):
+                    self.fail("FAILED: Final ingestion after rebalance-out into {}.".format(
+                        dataset.full_name))
+
+                # Mutation validation after rebalance completion
+                self.log.info("Starting mutation validation after rebalance completion")
+                post_rebalance_results = dict()
+
+                try:
+                    for field in cmds.keys():
+                        index_name = f"idx_{field}"
+                        index_name = self.cbas_util.format_name(index_name)
+
+                        index_validator = HeterogeneousIndexValidation(self.columnar_cluster, dataset.name, [index_name],
+                                                                    self.cbas_util)
+                        post_rebalance_results[field] = index_validator.validate_all(cmds[field])
+                        self.log.info(f"Post-rebalance validation completed for index_name {index_name} in collection {dataset.name}")
+                except Exception as e:
+                    self.fail(f"Failed to validate index after rebalance {e}")
+
+                # Compare results before and after rebalance
+                self.log.info("Comparing mutation results before and after rebalance")
+                for field in before_results.keys():
+                    for cmd_index in before_results[field].keys():
+                        pre_rebalance_count = after_mutation_count
+                        post_rebalance_count = len(post_rebalance_results[field][cmd_index]) + (delete_end_index // 5)
+
+                        self.log.info(f"Field {field}, Query {cmd_index}:")
+                        self.log.info(f"    Before rebalance: {pre_rebalance_count}")
+                        self.log.info(f"    After rebalance: {post_rebalance_count}")
+
+                        # Validate that post-rebalance results match after-mutation results
+                        if pre_rebalance_count != post_rebalance_count:
+                            self.fail(f"Data inconsistency detected after rebalance for field {field}, query {cmd_index}. "
+                                    f"Expected {pre_rebalance_count}, got {post_rebalance_count}")
+
+                self.log.info("Rebalance operations and mutation validation completed successfully")
+
         self.log.info("Validation completed for test_mutate_data")
         return
 
 
     def test_remote_multiple_nested_field_index(self):
-        self.load_remote_collection()
+        self.setup_remote_collection()
 
         cmds = {"name_firstname-name_lastname": [
             f"select name from datasetName where name.firstname like 'A%' and name.lastname like 'A%';"

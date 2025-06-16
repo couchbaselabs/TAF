@@ -16,7 +16,8 @@ class ColumnarOnPremBase(CBASBaseTest):
 
         self.aws_region = self.input.param("aws_region", "us-west-1")
         self.s3_source_bucket = self.input.param("s3_source_bucket", "columnar-functional-sanity-test-data")
-        self.columnar_cbas_utils = columnarCBASUtil(
+        # renaming from columnar_cbas_utils to cbas_util - Consistent with ColumnarBaseTest (Cloud)
+        self.cbas_util = columnarCBASUtil(
             self.task, self.use_sdk_for_cbas)
         
         for cluster in self.cb_clusters.values():
@@ -36,6 +37,8 @@ class ColumnarOnPremBase(CBASBaseTest):
                                 update_start_index=None, update_end_index=None,
                                 delete_start_index=None, delete_end_index=None,
                                 expiry_start_index=None, expiry_end_index=None,
+                                create_percent=100, read_percent=0, update_percent=0,
+                                delete_percent=0, expiry_percent=0,
                                 wait_for_completion=True,
                                 template="Hotel"):
         buckets = buckets or cluster.buckets
@@ -50,7 +53,7 @@ class ColumnarOnPremBase(CBASBaseTest):
         tasks = list()
 
         for bucket in buckets:
-            pattern = [100, 0, 0, 0, 0]
+            pattern = [create_percent, read_percent, update_percent, delete_percent, expiry_percent]
             for scope in bucket.scopes.keys():
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
                     valType = template

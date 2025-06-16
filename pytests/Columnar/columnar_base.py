@@ -56,6 +56,20 @@ class ColumnarBaseTest(BaseTestCase):
         self.perform_columnar_instance_cleanup = self.input.param(
             "perform_columnar_instance_cleanup", True)
 
+        # Setup columnar and remote clusters
+        self.columnar_cluster = self.tenant.columnar_instances[0]
+        self.remote_cluster = None
+        if len(self.tenant.clusters) > 0:
+            self.remote_cluster = self.tenant.clusters[0]
+            # Import CouchbaseUtil here to avoid circular imports
+            from Jython_tasks.sirius_task import CouchbaseUtil
+            self.couchbase_doc_loader = CouchbaseUtil(
+                task_manager=self.task_manager,
+                hostname=self.remote_cluster.master.ip,
+                username=self.remote_cluster.master.rest_username,
+                password=self.remote_cluster.master.rest_password,
+            )
+
         # AWS credentials and other info
         self.aws_access_key = self.input.param("aws_access_key", "")
         self.aws_secret_key = self.input.param("aws_secret_key", "")
@@ -521,7 +535,7 @@ class ColumnarBaseTest(BaseTestCase):
         columnar_spec["file_format"] = self.input.param("file_format", "json")
         return columnar_spec
 
-    def load_doc_to_remote_collections(self, cluster, valType, buckets=None,
+    def load_remote_collections(self, cluster, template=None, buckets=None,
                                 create_start_index=None, create_end_index=None,
                                 read_start_index=None, read_end_index=None,
                                 update_start_index=None, update_end_index=None,
@@ -544,7 +558,7 @@ class ColumnarBaseTest(BaseTestCase):
             pattern = [create_percent, read_percent, update_percent, delete_percent, expiry_percent]
             for scope in bucket.scopes.keys():
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
-                    valType = valType
+                    valType = template
                     if scope == "_system":
                         continue
                     loader = SiriusCouchbaseLoader(

@@ -2500,7 +2500,7 @@ class Dataset_Util(KafkaLink_Util):
         """
         datasets = self.get_all_dataset_objs("remote")
         for dataset in datasets:
-            if dataset.kv_collection:
+            if dataset.kv_collection and dataset.kv_collection.num_items is not None:
                 dataset.num_of_items = dataset.kv_collection.num_items
             else:
                 dataset.num_of_items = bucket_util.get_collection_obj(
