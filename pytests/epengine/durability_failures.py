@@ -40,7 +40,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["failure_stat"] = dict()
         vb_info["create_stat"] = dict()
         nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
-        gen_load = doc_generator(self.key, 0, self.num_items)
+        gen_load = doc_generator(self.key, 0, self.num_items,
+                                 key_size=self.key_size)
         err_msg = "Doc mutation succeeded with, "  \
                   "cluster size: {0}, replica: {1}" \
                   .format(len(self.cluster.nodes_in_cluster),
@@ -386,11 +387,14 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Initialize doc_generators to use for testing
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
-            self.key, self.num_items, self.num_items+self.crud_batch_size)
+            self.key, self.num_items, self.num_items+self.crud_batch_size,
+            key_size=self.key_size)
         gen_update = doc_generator(
-            self.key, 0, self.num_items)
+            self.key, 0, self.num_items,
+            key_size=self.key_size)
         gen_delete = doc_generator(
-            self.key, 0, half_of_num_items)
+            self.key, 0, half_of_num_items,
+            key_size=self.key_size)
         self.log.info("Done creating doc_generators")
 
         # Perform specified action
@@ -503,13 +507,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Create doc_generators
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
-                                   self.num_items+self.crud_batch_size)
+                                   self.num_items+self.crud_batch_size,
+                                   key_size=self.key_size)
         gen_read = doc_generator(self.key, 0,
-                                 int(self.num_items/2))
+                                 int(self.num_items/2),
+                                 key_size=self.key_size)
         gen_update = doc_generator(self.key, int(self.num_items/2),
-                                   self.num_items)
+                                   self.num_items,
+                                   key_size=self.key_size)
         gen_delete = doc_generator(self.key, 0,
-                                   int(self.num_items/3))
+                                   int(self.num_items/3),
+                                   key_size=self.key_size)
 
         # Induce the specified disk related error on the target_node
         error_sim.create(self.simulate_error, self.bucket.name)
@@ -827,12 +835,15 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.log.info("Creating doc_generators")
         gen_create = doc_generator(
             self.key, self.num_items, self.num_items+self.crud_batch_size,
+            key_size=self.key_size,
             vbuckets=self.bucket.numVBuckets)
         gen_update = doc_generator(
             self.key, 0, self.crud_batch_size,
+            key_size=self.key_size,
             vbuckets=self.bucket.numVBuckets)
         gen_delete = doc_generator(
             self.key, 0, self.crud_batch_size,
+            key_size=self.key_size,
             vbuckets=self.bucket.numVBuckets)
         self.log.info("Done creating doc_generators")
 
@@ -937,6 +948,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.num_items,
                 crud_batch_size,
                 vbuckets=self.bucket.numVBuckets,
+                key_size=self.key_size,
                 target_vbucket=replica_vbs[server])
             success = self.bucket_util.load_durable_aborts(
                 ssh_shell, server, [load_gen[server]], self.cluster,
@@ -1044,15 +1056,19 @@ class TimeoutTests(DurabilityTestsBase):
         # Perform CRUDs with induced error scenario is active
         doc_gen["create"] = doc_generator(self.key, self.num_items,
                                           self.num_items+self.crud_batch_size,
+                                          key_size=self.key_size,
                                           doc_size=self.doc_size)
         doc_gen["delete"] = doc_generator(self.key, 0,
                                           int(self.num_items/3),
+                                          key_size=self.key_size,
                                           doc_size=self.doc_size)
         doc_gen["read"] = doc_generator(self.key, int(self.num_items/3),
                                         int(self.num_items/2),
+                                        key_size=self.key_size,
                                         doc_size=self.doc_size)
         doc_gen["update"] = doc_generator(self.key, int(self.num_items/2),
                                           self.num_items,
+                                          key_size=self.key_size,
                                           doc_size=self.doc_size,
                                           mutate=1)
 
@@ -1166,13 +1182,17 @@ class TimeoutTests(DurabilityTestsBase):
         # Perform CRUDs with induced error scenario is active
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
-                                   self.num_items+self.crud_batch_size)
+                                   self.num_items+self.crud_batch_size,
+                                   key_size=self.key_size)
         gen_delete = doc_generator(self.key, 0,
-                                   int(self.num_items/3))
+                                   int(self.num_items/3),
+                                   key_size=self.key_size)
         gen_read = doc_generator(self.key, int(self.num_items/3),
-                                 int(self.num_items/2))
+                                 int(self.num_items/2),
+                                 key_size=self.key_size)
         gen_update = doc_generator(self.key, int(self.num_items/2),
-                                   self.num_items)
+                                   self.num_items,
+                                   key_size=self.key_size)
 
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_create, "create", 0,
@@ -1339,17 +1359,21 @@ class TimeoutTests(DurabilityTestsBase):
         # Create required doc_generators
         doc_gen["create"] = doc_generator(self.key, self.num_items,
                                           self.num_items+self.crud_batch_size,
+                                          key_size=self.key_size,
                                           load_using=self.load_docs_using)
         doc_gen["delete"] = doc_generator(self.key, 0,
                                           self.crud_batch_size,
+                                          key_size=self.key_size,
                                           load_using=self.load_docs_using)
         doc_gen["read"] = doc_generator(
             self.key, int(self.num_items/3),
             int(self.num_items/3) + self.crud_batch_size,
+            key_size=self.key_size,
             load_using=self.load_docs_using)
         doc_gen["update"] = doc_generator(
             self.key, int(self.num_items/2),
             int(self.num_items/2) + self.crud_batch_size,
+            key_size=self.key_size,
             load_using=self.load_docs_using)
 
         target_nodes = self.getTargetNodes()

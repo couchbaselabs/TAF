@@ -297,6 +297,7 @@ class BucketDurabilityBase(ClusterSetup):
 
             doc_gen = doc_generator(
                 d_level_to_test, doc_start_index, num_items_to_load,
+                key_size=self.key_size,
                 vbuckets=bucket.numVBuckets,
                 target_vbucket=self.vbs_in_node[random_node][target_vb_type])
             error_sim = CouchbaseError(self.log,
@@ -346,6 +347,7 @@ class BucketDurabilityBase(ClusterSetup):
         else:
             doc_gen = doc_generator(d_level_to_test, doc_start_index,
                                     doc_start_index+num_items_to_load,
+                                    key_size=self.key_size,
                                     load_using=self.load_docs_using)
 
         # Retry the same CRUDs without any error simulation in place
