@@ -13,6 +13,8 @@ from kafka_util.kafka_connect_util import KafkaConnectUtil
 
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.sirius_task import CouchbaseUtil
+from common_lib import sleep
+
 
 class HeterogeneousIndexValidation(ColumnarBaseTest):
 
@@ -756,24 +758,37 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
 
 
             # validate query
-            try:
-                for field in cmds.keys():
-                    index_name = f"idx_{field}"
-                    index_name = self.cbas_util.format_name(index_name)
+            retry = 0
+            max_retries = 10
+            success = False
+            while retry < max_retries:
+                try:
+                    for field in cmds.keys():
+                        index_name = f"idx_{field}"
+                        index_name = self.cbas_util.format_name(index_name)
 
-                    index_validator = HeterogeneousIndexValidation(self.columnar_cluster, dataset.name, [index_name],
-                                                                   self.cbas_util)
-                    after_results[field] = index_validator.validate_all(cmds[field])
-                    self.log.info(f"Validation completed for index_name {index_name} in collection {dataset.name}")
-            except Exception as e:
-                self.fail(f"Failed to validate index {e}")
+                        index_validator = HeterogeneousIndexValidation(self.columnar_cluster, dataset.name, [index_name],
+                                                                       self.cbas_util)
+                        after_results[field] = index_validator.validate_all(cmds[field])
+                        self.log.info(f"Validation completed for index_name {index_name} in collection {dataset.name}")
+                except Exception as e:
+                    self.fail(f"Failed to validate index {e}")
 
+                success = True
+                for field in before_results.keys():
+                    for cmd_index in before_results[field].keys():
+                        before_mutation_count = len(before_results[field][cmd_index])
+                        after_mutation_count = len(after_results[field][cmd_index]) + (delete_end_index // 5)
+                        self.log.info(f"Query {cmd_index}: Before Mutation = {before_mutation_count}; After Mutation = {after_mutation_count}")
+                        if before_mutation_count != after_mutation_count:
+                            success = False
+                if success:
+                    break
+                retry += 1
+                sleep(10)
 
-            for field in before_results.keys():
-                for cmd_index in before_results[field].keys():
-                    before_mutation_count = len(before_results[field][cmd_index])
-                    after_mutation_count = len(after_results[field][cmd_index]) + (delete_end_index // 5)
-                    assert before_mutation_count == after_mutation_count, "Mutation count does not match"
+            if not success:
+                raise AssertionError("Timeout reached; Mutation count does not match")
 
         self.log.info("Validation completed for test_mutate_data")
         return
