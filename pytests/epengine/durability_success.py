@@ -267,12 +267,15 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         tasks = list()
         gen_create = doc_generator(self.key, self.num_items,
                                    self.crud_batch_size,
+                                   key_size=self.key_size,
                                    vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=target_vbuckets)
         gen_delete = doc_generator(self.key, 0, 50,
+                                   key_size=self.key_size,
                                    vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=target_vbuckets)
         gen_update = doc_generator(self.key, int(self.num_items/2), 50,
+                                   key_size=self.key_size,
                                    vbuckets=self.bucket.numVBuckets,
                                    target_vbucket=target_vbuckets)
 
