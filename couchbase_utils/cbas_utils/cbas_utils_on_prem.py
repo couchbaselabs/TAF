@@ -5195,7 +5195,8 @@ class CBASRebalanceUtil(object):
 
     def rebalance(self, cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
                   cbas_nodes_out=0, available_servers=[], exclude_nodes=[],
-                  in_node_services=""):
+                  in_node_services="",
+                  wait_for_complete=False):
         if kv_nodes_out > 0:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
                 cluster, service_type="kv", get_all_nodes=True,
@@ -5248,6 +5249,16 @@ class CBASRebalanceUtil(object):
             cluster, servs_in, servs_out,
             check_vbucket_shuffling=self.vbucket_check,
             retry_get_process_num=200, services=services)
+        if wait_for_complete:
+            self.wait_for_rebalance_task_to_complete(rebalance_task, cluster)
+            retries = 0
+            while not rebalance_task.result and retries < 3:
+                self.log.info("Rebalance task failed, retrying...")
+                rebalance_task = self.task.async_rebalance(
+                    cluster, servs_in, servs_out,
+                    check_vbucket_shuffling=self.vbucket_check,
+                    retry_get_process_num=200, services=services)
+                retries += 1
 
         available_servers = [servs for servs in available_servers if
                              servs not in servs_in]
@@ -5563,8 +5574,16 @@ class CBASRebalanceUtil(object):
                 retry_get_process_num=200)
 
             if wait_for_complete:
-                if not self.wait_for_rebalance_task_to_complete(
-                        rebalance_task, cluster):
+                retries = 0
+                while not self.wait_for_rebalance_task_to_complete(
+                        rebalance_task, cluster) and retries < 3:
+                    retries += 1
+                    self.log.info("Rebalance task failed, retrying...")
+                    rebalance_task = self.task.async_rebalance(
+                        cluster, [], kv_failover_nodes + cbas_failover_nodes,
+                        check_vbucket_shuffling=self.vbucket_check,
+                        retry_get_process_num=200)
+                if not rebalance_task.result:
                     raise Exception(
                         "Rebalance failed while rebalancing nodes after failover")
             else:
@@ -5587,8 +5606,14 @@ class CBASRebalanceUtil(object):
             rebalance_task = self.task.async_rebalance(
                 cluster, [], [], retry_get_process_num=200)
             if wait_for_complete:
-                if not self.wait_for_rebalance_task_to_complete(
-                        rebalance_task, cluster):
+                retries = 0
+                while not self.wait_for_rebalance_task_to_complete(
+                        rebalance_task, cluster) and retries < 3:
+                    retries += 1
+                    self.log.info("Rebalance task failed, retrying...")
+                    rebalance_task = self.task.async_rebalance(
+                        cluster, [], [], retry_get_process_num=200)
+                if not rebalance_task.result:
                     raise Exception(
                         "Rebalance failed while doing recovery after failover")
                 time.sleep(10)
