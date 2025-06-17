@@ -2975,7 +2975,7 @@ class BucketUtils(ScopeUtils):
             history_retention_bytes=0,
             history_retention_seconds=0,
             warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
-            fusion_log_store_uri=""):
+            fusion_log_store_uri=None):
         success = True
         info = self.cluster_util.get_nodes_self(cluster.master)
         tasks = dict()
