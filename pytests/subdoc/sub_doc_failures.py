@@ -21,14 +21,15 @@ class SubDocTimeouts(DurabilityTestsBase):
         # Loading SubDocs to loaded documents
         self.log.info("Creating doc_generator..")
         # Load basic docs into bucket
+        num_sub_docs = self.num_items // 2
         doc_create = sub_doc_generator(
-            self.key, 0, self.num_items/2,
+            self.key, 0, num_sub_docs,
             key_size=self.key_size,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
             vbuckets=self.bucket.numVBuckets)
         self.log.info("Loading {0} Sub-docs into the bucket: {1}"
-                      .format(self.num_items/2, self.bucket))
+                      .format(num_sub_docs, self.bucket))
         task = self.task.async_load_gen_sub_docs(
             self.cluster, self.bucket, doc_create,
             DocLoading.Bucket.SubDocOps.INSERT, self.maxttl,
@@ -36,7 +37,8 @@ class SubDocTimeouts(DurabilityTestsBase):
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
         self.log.info("==========Finished SubDocFailures base setup========")
 
@@ -176,9 +178,9 @@ class SubDocTimeouts(DurabilityTestsBase):
                              % (len_failed_keys, reader_task.fail.keys()))
         for doc_key, crud_result in reader_task.success.items():
             expected_val = 2
-            if int(doc_key.split('-')[1]) >= self.num_items/2:
+            if int(doc_key.split('-')[1]) >= self.num_items//2:
                 expected_val = 1
-            if reader_task.success[doc_key]["value"][0] != expected_val:
+            if reader_task.success[doc_key]["value"]["mutated"] != expected_val:
                 self.log_failure("Value mismatch for %s: %s"
                                  % (doc_key, crud_result))
 

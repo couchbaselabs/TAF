@@ -283,6 +283,8 @@ class BucketDurabilityBase(ClusterSetup):
         if d_level_to_test == SDKConstants.DurabilityLevel.NONE:
             return
 
+        # To avoid failures during key generation with key_size > key prefix
+        self.key_size = len(d_level_to_test) + 10
         self.log.info("Performing %s operation to validate d_level %s"
                       % (op_type, d_level_to_test))
 
