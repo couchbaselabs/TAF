@@ -366,7 +366,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 # Validation of CRUDs - Update / Create / Delete
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
-                        doc_id, self.bucket.vbuckets)
+                        doc_id, self.bucket.numVBuckets)
                     if SDKException.DurabilityAmbiguousException \
                             not in str(crud_result["error"]):
                         self.log_failure(
