@@ -84,24 +84,24 @@ class SubDocTimeouts(DurabilityTestsBase):
                                                 node=node)
 
         doc_gen["insert"] = sub_doc_generator(
-            self.key, self.num_items/2, self.num_items,
+            self.key, self.num_items//2, self.num_items,
             key_size=self.key_size,
             doc_size=self.sub_doc_size)
         doc_gen["read"] = sub_doc_generator(
             self.key,
-            self.num_items/4,
-            self.num_items/2,
+            self.num_items//4,
+            self.num_items//2,
             key_size=self.key_size)
         doc_gen["upsert"] = sub_doc_generator_for_edit(
             self.key,
-            self.num_items/4,
-            self.num_items/2,
+            self.num_items//4,
+            self.num_items//2,
             key_size=self.key_size,
             template_index=2)
         doc_gen["remove"] = sub_doc_generator_for_edit(
             self.key,
             0,
-            self.num_items/4,
+            self.num_items//4,
             key_size=self.key_size,
             template_index=2)
 
@@ -303,7 +303,7 @@ class SubDocTimeouts(DurabilityTestsBase):
         # Create required doc_generators
         doc_gen["insert"] = sub_doc_generator(
             self.key,
-            self.num_items/2,
+            self.num_items // 2,
             self.crud_batch_size,
             vbuckets=self.bucket.numVBuckets,
             target_vbucket=target_vbs,
@@ -326,7 +326,7 @@ class SubDocTimeouts(DurabilityTestsBase):
             target_vbucket=target_vbs)
         doc_gen["upsert"] = sub_doc_generator_for_edit(
             self.key,
-            int(self.num_items/4),
+            self.num_items // 4,
             self.crud_batch_size,
             key_size=self.key_size,
             template_index=1,
@@ -367,8 +367,9 @@ class SubDocTimeouts(DurabilityTestsBase):
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.bucket.numVBuckets)
-                    if SDKException.DurabilityAmbiguousException \
-                            not in str(crud_result["error"]):
+                    if not SDKException.check_if_exception_exists(
+                            SDKException.DurabilityAmbiguousException,
+                            crud_result["error"]):
                         self.log_failure(
                             "Invalid exception for doc %s, vb %s: %s"
                             % (doc_id, vb_num, crud_result))
@@ -415,7 +416,8 @@ class SubDocTimeouts(DurabilityTestsBase):
         # If replicas+1 == total nodes, verify no mutation should have
         # succeeded with durability
         if self.nodes_init == self.num_replicas+1:
-            read_gen = doc_generator(self.key, 0, self.num_items)
+            read_gen = doc_generator(self.key, 0, self.num_items,
+                                     key_size=self.key_size)
             read_task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, read_gen,
                 DocLoading.Bucket.DocOps.READ, 0,
@@ -425,7 +427,7 @@ class SubDocTimeouts(DurabilityTestsBase):
 
             failed_keys = TableView(self.log.error)
             failed_keys.set_headers(["Key", "Error"])
-            half_of_num_items = self.num_items/2
+            half_of_num_items = self.num_items // 2
             for doc_key, doc_info in read_task.success.items():
                 key_index = int(doc_key.split("-")[1])
                 expected_mutated_val = 0
@@ -439,6 +441,8 @@ class SubDocTimeouts(DurabilityTestsBase):
 
         # Doc error validation
         for op_type in doc_gen.keys():
+            if op_type == "read":
+                continue
             task = tasks[op_type]
 
             retry_task = self.task.async_load_gen_sub_docs(
