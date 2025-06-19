@@ -14,12 +14,14 @@ from pytests.Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 from couchbase_utils.security_utils.x509main import x509main
 from cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
 from cb_server_rest_util.rest_client import RestConnection
+from CbasLib.CBASOperations_PythonSDK import CBASHelper
 
 
 class ColumnarOnPremSystemTest(ColumnarOnPremBase):
     """
     System test class for onprem columnar testing
     """
+    
 
     def setUp(self):
         super(ColumnarOnPremSystemTest, self).setUp()
@@ -46,6 +48,7 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
             self.cluster_util, self.bucket_util, self.task,
             self.input.param("vbucket_check", True), self.cbas_util)
         self.steady_state_workload_sleep = self.input.param("steady_state_workload_sleep", 600)
+        self.cbas_helper = CBASHelper(self.analytics_cluster)
 
     def tearDown(self):
         self.columnar_cbas_utils.cleanup_cbas(self.analytics_cluster)
@@ -174,25 +177,37 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
             self.fail("Error while creating analytics entities.")
 
     def add_mutate_data_on_remote_server(self, done_event):
+        """
+        Add data to the remote server and mutate data on the remote server.
+        """
+
         while not done_event.is_set():
             self.log.info("Mutating data on remote cluster.")
             self.log.info("Inserting items in remote dataset. start_index {0} num_items {1}".format(
-                self.create_start_index,
-                self.num_items / 10))
+                int(self.create_start_index),
+                int(self.num_items / 10)))
             self.load_remote_collections(self.remote_cluster,
                                          create_start_index=self.create_start_index,
                                          create_end_index=self.create_start_index + self.num_items / 10,
-                                         wait_for_completion=True)
+                                         wait_for_completion=True,
+                                         template="Product")
+
             self.create_start_index = self.create_start_index + self.num_items / 10
-            self.log.info("Upserting items in remote dataset. num_items {0}".format(self.create_start_index))
+            self.log.info("Upserting items in remote dataset. num_items {0}".format(int(self.create_start_index)))
             self.load_remote_collections(self.remote_cluster,
                                          update_start_index=0,
                                          update_end_index=self.create_start_index,
-                                         wait_for_completion=True)
+                                         wait_for_completion=True,
+                                         template="Product")
+
             self.log.info("Sleep for 5 mins before next mutation.")
             time.sleep(300)
 
     def rebalance_nodes(self, done_event):
+        """
+        Rebalance in,out and swap the cluster.
+        """
+
         while not done_event.is_set():
             self.log.info("Step 1: Rebalance-In a KV+CBAS node in analytics cluster")
             rebalance_task, self.analytics_cluster.available_servers = \
@@ -233,48 +248,6 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
             self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after rebalance swap for {} seconds".format(self.steady_state_workload_sleep))
-            #
-            # self.log.info("Step 4: HardFailover+DeltaRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
-            # self.analytics_cluster.available_servers, _, _ = \
-            #     self.rebalance_util.failover(
-            #         cluster=self.analytics_cluster, cbas_nodes=1,
-            #         action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers,
-            #         failover_type="Hard")
-            # self.sleep(self.steady_state_workload_sleep,
-            #            "Wait after hard failover and delta recovery for {} seconds".format(
-            #                self.steady_state_workload_sleep))
-            #
-            # self.log.info("Step 5: HardFailover+FullRecovery+RebalanceIn a KV+CBAS node in analytics cluster")
-            # self.analytics_cluster.available_servers, _, _ = \
-            #     self.rebalance_util.failover(
-            #         cluster=self.analytics_cluster, cbas_nodes=1,
-            #         action="FullRecovery", available_servers=self.analytics_cluster.available_servers,
-            #         failover_type="Hard")
-            # self.sleep(self.steady_state_workload_sleep,
-            #            "Wait after hard failover and full recovery for {} seconds".format(self.steady_state_workload_sleep))
-            #
-            # self.log.info("Step 6: HardFailover+RebalanceOut a KV+CBAS node in analytics cluster")
-            # self.analytics_cluster.available_servers, _, _ = \
-            #     self.rebalance_util.failover(
-            #         cluster=self.analytics_cluster, cbas_nodes=1,
-            #         action="RebalanceOut", available_servers=self.analytics_cluster.available_servers,
-            #         failover_type="Hard")
-            # self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
-            # self.sleep(self.steady_state_workload_sleep,
-            #            "Wait after hard failover and rebalance out for {} seconds".format(self.steady_state_workload_sleep))
-
-            self.log.info("Step 7: Rebalance-In a KV+CBAS node in analytics cluster")
-            rebalance_task, self.analytics_cluster.available_servers = \
-                self.rebalance_util.rebalance(
-                    cluster=self.analytics_cluster, cbas_nodes_in=1,
-                    available_servers=self.analytics_cluster.available_servers,
-                    in_node_services="kv,cbas")
-            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.analytics_cluster, True, True):
-                self.fail("Error while Rebalance-In KV+CBAS node in analytics "
-                          "cluster")
-            self.sleep(self.steady_state_workload_sleep,
-                       "Wait after rebalance in for {} seconds".format(self.steady_state_workload_sleep))
 
     def run_query_on_remote_dataset(self, done_event):
         """
@@ -285,10 +258,6 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         remote_datasets = self.columnar_cbas_utils.get_all_dataset_objs("remote")
         if not remote_datasets:
             self.fail("No remote datasets found")
-
-        # Create a queue for jobs
-        jobs = Queue()
-        results = []
 
         # Run queries on each remote dataset
         for dataset in remote_datasets:
@@ -307,14 +276,9 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
             self.log.info("Starting parallel query execution on remote datasets for 60 minutes")
             while time.time() < end_time:
                 try:
-                    # Add queries to the queue
+                    # Execute queries
                     for query in queries:
-                        jobs.put((self.columnar_cbas_utils.execute_statement_on_cbas_util,
-                                  {"cluster": self.columnar_cluster,
-                                   "statement": query,
-                                   "timeout": 300}))
-                    self.cbas_util.run_jobs_in_parallel(
-                        jobs, results, self.sdk_clients_per_user, async_run=True)
+                        self.cbas_helper.execute_statement_on_cbas(query, None)
                 except Exception as e:
                     self.log.info("Query failed due to: {}", str(e))
                 time.sleep(5)  # Small delay to prevent overwhelming the system
@@ -326,9 +290,6 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         """
         Run queries on external collections.
         """
-        # Create a queue for jobs
-        jobs = Queue()
-        results = []
 
         # Run queries on each external dataset
         for dataset_name in self.external_datasets:
@@ -346,15 +307,10 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
 
             self.log.info("Starting parallel query execution on external datasets for 60 minutes")
             while time.time() < end_time:
-                # Add queries to the queue
+                # Execute queries.
                 for query in queries:
-                    jobs.put((self.columnar_cbas_utils.execute_statement_on_cbas_util,
-                              {"cluster": self.columnar_cluster,
-                               "statement": query,
-                               "timeout": 300}))
-                self.cbas_util.run_jobs_in_parallel(
-                    jobs, results, self.sdk_clients_per_user, async_run=True)
-                time.sleep(1)  # Small delay to prevent overwhelming the system
+                    self.cbas_helper.execute_statement_on_cbas(query, None)
+                time.sleep(5)  # Small delay to prevent overwhelming the system
 
         self.log.info("Completed parallel query execution on external datasets")
 
@@ -376,7 +332,8 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
 
         self.load_remote_collections(self.remote_cluster,
                                      create_start_index=self.create_start_index,
-                                     create_end_index=self.num_items)
+                                     create_end_index=self.num_items,
+                                     template="Product")
         self.create_start_index = self.num_items
         self.log.info("Creating analytics entities")
         self.build_cbas_columnar_infra()
@@ -402,9 +359,6 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         t1.join()
         t2.join()
         t3.join()
-
-        # self.log.info("Running query on remote datasets.")
-        # self.run_query_on_remote_dataset()
 
         # Create external link for NetApp Storage
         self.log.info("Creating external link for NetApp Storage")

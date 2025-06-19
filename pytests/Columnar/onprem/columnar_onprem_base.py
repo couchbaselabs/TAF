@@ -36,7 +36,8 @@ class ColumnarOnPremBase(CBASBaseTest):
                                 update_start_index=None, update_end_index=None,
                                 delete_start_index=None, delete_end_index=None,
                                 expiry_start_index=None, expiry_end_index=None,
-                                wait_for_completion=True):
+                                wait_for_completion=True,
+                                template="Hotel"):
         buckets = buckets or cluster.buckets
         thread_count = 0
         for bucket in buckets:
@@ -52,7 +53,7 @@ class ColumnarOnPremBase(CBASBaseTest):
             pattern = [100, 0, 0, 0, 0]
             for scope in bucket.scopes.keys():
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
-                    valType = "Hotel"
+                    valType = template
                     if scope == "_system":
                         continue
                     loader = SiriusCouchbaseLoader(
