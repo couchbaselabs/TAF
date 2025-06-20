@@ -805,7 +805,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             self.cluster,
             timeout=self.wait_timeout)
 
-        for vb_num in range(0, self.cluster.vbuckets, 128):
+        for vb_num in range(0, 128, 32):
             self.target_vbucket = [vb_num]
             self.log.info("Targeting vBucket: {}".format(vb_num))
             self.gen_create = self.get_doc_generator(self.num_items,
