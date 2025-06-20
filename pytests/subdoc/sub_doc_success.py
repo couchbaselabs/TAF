@@ -200,11 +200,10 @@ class BasicOps(DurabilityTestsBase):
             op_failed_tbl.set_headers(["Delete failed key", "Value"])
 
             # Collect read operations that failed
-            for key, value in task.success.items():
+            for key, value in task.fail.items():
                 err_str = ""
-                for sd_key, sd_val in value['value'].items():
-                    if sd_val == SDKException.PathNotFoundException:
-                        err_str += f"{sd_key} - PathNotFoundException ; "
+                if SDKException.check_if_exception_exists(SDKException.PathNotFoundException, value):
+                    err_str += f"PathNotFoundException"
                 if err_str:
                     op_failed_tbl.add_row([key, err_str])
             op_failed_tbl.display("Delete succeeded for keys:")
@@ -258,11 +257,14 @@ class BasicOps(DurabilityTestsBase):
 
         self.log.info("Loading documents to support further sub_doc ops")
         doc_gen = doc_generator(
-            self.key, self.num_items, self.num_items*2, doc_size=self.doc_size,
+            self.key, self.num_items, self.num_items*2,
+            key_size=self.key_size,
+            doc_size=self.doc_size,
             target_vbucket=self.target_vbucket,
             vbuckets=def_bucket.numVBuckets)
         task = self.task.async_load_gen_docs(
-            self.cluster, def_bucket, doc_gen, "create", self.maxttl,
+            self.cluster, def_bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
+            self.maxttl,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level, timeout_secs=self.sdk_timeout,
