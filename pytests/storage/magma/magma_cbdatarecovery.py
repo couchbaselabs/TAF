@@ -1,4 +1,5 @@
 import random
+from BucketLib.BucketOperations import BucketHelper
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
@@ -147,8 +148,16 @@ class MagmaRecovery(BaseTestCase):
                     replica=self.num_replicas,
                     storage=self.bucket_storage,
                     eviction_policy=self.bucket_eviction_policy,
-                    bucket_name=bucket_name)
+                    bucket_name=bucket_name,
+                    enable_encryption_at_rest=self.enable_encryption_at_rest,
+                    encryption_at_rest_key_id=self.encryption_at_rest_id,
+                    encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                    encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
         self.bucket_util.print_bucket_stats(self.first_cluster)
+
+        bucket_helper = BucketHelper(self.first_cluster.master)
+        for bucket in self.first_cluster.buckets:
+            bucket_stats = bucket_helper.get_bucket_json(bucket.name)
 
         if self.test_auto_create_collections:
             for bucket in self.first_cluster.buckets:
@@ -192,7 +201,11 @@ class MagmaRecovery(BaseTestCase):
                     replica=self.num_replicas,
                     storage=self.bucket_storage,
                     eviction_policy=self.bucket_eviction_policy,
-                    bucket_name=bucket_name)
+                    bucket_name=bucket_name,
+                    enable_encryption_at_rest=self.enable_encryption_at_rest,
+                    encryption_at_rest_key_id=self.encryption_at_rest_id,
+                    encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                    encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
         self.bucket_util.print_bucket_stats(self.second_cluster)
 
         data_path = RestConnection(self.first_cluster_master).get_data_path()

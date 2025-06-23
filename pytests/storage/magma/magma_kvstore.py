@@ -328,7 +328,11 @@ class KVStoreTests(MagmaBaseTest):
                          "magma": self.num_delete_buckets},
                 eviction_policy=self.bucket_eviction_policy,
                 ram_quota=bucket_ram_quota,
-                bucket_name=self.bucket_name)
+                bucket_name=self.bucket_name,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                encryption_at_rest_key_id=self.encryption_at_rest_id,
+                encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
 
             if self.crash_memcached:
                 self.stop_crash = True
@@ -346,7 +350,11 @@ class KVStoreTests(MagmaBaseTest):
                              "magma": self.num_delete_buckets},
                     eviction_policy=self.bucket_eviction_policy,
                     ram_quota=bucket_ram_quota,
-                    bucket_name=self.bucket_name)
+                    bucket_name=self.bucket_name,
+                    enable_encryption_at_rest=self.enable_encryption_at_rest,
+                    encryption_at_rest_key_id=self.encryption_at_rest_id,
+                    encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                    encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
 
             self.assertTrue(buckets_created, "Unable to create multiple buckets after bucket deletion")
 

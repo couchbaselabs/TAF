@@ -116,7 +116,11 @@ class StorageBase(BaseTestCase):
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
                 history_retention_bytes=self.bucket_dedup_retention_bytes,
-                weight=self.bucket_weight, width=self.bucket_width)
+                weight=self.bucket_weight, width=self.bucket_width,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                encryption_at_rest_key_id=self.encryption_at_rest_id,
+                encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
@@ -134,7 +138,11 @@ class StorageBase(BaseTestCase):
                 autoCompactionDefined=self.autoCompactionDefined,
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
-                history_retention_bytes=self.bucket_dedup_retention_bytes)
+                history_retention_bytes=self.bucket_dedup_retention_bytes,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                encryption_at_rest_key_id=self.encryption_at_rest_id,
+                encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
         if self.change_magma_quota:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -284,16 +292,22 @@ class StorageBase(BaseTestCase):
                 self.bucket_util.set_throttle_n_storage_limit(bucket, throttle_limit=self.kv_throttling_limit)
 
         # Validate that the fragmentation value has been set
+        self.sleep(30, "Wait before fetching bucket stats")
         for bucket in self.cluster.buckets:
             bucket_helper = BucketHelper(self.cluster.master)
             if bucket.storageBackend == Bucket.StorageBackend.magma:
                 bucket_stats = bucket_helper.get_bucket_json(bucket.name)
-                frag_val = bucket_stats["autoCompactionSettings"] \
-                                       ["magmaFragmentationPercentage"]
-                self.log.info("Bucket: {}, Fragmentation value: {}".\
-                              format(bucket.name, frag_val))
-                self.assertEqual(int(frag_val), self.fragmentation,
-                                 "Fragmentation value does not match")
+                if self.enable_encryption_at_rest:
+                    self.log.info("Bucket: {}, Encryption Info: {}, Key ID: {}, Rotation Interval: {}, DEK Lifetime: {}".format(
+                        bucket.name, bucket_stats['encryptionAtRestInfo'], bucket_stats['encryptionAtRestKeyId'],
+                        bucket_stats['encryptionAtRestDekRotationInterval'], bucket_stats['encryptionAtRestDekLifetime']))
+                if self.autoCompactionDefined:
+                    frag_val = bucket_stats["autoCompactionSettings"] \
+                                        ["magmaFragmentationPercentage"]
+                    self.log.info("Bucket: {}, Fragmentation value: {}".\
+                                format(bucket.name, frag_val))
+                    self.assertEqual(int(frag_val), self.fragmentation,
+                                    "Fragmentation value does not match")
 
     def find_nodes_with_service(self, service_type, nodes_list):
         filter_list = list()

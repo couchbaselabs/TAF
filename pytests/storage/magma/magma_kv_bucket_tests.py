@@ -1,3 +1,4 @@
+from BucketLib.BucketOperations import BucketHelper
 from magma_base import MagmaBaseTest
 
 
@@ -39,14 +40,23 @@ class MagmaKVTests(MagmaBaseTest):
 
         self.log.info("Creating {0} buckets...".format(new_buckets_count))
         buckets_creation_task = self.bucket_util.create_multiple_buckets(
-                                            self.cluster,
-                                            self.num_replicas,
-                                            bucket_count=new_buckets_count,
-                                            bucket_type=self.bucket_type,
-                                            storage=self.bucket_storage,
-                                            eviction_policy=self.bucket_eviction_policy,
-                                            bucket_name="new_bucket",
-                                            ram_quota=self.bucket_ram_quota)
+                self.cluster,
+                self.num_replicas,
+                bucket_count=new_buckets_count,
+                bucket_type=self.bucket_type,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy,
+                bucket_name="new_bucket",
+                ram_quota=self.bucket_ram_quota,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                encryption_at_rest_key_id=self.encryption_at_rest_id,
+                encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
+
+        self.sleep(30, "Wait before fetching bucket stats")
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            bucket_stats = bucket_helper.get_bucket_json(bucket.name)
 
         self.assertTrue(buckets_creation_task, "Unable to create multiple buckets")
         self.wait_for_doc_load_completion(create_task)
@@ -87,14 +97,23 @@ class MagmaKVTests(MagmaBaseTest):
 
         self.log.info("Creating {0} buckets...".format(new_buckets_count))
         buckets_creation_task = self.bucket_util.create_multiple_buckets(
-                                            self.cluster,
-                                            self.num_replicas,
-                                            bucket_count=new_buckets_count,
-                                            bucket_type=self.bucket_type,
-                                            storage=self.bucket_storage,
-                                            eviction_policy=self.bucket_eviction_policy,
-                                            bucket_name="new_bucket",
-                                            ram_quota=self.bucket_ram_quota)
+                self.cluster,
+                self.num_replicas,
+                bucket_count=new_buckets_count,
+                bucket_type=self.bucket_type,
+                storage=self.bucket_storage,
+                eviction_policy=self.bucket_eviction_policy,
+                bucket_name="new_bucket",
+                ram_quota=self.bucket_ram_quota,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                encryption_at_rest_key_id=self.encryption_at_rest_id,
+                encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
+
+        self.sleep(30, "Wait before fetching bucket stats")
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            bucket_stats = bucket_helper.get_bucket_json(bucket.name)
 
         self.assertTrue(buckets_creation_task, "Unable to create multiple buckets")
         self.bucket_util.print_bucket_stats(self.cluster)

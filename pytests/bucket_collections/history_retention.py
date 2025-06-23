@@ -194,7 +194,11 @@ class DocHistoryRetention(ClusterSetup):
              eviction_policy=self.bucket_eviction_policy,
              history_retention_bytes=self.bucket_dedup_retention_bytes,
              history_retention_seconds=self.bucket_dedup_retention_seconds,
-             storage=Bucket.StorageBackend.magma)
+             storage=Bucket.StorageBackend.magma,
+             enable_encryption_at_rest=self.enable_encryption_at_rest,
+             encryption_at_rest_key_id=self.encryption_at_rest_id,
+             encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+             encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
 
         # Data loading
         self.log.info("Loading initial data")
@@ -365,6 +369,12 @@ class DocHistoryRetention(ClusterSetup):
                 if b_type == Bucket.Type.EPHEMERAL:
                     params[Bucket.evictionPolicy] \
                         = Bucket.EvictionPolicy.NO_EVICTION
+
+                if self.enable_encryption_at_rest and b_type != Bucket.Type.EPHEMERAL:
+                    params[Bucket.encryptionAtRestKeyId] = self.encryption_at_rest_id
+                    params[Bucket.encryptionAtRestDekRotationInterval] = self.encryptionAtRestDekRotationInterval
+                    params[Bucket.encryptionAtRestDekLifetime] = self.encryption_at_rest_dek_lifetime
+
                 bucket = Bucket(params)
                 self.log.info(
                     "Create bucket '%s' with CDC enabled for %s:%s"
@@ -713,6 +723,11 @@ class DocHistoryRetention(ClusterSetup):
                           Bucket.historyRetentionSeconds]:
                 if to_test[param] is not None:
                     bucket_params[param] = to_test[param]
+
+            if self.enable_encryption_at_rest:
+                bucket_params[Bucket.encryptionAtRestKeyId] = self.encryption_at_rest_id
+                bucket_params[Bucket.encryptionAtRestDekRotationInterval] = self.encryptionAtRestDekRotationInterval
+                bucket_params[Bucket.encryptionAtRestDekLifetime] = self.encryption_at_rest_dek_lifetime
 
             bucket = Bucket(bucket_params)
             status, _ = self.__create_bucket(bucket_params)

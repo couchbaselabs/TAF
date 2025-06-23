@@ -2200,7 +2200,11 @@ class BucketUtils(ScopeUtils):
             history_retention_seconds=0,
             magma_key_tree_data_block_size=4096,
             magma_seq_tree_data_block_size=4096,
-            vbuckets=None, weight=None, width=None):
+            vbuckets=None, weight=None, width=None,
+            enable_encryption_at_rest=False,
+            encryption_at_rest_key_id=None,
+            encryption_at_rest_dek_rotation_interval=None,
+            encryption_at_rest_dek_lifetime=None):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2242,6 +2246,14 @@ class BucketUtils(ScopeUtils):
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight})
+
+        if enable_encryption_at_rest:
+            bucket_obj.encryptionAtRestKeyId = encryption_at_rest_key_id
+            if encryption_at_rest_dek_rotation_interval is not None:
+                bucket_obj.encryptionAtRestDekRotationInterval = encryption_at_rest_dek_rotation_interval
+            if encryption_at_rest_dek_lifetime is not None:
+                bucket_obj.encryptionAtRestDekLifetime = encryption_at_rest_dek_lifetime
+
         if cluster.type == "dedicated":
             bucket_params = {
                 CloudCluster.Bucket.name: bucket_obj.name,
@@ -2945,7 +2957,11 @@ class BucketUtils(ScopeUtils):
             weight=None, width=None,
             history_retention_collection_default="true",
             history_retention_bytes=0,
-            history_retention_seconds=0):
+            history_retention_seconds=0,
+            enable_encryption_at_rest=False,
+            encryption_at_rest_key_id=None,
+            encryption_at_rest_dek_rotation_interval=None,
+            encryption_at_rest_dek_lifetime=None):
         success = True
         rest = RestConnection(cluster.master)
         info = rest.get_nodes_self()
@@ -2994,6 +3010,13 @@ class BucketUtils(ScopeUtils):
                         Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
                         Bucket.historyRetentionSeconds: history_retention_seconds,
                         Bucket.historyRetentionBytes: history_retention_bytes})
+
+                    if enable_encryption_at_rest:
+                        bucket.encryptionAtRestKeyId = encryption_at_rest_key_id
+                        if encryption_at_rest_dek_rotation_interval is not None:
+                            bucket.encryptionAtRestDekRotationInterval = encryption_at_rest_dek_rotation_interval
+                        if encryption_at_rest_dek_lifetime is not None:
+                            bucket.encryptionAtRestDekLifetime = encryption_at_rest_dek_lifetime
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1
 

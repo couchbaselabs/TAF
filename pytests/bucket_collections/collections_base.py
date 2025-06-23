@@ -602,6 +602,8 @@ class CollectionBase(ClusterSetup):
                 test_obj.encryption_at_rest_id
             buckets_spec[Bucket.encryptionAtRestDekRotationInterval] = \
                 test_obj.encryptionAtRestDekRotationInterval
+            buckets_spec[Bucket.encryptionAtRestDekLifetime] = \
+                test_obj.encryption_at_rest_dek_lifetime
             if "buckets" in buckets_spec:
                 for bucket in buckets_spec["buckets"]:
                     if test_obj.KMIP_for_data_encryption:
