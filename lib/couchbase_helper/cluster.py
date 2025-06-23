@@ -1180,3 +1180,8 @@ class ServerTasks(object):
         _task = jython_tasks.MonitorClusterStatsTask(cluster, monitor_tasks, period, timeout, store_csv, csv_dir)
         self.jython_task_manager.add_new_task(_task)
         return _task
+
+    def async_execute_queries(self, query_node, queries=list(), timeout=None, shuffle_queries=True):
+        _task = jython_tasks.ExecuteQueriesTask(query_node, queries, timeout=timeout, shuffle_queries=shuffle_queries)
+        self.jython_task_manager.add_new_task(_task)
+        return _task

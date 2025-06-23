@@ -8854,3 +8854,67 @@ class MonitorClusterStatsTask(Task):
 
         self.complete_task()
         return self.result_set
+
+class ExecuteQueriesTask(Task):
+    def __init__(self, query_node, queries=[], timeout=None, store_query_results=False, shuffle_queries=True):
+        super(ExecuteQueriesTask, self).__init__("ExecuteN1QLQueryTask_{}".format(time.time()))
+        self.query_node = query_node
+        self.queries = queries
+        self.timeout = timeout
+        self.stop_task = False
+        self.store_query_results = store_query_results
+        self.rest = RestConnection(query_node)
+        self.result_queries = {
+            "success": 0,
+            "failed": 0,
+            "queries_status": []
+        }
+
+        if shuffle_queries:
+            random.shuffle(self.queries)
+
+    def end_task(self):
+        self.stop_task = True
+
+    def call(self):
+        self.start_task()
+
+        if len(self.queries) == 0:
+            self.set_exception(Exception("No queries to execute"))
+
+        try:
+            self.test_log.info("Executing N1QL queries on {}".format(self.query_node.ip))
+
+            end = None
+            if self.timeout:
+                end = time.time() + self.timeout
+
+            self.stop_task = self.stop_task or (end != None and time.time() > end)
+
+            while not self.stop_task:
+                for query in self.queries:
+                    if self.stop_task:
+                        break
+                    self.test_log.debug("Executing query: {}".format(query))
+
+                    result = self.rest.query_tool(query, timeout=1200)
+
+                    if result["status"] == "success":
+                        self.result_queries["success"] += 1
+                        if self.store_query_results:
+                            self.result_queries["queries_status"].append([time.time(), query, result]) # [time, query, result]
+                        else:
+                            self.result_queries["queries_status"].append([time.time(), query, "Success"]) # [time, query, result]
+                    else:
+                        self.test_log.debug("Failed query: {}: {}".format(query, result))
+                        self.result_queries["failed"] += 1
+                        self.result_queries["queries_status"].append([time.time(), query, result]) # [time, query, result]
+
+                    self.stop_task = self.stop_task or (end != None and time.time() > end)
+
+        except Exception as e:
+            self.log.error("Exception occurred during : {}".format(str(e)))
+            self.set_exception(e)
+
+        self.complete_task()
+        return self.result_queries
