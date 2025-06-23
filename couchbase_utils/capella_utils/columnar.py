@@ -450,11 +450,11 @@ class ColumnarUtils:
                     instance_config = self.generate_instance_configuration()
 
                 resp = columnar_api.get_deployment_options(
-                    tenant.id, instance_config["provider"])
+                    tenant.id, None)
                 if resp.status_code != 200:
                     raise Exception(str(resp.content))
                 deployment_options = resp.json()
-                instance_config["cidr"] = deployment_options["suggestedCidr"]
+                instance_config["cidr"] = deployment_options["cidr"]["suggestedBlock"]
                 print(instance_config)
                 resp = columnar_api.create_columnar_instance(
                     tenant.id, tenant.project_id, instance_config)
