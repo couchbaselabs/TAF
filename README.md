@@ -157,6 +157,19 @@ port:8091
 services:kv
 ```
 
+## To start the test with sirius java client as part of the framework
+```
+python testrunner.py -c debug.conf -i node.ini -p rerun=False,get-cbcollect-info=False,skip_cluster_reset=True,load_docs_using=sirius_java_sdk --launch_java_doc_loader --sirius_url http://localhost:<port_num>
+```
+
+## To run sirius locally
+```
+cd DocLoader
+mvn install
+java -cp ./target/magmadocloader/magmadocloader.jar RestServer.RestApplication --server.port=<port_num>
+```
+Once launched, we can start the TAF using regular `python testrunner.py ...` command but without `--launch_java_doc_loader` parameter.
+
 ## Cluster_run support
 TAF supports cluster_run with following additional params under the specified sections,
 Note: Make sure your rest_password is 'password'
