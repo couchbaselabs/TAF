@@ -271,13 +271,8 @@ class Columnar(BaseTestCase, hostedOPD):
                 if status:
                     cluster.cbas_cc_node.ip = json.loads(content)["ccNodeName"].split(":")[0]
                     cluster.master.ip = cluster.cbas_cc_node.ip
-                    state = json.loads(content)["state"]
-                    if state != "ACTIVE":
-                        cluster.state = state
-                        self.log.critical("Columnar cluster state is {}".format(state))
-                    elif cluster.state != "ACTIVE":
-                        self.log.critical("Columnar cluster state is {}".format(state))
-                        cluster.state = state
+                    cluster.state = json.loads(content)["state"]
+                    self.log.critical("Columnar cluster state is {}".format(cluster.state))
             except Exception as e:
                 print(e)
                 import traceback

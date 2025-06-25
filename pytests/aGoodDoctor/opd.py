@@ -1279,7 +1279,7 @@ class OPD:
         self.key_prefix = self.input.param("key", "test_docs-")
 
     def check_index_pending_mutations(self, cluster):
-        while True:
+        while not self.stop_run:
             check = False
             for node in cluster.index_nodes:
                 try:
