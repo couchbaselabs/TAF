@@ -991,6 +991,10 @@ class BasicOps(CollectionBase):
                 self.bucket_util.drop_scope(self.cluster.master,
                                             self.bucket,
                                             scope_name)
+            else:
+                # Scope is default scope (can't be deleted), Update num_items for validation
+                docs_loaded = self.num_items * 20 - self.num_items # 190,000
+                self.bucket.scopes[scope_name].collections[collection_name].num_items += docs_loaded
 
         else:
             self.bucket_util.drop_collection(self.cluster.master,
