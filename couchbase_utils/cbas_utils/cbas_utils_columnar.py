@@ -2139,7 +2139,7 @@ class Dataset_Util(KafkaLink_Util):
     def generate_create_dataset_cmd(self, dataset_name, kv_entity, dataverse_name=None,
                                     database_name=None, if_not_exists=False, compress_dataset=False,
                                     with_clause=None, link_name=None, where_clause=None,
-                                    analytics_collection=False, storage_format=None):
+                                    analytics_collection=False, storage_format=None, transform_function=None):
 
         if analytics_collection:
             cmd = "create analytics collection"
@@ -2175,6 +2175,9 @@ class Dataset_Util(KafkaLink_Util):
         if where_clause:
             cmd += " where " + where_clause
 
+        if transform_function:
+            cmd += " APPLY FUNCTION {0}".format(transform_function)
+
         cmd += ";"
 
         return cmd
@@ -2185,7 +2188,7 @@ class Dataset_Util(KafkaLink_Util):
             with_clause=None, link_name=None, where_clause=None,
             validate_error_msg=False, username=None, password=None,
             expected_error=None, timeout=300, analytics_timeout=300,
-            analytics_collection=False, storage_format=None):
+            analytics_collection=False, storage_format=None, transform_function=None):
         """
         Creates a dataset/analytics collection on a KV bucket.
         :param dataset_name str, fully qualified dataset name.
@@ -2209,12 +2212,13 @@ class Dataset_Util(KafkaLink_Util):
         :param analytics_collection bool, If True, will use create analytics collection syntax
         :param storage_format string, whether to use row or column storage for analytics datasets. Valid values are
         row and column
+        :param transform_function: Apply transform function to dataset if specified.
         """
 
         cmd = self.generate_create_dataset_cmd(dataset_name, kv_entity, dataverse_name,
                                                database_name, if_not_exists, compress_dataset,
                                                with_clause, link_name, where_clause,
-                                               analytics_collection, storage_format)
+                                               analytics_collection, storage_format, transform_function)
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -2534,7 +2538,7 @@ class Remote_Dataset_Util(Dataset_Util):
             compress_dataset=False, with_clause=None, where_clause=None,
             storage_format=None, analytics_collection=False,
             validate_error_msg=False, username=None, password=None,
-            expected_error=None, timeout=300, analytics_timeout=300):
+            expected_error=None, timeout=300, analytics_timeout=300, transform_function=None):
         """
         Creates remote datasets.
         :param dataset_name str, fully qualified dataset name.
@@ -2558,6 +2562,7 @@ class Remote_Dataset_Util(Dataset_Util):
         :param analytics_collection bool, If True, will use create analytics collection syntax
         :param storage_format string, whether to use row or column storage for analytics datasets. Valid values are
         row and column
+        :param transform_function: Apply transform function to dataset if specified.
         """
 
         return self.create_dataset(
@@ -2565,7 +2570,7 @@ class Remote_Dataset_Util(Dataset_Util):
             if_not_exists, compress_dataset, with_clause,
             link_name, where_clause, validate_error_msg,
             username, password, expected_error, timeout,
-            analytics_timeout, analytics_collection, storage_format)
+            analytics_timeout, analytics_collection, storage_format, transform_function)
 
     @staticmethod
     def get_remote_dataset_spec(cbas_spec):
@@ -5265,7 +5270,7 @@ class UDFUtil(Index_Util):
     def generate_create_udf_cmd(
             self, name, dataverse=None, database=None, or_replace=False,
             parameters=[], body=None, if_not_exists=False,
-            query_context=False, use_statement=False):
+            query_context=False, use_statement=False, transform_function=False):
 
         create_udf_statement = ""
         if use_statement:
@@ -5273,7 +5278,11 @@ class UDFUtil(Index_Util):
         create_udf_statement += "create"
         if or_replace:
             create_udf_statement += " or replace"
-        create_udf_statement += " analytics function "
+
+        if not transform_function:
+            create_udf_statement += " analytics function "
+        else:
+            create_udf_statement += " transform function "
         if database and dataverse and not query_context and not use_statement:
             create_udf_statement += "{0}.{1}.".format(database, dataverse)
         elif dataverse and not query_context and not use_statement:
@@ -5296,7 +5305,7 @@ class UDFUtil(Index_Util):
                    if_not_exists=False, query_context=False,
                    use_statement=False, validate_error_msg=False,
                    expected_error=None, username=None, password=None,
-                   timeout=300, analytics_timeout=300):
+                   timeout=300, analytics_timeout=300, transform_function=False):
         """
         Create CBAS User Defined Functions
         :param name str, name of the UDF to be created.
@@ -5316,11 +5325,12 @@ class UDFUtil(Index_Util):
         :param password : str
         :param timeout : int
         :param analytics_timeout : int
+        :param transform_function: True if transform udf is to be created, false if analytics udf to be created.
         """
         param = {}
         create_udf_statement = self.generate_create_udf_cmd(
             name, dataverse, database, or_replace, parameters, body,
-            if_not_exists, query_context, use_statement)
+            if_not_exists, query_context, use_statement, transform_function)
 
         self.log.info("Executing cmd - \n{0}\n".format(create_udf_statement))
 
@@ -6719,15 +6729,6 @@ class CbasUtil(CBOUtil):
                     self.log.error(f"Failed to drop View: {view}")
                     state = False
 
-            # Drop all UDFs
-            for udf in self.get_all_udfs_from_metadata(cluster):
-                self.log.info(f"Attempting to drop UDF: {udf[0]}")
-                if not self.drop_udf(
-                        cluster, CBASHelper.format_name(udf[0]), None, None, udf[1],
-                        username=username, password=password):
-                    self.log.error(f"Unable to drop UDF: {udf[0]}")
-                    state = False
-
             # Drop all indexes
             for idx in self.get_all_indexes_from_metadata(cluster):
                 self.log.info(f"Attempting to drop Index: {idx}")
@@ -6765,6 +6766,15 @@ class CbasUtil(CBOUtil):
                 self.log.info(f"Attempting to drop Dataset: {ds}")
                 if not self.drop_dataset(cluster, ds, username=username, password=password):
                     self.log.error(f"Unable to drop Dataset: {ds}")
+                    state = False
+
+            # Drop all UDFs
+            for udf in self.get_all_udfs_from_metadata(cluster):
+                self.log.info(f"Attempting to drop UDF: {udf[0]}")
+                if not self.drop_udf(
+                        cluster, CBASHelper.format_name(udf[0]), None, None, udf[1],
+                        username=username, password=password):
+                    self.log.error(f"Unable to drop UDF: {udf[0]}")
                     state = False
 
             # Drop all links
