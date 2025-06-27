@@ -10,9 +10,7 @@ import random
 from threading import Thread
 import threading
 import time
-import traceback
 
-from CbasLib.CBASOperations import CBASHelper
 from global_vars import logger
 from table_view import TableView
 from couchbase.analytics import AnalyticsScanConsistency, AnalyticsStatus
@@ -166,7 +164,6 @@ def execute_via_sdk(client, statement, readonly=False,
         output["errors"] = None
     else:
         raise Exception("Analytics Service API failed")
-
     return output
 
 
@@ -276,27 +273,6 @@ class DoctorCBAS():
         def check_in_th(collection, items):
             status = False
             stop_time = time.time() + timeout
-            # while time.time() < stop_time:
-            #     if cluster.state == "ACTIVE":
-            #         try:
-            #             rest = CBASHelper(cluster.cbas_cc_node)
-            #             _, _, response = rest.fetch_pending_mutation_on_cbas_cluster()
-            #             if response.status_code in [200, 201, 202]:
-            #                 result = json.loads(response.content, encoding='utf-8')
-            #                 keys = []
-            #                 for key in result["Default"].keys():
-            #                     keys.append(str(key))
-            #                 if collection not in keys or result["Default"][collection] == 0:
-            #                     break
-            #                 else:
-            #                     self.log.debug("dataset: {}, status: {}, pending count: {}, expected count: {}"
-            #                                .format(collection, response.status_code,
-            #                                        result["Default"][collection],
-            #                                        items))
-            #         except:
-            #             break                
-            #     time.sleep(random.randint(60,120))
-                    
             while time.time() < stop_time:
                 statement = "select count(*) cnt from {};".format(collection)
                 try:
@@ -313,7 +289,6 @@ class DoctorCBAS():
                 except (TimeoutException, AmbiguousTimeoutException, RequestCanceledException,
                         CouchbaseException, Exception) as e:
                     self.log.critical(str(e))
-                    traceback.print_exc()
                 time.sleep(random.randint(60,120))
             if status is False:
                 _results.append(status)
