@@ -261,6 +261,19 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             self.log.info("Strating test iteration: {}".format(loop))
             self.ingestion_ths = list()
             for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
+                max_retries = 3
+                retry_count = 0
+                while retry_count < max_retries:
+                    try:
+                        self.drCBAS.disconnect_link(self.analytics_cluster, dataSource.link_name)
+                        break
+                    except Exception as e:
+                        retry_count += 1
+                        self.log.warning(f"Failed to disconnect link {dataSource.link_name} on attempt {retry_count}: {str(e)}")
+                        if retry_count < max_retries:
+                            self.sleep(10, f"Retrying link disconnect in 10 seconds (attempt {retry_count + 1}/{max_retries})")
+                        else:
+                            self.log.error(f"Failed to disconnect link {dataSource.link_name} after {max_retries} attempts")
                 self.drCBAS.disconnect_link(self.analytics_cluster, dataSource.link_name)
             self.sleep(60, "wait after previous link disconnect")
             dataSource.link_name = "{}_".format(dataSource.type) + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])

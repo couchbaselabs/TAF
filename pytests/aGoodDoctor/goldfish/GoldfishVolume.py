@@ -191,7 +191,15 @@ class Columnar(BaseTestCase, hostedOPD):
         self.initial_load()
 
     def tearDown(self):
-        self.doc_loading_tm.abortAllTasks()
+        self.check_dump_thread = False
+        self.stop_crash = True
+        self.stop_run = True
+        for ql in self.cbasQL:
+            ql.stop_query_load()
+        for th in self.query_cancel_ths:
+            th.join()
+        self.sleep(10)
+        self.doc_loading_tm.abort_all_tasks()
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
                 for data_source in self.data_sources["mongo"] + self.data_sources["remoteCouchbase"]:
@@ -208,14 +216,6 @@ class Columnar(BaseTestCase, hostedOPD):
 
         self.tearDownKafka()
         self.teardownMongo()
-        self.check_dump_thread = False
-        self.stop_crash = True
-        self.stop_run = True
-        for ql in self.cbasQL:
-            ql.stop_query_load()
-        for th in self.query_cancel_ths:
-            th.join()
-        self.sleep(10)
         BaseTestCase.tearDown(self)
 
     def infra_setup(self):
