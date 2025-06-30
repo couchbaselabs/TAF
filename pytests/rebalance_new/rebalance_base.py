@@ -172,7 +172,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.active_resident_threshold = 100
             self.gen_create = None
             self.gen_delete = None
-            self.gen_update = self.get_doc_generator(0, (self.items / 2))
+            self.gen_update = self.get_doc_generator(0, (self.items // 2))
             self.durability_helper = DurabilityHelper(
                 self.log, len(self.cluster.nodes_in_cluster),
                 durability=self.durability_level,
@@ -193,7 +193,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.log.info("Creating required SDK clients for client_pool")
         bucket_count = len(self.cluster.buckets)
         max_clients = self.task_manager.number_of_threads
-        clients_per_bucket = int(ceil(max_clients / bucket_count))
+        clients_per_bucket = ceil(max_clients // bucket_count)
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
                 self.cluster, bucket,

@@ -32,7 +32,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.gen_update = doc_generator(
                 init_doc_load_spec["doc_crud"][
                     MetaCrudParams.DocCrud.COMMON_DOC_KEY],
-                0, (self.items / 2),
+                0, (self.items // 2),
                 mutation_type="SET")
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
@@ -186,7 +186,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
                 self.assertTrue(
-                    reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
+                    reb_util.stop_rebalance(wait_timeout=self.wait_timeout//3),
                     msg="Unable to stop rebalance")
                 # Trigger cb_collect with rebalance stopped and doc_ops running
                 self.cbcollect_info(trigger=True, validate=True)
@@ -257,7 +257,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             if not self.cluster_util.is_cluster_rebalanced(rest):
                 self.log.info("Stop the rebalance")
                 self.assertTrue(
-                    reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
+                    reb_util.stop_rebalance(wait_timeout=self.wait_timeout//3),
                     msg="Unable to stop rebalance")
                 if self.withMutationOps:
                     cont_load_task = \
@@ -344,7 +344,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         if not self.cluster_util.is_cluster_rebalanced(rest):
             self.log.info("Stop the rebalance")
             self.assertTrue(
-                reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
+                reb_util.stop_rebalance(wait_timeout=self.wait_timeout//3),
                 msg="Unable to stop rebalance")
 
         # Trigger cbcollect with halted failover

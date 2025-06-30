@@ -20,7 +20,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     def test_rebalance_out_with_ops_durable(self):
         self.gen_create = doc_generator(self.key, self.num_items,
                                         self.num_items + self.items)
-        self.gen_delete = doc_generator(self.key, int(self.items / 2),
+        self.gen_delete = doc_generator(self.key, self.items // 2,
                                         self.items)
         servs_out = [self.cluster.servers[len(self.cluster.nodes_in_cluster) - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
@@ -89,7 +89,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         verify_MB_57991 = self.input.param("verify_MB_57991", False)
         self.gen_create = doc_generator(self.key, self.num_items,
                                         self.num_items + self.items)
-        self.gen_delete = doc_generator(self.key, int(self.items / 2),
+        self.gen_delete = doc_generator(self.key, self.items // 2,
                                         self.items)
         servs_out = []
         if rebalance_out_orchestrator:
@@ -192,10 +192,10 @@ class RebalanceOutTests(RebalanceBaseTest):
         curr_items_total. We also check for data and its meta-data, vbucket sequene numbers"""
 
     def rebalance_out_after_ops(self):
-        self.gen_delete = self.get_doc_generator(self.items / 2,
+        self.gen_delete = self.get_doc_generator(self.items // 2,
                                                  self.items)
         self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items + self.items / 2)
+                                                 self.num_items + self.items // 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         self.check_temporary_failure_exception = False
@@ -270,10 +270,10 @@ class RebalanceOutTests(RebalanceBaseTest):
     curr_items_total. We also check for data and its meta-data, vbucket sequene numbers"""
 
     def rebalance_out_with_failover_full_addback_recovery(self):
-        self.gen_delete = self.get_doc_generator(self.items / 2,
+        self.gen_delete = self.get_doc_generator(self.items // 2,
                                                  self.items)
         self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items + self.items / 2)
+                                                 self.num_items + self.items // 2)
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs()
@@ -335,10 +335,10 @@ class RebalanceOutTests(RebalanceBaseTest):
     def rebalance_out_with_failover(self):
         fail_over = self.input.param("fail_over", False)
         self.rest = ClusterRestAPI(self.cluster.master)
-        self.gen_delete = self.get_doc_generator(int(self.items / 2),
+        self.gen_delete = self.get_doc_generator(self.items // 2,
                                                  self.items)
         self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items + int(self.items / 2))
+                                                 self.num_items + (self.items // 2))
         # define which doc's ops will be performed during rebalancing
         # allows multiple of them but one by one
         tasks_info = self.loadgen_docs()
@@ -408,10 +408,10 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced the test is finished."""
 
     def rebalance_out_with_compaction_and_ops(self):
-        self.gen_delete = self.get_doc_generator(self.items / 2,
+        self.gen_delete = self.get_doc_generator(self.items // 2,
                                                  self.items)
         self.gen_create = self.get_doc_generator(self.num_items,
-                                                 self.num_items + self.items / 2)
+                                                 self.num_items + self.items // 2)
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
         rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
         compaction_task = list()
@@ -509,12 +509,12 @@ class RebalanceOutTests(RebalanceBaseTest):
 
     def incremental_rebalance_out_with_ops(self):
         items = self.items
-        delete_from = int(items/2)
+        delete_from = items // 2
         create_from = items
-        majority = int((self.num_replicas+1)/2)+1
+        majority = ((self.num_replicas+1) // 2) + 1
         for i in reversed(range(majority, self.nodes_init, 2)):
             self.gen_delete = self.get_doc_generator(delete_from,
-                                                     int(delete_from+items/2))
+                                                     delete_from+items//2)
             self.gen_create = self.get_doc_generator(create_from,
                                                      create_from+items)
             delete_from += items
@@ -606,7 +606,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         if self.active_resident_threshold == 0:
             timeout = max(self.wait_timeout * 4,
                           len(self.cluster.buckets)
-                          * int(self.wait_timeout * self.num_items / 50000))
+                          * (self.wait_timeout * self.num_items // 50000))
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -637,7 +637,7 @@ class RebalanceOutTests(RebalanceBaseTest):
 
         servs_out = self.cluster.servers[-self.nodes_out:]
         rebalance = self.task.async_rebalance(self.cluster, [], servs_out)
-        self.sleep(int(self.wait_timeout / 5))
+        self.sleep(self.wait_timeout // 5)
         # see that the result of view queries are the same as expected during the test
         for bucket in self.cluster.buckets:
             self.bucket_util.perform_verify_queries(
@@ -681,7 +681,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         timeout = None
         if self.active_resident_threshold == 0:
             timeout = max(self.wait_timeout * 5,
-                          int(self.wait_timeout * self.num_items / 25000))
+                          self.wait_timeout * self.num_items // 25000)
         query = dict()
         query["connectionTimeout"] = 60000
         query["full_set"] = "true"
@@ -714,7 +714,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         query["stale"] = "update_after"
         for i in reversed(range(1, self.nodes_init, 2)):
             rebalance = self.task.async_rebalance(self.cluster, [], self.cluster.servers[i:i + 2])
-            self.sleep(int(self.wait_timeout / 5))
+            self.sleep(self.wait_timeout // 5)
             # see that the result of view queries are the same as expected during the test
             self.bucket_util.perform_verify_queries(
                 self.cluster.master, num_views, prefix, ddoc_name,
@@ -816,7 +816,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced out of the cluster the test finishes."""
 
     def incremental_rebalance_out_with_mutation_and_deletion(self):
-        gen_2 = self.get_doc_generator(int(self.num_items / 2) + 2000,
+        gen_2 = self.get_doc_generator((self.num_items // 2) + 2000,
                                        self.num_items)
         for i in reversed(range(self.nodes_init)[1:]):
             # don't use batch for rebalance out 2-1 nodes
@@ -862,7 +862,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     Once all nodes have been rebalanced out of the cluster the test finishes."""
 
     def incremental_rebalance_out_with_mutation_and_expiration(self):
-        gen_2 = self.get_doc_generator(int(self.num_items / 2) + 2000,
+        gen_2 = self.get_doc_generator((self.num_items // 2) + 2000,
                                        self.num_items)
         batch_size = 1000
         for i in reversed(range(self.nodes_init)[2:]):

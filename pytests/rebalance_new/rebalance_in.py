@@ -26,7 +26,7 @@ class RebalanceInTests(RebalanceBaseTest):
     def test_rebalance_in_with_ops_durable(self):
         self.gen_create = self.get_doc_generator(self.num_items,
                                                  self.num_items+self.items)
-        self.gen_delete = self.get_doc_generator(self.items / 2,
+        self.gen_delete = self.get_doc_generator(self.items // 2,
                                                  self.items)
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
@@ -70,13 +70,13 @@ class RebalanceInTests(RebalanceBaseTest):
 
     def test_rebalance_in_with_ops(self):
         items = self.num_items
-        delete_from = items/2
+        delete_from = items//2
         create_from = items
 
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
-                                                 delete_from + items/2)
+                                                 delete_from + items//2)
 
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
@@ -123,7 +123,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
-                                                 delete_from + items/2)
+                                                 delete_from + items//2)
         tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                        task_verification=True)
         if not self.atomicity:
@@ -142,13 +142,13 @@ class RebalanceInTests(RebalanceBaseTest):
 
     def test_rebalance_in_with_ops_sync_async(self):
         items = self.num_items
-        delete_from = items/2
+        delete_from = items//2
         create_from = items
 
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
-                                                 delete_from + items/2)
+                                                 delete_from + items//2)
 
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
@@ -167,7 +167,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
-                                                 delete_from + items/2)
+                                                 delete_from + items//2)
         temp = self.durability_level
         self.durability_level = "NONE"
         tasks_info.update(self.loadgen_docs())
@@ -205,7 +205,7 @@ class RebalanceInTests(RebalanceBaseTest):
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + items)
         self.gen_delete = self.get_doc_generator(delete_from,
-                                                 delete_from + items/2)
+                                                 delete_from + items//2)
         tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions,
                                        task_verification=True)
         if not self.atomicity:
@@ -339,9 +339,9 @@ class RebalanceInTests(RebalanceBaseTest):
         Once all nodes have been rebalanced in the test is finished.
         """
 
-        self.gen_update = self.get_doc_generator(0, self.items/2)
+        self.gen_update = self.get_doc_generator(0, self.items//2)
         self.gen_create = self.get_doc_generator(self.num_items, self.num_items+self.items)
-        self.gen_delete = self.get_doc_generator(self.items/2, self.items)
+        self.gen_delete = self.get_doc_generator(self.items//2, self.items)
         std = self.std_vbucket_dist or 1.0
         tasks_info = self.loadgen_docs()
 
@@ -495,8 +495,8 @@ class RebalanceInTests(RebalanceBaseTest):
         compaction_tasks = list()
         self.gen_create = self.get_doc_generator(self.num_items,
                                                  self.num_items + self.items)
-        self.gen_delete = self.get_doc_generator(self.num_items / 2,
-                                                 (self.num_items+self.items)/2)
+        self.gen_delete = self.get_doc_generator(self.num_items // 2,
+                                                 (self.num_items+self.items)//2)
         servs_in = [self.cluster.servers[i + self.nodes_init]
                     for i in range(self.nodes_in)]
         rebalance_task = self.task.async_rebalance(
@@ -564,8 +564,8 @@ class RebalanceInTests(RebalanceBaseTest):
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
     def rebalance_in_with_ops_batch(self):
-        self.gen_delete = self.get_doc_generator((self.num_items / 2 - 1), (self.num_items / 2 - 1)+self.items)
-        self.gen_create = self.get_doc_generator(self.num_items+1, self.num_items+self.items/2)
+        self.gen_delete = self.get_doc_generator((self.num_items // 2 - 1), (self.num_items // 2 - 1)+self.items)
+        self.gen_create = self.get_doc_generator(self.num_items+1, self.num_items+self.items//2)
         servs_in = [self.cluster.servers[i + 1] for i in range(self.nodes_in)]
         rebalance = self.task.async_rebalance(
             self.cluster, servs_in, [],
@@ -711,7 +711,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 elif "create" in self.doc_ops:
                     op_type = "create"
                     # 1/2th of initial data will be added in each iteration
-                    tem_num_items = int(self.num_items * (1 + i / 2.0))
+                    tem_num_items = int(self.num_items * (1 + i // 2.0))
                     self.gen_create = self.get_doc_generator(num_of_items,
                                                              tem_num_items)
                     num_of_items = tem_num_items
@@ -740,8 +740,8 @@ class RebalanceInTests(RebalanceBaseTest):
                     # 1/(num_servers) of initial data will be removed after
                     # each iteration at the end we should get an
                     # empty base or couple items
-                    tem_del_start_num = int(self.num_items * (1 - i / (self.num_servers - 1.0))) + 1
-                    tem_del_end_num = int(self.num_items * (1 - (i - 1) / (self.num_servers - 1.0)))
+                    tem_del_start_num = int(self.num_items * (1 - i // (self.num_servers - 1.0))) + 1
+                    tem_del_end_num = int(self.num_items * (1 - (i - 1) // (self.num_servers - 1.0)))
                     self.gen_delete = self.get_doc_generator(tem_del_start_num,
                                                              tem_del_end_num)
                     num_of_items -= (tem_del_end_num - tem_del_start_num + 1)
@@ -881,7 +881,7 @@ class RebalanceInTests(RebalanceBaseTest):
 
         timeout = None
         if self.active_resident_threshold == 0:
-            timeout = max(self.wait_timeout * 4, len(self.cluster.buckets) * self.wait_timeout * self.num_items / 50000)
+            timeout = max(self.wait_timeout * 4, len(self.cluster.buckets) * self.wait_timeout * self.num_items // 50000)
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -918,7 +918,7 @@ class RebalanceInTests(RebalanceBaseTest):
             rebalance = self.task.async_rebalance(
                 self.cluster, servs_in, [],
                 network_delay_between_nodes=self.network_delay_between_nodes)
-            self.sleep(self.wait_timeout / 5)
+            self.sleep(self.wait_timeout // 5)
 
             # See that the result of view queries are same as
             # the expected during the test
@@ -979,7 +979,7 @@ class RebalanceInTests(RebalanceBaseTest):
         prefix = ("", "dev_")[is_dev_ddoc]
         # increase timeout for big data
         timeout = max(self.wait_timeout * 4,
-                      self.wait_timeout * self.num_items / 25000)
+                      self.wait_timeout * self.num_items // 25000)
         query = dict()
         query["connectionTimeout"] = 60000
         query["full_set"] = "true"
@@ -1017,7 +1017,7 @@ class RebalanceInTests(RebalanceBaseTest):
             rebalance = self.task.async_rebalance(
                 self.cluster, self.cluster.servers[i:i + 2], [],
                 network_delay_between_nodes=self.network_delay_between_nodes)
-            self.sleep(self.wait_timeout / 5)
+            self.sleep(self.wait_timeout // 5)
             # Verify the result of view queries are same as expected during the test
             result = self.bucket_util.perform_verify_queries(
                 self.cluster.master, num_views, prefix, ddoc_name,
@@ -1213,7 +1213,7 @@ class RebalanceInTests(RebalanceBaseTest):
         Once all nodes have been rebalanced in the test is finished.
         """
 
-        self.gen_delete = self.get_doc_generator(self.num_items / 2,
+        self.gen_delete = self.get_doc_generator(self.num_items // 2,
                                                  self.num_items)
 
         for i in range(self.num_servers)[self.nodes_init:]:
@@ -1257,7 +1257,7 @@ class RebalanceInTests(RebalanceBaseTest):
         Once all nodes have been rebalanced in the test is finished.
         """
 
-        gen_2 = self.get_doc_generator(self.num_items / 2,
+        gen_2 = self.get_doc_generator(self.num_items // 2,
                                        self.num_items)
         for i in range(self.num_servers)[1:]:
             rebalance = self.task.async_rebalance(

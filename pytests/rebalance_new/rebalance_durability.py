@@ -17,7 +17,7 @@ class RebalanceDurability(RebalanceBaseTest):
         self.items = self.num_items
         self.start_from = self.num_items
         self.add_items = self.num_items
-        self.delete_from = self.num_items/2
+        self.delete_from = self.num_items // 2
         self.delete_items = 5000
 
     def tearDown(self):

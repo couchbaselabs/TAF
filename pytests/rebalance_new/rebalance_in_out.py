@@ -288,7 +288,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.doc_ops = "update"
         self.gen_update = self.get_doc_generator(0, self.num_items)
 
-        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
+        for i in reversed(range(self.num_servers)[self.num_servers//2:]):
             # CRUDs while rebalance is running in parallel
             tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
@@ -335,7 +335,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         gen = self.get_doc_generator(0, self.num_items)
         batch_size = 50
         tasks_info = None
-        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
+        for i in reversed(range(self.num_servers)[self.num_servers//2:]):
             if self.atomicity:
                 self._load_all_buckets_atomicty(gen, "rebalance_only_update")
             else:
@@ -448,8 +448,8 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
-        gen_delete = self.get_doc_generator(self.num_items / 2 + 2000, self.num_items)
-        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
+        gen_delete = self.get_doc_generator(self.num_items // 2 + 2000, self.num_items)
+        for i in reversed(range(self.num_servers)[self.num_servers//2:]):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
                 batch_size=1, timeout_secs=60,
@@ -494,9 +494,9 @@ class RebalanceInOutTests(RebalanceBaseTest):
         where we are adding back and removing at least half of the nodes.
         """
         self.add_remove_servers_and_rebalance(self.cluster.servers[self.nodes_init:self.num_servers], [])
-        gen_delete = self.get_doc_generator(int(self.num_items/2) + 2000,
+        gen_delete = self.get_doc_generator(self.num_items//2 + 2000,
                                             self.num_items)
-        for i in reversed(range(self.num_servers)[int(self.num_servers/2):]):
+        for i in reversed(range(self.num_servers)[self.num_servers//2:]):
             tasks_info = self.bucket_util._async_load_all_buckets(
                 self.cluster, self.gen_update, "update", 0,
                 durability=self.durability_level,
@@ -757,7 +757,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         for bucket in self.cluster.buckets:
-            durability_req = (bucket.replicaNumber + 1)/2 + 1
+            durability_req = (bucket.replicaNumber + 1)//2 + 1
             self.assertTrue(durability_req >= len(current_nodes) - len(toBeEjectedNodes) + len(servs_in),
                             "bucket replica is less than the available nodes in the cluster")
 
