@@ -9,6 +9,7 @@ import json
 import random
 import string
 import threading
+import time
 from CbasLib.CBASOperations import CBASHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants import CbServer
@@ -21,7 +22,11 @@ from couchbase_utils.security_utils.x509main import x509main
 from cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
 from pytests.aGoodDoctor.opd import OPD
 from pytests.aGoodDoctor.goldfish.CbasUtil import DoctorCBAS, CBASQueryLoad
-from pytests.aGoodDoctor.goldfish.datasources import CouchbaseRemoteCluster
+from pytests.aGoodDoctor.goldfish.datasources import CouchbaseRemoteCluster, MongoDB, KafkaClusterUtils, MongoDocLoading
+from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
+from TestInput import TestInputSingleton
+
+_input = TestInputSingleton
 
 class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
     """
@@ -70,7 +75,6 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.fragmentation = int(self.input.param("fragmentation", 50))
         self.index_timeout = self.input.param("index_timeout", 3600)
         self.load_defn = list()
-        self.cbasQL = list()
         self.stop_run = False
         self.skip_init = self.input.param("skip_init", False)
         self.query_result = True
@@ -98,7 +102,6 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.cbasQL = list()
         self.drCBAS = DoctorCBAS()
         self.query_cancel_ths = list()
-        self.mongo_workload_tasks = list()
         self.bucket_history_retention_bytes = self.input.param("bucket_history_retention_bytes", 0)
         self.bucket_history_retention_seconds = self.input.param("bucket_history_retention_seconds", 0)
         self.steady_state_workload_sleep = self.input.param("steady_state_workload_sleep", 600)
@@ -136,7 +139,66 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                             collection_name = self.collection_prefix + str(i)
                             collection_spec = {"name": collection_name}
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
-            
+
+    def setupMongo(self, atlas=False):
+        if not atlas:
+            mongo_hostname = self.input.datasources.get("onprem_mongo")
+            mongo_username = self.input.datasources.get("onprem_mongo_user")
+            mongo_password = self.input.datasources.get("onprem_mongo_pwd")
+            mongo_atlas = False
+        else:
+            mongo_hostname = self.input.datasources.get("atlas_mongo")
+            mongo_username = self.input.datasources.get("atlas_mongo_user")
+            mongo_password = self.input.datasources.get("atlas_mongo_pwd")
+            mongo_atlas = True
+
+        self.mongo_db = self.input.param("mongo_db", None)
+        mongo = MongoDB(mongo_hostname, mongo_username,
+                        mongo_password, self.mongo_db, mongo_atlas)
+        mongo.loadDefn = self.default_workload
+        mongo.set_collections()
+        mongo.key = "test_docs-"
+        mongo.key_size = 18
+        mongo.key_type = "Circular"
+        
+        mongo.setup_kafka_connectors("taf_volume")
+        self.data_sources["mongo"].append(mongo)
+
+    def load_mongo_cluster(self):
+        self.mongo_doc_loading = MongoDocLoading(self.doc_loading_tm, "test_docs-", 18, 256, "Circular", "SimpleValue",
+                                            1, "mongo_load", 10000, False, True, 0)
+        for mongo in self.data_sources["mongo"]:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=0,
+                               create_end=mongo.loadDefn.get("num_items"),
+                               bucket=mongo)
+            if not self.skip_init:
+                self.mongo_doc_loading.perform_load(self.data_sources["mongo"], wait_for_load=True,
+                                               overRidePattern=[100, 0, 0, 0, 0])
+
+    def check_kafka_topics(self, mongo):
+        start_time = time.time()
+        self.kafka_util = KafkaClusterUtils()
+        while time.time() < start_time + 3600:
+            topics = self.kafka_util.listKafkaTopics(prefix=mongo.prefix + "." + mongo.source_name)
+            if topics and len(topics) == len(mongo.collections):
+                self.log.info("Kafka topics created: %s" % topics)
+                self.log.info("Kafka topics are created. Good to go!!")
+                break
+            else:
+                self.log.info("Kafka topics aren't created. waiting...")
+                self.log.debug("Current Topics: %s" % self.kafka_util.listKafkaTopics(
+                    prefix=mongo.prefix + "." + mongo.source_name))
+                time.sleep(10)
+
+    def teardownMongo(self):
+        for dataSource in self.data_sources["mongo"]:
+            dataSource.drop()
+
+    def tearDownKafka(self):
+        self.kafka_util = KafkaClusterUtils()
+        for dataSource in self.data_sources["mongo"]:
+            self.kafka_util.deleteKafkaTopics(dataSource.kafka_topics)
 
     def setup_columnar_sdk_clients(self, columnar):
         columnar.SDKClients = list()
@@ -148,12 +210,20 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         if self.val_type == "siftBigANN":
             self.siftBigANN_load()
         else:
-            self.normal_load()
+            self.normal_load(check_core_dumps=False)
 
     def tearDown(self):
         self.stop_run = True
         for ql in self.cbasQL:
             ql.stop_query_load()
+        
+        # Cleanup MongoDB and Kafka resources
+        if self.data_sources["mongo"]:
+            for mongo in self.data_sources["mongo"]:
+                mongo.client.close()
+            self.teardownMongo()
+            self.tearDownKafka()
+            
         if not self.skip_teardown_cleanup:
             self.columnar_cbas_utils.cleanup_cbas(self.analytics_cluster)
         super(ColumnarOnPremVolumeTest, self).tearDown()
@@ -188,7 +258,22 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
 
     def infra_setup(self):
         self.monitor_query_status()
-        self.setupRemoteCouchbase()
+        
+        # Setup MongoDB if enabled
+        if self.input.param("onPremMongo", False):
+            self.setupMongo(atlas=False)
+        if self.input.param("onCloudMongo", False):
+            self.setupMongo(atlas=True)
+        
+        if self.input.param("remoteCouchbase", True):
+            self.setupRemoteCouchbase()
+        
+        # Load MongoDB data and check Kafka topics
+        if self.data_sources["mongo"]:
+            self.load_mongo_cluster()
+            for dataSource in self.data_sources["mongo"]:
+                self.check_kafka_topics(dataSource)
+        
         state_monitor = threading.Thread(target=self.cluster_state_monitor,
                                                kwargs={"cluster": self.analytics_cluster})
         state_monitor.start()
@@ -246,6 +331,16 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                     self.log.critical("Core dump(s) found on analytics cluster node(s) after KV workload")
             self.sleep(10)
 
+    def live_mongo_workload(self):
+        self.log.info("Creating live MongoDB workload")
+        while not self.stop_run:
+            for dataSource in self.data_sources["mongo"]:
+                self.mongo_doc_loading.mutate += 1
+                self.generate_docs(bucket=dataSource)
+                self.mongo_doc_loading.perform_load(
+                    [dataSource], wait_for_load=True)
+            self.sleep(10)
+
     def test_columnar_volume(self):
         self.update_cluster_state(self.analytics_cluster)
         self.rebalance_util = CBASRebalanceUtil(
@@ -259,9 +354,17 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         if result:
             self.fail("Core dump(s) found on analytics cluster node(s) after infra setup")
 
+        
         # Start KV workload thread
         kv_workload_thread = threading.Thread(target=self.live_kv_workload)
         kv_workload_thread.start()
+        
+        # Start MongoDB workload thread if MongoDB is enabled
+        mongo_workload_thread = None
+        if self.data_sources["mongo"]:
+            mongo_workload_thread = threading.Thread(target=self.live_mongo_workload)
+            mongo_workload_thread.start()
+            
         self.sleep(10)
 
         # Create new collections
@@ -443,3 +546,5 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             loop -= 1
         self.stop_run = True
         kv_workload_thread.join()
+        if mongo_workload_thread:
+            mongo_workload_thread.join()

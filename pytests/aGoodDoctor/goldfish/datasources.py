@@ -9,15 +9,19 @@ import random
 import string
 import time
 
+import pymongo
+
 from CbasLib.CBASOperations import CBASHelper
+from Jython_tasks.java_loader_tasks import SiriusJavaMongoLoader
 from .CbasUtil import execute_statement_on_cbas
 from py_constants.cb_constants.CBServer import CbServer
 from global_vars import logger
 from kafka_util.kafka_connect_util import KafkaConnectUtil
 from TestInput import TestInputSingleton
 from couchbase.exceptions import AmbiguousTimeoutException
+from confluent_kafka.admin import AdminClient
 
-_input = TestInputSingleton
+_input = TestInputSingleton.input
 
 class MongoDB(object):
     def __init__(self, hostname, username, password, mongo_db=None, atlas=False):
@@ -46,38 +50,35 @@ class MongoDB(object):
         self.connString = self.connString + "://" \
             + self.username + ":" + self.password \
             + "@" + self.hostname + ":27017/"
+            
+        self.client = pymongo.MongoClient(self.connString)
 
     def set_collections(self):
-        master = Server(self.hostname, self.port,
-                            self.username, self.password,
-                            "")
         for i in range(self.loadDefn.get("collections")):
             self.collections.append("volCollection" + str(i))
-            client = MongoSDKClient(master, self.name, "volCollection" + str(i), self.atlas)
-            client.connectCluster()
-            client.disconnectCluster()
+            mydb = self.client[self.name]
+            mycoll = mydb[self.collections[i]]
             time.sleep(2)
+        self.client.close()
 
     def drop(self):
-        master = Server(self.hostname, self.port,
-                            self.username, self.password,
-                            "")
-        client = MongoSDKClient(master, self.name, self.collections[0], self.atlas)
-        client.connectCluster()
-        client.dropDatabase()
-        client.disconnectCluster()
+        self.client = pymongo.MongoClient(self.connString)
+        self.client.drop_database(self.name)
+        self.client.close()
 
     def setup_kafka_connectors(self, prefix):
+        connector_hostname = _input.kafka.get("connector") + ":8083"
         self.prefix = prefix
-        connector_util = KafkaConnectUtil("http://{}:8083".format(_input.kafka.get("connector")))
+        connector_util = KafkaConnectUtil()
         config = connector_util.generate_mongo_connector_config(
             "mongodb://{0}:{1}@{2}:{3}/?retryWrites=true&w=majority&replicaSet=rs0".format(
                 self.username, self.password, self.hostname, self.port),
             mongo_collections=[self.source_name + "." + coll_name for coll_name in self.collections],
             topic_prefix=prefix,
-            partitions=32)
+            partitions=32,
+            cdc_enabled=True)
         self.kafka_topics = [prefix + "." + self.source_name + "." + coll_name for coll_name in self.collections]
-        status = connector_util.deploy_connector(self.source_name, config)
+        status = connector_util.deploy_connector(connector_hostname, self.source_name, config)
         if status:
             self.log.info("connectors are deployed properly!! Check for the topics")
 
@@ -145,30 +146,76 @@ class MongoDB(object):
         self.cbas_collections.extend(new_collections)
         return new_collections
 
-    @staticmethod
-    def perform_load(databases, wait_for_load=True, overRidePattern=None, tm=None, workers=10):
-        loader_map = Loader._loader_dict(databases, overRidePattern)
+class MongoDocLoading(object):
+    def __init__(self, doc_loading_tm, key_prefix, key_size, doc_size, key_type, value_type,
+                 process_concurrency, task_identifier, ops, suppress_error_table, track_failures, mutate):
+        self.key_prefix = key_prefix
+        self.key_size = key_size
+        self.doc_size = doc_size
+        self.key_type = key_type
+        self.value_type = value_type
+        self.process_concurrency = process_concurrency
+        self.task_identifier = task_identifier
+        self.ops = ops
+        self.suppress_error_table = suppress_error_table
+        self.track_failures = track_failures
+        self.mutate = mutate
+        self.doc_loading_tm = doc_loading_tm
+
+    def _loader_dict(self, databases, overRidePattern=None, workers=10, cmd={}):
+        workers = workers
+        loader_map = dict()
+        default_pattern = [100, 0, 0, 0, 0]
+        for database in databases:
+            per_coll_ops = self.ops//(len(database.collections))
+            pattern = overRidePattern or database.loadDefn.get("pattern", default_pattern)
+            for i, collection in enumerate(database.collections):
+                workloads = database.loadDefn.get("collections_defn", [database.loadDefn])
+                valType = workloads[i % len(workloads)]["valType"]
+                loader = SiriusJavaMongoLoader(
+                        server_ip=database.hostname, server_port=database.port,
+                        username=database.username, password=database.password,
+                        bucket_name=database.name, collection_name=collection,
+                        is_atlas=database.atlas,
+                        key_prefix=self.key_prefix, key_size=self.key_size, doc_size=self.doc_size,
+                        key_type=database.key_type, value_type=valType,
+                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
+                        delete_percent=pattern[3], expiry_percent=pattern[4],
+                        create_start_index=database.create_start , create_end_index=database.create_end,
+                        read_start_index=database.read_start, read_end_index=database.read_end,
+                        update_start_index=database.update_start, update_end_index=database.update_end,
+                        delete_start_index=database.delete_start, delete_end_index=database.delete_end,
+                        expiry_start_index=database.expire_start, expiry_end_index=database.expire_end,
+                        process_concurrency=self.process_concurrency, task_identifier="", ops=per_coll_ops,
+                        suppress_error_table=False,
+                        track_failures=True,
+                        mutate=self.mutate,
+                        )
+                loader_map.update({database.name+collection: loader})
+        return loader_map
+
+    def perform_load(self, databases, wait_for_load=True, overRidePattern=None, workers=10):
+        loader_map = self._loader_dict(databases, overRidePattern)
         tasks = list()
-        i = workers
-        while i > 0:
-            for database in databases:
-                master = Server(database.hostname, database.port,
-                                database.username, database.password,
-                                "")
-                for collection in database.collections:
-                    client = MongoSDKClient(master, database.name, collection, database.atlas)
-                    client.connectCluster()
-                    time.sleep(1)
-                    taskName = "Loader_%s_%s_%s" % (database.name, collection, time.time())
-                    task = WorkLoadGenerate(taskName, loader_map[database.name+collection], client)
-                    tasks.append(task)
-                    tm.submit(task)
-                    i -= 1
+        for database in databases:
+            for collection in database.collections:
+                loader = loader_map[database.name+collection]
+                result, json_response = loader.create_doc_load_task()
+                if not result:
+                    self.log.critical("Failed to create doc load task: %s" % json_response)
+                self.doc_loading_tm.add_new_task(loader)
+                tasks.append(loader)
 
         if wait_for_load:
-            tm.getAllTaskResult()
+            self.wait_for_doc_load_completion(tasks)
         else:
             return tasks
+
+    def wait_for_doc_load_completion(self, tasks):
+        for task in tasks:
+            task.result = self.doc_loading_tm.get_task_result(task)
+            if task.result is False:
+                self.log.critical("Task failed: %s" % task.task_id)
 
 
 class CouchbaseRemoteCluster(object):
@@ -325,84 +372,31 @@ class s3(object):
                 pass
 
 
-class Loader():
-    @staticmethod
-    def _loader_dict(databases, overRidePattern=None, workers=10, cmd={}):
-        workers = workers
-        loader_map = dict()
-        default_pattern = [100, 0, 0, 0, 0]
-        for database in databases:
-            pattern = overRidePattern or database.loadDefn.get("pattern", default_pattern)
-            for i, collection in enumerate(database.collections):
-                workloads = database.loadDefn.get("collections_defn", [database.loadDefn])
-                valType = workloads[i % len(workloads)]["valType"]
-                ws = WorkLoadSettings(cmd.get("keyPrefix", database.key),
-                                      cmd.get("keySize", database.key_size),
-                                      cmd.get("docSize", database.loadDefn.get("doc_size")),
-                                      cmd.get("cr", pattern[0]),
-                                      cmd.get("rd", pattern[1]),
-                                      cmd.get("up", pattern[2]),
-                                      cmd.get("dl", pattern[3]),
-                                      cmd.get("ex", pattern[4]),
-                                      cmd.get("workers", workers),
-                                      cmd.get("ops", database.loadDefn.get("ops")),
-                                      cmd.get("loadType", None),
-                                      cmd.get("keyType", database.key_type),
-                                      cmd.get("valueType", valType),
-                                      cmd.get("validate", False),
-                                      cmd.get("gtm", False),
-                                      cmd.get("deleted", False),
-                                      cmd.get("mutated", 0)
-                                      )
-                hm = HashMap()
-                hm.putAll({DRConstants.create_s: database.create_start,
-                           DRConstants.create_e: database.create_end,
-                           DRConstants.update_s: database.update_start,
-                           DRConstants.update_e: database.update_end,
-                           DRConstants.expiry_s: database.expire_start,
-                           DRConstants.expiry_e: database.expire_end,
-                           DRConstants.delete_s: database.delete_start,
-                           DRConstants.delete_e: database.delete_end,
-                           DRConstants.read_s: database.read_start,
-                           DRConstants.read_e: database.read_end})
-                dr = DocRange(hm)
-                ws.dr = dr
-                dg = DocumentGenerator(ws, database.key_type, valType)
-                loader_map.update({database.name+collection: dg})
-        return loader_map
-
-
 class KafkaClusterUtils():
     
     def __init__(self):
-        username = _input.kafka.get("cluster_username");
-        password = _input.kafka.get("cluster_password");
+        self.log = logger.get("test")
         
-        jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\";";
-        jaasCfg = String.format(jaasTemplate, username, password);
+        config = {
+            'bootstrap.servers': "{}:9092".format(_input.kafka.get("cluster_url")),
+            'security.protocol': "SASL_SSL",
+            'sasl.mechanisms': "PLAIN",
+            'sasl.username': _input.kafka.get("cluster_username"),
+            'sasl.password': _input.kafka.get("cluster_password")
+        }
 
-        props = Properties()
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "{}:9092".format(_input.kafka.get("cluster_url")));
-        props.put("session.timeout.ms", "30000");
-        props.put("security.protocol", "SASL_SSL");
-        props.put("sasl.mechanism", "PLAIN");
-        props.put("sasl.jaas.config", jaasCfg);
-
-        self.kafkaAdminClient = AdminClient.create(props);
+        self.kafkaAdminClient = AdminClient(config);
 
     def deleteKafkaTopics(self, topics):
-        deleteTopicsResult = self.kafkaAdminClient.deleteTopics(topics)
+        deleteTopicsResult = self.kafkaAdminClient.delete_topics(topics)
         while not deleteTopicsResult.all().isDone():
             for topic in topics:
                 print("still deleting: %s" % self.listKafkaTopics(topic))
             time.sleep(5)
 
     def listKafkaTopics(self, prefix=None):
-        topicsList = self.kafkaAdminClient.listTopics();
-        topics = list()
-        for topic in topicsList.listings().get(): 
-            topics.append(topic.name())
-        # self.log.info("Current kafta topics present: %s" % topics)
+        topics = self.kafkaAdminClient.list_topics().topics
         if prefix:
             return [topic for topic in topics if topic.find(prefix) != -1]
+        self.log.info("Current kafka topics present: %s" % topics)
         return topics

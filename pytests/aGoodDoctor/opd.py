@@ -661,7 +661,8 @@ class OPD:
     def perform_load(self, wait_for_load=True,
                      validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
                      wait_for_stats=True,
-                     overWriteValType=None):
+                     overWriteValType=None,
+                     check_core_dumps=True):
         self.get_memory_footprint()
         buckets = buckets or cluster.buckets
         self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default,
@@ -694,14 +695,14 @@ class OPD:
 
         if self.cluster.type != "default":
             return
-
-        result = self.check_coredump_exist(cluster.nodes_in_cluster)
-        if result:
-            self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
-            if self.assert_crashes_on_load:
-                self.task_manager.abort_all_tasks()
-                self.doc_loading_tm.abortAllTasks()
-                self.assertFalse(result)
+        if check_core_dumps:
+            result = self.check_coredump_exist(cluster.nodes_in_cluster)
+            if result:
+                self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
+                if self.assert_crashes_on_load:
+                    self.task_manager.abort_all_tasks()
+                    self.doc_loading_tm.abortAllTasks()
+                    self.assertFalse(result)
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:
@@ -1312,7 +1313,7 @@ class OPD:
                               validate_data=False,
                               wait_for_stats=False)
 
-    def normal_load(self):
+    def normal_load(self, check_core_dumps=True):
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["create"],
                                create_start=0,
@@ -1323,7 +1324,8 @@ class OPD:
                               buckets=self.cluster.buckets,
                               overRidePattern=[100,0,0,0,0],
                               validate_data=False,
-                              wait_for_stats=False)
+                              wait_for_stats=False,
+                              check_core_dumps=check_core_dumps)
 
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["create"],
@@ -1335,7 +1337,8 @@ class OPD:
                               buckets=self.cluster.buckets,
                               overRidePattern=[100,0,0,0,0],
                               validate_data=False,
-                              wait_for_stats=False)
+                              wait_for_stats=False,
+                              check_core_dumps=check_core_dumps)
 
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["update"],
@@ -1347,4 +1350,5 @@ class OPD:
                               buckets=self.cluster.buckets,
                               overRidePattern=[0,0,100,0,0],
                               validate_data=False,
-                              wait_for_stats=False)
+                              wait_for_stats=False,
+                              check_core_dumps=check_core_dumps)

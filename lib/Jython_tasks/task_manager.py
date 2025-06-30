@@ -2,7 +2,7 @@ import itertools
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
-from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader, SiriusJavaMongoLoader
 from common_lib import sleep
 from global_vars import logger
 
@@ -17,7 +17,7 @@ class TaskManager(object):
         self.futures = dict()
 
     def add_new_task(self, task):
-        if isinstance(task, SiriusCouchbaseLoader):
+        if isinstance(task, SiriusCouchbaseLoader) or isinstance(task, SiriusJavaMongoLoader):
             if not task.start_task():
                 raise Exception(f"Failed to add new task {task.thread_name}")
             return
@@ -28,7 +28,7 @@ class TaskManager(object):
 
     def get_task_result(self, task):
         self.log.debug("Getting task result for %s" % task.thread_name)
-        if isinstance(task, SiriusCouchbaseLoader):
+        if isinstance(task, SiriusCouchbaseLoader) or isinstance(task, SiriusJavaMongoLoader):
             okay = task.get_task_result()
             if not okay:
                 self.log.critical("Failure during get_task_result of "
@@ -56,7 +56,7 @@ class TaskManager(object):
         self.add_new_task(task)
 
     def stop_task(self, task):
-        if isinstance(task, SiriusCouchbaseLoader):
+        if isinstance(task, SiriusCouchbaseLoader) or isinstance(task, SiriusJavaMongoLoader):
             okay, json_response = task.end_task()
             if not okay or not json_response["status"]:
                 self.log.critical(f"Some error during stop task of "
