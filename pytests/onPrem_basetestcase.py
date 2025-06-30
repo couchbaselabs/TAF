@@ -108,7 +108,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.KMIP_pkcs8_file_name = self.input.param(
             "KMIP_pkcs8_file_name", "client-key-pkcs8.pem")
         self.KMIP_cert_file_name = self.input.param(
-            "KMIP_cert_file_name", "client3-cert.pem")
+            "KMIP_cert_file_name", "client_cert_with_appid2.pem")
         self.client_certs_path = "/etc/couchbase/certs/"
         self.create_KMIP_secret= self.input.param(
             "create_KMIP_secret", False)

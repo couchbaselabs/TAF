@@ -37,7 +37,7 @@ class BucketHelper(RestConnection):
             self.log.info(e)
             return False
 
-    def create_secret_params(self, secret_type="auto-generated-aes-key-256",
+    def create_secret_params(self, secret_type="cb-server-managed-aes-key-256",
                              name="Default secret", usage=None,
                              autoRotation=True, rotationIntervalInDays=60,
                              rotationIntervalInSeconds=None, keyARN=None,
@@ -49,7 +49,7 @@ class BucketHelper(RestConnection):
                              keyPath=None, certPath=None, keyPassphrase=None,
                              host=None, port=None):
         if usage is None:
-            usage = ["bucket-encryption-*"]
+            usage = ["bucket-encryption"]
 
         data = {}
         if host is None:

@@ -340,7 +340,7 @@ class UpgradeBase(BaseTestCase):
         params = bucket_helper.create_secret_params(
             secret_type="auto-generated-aes-key-256",
             name="TestSecretAutoRotationOn",
-            usage=["bucket-encryption-*"],
+            usage=["bucket-encryption"],
             autoRotation=True,
             rotationIntervalInSeconds=60
         )

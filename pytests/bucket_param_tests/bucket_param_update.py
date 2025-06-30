@@ -807,7 +807,7 @@ class BucketParamTest(ClusterSetup):
             params = bucket_helper.create_secret_params(
                 secret_type="auto-generated-aes-key-256",
                 name="UTestSecret",
-                usage=["bucket-encryption-*"],
+                usage=["bucket-encryption"],
                 autoRotation=True,
                 rotationIntervalInSeconds=5184000)
             status, response = rest.create_secret(params)

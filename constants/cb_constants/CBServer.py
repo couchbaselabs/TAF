@@ -132,7 +132,7 @@ class CbServer(object):
     max_ttl_seconds = 2147483647
 
     # Encryption at rest default settings
-    encryption_at_rest_dek_rotation_interval = 2592000
+    encryption_at_rest_dek_rotation_interval = 2591000
     encryption_at_rest_dek_lifetime_interval = 31536000
     secret_rotation_interval_in_seconds = 2592000
 
