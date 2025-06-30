@@ -421,7 +421,7 @@ class SecurityBase(CouchbaseBaseTest):
             payload["serverVersion"] = TestInputSingleton.input.param("server_version", "7.6")
 
             while (self.cluster_id is None):
-                resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
+                resp = self.capellaAPIv2.get_deployment_options(self.tenant_id)
                 subnet = resp.json()["cidr"]["suggestedBlock"]
                 payload["cidr"] = subnet
                 resp = self.capellaAPIv2.deploy_v2_cluster(self.tenant_id, payload)
