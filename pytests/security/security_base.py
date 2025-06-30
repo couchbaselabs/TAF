@@ -467,7 +467,7 @@ class SecurityBase(CouchbaseBaseTest):
                     ami_payload["overRide"]["image"] = image
                     ami_payload["overRide"]["server"] = server_version
                     ami_payload["projectId"] = self.project_id
-                    resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
+                    resp = self.capellaAPIv2.get_deployment_options(self.tenant_id)
                     subnet = resp.json()["cidr"]["suggestedBlock"]
                     ami_payload["cidr"] = subnet
                     self.log.info("Trying out with cidr {}".format(subnet))
