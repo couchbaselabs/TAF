@@ -650,6 +650,13 @@ class RebalanceTask(Task):
         self.sleep(10, "Waiting before starting rebalance")
         delay_enabled = False
         self.start_task()
+
+        if self.network_delay_between_nodes is not None:
+            self.log.critical("Enabling delay between the nodes")
+            delay_enabled = True
+            global_vars.cluster_util.set_network_delay_between_nodes(
+                self.network_delay_between_nodes, "enable")
+
         try:
             if len(self.to_add) and len(self.to_add) == len(self.to_remove) \
                     and self.cluster.nodes_in_cluster:
@@ -693,12 +700,6 @@ class RebalanceTask(Task):
             if result is False:
                 self.complete_task()
                 return self.result
-
-            if self.network_delay_between_nodes is not None:
-                self.log.critical("Enabling delay between the nodes")
-                delay_enabled = True
-                global_vars.cluster_util.set_network_delay_between_nodes(
-                    self.network_delay_between_nodes, "enable")
 
             self.state = "triggering"
             self.start_rebalance()
@@ -7799,7 +7800,8 @@ class NodeInitializeTask(Task):
 class FailoverTask(Task):
     def __init__(self, cluster, to_failover=[], wait_for_pending=0,
                  graceful=False, use_hostnames=False, allow_unsafe=False,
-                 all_at_once=False, validate_bucket_ranking=True):
+                 all_at_once=False, validate_bucket_ranking=True,
+                 network_delay_between_nodes=None):
         Task.__init__(self, "failover_task")
         self.cluster = cluster
         self.servers = cluster.nodes_in_cluster
@@ -7810,12 +7812,21 @@ class FailoverTask(Task):
         self.use_hostnames = use_hostnames
         self.allow_unsafe = allow_unsafe
         self.all_at_once = all_at_once
+        self.network_delay_between_nodes = network_delay_between_nodes
         self.otp_nodes_to_fo = list()
         self.rest = ClusterRestAPI(self.servers[0])
         self.cluster_util = global_vars.cluster_util
 
     def call(self):
+        delay_enabled = False
         self.start_task()
+
+        if self.network_delay_between_nodes is not None:
+            self.log.critical("Enabling delay between the nodes")
+            delay_enabled = True
+            global_vars.cluster_util.set_network_delay_between_nodes(
+                self.network_delay_between_nodes, "enable")
+
         for server in self.to_failover:
             for node in self.cluster_util.get_nodes(self.servers[0]):
                 if (server.hostname if self.use_hostnames else server.ip) == node.ip \
@@ -7840,10 +7851,13 @@ class FailoverTask(Task):
                 timeout -= 5
             self.set_result(True)
             self.complete_task()
-
         except (FailoverFailedException, Exception) as e:
             self.set_result(False)
             self.set_exception(e)
+        finally:
+            if delay_enabled:
+                global_vars.cluster_util.set_network_delay_between_nodes(
+                    self.network_delay_between_nodes, "disable")
 
     def _failover_nodes(self):
         # call REST fail_over for the nodes to be failed over all at once

@@ -94,7 +94,7 @@ class NodeUtils(object):
                 self.log.critical("Unable to find the default interface: %s"
                                   % err)
             else:
-                server.default_interface = output[1]
+                server.default_interface = output[0]
             shell.disconnect()
         self.log.info("%s - Default interface :: %s"
                       % (server.ip, server.default_interface))

@@ -157,6 +157,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         self.log_setup_status(self.__class__.__name__, "started")
 
+        # Find the default interface on each server node
+        # and flush all network rules to avoid test failures
+        for server in self.servers:
+            self.node_utils.populate_default_nw_interface_name(server)
+            shell_conn = RemoteMachineShellConnection(server)
+            ClusterUtils.flush_network_rules(shell_conn,
+                                             server.default_interface)
+
         # Force disable TLS to avoid initial connection issues
         tasks = [self.node_utils.async_disable_tls(server)
                  for server in self.servers]
@@ -803,8 +811,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
-            ClusterUtils.flush_network_rules(ssh_sessions[server.ip],
-                                             server.default_interface)
             if not server.index_path:
                 server.index_path = server.data_path
             if not server.cbas_path:
