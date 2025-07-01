@@ -6,12 +6,21 @@ from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
 
 from Jython_tasks.sirius_task import MongoUtil
 from sirius_client_framework.sirius_constants import SiriusCodes
+from TestInput import TestInputSingleton
+runtype = TestInputSingleton.input.param("runtype", "default").lower()
+if runtype == "columnar":
+    from Columnar.columnar_base import ColumnarBaseTest
+else:
+    from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
 
 
 class ConfluentKafka(ColumnarBaseTest):
     def setUp(self):
         super(ConfluentKafka, self).setUp()
-        self.columnar_cluster = self.tenant.columnar_instances[0]
+        if runtype == "columnar":
+            self.columnar_cluster = self.tenant.columnar_instances[0]
+        else:
+            self.columnar_cluster = self.analytics_cluster
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"

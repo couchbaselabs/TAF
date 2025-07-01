@@ -367,7 +367,8 @@ class MongoUtil(object):
     def load_docs_in_mongo_collection(
             self, database, collection, start, end,
             doc_template=SiriusCodes.Templates.PERSON, doc_size=1024,
-            sdk_batch_size=500, wait_for_task_complete=False):
+            sdk_batch_size=500, wait_for_task_complete=False,
+            sirius_base_url=SiriusSetup.sirius_url):
         self.loader.database = database
         self.loader.collection = collection
         self.loader.sdk_batch_size = sdk_batch_size
@@ -379,6 +380,7 @@ class MongoUtil(object):
             op_type=SiriusCodes.DocOps.BULK_CREATE,
             database_information=self.loader,
             operation_config=operation_config,
+            default_sirius_base_url=sirius_base_url
         )
         self.task_manager.add_new_task(task)
         if wait_for_task_complete:

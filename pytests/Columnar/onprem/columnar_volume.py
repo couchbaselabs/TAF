@@ -401,7 +401,6 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             #               "cluster")
             for th in self.ingestion_ths:
                 th.join()
-            self.stop_run = True
             for th in self.query_cancel_ths:
                 th.join()
             loop -= 1
