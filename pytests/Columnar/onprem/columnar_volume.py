@@ -274,7 +274,6 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                             self.sleep(10, f"Retrying link disconnect in 10 seconds (attempt {retry_count + 1}/{max_retries})")
                         else:
                             self.log.error(f"Failed to disconnect link {dataSource.link_name} after {max_retries} attempts")
-                self.drCBAS.disconnect_link(self.analytics_cluster, dataSource.link_name)
             self.sleep(60, "wait after previous link disconnect")
             dataSource.link_name = "{}_".format(dataSource.type) + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
             dataSource.links.append(dataSource.link_name)
