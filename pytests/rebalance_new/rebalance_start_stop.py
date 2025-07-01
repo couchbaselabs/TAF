@@ -103,11 +103,13 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         for i in range(1, 6):
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.cluster, self.servs_in, self.servs_out)
+                    self.cluster, self.servs_in, self.servs_out,
+                    network_delay_between_nodes=self.network_delay_between_nodes)
             else:
                 rebalance = self.task.async_rebalance(
                     self.cluster, add_in_once,
-                    self.servs_out + self.extra_servs_out)
+                    self.servs_out + self.extra_servs_out,
+                    network_delay_between_nodes=self.network_delay_between_nodes)
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
@@ -171,11 +173,13 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                     CollectionBase.start_history_retention_data_load(self)
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.cluster, self.servs_in, self.servs_out)
+                    self.cluster, self.servs_in, self.servs_out,
+                    network_delay_between_nodes=self.network_delay_between_nodes)
             else:
                 rebalance = self.task.async_rebalance(
                     self.cluster,
-                    add_in_once, self.servs_out + self.extra_servs_out)
+                    add_in_once, self.servs_out + self.extra_servs_out,
+                    network_delay_between_nodes=self.network_delay_between_nodes)
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
@@ -242,11 +246,13 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         for i in range(1, 6):
             if i == 1:
                 rebalance = self.task.async_rebalance(
-                    self.cluster, self.servs_in, self.servs_out)
+                    self.cluster, self.servs_in, self.servs_out,
+                    network_delay_between_nodes=self.network_delay_between_nodes)
             else:
                 rebalance = self.task.async_rebalance(
                     self.cluster,
-                    add_in_once, self.servs_out + self.extra_servs_out)
+                    add_in_once, self.servs_out + self.extra_servs_out,
+                    network_delay_between_nodes=self.network_delay_between_nodes)
                 add_in_once = []
             self.sleep(20)
             expected_progress = 20 * i
@@ -335,7 +341,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                                      create_percent)
         self.tasks_result(task)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
-        self.task.async_rebalance(self.cluster, self.servs_in, self.servs_out)
+        self.task.async_rebalance(
+            self.cluster, self.servs_in, self.servs_out,
+            network_delay_between_nodes=self.network_delay_between_nodes)
         expected_progress = 50
         rest = ClusterRestAPI(self.cluster.master)
         reached = self.cluster_util.rebalance_reached(self.cluster, expected_progress)

@@ -638,9 +638,9 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                               else master)
 
         self.log.info("IN/OUT REBALANCE PHASE")
-        rebalance_task = self.task.async_rebalance(self.cluster,
-                                                   servs_in,
-                                                   toBeEjectedNodes)
+        rebalance_task = self.task.async_rebalance(
+            self.cluster, servs_in, toBeEjectedNodes,
+            network_delay_between_nodes=self.network_delay_between_nodes)
 
         # CRUDs while rebalance is running in parallel
         self.gen_create = self.get_doc_generator(create_from,
@@ -670,7 +670,8 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         self.assertTrue(stopped, msg="unable to stop rebalance")
                         self.sleep(20)
                         rebalance_task = self.task.async_rebalance(
-                            self.cluster, [], toBeEjectedNodes)
+                            self.cluster, [], toBeEjectedNodes,
+                            network_delay_between_nodes=self.network_delay_between_nodes)
                         break
                     elif retry > 100:
                         break
@@ -763,7 +764,8 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         self.log.info("IN/OUT REBALANCE PHASE")
         rebalance_task = self.task.async_rebalance(
-            self.cluster, servs_in, toBeEjectedNodes)
+            self.cluster, servs_in, toBeEjectedNodes,
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.sleep(10, "wait for rebalance to start")
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")

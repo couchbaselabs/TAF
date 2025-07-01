@@ -50,7 +50,8 @@ class RebalanceDurability(RebalanceBaseTest):
                     for i in range(self.nodes_in)]
         tasks_info = self.__load_docs_in_all_buckets()
         rebalance = self.task.async_rebalance(
-            self.cluster, servs_in, [])
+            self.cluster, servs_in, [],
+            network_delay_between_nodes=self.network_delay_between_nodes)
         self.task.jython_task_manager.get_task_result(rebalance)
 
         for task in tasks_info:
