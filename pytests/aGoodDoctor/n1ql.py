@@ -213,7 +213,6 @@ def execute_via_sdk(client, statement, readonly=False, client_context_id=None, q
                 if "Job requirement" in msg and "exceeds capacity" in msg:
                     raise Exception("Capacity cannot meet job requirement")
         except CouchbaseException as e:
-            traceback.print_exc()
             raise e
 
     return output
