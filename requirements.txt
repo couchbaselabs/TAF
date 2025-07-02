@@ -5,7 +5,7 @@ PyYAML
 six
 futures
 certifi==2023.5.7
-couchbase==4.3.6
+couchbase==4.4.0
 boto3
 confluent-kafka
 urllib3
