@@ -290,11 +290,12 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.rebalance_util.rebalance(
                 cluster=self.analytics_cluster, cbas_nodes_in=1,
                 available_servers=self.analytics_cluster.available_servers,
-                in_node_services="kv,cbas")
-            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.analytics_cluster, True, True):
+                in_node_services="kv,cbas",
+                wait_for_complete=True)
+            if not rebalance_task.result:
                 self.fail("Error while Rebalance-In KV+CBAS node in analytics "
                         "cluster")
+            self.log.info("Rebalance-In KV+CBAS node in analytics cluster completed")
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after rebalance in for {} seconds".format(self.steady_state_workload_sleep))
 
@@ -302,9 +303,9 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             rebalance_task, self.analytics_cluster.available_servers = \
                 self.rebalance_util.rebalance(
                 cluster=self.analytics_cluster, cbas_nodes_out=1,
-                available_servers=self.analytics_cluster.available_servers)
-            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.analytics_cluster, True, True):
+                available_servers=self.analytics_cluster.available_servers,
+                wait_for_complete=True)
+            if not rebalance_task.result:
                 self.fail("Error while Rebalance-Out KV+CBAS node in analytics "
                         "cluster")
             self.sleep(self.steady_state_workload_sleep,
@@ -316,9 +317,9 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.rebalance_util.rebalance(
                 cluster=self.analytics_cluster, cbas_nodes_in=1, cbas_nodes_out=1,
                 available_servers=self.analytics_cluster.available_servers,
-                in_node_services="kv,cbas")
-            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.analytics_cluster, True, True):
+                in_node_services="kv,cbas",
+                wait_for_complete=True)
+            if not rebalance_task.result:
                 self.fail("Error while Rebalance-Swap KV+CBAS node in analytics "
                         "cluster")
             self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
@@ -358,9 +359,9 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.rebalance_util.rebalance(
                 cluster=self.analytics_cluster, cbas_nodes_in=1,
                 available_servers=self.analytics_cluster.available_servers,
-                in_node_services="kv,cbas")
-            if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.analytics_cluster, True, True):
+                in_node_services="kv,cbas",
+                wait_for_complete=True)
+            if not rebalance_task.result:
                 self.fail("Error while Rebalance-In KV+CBAS node in analytics "
                         "cluster")
             self.sleep(self.steady_state_workload_sleep,
