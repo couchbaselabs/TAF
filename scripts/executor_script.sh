@@ -272,6 +272,16 @@ if [ $status -eq 0 ]; then
   set -x
   load_docs_using=$(echo "$parameters" | grep -oP 'load_docs_using=\K[^,]*')
   if [[ "$load_docs_using" == "sirius_go_sdk" ]]; then
+    # Setup GoLang in local dir
+    go_version=1.22.4
+    echo "Setting up Golang $go_version locally"
+    wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz --quiet
+    tar -xzf go${go_version}.linux-amd64.tar.gz
+    rm -f go${go_version}.linux-amd64.tar.gz
+    export GOPATH=`pwd`/go
+    export PATH="${GOPATH}/bin:${PATH}"
+    export GO111MODULE=on
+
     echo "Launching Sirius GO SDK to load documents."
     python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
   else
