@@ -343,7 +343,7 @@ class CBASBaseTest(BaseTestCase):
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
                 retry = 0
-                while True and retry < 3:
+                while True and retry < 30:
                     cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
                         cluster)
                     if cbas_cc_node_ip:
