@@ -19,6 +19,26 @@ class Linux(object):
     COUCHBASE_DATA_PATH = "/opt/couchbase/var/lib/couchbase/data/"
     COUCHBASE_LIB_PATH = "/opt/couchbase/var/lib/couchbase/"
 
+class LinuxEnterpriseAnalytics(object):
+    NAME = "linux"
+
+    DISTRIBUTION_NAME = ["ubuntu", "centos", "red hat", "opensuse",
+                         "suse", "oracle linux"]
+    LOG_PATH = "/opt"
+    ROOT_PATH = "/root/"
+    CB_PATH = "/opt/enterprise-analytics/"
+    COUCHBASE_BIN_PATH = "/opt/enterprise-analytics/bin/"
+    NONROOT_CB_BIN_PATH = "~/cb/opt/enterprise-analytics/bin/"
+    GOPATH = "/root/tuq/gocode"
+    CAPI_INI = "/opt/enterprise-analytics/etc/couchdb/default.d/capi.ini"
+    COUCHBASE_PORT_CONFIG_PATH = "/opt/enterprise-analytics/etc/couchbase"
+    COUCHBASE_OLD_CONFIG_PATH = "/opt/enterprise-analytics/var/lib/couchbase/config/"
+    STATIC_CONFIG = "/opt/enterprise-analytics/etc/couchbase/static_config"
+    COUCHBASE_LOGS_PATH = "/opt/enterprise-analytics/var/lib/couchbase/logs"
+    CONFIG_FILE = "/opt/enterprise-analytics/var/lib/couchbase/config/config.dat"
+    DIST_CONFIG = "/opt/enterprise-analytics/var/lib/couchbase/config/dist_cfg"
+    COUCHBASE_DATA_PATH = "/opt/enterprise-analytics/var/lib/couchbase/data/"
+    COUCHBASE_LIB_PATH = "/opt/enterprise-analytics/var/lib/couchbase/"
 
 class Mac(object):
     NAME = "mac"

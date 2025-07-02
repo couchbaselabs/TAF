@@ -1004,6 +1004,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
         for idx, server in enumerate(servers):
             self.log.info(f"{server.ip} - Parsing logs for error/critical "
                           f"string patterns")
+            if server.type == "analytics":
+                lib_cb = os_constants.LinuxEnterpriseAnalytics.COUCHBASE_LIB_PATH
+                bin_cb = os_constants.LinuxEnterpriseAnalytics.COUCHBASE_BIN_PATH
+            else:
+                lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
+                bin_cb = os_constants.Linux.COUCHBASE_BIN_PATH
             shell = RemoteMachineShellConnection(server)
             crash_dir = lib_cb + "crash/"
             if shell.info.type.lower() == "windows":

@@ -2,7 +2,7 @@ import os
 
 from TestInput import TestInputSingleton
 from cb_constants.ClusterRun import ClusterRun
-from platform_constants.os_constants import Linux, Mac, Windows
+from platform_constants.os_constants import Linux, LinuxEnterpriseAnalytics, Mac, Windows
 
 
 class CbCmdBase:
@@ -15,8 +15,10 @@ class CbCmdBase:
         self.username = username
         self.password = password
         self.binaryName = binary_name
-
-        self.cbstatCmd = "%s%s" % (Linux.COUCHBASE_BIN_PATH, self.binaryName)
+        if shell_conn.server.type == "analytics":
+            self.cbstatCmd = "%s%s" % (LinuxEnterpriseAnalytics.COUCHBASE_BIN_PATH, self.binaryName)
+        else:
+            self.cbstatCmd = "%s%s" % (Linux.COUCHBASE_BIN_PATH, self.binaryName)
 
         if ClusterRun.is_enabled:
             # Cluster run case
