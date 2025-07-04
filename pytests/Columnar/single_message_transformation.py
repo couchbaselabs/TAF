@@ -2,12 +2,18 @@
 Created on 2025
 @author: Anisha Sinha
 """
+import json
+import random
+import string
 import time
+
 from deepdiff import DeepDiff
 
 from CbasLib.CBASOperations import CBASHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.sirius_task import CouchbaseUtil
+from cb_server_rest_util.py_constants.cb_constants import DocLoading
+from couchbase_helper.documentgenerator import doc_generator
 from pytests.Columnar.columnar_base import ColumnarBaseTest
 
 
@@ -63,7 +69,7 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         super(SingleMessageTransformationTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
-    def test_setup(self):
+    def test_setup(self, load_docs=True):
         self.create_bucket_scopes_collections_in_capella_cluster(
             self.tenant, self.remote_cluster,
             self.input.param("num_buckets", 1))
@@ -80,21 +86,22 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
             remote_clusters=[self.remote_cluster])
         if not result:
             self.fail(msg)
+        if load_docs:
+            self.log.info("Load data to remote collection.")
+            for bucket in self.remote_cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                    self.remote_cluster.master.rest_password,
+                    bucket.name, req_clients=1)
 
-        self.log.info("Load data to remote collection.")
-        for bucket in self.remote_cluster.buckets:
-            SiriusCouchbaseLoader.create_clients_in_pool(
-                self.remote_cluster.master, self.remote_cluster.master.rest_username,
-                self.remote_cluster.master.rest_password,
-                bucket.name, req_clients=1)
-
-        self.load_doc_to_remote_collections(self.remote_cluster, valType="Product",
-                                            create_start_index=0, create_end_index=self.initial_doc_count,
-                                            wait_for_completion=True)
+            self.load_doc_to_remote_collections(self.remote_cluster, valType="Product",
+                                                create_start_index=0, create_end_index=self.initial_doc_count,
+                                                wait_for_completion=True)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         self.remote_dataset_name = remote_datasets[0].full_name
 
-    def create_udf_and_remotedataset(self, udf_query, if_not_exists=False, udf_name=None, or_replace=False):
+    def create_udf_and_remotedataset(self, udf_query, if_not_exists=False, udf_name=None, or_replace=False,
+                                     wait_for_ingestion=True):
         if not udf_name:
             udf_name = self.cbas_util.generate_name()
         if not self.cbas_util.create_udf(
@@ -126,10 +133,13 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         if not result:
             self.fail("Failed to create remote collection {} from transform function {}".format(
                 remote_coll_obj.name, udf_name))
-
+        if wait_for_ingestion:
+            self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster,
+                                                       remote_coll_obj.name,
+                                                       self.initial_doc_count)
         return remote_coll_obj
 
-    def validate_collection_created_from_udf(self, udf_query, remote_query):
+    def validate_collection_created_from_udf(self, udf_query, remote_query, continue_test=False):
         # Validate result by running query on remote dataset and comparing with the transform collection result.
         status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
             self.columnar_cluster, udf_query)
@@ -139,9 +149,12 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         diff = DeepDiff(results, udf_results, ignore_order=True)
         if diff:
             self.log.info(diff)
+            if continue_test:
+                return False, diff
             self.fail(
                 f"Data mismatch between expected and actual result of transform function."
                 f"{diff}")
+        return True, None
 
     def drop_udf(self):
         udf_list = self.cbas_util.get_all_udfs_from_metadata(self.columnar_cluster)
@@ -156,15 +169,46 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
 
         self.log.info("Start test setup.")
         self.test_setup()
-        self.log.info("Create UDF with transform function.")
-        udf_create_query = f"""SELECT product_name || seller_name as name_seller
-                        FROM [item] as item
-                        LIMIT 1 """
-        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
-        udf_select_query = f"select name_seller from {udf_coll_obj.name}"
-        remote_query = f"select product_name || seller_name as name_seller from {self.remote_dataset_name}"
-        self.log.info("Validate collection created with the transform function.")
-        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        string_functions = ["concat", "replace", "ltrim", "rtrim", "substring", "regex_replace"]
+        results = []
+
+        for func in string_functions:
+            self.log.info(f"Create UDF with {func} transform function.")
+
+            # Prepare appropriate UDF body and remote query for each string function
+            if func == "concat":
+                udf_expr = "product_name || seller_name"
+            elif func == "replace":
+                udf_expr = "REPLACE(product_name, 'a', '@')"
+            elif func == "ltrim":
+                udf_expr = "LTRIM(product_name)"
+            elif func == "rtrim":
+                udf_expr = "RTRIM(product_name)"
+            elif func == "substring":
+                udf_expr = "SUBSTR(product_name, 0, 3)"  # first 3 chars
+            elif func == "regex_replace":
+                udf_expr = "REGEXP_REPLACE(product_name, '[aeiou]', '*')" # replace vowels with *
+            else:
+                continue  # Skip unsupported functions
+
+            udf_create_query = f"""SELECT {udf_expr} AS result_field_{func} FROM [item] AS item LIMIT 1"""
+            udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+
+            udf_select_query = f"SELECT result_field_{func} FROM {udf_coll_obj.name}"
+            remote_query = f"SELECT {udf_expr} AS result_field_{func} FROM {self.remote_dataset_name}"
+
+            self.log.info(f"Validate collection created with the transform function: {func}")
+            results.append(
+                self.validate_collection_created_from_udf(udf_select_query, remote_query, continue_test=True))
+
+        # Check results and fail if any test failed
+        for i, result in enumerate(results):
+            if not result[0]:
+                self.fail(
+                    f"For string function {string_functions[i]}: "
+                    f"Data mismatch between expected and actual result of transform function. {result[1]}"
+                )
+
         self.log.info("Test completed successfully.")
 
     def test_smt_filter_with_where_clause(self):
@@ -442,3 +486,343 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         if not self.drop_udf():
             self.fail("Unable to drop UDF.")
         self.log.info("Test completed successfully.")
+
+    def test_smt_drop_udf_after_collection_is_deleted(self):
+        """
+        Test smt drop udf after collection using it is deleted.
+        """
+        self.log.info("Running transform function for drop udf after collection using it is deleted.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT quantity, product_name
+                                                FROM [item] as item
+                                                LIMIT 1 """
+        udf_name = self.cbas_util.generate_name()
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query, udf_name=udf_name)
+        if not self.cbas_util.drop_dataset(self.columnar_cluster, udf_coll_obj):
+            self.fail("Error while dropping dataset.")
+
+        if not self.drop_udf():
+            self.fail("Unable to drop UDF.")
+        self.log.info("Test completed successfully.")
+
+    def test_smt_type_conversions(self):
+        """
+        Test create transform function with type conversions.
+        """
+        self.log.info("Running transform function with type conversions.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        transformations = [
+            {
+                "log_label": "number to string",
+                "func": "TO_STRING(mutated)",
+                "alias": "mutated",
+                "fields": ["mutated", "product_name"]
+            },
+            {
+                "log_label": "string to number",
+                "func": "TO_NUMBER(weight)",
+                "alias": "weight",
+                "fields": ["weight", "product_name"]
+            }
+        ]
+
+        results = []
+        for transform in transformations:
+            self.log.info(f"Transform function for {transform['log_label']}.")
+
+            # Compose field selection string for SELECT clause
+            select_fields = f"{transform['func']} AS {transform['alias']}, " + \
+                            ", ".join([f for f in transform['fields'] if f != transform['alias']])
+
+            udf_create_query = f"""SELECT VALUE doc FROM
+                                    (SELECT {select_fields}
+                                     FROM [item] AS item) AS doc
+                                    LIMIT 1"""
+            udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+
+            # Build SELECT clause from alias + other fields
+            udf_select_query = f"SELECT {', '.join(transform['fields'])} FROM {udf_coll_obj.name}"
+            remote_query = f"""SELECT {select_fields} FROM {self.remote_dataset_name}"""
+
+            self.log.info("Validate collection created with the transform function.")
+            result = self.validate_collection_created_from_udf(
+                udf_select_query, remote_query, continue_test=True
+            )
+            results.append((transform["log_label"], result))
+
+        # Check results
+        for label, result in results:
+            if not result[0]:
+                self.fail(
+                    f"Data mismatch between expected and actual result of transform function for {label}. "
+                    f"{result[1]}"
+                )
+
+        self.log.info("Test completed successfully.")
+
+    def test_smt_arithmetic_functions(self):
+        """
+        Test create transform function with arithmetic functions.
+        """
+        self.log.info("Running transform function with arithmetic functions.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        arithmetic_functions = ["AVG", "SUM", "MIN", "MAX"]
+        results = []
+        for func in arithmetic_functions:
+            self.log.info(f"Transform function for {func}.")
+            udf_create_query = f"""SELECT VALUE doc FROM
+                                    (SELECT 
+                                    {func}(r.ratings.performance) AS product_review_perf_{func}
+                                    FROM [item] AS b
+                                    UNNEST b.product_reviews AS r) AS doc
+                                    LIMIT 1"""
+            udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+            udf_select_query = f"select product_review_perf_{func} from {udf_coll_obj.name}"
+            remote_query = f"""SELECT 
+                                {func}(r.ratings.performance) AS product_review_perf_{func}
+                                from {self.remote_dataset_name} AS b
+                                UNNEST b.product_reviews AS r
+                                GROUP BY b;"""
+
+            self.log.info("Validate collection created with the transform function.")
+            results.append(self.validate_collection_created_from_udf(udf_select_query,
+                                                                     remote_query,
+                                                                     continue_test=True))
+        for i, result in enumerate(results):
+            if not result[0]:
+                self.fail(
+                    f"For arithmetic function {arithmetic_functions[i]}"
+                    f"Data mismatch between expected and actual result of transform function."
+                    f"{result[1]}")
+
+        self.log.info("Test completed successfully.")
+
+    def test_smt_array_functions(self):
+        """
+        Test create transform function with array functions.
+        """
+        self.log.info("Running transform function with array functions.")
+
+        self.log.info("Start test setup.")
+        self.test_setup()
+        array_functions = ["ARRAY_COUNT", "ARRAY_SUM"]
+        results = []
+
+        for func in array_functions:
+            self.log.info(f"Create UDF with {func} transform function.")
+            if func == "ARRAY_COUNT":
+                expr = "ARRAY_COUNT(item.product_reviews)"
+            elif func == "ARRAY_SUM":
+                expr = "ARRAY_SUM(item.product_reviews)"
+            else:
+                continue
+            udf_create_query = f"""
+                SELECT VALUE doc FROM
+                                (SELECT {expr} AS result_field
+                                FROM [item] as item
+                                ) as doc
+                                LIMIT 1"""
+            remote_query = f"""
+                SELECT {expr} AS result_field
+                FROM {self.remote_dataset_name} AS item
+                GROUP by item;"""
+
+            udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+            udf_select_query = f"SELECT result_field FROM {udf_coll_obj.name}"
+
+            self.log.info(f"Validate collection created with the transform function: {func}")
+            results.append(self.validate_collection_created_from_udf(
+                udf_select_query, remote_query, continue_test=True
+            ))
+
+        # Final validation loop
+        for i, result in enumerate(results):
+            if not result[0]:
+                self.fail(
+                    f"For array function {array_functions[i]}: "
+                    f"Data mismatch between expected and actual result of transform function. {result[1]}"
+                )
+        self.log.info("Test completed successfully.")
+
+    def test_smt_filter_where_clause(self):
+        """
+        Test create transform function with filtering.
+        """
+        self.log.info("Running transform function with filtering.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        filter_string = ["where num_sold<10000", "where avg_rating>2"]
+        results = []
+        for filter_s in filter_string:
+            self.log.info(f"Transform function for filter string {filter_s}.")
+            udf_create_query = f"""SELECT VALUE doc FROM
+                                    (SELECT 
+                                    b.*
+                                    FROM [item] AS b
+                                    {filter_s}) AS doc
+                                    LIMIT 1"""
+            udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query, wait_for_ingestion=False)
+            udf_select_query = f"select s.* from {udf_coll_obj.name} as s"
+            remote_query = f"""SELECT 
+                                b.*
+                                from {self.remote_dataset_name} AS b
+                                {filter_s};"""
+
+            self.log.info("Validate collection created with the transform function.")
+            results.append(self.validate_collection_created_from_udf(udf_select_query,
+                                                                     remote_query,
+                                                                     continue_test=True))
+        for i, result in enumerate(results):
+            if not result[0]:
+                self.fail(
+                    f"For filter {filter_string[i]}"
+                    f"Data mismatch between expected and actual result of transform function."
+                    f"{result[1]}")
+
+        self.log.info("Test completed successfully.")
+
+    def test_smt_flatten_dict(self):
+        """
+        Test create transform function to flatten dict.
+        """
+        self.log.info("Running transform function to flatten dict.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT VALUE doc FROM
+                        (SELECT r.date, r.author,
+                r.ratings.utility AS ratings_utility, r.ratings.performance AS ratings_performance,
+                r.ratings.build_quality AS ratings_build_quality,
+                r.ratings.pricing AS ratings_pricing,
+                r.ratings.rating_value AS ratings_rating_value
+                FROM [item] AS b
+                UNNEST b.product_reviews AS r) AS doc LIMIT 1"""
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+        udf_select_query = (f"select date, author, ratings_utility, ratings_performance, ratings_build_quality, "
+                            f"ratings_pricing, ratings_rating_value from {udf_coll_obj.name}")
+        remote_query = (f"select b.product_reviews[0].date AS date,"
+                        f"b.product_reviews[0].author AS author, "
+                        f"b.product_reviews[0].ratings.utility AS ratings_utility,"
+                        f"b.product_reviews[0].ratings.performance AS ratings_performance,"
+                        f"b.product_reviews[0].ratings.build_quality AS ratings_build_quality,"
+                        f"b.product_reviews[0].ratings.pricing AS ratings_pricing,"
+                        f"b.product_reviews[0].ratings.rating_value AS ratings_rating_value from "
+                        f"{self.remote_dataset_name} AS b")
+        self.log.info("Validate collection created with the transform function.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        self.log.info("Test completed successfully.")
+
+    def test_smt_return_more_than_one_doc(self):
+        """
+        Test create transform function returning more than one doc.
+        """
+        self.log.info("Create UDF with transform function that returns more than ne doc.")
+        udf_create_query = f"""SELECT VALUE doc FROM (
+                        SELECT _reviews.author, item.name
+                        FROM [item] as item
+                        UNNEST item.reviews AS _reviews) AS doc"""
+        udf_name = self.cbas_util.generate_name()
+        if self.cbas_util.create_udf(
+                cluster=self.columnar_cluster, name=udf_name, parameters=["item"],
+                body=udf_create_query, transform_function=True):
+            self.fail("Error created UDF which returns more than 1 doc.")
+        else:
+            self.log.info("Could not create UDF returning more than 1 doc.")
+
+        self.log.info("Test completed successfully.")
+
+    def test_smt_include_5_of_1000_columns(self):
+        """
+        Test transform function that includes 5 keys out of 1000 keys.
+        """
+        self.test_setup(load_docs=False)
+
+        # Generate a JSON document with 1000 keys
+        doc_key = "doc_with_1000_keys"
+        doc_value = self._generate_json_with_1000_keys()
+
+        # Create document generator for a single document
+        template = {"doc_data": doc_value}
+        doc_gen = doc_generator(doc_key, 0, 1, doc_size=len(json.dumps(template)))
+
+        # Load the document into the bucket
+        self.log.info(f"Loading document with 1000 keys into bucket {self.remote_cluster.buckets[0].name}")
+
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        # Use async load to create the document
+        task = self.task.async_load_gen_docs(
+            self.remote_cluster, self.remote_cluster.buckets[0], doc_gen,
+            DocLoading.Bucket.DocOps.CREATE,
+            load_using=self.load_docs_using,
+            durability=self.durability_level,
+            process_concurrency=1,
+            suppress_error_table=False,
+            print_ops_rate=False)
+
+        # Wait for the task to complete
+        self.task_manager.get_task_result(task)
+
+        get_columns_query = f"SELECT OBJECT_NAMES(d) AS column_names FROM {self.remote_dataset_name} AS d LIMIT 1;"
+        status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+            self.columnar_cluster, get_columns_query)
+
+        columns = ','.join(results[0]['column_names'][0:5])
+
+        udf_create_query = f"""SELECT VALUE doc FROM
+                                (SELECT {columns}
+                        FROM [item] as b) AS doc LIMIT 1"""
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query, wait_for_ingestion=False)
+        udf_select_query = f"select {columns} from {udf_coll_obj.name}"
+        remote_query = f"select {columns} from {self.remote_dataset_name}"
+        self.log.info("Validate collection created with the transform function.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        self.log.info("Test completed successfully.")
+
+    def _generate_json_with_1000_keys(self):
+        """
+        Generate a JSON object with 1000 keys
+        """
+        doc_data = {}
+
+        # Generate 1000 unique keys with different value types
+        for i in range(1000):
+            key_name = f"key_{i:04d}"
+
+            # Generate different types of values
+            value_type = i % 6
+
+            if value_type == 0:
+                # String value
+                value = f"value_{i}_{''.join(random.choices(string.ascii_letters, k=10))}"
+            elif value_type == 1:
+                # Integer value
+                value = random.randint(1, 1000000)
+            elif value_type == 2:
+                # Float value
+                value = round(random.uniform(0.0, 1000.0), 2)
+            elif value_type == 3:
+                # Boolean value
+                value = bool(i % 2)
+            elif value_type == 4:
+                # Array value
+                value = [random.randint(1, 100) for _ in range(random.randint(1, 5))]
+            else:
+                # Nested object
+                value = {
+                    "nested_key_1": f"nested_value_{i}",
+                    "nested_key_2": random.randint(1, 100),
+                    "nested_key_3": [random.randint(1, 10) for _ in range(3)]
+                }
+
+            doc_data[key_name] = value
+
+        return doc_data
