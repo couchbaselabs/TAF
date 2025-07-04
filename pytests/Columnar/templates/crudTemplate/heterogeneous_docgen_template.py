@@ -75,19 +75,12 @@ class Person:
     """
     def __get_hobbies(self):
         hobbies_list = [
-            "Reading", "Writing", "Drawing", "Painting", "Sculpting", "Photography", "Calligraphy",
-            "Pottery", "Origami", "Knitting", "Crocheting", "Embroidery", "Sewing", "Scrapbooking",
-            "Card making", "Woodworking", "Metalworking"
+            "Reading", "Writing", "Drawing", "Painting", "Sculpting", "Photography"
         ]
 
         hobbies = []
-        for _ in range(random.randint(3, 4)):
-            is_list = random.random() < (0.5 * self.heterogeneity)
-            if is_list:
-                sublist = [random.choice(hobbies_list) for _ in range(random.randint(1, 3))]
-                hobbies.append(sublist)
-            else:
-                hobbies.append(random.choice(hobbies_list))
+        for _ in range(3):
+            hobbies.append(random.choice(hobbies_list))
         return hobbies
 
     """
@@ -148,7 +141,7 @@ class Person:
             "Greensboro", "Plano", "Newark", "Lincoln", "Toledo", "Orlando", "Chula Vista",
             "Irvine", "Fort Wayne", "Jersey City", "Durham", "St. Petersburg", "Laredo", "Buffalo",
             "Madison", "Lubbock", "Chandler", "Scottsdale", "Glendale", "Reno", "Norfolk",
-            "Winston–Salem", "North Las Vegas", "Irving", "Chesapeake", "Gilbert", "Hialeah",
+            "Winston-Salem", "North Las Vegas", "Irving", "Chesapeake", "Gilbert", "Hialeah",
             "Garland", "Fremont", "Richmond", "Boise", "Baton Rouge"
         ]
 

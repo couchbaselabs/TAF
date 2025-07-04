@@ -10,6 +10,7 @@ from Columnar.columnar_base import ColumnarBaseTest
 from Columnar.columnar_rbac_cloud import generate_random_entity_name
 from kafka_util.confluent_utils import ConfluentUtils
 from kafka_util.kafka_connect_util import KafkaConnectUtil
+from cbas_utils.cbas_utils_columnar import CBOUtil
 
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.sirius_task import CouchbaseUtil
@@ -474,12 +475,112 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
 
 
 
-    # blocked - not able to reproduce - https://jira.issues.couchbase.com/browse/MB-67095
     def test_join_indexed_fields(self):
-       return
+        """
+        create 2 standalone collections with 1000 docs each (age (str, int): 28-32)
+        ANALYZE ANALYTICS COLLECTION KS1 with {"sample":"high"};
+        ANALYZE ANALYTICS COLLECTION KS2 with {"sample":"high"};
+        CREATE INDEX idx_age ON KS1(age);
+        CREATE INDEX idx_age ON KS2(age);
+        select count(1) from KS1 x join KS2 y on x.age <= 28;
+        select count(1) from KS1 x join KS2 y on y.age <= 28;
+        """
+        self.create_load_documents_standalone_collection()
 
-    # "msg": "Internal error" - https://jira.issues.couchbase.com/browse/MB-67047
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+
+
+        jobs = Queue()
+        results = []
+
+        cmds = {"age": [
+            f"select count(1) from {datasets[0].name} x join {datasets[1].name} y on x.age <= 28;",
+            f"select count(1) from {datasets[0].name} x join {datasets[1].name} y on y.age <= 28;"
+        ]}
+
+        # analyze collection
+        for dataset in datasets:
+            cboutil = CBOUtil()
+            cboutil.create_sample_for_analytics_collections(self.columnar_cluster, dataset.name, sample_size="high")
+
+        # create index
+        for dataset in datasets:
+            for field in cmds.keys():
+                index_name = self.cbas_util.format_name(f"idx_{field}")
+                index_fields = [field]
+
+                jobs.put((self.cbas_util.create_cbas_index,
+                    {"cluster": self.columnar_cluster, "index_name": index_name,
+                    "indexed_fields": index_fields, "dataset_name": dataset.name}))
+
+            self.cbas_util.run_jobs_in_parallel(
+                jobs, results, self.sdk_clients_per_user, async_run=False
+            )
+
+            if not all(results):
+                self.fail("Failed to create index")
+
+        # validate queries
+        for cmd in cmds["age"]:
+            dataset = datasets[0].name
+            try:
+                index_name = self.cbas_util.format_name(f"idx_age")
+                index_validator = HeterogeneousIndexValidation(self.columnar_cluster, dataset, [index_name],
+                                                                self.cbas_util)
+                index_validator.validate_all([cmd])
+                self.log.info(f"Validation completed for index_name {index_name} in collection {dataset}")
+            except Exception as e:
+                self.fail(f"Failed to validate index {e}")
+
+        self.log.info("Validation completed for test_join_indexed_fields")
+        return
+
     def test_list_field_index(self):
+        """
+        insert 1000 docs in standalone collection
+        CREATE INDEX idx_hobbies ON KS1(hobbies);
+        select count(*) from KS1 where hobbies = ["Reading", "Writing", "Drawing"];
+        """
+        self.create_load_documents_standalone_collection()
+
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+
+        for dataset in datasets:
+            jobs = Queue()
+            results = []
+
+            cmds = {"hobbies": [
+                f"select count(*) from {dataset.name} where hobbies = ['Reading', 'Writing', 'Drawing'];"
+            ]}
+
+            # create index
+            for field in cmds.keys():
+                index_name = self.cbas_util.format_name(f"idx_{field}")
+                index_fields = [field]
+
+                jobs.put((self.cbas_util.create_cbas_index,
+                          {"cluster": self.columnar_cluster, "index_name": index_name,
+                           "indexed_fields": index_fields, "dataset_name": dataset.name}))
+
+            self.cbas_util.run_jobs_in_parallel(
+                jobs, results, self.sdk_clients_per_user, async_run=False
+            )
+
+            if not all(results):
+                self.fail("Failed to create index")
+
+            # validate queries
+            try:
+                for field in cmds.keys():
+                    index_name = self.cbas_util.format_name(f"idx_{field}")
+                    index_validator = HeterogeneousIndexValidation(self.columnar_cluster, dataset.name, [index_name],
+                                                                   self.cbas_util)
+                    index_validator.validate_all(cmds[field])
+                    self.log.info(f"Validation completed for index_name {index_name} in collection {dataset.name}")
+            except Exception as e:
+                self.fail(f"Failed to validate index {e}")
+
+        self.log.info("Validation completed for test_list_field_index")
         return
 
     def test_include_exclude_key_index(self):
