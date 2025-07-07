@@ -5255,7 +5255,7 @@ class CBASRebalanceUtil(object):
             while not rebalance_task.result and retries < 3:
                 self.log.info("Rebalance task failed, retrying...")
                 rebalance_task = self.task.async_rebalance(
-                    cluster, servs_in, servs_out,
+                    cluster, [], servs_out,
                     check_vbucket_shuffling=self.vbucket_check,
                     retry_get_process_num=200, services=services)
                 retries += 1
