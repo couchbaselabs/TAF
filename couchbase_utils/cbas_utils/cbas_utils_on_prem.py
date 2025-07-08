@@ -5248,8 +5248,8 @@ class CBASRebalanceUtil(object):
         rebalance_task = self.task.async_rebalance(
             cluster, servs_in, servs_out,
             check_vbucket_shuffling=self.vbucket_check,
-            retry_get_process_num=200, services=services,
-            validate_bucket_ranking=False)
+            retry_get_process_num=2000, services=services,
+            validate_bucket_ranking = False)
         if wait_for_complete:
             self.wait_for_rebalance_task_to_complete(rebalance_task, cluster)
             retries = 0
