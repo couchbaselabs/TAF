@@ -5260,6 +5260,7 @@ class CBASRebalanceUtil(object):
                     check_vbucket_shuffling=self.vbucket_check,
                     retry_get_process_num=200, services=services,
                     validate_bucket_ranking=False)
+                self.wait_for_rebalance_task_to_complete(rebalance_task, cluster)
                 retries += 1
 
         available_servers = [servs for servs in available_servers if
