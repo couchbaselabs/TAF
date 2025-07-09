@@ -268,12 +268,12 @@ class DoctorCBAS():
         self.stop_run = True
 
     def wait_for_ingestion(self, cluster, databases, timeout=86400):
-        client = cluster.SDKClients[0].cluster
         _results = list()
         def check_in_th(collection, items):
             status = False
             stop_time = time.time() + timeout
             while time.time() < stop_time:
+                client = random.choice(cluster.SDKClients).cluster
                 statement = "select count(*) cnt from {};".format(collection)
                 try:
                     if cluster.state == "ACTIVE":
@@ -324,7 +324,7 @@ class CBASQueryLoad:
         self.query_stats = {key[1]: [0, 0] for key in self.queries}
         self.failures = 0
         self.cluster = cluster
-        self.cluster_conn = random.choice(cluster.SDKClients).cluster
+        self.cluster_conn = None
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -351,6 +351,7 @@ class CBASQueryLoad:
         name = threading.currentThread().getName()
         i = 0
         while not self.stop_run:
+            self.cluster_conn = random.choice(self.cluster.SDKClients).cluster
             if self.cluster.state != "ACTIVE":
                 time.sleep(60)
                 continue

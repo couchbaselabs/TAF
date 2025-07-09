@@ -7682,6 +7682,8 @@ class NodeInitializeTask(Task):
         service_quota[CbServer.Settings.KV_MEM_QUOTA] = \
             max(self.__get_memory_quota_in_mb(CbServer.Services.KV),
                 CbServer.Settings.MinRAMQuota.KV)
+        if self.server.type == CbServer.Services.COLUMNAR:
+            service_quota[CbServer.Settings.KV_MEM_QUOTA] = 100
 
         service_quota[CbServer.Settings.CBAS_MEM_QUOTA] = \
             max(self.__get_memory_quota_in_mb(CbServer.Services.CBAS),

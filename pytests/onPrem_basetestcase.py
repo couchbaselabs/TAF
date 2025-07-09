@@ -1068,7 +1068,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 for log_file in log_files:
                     log_file = log_file.strip("\n")
                     pattern_to_grep = []
-                    err_pattern = exclude_pattern = []
+                    err_pattern = []
+                    exclude_pattern = []
                     if 'exclude_patterns' in file_data:
                         for pattern in file_data['exclude_patterns']:
                             exclude_pattern.append(pattern['string'])
@@ -1095,7 +1096,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                             grep_str = "".join(grep_output)
                             kvstores = list(set(re.findall(regex, grep_str)))
                             self.data_sets[server] = kvstores
-                        if err_pattern is not None:
+                        if err_pattern and err_pattern is not None:
                             for pattern in err_pattern:
                                 found, index = check_error_patterns(grep_output, pattern)
                                 if found:
@@ -1117,7 +1118,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                               log_file)
                                 self.log.critical("%s: Found '%s' logs - %s"
                                                   % (server.ip, grep_for_str,
-                                                     grep_output))
+                                                     "\n".join(grep_output)))
                                 result = True
                                 break
                     if result is True:

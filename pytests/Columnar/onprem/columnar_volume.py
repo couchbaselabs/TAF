@@ -241,6 +241,9 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
                 self.generate_docs(bucket=bucket)
                 self.perform_load(cluster=self.remote_cluster, wait_for_load=True, validate_data=False)
+                result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+                if result:
+                    self.log.critical("Core dump(s) found on analytics cluster node(s) after KV workload")
             self.sleep(10)
 
     def test_columnar_volume(self):
@@ -251,6 +254,12 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.log.info("Creating Buckets, Scopes and Collection on Remote "
                         "cluster.")
         self.infra_setup()
+
+        result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+        if result:
+            self.fail("Core dump(s) found on analytics cluster node(s) after infra setup")
+
+        # Start KV workload thread
         kv_workload_thread = threading.Thread(target=self.live_kv_workload)
         kv_workload_thread.start()
         self.sleep(10)
@@ -296,6 +305,10 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.fail("Error while Rebalance-In KV+CBAS node in analytics "
                         "cluster")
             self.log.info("Rebalance-In KV+CBAS node in analytics cluster completed")
+            result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+            if result:
+                self.fail("Core dump(s) found on analytics cluster node(s) after rebalance-in")
+            self.setup_columnar_sdk_clients(self.analytics_cluster)
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after rebalance in for {} seconds".format(self.steady_state_workload_sleep))
 
@@ -308,6 +321,10 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             if not rebalance_task.result:
                 self.fail("Error while Rebalance-Out KV+CBAS node in analytics "
                         "cluster")
+            result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+            if result:
+                self.fail("Core dump(s) found on analytics cluster node(s) after rebalance-out")
+            self.setup_columnar_sdk_clients(self.analytics_cluster)
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after rebalance out for {} seconds".format(self.steady_state_workload_sleep))
             self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
@@ -323,6 +340,10 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.fail("Error while Rebalance-Swap KV+CBAS node in analytics "
                         "cluster")
             self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+            result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+            if result:
+                self.log.critical("Core dump(s) found on analytics cluster node(s) after rebalance-swap")
+            self.setup_columnar_sdk_clients(self.analytics_cluster)
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after rebalance swap for {} seconds".format(self.steady_state_workload_sleep))
 
@@ -332,6 +353,9 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 cluster=self.analytics_cluster, cbas_nodes=1,
                 action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers,
                 failover_type="Hard")
+            result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+            if result:
+                self.log.critical("Core dump(s) found on analytics cluster node(s) after hard failover and delta recovery")
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after hard failover and delta recovery for {} seconds".format(self.steady_state_workload_sleep))
                 
@@ -341,6 +365,10 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 cluster=self.analytics_cluster, cbas_nodes=1,
                 action="FullRecovery", available_servers=self.analytics_cluster.available_servers,
                 failover_type="Hard")
+            result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+            if result:
+                self.log.critical("Core dump(s) found on analytics cluster node(s) after hard failover and full recovery")
+            self.setup_columnar_sdk_clients(self.analytics_cluster)
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after hard failover and full recovery for {} seconds".format(self.steady_state_workload_sleep))
                 
@@ -351,6 +379,10 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 action="RebalanceOut", available_servers=self.analytics_cluster.available_servers,
                 failover_type="Hard")
             self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
+            result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+            if result:
+                self.log.critical("Core dump(s) found on analytics cluster node(s) after hard failover and rebalance out")
+            self.setup_columnar_sdk_clients(self.analytics_cluster)
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after hard failover and rebalance out for {} seconds".format(self.steady_state_workload_sleep))
                 
@@ -364,6 +396,10 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             if not rebalance_task.result:
                 self.fail("Error while Rebalance-In KV+CBAS node in analytics "
                         "cluster")
+            result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+            if result:
+                self.log.critical("Core dump(s) found on analytics cluster node(s) after rebalance-in")
+            self.setup_columnar_sdk_clients(self.analytics_cluster)
             self.sleep(self.steady_state_workload_sleep,
                        "Wait after rebalance in for {} seconds".format(self.steady_state_workload_sleep))
                 

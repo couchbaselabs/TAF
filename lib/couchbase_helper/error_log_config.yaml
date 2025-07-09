@@ -85,9 +85,10 @@ file_name_patterns:
       - string: 'invalid last page'
       - string: 'Storage corrupted and unrecoverable'
 
-  - file: 'analytics_*'
+  - file: 'analytics_info*'
     grep_for:
       - string: "fata"
+      - string: "MERGE operation.*failed"
       - string: "Analytics Service is temporarily unavailable"
       - string: "Failed during startup task"
       - string: "IllegalStateException"
