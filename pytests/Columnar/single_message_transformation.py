@@ -8,12 +8,17 @@ import string
 import time
 
 from deepdiff import DeepDiff
+from confluent_kafka import Producer
 
 from CbasLib.CBASOperations import CBASHelper
+from CbasLib.cbas_entity_columnar import Standalone_Dataset
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.sirius_task import CouchbaseUtil
 from cb_server_rest_util.py_constants.cb_constants import DocLoading
 from couchbase_helper.documentgenerator import doc_generator
+from kafka_util.confluent_utils import ConfluentUtils
+from kafka_util.kafka_connect_util import KafkaConnectUtil
+from couchbase_utils.kafka_util.common_utils import KafkaClusterUtils
 from pytests.Columnar.columnar_base import ColumnarBaseTest
 
 
@@ -46,6 +51,7 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                 password=self.remote_cluster.master.rest_password,
             )
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
+        self.kafka_test = self.input.param("kafka_test", False)
         self.doc_size = self.input.param("doc_size", 1024)
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
@@ -66,6 +72,41 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
             self.delete_all_buckets_from_capella_cluster(
                 self.tenant, self.remote_cluster)
 
+        # Clean up Kafka resources if they were used
+        if hasattr(self, "confluent_util") and hasattr(self, "confluent_cluster_obj"):
+            self.log.info("Cleaning up Kafka resources.")
+            try:
+                # Delete any topics with the prefix
+                if hasattr(self, "kafka_topic_prefix"):
+                    self.confluent_util.kafka_cluster_util.delete_topic_by_topic_prefix(
+                        self.kafka_topic_prefix)
+                if hasattr(self, "smt_topic"):
+                    self.confluent_util.kafka_cluster_util.delete_topic_by_topic_prefix(
+                        self.smt_topic)
+                
+                # Clean up connectors if they exist
+                if hasattr(self, "kafka_connect_hostname_cdc_confluent") and hasattr(self, "cdc_connector_name"):
+                    self.confluent_util.cleanup_kafka_resources(
+                        self.kafka_connect_hostname_cdc_confluent,
+                        [self.cdc_connector_name], self.kafka_topic_prefix + "_cdc")
+                
+                if hasattr(self, "kafka_connect_hostname_non_cdc_confluent") and hasattr(self, "non_cdc_connector_name"):
+                    self.confluent_util.cleanup_kafka_resources(
+                        self.kafka_connect_hostname_non_cdc_confluent,
+                        [self.non_cdc_connector_name], self.kafka_topic_prefix + "_non_cdc",
+                        self.confluent_cluster_obj.cluster_access_key)
+                
+                # Delete API key
+                if hasattr(self, "confluent_cluster_obj") and hasattr(self.confluent_cluster_obj, "cluster_access_key"):
+                    try:
+                        self.confluent_util.confluent_apis.delete_api_key(
+                            self.confluent_cluster_obj.cluster_access_key)
+                    except Exception as err:
+                        self.log.error(f"Error deleting API key: {err}")
+                        
+            except Exception as e:
+                self.log.error(f"Error during Kafka cleanup: {e}")
+
         super(SingleMessageTransformationTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
@@ -73,11 +114,69 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         self.create_bucket_scopes_collections_in_capella_cluster(
             self.tenant, self.remote_cluster,
             self.input.param("num_buckets", 1))
+        if self.kafka_test:
+            # Initialize variables for Kafka
+            self.kafka_topic_prefix = f"smt_regression_{int(time.time())}"
+            self.smt_topic = f"smt_test_{int(time.time())}"
 
-        self.columnar_spec = self.populate_columnar_infra_spec(
-            columnar_spec=self.cbas_util.get_columnar_spec(
-                self.columnar_spec_name),
-            remote_cluster=self.remote_cluster)
+            # Initializing Confluent util and Confluent cluster object.
+            self.confluent_util = ConfluentUtils(
+                cloud_access_key=self.input.param("confluent_cloud_access_key"),
+                cloud_secret_key=self.input.param("confluent_cloud_secret_key"))
+            self.confluent_cluster_obj = self.confluent_util.generate_confluent_kafka_object(
+                kafka_cluster_id=self.input.param("confluent_cluster_id"),
+                topic_prefix=self.kafka_topic_prefix)
+            if not self.confluent_cluster_obj:
+                self.fail("Unable to initialize Confluent Kafka cluster object")
+
+            # Initializing KafkaConnect Util and kafka connect server hostnames
+            self.kafka_connect_util = KafkaConnectUtil()
+            kafka_connect_hostname = self.input.param('kafka_connect_hostname')
+            self.kafka_connect_hostname_cdc_confluent = (
+                f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_CDC_PORT}")
+            self.kafka_connect_hostname_non_cdc_confluent = (
+                f"{kafka_connect_hostname}:{KafkaConnectUtil.CONFLUENT_NON_CDC_PORT}")
+
+            self.kafka_topics = {
+                "confluent": {
+                    "MONGODB": [],
+                    "POSTGRESQL": [],
+                    "MYSQLDB": []
+                }
+            }
+            self.kafka_topics["confluent"]["POSTGRESQL"].append(
+                {
+                    "topic_name": "postgres2.public.employee_data",
+                    "key_serialization_type": "json",
+                    "value_serialization_type": "json",
+                    "cdc_enabled": False,
+                    "source_connector": "DEBEZIUM",
+                    "num_items": 1000000
+                }
+            )
+
+            self.serialization_type = self.input.param("serialization_type",
+                                                       "JSON")
+            confluent_kafka_cluster_details = [
+                self.confluent_util.generate_confluent_kafka_cluster_detail(
+                    brokers_url=self.confluent_cluster_obj.bootstrap_server,
+                    auth_type="PLAIN", encryption_type="TLS",
+                    api_key=self.confluent_cluster_obj.cluster_access_key,
+                    api_secret=self.confluent_cluster_obj.cluster_secret_key)]
+            self.columnar_spec = self.populate_columnar_infra_spec(
+                columnar_spec=self.cbas_util.get_columnar_spec(
+                    self.columnar_spec_name),
+                remote_cluster=self.remote_cluster,
+                confluent_kafka_cluster_details=confluent_kafka_cluster_details,
+                kafka_topics=self.kafka_topics,
+                external_dbs=["POSTGRESQL"])
+            self.columnar_spec["kafka_dataset"]["primary_key"] = [
+                {"id": "INT"}]
+        else:
+            self.columnar_spec = self.populate_columnar_infra_spec(
+                columnar_spec=self.cbas_util.get_columnar_spec(
+                    self.columnar_spec_name),
+                remote_cluster=self.remote_cluster)
 
         self.log.info("Create test infra from spec.")
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
@@ -99,6 +198,52 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                                                 wait_for_completion=True)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         self.remote_dataset_name = remote_datasets[0].full_name
+        if self.kafka_test:
+            status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+                self.columnar_cluster, f"select * from {self.remote_dataset_name}")
+
+            if status != "success":
+                self.fail("Could not get results from remote dataset.")
+
+            # Upload results to Kafka topic
+            connection_config = self.confluent_cluster_obj.generate_connection_config(
+                self.confluent_cluster_obj.bootstrap_server,
+                security_protocal="SASL_SSL", sasl_mechanism="PLAIN",
+                sasl_username=self.confluent_cluster_obj.cluster_access_key,
+                sasl_password=self.confluent_cluster_obj.cluster_secret_key)
+            self.kafka_cluster_util = KafkaClusterUtils(connection_config)
+            if not self.kafka_cluster_util.create_topic(self.smt_topic, partitions_count=4, replication_factor=-1):
+                self.fail("Could not create topic on Kafka cluster.")
+            producer = Producer(connection_config)
+            remote_dataset_name = self.remote_dataset_name.split(".")[2]
+            for result in results:
+                producer.produce(self.smt_topic, value=json.dumps(result[remote_dataset_name]))
+            dataset_name = self.cbas_util.generate_name()
+            kafka_link = self.cbas_util.get_all_link_objs("kafka")[0]
+            dataset_obj = Standalone_Dataset(
+                name=dataset_name, data_source="POSTGRESQL",
+                primary_key={"id": "STRING"},
+                dataverse_name="default", database_name="default",
+                link_name=kafka_link.name, storage_format="columnar",
+                kafka_topic_name=self.smt_topic,
+                num_of_items=1,
+                cdc_enabled=False,
+                key_serialization_type="json",
+                value_serialization_type="json",
+                cdc_source_connector="DEBEZIUM")
+            if not self.cbas_util.create_standalone_collection_using_links(
+                cluster=self.columnar_cluster, collection_name=dataset_obj.name, if_not_exists=False,
+                primary_key=dataset_obj.primary_key,
+                link_name=dataset_obj.link_name, storage_format=dataset_obj.storage_format,
+                external_collection=dataset_obj.kafka_topic_name,
+                cdc_enabled=dataset_obj.cdc_enabled,
+                key_serialization_type=dataset_obj.key_serialization_type,
+                value_serialization_type=dataset_obj.value_serialization_type,
+                cdc_source=dataset_obj.data_source,
+                cdc_source_connector=dataset_obj.cdc_source_connector
+            ):
+                self.fail("Could not create the collection from Kafka topic generated.")
+            self.remote_dataset_name = dataset_obj.name
 
     def create_udf_and_remotedataset(self, udf_query, if_not_exists=False, udf_name=None, or_replace=False,
                                      wait_for_ingestion=True):
@@ -224,7 +369,7 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                         FROM [item] as item
                         WHERE num_sold>10000
                         LIMIT 1 """
-        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query, wait_for_ingestion=False)
         udf_select_query = f"select product_name from {udf_coll_obj.name}"
         remote_query = f"select product_name from {self.remote_dataset_name} where num_sold>10000"
         self.log.info("Validate collection created with the transform function.")
