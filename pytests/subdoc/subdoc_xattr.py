@@ -1805,12 +1805,13 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS,
                 create_path=True, xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
+            # Python SDK returns DurabilityAmbiguousException
             if not SDKException.check_if_exception_exists(
-                    SDKException.AmbiguousTimeoutException, sdk_exception):
+                    SDKException.DurabilityAmbiguousException, sdk_exception):
                 self.log_failure("Invalid exception: %s" % failed_item)
+            # Check for SyncWriteAmbiguous exception
             if not SDKException.check_if_exception_exists(
-                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS,
-                    sdk_exception):
+                    SDKException.RetryReason.SyncWriteAmbiguous, sdk_exception):
                 self.log_failure("Retry reason missing: %s" % failed_item)
 
             # Validate CAS doesn't change after sync_write failure
