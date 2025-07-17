@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from Columnar.templates.crudTemplate.docgen_template import Hotel
 from Columnar.templates.crudTemplate.heterogeneous_docgen_template import Person
 from cb_server_rest_util.security.security_api import SecurityRestAPI
+from Columnar.templates.crudTemplate.unlimited_columns_docgen_template import Column
 from global_vars import logger
 from SecurityLib.rbac import RbacUtil
 from CbasLib.CBASOperations import CBASHelper
@@ -3368,6 +3369,14 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self.log.error(str(err))
         return doc
 
+    def generate_unlimited_columns_docs(self, column):
+        doc = None
+        try:
+            doc = column.generate_document()
+        except Exception as err:
+            self.log.error(str(err))
+        return doc
+
     def doc_operations_standalone_collection_sirius(self, task_manager, collection_name, dataverse_name, database_name,
                                                     connection_string, start, end, sdk_batch_size=25, doc_size=1024,
                                                     template="product", username=None, password=None,
@@ -3393,32 +3402,41 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self, cluster, collection_name, dataverse_name, database_name,
             no_of_docs, document_size=1024, batch_size=1000,
             max_concurrent_batches=10, country_type="string",
-            include_country=True, analytics_timeout=1800, timeout=1800, username=None, password=None, nested_level=0, heterogeneous=False, heterogeneity=1, upsert=False):
+            include_country=True, analytics_timeout=1800, timeout=1800, username=None, password=None, nested_level=0, upsert=False, doc_template="hotel", doc_template_params=None,):
         """
         Load documents to a standalone collection.
         """
         start = time.time()
-        person = Person(heterogeneity=heterogeneity)
-        def generate_docs_and_insert(start, end, batch_size, heterogeneous):
+
+        if doc_template == "unlimited_columns":
+            column = Column(no_of_columns=doc_template_params["no_of_columns"], no_of_levels=doc_template_params["no_of_levels"], sparse=doc_template_params["sparse"], allArrays=doc_template_params["allArrays"])
+        elif doc_template == "heterogeneous":
+            person = Person(heterogeneity=doc_template_params["heterogeneity"])
+
+        doc_generator = {
+                "hotel": lambda: self.generate_docs(document_size, country_type, include_country, nested_level),
+                "heterogeneous": lambda: self.generate_heterogeneous_docs(person),
+                "unlimited_columns": lambda: self.generate_unlimited_columns_docs(column)
+            }
+
+
+        def generate_docs_and_insert(start, end, batch_size):
             for i in range(start, end, batch_size):
                 batch_start = i
                 batch_end = min(i + batch_size, end)
                 batch_docs = []
-                document_contains_null = False
                 self.log.info("Generating docs for batch start: {} and end: {}".format(batch_start, batch_end))
-                for j in range(batch_start, batch_end):
-                    if not heterogeneous:
-                        batch_docs.append(self.generate_docs(document_size, country_type, include_country, nested_level))
-                    else:
-                        batch_docs.append(self.generate_heterogeneous_docs(person))
-                        document_contains_null = True
+
+                for _ in range(batch_start, batch_end):
+                    batch_docs.append(doc_generator[doc_template]())
+
                 retry_count = 0
                 while retry_count < 3:
                     result = self.insert_into_standalone_collection(
                         cluster, collection_name,
                         batch_docs, dataverse_name, database_name,
                         analytics_timeout=analytics_timeout,
-                        timeout=timeout, username=username, password=password, document_contains_null=document_contains_null)
+                        timeout=timeout, username=username, password=password)
                     if result:
                         break
                     elif retry_count == 2:
@@ -3429,24 +3447,21 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                         retry_count += 1
             return
 
-        def generate_docs_and_upsert(start, end, batch_size, heterogeneous):
+        def generate_docs_and_upsert(start, end, batch_size):
             for i in range(start, end, batch_size):
                 batch_start = i
                 batch_end = min(i + batch_size, end)
                 batch_docs = []
-                document_contains_null = False
                 self.log.info("Generating docs for batch start: {} and end: {}".format(batch_start, batch_end))
-                for j in range(batch_start, batch_end):
-                    if not heterogeneous:
-                        batch_docs.append(self.generate_docs(document_size, country_type, include_country, nested_level))
-                    else:
-                        batch_docs.append(self.generate_heterogeneous_docs(person))
-                        document_contains_null = True
+
+                for _ in range(batch_start, batch_end):
+                    batch_docs.append(doc_generator[doc_template]())
+
                 retry_count = 0
                 while retry_count < 3:
                     result = self.upsert_into_standalone_collection(
                         cluster, collection_name,
-                        batch_docs, dataverse_name, database_name, document_contains_null=document_contains_null)
+                        batch_docs, dataverse_name, database_name)
                     if result:
                         break
                     elif retry_count == 2:
@@ -3461,9 +3476,9 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             step = no_of_docs // max_concurrent_batches
             for i in range(max_concurrent_batches):
                 if upsert:
-                    executor.submit(generate_docs_and_upsert, i * step, (i + 1) * step, batch_size, heterogeneous)
+                    executor.submit(generate_docs_and_upsert, i * step, (i + 1) * step, batch_size)
                 else:
-                    executor.submit(generate_docs_and_insert, i * step, (i + 1) * step, batch_size, heterogeneous)
+                    executor.submit(generate_docs_and_insert, i * step, (i + 1) * step, batch_size)
             executor.shutdown(wait=True)
 
         end = time.time()
@@ -3491,7 +3506,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
     def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
                                           database_name=None, username=None, validate_error_msg=None,
                                           expected_error=None, expected_error_code=None, password=None,
-                                          analytics_timeout=300, timeout=300, client_context_id=None, document_contains_null = False):
+                                          analytics_timeout=300, timeout=300, client_context_id=None):
         """
         Query to insert into standalone collection
         """
@@ -3502,8 +3517,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                                                        CBASHelper.format_name(collection_name)))
 
         # replace None with null ; else error while inserting docs
-        if document_contains_null:
-            cmd = cmd.replace("None", "null")
+        cmd = cmd.replace("None", "null")
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
@@ -3537,7 +3551,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
     def upsert_into_standalone_collection(self, cluster, collection_name, new_item, dataverse_name=None,
                                           database_name=None, username=None, validate_error_msg=None,
                                           expected_error=None, expected_error_code=None, password=None,
-                                          analytics_timeout=300, timeout=300, client_context_id=None, document_contains_null = False):
+                                          analytics_timeout=300, timeout=300, client_context_id=None):
         """
         Upsert into standalone collection
         """
@@ -3551,8 +3565,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                                                                                           collection_name)))
 
         # replace None with null ; else error while inserting docs
-        if document_contains_null:
-            cmd = cmd.replace("None", "null")
+        cmd = cmd.replace("None", "null")
 
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
@@ -3595,6 +3608,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         """
         Query to delete from standalone collection
         """
+        self.log.info(f"Deleting from standalone collection {collection_name}")
         cmd = self.generate_delete_from_cmd(
             collection_name=collection_name, dataverse_name=dataverse_name,
             database_name=database_name, where_clause=where_clause,

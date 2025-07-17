@@ -199,7 +199,7 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
         )
 
         if not all(results):
-            self.fail("Failed to create some collection with key {0}".format(str(key)))
+            self.fail("Failed to create some collection")
         if validate_error:
             return
 
@@ -209,7 +209,8 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
             jobs.put((self.cbas_util.load_doc_to_standalone_collection,
                       {"cluster": self.columnar_cluster, "collection_name": dataset.name,
                        "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
-                       "no_of_docs": self.initial_doc_count, "document_size": self.doc_size, "heterogeneous": True}))
+                       "no_of_docs": self.initial_doc_count, "document_size": self.doc_size, "doc_template": "heterogeneous",
+                       "doc_template_params": {"heterogeneity": 1}}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False
@@ -763,8 +764,8 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
             jobs.put((self.cbas_util.load_doc_to_standalone_collection,
                       {"cluster": self.columnar_cluster, "collection_name": dataset.name,
                        "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
-                       "no_of_docs": self.initial_doc_count, "document_size": self.doc_size, "heterogeneous": True,
-                       "heterogeneity": 0, "upsert": True}))
+                       "no_of_docs": self.initial_doc_count, "document_size": self.doc_size, "doc_template": "heterogeneous",
+                       "doc_template_params": {"heterogeneity": 0}, "upsert": True}))
 
             self.cbas_util.run_jobs_in_parallel(
                 jobs, results, self.sdk_clients_per_user, async_run=False
