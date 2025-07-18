@@ -91,14 +91,18 @@ for file in `find ~/.gradle/ -name "*.out.log"`; do
     fi
 done
 
-# Setup GoLang in local dir
-go_version=1.22.4
-wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz --quiet
-tar -xzf go${go_version}.linux-amd64.tar.gz
-rm -f go${go_version}.linux-amd64.tar.gz
-export GOPATH=`pwd`/go
-export PATH="${GOPATH}/bin:${PATH}"
-export GO111MODULE=on
+load_docs_using=$(echo "$parameters" | grep -oP 'load_docs_using=\K[^,]*')
+if [[ "$load_docs_using" == "sirius_go_sdk" ]]; then
+  # Setup GoLang in local dir
+  go_version=1.22.4
+  echo "Setting up Golang ${go_version} for sirius"
+  wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz --quiet
+  tar -xzf go${go_version}.linux-amd64.tar.gz
+  rm -f go${go_version}.linux-amd64.tar.gz
+  export GOPATH=`pwd`/go
+  export PATH="${GOPATH}/bin:${PATH}"
+  export GO111MODULE=on
+fi
 # Set desired python env
 export PYENV_VERSION="3.10.14"
 export PYENV_ROOT="$HOME/.pyenv"
@@ -278,7 +282,6 @@ if [ $status -eq 0 ]; then
   num_scripts_running=$(ps -ef | grep '/tmp/jenkins' | grep -v 'grep ' | wc -l)
   sirius_port=${starting_ports[$num_scripts_running]} ; while [ "$(ss -tulpn | grep LISTEN | grep $sirius_port | wc -l)" -ne 0 ]; do sirius_port=$((sirius_port+1)) ; done
   set -x
-  load_docs_using=$(echo "$parameters" | grep -oP 'load_docs_using=\K[^,]*')
   if [[ "$load_docs_using" == "sirius_go_sdk" ]]; then
     echo "Launching Sirius GO SDK to load documents."
     python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
