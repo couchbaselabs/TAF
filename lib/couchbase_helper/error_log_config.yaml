@@ -113,6 +113,7 @@ file_name_patterns:
       - string: 'HYR0114'
       - string: 'HYR0115'
       - string: 'ASX3110'
+      - string: 'ensureSeverGroupsLOCKED'
 
   - file: '*.log'
 
