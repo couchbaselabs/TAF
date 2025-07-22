@@ -241,7 +241,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
                 self.generate_docs(bucket=bucket)
                 self.perform_load(cluster=self.remote_cluster, wait_for_load=True, validate_data=False)
-                result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
+                result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=False)
                 if result:
                     self.log.critical("Core dump(s) found on analytics cluster node(s) after KV workload")
             self.sleep(10)
