@@ -792,7 +792,7 @@ class ColumnarUtils:
             else:
                 return None, None
         else:
-            self.log.error("Unable to create user couchbase-cloud-qe")
+            self.log.error("Unable to create user couchbase-cloud-qe: {}".format(resp.json()))
             return None, None
 
     def delete_couchbase_cloud_qe_user(self, pod, tenant, instance):

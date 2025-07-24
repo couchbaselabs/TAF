@@ -114,6 +114,7 @@ file_name_patterns:
       - string: 'HYR0115'
       - string: 'ASX3110'
       - string: 'ensureSeverGroupsLOCKED'
+      - string: 'Active Runtime .* is already registered'
 
   - file: '*.log'
 

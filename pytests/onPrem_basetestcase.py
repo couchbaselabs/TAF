@@ -773,6 +773,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                           "other nodes from '%s'" % cluster_name)
             self.cluster_util.cluster_cleanup(cluster,
                                                 self.bucket_util)
+            if not self.skip_cluster_reset:
+                self.log.info("Resetting cluster nodes")
+                self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
         # delete aws bucket that was created for compute storage separation
         if (self.analytics_compute_storage_separation and
                 self.columnar_aws_bucket_created):
