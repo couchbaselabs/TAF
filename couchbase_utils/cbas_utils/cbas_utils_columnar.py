@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 
 from Columnar.templates.crudTemplate.docgen_template import Hotel
 from Columnar.templates.crudTemplate.heterogeneous_docgen_template import Person
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 from global_vars import logger
 from SecurityLib.rbac import RbacUtil
 from CbasLib.CBASOperations import CBASHelper
@@ -408,15 +409,19 @@ class RBAC_Util(BaseUtil):
         self.database_users = dict()
         self.columnar_roles = dict()
 
-    def create_user(self, cluster, id, username, password):
+    def create_user(self, cluster, id, username, password, roles=None):
         """
             Function to create server user.
         """
-        user = DatabaseUser(id, username, password)
+        user = DatabaseUser(id, username, password, roles)
         result = True
         try:
             RbacUtil().create_user_source([user.to_dict()], "builtin",
                                           cluster.master)
+            if roles:
+                RbacUtil().add_user_role([user.to_dict()],
+                                         SecurityRestAPI(cluster.master),
+                                         "builtin")
         except Exception as e:
             self.log.error("Exception while creating new user: {}".format(e))
             result = False

@@ -304,7 +304,7 @@ class CBASBaseTest(BaseTestCase):
             for server in cluster.servers:
                 # This check ensures that only the number of nodes that are
                 # mentioned in node_init param are added to the cluster.
-                if j < self.nodes_init[i]:
+                if j < self.nodes_init[i] and len(self.services_init[i]) > j:
                     if server.ip != cluster.master.ip:
                         server.services = self.services_init[i][j].replace(":", ",")
                         j += 1

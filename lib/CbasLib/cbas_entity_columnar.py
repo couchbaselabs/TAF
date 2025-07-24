@@ -12,16 +12,18 @@ class DatabaseUser(object):
     """
     Database user
     """
-    def __init__(self, id, name, password):
+    def __init__(self, id, name, password, roles=None):
         self.id = id
         self.name = name
         self.password = password
+        self.roles = roles
 
     def __str__(self):
         return self.id
 
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "password": self.password}
+        return {"id": self.id, "name": self.name, "password": self.password,
+                "roles": self.roles}
 
 
 class ColumnarRole(object):

@@ -27,7 +27,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
             else:
                 self.remote_cluster = cluster
 
-        self.ACCESS_DENIED_ERR = "User must have permission (cluster.analytics.grant.{}[{}]!{})"
+        self.ACCESS_DENIED_ERR = "Insufficient permissions or the requested object does not exist"
         self.database_privileges = ["CREATE", "DROP"]
         self.scope_privileges = ["CREATE", "DROP"]
         self.collection_ddl_privileges = ["CREATE", "DROP"]
@@ -44,11 +44,11 @@ class ColumnarRBAC(ColumnarOnPremBase):
         self.view_ddl_privileges = ["CREATE", "DROP"]
         self.view_select_privileges = ["SELECT"]
 
-        self.predefined_roles = ["sys_root", "sys_data_reader_writer",
+        self.predefined_roles = ["sys_root", "sys_data_admin",
                                  "sys_data_reader", "sys_view_reader"]
 
-        self.aws_region = "us-west-1"
-        self.s3_source_bucket = "columnar-sanity-test-data-mohsin"
+        self.aws_region = self.input.param("aws_bucket_region", self.input.param("aws_region", "us-east-1"))
+        self.s3_source_bucket = "columnar-functional-sanity-test-data"
         self.sink_s3_bucket_name = None
 
     def generate_random_password(self, length=12):
@@ -85,7 +85,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         return test_case
 
     def create_rbac_testcases(self, privileges=[], resources=[], privilege_resource_type="database",
-                              valid_predefined_roles=[]):
+                              valid_predefined_roles=[], ns_server_roles=["analytics_access"]):
         """
         1. Create a user for each privilege and assign the corresponding
            privilege to the user
@@ -103,14 +103,17 @@ class ColumnarRBAC(ColumnarOnPremBase):
         for priv in privileges:
             username = self.generate_random_entity_name(type="user")
             password = self.generate_random_password()
+            self.log.info("Creating user: {}".format(username))
             result = self.columnar_rbac_util.create_user(self.analytics_cluster,
                                                          username,
                                                          username,
-                                                         password)
+                                                         password,
+                                                         roles=ns_server_roles)
             if not result:
                 self.fail("Failed to create user1")
             user1 = self.columnar_rbac_util.get_user_obj(username)
             role_name = self.generate_random_entity_name(type="role")
+            self.log.info("Creating role: {}".format(role_name))
             result = self.columnar_rbac_util.create_columnar_role(self.analytics_cluster,
                                                                   role_name)
             if not result:
@@ -118,6 +121,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
             role1 = self.columnar_rbac_util.get_columnar_role_object(role_name)
 
             #Grant privilege to role and user
+            self.log.info("Granting privilege: {} to user: {} and role: {}".format(priv, username, role_name))
             result = self.columnar_rbac_util.grant_privileges_to_subjects(self.analytics_cluster,
                                                                           [priv],
                                                                           [user1, role1],
@@ -140,10 +144,12 @@ class ColumnarRBAC(ColumnarOnPremBase):
             #Assign role to new user
             username = self.generate_random_entity_name(type="user")
             password = self.generate_random_password()
+            self.log.info("Creating user: {}".format(username))
             result = self.columnar_rbac_util.create_user(self.analytics_cluster,
                                                          username,
                                                          username,
-                                                         password)
+                                                         password,
+                                                         roles=ns_server_roles)
             if not result:
                 self.fail("Failed to create user2")
             user2 = self.columnar_rbac_util.get_user_obj(username)
@@ -166,19 +172,22 @@ class ColumnarRBAC(ColumnarOnPremBase):
         result = self.columnar_rbac_util.create_user(self.analytics_cluster,
                                                      username,
                                                      username,
-                                                     password)
+                                                     password,
+                                                     roles=ns_server_roles)
         if not result:
             self.fail("Failed to create user3")
 
         user3 = self.columnar_rbac_util.get_user_obj(username)
 
         role_name = self.generate_random_entity_name(type="role")
+        self.log.info("Creating role: {}".format(role_name))
         result = self.columnar_rbac_util.create_columnar_role(self.analytics_cluster,
                                                               role_name)
         if not result:
             self.fail("Failed to create role2")
         role2 = self.columnar_rbac_util.get_columnar_role_object(role_name)
 
+        self.log.info("Granting privilege: {} to user: {} and role: {}".format(privileges, username, role_name))
         result = self.columnar_rbac_util.grant_privileges_to_subjects(self.analytics_cluster,
                                                                       privileges,
                                                                       [user3, role2],
@@ -192,14 +201,17 @@ class ColumnarRBAC(ColumnarOnPremBase):
 
         username = self.generate_random_entity_name(type="user")
         password = self.generate_random_password()
+        self.log.info("Creating user: {}".format(username))
         result = self.columnar_rbac_util.create_user(self.analytics_cluster,
                                                      username,
                                                      username,
-                                                     password)
+                                                     password,
+                                                     roles=ns_server_roles)
         if not result:
             self.fail("Failed to create user4")
         user4 = self.columnar_rbac_util.get_user_obj(username)
 
+        self.log.info("Assigning role: {} to user: {}".format(role2, username))
         result = self.columnar_rbac_util.assign_role_to_user(self.analytics_cluster,
                                                              roles=[role2],
                                                              users=[user4])
@@ -211,16 +223,19 @@ class ColumnarRBAC(ColumnarOnPremBase):
 
         username = self.generate_random_entity_name(type="user")
         password = self.generate_random_password()
+        self.log.info("Creating user: {}".format(username))
         result = self.columnar_rbac_util.create_user(self.analytics_cluster,
                                                      username,
                                                      username,
-                                                     password)
+                                                     password,
+                                                     roles=ns_server_roles)
 
         if not result:
             self.fail("Failed to create user5 {}".format(username))
         user5 = self.columnar_rbac_util.get_user_obj(username)
 
         role_name = self.generate_random_entity_name(type="role")
+        self.log.info("Creating role: {}".format(role_name))
         result = self.columnar_rbac_util.create_columnar_role(self.analytics_cluster,
                                                                 role_name)
         if not result:
@@ -235,11 +250,13 @@ class ColumnarRBAC(ColumnarOnPremBase):
         result = self.columnar_rbac_util.create_user(self.analytics_cluster,
                                                      username,
                                                      username,
-                                                     password)
+                                                     password,
+                                                     roles=ns_server_roles)
         if not result:
             self.fail("Failed to create user5 {}".format(username))
         user6 = self.columnar_rbac_util.get_user_obj(username)
 
+        self.log.info("Assigning role: {} to user: {}".format(role3, username))
         result = self.columnar_rbac_util.assign_role_to_user(self.analytics_cluster,
                                                              [role3],
                                                              [user6])
@@ -254,20 +271,23 @@ class ColumnarRBAC(ColumnarOnPremBase):
         for pre_def_role in self.predefined_roles:
             username = self.generate_random_entity_name(type="user")
             password = self.generate_random_password()
+            self.log.info("Creating user: {}".format(username))
             result = self.columnar_rbac_util.create_user(self.analytics_cluster,
                                                      username,
                                                      username,
-                                                     password)
+                                                     password,
+                                                     roles=ns_server_roles)
             if not result:
                 self.fail("Failed to create user5 {}".format(username))
             created_user = self.columnar_rbac_util.get_user_obj(username)
+            self.log.info("Assigning role: {} to user: {}".format(pre_def_role, username))
             result = self.columnar_rbac_util.assign_role_to_user(self.analytics_cluster,
                                                                  [pre_def_role],
                                                                  [created_user])
             if not result:
                 self.fail("Failed to assign predefined role {} to user {}".
                         format(str(pre_def_role), str(created_user)))
-            validate_err_msg = True if pre_def_role in valid_predefined_roles else False
+            validate_err_msg = False if pre_def_role in valid_predefined_roles else True
             test_case = self.generate_test_case(created_user, privileges, resources,
                                                 validate_err_msg=validate_err_msg,
                                                 predefined_roles=[pre_def_role])
@@ -464,7 +484,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.database_privileges, [],
                                                "database",
                                                valid_predefined_roles=['sys_root',
-                                                                       'sys_data_reader_writer'])
+                                                                       'sys_data_admin'])
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
             self.log.info(test_case['description'])
@@ -475,7 +495,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
 
             privileges = test_case['privileges']
 
-            self.sleep(36000, "Wait before ending test")
+            self.sleep(2, "Wait before ending test")
 
             for priv in privileges:
                 if priv == "CREATE":
@@ -514,7 +534,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.scope_privileges, databases,
                                                privilege_resource_type="scope",
                                                valid_predefined_roles=['sys_root',
-                                                                       'sys_data_reader_writer'])
+                                                                       'sys_data_admin'])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -582,7 +602,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.collection_ddl_privileges,
                                                scopes, privilege_resource_type="collection_ddl",
                                                valid_predefined_roles=['sys_root',
-                                                                       'sys_data_reader_writer'])
+                                                                       'sys_data_admin'])
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
             self.log.info(test_case['description'])
@@ -795,7 +815,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.collection_dml_privileges, collections,
                                                privilege_resource_type="collection_dml",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -879,7 +899,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.link_ddl_privileges, [],
                                                privilege_resource_type="link_ddl",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -1002,7 +1022,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.link_connection_privileges, remote_links,
                                                privilege_resource_type="link_connection",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -1116,7 +1136,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.link_dml_privileges, s3_links,
                                                privilege_resource_type="link_dml",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -1212,7 +1232,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.link_dml_privileges, remote_links,
                                                privilege_resource_type="link_dml",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -1314,7 +1334,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.synonym_privileges, scopes,
                                                privilege_resource_type="synonym",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -1398,7 +1418,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.index_privileges, collections,
                                                privilege_resource_type="index",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         index_fields = ["name:string"]
         for idx, test_case in enumerate(testcases):
@@ -1482,7 +1502,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         testcases = self.create_rbac_testcases(self.udf_ddl_privileges, scopes,
                                                privilege_resource_type="udf_ddl",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
         function_body = "select 1"
 
         for idx, test_case in enumerate(testcases):
@@ -1573,7 +1593,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                analytics_udfs,
                                                privilege_resource_type="udf_execute",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -1641,7 +1661,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                scopes,
                                                privilege_resource_type="view_ddl",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer"])
+                                                                       "sys_data_admin"])
 
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
@@ -1755,7 +1775,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                views,
                                                privilege_resource_type="view_select",
                                                valid_predefined_roles=["sys_root",
-                                                                       "sys_data_reader_writer",
+                                                                       "sys_data_admin",
                                                                        "sys_data_reader",
                                                                        "sys_view_reader"])
         for idx, test_case in enumerate(testcases):
@@ -1799,5 +1819,5 @@ class ColumnarRBAC(ColumnarOnPremBase):
         if self.sink_s3_bucket_name:
             self.delete_s3_bucket()
 
-        self.columnar_cbas_utils.cleanup_cbas(self.cluster)
+        self.columnar_cbas_utils.cleanup_cbas(self.analytics_cluster)
         super(ColumnarRBAC, self).tearDown()
