@@ -2203,3 +2203,32 @@ class APIBase(CouchbaseBaseTest):
             oidProvider_Deletion_Failed = True
 
         return oidProvider_Deletion_Failed
+
+    def create_user_to_be_tested(self, resources, email, name, organizationRoles):
+        self.log.info("Creating a User for next test in the queue.")
+
+        res = self.capellaAPI.cluster_ops_apis.create_user(
+            self.organisation_id, resources, email, name, organizationRoles)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_user(
+                self.organisation_id, resources, email, name, organizationRoles)
+        if res.status_code != 201:
+            self.log.error("Result: {}".format(res.content))
+            self.tearDown()
+            self.fail("Error while creating User.")
+        return res.json()["id"]
+
+    def delete_user(self, user_id):
+        self.log.info("Deleting a User for next test in the queue.")
+        res = self.capellaAPI.cluster_ops_apis.delete_user(
+            self.organisation_id, user_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.delete_user(
+                self.organisation_id, user_id)
+        if res.status_code != 204:
+            self.log.error("Result: {}".format(res.content))
+            self.tearDown()
+            self.fail("Error while deleting User.")
+        self.log.info("User deleted successfully.")

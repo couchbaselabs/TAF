@@ -12,3 +12,5 @@ build
 /bin/
 **/.jython_cache
 **/.vscode
+jars
+trial.ini
