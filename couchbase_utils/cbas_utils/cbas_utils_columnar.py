@@ -2278,7 +2278,7 @@ class Dataset_Util(KafkaLink_Util):
             self, cluster, dataset_name, username=None, password=None,
             validate_error_msg=False, expected_error=None,
             expected_error_code=None, if_exists=False,
-            analytics_collection=False, timeout=300, analytics_timeout=300):
+            analytics_collection=False, timeout=600, analytics_timeout=600):
         """
         Drops the dataset.
         :param dataset_name: str, dataset to be droppped
@@ -4899,7 +4899,7 @@ class View_Util(Synonym_Util):
     def drop_analytics_view(
             self, cluster, view_full_name, if_exists=False,
             validate_error_msg=False, expected_error=None, username=None,
-            password=None, timeout=300, analytics_timeout=300):
+            password=None, timeout=600, analytics_timeout=600):
 
         cmd = "drop analytics view {0}".format(view_full_name)
 
