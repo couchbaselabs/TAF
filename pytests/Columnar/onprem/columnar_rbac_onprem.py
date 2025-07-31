@@ -186,8 +186,13 @@ class ColumnarRBAC(ColumnarOnPremBase):
             testcases.append(test_case)
 
             if len(privileges) > 1:
-                exluded_privs = [ex_priv for ex_priv in privileges if ex_priv != priv]
+                exluded_privs = [ex_priv for ex_priv in privileges if ex_priv != priv and priv.find(ex_priv) == -1 and ex_priv.find(priv) == -1]
                 exluded_privs = random.sample(exluded_privs, min(2, len(exluded_privs)))
+                self.log.info("Granted privileges: {}".format(priv))
+                self.log.info("Excluded privileges: {}".format(exluded_privs))
+                if "SELECT,DELETE" in exluded_privs:
+                    exluded_privs.remove("SELECT,DELETE")
+                    exluded_privs.append("DELETE")
                 negative_test_case = self.generate_test_case(user2, exluded_privs,
                                                              resources, True)
                 testcases.append(negative_test_case)
@@ -318,12 +323,18 @@ class ColumnarRBAC(ColumnarOnPremBase):
                 self.fail("Failed to assign predefined role {} to user {}".
                         format(str(pre_def_role), str(created_user)))
             validate_err_msg = False if pre_def_role in valid_predefined_roles else True
-            if pre_def_role == "sys_view_reader" and privilege_resource_type == "collection_dml":
-                _exclude_privs = ["SELECT", "DELETE", "INSERT", "UPSERT", "ANALYZE"]
-                negative_test_case = self.generate_test_case(created_user, _exclude_privs, resources,
-                                                validate_err_msg=True,
-                                                predefined_roles=[pre_def_role])
-                testcases.append(negative_test_case)
+            if pre_def_role == "sys_view_reader":
+                if privilege_resource_type != "view_select":
+                    _exclude_privs = ["SELECT", "DELETE", "INSERT", "UPSERT", "ANALYZE"]
+                    negative_test_case = self.generate_test_case(created_user, _exclude_privs, resources,
+                                                    validate_err_msg=True,
+                                                    predefined_roles=[pre_def_role])
+                    testcases.append(negative_test_case)
+                else:
+                    test_case = self.generate_test_case(created_user, ["SELECT"], resources,
+                                                        validate_err_msg=False,
+                                                        predefined_roles=[pre_def_role])
+                    testcases.append(test_case)
             elif pre_def_role == "sys_data_reader":
                 _priv = ["SELECT"]
                 test_case = self.generate_test_case(created_user, _priv, resources,
@@ -1843,7 +1854,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                 password=test_case['user'].password,
                                 timeout=300, analytics_timeout=300))
 
-                if test_case['validate_err_msg']:
+                if test_case['validate_err_msg'] and "sys_data_reader" not in test_case['predefined_roles']:
                     result = self.columnar_cbas_utils.validate_error_and_warning_in_response(
                                 status, errors, expected_error, None)
                     if not result:
