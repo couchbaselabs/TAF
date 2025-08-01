@@ -410,7 +410,7 @@ class RBAC_Util(BaseUtil):
         self.database_users = dict()
         self.columnar_roles = dict()
 
-    def create_user(self, cluster, id, username, password, roles=""):
+    def create_user(self, cluster, id, username, password, roles=[]):
         """
             Function to create server user.
         """
