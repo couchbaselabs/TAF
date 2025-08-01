@@ -557,9 +557,9 @@ class Murphy(BaseTestCase, OPD):
             self.mutation_th.start()
 
             self.PrintStep("Running Query workload for {} during mutations".format(
-                self.input.param("steady_state_workload_sleep", 300)))
+                self.input.param("mutations_only_workload_sleep", 300)))
             self.restart_query_load(self.cluster, 0)
-            self.sleep(self.input.param("steady_state_workload_sleep", 300))
+            self.sleep(self.input.param("mutations_only_workload_sleep", 300))
             self.end_step_checks(" queries with mutations")
         else:
             self.mutations = True
