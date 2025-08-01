@@ -393,13 +393,13 @@ class PutAppEndpoints(GetAppEndpoints):
                 elif k == "scopes" and v is None:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 400,
+                        "code": 422,
+                        "message": "App Endpoint Scopes config is empty or "
+                                   "has more than one scope",
                         "hint": "Please review your request and ensure that "
                                 "all required parameters are correctly "
                                 "provided.",
-                        "httpStatusCode": 400,
-                        "message": "App Endpoint Scopes config is empty or "
-                                   "has more than one scope"
+                        "httpStatusCode": 422
                     }
                 elif k == "name" and v == "":
                     testcase["expected_status_code"] = 422

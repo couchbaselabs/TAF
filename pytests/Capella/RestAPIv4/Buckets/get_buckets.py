@@ -26,6 +26,8 @@ class GetBucket(GetCluster):
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
             "priority": 0,
+            "memoryAllocationInMb": 1024,  # Adding missing field
+            "vbuckets": 1024,  # Adding missing field
             "stats": {
                 "itemCount": None,
                 "opsPerSecond": None,
