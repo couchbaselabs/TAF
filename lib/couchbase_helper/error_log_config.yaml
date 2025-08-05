@@ -33,6 +33,8 @@ file_name_patterns:
             time_to_consider_in_seconds: 10
           - string: 'Slow scheduling'
             time_to_consider_in_seconds: 5
+        exclude_patterns:
+          - 'RANGE_SCAN_CONTINUE'
 
       #- string: 'WARN'
       #  exclude_patterns:
@@ -108,6 +110,7 @@ file_name_patterns:
       - string: "ArrayIndexOutOfBoundsException"
       - string: "java.lang.OutOfMemoryError"
       - string: "Invalid pinCount"
+      - string: "seqno advancements due to DCP_OSO_SNAPSHOT end"
     exclude_patterns:
       - string: 'HYR0010'
       - string: 'HYR0114'
