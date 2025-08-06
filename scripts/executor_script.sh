@@ -212,8 +212,8 @@ else
   check_and_build_testrunner_install_docker
   touch $WORKSPACE/testexec.$$.ini
   docker run --rm \
-    -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini \
-    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
+    -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini:Z \
+    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z  \
     testrunner:install python3 scripts/populateIni.py $skip_mem_info \
     -s ${servers} $internal_servers_param \
     -d ${addPoolServerId} \
@@ -225,7 +225,7 @@ else
   if [ "$server_type" != "CAPELLA_LOCAL" ]; then
     if [ "$os" = "windows" ] ; then
       docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
+        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z \
         testrunner:install python3 scripts/new_install.py \
         -i testexec.$$.ini \
         -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
