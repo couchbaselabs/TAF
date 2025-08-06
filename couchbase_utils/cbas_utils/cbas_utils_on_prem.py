@@ -11,6 +11,7 @@ executing DDLs is hard coded to run on a single thread. If this changes in futur
 remove this hard coded value.
 """
 import json
+import re
 import urllib
 import time
 import threading
@@ -39,6 +40,7 @@ from cb_server_rest_util.rest_client import RestConnection as NewRestConnection
 
 from py_constants import CbServer
 from shell_util.remote_connection import RemoteMachineShellConnection
+from table_view import TableView
 
 
 class BaseUtil(object):
@@ -5196,7 +5198,7 @@ class CBASRebalanceUtil(object):
     def rebalance(self, cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
                   cbas_nodes_out=0, available_servers=[], exclude_nodes=[],
                   in_node_services="",
-                  wait_for_complete=False):
+                  wait_for_complete=False, monitor_health=False):
         if kv_nodes_out > 0:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
                 cluster, service_type="kv", get_all_nodes=True,
@@ -5250,6 +5252,14 @@ class CBASRebalanceUtil(object):
             check_vbucket_shuffling=self.vbucket_check,
             retry_get_process_num=2000, services=services,
             validate_bucket_ranking = False)
+
+        # Start health monitoring if requested
+        health_monitor_thread = None
+        if monitor_health:
+            health_monitor = HealthMonitorUtil(cluster, self.cluster_util)
+            health_monitor_thread = health_monitor.start_health_monitoring_thread(
+                cluster, check_interval=2, timeout=3000)
+            self.log.info("Started health monitoring during rebalance")
         if wait_for_complete:
             self.wait_for_rebalance_task_to_complete(rebalance_task, cluster)
             retries = 0
@@ -5262,6 +5272,14 @@ class CBASRebalanceUtil(object):
                     validate_bucket_ranking=False)
                 self.wait_for_rebalance_task_to_complete(rebalance_task, cluster)
                 retries += 1
+            if health_monitor:
+                health_monitor.set_rebl_running(False)
+                
+        # Wait for health monitoring thread to complete if it was started
+        if health_monitor_thread and health_monitor_thread.is_alive():
+            health_monitor_thread.join(timeout=60)
+            if health_monitor_thread.is_alive():
+                self.log.warning("Health monitoring thread did not complete within timeout")
 
         available_servers = [servs for servs in available_servers if
                              servs not in servs_in]
@@ -5443,7 +5461,7 @@ class CBASRebalanceUtil(object):
                  action=None, timeout=7200, available_servers=[],
                  exclude_nodes=[], kv_failover_nodes=None,
                  cbas_failover_nodes=None, all_at_once=False,
-                 wait_for_complete=True, reset_cbas_cc=True):
+                 wait_for_complete=True, reset_cbas_cc=True, monitor_health=False):
         """
         This fucntion fails over KV or CBAS node/nodes.
         :param cluster <cluster_obj> cluster in which the nodes are present
@@ -5457,6 +5475,15 @@ class CBASRebalanceUtil(object):
         :param exclude_nodes <list> list of nodes not to be considered for
         fail over.
         """
+        # Start health monitoring if requested
+        health_monitor_thread = None
+        health_monitor = None
+        if monitor_health:
+            health_monitor = HealthMonitorUtil(cluster, self.cluster_util)
+            health_monitor_thread = health_monitor.start_health_monitoring_thread(
+                cluster, check_interval=2, timeout=3000)
+            self.log.info("Started health monitoring during failover rebalance")
+
         self.log.info("Failover Type - {0}, Action after failover {1}".format(
             failover_type, action))
 
@@ -5555,15 +5582,22 @@ class CBASRebalanceUtil(object):
         if action and fail_over_status:
             available_servers, _, _ = self.perform_action_on_failed_over_nodes(
                 cluster, action, available_servers, kv_failover_nodes,
-                cbas_failover_nodes, wait_for_complete)
+                cbas_failover_nodes, wait_for_complete, monitor_health)
         if reset_cbas_cc:
             self.reset_cbas_cc_node(cluster)
+        # Wait for health monitoring thread to complete if it was started
+        if health_monitor:
+            health_monitor.set_rebl_running(False)
+        if health_monitor_thread and health_monitor_thread.is_alive():
+            health_monitor_thread.join(timeout=60)
+            if health_monitor_thread.is_alive():
+                self.log.warning("Health monitoring thread did not complete within timeout")
         return available_servers, kv_failover_nodes, cbas_failover_nodes
 
     def perform_action_on_failed_over_nodes(
             self, cluster, action="FullRecovery", available_servers=[],
             kv_failover_nodes=[], cbas_failover_nodes=[],
-            wait_for_complete=True):
+            wait_for_complete=True, monitor_health=False):
         # Perform the action
         if action == "RebalanceOut":
             servs_out = [node for node in cluster.nodes_in_cluster for
@@ -5608,6 +5642,7 @@ class CBASRebalanceUtil(object):
                         otp_node=node_ids[node.ip], recovery_type="delta")
             rebalance_task = self.task.async_rebalance(
                 cluster, [], [], retry_get_process_num=200)
+
             if wait_for_complete:
                 retries = 0
                 while not self.wait_for_rebalance_task_to_complete(
@@ -5620,8 +5655,7 @@ class CBASRebalanceUtil(object):
                     raise Exception(
                         "Rebalance failed while doing recovery after failover")
                 time.sleep(10)
-            else:
-                return rebalance_task
+
         if cbas_failover_nodes:
             self.reset_cbas_cc_node(cluster)
         # After the action has been performed on failed over node,
@@ -5744,3 +5778,86 @@ class BackupUtils(object):
             include=include, exclude=exclude, remap=remap,
             level=level, backup=backup)
         return status, cbas_helper.get_json(content), response
+
+
+class HealthMonitorUtil(object):
+    """
+    Utility class for monitoring node health during rebalance operations
+    """
+
+    def __init__(self, cluster, cluster_util):
+        self.cluster = cluster
+        self.cluster_util = cluster_util
+        self.log = logger.get("test")
+        self.rebl_running = True
+
+    def set_rebl_running(self, rebl_running):
+        self.rebl_running = rebl_running
+
+    def check_node_health(self, node_ip, port=8095):
+        """
+        Check health of a single node by polling the health API
+        """
+        try:
+            import requests
+            health_url = f"http://{node_ip}:{port}/api/v1/health"
+            response = requests.get(health_url, timeout=30)
+            return response.status_code
+        except Exception as e:
+            self.log.error(f"Node {node_ip} health check failed with exception: {str(e)}")
+            return "No response"
+
+    def monitor_cluster_health_during_rebalance(self, cluster,
+                                                check_interval=10, timeout=300):
+        """
+        Monitor health of all nodes in cluster during rebalance operation
+
+        Args:
+            cluster: Cluster object containing nodes
+            check_interval: Interval between health checks in seconds
+            timeout: Maximum time to monitor health in seconds
+        """
+        self.log.info("Starting health monitoring during rebalance")
+        start_time = time.time()
+
+        # Get all nodes in the cluster
+
+        while time.time() - start_time < timeout:
+            cluster_nodes = []
+            for r_node in self.cluster_util.get_nodes(self.cluster.master,
+                                                    inactive_added=True,
+                                                    inactive_failed=True):
+                cluster_nodes.extend([node for node in self.cluster.servers if node.ip == r_node.ip])
+            # Check if rebalance is still running
+            if self.rebl_running is False:
+                self.log.info("Rebalance completed, stopping health monitoring")
+                break
+
+            # Check health of all nodes
+            table_view = TableView(self.log.info)
+            table_view.set_headers(["Node IP", "Status Code"])
+            for node in cluster_nodes:
+                node_ip = node.ip
+                status_code = self.check_node_health(node_ip)
+                table_view.add_row([node_ip, status_code])
+            table_view.display("Health Check Status")
+
+            # Wait before next health check
+            time.sleep(check_interval)
+
+    def start_health_monitoring_thread(self, cluster,
+                                     check_interval=10, timeout=3000):
+        """
+        Start health monitoring in a separate thread during rebalance
+
+        Returns:
+            threading.Thread: The monitoring thread
+        """
+        def monitor_health():
+            return self.monitor_cluster_health_during_rebalance(
+                cluster, check_interval, timeout)
+
+        health_thread = threading.Thread(target=monitor_health)
+        health_thread.daemon = True
+        health_thread.start()
+        return health_thread

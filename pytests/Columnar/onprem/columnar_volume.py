@@ -201,9 +201,8 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             self.kafka_util.deleteKafkaTopics(dataSource.kafka_topics)
 
     def setup_columnar_sdk_clients(self, columnar):
-        columnar.SDKClients = list()
         client = SDKClient(columnar, None)
-        columnar.SDKClients.append(client)
+        columnar.SDKClients = [client]
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def load_remote_couchbase_clusters(self):
@@ -403,7 +402,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 cluster=self.analytics_cluster, cbas_nodes_in=1,
                 available_servers=self.analytics_cluster.available_servers,
                 in_node_services="kv,cbas",
-                wait_for_complete=True)
+                wait_for_complete=True, monitor_health=True)
             if not rebalance_task.result:
                 self.fail("Error while Rebalance-In KV+CBAS node in analytics "
                         "cluster")
@@ -420,7 +419,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.rebalance_util.rebalance(
                 cluster=self.analytics_cluster, cbas_nodes_out=1,
                 available_servers=self.analytics_cluster.available_servers,
-                wait_for_complete=True)
+                wait_for_complete=True, monitor_health=True)
             if not rebalance_task.result:
                 self.fail("Error while Rebalance-Out KV+CBAS node in analytics "
                         "cluster")
@@ -438,7 +437,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 cluster=self.analytics_cluster, cbas_nodes_in=1, cbas_nodes_out=1,
                 available_servers=self.analytics_cluster.available_servers,
                 in_node_services="kv,cbas",
-                wait_for_complete=True)
+                wait_for_complete=True, monitor_health=True)
             if not rebalance_task.result:
                 self.fail("Error while Rebalance-Swap KV+CBAS node in analytics "
                         "cluster")
@@ -455,7 +454,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.rebalance_util.failover(
                 cluster=self.analytics_cluster, cbas_nodes=1,
                 action="DeltaRecovery", available_servers=self.analytics_cluster.available_servers,
-                failover_type="Hard")
+                failover_type="Hard", monitor_health=True)
             result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
             if result:
                 self.log.critical("Core dump(s) found on analytics cluster node(s) after hard failover and delta recovery")
@@ -467,7 +466,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.rebalance_util.failover(
                 cluster=self.analytics_cluster, cbas_nodes=1,
                 action="FullRecovery", available_servers=self.analytics_cluster.available_servers,
-                failover_type="Hard")
+                failover_type="Hard", monitor_health=True)
             result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
             if result:
                 self.log.critical("Core dump(s) found on analytics cluster node(s) after hard failover and full recovery")
@@ -480,7 +479,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 self.rebalance_util.failover(
                 cluster=self.analytics_cluster, cbas_nodes=1,
                 action="RebalanceOut", available_servers=self.analytics_cluster.available_servers,
-                failover_type="Hard")
+                failover_type="Hard", monitor_health=True)
             self.analytics_cluster.rest = RestConnection(self.analytics_cluster.cbas_cc_node)
             result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=True)
             if result:
@@ -495,7 +494,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
                 cluster=self.analytics_cluster, cbas_nodes_in=1,
                 available_servers=self.analytics_cluster.available_servers,
                 in_node_services="kv,cbas",
-                wait_for_complete=True)
+                wait_for_complete=True, monitor_health=True)
             if not rebalance_task.result:
                 self.fail("Error while Rebalance-In KV+CBAS node in analytics "
                         "cluster")

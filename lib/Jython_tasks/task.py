@@ -640,6 +640,7 @@ class RebalanceTask(Task):
         else:
             return "[%s] %s not yet scheduled" % \
                    (self.thread_name, self.num_items)
+
     def call(self):
         def print_nodes(msg, node_list):
             if len(node_list) == 0:

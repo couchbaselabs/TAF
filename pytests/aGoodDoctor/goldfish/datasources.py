@@ -389,9 +389,12 @@ class KafkaClusterUtils():
 
     def deleteKafkaTopics(self, topics):
         deleteTopicsResult = self.kafkaAdminClient.delete_topics(topics)
-        while not deleteTopicsResult.all().isDone():
-            for topic in topics:
-                print("still deleting: %s" % self.listKafkaTopics(topic))
+        for topic, f in deleteTopicsResult.items():
+            try:
+                f.result()  # The result itself is None
+                print("Topic {} deleted".format(topic))
+            except Exception as e:
+                print("Failed to delete topic {}: {}".format(topic, e))
             time.sleep(5)
 
     def listKafkaTopics(self, prefix=None):
