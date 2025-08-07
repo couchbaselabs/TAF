@@ -85,6 +85,11 @@ class OPD:
                  Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
                  Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
 
+            if self.enable_encryption_at_rest:
+                bucket.encryptionAtRestKeyId = self.encryption_at_rest_id
+                bucket.encryptionAtRestDekRotationInterval = self.encryptionAtRestDekRotationInterval
+                bucket.encryptionAtRestDekLifetime = self.encryption_at_rest_dek_lifetime
+
             bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
             if bucket.loadDefn.get("name"):
                 bucket.name = bucket.loadDefn.get("name")
@@ -1357,8 +1362,8 @@ class OPD:
                             for collection in stats[bucket][scope]:
                                 for idx in stats[bucket][scope][collection]:
                                     self.log.info(":".join([
-                                        bucket, scope, collection, 
-                                        idx, "num_docs_pending", 
+                                        bucket, scope, collection,
+                                        idx, "num_docs_pending",
                                         str(stats[bucket][scope][collection][idx]["num_docs_pending"])]))
                                     if stats[bucket][scope][collection][idx]["num_docs_pending"] > 0:
                                         check = True
