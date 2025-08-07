@@ -75,7 +75,7 @@ def perform_S3_operation(**kwargs):
 
 def convert_json_to_parquet(**kwargs):
     json_parquet_converter_file_path = os.path.abspath("scripts/json_to_parquet.py")
-    arguements = ["python", json_parquet_converter_file_path, kwargs.get("path")]
+    arguements = ["python3", json_parquet_converter_file_path, kwargs.get("path")]
 
     response = subprocess.Popen(
         arguements, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
