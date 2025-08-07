@@ -16,7 +16,7 @@ def perform_S3_operation(**kwargs):
     """
     aws_util_file_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "S3.py"))
-    arguements = ["python", aws_util_file_path, kwargs.get("aws_access_key"),
+    arguements = ["python3", aws_util_file_path, kwargs.get("aws_access_key"),
                   kwargs.get("aws_secret_key"), kwargs.get("aws_session_token")]
 
     if kwargs.get("get_regions", False):
@@ -68,7 +68,7 @@ def perform_S3_operation(**kwargs):
 
 def convert_json_to_parquet(**kwargs):
     json_parquet_converter_file_path = os.path.abspath("scripts/json_to_parquet.py")
-    arguements = ["python", json_parquet_converter_file_path, kwargs.get("path")]
+    arguements = ["python3", json_parquet_converter_file_path, kwargs.get("path")]
 
     response = subprocess.Popen(
         arguements, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
