@@ -511,7 +511,10 @@ class Murphy(BaseTestCase, OPD):
             self.combinational = self.input.param("combinational", False)
             self.drIndex.create_indexes(self.cluster.buckets, base64=self.base64, xattr=self.xattr,
                                         combinational=self.combinational)
-            self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
+            results = self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
+            for index_name, result in results.items():
+                if result is False:
+                    self.fail("Index {} build failed or timed out or warming up".format(index_name))
             self.check_index_pending_mutations(self.cluster)
             self.end_step_checks(" after initial index build is completed")
             for bucket in self.cluster.buckets:

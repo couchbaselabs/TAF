@@ -375,7 +375,10 @@ class GsiHelper(RestConnection):
             if bucket.name in result:
                 if index in result[bucket.name].keys():
                     self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
-                    if result[bucket.name][index]['status'] not in ("Training", "Created"):
+                    if result[bucket.name][index]['status'] == "Warmup":
+                        self.log.info("2i index is warming up: {}".format(index))
+                        return False
+                    elif result[bucket.name][index]['status'] not in ("Training", "Created"):
                         self.log.info("2i index is trained: {}".format(index))
                         self.log.info("Index {} training is completed in {}".format(index, str(x*sleep_time)))
                         return True
@@ -392,7 +395,10 @@ class GsiHelper(RestConnection):
             if bucket.name in result:
                 if index in result[bucket.name].keys():
                     self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
-                    if result[bucket.name][index]['status'] == status or result[bucket.name][index]['status'] == "Ready":
+                    if result[bucket.name][index]['status'] == "Warmup":
+                        self.log.info("2i index is warming up: {}".format(index))
+                        return False
+                    elif result[bucket.name][index]['status'] == status or result[bucket.name][index]['status'] == "Ready":
                         self.log.info("2i index is ready: {}".format(index))
                         self.log.info("Index {} build is completed in {}".format(index, str(x*sleep_time)))
                         return True

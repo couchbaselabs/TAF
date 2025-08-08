@@ -428,6 +428,7 @@ class DoctorN1QL():
         build = True
         build_count = TestInputSingleton.input.param("build_count", 5)
         i = 0
+        results = dict()
         while build:
             build = False
             k = 0
@@ -459,18 +460,32 @@ class DoctorN1QL():
                             d[c].append(key)
                         self.rest = GsiHelper(cluster.master, logger["test"])
                         ths = list()
+
+                        def polling_with_result(bucket, index_name, timeout_val):
+                            result = self.rest.polling_create_index_status(bucket, index_name, timeout_val)
+                            results[index_name] = result
+                            return result
+
                         for collection in sorted(d.keys())[i:i+build_count]:
                             for index_name in sorted(d.get(collection)):
                                 details = bucket.indexes[index_name]
-                                th = threading.Thread(target=self.rest.polling_create_index_status,
+                                th = threading.Thread(target=polling_with_result,
                                                       name=index_name,
                                                       args=(bucket, index_name, timeout//10))
                                 th.start()
                                 ths.append(th)
                         for th in ths:
                             th.join()
+
+                        # Log the results
+                        for index_name, result in results.items():
+                            if result:
+                                self.log.info("Index {} build completed successfully".format(index_name))
+                            else:
+                                self.log.error("Index {} build failed or timed out or warming up".format(index_name))
                 k += 1
             i += build_count
+        return results
 
     def drop_indexes(self, cluster):
         for bucket in cluster.buckets:
