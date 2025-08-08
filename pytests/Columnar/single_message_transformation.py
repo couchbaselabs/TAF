@@ -865,7 +865,7 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         """
         Test create transform function returning more than one doc.
         """
-        self.log.info("Create UDF with transform function that returns more than ne doc.")
+        self.log.info("Create UDF with transform function that returns more than one doc.")
         udf_create_query = f"""SELECT VALUE doc FROM (
                         SELECT _reviews.author, item.name
                         FROM [item] as item
@@ -971,3 +971,374 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
             doc_data[key_name] = value
 
         return doc_data
+
+    def test_smt_filter_with_where_clause_data_added_after(self):
+        """
+        Test create transform function with where clause where data is added after creating remote dataset.
+        """
+        self.log.info("Running transform function with where clause where data is added after creating remote dataset.")
+        self.log.info("Start test setup.")
+        self.test_setup(load_docs=False)
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT product_name
+                        FROM [item] as item
+                        WHERE num_sold>10000
+                        LIMIT 1 """
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query, wait_for_ingestion=False)
+        
+        # Load data to remote collection after creating the remote dataset
+        self.log.info("Load data to remote collection after creating remote dataset.")
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.load_doc_to_remote_collections(self.remote_cluster, valType="Product",
+                                            create_start_index=0, create_end_index=self.initial_doc_count,
+                                            wait_for_completion=False)
+        
+        udf_select_query = f"select product_name from {udf_coll_obj.name}"
+        remote_query = f"select product_name from {self.remote_dataset_name} where num_sold>10000"
+        self.log.info("Validate collection created with the transform function.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        self.log.info("Test completed successfully.")
+
+    def test_smt_non_existing_field(self):
+        """
+        Test create transform function with non-existing field product_amount.
+        """
+        self.log.info("Running transform function with non-existing field product_amount.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function using non-existing field.")
+        udf_create_query = f"""SELECT product_name, product_amount
+                        FROM [item] as item
+                        LIMIT 1 """
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query, wait_for_ingestion=False)
+        udf_select_query = f"select product_name, product_amount from {udf_coll_obj.name}"
+        remote_query = f"select product_name, product_amount from {self.remote_dataset_name}"
+        self.log.info("Validate collection created with the transform function.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        self.log.info("Test completed successfully.")
+
+    def test_smt_special_char_field(self):
+        """
+        Test create transform function with field containing special characters.
+        """
+        self.log.info("Running transform function with field containing special characters.")
+        self.log.info("Start test setup.")
+        self.test_setup(load_docs=False)
+        
+        # Insert 10 specific rows with special character field
+        self.log.info("Insert 10 rows with special character field.")
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        # Create documents with special character field
+        for i in range(10):
+            doc_key = f"special_char_doc_{i}"
+            doc_value = {
+                "product_name": f"Product_{i}",
+                "quantity": i * 100,
+                "field_name!#%": f"special_value_{i}!#%",
+                "num_sold": i * 1000,
+                "weight": i * 2.5
+            }
+            
+            # Create document generator for a single document
+            template = {"doc_data": doc_value}
+            doc_gen = doc_generator(doc_key, 0, 1, doc_size=len(json.dumps(template)))
+
+            # Use async load to create the document
+            task = self.task.async_load_gen_docs(
+                self.remote_cluster, self.remote_cluster.buckets[0], doc_gen,
+                DocLoading.Bucket.DocOps.CREATE,
+                load_using=self.load_docs_using,
+                durability=self.durability_level,
+                process_concurrency=1,
+                suppress_error_table=False,
+                print_ops_rate=False)
+
+            # Wait for the task to complete
+            self.task_manager.get_task_result(task)
+        
+        self.log.info("Create UDF with transform function including special character field.")
+        udf_create_query = f"""SELECT quantity, product_name, `field_name!#%`
+                                FROM [item] as item
+                                LIMIT 1 """
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query, wait_for_ingestion=False)
+        udf_select_query = f"select quantity, product_name, `field_name!#%` from {udf_coll_obj.name}"
+        remote_query = f"select quantity, product_name, `field_name!#%` from {self.remote_dataset_name}"
+        self.log.info("Validate collection created with the transform function.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        self.log.info("Test completed successfully.")
+
+    def test_smt_drop_remote_collection(self):
+        """
+        Test create transform function with multiple fields and then drop remote collection and bucket.
+        """
+        self.log.info("Running transform function with select multiple fields and drop remote collection.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT quantity, product_name
+                                FROM [item] as item
+                                LIMIT 1 """
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+        
+        # Drop collection in remote cluster after creating the UDF and remote dataset
+        self.log.info("Drop collection in remote cluster.")
+        for bucket in self.remote_cluster.buckets:
+            for scope_name, scope in bucket.scopes.items():
+                if scope_name != "_system":
+                    for collection_name, collection in scope.collections.items():
+                        self.log.info(f"Dropping collection {bucket.name}.{scope_name}.{collection_name}")
+                        # Drop the collection from the remote cluster
+                        if not self.couchbase_doc_loader.drop_collection(
+                            bucket=bucket.name,
+                            scope=scope_name,
+                            collection=collection_name):
+                            self.fail(f"Error while dropping collection {bucket.name}.{scope_name}.{collection_name}")
+        
+        # Validate the collection created with the transform function after dropping remote collection
+        udf_select_query = f"select quantity, product_name from {udf_coll_obj.name}"
+        remote_query = f"select quantity, product_name from {self.remote_dataset_name}"
+        self.log.info("Validate collection created with the transform function after dropping remote collection.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        
+        # Drop buckets from remote cluster
+        if hasattr(self, "remote_cluster") and self.remote_cluster:
+            self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
+        
+        self.log.info("Test completed successfully.")
+
+    def test_smt_drop_remote_dataset_confirm_dropped(self):
+        """
+        Test create UDF and remote dataset using UDF, then drop remote dataset and confirm it is dropped.
+        """
+        self.log.info("Running test to create UDF and remote dataset, then drop remote dataset and confirm it is dropped.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT quantity, product_name
+                                FROM [item] as item
+                                LIMIT 1 """
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+        
+        # Validate the collection created with the transform function
+        udf_select_query = f"select quantity, product_name from {udf_coll_obj.name}"
+        remote_query = f"select quantity, product_name from {self.remote_dataset_name}"
+        self.log.info("Validate collection created with the transform function.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        
+        # Drop the remote dataset
+        self.log.info("Drop remote dataset.")
+        if not self.cbas_util.drop_dataset(self.columnar_cluster, udf_coll_obj):
+            self.fail(f"Error while dropping dataset {udf_coll_obj.name}")
+        
+        # Confirm that the remote dataset is dropped by trying to query it
+        self.log.info("Confirm that the remote dataset is dropped.")
+        try:
+            status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+                self.columnar_cluster, f"SELECT * FROM {udf_coll_obj.name} LIMIT 1")
+            if status == "success":
+                self.fail(f"Dataset {udf_coll_obj.name} still exists after being dropped")
+            else:
+                self.log.info(f"Dataset {udf_coll_obj.name} successfully dropped - query failed as expected")
+        except Exception as e:
+            self.log.info(f"Dataset {udf_coll_obj.name} successfully dropped - exception occurred as expected: {e}")
+        
+        self.log.info("Test completed successfully.")
+
+    def test_smt_udf_multiple_remote_datasets(self):
+        """
+        Test create a UDF and 2 remote datasets using that UDF, then validate both collections.
+        """
+        self.log.info("Running test to create UDF and 2 remote datasets using that UDF.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT quantity, product_name
+                                FROM [item] as item
+                                LIMIT 1 """
+        udf_name = self.cbas_util.generate_name()
+        if not self.cbas_util.create_udf(
+                cluster=self.columnar_cluster, name=udf_name, parameters=["item"],
+                body=udf_create_query, transform_function=True):
+            self.fail(f"Error while creating UDF with name {udf_name}")
+        
+        # Create first remote dataset using the UDF
+        self.log.info("Create first remote dataset using the UDF.")
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        remote_coll_obj1 = self.cbas_util.create_remote_dataset_obj(
+            self.columnar_cluster,
+            self.remote_cluster.buckets[0].name,
+            "_default",
+            "_default",
+            remote_link,
+            use_only_existing_db=True,
+            use_only_existing_dv=True,
+            database="Default",
+            dataverse="Default",
+            capella_as_source=True)[0]
+        result1 = self.cbas_util.create_remote_dataset(
+            self.columnar_cluster,
+            remote_coll_obj1.name,
+            remote_coll_obj1.full_kv_entity_name,
+            remote_coll_obj1.link_name,
+            remote_coll_obj1.dataverse_name,
+            remote_coll_obj1.database_name,
+            transform_function=udf_name)
+        if not result1:
+            self.fail("Failed to create first remote collection {} from transform function {}".format(
+                remote_coll_obj1.name, udf_name))
+        
+        # Create second remote dataset using the same UDF
+        self.log.info("Create second remote dataset using the same UDF.")
+        remote_coll_obj2 = self.cbas_util.create_remote_dataset_obj(
+            self.columnar_cluster,
+            self.remote_cluster.buckets[0].name,
+            "_default",
+            "_default",
+            remote_link,
+            use_only_existing_db=True,
+            use_only_existing_dv=True,
+            database="Default",
+            dataverse="Default",
+            capella_as_source=True)[0]
+        result2 = self.cbas_util.create_remote_dataset(
+            self.columnar_cluster,
+            remote_coll_obj2.name,
+            remote_coll_obj2.full_kv_entity_name,
+            remote_coll_obj2.link_name,
+            remote_coll_obj2.dataverse_name,
+            remote_coll_obj2.database_name,
+            transform_function=udf_name)
+        if not result2:
+            self.fail("Failed to create second remote collection {} from transform function {}".format(
+                remote_coll_obj2.name, udf_name))
+        
+        # Wait for ingestion to complete for both datasets
+        self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster,
+                                                   remote_coll_obj1.name,
+                                                   self.initial_doc_count)
+        self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster,
+                                                   remote_coll_obj2.name,
+                                                   self.initial_doc_count)
+        
+        # Validate first collection
+        self.log.info("Validate first collection created with the transform function.")
+        udf_select_query1 = f"select quantity, product_name from {remote_coll_obj1.name}"
+        remote_query = f"select quantity, product_name from {self.remote_dataset_name}"
+        self.validate_collection_created_from_udf(udf_select_query1, remote_query)
+        
+        # Validate second collection
+        self.log.info("Validate second collection created with the transform function.")
+        udf_select_query2 = f"select quantity, product_name from {remote_coll_obj2.name}"
+        self.validate_collection_created_from_udf(udf_select_query2, remote_query)
+        
+        self.log.info("Test completed successfully.")
+
+    def test_smt_add_quantity_grade_field(self):
+        """
+        Test create transform function with add quantity_grade field based on quantity ranges.
+        """
+        self.log.info("Running transform function with add quantity_grade field.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT quantity, product_name,
+                                CASE 
+                                    WHEN quantity < 1000 THEN 'less'
+                                    WHEN quantity >= 1000 AND quantity <= 2000 THEN 'medium'
+                                    WHEN quantity > 2000 THEN 'large'
+                                    ELSE 'unknown'
+                                END AS quantity_grade
+                                FROM [item] as item
+                                LIMIT 1 """
+        udf_coll_obj = self.create_udf_and_remotedataset(udf_create_query)
+        self.log.info("Sleep for a second before validation.")
+        time.sleep(1)
+        udf_select_query = f"select quantity, product_name, quantity_grade from {udf_coll_obj.name}"
+        remote_query = f"""SELECT quantity, product_name,
+                                CASE 
+                                    WHEN quantity < 1000 THEN 'less'
+                                    WHEN quantity >= 1000 AND quantity <= 2000 THEN 'medium'
+                                    WHEN quantity > 2000 THEN 'large'
+                                    ELSE 'unknown'
+                                END AS quantity_grade
+                                FROM {self.remote_dataset_name}"""
+        self.log.info("Validate collection created with the transform function.")
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        self.log.info("Test completed successfully.")
+
+    def test_smt_drop_udf_while_in_use(self):
+        """
+        Test drop a UDF while it is being used in collection and check that it creates an error.
+        """
+        self.log.info("Running test to drop UDF while it is being used in collection.")
+        self.log.info("Start test setup.")
+        self.test_setup()
+        self.log.info("Create UDF with transform function.")
+        udf_create_query = f"""SELECT quantity, product_name
+                                FROM [item] as item
+                                LIMIT 1 """
+        udf_name = self.cbas_util.generate_name()
+        if not self.cbas_util.create_udf(
+                cluster=self.columnar_cluster, name=udf_name, parameters=["item"],
+                body=udf_create_query, transform_function=True):
+            self.fail(f"Error while creating UDF with name {udf_name}")
+        
+        # Create remote dataset using the UDF
+        self.log.info("Create remote dataset using the UDF.")
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        remote_coll_obj = self.cbas_util.create_remote_dataset_obj(
+            self.columnar_cluster,
+            self.remote_cluster.buckets[0].name,
+            "_default",
+            "_default",
+            remote_link,
+            use_only_existing_db=True,
+            use_only_existing_dv=True,
+            database="Default",
+            dataverse="Default",
+            capella_as_source=True)[0]
+        result = self.cbas_util.create_remote_dataset(
+            self.columnar_cluster,
+            remote_coll_obj.name,
+            remote_coll_obj.full_kv_entity_name,
+            remote_coll_obj.link_name,
+            remote_coll_obj.dataverse_name,
+            remote_coll_obj.database_name,
+            transform_function=udf_name)
+        if not result:
+            self.fail("Failed to create remote collection {} from transform function {}".format(
+                remote_coll_obj.name, udf_name))
+        
+        # Wait for ingestion to complete
+        self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster,
+                                                   remote_coll_obj.name,
+                                                   self.initial_doc_count)
+        
+        # Validate that the collection works correctly
+        self.log.info("Validate that the collection works correctly.")
+        udf_select_query = f"select quantity, product_name from {remote_coll_obj.name}"
+        remote_query = f"select quantity, product_name from {self.remote_dataset_name}"
+        self.validate_collection_created_from_udf(udf_select_query, remote_query)
+        
+        # Attempt to drop the UDF while it is being used
+        self.log.info("Attempt to drop the UDF while it is being used.")
+        try:
+            drop_result = self.cbas_util.drop_udf(self.columnar_cluster, udf_name, None, None, None)
+            if drop_result:
+                self.fail("UDF was successfully dropped while being used in a collection - this should have failed")
+            else:
+                self.log.info("UDF drop failed as expected while being used in a collection")
+        except Exception as e:
+            self.log.info(f"UDF drop threw an exception as expected: {e}")
+        
+        self.log.info("Test completed successfully.")
