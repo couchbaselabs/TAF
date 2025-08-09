@@ -418,7 +418,7 @@ class RBAC_Util(BaseUtil):
         result = True
         try:
             RbacUtil().create_user_source([user.to_dict()], "builtin",
-                                          cluster.master)
+                                          cluster.master, remove_if_exists=False)
             if roles:
                 RbacUtil().add_user_role([user.to_dict()],
                                          SecurityRestAPI(cluster.master),
@@ -730,6 +730,7 @@ class Database_Util(BaseUtil):
         if if_not_exists:
             cmd += " if not exists"
         cmd = cmd + ";"
+        self.log.info(f"Creating database using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
@@ -837,6 +838,7 @@ class Database_Util(BaseUtil):
         if if_exists:
             cmd += " if exists"
         cmd += ";"
+        self.log.info(f"Dropping database using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
@@ -896,7 +898,7 @@ class Dataverse_Util(Database_Util):
             cmd += " and dv.DatabaseName = \"{0}\"".format(
                 self.unformat_name(database_name))
         cmd += ";"
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        self.log.info(f"Validating dataverse entry in Metadata using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
@@ -934,6 +936,7 @@ class Dataverse_Util(Database_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
+        database_name = self.format_name(database_name) or "Default"
         dataverse_name = self.format_name(dataverse_name)
 
         if analytics_scope:
@@ -944,7 +947,7 @@ class Dataverse_Util(Database_Util):
             cmd = "create dataverse "
         if database_name:
             cmd += "{0}.{1}".format(
-                self.format_name(database_name), dataverse_name)
+                database_name, dataverse_name)
         else:
             cmd += "{0}".format(dataverse_name)
 
@@ -952,7 +955,7 @@ class Dataverse_Util(Database_Util):
             cmd += " if not exists"
 
         cmd += ";"
-
+        self.log.info(f"Creating dataverse using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
@@ -966,12 +969,10 @@ class Dataverse_Util(Database_Util):
                 return False
             else:
                 if not self.get_dataverse_obj(dataverse_name, database_name):
-                    if database_name:
-                        database_obj = self.get_database_obj(database_name)
-                        obj = Dataverse(dataverse_name, database_name)
-                    else:
-                        database_obj = self.get_database_obj("Default")
-                        obj = Dataverse(dataverse_name)
+                    database_obj = self.get_database_obj(database_name)
+                    obj = Dataverse(dataverse_name, database_name)
+                    if not hasattr(database_obj, "dataverses") or database_obj.dataverses is None:
+                        database_obj.dataverses = {}
                     database_obj.dataverses[obj.name] = obj
                 return True
 
@@ -1018,7 +1019,7 @@ class Dataverse_Util(Database_Util):
         if if_exists:
             cmd += " if exists"
         cmd += ";"
-
+        self.log.info(f"Dropping dataverse using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
@@ -1343,7 +1344,7 @@ class Link_Util(Dataverse_Util):
             cmd += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
         cmd += ";"
 
-        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        self.log.info(f"Validating link entry in Metadata using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
@@ -1465,7 +1466,7 @@ class Link_Util(Dataverse_Util):
         if if_exists:
             cmd += " if exists"
         cmd += ";"
-
+        self.log.info(f"Dropping link using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
@@ -2225,7 +2226,7 @@ class Dataset_Util(KafkaLink_Util):
                                                database_name, if_not_exists, compress_dataset,
                                                with_clause, link_name, where_clause,
                                                analytics_collection, storage_format, transform_function)
-
+        self.log.info(f"Creating dataset using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
@@ -2234,6 +2235,7 @@ class Dataset_Util(KafkaLink_Util):
                                                                expected_error)
         else:
             if status != "success":
+                self.log.error(f"Create dataset failed: {errors}")
                 return False
             else:
                 return True
@@ -2303,7 +2305,7 @@ class Dataset_Util(KafkaLink_Util):
         if if_exists:
             cmd += " if exists"
         cmd += ";"
-
+        self.log.info(f"Dropping dataset using cmd: {cmd}")
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)

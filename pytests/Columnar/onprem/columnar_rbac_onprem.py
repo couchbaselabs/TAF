@@ -85,7 +85,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         return test_case
 
     def create_rbac_testcases(self, privileges=[], resources=[], privilege_resource_type="database",
-                              valid_predefined_roles=[], ns_server_roles="analytics_access"):
+                              valid_predefined_roles=[], ns_server_role="analytics_access"):
         """
         1. Create a user for each privilege and assign the corresponding
            privilege to the user
@@ -99,26 +99,28 @@ class ColumnarRBAC(ColumnarOnPremBase):
         5. Create a negative test case wherer no privilege is assinged to the user
            and role.
         """
-        # self.log.info("Create Analytics Admin user")
-        # username = self.generate_random_entity_name(type="user")
-        # password = self.generate_random_password()
-        # self.log.info("Creating user: {}".format(username))
-        # result = self.columnar_rbac_util.create_user(self.analytics_cluster,
-        #                                              username,
-        #                                              username,
-        #                                              password,
-        #                                              roles="analytics_admin")
-        # if not result:
-        #     self.fail("Failed to create user1")
-        # analytic_admin_user = self.columnar_rbac_util.get_user_obj(username)
-        # self.analytics_cluster.master.rest_username = username
-        # self.analytics_cluster.master.rest_password = password
-
         testcases = []
         table_view = TableView(self.log.info)
         table_view.set_headers(["User", "Password", "Role", "Privilege", "Resource"])
 
+        ea_admin = self.generate_random_entity_name(type="user")
+        ea_admin_password = self.generate_random_password()
+        self.log.info("Creating user: {}".format(ea_admin))
+        result = self.columnar_rbac_util.create_user(self.analytics_cluster,
+                                                        ea_admin,
+                                                        ea_admin,
+                                                        ea_admin_password,
+                                                        roles="analytics_admin")
+        if not result:
+            self.fail("Failed to create user: {}".format(ea_admin))
+        ea_admin_user = self.columnar_rbac_util.get_user_obj(ea_admin)
+        table_view.add_row([ea_admin_user.name, ea_admin_password, "analytics_admin", "all", "all"])
+
         for priv in privileges:
+
+            test_case = self.generate_test_case(ea_admin_user, [priv], resources)
+            testcases.append(test_case)
+
             username = self.generate_random_entity_name(type="user")
             password = self.generate_random_password()
             self.log.info("Creating user: {}".format(username))
@@ -126,7 +128,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                          username,
                                                          username,
                                                          password,
-                                                         roles=ns_server_roles)
+                                                         roles=ns_server_role)
             if not result:
                 self.fail("Failed to create user1")
             user1 = self.columnar_rbac_util.get_user_obj(username)
@@ -173,7 +175,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                          username,
                                                          username,
                                                          password,
-                                                         roles=ns_server_roles)
+                                                         roles=ns_server_role)
             if not result:
                 self.fail("Failed to create user2")
             user2 = self.columnar_rbac_util.get_user_obj(username)
@@ -203,7 +205,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                      username,
                                                      username,
                                                      password,
-                                                     roles=ns_server_roles)
+                                                     roles=ns_server_role)
         if not result:
             self.fail("Failed to create user3")
 
@@ -237,7 +239,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                      username,
                                                      username,
                                                      password,
-                                                     roles=ns_server_roles)
+                                                     roles=ns_server_role)
         if not result:
             self.fail("Failed to create user4")
         user4 = self.columnar_rbac_util.get_user_obj(username)
@@ -260,7 +262,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                      username,
                                                      username,
                                                      password,
-                                                     roles=ns_server_roles)
+                                                     roles=ns_server_role)
 
         if not result:
             self.fail("Failed to create user5 {}".format(username))
@@ -284,7 +286,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                      username,
                                                      username,
                                                      password,
-                                                     roles=ns_server_roles)
+                                                     roles=ns_server_role)
         if not result:
             self.fail("Failed to create user5 {}".format(username))
         user6 = self.columnar_rbac_util.get_user_obj(username)
@@ -310,7 +312,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                      username,
                                                      username,
                                                      password,
-                                                     roles=ns_server_roles)
+                                                     roles=ns_server_role)
             if not result:
                 self.fail("Failed to create user5 {}".format(username))
             created_user = self.columnar_rbac_util.get_user_obj(username)
