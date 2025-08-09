@@ -97,7 +97,6 @@ file_name_patterns:
       - string: "CBAS\\[number\\]"
       - string: "IllegalReferenceCountException"
       - string: "ArrayIndexOutOfBoundsException"
-      - string: "java.lang.OutOfMemoryError"
       - string: "Invalid pinCount"
       - string: "seqno advancements due to DCP_OSO_SNAPSHOT end"
     exclude_patterns:

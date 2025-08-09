@@ -34,7 +34,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         self.collection_ddl_privileges = ["CREATE", "DROP"]
         self.collection_dml_privileges = ["SELECT,DELETE", "SELECT", "INSERT", "UPSERT", "ANALYZE"]
         self.link_ddl_privileges = ["CREATE", "DROP", "ALTER"]
-        self.link_connection_privileges = ["CONNECT", "DISCONNECT"]
+        self.link_connection_privileges = ["CONNECT", "DISCONNECT", "DESCRIBE"]
         self.link_dml_privileges = ["COPY TO", "COPY FROM"]
         self.role_privieleges = ["CREATE", "DROP"]
         self.synonym_privileges = ["CREATE", "DROP"]
@@ -101,7 +101,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         """
         testcases = []
         table_view = TableView(self.log.info)
-        table_view.set_headers(["User", "Password", "Role", "Privilege", "Resource"])
+        table_view.set_headers(["User", "Password", "Role", "Privilege", "Resource Type", "Resource"])
 
         ea_admin = self.generate_random_entity_name(type="user")
         ea_admin_password = self.generate_random_password()
@@ -114,7 +114,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         if not result:
             self.fail("Failed to create user: {}".format(ea_admin))
         ea_admin_user = self.columnar_rbac_util.get_user_obj(ea_admin)
-        table_view.add_row([ea_admin_user.name, ea_admin_password, "analytics_admin", "all", "all"])
+        table_view.add_row([ea_admin_user.name, ea_admin_password, "analytics_admin", "all", "all", "all"])
 
         for priv in privileges:
 
@@ -147,7 +147,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                                           [user1, role1],
                                                                           resources,
                                                                           privilege_resource_type)
-            table_view.add_row([user1.name, password, "", priv, resources])
+            table_view.add_row([user1.name, password, "", priv, privilege_resource_type, resources])
             if not result:
                 self.fail("Failed to assign {} privilege to {}, {}".format(
                     priv, str(user1), str(role1)))
@@ -183,7 +183,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
             self.columnar_rbac_util.assign_role_to_user(self.analytics_cluster,
                                                         roles=[role1],
                                                         users=[user2])
-            table_view.add_row([user2.name, password, role1.role_name, priv, resources])
+            table_view.add_row([user2.name, password, role1.role_name, priv, privilege_resource_type, resources])
             test_case = self.generate_test_case(user2, [priv], resources)
             testcases.append(test_case)
 
@@ -225,7 +225,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                                       [user3, role2],
                                                                       resources,
                                                                       privilege_resource_type)
-        table_view.add_row([user3.name, password, "", privileges, resources])
+        table_view.add_row([user3.name, password, "", privileges, privilege_resource_type, resources])
         if not result:
                 self.fail("Failed to assign {} privileges to {}, {}".format(
                     privileges, str(user3), str(role2)))
@@ -248,7 +248,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         result = self.columnar_rbac_util.assign_role_to_user(self.analytics_cluster,
                                                              roles=[role2],
                                                              users=[user4])
-        table_view.add_row([user4.name, password, role2.role_name, privileges, resources])
+        table_view.add_row([user4.name, password, role2.role_name, privileges, privilege_resource_type, resources])
         if not result:
             self.fail("Failed to asssign role2 {} to user4 {}".
                       format(str(role2), str(user4)))
@@ -267,7 +267,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         if not result:
             self.fail("Failed to create user5 {}".format(username))
         user5 = self.columnar_rbac_util.get_user_obj(username)
-        table_view.add_row([user5.name, password, "", "", resources])
+        table_view.add_row([user5.name, password, "", "", privilege_resource_type, resources])
 
         role_name = self.generate_random_entity_name(type="role")
         self.log.info("Creating role: {}".format(role_name))
@@ -295,7 +295,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
         result = self.columnar_rbac_util.assign_role_to_user(self.analytics_cluster,
                                                              [role3],
                                                              [user6])
-        table_view.add_row([user6.name, password, role3.role_name, "", resources])
+        table_view.add_row([user6.name, password, role3.role_name, "", privilege_resource_type, resources])
         if not result:
             self.fail("Failed to assign role3 {} to user6 {}".
                       format(str(role3), str(user6)))
@@ -320,7 +320,7 @@ class ColumnarRBAC(ColumnarOnPremBase):
             result = self.columnar_rbac_util.assign_role_to_user(self.analytics_cluster,
                                                                  [pre_def_role],
                                                                  [created_user])
-            table_view.add_row([created_user.name, password, pre_def_role, "", resources])
+            table_view.add_row([created_user.name, password, pre_def_role, "", privilege_resource_type, resources])
             if not result:
                 self.fail("Failed to assign predefined role {} to user {}".
                         format(str(pre_def_role), str(created_user)))

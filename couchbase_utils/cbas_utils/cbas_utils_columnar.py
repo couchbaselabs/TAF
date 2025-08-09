@@ -418,7 +418,7 @@ class RBAC_Util(BaseUtil):
         result = True
         try:
             RbacUtil().create_user_source([user.to_dict()], "builtin",
-                                          cluster.master, remove_if_exists=False)
+                                          cluster.master)
             if roles:
                 RbacUtil().add_user_role([user.to_dict()],
                                          SecurityRestAPI(cluster.master),
