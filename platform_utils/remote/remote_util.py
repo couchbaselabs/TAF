@@ -5009,6 +5009,13 @@ class RemoteMachineShellConnection:
         output, error = self.execute_command(diag_eval_command)
         return output, error
 
+    def bypass_encryption_restrictions(self, userId="Administrator", password="password"):
+        cmd = ( "curl -w '\\n' -u {0}:{1} 'localhost:8091/diag/eval' "
+            "-d 'ns_config:set(test_bypass_encr_cfg_restrictions, true).'"
+            ).format(userId, password)
+        output, error = self.execute_command(cmd)
+        return output, error
+
     def disable_slow_disk(self, userId="Administrator", password="password"):
         diag_eval_command = (
             "curl -w '\\n' -u {0}:{1} localhost:8091/diag/eval -d "

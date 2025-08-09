@@ -10,6 +10,7 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.durability_helper import DurabilityHelper
 from bucket_utils.bucket_ready_functions import CollectionUtils
+from cluster_utils.cluster_ready_functions import ClusterUtils
 from pytests.bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from sdk_exceptions import SDKException
@@ -805,8 +806,8 @@ class BucketParamTest(ClusterSetup):
             self.assertTrue(bucket.encryptionAtRestInfo['issues'] == [],
                             "Default value mismatch for issues")
             params = bucket_helper.create_secret_params(
-                secret_type="auto-generated-aes-key-256",
-                name="UTestSecret",
+                secret_type="cb-server-managed-aes-key-256",
+                name= ClusterUtils.generate_random_name("UTestSecret"),
                 usage=["bucket-encryption"],
                 autoRotation=True,
                 rotationIntervalInSeconds=5184000)
@@ -865,7 +866,7 @@ class BucketParamTest(ClusterSetup):
 
         # Create secret for log encryption
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryption",
             usage=["log-encryption"],
             autoRotation=True,
@@ -879,7 +880,7 @@ class BucketParamTest(ClusterSetup):
             self.fail("Failed to create log encryption secret: %s" % response)
 
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryptionNeg",
             usage=["config-encryption"],
             autoRotation=True,
@@ -908,7 +909,7 @@ class BucketParamTest(ClusterSetup):
         # Verify set values for log encryption from the response
         encryption_settings = json.loads(response)
         self.assertTrue(
-            encryption_settings['log']['encryptionKey'] == "secret",
+            encryption_settings['log']['encryptionMethod'] == "encryptionKey",
             "Log encryption method mismatch")
         self.assertTrue(encryption_settings['log'][
                             'encryptionKeyId'] == config_secret_id,
@@ -951,7 +952,7 @@ class BucketParamTest(ClusterSetup):
 
         # Create secret for log encryption
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryption",
             usage=["config-encryption"],
             autoRotation=True,
@@ -966,7 +967,7 @@ class BucketParamTest(ClusterSetup):
                 "Failed to create config encryption secret: %s" % response)
 
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryptionNeg",
             usage=["log-encryption"],
             autoRotation=True,

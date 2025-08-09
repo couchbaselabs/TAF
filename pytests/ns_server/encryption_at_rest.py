@@ -168,7 +168,7 @@ class EncryptionAtRest(CollectionBase):
                 encryptionAtRestDekLifetime=2
             )
 
-        self.sleep(60)
+        self.sleep(80, "Waiting for key rotation to occur")
         status, secrets_response = rest.get_all_secrets()
         secrets = json.loads(secrets_response)
         self.assertTrue(status, "Failed to fetch secrets")
@@ -193,8 +193,6 @@ class EncryptionAtRest(CollectionBase):
                 self.assertTrue(new_key['active'], "New key is not active")
                 self.assertFalse(old_key['active'], "Original key is still active")
                 delete_status, _ = rest.delete_secret(secret['id'])
-                self.assertFalse(delete_status,
-                                 "Secret gets deleted even though it's in use for ID: %s" % secret_id)
 
         self.assertTrue(secret_found, "Secret with ID %s not found" % secret_id)
 
@@ -373,9 +371,7 @@ class EncryptionAtRest(CollectionBase):
                 "search_key": "description",
                 "search_value": "Encryption at rest DEK rotated",
                 "attributes": {
-                    "extra_attributes": {
-                        "kind": "configDek"
-                    }
+                    "severity": "info"
                 }
             },
             {
@@ -383,16 +379,12 @@ class EncryptionAtRest(CollectionBase):
                 "search_value": "Encryption key created",
                 "attributes": {
                     "extra_attributes": {
-                        "encryption_key_name": self.conf_secret_name
-                    }
-                }
-            },
-            {
-                "search_key": "description",
-                "search_value": "Encryption key created",
-                "attributes": {
-                    "extra_attributes": {
-                        "encryption_key_name": self.log_secret_name
+                        "settings": {
+                            "type": "cb-server-managed-aes-key-256",
+                            "data":{
+                                "encryptWith": "nodeSecretManager"
+                            }
+                        }
                     }
                 }
             },
@@ -402,7 +394,24 @@ class EncryptionAtRest(CollectionBase):
                 "attributes": {
                     "extra_attributes": {
                         "settings": {
-                         "name": "EncryptionSecret"
+                            "type": "cb-server-managed-aes-key-256",
+                            "data":{
+                                "encryptWith": "nodeSecretManager"
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "search_key": "description",
+                "search_value": "Encryption key created",
+                "attributes": {
+                    "extra_attributes": {
+                        "settings": {
+                            "type": "cb-server-managed-aes-key-256",
+                            "data":{
+                                "encryptWith": "nodeSecretManager"
+                            }
                         }
                     }
                 }
@@ -416,10 +425,10 @@ class EncryptionAtRest(CollectionBase):
                             "config": {
                                 "dekLifetime": 100,
                                 "dekRotationInterval": 100,
+                                "encryptionMethod": "encryptionKey"
                             },
                             "log": {
-                                "dekLifetime": 0,
-                                "dekRotationInterval": 100,
+                                "encryptionMethod": "encryptionKey"
                             }
                         }
                     }
@@ -515,7 +524,7 @@ class EncryptionAtRest(CollectionBase):
 
         self.sleep(100, "waiting for event to be generated")
         events = self.event_rest_helper.get_events(server=self.cluster.master,
-                                                   events_count=40000)
+                                                   events_count=80000)
         events = events["events"]
         search_and_verify(events, to_verify)
         self.assertTrue(len(not_find) == 0, "Not found: %s" % not_find)

@@ -45,6 +45,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.minimum_bucket_replica = self.input.param("minimum_bucket_replica", None)
         self.disable_max_fo_count = self.input.param("disable_max_fo_count",
                                                      'false')
+        self.bypass_encryption_restrictions = self.input.param("bypass_encryption_restrictions", True)
         self.log_location = self.input.param("log_location", None)
         self.stat_info = self.input.param("stat_info", None)
         self.port = self.input.param("port", None)
@@ -427,6 +428,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
             # Creating encryption keys
             rest = RestConnection(self.cluster.master)
+            self.bypass_encryption_setting()
             if self.create_KMIP_secret:
                 params = ClusterUtils.create_secret_params(
                     name=ClusterUtils.generate_random_name(
@@ -969,6 +971,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 rest = RestConnection(server)
                 rest.set_jre_path(self.jre_path)
         return quota
+
+    def bypass_encryption_setting(self):
+        self.log.info("Bypassing encryption restrictions")
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.bypass_encryption_restrictions()
 
     def get_KMIP_certificate(self, node):
         shell = RemoteMachineShellConnection(node)
