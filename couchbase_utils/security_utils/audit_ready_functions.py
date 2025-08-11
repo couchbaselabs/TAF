@@ -8,14 +8,16 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class audit:
-    AUDITLOGFILENAME = 'audit.log'
+    AUDITLOGFILENAME = 'current-audit.log'
     AUDITCONFIGFILENAME = 'audit.json'
     AUDITDESCFILE = 'audit_events.json'
     WINLOGFILEPATH = "C:/Program Files/Couchbase/Server/var/lib/couchbase/logs"
     LINLOGFILEPATH = "/opt/couchbase/var/lib/couchbase/logs"
+    LINLOGFILEPATH_EA = "/opt/enterprise-analytics/var/lib/couchbase/logs"
     MACLOGFILEPATH = "/Users/couchbase/Library/Application Support/Couchbase/var/lib/couchbase/logs"
     WINCONFIFFILEPATH = "C:/Program Files/Couchbase/Server/var/lib/couchbase/config/"
     LINCONFIGFILEPATH = "/opt/couchbase/var/lib/couchbase/config/"
+    LINCONFIGFILEPATH_EA = "/opt/enterprise-analytics/var/lib/couchbase/config/"
     MACCONFIGFILEPATH = "/Users/couchbase/Library/Application Support/Couchbase/var/lib/couchbase/config/"
     DOWNLOADPATH = "/tmp/"
 
@@ -67,6 +69,9 @@ class audit:
                                                   audit.LINCONFIGFILEPATH)
                 self.currentLogFile = "/home/%s%s" % (self.host.ssh_username,
                                                       audit.LINLOGFILEPATH)
+            elif self.host.type == "analytics":
+                auditconfigpath = audit.LINCONFIGFILEPATH_EA
+                self.currentLogFile = audit.LINLOGFILEPATH_EA
             else:
                 auditconfigpath = audit.LINCONFIGFILEPATH
                 self.currentLogFile = audit.LINLOGFILEPATH
@@ -343,7 +348,7 @@ class audit:
                         elif key == 'mandatory_fields':
                             for items in particulars['mandatory_fields']:
                                 mandatoryFields.append(items)
-                                if (isinstance((particulars['mandatory_fields'][items.encode('utf-8')]), dict)):
+                                if (isinstance((particulars['mandatory_fields'][items]), dict)):
                                     tempStr = items
                                     for secLevel in particulars['mandatory_fields'][items].items():
                                         tempStr = tempStr + ":" + secLevel[0]
@@ -351,7 +356,7 @@ class audit:
                         elif key == 'optional_fields':
                             for items in particulars['optional_fields']:
                                 optionalFields.append(items)
-                                if (isinstance((particulars['optional_fields'][items.encode('utf-8')]), dict)):
+                                if (isinstance((particulars['optional_fields'][items]), dict)):
                                     tempStr = items
                                     for secLevel in particulars['optional_fields'][items].items():
                                         tempStr = tempStr + ":" + secLevel[0]
@@ -382,43 +387,53 @@ class audit:
         flag = True
         for items in defaultFields:
             #self.log.info ("Default Value getting checked is - {0}".format(items))
-            if items not in data:
-                self.log.info (" Default value not matching with expected expected value is - {0}".format(items))
+            # Handle case where items key is bytes
+            items_key = items.decode('utf-8') if isinstance(items, bytes) else items
+            if items_key not in data:
+                self.log.info (" Default value not matching with expected expected value is - {0}".format(items_key))
                 flag = False
         for items in mandatoryFields:
             self.log.info ("Top Level Mandatory Field Default getting checked is - {0}".format(items))
-            if items in data:
-                if (isinstance ((data[items]), dict)):
+            # Handle case where items key is bytes
+            items_key = items.decode('utf-8') if isinstance(items, bytes) else items
+            if items_key in data:
+                if (isinstance ((data[items_key]), dict)):
                     for items1 in manFieldSecLevel:
                         tempStr = items1.split(":")
-                        if tempStr[0] == items:
-                            for items in data[items]:
-                                #self.log.info ("Second Level Mandatory Field Default getting checked is - {0}".format(items))
-                                if (items not in tempStr and method is not 'REST'):
-                                    #self.log.info (" Second level Mandatory field not matching with expected expected value is - {0}".format(items))
+                        if tempStr[0] == items_key:
+                            for subitems in data[items_key]:
+                                #self.log.info ("Second Level Mandatory Field Default getting checked is - {0}".format(subitems))
+                                # Handle case where subitems key is bytes
+                                subitems_key = subitems.decode('utf-8') if isinstance(subitems, bytes) else subitems
+                                if (subitems_key not in tempStr and method is not 'REST'):
+                                    #self.log.info (" Second level Mandatory field not matching with expected expected value is - {0}".format(subitems_key))
                                     flag = False
             else:
                 flag = False
-                if (method == 'REST' and items == 'sessionid'):
+                if (method == 'REST' and items_key == 'sessionid'):
                     flag = True
-                self.log.info (" Top level Mandatory field not matching with expected expected value is - {0}".format(items))
+                self.log.info (" Top level Mandatory field not matching with expected expected value is - {0}".format(items_key))
         for items in optionalFields:
             self.log.info ("Top Level Optional Field Default getting checked is - {0}".format(items))
-            if items in data:
-                if (isinstance ((data[items]), dict)):
+            # Handle case where items key is bytes
+            items_key = items.decode('utf-8') if isinstance(items, bytes) else items
+            if items_key in data:
+                if (isinstance ((data[items_key]), dict)):
                     for items1 in optFieldSecLevel:
                         tempStr = items1.split(":")
-                        if tempStr[0] == items:
-                            for items in data[items]:
-                                #self.log.info ("Second Level Optional Field Default getting checked is - {0}".format(items))
-                                if (items not in tempStr and method is not 'REST'):
-                                    self.log.info (" Second level Optional field not matching with expected expected value is - {0}".format(items))
+                        if tempStr[0] == items_key:
+                            for subitems in data[items_key]:
+                                #self.log.info ("Second Level Optional Field Default getting checked is - {0}".format(subitems))
+                                # Handle case where subitems key is bytes
+                                subitems_key = subitems.decode('utf-8') if isinstance(subitems, bytes) else subitems
+                                if (subitems_key not in tempStr and method is not 'REST'):
+                                    self.log.info (" Second level Optional field not matching with expected expected value is - {0}".format(subitems_key))
                                     #flag = False
             else:
                 #flag = False
-                if (method == 'REST' and items == "sessionid"):
+                if (method == 'REST' and items_key == "sessionid"):
                     flag = True
-                self.log.info (" Top level Optional field not matching with expected expected value is - {0}".format(items))
+                self.log.info (" Top level Optional field not matching with expected expected value is - {0}".format(items_key))
         if n1ql_audit:
             flag = True
         return flag
@@ -437,8 +452,10 @@ class audit:
         flag = True
         ignore = False
         for items in data:
-            if items not in expectedResult:
-                expectedResult[items] = data[items]
+            # Handle case where items key is bytes
+            items_key = items.decode('utf-8') if isinstance(items, bytes) else items
+            if items_key not in expectedResult:
+                expectedResult[items_key] = data[items]
             if items == 'timestamp':
                 tempFlag = self.validateTimeStamp(data['timestamp'])
                 if (tempFlag is False):
@@ -446,15 +463,20 @@ class audit:
             else:
                 if (isinstance(data[items], dict)):
                     for seclevel in data[items]:
-                        tempLevel = items + ":" + seclevel
+                        tempLevel = items_key + ":" + seclevel
                         if (tempLevel in expectedResult.keys()):
                             tempValue = expectedResult[tempLevel]
                         else:
                             if seclevel in expectedResult.keys():
                                 tempValue = expectedResult[seclevel]
                             else:
-                                ignore = True
-                                tempValue = data[items][seclevel]
+                                # Handle case where seclevel is bytes and we need to check string version
+                                seclevel_str = seclevel.decode('utf-8') if isinstance(seclevel, bytes) else seclevel
+                                if seclevel_str in expectedResult.keys():
+                                    tempValue = expectedResult[seclevel_str]
+                                else:
+                                    ignore = True
+                                    tempValue = data[items][seclevel]
                         if (seclevel == 'port' and data[items][seclevel] >= 30000 and data[items][seclevel] <= 65535):
                             self.log.info ("Matching port is an ephemeral port -- actual port is {0}".format(data[items][seclevel]))
                         else:
@@ -471,16 +493,16 @@ class audit:
                         self.log.info ("Matching port is an ephemeral port -- actual port is {0}".format(data[items]))
                     else:
                         if items == "requestId" or items == 'clientContextId':
-                            expectedResult[items] = data[items]
-                        self.log.info ('expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
+                            expectedResult[items_key] = data[items]
+                        self.log.info ('expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items_key], data[items], items))
                         if (items == 'peername'):
-                            if (expectedResult[items] not in data[items]):
+                            if (expectedResult[items_key] not in data[items]):
                                 flag = False
-                                self.log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
+                                self.log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items_key], data[items], items))
                         else:
-                            if (data[items] != expectedResult[items]):
+                            if (data[items] != expectedResult[items_key]):
                                 flag = False
-                                self.log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items.encode('utf-8')], data[items.encode('utf-8')], items))
+                                self.log.info ('Mis - Match Found expected values - {0} -- actual value -- {1} - eventName - {2}'.format(expectedResult[items_key], data[items], items))
             ignore = False
         return flag
 
@@ -558,7 +580,7 @@ class audit:
         actualEvent = self.returnEvent(self.eventID)
         fieldVerification = self.validateFieldActualLog(actualEvent, self.eventID, 'ns_server', self.defaultFields, mandatoryFields, \
                                                     mandatorySecLevel, optionalFields, optionalSecLevel, self.method, n1ql_audit)
-        expectedResults = dict(defaultField.items() + expectedResults.items())
+        expectedResults.update(defaultField)
         valueVerification = self.validateData(actualEvent, expectedResults)
         return fieldVerification, valueVerification
 

@@ -5,12 +5,12 @@ Created on 30-Aug-2021
 '''
 import json
 
-from cbas.cbas_base import CBASBaseTest
+from pytests.Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 from security_utils.audit_ready_functions import audit
 from rbac_utils.Rbac_ready_functions import RbacUtils
 
 
-class CBASAuditLogs(CBASBaseTest):
+class CBASAuditLogs(ColumnarOnPremBase):
 
     actual_service_parameter_dict = {}
     actual_node_parameter_dict = {}
@@ -21,7 +21,7 @@ class CBASAuditLogs(CBASBaseTest):
 
         super(CBASAuditLogs, self).setUp()
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = self.analytics_cluster
 
         self.log.info("Enable audit on cluster")
         self.audit_obj = audit(host=self.cluster.master)
@@ -98,7 +98,7 @@ class CBASAuditLogs(CBASBaseTest):
         update_configuration_map = {}
         for key in CBASAuditLogs.actual_service_parameter_dict:
             if isinstance(CBASAuditLogs.actual_service_parameter_dict[key],
-                          (int, long)) and CBASAuditLogs.actual_service_parameter_dict[key] != 1:
+                          (int)) and CBASAuditLogs.actual_service_parameter_dict[key] != 1:
                 update_configuration_map[key] = CBASAuditLogs.actual_service_parameter_dict[key] - 1
 
         self.log.info("Update service configuration")
@@ -128,7 +128,7 @@ class CBASAuditLogs(CBASBaseTest):
             "Create a configuration map that will be passed as JSON body for node configuration")
         update_configuration_map = {}
         for key in CBASAuditLogs.actual_node_parameter_dict:
-            if isinstance(CBASAuditLogs.actual_node_parameter_dict[key], (int, long)):
+            if isinstance(CBASAuditLogs.actual_node_parameter_dict[key], (int)):
                 update_configuration_map[key] = CBASAuditLogs.actual_node_parameter_dict[key] - 1
 
         self.log.info("Update node configuration")
