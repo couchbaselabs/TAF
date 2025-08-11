@@ -338,12 +338,15 @@ class ColumnarRBAC(ColumnarOnPremBase):
                                                         predefined_roles=[pre_def_role])
                     testcases.append(test_case)
             elif pre_def_role == "sys_data_reader":
-                _priv = ["SELECT"]
-                test_case = self.generate_test_case(created_user, _priv, resources,
-                                                validate_err_msg=False,
-                                                predefined_roles=[pre_def_role])
-                testcases.append(test_case)
                 _exclude_privs = ["DELETE", "INSERT", "UPSERT", "ANALYZE"]
+                if privilege_resource_type != "udf_execute":
+                    _priv = ["SELECT"]
+                    test_case = self.generate_test_case(created_user, _priv, resources,
+                                                    validate_err_msg=False,
+                                                    predefined_roles=[pre_def_role])
+                    testcases.append(test_case)
+                else:
+                    _exclude_privs = ["SELECT", "DELETE", "INSERT", "UPSERT", "ANALYZE"]
                 negative_test_case = self.generate_test_case(created_user, _exclude_privs, resources,
                                                 validate_err_msg=True,
                                                 predefined_roles=[pre_def_role])
