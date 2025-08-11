@@ -15,7 +15,11 @@ class MultiBucketTests(ClusterSetup):
             self.cluster, self.num_replicas,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
-            bucket_count=self.standard_buckets, bucket_type=self.bucket_type)
+            bucket_count=self.standard_buckets, bucket_type=self.bucket_type,
+            enable_encryption_at_rest=self.enable_encryption_at_rest,
+            encryption_at_rest_key_id=self.encryption_at_rest_id,
+            encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
         self.assertTrue(buckets_created, "Multi-bucket creation failed")
         self.bucket_util.add_rbac_user(self.cluster.master)
 

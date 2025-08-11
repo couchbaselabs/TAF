@@ -1449,7 +1449,11 @@ class ClusterSetup(OnPremBaseTest):
             "history_retention_seconds": self.bucket_dedup_retention_seconds,
             "history_retention_bytes": self.bucket_dedup_retention_bytes,
             "magma_key_tree_data_block_size": self.magma_key_tree_data_block_size,
-            "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size
+            "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size,
+            "enable_encryption_at_rest": self.enable_encryption_at_rest,
+            "encryption_at_rest_key_id": self.encryption_at_rest_id,
+            "encryption_at_rest_dek_rotation_interval": self.encryptionAtRestDekRotationInterval,
+            "encryption_at_rest_dek_lifetime": self.encryption_at_rest_dek_lifetime
         }
 
         # This is needed because server will throw the error saying,

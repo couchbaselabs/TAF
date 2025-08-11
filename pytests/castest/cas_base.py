@@ -31,7 +31,11 @@ class CasBaseTest(ClusterSetup):
             ram_quota=self.bucket_size,
             replica=self.num_replicas,
             storage=self.bucket_storage,
-            conflict_resolution=self.bucket_conflict_resolution_type)
+            conflict_resolution=self.bucket_conflict_resolution_type,
+            enable_encryption_at_rest=self.enable_encryption_at_rest,
+            encryption_at_rest_key_id=self.encryption_at_rest_id,
+            encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket = self.cluster.buckets[0]
 
@@ -39,7 +43,7 @@ class CasBaseTest(ClusterSetup):
         if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
-                elf.cluster, self.bucket,
+                self.cluster, self.bucket,
                 req_clients=self.sdk_pool_capacity,
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,
