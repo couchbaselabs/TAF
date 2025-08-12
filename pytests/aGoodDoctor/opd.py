@@ -994,7 +994,7 @@ class OPD:
                 if "kv" in services:
                     shell.kill_memcached()
                 if "indexer" in services:
-                    shell.kill_process("indexer")
+                    shell.kill_process("indexer", "indexer")
                 shell.disconnect()
             self.sleep(5, "Sleep for 5 seconds before killing memc on next node.")
 
