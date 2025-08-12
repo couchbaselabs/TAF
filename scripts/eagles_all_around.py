@@ -78,7 +78,7 @@ def scan_all_slaves():
         if session is None:
             continue
 
-        cmds = ["find /data/workspace/ -iname '*collect*2021*.zip'", "find /data/workspace/ -iname '*2021*diag*.zip'"]
+        cmds = ["find /data/workspace/ -iname '*collect*2025*.zip'", "find /data/workspace/ -iname '*2025*diag*.zip'"]
         if len(sys.argv) > 1:
             cmds = ["find /data/workspace/ -iname '*collect*{}*.zip'".format(sys.argv[1]),
                     "find /data/workspace/ -iname '*{}*diag*.zip'".format(sys.argv[1].replace("-", ""))]
