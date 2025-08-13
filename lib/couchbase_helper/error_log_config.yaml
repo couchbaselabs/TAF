@@ -25,17 +25,6 @@ file_name_patterns:
           - 'Invalid packet header detected'
             # Not a bug: Ref: MB-45330
           - 'failed - Already exists'
-      - string: ' WARNING '
-        error_patterns:
-          - string: 'Slow operation'
-            time_to_consider_in_seconds: 10
-          - string: 'Slow runtime'
-            time_to_consider_in_seconds: 10
-          - string: 'Slow scheduling'
-            time_to_consider_in_seconds: 5
-        exclude_patterns:
-          - 'RANGE_SCAN_CONTINUE'
-
       #- string: 'WARN'
       #  exclude_patterns:
       #    - 'Slow'
