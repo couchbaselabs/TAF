@@ -437,7 +437,7 @@ class OPD:
                         expiry_start_index=bucket.expire_start, expiry_end_index=bucket.expire_end,
                         process_concurrency=self.process_concurrency, task_identifier="", ops=per_coll_ops,
                         suppress_error_table=False,
-                        track_failures=True,
+                        track_failures=self.track_failures,
                         mutate=0,
                         elastic=False, model=self.model, mockVector=self.mockVector, dim=dim, base64=self.base64)
                     self.loader_map.update({bucket.name+scope+collection: loader})
@@ -528,7 +528,7 @@ class OPD:
                         process_concurrency=self.process_concurrency,
                         task_identifier="", ops=bucket.loadDefn.get("ops"),
                         suppress_error_table=False,
-                        track_failures=True,
+                        track_failures=self.track_failures,
                         mutate=0,
                         elastic=False, model=self.model, mockVector=self.mockVector, dim=dim, base64=self.base64,
                         base_vectors_file_path=bucket.loadDefn.get("baseFilePath"),
