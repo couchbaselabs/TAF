@@ -44,7 +44,7 @@ class SecondaryWarmup(BaseTestCase):
                                     get_all_nodes=True)
 
         # Update num_reader_threads to slow the warmup process
-        ClusterRestAPI(self.cluster.master).manage_cluster_connections(
+        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
             num_reader_threads=self.num_reader_threads)
 
         # Creating buckets from spec file

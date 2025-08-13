@@ -362,7 +362,7 @@ class Murphy(BaseTestCase, OPD):
         self.writer_threads = self.input.param("writer_threads", "disk_io_optimized")
         self.reader_threads = self.input.param("reader_threads", "disk_io_optimized")
         self.storage_threads = self.input.param("storage_threads", 40)
-        ClusterRestAPI(self.cluster.master).manage_cluster_connections(
+        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                                 num_writer_threads=self.writer_threads,
                                 num_reader_threads=self.reader_threads,
                                 num_storage_threads=self.storage_threads)

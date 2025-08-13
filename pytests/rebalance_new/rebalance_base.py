@@ -81,7 +81,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.spec_name = self.input.param("bucket_spec", None)
         self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            ClusterRestAPI(self.cluster.master).manage_cluster_connections(
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                                     num_writer_threads="disk_io_optimized",
                                     num_reader_threads="disk_io_optimized")
         # Buckets creation and initial data load done by bucket_spec
@@ -245,7 +245,7 @@ class RebalanceBaseTest(BaseTestCase):
     def tearDown(self):
         self.cluster_util.print_cluster_stats(self.cluster)
         if self.disk_optimized_thread_settings:
-            ClusterRestAPI(self.cluster.master).manage_cluster_connections(
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                                             num_writer_threads="default",
                                             num_reader_threads="default",
                                             num_storage_threads="default")

@@ -1328,7 +1328,7 @@ class StorageBase(BaseTestCase):
         return data_path
 
     def set_writer_reader_storage_threads(self):
-        self.rest.manage_cluster_connections(num_reader_threads=self.num_reader_threads,
+        self.rest.manage_global_memcached_setting(num_reader_threads=self.num_reader_threads,
                                              num_writer_threads=self.num_writer_threads,
                                              num_storage_threads=self.num_storage_threads)
 
