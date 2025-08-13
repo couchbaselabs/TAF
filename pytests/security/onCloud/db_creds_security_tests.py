@@ -1,16 +1,9 @@
-import time
 import json
 import base64
-import random
-import string
 import requests
 from pytests.security.security_base import SecurityBase
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from TestInput import TestInputSingleton
-import threading
-from Queue import Queue
-import subprocess
-from datetime import timedelta
 
 class DB_CREDS_TESTS(SecurityBase):
 
@@ -19,19 +12,63 @@ class DB_CREDS_TESTS(SecurityBase):
 
         self.rest_username = TestInputSingleton.input.membase_settings.rest_username
         self.rest_password = TestInputSingleton.input.membase_settings.rest_password
-        self.support_token = self.input.capella.get("support_token")
+        self.data_api_url = self.input.capella.get("data_api_url", None)
+        if self.data_api_url is None:
+            self.data_api_url = self.enable_data_api()
+
+        self.scopes = ["all", "scope1", "scope2"]
+        self.collections = ["collection1", "collection2"]
+        self.scopes_and_collections = [["scope1", "collection1"], ["scope2", "collection2"]]
 
     def tearDown(self):
         self.test_delete_db_users()
         self.test_delete_buckets()
         super(DB_CREDS_TESTS, self).tearDown()
 
-    def create_db_payload(self, username, password, bucket_name="", access=""):
+    def enable_data_api(self):
+        self.log.info("Enabling Data API")
+
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, self.user,
+                                 self.passwd)
+        url = "https://{}/v2/organizations/{}/projects/{}/clusters/{}/data-api".format(self.url.replace("cloud", "", 1),
+                                                                                       self.tenant_id,
+                                                                                       self.project_id,
+                                                                                       self.cluster_id)
+        payload = {
+            "enabled": True
+        }
+        resp = capella_api.do_internal_request(url, "PUT", payload=payload)
+        if resp.status_code != 202:
+            self.fail("Failed to enable Data API for the cluster. Reason: {}".format(resp.content))
+
+        data_api_status = "enabling"
+        while data_api_status == "enabling":
+            self.sleep(60, "Waiting for Data API to be enabled. Current status: {}".format(data_api_status))
+            resp = self.capellaAPI.cluster_ops_apis.get_cluster(self.tenant_id,
+                                                                self.project_id,
+                                                                self.cluster_id)
+            if resp.status_code != 200:
+                self.fail("Failed to get cluster data. Reason {}".format(resp.content))
+            else:
+                resp = resp.json()
+                data_api_status = resp["data"]["dataApiState"]
+
+        if data_api_status == "enabled":
+            self.log.info("Data API enabled")
+            return resp["data"]["dataApiHostname"]
+        else:
+            self.fail("Failed to enable Data API. Reason: {}".format(data_api_status))
+
+    def create_db_payload(self, username, password, bucket_name="", scope="", access=""):
         payload = {
             "name": username,
             "password": password,
-            "permissions": {}
+            "permissions": {},
+            "credentialType": "basic"
         }
+
+        if scope == "all":
+            scope = "*"
 
         if bucket_name != "":
             if 'read' in access:
@@ -39,7 +76,7 @@ class DB_CREDS_TESTS(SecurityBase):
                     "buckets": [
                         {
                             "name" : bucket_name,
-                            "scopes": [{"name": "*"}]
+                            "scopes": [{"name": "{}".format(scope)}]
                         }
                     ]
                 }
@@ -48,7 +85,7 @@ class DB_CREDS_TESTS(SecurityBase):
                     "buckets": [
                         {
                             "name": bucket_name,
-                            "scopes": [{"name": "*"}]
+                            "scopes": [{"name": "{}".format(scope)}]
                         }
                     ]
                 }
@@ -60,23 +97,57 @@ class DB_CREDS_TESTS(SecurityBase):
                 "permissions": {
                     "data_reader": {},
                     "data_writer": {}
-                }
+                },
+                "credentialType": "basic"
             }
 
         return payload
+    """
+    {
+        "name":"Administrator",
+        "password":"Password@123",
+        "permissions":{
+            "data_reader":{
+                "buckets":[
+                    {
+                        "name":"bucket1",
+                        "scopes":[
+                            {
+                                "name":"scope1"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "credentialType":"basic"
+    }
+    {
+        "name": "Administrator",
+        "password": "Password@123",
+        "permissions": {
+            "data_reader": {},
+            "data_writer": {}
+        },
+        "credentialType": "basic"
+    }
+    """
 
-    def create_db_creds(self, body, access, bucket, result_queue=None):
+    def create_db_creds(self, body, access, bucket):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, self.user,
                                  self.passwd)
-        self.log.info("Creating DB Creds. User - {}, Bucket - {}, Access - {}".format(body["name"],
+        self.log.info("Creating Cluster Access Creds. User - {}, Bucket - {}, Access - {}".format(body["name"],
                                                      bucket, access))
+        # {"name":"Administrator","password":"Password@123","permissions":{"data_reader":{},"data_writer":{}},"credentialType":"basic"}
         url = '{}/v2/organizations/{}/projects/{}/clusters/{}/users' \
             .format("https://" + self.url.replace("cloud", "", 1), self.tenant_id,
                     self.project_id, self.cluster_id)
         create_db_cred_resp = capella_api.do_internal_request(url, method="POST",
                                         params=json.dumps(body))
 
-        # result_queue.put((create_db_cred_resp, access, bucket, body["name"]))
+        self.log.info("create_db_cred_resp: {}, {}".format(create_db_cred_resp.status_code,
+                                                       create_db_cred_resp.content))
+
         return create_db_cred_resp
 
     def get_db_creds(self):
@@ -93,263 +164,233 @@ class DB_CREDS_TESTS(SecurityBase):
                          msg='FAIL, Outcome:{}, Expected:{}, Reason: {}'
                          .format(get_db_user_resp.status_code, 200, get_db_user_resp.content))
 
-    def write_doc_into_buckets(self, buckets):
+    def create_scopes_and_collections(self, buckets):
+        for bucket in buckets:
+            for item in self.scopes_and_collections:
+                resp = self.capellaAPI.cluster_ops_apis.create_scope(self.tenant_id, self.project_id, self.cluster_id, bucket, item[0])
+                if resp.status_code != 201:
+                    self.fail("Failed to create scope {} for bucket '{}'. Reason - {}".format(item[0], bucket,
+                                                                                              resp.content))
+
+                resp = self.capellaAPI.cluster_ops_apis.create_collection(self.tenant_id, self.project_id, self.cluster_id, bucket,
+                                                     item[0], item[1])
+                if resp.status_code != 201:
+                    self.fail("Failed to create collection for bucket '{}'. Reason - {}".format(bucket,
+                                                                                                resp.content))
+
+        self.log.info("Successfully created scopes and collections")
+
+
+    def write_doc_into_buckets(self, buckets, doc_id):
         self.log.info("Writing documents into the buckets")
 
         capella_api = CapellaAPI("https://" + self.url, self.secret_key,
                                  self.access_key, self.user, self.passwd)
         payload = {
-                "id": "8091",
-                "name": "Koushal-test-doc"
-            }
-        doc_id = "airline_8091"
+            "doc_id": doc_id,
+            "name": self.generate_random_string(3, False, "name"),
+            "last": self.generate_random_string(3, False, "last"),
+        }
+
         for bucket in buckets:
-            url = 'https://{}/v2/databases/{}/proxy/pools/default' \
-                  '/buckets/{}/scopes/_default/collections/_default/docs/{}'.format(
-                self.url.replace(
-                    "cloud", ""), self.cluster_id, bucket, doc_id)
-            header = {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-            resp = capella_api.do_internal_request(url, "POST", params=payload, headers=header)
-            self.assertEqual(resp.status_code, 200,
+            for scope in self.scopes_and_collections:
+                url = 'https://{}/v1/buckets/{}/scopes/{}/collections/{}/documents/{}'.format(
+                    self.data_api_url, bucket, scope[0], scope[1], doc_id)
+                header = {
+                    'Authorization': 'Basic {}'.format(base64.b64encode('{}:{}'.format(self.rest_username,
+                                                                                 self.rest_password).encode()).decode()),
+                    'Content-Type': 'application/json'
+                }
+                resp = capella_api.do_internal_request(url, "POST", params=payload, headers=header)
+                self.assertEqual(resp.status_code, 200,
                              msg='FAIL, Outcome:{}, Expected:{}, Reason: {}'
                              .format(resp.status_code, 200, resp.content))
 
-    def read_db_creds_test(self, read_db_creds, buckets):
+    def read_db_creds_test(self, read_db_creds, buckets, doc_id):
         for idx, dictionary in enumerate(read_db_creds):
             for key, value in dictionary.items():
                 for bucket in buckets:
-                    if bucket == value:
-                        continue
-                    else:
-                        self.log.info("Trying to read a document")
-                        self.log.info("Bucket - {}, User - {}".format(bucket, key))
-                        capella_api = CapellaAPI("https://" + self.url, self.secret_key,
-                                                 self.access_key, self.user, self.passwd)
-                        resp = capella_api.get_nodes(self.tenant_id, self.project_id,
-                                                     self.cluster_id)
-                        ip = resp.json()['data'][0]['data']['hostname']
-                        doc_id = 'airline_8091'
-                        url = 'https://{}:18091/pools/default/buckets/{}/docs/{}'.format(ip, bucket,
-                                                                                   doc_id)
-                        authorization = base64.b64encode(
-                            '{}:{}'.format(key, self.rest_password).encode()).decode()
-                        headers = {
-                            'Authorization': 'Basic %s' % authorization,
-                            'Accept': '*/*'
-                        }
-                        resp = requests.request("GET", url, headers=headers, verify=False)
-                        self.assertEqual(resp.status_code, 403,
-                                         msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
-                                             resp.status_code, 403, resp.content))
+                    for scope in self.scopes_and_collections:
+                        self.log.info(
+                            "bucket - {}, value[0] - {}, scope[0] - {}, value[1] - {},".format(bucket, value[0],
+                                                                                               scope[0], value[1]))
+                        if bucket == value[0] and (scope[0] == value[1] or value[1] == "all"):
+                            continue
+                        else:
+                            self.log.info("Trying to read a document")
+                            self.log.info("User - {}, Bucket - {}, Scope - {} ".format(key, bucket, value[1]))
 
-    def write_db_creds_test(self, write_db_creds, buckets):
+                            url = 'https://{}/v1/buckets/{}/scopes/{}/collections/{}/documents/{}'.format(
+                                self.data_api_url, bucket, scope[0], scope[1], doc_id)
+                            authorization = base64.b64encode(
+                                '{}:{}'.format(key, self.rest_password).encode()).decode()
+                            headers = {
+                                'Authorization': 'Basic %s' % authorization,
+                                'Accept': '*/*'
+                            }
+                            resp = requests.request("GET", url, headers=headers, verify=False)
+                            self.assertEqual(resp.status_code, 403,
+                                             msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
+                                                 resp.status_code, 403, resp.content))
+
+    def write_db_creds_test(self, write_db_creds, buckets, doc_id):
         for idx, dictionary in enumerate(write_db_creds):
             for key, value in dictionary.items():
                 for bucket in buckets:
-                    if bucket == value:
-                        continue
-                    else:
-                        self.log.info("Trying to write a document into bucket - {}".format(bucket))
-                        self.log.info("Bucket - {}, User - {}".format(bucket, key))
-                        capella_api = CapellaAPI("https://" + self.url, self.secret_key,
-                                                 self.access_key, self.user, self.passwd)
-                        resp = capella_api.get_nodes(self.tenant_id, self.project_id,
-                                                     self.cluster_id)
-                        ip = resp.json()['data'][0]['data']['hostname']
-                        doc_id = 'airline_8092'
-                        url = 'https://{}:18091/pools/default/buckets/{}/docs/{}'.format(ip, bucket,
-                                                                                         doc_id)
-                        authorization = base64.b64encode(
-                            '{}:{}'.format(key, self.rest_password).encode()).decode()
-                        headers = {
-                            'Authorization': 'Basic %s' % authorization,
-                            'Accept': '*/*'
-                        }
-                        resp = requests.request("POST", url, headers=headers, verify=False)
-                        self.assertEqual(resp.status_code, 403,
-                                         msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
-                                             resp.status_code, 403, resp.content))
+                    for scope in self.scopes_and_collections:
+                        self.log.info(
+                            "bucket - {}, value[0] - {}, scope[0] - {}, value[1] - {},".format(bucket, value[0],
+                                                                                               scope[0], value[1]))
+                        if bucket == value[0] and (scope[0] == value[1] or value[1] == "all"):
+                            continue
+                        else:
+                            self.log.info("Trying to write a document into bucket - {}".format(bucket))
+                            self.log.info("User - {}, Bucket - {}, Scope - {}".format(key, bucket, scope))
 
-    def read_write_db_creds_test(self, read_write_db_creds, buckets):
+                            url = 'https://{}/v1/buckets/{}/scopes/{}/collections/{}/documents/{}'.format(
+                                                                    self.data_api_url, bucket,
+                                                                          scope[0], scope[1], doc_id)
+                            authorization = base64.b64encode(
+                                '{}:{}'.format(key, self.rest_password).encode()).decode()
+                            headers = {
+                                'Authorization': 'Basic %s' % authorization,
+                                'Accept': '*/*'
+                            }
+                            resp = requests.request("POST", url, headers=headers, verify=False)
+                            self.assertEqual(resp.status_code, 403,
+                                             msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
+                                                 resp.status_code, 403, resp.content))
+
+    def read_write_db_creds_test(self, read_write_db_creds, buckets, doc_id):
         for idx, dictionary in enumerate(read_write_db_creds):
             for key, value in dictionary.items():
                 for bucket in buckets:
-                    if bucket == value:
-                        continue
-                    else:
-                        self.log.info("Trying to read a document from bucket - {}".format(bucket))
-                        self.log.info("Bucket - {}, User - {}".format(bucket, key))
-                        capella_api = CapellaAPI("https://" + self.url, self.secret_key,
-                                                 self.access_key, self.user, self.passwd)
-                        resp = capella_api.get_nodes(self.tenant_id, self.project_id,
-                                                     self.cluster_id)
-                        ip = resp.json()['data'][0]['data']['hostname']
-                        doc_id = 'airline_8091'
-                        url = 'https://{}:18091/pools/default/buckets/{}/docs/{}'.format(ip, bucket,
-                                                                                         doc_id)
-                        authorization = base64.b64encode(
-                            '{}:{}'.format(key, self.rest_password).encode()).decode()
-                        headers = {
-                            'Authorization': 'Basic %s' % authorization,
-                            'Accept': '*/*'
-                        }
-                        resp = requests.request("GET", url, headers=headers, verify=False)
-                        self.assertEqual(resp.status_code, 403,
-                                         msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
-                                             resp.status_code, 403, resp.content))
+                    for scope in self.scopes_and_collections:
+                        self.log.info("bucket - {}, value[0] - {}, scope[0] - {}, value[1] - {},".format(bucket, value[0], scope[0], value[1]))
+                        if bucket == value[0] and (scope[0] == value[1] or value[1] == "all"):
+                            continue
+                        else:
+                            self.log.info("Trying to read a document from bucket - {}".format(bucket))
+                            self.log.info("User - {}, Bucket - {}, Scope - {}".format(key, bucket, scope))
 
-                        self.log.info("Trying to write a document into bucket - {}".format(bucket))
-                        self.log.info("Bucket - {}, User - {}".format(bucket, key))
-                        doc_id = 'airline_8092'
-                        url = 'https://{}:18091/pools/default/buckets/{}/docs/{}'.format(ip, bucket,
-                                                                                         doc_id)
-                        authorization = base64.b64encode(
-                            '{}:{}'.format(key, self.rest_password).encode()).decode()
-                        headers = {
-                            'Authorization': 'Basic %s' % authorization,
-                            'Accept': '*/*'
-                        }
-                        resp = requests.request("POST", url, headers=headers, verify=False)
-                        self.assertEqual(resp.status_code, 403,
-                                         msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
-                                             resp.status_code, 403, resp.content))
+                            url = 'https://{}/v1/buckets/{}/scopes/{}/collections/{}/documents/{}'.format(self.data_api_url,
+                                                                                                          bucket,
+                                                                                                          scope[0],
+                                                                                                          scope[1],
+                                                                                                          doc_id)
+                            authorization = base64.b64encode(
+                                '{}:{}'.format(key, self.rest_password).encode()).decode()
+                            headers = {
+                                'Authorization': 'Basic %s' % authorization,
+                                'Accept': '*/*'
+                            }
+                            resp = requests.request("GET", url, headers=headers, verify=False)
+                            self.assertEqual(resp.status_code, 403,
+                                             msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
+                                                 resp.status_code, 403, resp.content))
 
-    def test_db_creds_parallely(self):
-        self.log.info("Running a test to validate the database credentials")
+                            self.log.info("Trying to write a document into bucket - {}".format(bucket))
+                            self.log.info("User - {}, Bucket - {}, Scope - {}".format(key, bucket, scope))
 
-
-        # buckets = []
-        # threads = []
-        # for i in range(10):
-        #     capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-        #                              self.user, self.passwd)
-        #     t = threading.Thread(target=capella_api.create_bucket, args=(self.tenant_id,
-        #                                                                  self.project_id,
-        #                                                                  self.cluster_id,
-        #                                                                  {"name": "bucket_" +
-        #                                                                   str(i)}))
-        #     buckets.append("bucket_" + str(i))
-        #     threads.append(t)
-        #     t.start()
-        #
-        # for t in threads:
-        #     t.join()
-        #
-        # self.log.info("Created all the buckets")
-        #
-        # threads = []
-        # access_roles = ["read", "write", "readwrite", "readwriteexpiry"]
-        # reads_db_creds = []
-        # writes_db_creds = []
-        # read_writes_db_creds = []
-        # read_writes_db_creds_expiry = []
-        # result_queue = Queue()
-        # num = 0
-        # for bucket in buckets:
-        #     for access in access_roles:
-        #         body = self.create_db_payload("Administrator_" + str(num), self.rest_password,
-        #                                       bucket, access)
-        #         t = threading.Thread(target=self.create_db_creds, args=(body, access, result_queue,
-        #                                                                 bucket))
-        #         threads.append(t)
-        #         t.start()
-        #         num = num + 1
-        #
-        # for t in threads:
-        #     t.join()
-        #
-        # while not result_queue.empty():
-        #     resp, access, bucket, username = result_queue.get()
-        #     self.assertEqual(resp.status_code, 200,
-        #                      msg='FAIL, Outcome:{}, Expected:{}, Reason: {}'
-        #                      .format(resp.status_code, 200, resp.content))
-        #     if resp.status_code == 200:
-        #         if access == "read":
-        #             reads_db_creds.append({username: bucket})
-        #         elif access == "write":
-        #             writes_db_creds.append({username: bucket})
-        #         elif access == "readwrite":
-        #             read_writes_db_creds.append({username: bucket})
-        #         elif access == "readwriteexpiry":
-        #             read_writes_db_creds_expiry.append({username: bucket})
-        #
-        # threads = []
-        # t1 = threading.Thread(target=self.read_db_creds_test, args=(reads_db_creds, buckets))
-        # t2 = threading.Thread(target=self.write_db_creds_test, args=(writes_db_creds, buckets))
-        # t3 = threading.Thread(target=self.read_write_db_creds_test, args=(read_writes_db_creds, buckets))
-        #
-        # threads.append(t1)
-        # threads.append(t2)
-        # threads.append(t3)
-        #
-        # t1.start()
-        # t2.start()
-        # t3.start()
-        #
-        # for t in threads:
-        #     t.join()
-        #
-        # self.log.info("The test is completed successfully")
+                            url = 'https://{}/v1/buckets/{}/scopes/{}/collections/{}/documents/{}'.format(self.data_api_url,
+                                                                                                          bucket,
+                                                                                                          scope[0],
+                                                                                                          scope[1],
+                                                                                                          doc_id)
+                            authorization = base64.b64encode(
+                                '{}:{}'.format(key, self.rest_password).encode()).decode()
+                            headers = {
+                                'Authorization': 'Basic %s' % authorization,
+                                'Accept': '*/*'
+                            }
+                            resp = requests.request("POST", url, headers=headers, verify=False)
+                            self.assertEqual(resp.status_code, 403,
+                                             msg='FAIL, Outcome:{}, Expected: {}, Reason: {}'.format(
+                                                 resp.status_code, 403, resp.content))
 
     def test_db_creds(self):
-        self.log.info("Running a test to validate the database credentials")
+        self.log.info("Running a test to validate the data api with cluster access")
+
+        self.log.info("Creating Admin user for the test")
+        body = self.create_db_payload(self.rest_username, self.rest_password, "", access="full")
+        admin_response = self.create_db_creds(body, "", "")
+        if admin_response.status_code != 200:
+            self.log.info("Failed to create admin users. Reason - {}".format(admin_response.content))
+        else:
+            self.log.info("Successfully created admin user")
+
         buckets = []
         self.bucket_ids = []
         for i in range(10):
-            capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                     self.user, self.passwd)
             bucket_params = {
-                "name": "bucket_" + str(i)
+                "name": self.prefix + "Bucket_" + self.generate_random_string(3, False),
+                "type": "couchbase",
+                "storageBackend": "couchstore",
+                "memoryAllocationInMb": 100,
+                "bucketConflictResolution": "seqno",
+                "durabilityLevel": "majorityAndPersistActive",
+                "replicas": 1,
+                "flush": True,
+                "timeToLiveInSeconds": 0
             }
-            resp = capella_api.create_bucket(self.tenant_id, self.project_id, self.cluster_id,
-                                             bucket_params)
+            resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.cluster_id,
+                                                                  bucket_params["name"],
+                                                                  bucket_params["type"],
+                                                                  bucket_params["storageBackend"],
+                                                                  bucket_params["memoryAllocationInMb"],
+                                                                  bucket_params["bucketConflictResolution"],
+                                                                  bucket_params["durabilityLevel"],
+                                                                  bucket_params["replicas"],
+                                                                  bucket_params["flush"],
+                                                                  bucket_params["timeToLiveInSeconds"])
             if resp.status_code == 201:
-                buckets.append("bucket_" + str(i))
+                buckets.append(bucket_params["name"])
+                self.log.info("Created bucket - {}".format(resp.content))
+                self.bucket_ids.append(resp.json()["id"])
             else:
                 self.fail("Failed to create a bucket. Reason: {}".format(resp.content))
 
         self.log.info("Created all the buckets")
 
-        access_roles = ["read", "write", "readwrite", "readwriteexpiry"]
+        access_roles = ["read", "write", "readwrite"]
         reads_db_creds = []
         writes_db_creds = []
         read_writes_db_creds = []
-        read_writes_db_creds_expiry = []
+
+        doc_id = "doc_1"
+        self.create_scopes_and_collections(self.bucket_ids)
+        self.write_doc_into_buckets(buckets, doc_id)
 
         num = 0
         for bucket in buckets:
-            for access in access_roles:
-                username = "Administrator_" + str(num)
-                body = self.create_db_payload(username, self.rest_password, bucket, access)
-                resp = self.create_db_creds(body, access, bucket)
+            for scope in self.scopes:
+                for access in access_roles:
+                    username = "Administrator_" + str(num)
+                    body = self.create_db_payload(username, self.rest_password, bucket, scope, access)
+                    resp = self.create_db_creds(body, access, bucket)
 
-                if resp.status_code == 200:
-                    if access == "read":
-                        reads_db_creds.append({username: bucket})
-                    elif access == "write":
-                        writes_db_creds.append({username: bucket})
-                    elif access == "readwrite":
-                        read_writes_db_creds.append({username: bucket})
-                    elif access == "readwriteexpiry":
-                        read_writes_db_creds_expiry.append({username: bucket})
+                    if resp.status_code == 200:
+                        if access == "read":
+                            reads_db_creds.append({username: [bucket, scope]})
+                        elif access == "write":
+                            writes_db_creds.append({username: [bucket, scope]})
+                        elif access == "readwrite":
+                            read_writes_db_creds.append({username: [bucket, scope]})
 
-                num = num + 1
+                    num = num + 1
 
         self.log.info("Created all the db credentials")
         self.log.info("The Read DB Creds are - {}".format(reads_db_creds))
         self.log.info("The Write DB Creds are - {}".format(writes_db_creds))
         self.log.info("The Read/Write DB Creds are - {}".format(read_writes_db_creds))
-        self.log.info("The Read/Write Expiry DB Creds are - {}".format(read_writes_db_creds_expiry))
 
-        self.write_doc_into_buckets(buckets)
-
-        self.read_db_creds_test(reads_db_creds, buckets)
+        self.read_db_creds_test(reads_db_creds, buckets, doc_id)
         self.log.info("Done with Read tests")
-        self.write_db_creds_test(writes_db_creds, buckets)
+        self.write_db_creds_test(writes_db_creds, buckets, doc_id)
         self.log.info("Done with write tests")
-        self.read_write_db_creds_test(read_writes_db_creds, buckets)
+        self.read_write_db_creds_test(read_writes_db_creds, buckets, doc_id)
         self.log.info("Done with Read/write tests")
 
         self.log.info("The test is completed successfully")
