@@ -424,7 +424,7 @@ class MagmaBaseTest(StorageBase):
         shell = RemoteMachineShellConnection(server)
 
         magma_path = os.path.join(self.data_path,
-                                  bucket.name, "magma.0")
+                                  bucket.uuid, "magma.0")
         kv_path = shell.execute_command("ls %s | grep kv | head -1" %
                                         magma_path)[0][0].split('\n')[0]
         path = os.path.join(magma_path, kv_path, "rev*/seqIndex")
@@ -471,7 +471,7 @@ class MagmaBaseTest(StorageBase):
             result = 0
             result_str = ""
             bucket = self.cluster.buckets[0]
-            magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
+            magma_path = os.path.join(self.data_path, bucket.uuid, "magma.{}")
             shell = RemoteMachineShellConnection(node)
             shards = shell.execute_command(
                 "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
@@ -639,7 +639,7 @@ class MagmaBaseTest(StorageBase):
         for node in self.cluster.nodes_in_cluster:
             result["_".join(node.ip.split("."))] = dict()
         bucket = bucket or self.cluster.buckets[0]
-        magma_path = os.path.join(self.data_path, bucket.name, "magma.{}")
+        magma_path = os.path.join(self.data_path, bucket.uuid, "magma.{}")
         for node in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(node)
             shards = shell.execute_command(
