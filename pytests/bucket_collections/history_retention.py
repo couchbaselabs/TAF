@@ -592,7 +592,7 @@ class DocHistoryRetention(ClusterSetup):
         client = self.cluster.sdk_client_pool.get_client_for_bucket(
             bucket, collection=col)
         keys = list()
-        for vb_num in range(0, bucket.numVBuckets):
+        for vb_num in range(0, bucket.num_vbuckets):
             key, val = doc_generator("test_doc", 0, 1,
                                      target_vbucket=[vb_num]).next()
             keys.append(key)
