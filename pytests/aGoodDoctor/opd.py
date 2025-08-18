@@ -189,7 +189,7 @@ class OPD:
                 shell.disconnect()
             elif error_condition == "kill_indexer":
                 shell = RemoteMachineShellConnection(node)
-                shell.kill_indexer()
+                shell.kill_process("indexer", "indexer")
                 shell.disconnect()
             elif error_condition == "reboot_server":
                 shell = RemoteMachineShellConnection(node)
