@@ -18,6 +18,7 @@ from cb_tools.cbstats import Cbstats
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
+from membase.api.rest_client import RestConnection
 
 
 class CollectionBase(ClusterSetup):
