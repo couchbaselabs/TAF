@@ -118,6 +118,9 @@ if [ ${fresh_run} == false ]; then
  set +x
 fi
 
+# Used to pass on to the cleanup job
+export is_dynamic_vms=`echo $dispatcher_params | grep -o '"use_dynamic_vms": [^,]*' | cut -d' ' -f2`
+
 echo "Set ALLOW_HTP to False so test could run."
 sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
 
