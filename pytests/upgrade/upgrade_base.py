@@ -338,7 +338,7 @@ class UpgradeBase(BaseTestCase):
         # Try creating a secret
         bucket_helper = BucketHelper(self.cluster.master)
         params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretAutoRotationOn",
             usage=["bucket-encryption"],
             autoRotation=True,
