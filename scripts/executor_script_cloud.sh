@@ -47,7 +47,10 @@ if [ ! "${password}" = "" ]; then
   fi
 fi
 
-# Below "if" block added by UMANG to run goldfish tests
+# Used to pass on to the cleanup job
+export is_dynamic_vms=`echo $dispatcher_params | grep -o '"use_dynamic_vms": [^,]*' | cut -d' ' -f2`
+
+# Below "if" block added by UMANG to run columnar tests
 if [ "$server_type" = "SERVERLESS_COLUMNAR" ]; then
   cluster_info="{\"pod\": \"$capella_api_url\", \"tenant_id\": \"$tenant_id\", \"capella_user\": \"$capella_user\", \"capella_pwd\": \"$capella_password\", \"region\": \"$capella_region\"}"
   #echo ${py_executable} signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region
