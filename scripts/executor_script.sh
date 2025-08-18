@@ -120,6 +120,9 @@ if [ ${fresh_run} == false ]; then
   set +x
 fi
 
+# Used to pass on to the cleanup job
+export is_dynamic_vms=`echo $dispatcher_params | grep -o '"use_dynamic_vms": [^,]*' | cut -d' ' -f2`
+
 set +e
 echo newState=available>propfile
 newState=available
