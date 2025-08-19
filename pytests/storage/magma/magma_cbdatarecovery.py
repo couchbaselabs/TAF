@@ -79,7 +79,7 @@ class MagmaRecovery(BaseTestCase):
         if self.transfer_dead_vbuckets:
             target_vbs = [i for i in range(100)]
 
-        doc_gen = doc_generator(self.doc_prefix, 0, 100, target_vbucket=target_vbs)
+        doc_gen = doc_generator(self.doc_prefix, 0, 100, target_vbucket=target_vbs, doc_size=1024)
 
         self.log.info("Validating document metdata for bucket: {}".format(bucket_name))
         while doc_gen.has_next():
@@ -201,11 +201,7 @@ class MagmaRecovery(BaseTestCase):
                     replica=self.num_replicas,
                     storage=self.bucket_storage,
                     eviction_policy=self.bucket_eviction_policy,
-                    bucket_name=bucket_name,
-                    enable_encryption_at_rest=self.enable_encryption_at_rest,
-                    encryption_at_rest_key_id=self.encryption_at_rest_id,
-                    encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
-                    encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
+                    bucket_name=bucket_name)
         self.bucket_util.print_bucket_stats(self.second_cluster)
 
         data_path = RestConnection(self.first_cluster_master).get_data_path()
