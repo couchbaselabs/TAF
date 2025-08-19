@@ -84,6 +84,9 @@ from com.couchbase.test.sdk import SDKClientPool
 from com.couchbase.test.docgen import DRConstants
 
 from java.util import HashMap
+import json
+from cluster_utils.cluster_ready_functions import ClusterUtils
+from membase.api.rest_client import RestConnection
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -2245,10 +2248,10 @@ class BucketUtils(ScopeUtils):
              Bucket.magmaSeqTreeDataBlockSize: magma_seq_tree_data_block_size,
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
-             Bucket.weight: weight})
-
+             Bucket.weight: weight,
+             Bucket.encryptionAtRestKeyId: encryption_at_rest_key_id})
         if enable_encryption_at_rest:
-            bucket_obj.encryptionAtRestKeyId = encryption_at_rest_key_id
+            bucket_obj.encryptionAtRestKeyId = self.encryption_at_rest_id
             if encryption_at_rest_dek_rotation_interval is not None:
                 bucket_obj.encryptionAtRestDekRotationInterval = encryption_at_rest_dek_rotation_interval
             if encryption_at_rest_dek_lifetime is not None:
