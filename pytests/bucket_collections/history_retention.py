@@ -66,7 +66,7 @@ class DocHistoryRetention(ClusterSetup):
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for bucket in self.cluster.buckets:
             exp_bytes_per_vb = \
-                bucket.historyRetentionBytes / self.cluster.vbuckets
+                bucket.historyRetentionBytes / bucket.num_vbuckets
             result = self.bucket_util.validate_disk_info_detail_history_stats(
                 bucket, kv_nodes, exp_bytes_per_vb)
             self.assertTrue(result, "Disk_info validation failed")
