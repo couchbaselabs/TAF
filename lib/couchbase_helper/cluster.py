@@ -1185,3 +1185,8 @@ class ServerTasks(object):
         _task = jython_tasks.ExecuteQueriesTask(query_node, queries, timeout=timeout, shuffle_queries=shuffle_queries)
         self.jython_task_manager.add_new_task(_task)
         return _task
+
+    def async_periodic_profile(self, index_nodes, timeout=600, period=1, tasks=None, profile_dir=None):
+        _task = jython_tasks.PeriodicProfilingTask(index_nodes, timeout=timeout, period=period, tasks=tasks, profile_dir=profile_dir)
+        self.jython_task_manager.add_new_task(_task)
+        return _task

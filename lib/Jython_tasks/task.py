@@ -8918,3 +8918,101 @@ class ExecuteQueriesTask(Task):
 
         self.complete_task()
         return self.result_queries
+
+class PeriodicProfilingTask(Task):
+    def __init__(self, index_nodes=[], timeout=None, period=1, tasks=None, profile_dir=None):
+        super(PeriodicProfilingTask, self).__init__("PeriodicProfilingTask_{}".format(time.time()))
+        self.index_nodes = index_nodes
+        self.timeout = timeout
+
+        self.tasks = tasks
+        allowed_tasks = [
+            "cpu_profile",
+            "heap_profile",
+            "go_routines_dump"
+        ]
+
+        self.prof_dir = profile_dir
+
+        if self.tasks is None:
+            self.tasks = []
+
+        if not isinstance(self.tasks, list):
+            raise Exception("Tasks should be a list")
+
+        for task in self.tasks:
+            if task not in allowed_tasks:
+                raise Exception("Task {} not allowed".format(task))
+
+        self.rest = {}
+        for node in self.index_nodes:
+            self.rest[node.ip] = RestConnection(node)
+
+        self.wait_between_iterations = period
+
+        self.stop_task = False
+
+    def end_task(self):
+        self.stop_task = True
+
+    def record_cpu_profile(self, index_node, cpu_prof_out_file):
+        prof = self.rest[index_node.ip].get_index_cpu_profile()
+        with open(cpu_prof_out_file, 'wb') as f:
+            f.write(prof)
+
+    def record_heap_profile(self, index_node, heap_prof_out_file):
+        prof = self.rest[index_node.ip].get_index_heap_profile()
+        with open(heap_prof_out_file, 'wb') as f:
+            f.write(prof)
+
+    def record_go_routine_dump(self, index_node, go_routines_out_file):
+        prof = self.rest[index_node.ip].get_index_go_routine_dump()
+        with open(go_routines_out_file, 'wb') as f:
+            f.write(prof)
+
+    def call(self):
+        self.start_task()
+
+        self.test_log.info("Starting periodic profiling task")
+        if len(self.index_nodes) == 0:
+            self.set_exception(Exception("No index nodes to profile"))
+
+        try:
+            end = None
+            if self.timeout:
+                end = time.time() + self.timeout
+
+            self.stop_task = self.stop_task or (end != None and time.time() > end)
+            while not self.stop_task:
+                for index_node in self.index_nodes:
+                    if self.stop_task:
+                        break
+
+                    timestamp = time.strftime("%Y_%m_%d_%H_%M_%S")
+                    self.test_log.debug("Profiling index node {} at {}".format(index_node.ip, timestamp))
+
+                    if "cpu_profile" in self.tasks:
+                        cpu_prof_filename = "{}_${}_cpu_prof".format(timestamp, "_".join(str(index_node.ip).split('.')))
+                        cpu_prof_filename = os.path.join(self.prof_dir, cpu_prof_filename)
+                        self.record_cpu_profile(index_node, cpu_prof_filename)
+
+                    if "heap_profile" in self.tasks:
+                        heap_prof_filename = "{}_${}_heap_prof".format(timestamp, "_".join(str(index_node.ip).split('.')))
+                        heap_prof_filename = os.path.join(self.prof_dir, heap_prof_filename)
+                        self.record_heap_profile(index_node, heap_prof_filename)
+
+                    if "go_routines_dump" in self.tasks:
+                        go_routines_filename = "{}_${}_go_routines_dump".format(timestamp, "_".join(str(index_node.ip).split('.')))
+                        go_routines_filename = os.path.join(self.prof_dir, go_routines_filename)
+                        self.record_go_routine_dump(index_node, go_routines_filename)
+
+                    self.stop_task = self.stop_task or (end != None and time.time() > end)
+
+                self.sleep(self.wait_between_iterations, log_type="infra")
+
+        except Exception as e:
+            self.log.error("Exception occurred during : {}".format(str(e)))
+            self.set_exception(e)
+
+        self.complete_task()
+        return self.result_queries

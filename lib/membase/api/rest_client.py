@@ -2977,6 +2977,36 @@ class RestConnection(newRC):
         except ValueError:
             return content
 
+    def get_index_cpu_profile(self):
+        url = 'debug/pprof/profile'
+        api = self.indexUrl + url
+
+        status, content, header = self._http_request(api)
+        if not status:
+            raise Exception(content)
+
+        return content
+
+    def get_index_heap_profile(self):
+        url = 'debug/pprof/heap'
+        api = self.indexUrl + url
+
+        status, content, header = self._http_request(api)
+        if not status:
+            raise Exception(content)
+
+        return content
+
+    def get_index_go_routine_dump(self):
+        url = 'debug/pprof/goroutine'
+        api = self.indexUrl + url
+
+        status, content, header = self._http_request(api)
+        if not status:
+            raise Exception(content)
+
+        return content
+
     def analytics_tool(self, query, port=8095, timeout=650, query_params={},
                        is_prepared=False, named_prepare=None,
                        verbose=True, encoded_plan=None, servers=None):
