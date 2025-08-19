@@ -2053,7 +2053,7 @@ class XattrTests(SubdocBaseTest):
 
     def format_doc_key(self, key_number):
         """ Returns a document key given a document number. """
-        return "{}-{:04}".format(self.doc_prefix, key_number)
+        return "{}{:04}".format(self.doc_prefix, key_number)
 
     def get_subdoc_val(self):
         """ Given a document key and sub-doc path returns a pure value."""
@@ -2229,7 +2229,8 @@ class XattrTests(SubdocBaseTest):
                     self.assertFalse(accessible)
                 else:
                     self.assertEqual(xattrvalue, self.get_subdoc_val(),
-                                     "for key %s" % doc_key)
+                                     "for key {}, Expected: {}, Actual: {}".\
+                                     format(doc_key, self.get_subdoc_val(), xattrvalue))
 
     def parallel(self, function, key_min, key_max, **kwargs):
         """ Execute the workload in parallel by batching keys between key_max
