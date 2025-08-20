@@ -387,7 +387,8 @@ class GsiHelper(RestConnection):
             sleep(sleep_time)
         return False
 
-    def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10, status="Ready"):
+    def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10, status="Ready",
+                                    fail_on_warmup=True):
         self.polling_for_index_training(bucket, index, timeout=timeout//10)
         self.log.info("Starting polling for index:"+str(index))
         for x in range(timeout):
@@ -397,7 +398,8 @@ class GsiHelper(RestConnection):
                     self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
                     if result[bucket.name][index]['status'] == "Warmup":
                         self.log.info("2i index is warming up: {}".format(index))
-                        return False
+                        if fail_on_warmup:
+                            return False
                     elif result[bucket.name][index]['status'] == status or result[bucket.name][index]['status'] == "Ready":
                         self.log.info("2i index is ready: {}".format(index))
                         self.log.info("Index {} build is completed in {}".format(index, str(x*sleep_time)))

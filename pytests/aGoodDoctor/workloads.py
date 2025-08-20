@@ -11,7 +11,7 @@ default = {
     "key_prefix": "test_docs-",
     "key_size": 32,
     "key_type": _input.param("key_type", "SimpleKey"),
-    "valType": _input.param("valType", "Hotel"),
+    "valType": "SimpleValue",
     "collections": _input.param("collections", 2),
     "scopes": 1,
     "num_items": _input.param("num_items", 50000000),
@@ -25,7 +25,32 @@ default = {
     "cbasQPS": _input.param("cbasQPS", 10),
     "collections_defn": [
         {
-            "valType": _input.param("val_type", "SimpleValue"),
+            "valType": "SimpleValue",
+            "queries": [
+                'select name from {bucket}.{scope}.{collection} where age between 30 and 50 limit 100;',
+                'select name from {bucket}.{scope}.{collection} where body is not null and age between 0 and 50 limit 100;',
+                'select age, count(*) from {bucket}.{scope}.{collection} where marital = "M" group by age order by age limit 100;',
+                'select v.name, animal from {bucket}.{scope}.{collection} as v unnest animals as animal where v.attributes.hair = "Burgundy" and animal is not null limit 100;',
+                'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {bucket}.{scope}.{collection} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 100;',
+                'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {bucket}.{scope}.{collection} WHERE gender is not MISSING limit 100;'
+                ],
+            "queryParams": [
+                {},
+                {},
+                {},
+                {},
+                {},
+                {}
+                ],
+            "indexes": [
+                'create index {index_name} on {bucket}.{scope}.{collection}(age) where age between 30 and 50 WITH {{ "defer_build": true}};',
+                'create index {index_name} on {bucket}.{scope}.{collection}(body) where age between 0 and 50 WITH {{ "defer_build": true}};',
+                'create index {index_name} on {bucket}.{scope}.{collection}(marital,age) WITH {{ "defer_build": true}};',
+                'create index {index_name} on {bucket}.{scope}.{collection}(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
+                'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
+                'create index {index_name} on {bucket}.{scope}.{collection}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true}};'
+                ],
+
             "2i": {"num_queries": _input.param("2i_queries", 2),
                    "num_indexes": _input.param("2i_indexes", 2)},
             "FTS": {"num_queries": _input.param("fts_queries", 2),
@@ -780,7 +805,7 @@ siftBigANN = {
 }
 
 hotel_vector = {
-    "valType": _input.param("val_type", "Hotel"),
+    "valType": "Hotel",
     "scopes": 1,
     "collections": _input.param("collections", 2),
     "num_items": _input.param("num_items", 50000000),
@@ -788,14 +813,14 @@ hotel_vector = {
     "end": _input.param("num_items", 50000000),
     "ops": _input.param("ops_rate", 50000),
     "doc_size": _input.param("doc_size", 1024),
-    "pattern": [0, 0, 100, 0, 0], # CRUDE
-    "load_type": _input.param("doc_ops", ["update"]),
+    "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
     "2iQPS": 10,
     "ftsQPS": 10,
     "cbasQPS": 10,
+    "mockVector": True,
     "collections_defn": [
         {
-            "valType": _input.param("val_type", "Hotel"),
+            "valType": "Hotel",
             "dim": _input.param("dim", 128),
             "vector": [
                 {
@@ -840,14 +865,24 @@ hotel_vector = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`avg_rating`, `price`, `country`, `city`, vector VECTOR) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};'
                 ],
             "queries": [
-                'SELECT meta().id from {collection} WHERE country=$country ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
-                'SELECT price, country from {collection} where free_breakfast=True and `type`= $type AND free_parking=True and price is not null and array_count(public_likes)>=0 ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
-                'SELECT city,country from {collection} where free_breakfast=True and free_parking=True order by APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
-                'SELECT COUNT(1) AS cnt FROM {collection} WHERE city LIKE "North%" ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
-                'SELECT h.name,h.country,h.city,h.price FROM {collection} AS h WHERE h.price IS NOT NULL ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
-                'SELECT * from {collection} where `name` is not null ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
-                'SELECT * from {collection} where city like \"San%\" ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
-                'SELECT avg_rating, price, country, city from {collection} where `avg_rating`>4 and price<1000 and country=$country and city=$city ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) LIMIT 100'
+                'SELECT meta().id from {bucket}.{scope}.{collection} WHERE country=$country ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT price, country from {bucket}.{scope}.{collection} where free_breakfast=True and `type`= $type AND free_parking=True and price is not null and array_count(public_likes)>=0 ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT city,country from {bucket}.{scope}.{collection} where free_breakfast=True and free_parking=True order by APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT city FROM {bucket}.{scope}.{collection} WHERE city LIKE "North%" ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT h.name,h.country,h.city,h.price FROM {bucket}.{scope}.{collection} AS h WHERE h.price IS NOT NULL ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT * from {bucket}.{scope}.{collection} where `name` is not null ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT * from {bucket}.{scope}.{collection} where city like \"San%\" ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT avg_rating, price, country, city from {bucket}.{scope}.{collection} where `avg_rating`>4 and price<1000 and country=$country and city=$city ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) LIMIT 100'
+                ],
+            "queryParams": [
+                {"country": "faker.address().country()"},
+                {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
+                {},
+                {},
+                {},
+                {},
+                {},
+                {"country": "faker.address().country()", "city": "faker.address().city()"}
                 ],
             "2i": {"num_queries": _input.param("2i_queries", 2),
                    "num_indexes": _input.param("2i_indexes", 2)}

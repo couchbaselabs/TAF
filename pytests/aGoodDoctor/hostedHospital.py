@@ -306,7 +306,7 @@ class Murphy(BaseTestCase, hostedOPD):
                     for bucket in cluster.buckets:
                         if bucket.loadDefn.get("2iQPS", 0) > 0:
                             self.log.info("Starting Query load")
-                            ql = QueryLoad(bucket, self.mockVector,
+                            ql = QueryLoad(self.mockVector, bucket,
                                            validate_item_count=self.input.param("validate_query_results", True),
                                            esClient=self.esClient, log_fail=True)
                             ql.start_query_load()

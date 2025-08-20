@@ -33,21 +33,6 @@ from elasticsearch import Elasticsearch, ConnectionTimeout
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
-queries = ['select name from {} where age between 30 and 50 limit 100;',
-           'select name from {} where body is not null and age between 0 and 50 limit 100;',
-           'select age, count(*) from {} where marital = "M" group by age order by age limit 100;',
-           'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" and animal is not null limit 100;',
-           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 100;',
-           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 100;']
-
-indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "defer_build": true}};',
-           'create index {}{} on {}(body) where age between 0 and 50 WITH {{ "defer_build": true}};',
-           'create index {}{} on {}(marital,age) WITH {{ "defer_build": true}};',
-           'create index {}{} on {}(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
-           'CREATE INDEX {}{} ON {}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
-           'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true}};']
-
-
 def execute_statement_on_n1ql(client, statement, client_context_id=None,
                               query_params=None, validate=True):
     """
@@ -436,15 +421,20 @@ class QueryLoad:
     groundTruths = {}
     queryVectors = []
 
-    def __init__(self, bucket, mockVector=True, validate_item_count=False, esClient=None, log_fail=True):
+    def __init__(self, mock_vector, bucket, validate_item_count=False, esClient=None, log_fail=True):
         self.log = logger.get("infra")
-        self.mockVector = mockVector
+        self.valType = bucket.loadDefn.get("valType")
         self.base64 = False
         self.validate_item_count = validate_item_count
         self.bucket = bucket
         self.queries = [item[0] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
         self.queries_meta = [item[1] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
-        if not mockVector:
+        if mock_vector:
+            self.float_buf = [0] * 1024*1024
+            for index in range(1024*1024):
+                self.float_buf[index] = random.random()
+            self.float_buf_length = len(self.float_buf)
+        if self.valType == "siftBigANN":
             for meta in self.queries_meta:
                 gt = meta["gt"][0]
                 if gt not in QueryLoad.groundTruths.keys():
@@ -485,9 +475,9 @@ class QueryLoad:
         threads = []
         method = self._run_query
         count = 100
-        if self.bucket.loadDefn.get("collections_defn")[0].get("vector"):
+        if self.valType == "siftBigANN":
             method = self._run_vector_query
-            if not self.mockVector and not QueryLoad.queryVectors:
+            if not QueryLoad.queryVectors:
                 QueryLoad.queryVectors = self.read_query_vecs(siftBigANN.get("baseFilePath") + "/bigann_query.bvecs")
                 count = 1000
         for i in range(0, self.concurrent_queries_to_run):
@@ -505,7 +495,6 @@ class QueryLoad:
     def _run_vector_query(self, validate_item_count=True, expected_count=100):
         name = threading.currentThread().getName()
         counter = 0
-        # hotel = Vector(None)
         while not self.stop_run:
             client_context_id = name + str(counter)
             start = time.time()
@@ -514,9 +503,6 @@ class QueryLoad:
                 next(self.total_query_count)
                 query = self.queries[counter%len(self.queries)]
                 query_tuple = self.queries_meta[counter%len(self.queries)]
-                # lock = self.query_stats[query][5]
-                # lock.acquire()
-                dim = query_tuple["dim"]
                 if self.esClient:
                     es_scalars = query_tuple["es"]
                     es_params = []
@@ -527,27 +513,17 @@ class QueryLoad:
                         term["term"] = scalar
                         es_params.append(term)
                 vector_float = []
-                # if self.mockVector:
-                #     flt_buf = hotel.flt_buf
-                #     _slice = random.randint(0, hotel.flt_buf_length-dim)
-                #     embedding = flt_buf[_slice: _slice+dim]
-                # else:
                 index = self.query_stats[query][1] % len(QueryLoad.queryVectors)
                 gt = query_tuple["gt"][0]
                 expected_count = 10
                 embedding = QueryLoad.queryVectors[index]
                 groudtruth = QueryLoad.groundTruths[gt][index][:expected_count]
 
-                # if self.base64:
-                #     vector_float = hotel.convertToBase64Bytes(embedding)
-                # else:
                 for value in embedding:
                     vector_float.append(float(value))
 
                 q_param = query_tuple["queryParams"]
                 q_param.update({"vector": vector_float})
-                # import pydevd
-                # pydevd.settrace(trace_only_current_thread=False)
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
                     q_param, validate=validate_item_count)
@@ -557,7 +533,6 @@ class QueryLoad:
                     self.query_stats[query][8].append(metrics.execution_time().total_seconds()*1000.0)
                     if len(self.query_stats[query][8]) > 1000:
                         self.query_stats[query][8].pop(0)
-                # lock.release()
                 if status == QueryStatus.SUCCESS:
                     if self.esClient:
                         recall_es, latency_es = performKNNSearchES(self.esClient, query_tuple["collection"], vector_float, 100, groudtruth, es_params)
@@ -577,17 +552,8 @@ class QueryLoad:
                         next(self.success_count)
                 else:
                     next(self.failed_count)
-            # except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
-            #     pass
-            # except RequestCanceledException as e:
-            #     pass
             except CouchbaseException as ex:
                 e = ex
-            # except (Exception, PlanningFailureException) as e:
-            #     print (e)
-            #     self.error_count.next()
-            # if e:
-            #     lock.release()
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
@@ -604,8 +570,6 @@ class QueryLoad:
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()
-            # if end - start < 1:
-            #     time.sleep(end - start)
             counter += 1
 
     def _run_query(self, validate_item_count=False, expected_count=0):
@@ -614,13 +578,15 @@ class QueryLoad:
         while not self.stop_run:
             client_context_id = name + "__" + str(counter)
             counter += 1
-            start = time.time()
             e = ""
             try:
                 next(self.total_query_count)
                 query = self.queries[counter%len(self.queries)]
                 query_tuple = self.queries_meta[counter%len(self.queries)]
                 q_param = query_tuple["queryParams"]
+                if query_tuple.get("dim"):
+                    index = random.randint(0, self.float_buf_length-query_tuple.get("dim"))
+                    q_param["vector"] = self.float_buf[index:index+query_tuple.get("dim")]
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
                     q_param, validate=validate_item_count)
@@ -633,24 +599,22 @@ class QueryLoad:
                     self.query_stats[query][8].pop(0)
                 if status == QueryStatus.SUCCESS:
                     if validate_item_count:
-                        if results[0]['$1'] != expected_count:
+                        if len(results) != expected_count:
                             next(self.failed_count)
-                            print (q_param)
+                            # print ("Query Success but expected count mismatch.\n"
+                            #        "Query: {}\n"
+                            #        "Params: {}\n"
+                            #        "Expected: {}\n"
+                            #        "Actual: {}".format(query, q_
+                            #                            param, expected_count, len(results)))
                         else:
                             next(self.success_count)
                     else:
                         next(self.success_count)
                 else:
                     next(self.failed_count)
-            # except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
-            #     pass
-            # except RequestCanceledException as e:
-            #     pass
             except CouchbaseException as ex:
                 e = ex
-            # except (Exception, PlanningFailureException) as e:
-            #     print (e)
-            #     self.error_count.next()
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
@@ -669,8 +633,6 @@ class QueryLoad:
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()
-            # if end - start < 1:
-            #     time.sleep(end - start)
 
     def read_query_vecs(self, filename):
         '''

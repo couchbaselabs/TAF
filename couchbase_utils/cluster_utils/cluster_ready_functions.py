@@ -1562,7 +1562,7 @@ class ClusterUtils:
         return result
 
     def rebalance_reached(self, cluster, percentage=100, wait_step=2,
-                          num_retry=40, validate_bucket_ranking=True):
+                          num_retry=40, validate_bucket_ranking=True, task_status_id=None):
         start = time.time()
         progress = 0
         previous_progress = 0
@@ -1570,7 +1570,7 @@ class ClusterUtils:
         while progress != -1 and progress < percentage and retry < num_retry:
             # -1 is error , -100 means could not retrieve progress
             _, progress = self.get_rebalance_status_and_progress(
-                cluster, "rebalance")
+                cluster, task_status_id)
             if progress == -100:
                 self.log.error("Unable to retrieve rebalance progress. "
                                "Retrying..")

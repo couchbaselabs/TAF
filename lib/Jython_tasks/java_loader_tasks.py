@@ -64,7 +64,10 @@ class BaseSiriusLoader:
                     if val is None:
                         continue
                     try:
-                        val = int(val)
+                        if type(val) == bool:
+                            val = str(val).lower()
+                        else:
+                            val = int(val)
                     except ValueError:
                         val = '\"%s\"' % val
                     result += '\"%s\":%s,' % (key, val)
@@ -446,7 +449,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             "base_vectors_file_path": self.base_vectors_file_path,
             "sift_url": self.sift_url,
             "model": self.model,
-            "mockVector": self.mockVector,
+            "mock_vector": self.mockVector,
             "dim": self.dim,
             "base64": self.base64,
             "mutate_field": self.mutate_field,

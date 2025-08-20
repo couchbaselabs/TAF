@@ -2829,7 +2829,9 @@ class RestConnection(newRC):
     def get_logs(self, last_n=10, contains_text=None):
         api = self.baseUrl + 'logs'
         status, content, header = self._http_request(api)
-        json_parsed = json.loads(content.decode("utf-8", "ignore"))
+        if type(content) is bytes:
+            content = content.decode("utf-8", "ignore")
+        json_parsed = json.loads(content)
         logs = json_parsed['list']
         logs.reverse()
         result = []

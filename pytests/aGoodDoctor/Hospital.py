@@ -78,7 +78,7 @@ class Murphy(BaseTestCase, OPD):
         self.crashes = self.input.param("crashes", 20)
         self.check_dump_thread = True
         self.skip_read_on_error = False
-        self.suppress_error_table = False
+        self.suppress_error_table = self.input.param("suppress_error_table", False)
         self.track_failures = self.input.param("track_failures", True)
         self.loader_dict = None
         self.parallel_reads = self.input.param("parallel_reads", False)
@@ -443,7 +443,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.monitor_query_status()
         self.skip_read_on_error = True
-        self.suppress_error_table = True
+        self.suppress_error_table = self.input.param("suppress_error_table", False)
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
@@ -457,15 +457,22 @@ class Murphy(BaseTestCase, OPD):
             self.drEventing.create_eventing_function(self.cluster, file="pytests/aGoodDoctor/vector_xattr.json")
             self.drEventing.lifecycle_operation_for_all_functions(self.cluster, "deploy", "deployed")
 
-        if not self.skip_init:
-            if self.val_type == "siftBigANN":
+        if self.val_type == "siftBigANN":
+            if not self.skip_init:
                 JavaDocLoaderUtils.load_sift_data(self.cluster, self.cluster.buckets,
-                                                  overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
-                                                  wait_for_stats=False,
-                                                  validate_data=False)
-            else:
+                                                    overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
+                                                    wait_for_stats=False,
+                                                    validate_data=False)
+        else:
+            if not self.skip_init:
                 JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets,
-                                             overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0})
+                                            overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0})
+            else:
+                for bucket in self.cluster.buckets:
+                    JavaDocLoaderUtils.generate_docs(doc_ops=["create"],
+                                create_start=0,
+                                create_end=bucket.loadDefn.get("num_items"),
+                                bucket=bucket)
         self.print_stats(self.cluster)
 
         if self.cluster.cbas_nodes:
@@ -492,7 +499,7 @@ class Murphy(BaseTestCase, OPD):
             self.end_step_checks(" after initial index build is completed")
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("2iQPS", 0) > 0:
-                    ql = QueryLoad(bucket, self.mockVector,
+                    ql = QueryLoad(self.mockVector, bucket,
                                    validate_item_count=self.input.param("validate_query_results", True),
                                    esClient=self.esClient, log_fail=self.log_query_failures)
                     ql.start_query_load()
@@ -1409,6 +1416,8 @@ class Murphy(BaseTestCase, OPD):
     def SystemTestIndexer(self):
         self.loop = 1
         self.log_query_failures = False
+        self.suppress_error_table = True
+        self.track_failures = False
         self.initial_setup()
 
         self.PrintStep("Crash indexer with Loading of docs")
@@ -1746,11 +1755,15 @@ class Murphy(BaseTestCase, OPD):
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["pattern"] = pattern or bucket.loadDefn.get("pattern")
                 bucket.loadDefn["load_type"] = self.doc_ops if self.doc_ops else bucket.loadDefn.get("load_type")
-                self.generate_docs(bucket=bucket)
+                JavaDocLoaderUtils.generate_docs(bucket=bucket)
                 bucket.original_ops = bucket.loadDefn["ops"]
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
                 pprint.pprint(bucket.loadDefn)
-            self.loader_tasks = self.perform_load(wait_for_load=False, cluster=self.cluster)
+            self.loader_tasks = JavaDocLoaderUtils.perform_load(cluster=self.cluster,
+                                                                buckets=self.cluster.buckets,
+                                                                wait_for_load=False,
+                                                                suppress_error_table=self.suppress_error_table,
+                                                                track_failures=self.track_failures)
             for task in self.loader_tasks:
                 self.task_manager.get_task_result(task)
                 self.loader_tasks.remove(task)
@@ -1770,7 +1783,9 @@ class Murphy(BaseTestCase, OPD):
                 validate_data=False,
                 wait_for_stats=False,
                 wait_for_load=False,
-                mutate=self.mutate)
+                mutate=self.mutate,
+                suppress_error_table=self.suppress_error_table,
+                track_failures=self.track_failures)
             for task in self.loader_tasks:
                 self.task_manager.get_task_result(task)
                 self.loader_tasks.remove(task)

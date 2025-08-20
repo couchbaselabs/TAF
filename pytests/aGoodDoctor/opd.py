@@ -615,7 +615,7 @@ class OPD:
                     pass
                 if rebalance_task.result:
                     self.log.error("Rebalance passed/finished which is not expected")
-                    self.log.info("Rebalance % after rebalance finished = {}".
+                    self.log.info("Rebalance % expected but rebalance finished = {}".
                                   format(expected_progress))
                     return None
                 else:
@@ -663,7 +663,7 @@ class OPD:
             for collection in sorted(d.keys()):
                 for index_name in sorted(d.get(collection)):
                     status = rest.polling_create_index_status(
-                        bucket, index_name, 1200)
+                        bucket, index_name, 1200, fail_on_warmup=False)
                     print("index: {}, status: {}".format(index_name, status))
                     if status is True:
                         self.log.info("2i index is ready: {}".format(index_name))
@@ -933,15 +933,15 @@ class OPD:
                 cluster.refresh_object(nodes)
 
     def trigger_rollback(self):
-        mem_only_items = 1000000
+        mem_only_items = 1000
         rollbacks = 0
-        for i, node in enumerate(self.cluster.kv_nodes):
-            # Stopping persistence on NodeA
-            for bucket in self.cluster.buckets:
-                shell = RemoteMachineShellConnection(node)
-                Cbepctl(shell).persistence(bucket.name, "stop")
         while rollbacks < 20:
             self.PrintStep("Running Rollback: %s" % rollbacks)
+            for i, node in enumerate(self.cluster.kv_nodes):
+                # Stopping persistence on NodeA
+                for bucket in self.cluster.buckets:
+                    shell = RemoteMachineShellConnection(node)
+                    Cbepctl(shell).persistence(bucket.name, "stop")
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["key_prefix"] = "rollback_docs_%s-" % (rollbacks)
             if self.val_type == "siftBigANN":
@@ -952,7 +952,12 @@ class OPD:
                                 wait_for_stats=False,
                                 override_num_items=mem_only_items)
             else:
-                JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets)
+                JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets,
+                                             overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},
+                                             suppress_error_table=True,
+                                             track_failures=False,
+                                             wait_for_stats=False,
+                                             override_num_items=mem_only_items)
 
             self.check_index_pending_mutations(self.cluster)
 

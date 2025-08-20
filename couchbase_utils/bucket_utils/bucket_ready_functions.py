@@ -157,14 +157,14 @@ class JavaDocLoaderUtils(object):
 
         if "expiry" in doc_ops:
             if bucket.loadDefn.get("maxttl") is None:
-                bucket.loadDefn.maxttl = TestInputSingleton.input.param("maxttl", 10)
+                bucket.loadDefn["maxttl"] = TestInputSingleton.input.param("maxttl", 10)
             bucket.expire_start = expire_start or bucket.end
             bucket.start = bucket.expire_start
             bucket.expire_end = expire_end or bucket.expire_start + bucket.loadDefn.get("num_items")//2
             bucket.end = bucket.expire_end
 
         if "create" in doc_ops:
-            bucket.create_start = create_start or bucket.end
+            bucket.create_start = create_start if create_start is not None else bucket.end
             bucket.start = bucket.create_start
 
             bucket.create_end = create_end or bucket.end + (bucket.expire_end - bucket.expire_start) + (bucket.delete_end - bucket.delete_start)
@@ -191,7 +191,9 @@ class JavaDocLoaderUtils(object):
                      key_prefix=None, key_size=None, key_type=None,
                      model=None, mockVector=None, base64=None,
                      process_concurrency=None, dim=None,
-                     skip_default=True, mutate=0):
+                     skip_default=True, mutate=0,
+                     suppress_error_table=False,
+                     track_failures=True):
         loader_map = dict()
         default_pattern = {"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0}
         buckets = buckets or cluster.buckets
@@ -229,8 +231,8 @@ class JavaDocLoaderUtils(object):
                         delete_start_index=bucket.delete_start, delete_end_index=bucket.delete_end,
                         expiry_start_index=bucket.expire_start, expiry_end_index=bucket.expire_end,
                         process_concurrency=process_concurrency, task_identifier="", ops=per_coll_ops,
-                        suppress_error_table=False,
-                        track_failures=True,
+                        suppress_error_table=suppress_error_table,
+                        track_failures=track_failures,
                         mutate=mutate,
                         elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64)
                     loader_map.update({bucket.name+scope+collection: loader})
@@ -254,8 +256,14 @@ class JavaDocLoaderUtils(object):
     @staticmethod
     def perform_load(cluster, buckets, wait_for_load=True,
                      validate_data=False, overRidePattern=None, skip_default=True,
-                     wait_for_stats=True, mutate=0):
-        loader_map = JavaDocLoaderUtils._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default, mutate=mutate)
+                     wait_for_stats=True, mutate=0,
+                     suppress_error_table=False,
+                     track_failures=True):
+        loader_map = JavaDocLoaderUtils._loader_dict(cluster, buckets,
+                                                     overRidePattern, skip_default=skip_default,
+                                                     mutate=mutate,
+                                                     suppress_error_table=suppress_error_table,
+                                                     track_failures=track_failures)
         tasks = list()
         for bucket in buckets:
             for scope in bucket.scopes.keys():
@@ -285,7 +293,9 @@ class JavaDocLoaderUtils(object):
                         validate_data=False,
                         wait_for_stats=True,
                         override_num_items=None,
-                        mutate=0):
+                        mutate=0,
+                        suppress_error_table=False,
+                        track_failures=True):
         tasks = list()
         buckets = buckets or cluster.buckets
         coll_order = TestInputSingleton.input.param("coll_order", 1)
@@ -334,8 +344,8 @@ class JavaDocLoaderUtils(object):
                         expiry_start_index=0, expiry_end_index=items,
                         process_concurrency=process_concurrency,
                         task_identifier="", ops=bucket.loadDefn.get("ops"),
-                        suppress_error_table=False,
-                        track_failures=True,
+                        suppress_error_table=suppress_error_table,
+                        track_failures=track_failures,
                         mutate=mutate,
                         elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64,
                         base_vectors_file_path=bucket.loadDefn.get("baseFilePath", "/root/bigann_base.bvecs.gz"),
@@ -358,12 +368,15 @@ class JavaDocLoaderUtils(object):
                   wait_for_stats=True,
                   validate_data=False,
                   update=False,
-                  mutate=0):
+                  mutate=0,
+                  suppress_error_table=False,
+                  track_failures=True,
+                  override_num_items=None):
         buckets = buckets or cluster.buckets
         for bucket in buckets:
             JavaDocLoaderUtils.generate_docs(doc_ops=["create"],
                                create_start=0,
-                               create_end=bucket.loadDefn.get("num_items"),
+                               create_end=override_num_items or bucket.loadDefn.get("num_items"),
                                bucket=bucket)
         
         JavaDocLoaderUtils.perform_load(cluster=cluster,
@@ -372,12 +385,14 @@ class JavaDocLoaderUtils(object):
                             validate_data=validate_data,
                             wait_for_load=wait_for_load,
                             wait_for_stats=wait_for_stats,
-                            mutate=mutate)
+                            mutate=mutate,
+                            suppress_error_table=suppress_error_table,
+                            track_failures=track_failures)
         if update:
             for bucket in buckets:
                 JavaDocLoaderUtils.generate_docs(doc_ops=["update"],
                                    update_start=0,
-                                   update_end=bucket.loadDefn.get("num_items"),
+                                   update_end=override_num_items or bucket.loadDefn.get("num_items"),
                                    bucket=bucket)
             JavaDocLoaderUtils.perform_load(cluster=cluster,
                               buckets=buckets,
@@ -385,7 +400,9 @@ class JavaDocLoaderUtils(object):
                               validate_data=False,
                               wait_for_load=wait_for_load,
                               wait_for_stats=wait_for_stats,
-                              mutate=mutate)
+                              mutate=mutate,
+                              suppress_error_table=suppress_error_table,
+                              track_failures=track_failures)
 
 class DocLoaderUtils(object):
     log = logger.get("test")
