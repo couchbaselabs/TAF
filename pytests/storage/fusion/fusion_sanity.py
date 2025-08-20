@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import threading
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from storage.fusion.fusion_base import FusionBase
 from storage.magma.magma_base import MagmaBaseTest
 
@@ -80,8 +81,12 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             self.perform_batch_reads()
 
             # Set Migration Rate Limit to 0 so that extent migration doesn't take place
-            for bucket in self.cluster.buckets:
-                self.change_fusion_settings(bucket, migration_rate_limit=0)
+            if int(self.current_version.split("-")[1]) >= 3020:
+                ClusterRestAPI(self.cluster.master).\
+                    manage_global_memcached_setting(fusion_migration_rate_limit=0)
+            else:
+                for bucket in self.cluster.buckets:
+                    self.change_fusion_settings(bucket, migration_rate_limit=0)
 
             # Perform a data workload in parallel when rebalance is taking place
             self.reset_doc_params(doc_ops="create")
@@ -103,21 +108,19 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 self.doc_loading_tm.get_task_result(task)
             self.printOps.end_task()
 
-            if self.num_nodes_to_rebalance_in > 0:
-                self.cluster.nodes_in_cluster.extend(self.cluster.servers[
-                    len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_rebalance_in])
-            elif self.num_nodes_to_rebalance_out > 0:
-                self.cluster.nodes_in_cluster = self.cluster.servers[
-                    :len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_rebalance_out)]
-
-            self.validate_log_file_count_size(dir_path=self.fusion_scripts_dir)
+            self.get_log_file_count_size(dir_path=self.fusion_scripts_dir,
+                                         rebalance_count=num_rebalance_count)
 
             # Perform reads when no extent migration has taken place yet
             self.perform_batch_reads()
 
             # Update Migration Rate Limit so that extent migration process starts
-            for bucket in self.cluster.buckets:
-                self.change_fusion_settings(bucket, migration_rate_limit=self.fusion_migration_rate_limit)
+            if int(self.current_version.split("-")[1]) >= 3020:
+                ClusterRestAPI(self.cluster.master).\
+                    manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+            else:
+                for bucket in self.cluster.buckets:
+                    self.change_fusion_settings(bucket, migration_rate_limit=self.fusion_migration_rate_limit)
 
             extent_migration_array = list()
             self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")

@@ -12,6 +12,7 @@ from Jython_tasks.task_manager import TaskManager
 from basetestcase import BaseTestCase
 from cb_constants import DocLoading
 from cb_constants.CBServer import CbServer
+from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
@@ -41,10 +42,16 @@ class StorageBase(BaseTestCase):
                                                        Bucket.EvictionPolicy.FULL_EVICTION)
 
         # Fusion params
+        self.fusion_test = self.input.param("fusion_test", False)
         self.fusion_log_store_uri = self.input.param("fusion_log_store_uri", None)
         self.fusion_upload_interval = self.input.param("fusion_upload_interval", 60)
         self.fusion_log_checkpoint_interval = self.input.param("fusion_log_checkpoint_interval", 180)
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
+        self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100000) # 100GB
+
+        if self.fusion_test:
+            self.configure_fusion()
+            self.enable_fusion()
 
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket_name = self.input.param("bucket_name", None)
@@ -114,8 +121,7 @@ class StorageBase(BaseTestCase):
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
                 history_retention_bytes=self.bucket_dedup_retention_bytes,
-                weight=self.bucket_weight, width=self.bucket_width,
-                fusion_log_store_uri=self.fusion_log_store_uri)
+                weight=self.bucket_weight, width=self.bucket_width)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
@@ -133,8 +139,7 @@ class StorageBase(BaseTestCase):
                 autoCompactionDefined=self.autoCompactionDefined,
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
-                history_retention_bytes=self.bucket_dedup_retention_bytes,
-                fusion_log_store_uri=self.fusion_log_store_uri)
+                history_retention_bytes=self.bucket_dedup_retention_bytes)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
         if self.change_magma_quota:
             bucket_helper = BucketHelper(self.cluster.master)
@@ -1355,15 +1360,18 @@ class StorageBase(BaseTestCase):
         shell.disconnect()
 
 
-    def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None, migration_rate_limit=None):
+    def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None):
 
         fusion_settings = ""
         if upload_interval is not None:
             fusion_settings += f"magma_fusion_upload_interval={upload_interval};"
+        else:
+            fusion_settings += f"magma_fusion_upload_interval={self.fusion_upload_interval};"
+
         if checkpoint_interval is not None:
             fusion_settings += f"magma_fusion_log_checkpoint_interval={checkpoint_interval};"
-        if migration_rate_limit is not None:
-            fusion_settings += f"magma_fusion_migration_rate_limit={migration_rate_limit};"
+        else:
+            fusion_settings += f"magma_fusion_log_checkpoint_interval={self.fusion_log_checkpoint_interval};"
         fusion_settings = fusion_settings[:-1] # Trimming the semicolon at the end
 
         diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{fusion_settings}"}}]).' http://localhost:8091/diag/eval"""
@@ -1387,8 +1395,41 @@ class StorageBase(BaseTestCase):
             cbstats = Cbstats(server)
             result = cbstats.all_stats(bucket.name)
             self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
-                          f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, "
-                          f"Migration Rate Limit: {result['ep_magma_fusion_migration_rate_limit']}")
+                          f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, ")
+
+    def configure_fusion(self):
+
+        fusion_client = FusionRestAPI(self.cluster.master)
+
+        self.log.info("Configuring Fusion with logStoreURI and enableSyncThresholdMB")
+
+        status, content = fusion_client.manage_fusion_settings(
+                                log_store_uri=self.fusion_log_store_uri,
+                                enable_sync_threshold=self.enable_sync_threshold)
+        self.log.info(f"Status = {status}, Result = {content}")
+
+    def enable_fusion(self):
+
+        self.log.info("Enabling Fusion")
+        fusion_client = FusionRestAPI(self.cluster.master)
+
+        status, _ = fusion_client.enable_fusion()
+        if status:
+            timeout = 600
+            end_time = time.time() + timeout
+            fusion_enabled = False
+            while time.time() < end_time:
+                status, content = fusion_client.get_fusion_status()
+                self.log.info(f"Fusion Status = {content}")
+                if content['state'] == "enabled":
+                    fusion_enabled = True
+                    break
+                time.sleep(2)
+
+            if fusion_enabled:
+                self.log.info("Fusion Enabled successfully")
+            else:
+                self.log.info("Enabling Fusion failed after timeout")
 
     def PrintStep(self, msg=None):
         print("\n")

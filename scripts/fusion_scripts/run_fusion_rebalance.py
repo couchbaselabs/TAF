@@ -211,7 +211,7 @@ class RebalanceAutomation:
         new_nodes_set = set(self.new_nodes)
         current_nodes_set = set(self.current_nodes)
 
-        if len(new_nodes_set) > len(current_nodes_set):
+        if len(new_nodes_set) >= len(current_nodes_set):
             nodes_to_setup = new_nodes_set - current_nodes_set
         elif len(new_nodes_set) < len(current_nodes_set):
             nodes_to_setup = new_nodes_set
@@ -285,13 +285,10 @@ class RebalanceAutomation:
             print("No new nodes to add")
             return
 
-        url = f"{self.base_url}{API_ADD_NODE}"
+        add_url = f"{self.base_url}{API_ADD_NODE}"
 
         for node in nodes_to_add:
             try:
-                # First configure the data path
-                # self._configure_node_data_path(node)
-
                 # Then add the node to the cluster
                 print(f"Adding node {node} to cluster...")
                 data = {
@@ -299,7 +296,7 @@ class RebalanceAutomation:
                     'user': self.auth[0],
                     'password': self.auth[1]
                 }
-                response = requests.post(url, auth=self.auth, data=data)
+                response = requests.post(add_url, auth=self.auth, data=data)
                 response.raise_for_status()
                 print(f"Successfully added node: {node}")
             except Exception as e:
@@ -331,6 +328,7 @@ def main():
     parser.add_argument('--config', default='config.json', help='Path to JSON configuration file')
     parser.add_argument('--env', choices=['aws', 'local'], required=True, help='Environment to run in (aws or local)')
     parser.add_argument('--sleep-time', type=int, default=0, help='Time to sleep in seconds (default: 0)')
+    parser.add_argument('--reb-count', type=int, default=1, help='Rebalance count')
 
     args = parser.parse_args()
 
@@ -340,6 +338,10 @@ def main():
         new_nodes = parse_node_list(args.new_nodes)
         validate_nodes(current_nodes, new_nodes)
         sleep_time = args.sleep_time
+        reb_count = args.reb_count
+
+        global REBALANCE_PLAN_FILE
+        REBALANCE_PLAN_FILE = "/root/fusion/reb_plan{}.json".format(reb_count)
 
         rebalancer = RebalanceAutomation(
             base_url=args.base_url,
