@@ -709,7 +709,7 @@ class SecurityTest(SecurityBase):
 
         # response should not contain extra fields
         content = resp.json()
-        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.status_code, 200)
         print("Content keys: {}".format(content.keys()))
         self.assertSetEqual(set(content.keys()), {"secretKey"})
 
