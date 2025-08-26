@@ -172,7 +172,7 @@ class CBASErrorValidator(CBASBaseTest):
         self.rebalance_util = CBASRebalanceUtil(
             self.cluster_util, self.bucket_util, self.task,
             vbucket_check=True, cbas_util=self.cbas_util)
-        self.rebalance_util.rebalance(self.cluster, cbas_nodes_in=1,
+        rebalance_task, _ = self.rebalance_util.rebalance(self.cluster, cbas_nodes_in=1,
                                       available_servers=available_servers)
         self.log.info("Execute query and validate error response")
         start_time = time.time()
@@ -185,6 +185,10 @@ class CBASErrorValidator(CBASBaseTest):
                                                          self.error_response["msg"],
                                                          self.error_response["code"]):
             self.fail("Error validation failed.")
+
+        if not self.rebalance_util.wait_for_rebalance_task_to_complete(
+                rebalance_task, self.cluster):
+            self.fail("Rebalancing in CBAS node failed.")
 
     def test_error_response_using_curl(self):
         self.setup_dataset()
@@ -333,7 +337,7 @@ class CBASError:
         },
         {
             "id": "kv_bucket_does_not_exist",
-            "msg": 'Connect link failed {\"Default.Local.%s\" : \"Bucket (%s) does not exist\"}',
+            "msg": 'Connect link failed {\"Default.Local.%s\":\"Bucket (%s) does not exist\"}',
             "code": 22001,
             "query": "connect link Local"
         },
