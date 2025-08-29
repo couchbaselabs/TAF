@@ -18,6 +18,7 @@ file_name_patterns:
           - 'Invalid packet header detected'
           - 'Error occured during memtable flush'
           - 'msg:Unable to open file  error:No such file or directory. Closest non-empty parent directory:/'
+          - 'EPBucket::compactInternal: compaction failed'
       - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
@@ -25,6 +26,7 @@ file_name_patterns:
           - 'Invalid packet header detected'
             # TODo: Remove the below after MB-45330
           - 'failed - Already exists'
+          - 'EPBucket::compactInternal: compaction failed'
       #- string: 'WARN'
       #  exclude_patterns:
       #    - 'Slow'
