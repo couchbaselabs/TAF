@@ -783,7 +783,9 @@ class CBASBaseTest(BaseTestCase):
                     "description": description.format(user),
                     "validate_error_msg": False
                 }
-            elif user in ["security_admin_local", "security_admin_external",
+            # "security_admin_local", "security_admin_external" -> Not supported from 8.0
+            # List of supported roles: https://{url}:18091/settings/rbac/roles
+            elif user in ["security_admin", "security_admin_local", "security_admin_external",
                           "query_external_access",
                           "query_system_catalog", "replication_admin",
                           "ro_admin", "bucket_full_access",
