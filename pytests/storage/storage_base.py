@@ -48,6 +48,7 @@ class StorageBase(BaseTestCase):
         self.fusion_log_checkpoint_interval = self.input.param("fusion_log_checkpoint_interval", 180)
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
         self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100000) # 100GB
+        self.logstore_frag_threshold = self.input.param("logstore_frag_threshold", 0.5) # 50%
 
         if self.fusion_test:
             self.configure_fusion()
@@ -1360,7 +1361,8 @@ class StorageBase(BaseTestCase):
         shell.disconnect()
 
 
-    def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None):
+    def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None,
+                               logstore_frag_threshold=None):
 
         fusion_settings = ""
         if upload_interval is not None:
@@ -1372,6 +1374,11 @@ class StorageBase(BaseTestCase):
             fusion_settings += f"magma_fusion_log_checkpoint_interval={checkpoint_interval};"
         else:
             fusion_settings += f"magma_fusion_log_checkpoint_interval={self.fusion_log_checkpoint_interval};"
+
+        if logstore_frag_threshold is not None:
+            fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={logstore_frag_threshold};"
+        else:
+            fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={self.logstore_frag_threshold};"
         fusion_settings = fusion_settings[:-1] # Trimming the semicolon at the end
 
         diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{fusion_settings}"}}]).' http://localhost:8091/diag/eval"""
@@ -1395,7 +1402,8 @@ class StorageBase(BaseTestCase):
             cbstats = Cbstats(server)
             result = cbstats.all_stats(bucket.name)
             self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
-                          f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, ")
+                          f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, "
+                          f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}")
 
     def configure_fusion(self):
 

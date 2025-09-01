@@ -68,24 +68,27 @@ class FusionBase(BaseTestCase):
         self.local_scripts_path = "/" + os.path.join("/".join(split_path[1:4]), "scripts", "fusion_scripts")
         self.log.info(f"Local scripts path: {self.local_scripts_path}")
 
-        self.setup_nfs_server()
+        if not self.skip_cluster_reset:
+            self.setup_nfs_server()
 
-        th_arr1 = list()
-        th_arr2 = list()
+            th_arr1 = list()
+            th_arr2 = list()
 
-        for nfs_client in self.cluster.servers:
-            th1 = threading.Thread(target=self.setup_nfs_client, args=[nfs_client])
-            th2 = threading.Thread(target=self.copy_scripts_to_nodes, args=[nfs_client])
-            th1.start()
-            th2.start()
-            th_arr1.append(th1)
-            th_arr2.append(th2)
+            for nfs_client in self.cluster.servers:
+                th1 = threading.Thread(target=self.setup_nfs_client, args=[nfs_client])
+                th2 = threading.Thread(target=self.copy_scripts_to_nodes, args=[nfs_client])
+                th1.start()
+                th2.start()
+                th_arr1.append(th1)
+                th_arr2.append(th2)
 
-        for th in th_arr1:
-            th.join()
+            for th in th_arr1:
+                th.join()
 
-        for th in th_arr2:
-            th.join()
+            for th in th_arr2:
+                th.join()
+        else:
+            self.log.info("Skipping Fusion Set Up")
 
         self.monitor = True
         self.crash_loop = False
@@ -399,7 +402,6 @@ class FusionBase(BaseTestCase):
         end_time = start_time + duration
 
         stat_dict = dict()
-        total_log_file_count = self.total_log_files[server.ip]
 
         while time.time() < end_time:
             try:
@@ -410,20 +412,12 @@ class FusionBase(BaseTestCase):
                     stat_dict[k] = v
                 self.log.debug(f"Extent Migration stats on {server.ip} :{stat_dict}")
 
-                if int(self.current_version.split("-")[1]) < 3020:
-                    extent_migration_percent = round((stat_dict['ep_fusion_logs_migrated'] / self.total_log_files[server.ip]) * 100, 2)
-                    self.log.info(f"Extent Migration Progress: {extent_migration_percent}% "
-                                f"({stat_dict['ep_fusion_logs_migrated']} / {self.total_log_files[server.ip]})")
-                    if stat_dict['ep_fusion_logs_migrated'] == total_log_file_count:
-                        self.log.info(f"Extent migration complete on node: {server.ip}")
-                        break
-                else:
-                    extent_migration_percent = round((stat_dict['ep_fusion_migration_completed_bytes'] / stat_dict['ep_fusion_migration_total_bytes']) * 100, 2)
-                    self.log.info(f"Extent Migration Progress: {extent_migration_percent}% "
-                        f"({stat_dict['ep_fusion_migration_completed_bytes']} / {stat_dict['ep_fusion_migration_total_bytes']})")
-                    if stat_dict['ep_fusion_migration_completed_bytes'] == stat_dict['ep_fusion_migration_total_bytes']:
-                        self.log.info(f"Extent migration complete on node: {server.ip}")
-                        break
+                extent_migration_percent = round((stat_dict['ep_fusion_migration_completed_bytes'] / stat_dict['ep_fusion_migration_total_bytes']) * 100, 2)
+                self.log.info(f"Extent Migration Progress: {extent_migration_percent}% "
+                    f"({stat_dict['ep_fusion_migration_completed_bytes']} / {stat_dict['ep_fusion_migration_total_bytes']})")
+                if stat_dict['ep_fusion_migration_completed_bytes'] == stat_dict['ep_fusion_migration_total_bytes']:
+                    self.log.info(f"Extent migration complete on node: {server.ip}")
+                    break
 
             except Exception as e:
                 self.log.info(f"Waiting for cbstats on {server.ip}")
@@ -465,7 +459,7 @@ class FusionBase(BaseTestCase):
             time.sleep(interval)
 
 
-    def run_rebalance(self, output_dir, rebalance_count=1):
+    def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120):
 
         # Fetch last rebalance task to track starting of current rebalance
         self.prev_rebalance_status_id = None
@@ -521,11 +515,11 @@ class FusionBase(BaseTestCase):
         source {self.venv_path}/bin/activate
         pip install --upgrade pip
         pip install paramiko requests
-        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time 120 --reb-count {rebalance_count}
+        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count}
         """
 
         self.log.info(f"Running fusion rebalance: {commands}")
-        o, e = ssh.execute_command(commands)
+        o, e = ssh.execute_command(commands, timeout=1800)
         self.log.info(f"Output = {o}, Error = {e}")
 
         # Monitor rebalance progress, and wait until it's done
