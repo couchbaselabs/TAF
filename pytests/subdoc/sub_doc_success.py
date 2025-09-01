@@ -63,7 +63,7 @@ class BasicOps(DurabilityTestsBase):
             key_size=self.key_size,
             doc_size=self.sub_doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=def_bucket.vbuckets)
         self.log.info("Loading {0} docs into the bucket: {1}"
                       .format(self.num_items, def_bucket))
         task = self.task.async_load_gen_sub_docs(
@@ -251,7 +251,7 @@ class BasicOps(DurabilityTestsBase):
         doc_gen = doc_generator(
             self.key, self.num_items, self.num_items*2, doc_size=self.doc_size,
             target_vbucket=self.target_vbucket,
-            vbuckets=self.cluster.vbuckets)
+            vbuckets=def_bucket.vbuckets)
         task = self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_gen, "create", self.maxttl,
             batch_size=10, process_concurrency=8,
@@ -282,13 +282,13 @@ class BasicOps(DurabilityTestsBase):
                                            key_size=self.key_size,
                                            doc_size=self.sub_doc_size,
                                            target_vbucket=self.target_vbucket,
-                                           vbuckets=self.cluster.vbuckets)
+                                           vbuckets=def_bucket.vbuckets)
             doc_gen[1] = sub_doc_generator(self.key, half_of_num_items,
                                            self.num_items,
                                            key_size=self.key_size,
                                            doc_size=self.sub_doc_size,
                                            target_vbucket=self.target_vbucket,
-                                           vbuckets=self.cluster.vbuckets)
+                                           vbuckets=def_bucket.vbuckets)
         elif doc_ops in [DocLoading.Bucket.SubDocOps.UPSERT,
                          DocLoading.Bucket.SubDocOps.REMOVE]:
             self.log.info("Creating sub_docs before upsert/remove operation")
@@ -298,7 +298,7 @@ class BasicOps(DurabilityTestsBase):
                 key_size=self.key_size,
                 doc_size=self.sub_doc_size,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=def_bucket.vbuckets)
             template_index_1 = 0
             template_index_2 = 1
             if doc_ops == DocLoading.Bucket.SubDocOps.REMOVE:
@@ -326,7 +326,7 @@ class BasicOps(DurabilityTestsBase):
                 key_size=self.key_size,
                 template_index=template_index_1,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=def_bucket.vbuckets)
             doc_gen[1] = sub_doc_generator_for_edit(
                 self.key,
                 start=half_of_num_items,
@@ -334,7 +334,7 @@ class BasicOps(DurabilityTestsBase):
                 key_size=self.key_size,
                 template_index=template_index_2,
                 target_vbucket=self.target_vbucket,
-                vbuckets=self.cluster.vbuckets)
+                vbuckets=def_bucket.vbuckets)
         else:
             self.fail("Invalid sub_doc operation '%s'" % doc_ops)
 
@@ -377,7 +377,7 @@ class BasicOps(DurabilityTestsBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=def_bucket.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -437,7 +437,7 @@ class BasicOps(DurabilityTestsBase):
                                           self.num_items * 2,
                                           doc_size=self.doc_size,
                                           target_vbucket=self.target_vbucket,
-                                          vbuckets=self.cluster.vbuckets)
+                                          vbuckets=def_bucket.vbuckets)
         doc_gen["read"] = doc_generator(self.key,
                                         0,
                                         self.num_items)
@@ -460,7 +460,7 @@ class BasicOps(DurabilityTestsBase):
                                     template_index=0,
                                     key_size=self.key_size,
                                     target_vbucket=self.target_vbucket,
-                                    vbuckets=self.cluster.vbuckets)
+                                    vbuckets=def_bucket.vbuckets)
         sub_doc_gen["remove"] = sub_doc_generator_for_edit(
                                     self.key,
                                     start=upsert_end_index,
@@ -468,7 +468,7 @@ class BasicOps(DurabilityTestsBase):
                                     template_index=2,
                                     key_size=self.key_size,
                                     target_vbucket=self.target_vbucket,
-                                    vbuckets=self.cluster.vbuckets)
+                                    vbuckets=def_bucket.vbuckets)
 
         # Start full document mutations before starting sub_doc ops
         tasks.append(self.task.async_load_gen_docs(
@@ -529,7 +529,7 @@ class BasicOps(DurabilityTestsBase):
         # Verify vb-details cbstats
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=def_bucket.vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -593,7 +593,7 @@ class BasicOps(DurabilityTestsBase):
                                         key_size=self.key_size,
                                         doc_size=self.sub_doc_size,
                                         target_vbucket=self.target_vbucket,
-                                        vbuckets=self.cluster.vbuckets)
+                                        vbuckets=def_bucket.vbuckets)
         task = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, sub_doc_gen,
             DocLoading.Bucket.SubDocOps.INSERT, self.maxttl,
@@ -611,7 +611,7 @@ class BasicOps(DurabilityTestsBase):
                                        insert_end_index,
                                        key_size=self.key_size,
                                        target_vbucket=self.target_vbucket,
-                                       vbuckets=self.cluster.vbuckets)
+                                       vbuckets=def_bucket.vbuckets)
         gen_update = sub_doc_generator_for_edit(
             self.key,
             insert_end_index,
@@ -727,18 +727,18 @@ class BasicOps(DurabilityTestsBase):
         # Override num_of_nodes affected to 1
         self.num_nodes_affected = 1
 
+        def_bucket = self.cluster.buckets[0]
         error_sim = dict()
         shell_conn = dict()
         cbstat_obj = dict()
         failover_info = dict()
         vb_info_info = dict()
-        target_vbuckets = range(0, self.cluster.vbuckets)
+        target_vbuckets = range(0, def_bucket.vbuckets)
         active_vbs_in_target_nodes = list()
         failover_info["init"] = dict()
         failover_info["afterCrud"] = dict()
         vb_info_info["init"] = dict()
         vb_info_info["afterCrud"] = dict()
-        def_bucket = self.cluster.buckets[0]
 
         self.log.info("Selecting nodes to simulate error condition")
         target_nodes = self.getTargetNodes()
