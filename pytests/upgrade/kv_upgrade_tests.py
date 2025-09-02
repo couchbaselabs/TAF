@@ -75,6 +75,9 @@ class KVUpgradeTests(UpgradeBase):
                 self.cluster_util.print_cluster_stats(self.cluster)
                 self.bucket_util.print_bucket_stats(self.cluster)
 
+                if self.test_failure is not None:
+                    self.fail("Test failed during upgrade")
+
     def test_db_dump_with_empty_body_and_empty_xattr(self):
         """
         1. Create empty doc (with no body + no sys_xattr) with data_type=xattr
