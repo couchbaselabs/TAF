@@ -763,7 +763,7 @@ class CGroupBase(unittest.TestCase):
                         " --services {}".format(services)
         self.log.info("Add node cmd: {}".format(add_node_cmd))
         if self.base_infra == "docker":
-            o, e = self.execute_command_docker(add_node_cmd, self.master_server)
+            o, e = self.execute_command_docker(add_node_cmd, master_server)
         else:
             o, e = self.shell_dict[master_server_ip].execute_command(add_node_cmd)
         self.log.info("Add node output = {}".format(o))

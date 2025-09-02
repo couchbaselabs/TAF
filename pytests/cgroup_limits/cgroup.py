@@ -648,11 +648,13 @@ class CGroup(CGroupBase):
             for container in current_nodes:
                 if container.container_name == container_name_to_upgrade:
                     container_to_upgrade = container
+            self.log.info(f"Container to upgrade = {container_to_upgrade.__dict__}")
 
-            if container_to_upgrade == self.cluster.master:
+            if container_to_upgrade.container_ip == self.cluster.master.container_ip:
                 for server in self.cluster.nodes_in_cluster:
                     if server.container_ip != container_to_upgrade.container_ip:
                         self.cluster.master = server
+                self.log.info(f"New master = {self.cluster.master.container_ip}")
 
             # Swap Rebalance
             self.add_server_to_cluster(self.cluster.master, new_container,
@@ -660,7 +662,9 @@ class CGroup(CGroupBase):
             self.cluster_rebalance(self.cluster.master,
                                    servers_to_remove=[container_to_upgrade])
 
-            self.cluster.nodes_in_cluster.remove(container_to_upgrade)
+            for container in self.cluster.nodes_in_cluster:
+                if container.container_ip == container_to_upgrade.container_ip:
+                    self.cluster.nodes_in_cluster.remove(container)
             self.cluster.nodes_in_cluster.append(new_container)
             self.cluster.master = new_container
 
