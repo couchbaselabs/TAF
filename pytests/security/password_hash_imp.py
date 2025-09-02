@@ -61,19 +61,8 @@ class PasswordHashImp(ClusterSetup):
                     self.fail("Hard failover failed for %s" % node)
                 self.sleep(5, "Wait for failover to start")
 
-    def validate_hash_algo(self, username, expected_hash_algo):
-        lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
-        isasl_file = lib_cb + "isasl.pw"
-
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        file_output = shell.execute_command("cat " + isasl_file)[0]
-        x = ''
-        for i in file_output:
-            x = x + i
-
-        res = json.loads(x)
-
-        observed_hash_algo = res[username]["hash"]["algorithm"]
+    def validate_hash_algo(self, expected_hash_algo):
+        _, observed_hash_algo = self.security_util.get_hash_algo(self.cluster)
         if observed_hash_algo == expected_hash_algo:
             self.log.info("Hash algorithm validation success")
         else:
@@ -112,7 +101,7 @@ class PasswordHashImp(ClusterSetup):
         self.rest.add_set_builtin_user(user_name, payload)
 
         # verify in isasl.pw
-        self.validate_hash_algo(user_name, hash_algo_before_migration)
+        self.validate_hash_algo(hash_algo_before_migration)
 
         # set migration to true
         result, content = self.security_util.set_allow_hash_migration_during_auth(self.cluster)
@@ -134,7 +123,7 @@ class PasswordHashImp(ClusterSetup):
         rest_non_admin.set_cluster_name("TEST_MIGRATION")
 
         # verify in isasl.pw
-        self.validate_hash_algo(user_name, hash_algo_after_migration)
+        self.validate_hash_algo(hash_algo_after_migration)
 
         # set algo back to SHA-1
         hash_algo_before_migration = "SHA-1"

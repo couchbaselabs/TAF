@@ -773,6 +773,13 @@ class RestConnection(newRC):
             self.test_log.error("Failed to set password hash algorithm: {}".format(content))
         return status, content
 
+    def get_paswd_hash_algo(self):
+        api = self.baseUrl + "settings/security"
+        status, content, header = self._http_request(api, 'GET')
+        if not status:
+            self.test_log.error("Failed to get password hash algorithm: {}".format(content))
+        return status, content
+
     def set_security_settings(self, settings):
         api = self.baseUrl + "settings/security"
         params = urllib.urlencode(settings)
