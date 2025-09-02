@@ -301,7 +301,7 @@ class AppBase(BaseTestCase):
         if not self.capella_run:
             self.log.info("Setting index storage mode=gsi")
             status, content = (IndexRestAPI(self.cluster.master).
-                set_gsi_settings({'storageMode': self.index_storage_mode}))
+                set_gsi_settings(storageMode=self.index_storage_mode))
             self.assertTrue(status, f"Failed to set storageMode: {content}")
 
         self.log.info("Dropping default indexes on _default collection")

@@ -378,7 +378,7 @@ class JavaDocLoaderUtils(object):
                                create_start=0,
                                create_end=override_num_items or bucket.loadDefn.get("num_items"),
                                bucket=bucket)
-        
+
         JavaDocLoaderUtils.perform_load(cluster=cluster,
                             buckets=buckets,
                             overRidePattern=overRidePattern,

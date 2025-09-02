@@ -29,4 +29,4 @@ cb_cluster:
     - user_name: "rbac_admin"
       password: "Rbac_admin@123"
       roles:
-        - "security_admin_local"
+        - "user_admin_local"

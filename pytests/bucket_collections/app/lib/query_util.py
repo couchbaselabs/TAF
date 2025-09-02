@@ -15,20 +15,24 @@ class CommonUtil(object):
         doc_key = "%s.%s" % (scope, collection)
         client = sdk_clients["bucket_data_writer"]
         client.select_collection(scope, "meta_data")
-        result = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
-                             doc_key, ["doc_counter", 1],
-                             create_path=True,
-                             store_semantics=StoreSemantics.UPSERT)
-        return int(result[doc_key]["value"]["doc_counter"])
+        success, fail = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
+                                    doc_key, ["doc_counter", 1],
+                                    create_path=True,
+                                    store_semantics=StoreSemantics.UPSERT)
+        if success:
+            success, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+                                     doc_key, "doc_counter")
+            return int(success[doc_key]["value"]["doc_counter"])
+        raise Exception(f"CRUD COUNTER operation failed: {fail}")
 
     @staticmethod
     def get_current_date(scope_name):
         doc_key = "application"
         client = sdk_clients["bucket_data_writer"]
         client.select_collection(scope_name, "meta_data")
-        result = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
-                             doc_key, "date")
-        return result[doc_key]['value']['date']
+        success, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+                                 doc_key, "date")
+        return success[doc_key]['value']['date']
 
     @staticmethod
     def incr_date(tenants):
