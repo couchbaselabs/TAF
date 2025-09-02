@@ -21,6 +21,7 @@ def build_image(ssh, branch, version, build, image_name):
     print("current directory is {}".format(current_dir))
     docker_file_dir = os.path.join(current_dir, "TAF", "scripts", "containers", "couchbase", "ubuntu_systemd")
     cmd = "docker build" \
+          " --network=host" \
           " --build-arg FLAVOR=" + branch + \
           " --build-arg VERSION=" + version + \
           " --build-arg BUILD_NO=" + build + \
