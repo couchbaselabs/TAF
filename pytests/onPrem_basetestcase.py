@@ -986,8 +986,20 @@ class OnPremBaseTest(CouchbaseBaseTest):
             timestamp_regex = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
             match_obj = timestamp_regex.search(last_line)
             if not match_obj:
-                self.log.critical("%s does not match any timestamp" % last_line)
-                return True
+                # Check if this is a known log entry type that might not have timestamps
+                # but shouldn't cause test failures
+
+                # https://jira.issues.couchbase.com/browse/MB-68370
+                non_critical_patterns = [
+                    "monitorserviceforportchanges"
+                ]
+                is_non_critical = any(pattern in last_line.lower() for pattern in non_critical_patterns)
+                if is_non_critical:
+                    self.log.warning("Found log entry without timestamp (treating as non-critical): %s" % last_line)
+                    return False  # Don't fail the test for known non-critical log entries
+                else:
+                    self.log.critical("%s does not match any timestamp" % last_line)
+                    return True
             timestamp = match_obj.group()
             timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             self.log.info("Comparing timestamps: Log's latest timestamp: %s, "

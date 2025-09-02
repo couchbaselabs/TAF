@@ -196,7 +196,7 @@ class CBASHighAvailability(CBASBaseTest):
                 "views_reader", "query_delete", "fts_searcher",
                 "bucket_admin", "fts_admin", "security_admin_local",
                 "ro_admin", "analytics_select", "replication_admin",
-                "views_admin", "bucket_full_access", "analytics_reader"]:
+                "views_admin", "bucket_full_access", "analytics_reader", "security_admin"]:
                 tc["validate_error_msg"] = True
                 tc["expected_error"] = "Forbidden. User needs the following permissions"
             else:

@@ -56,13 +56,16 @@ class AWSBase(object):
         except ClientError as e:
             self.logger.error(e)
 
-    def create_service_resource(self, resource_name):
+    def create_service_resource(self, resource_name, region=None):
         """
         Create a service resource object, to access resources related to
         service.
         """
         try:
-            return self.aws_session.resource(resource_name)
+            if region is None:
+                return self.aws_session.resource(resource_name)
+            else:
+                return self.aws_session.resource(resource_name, region_name=region)
         except Exception as e:
             self.logger.error(e)
 
@@ -84,7 +87,7 @@ class S3(AWSBase):
         super(S3, self).__init__(access_key, secret_key, session_token)
         self.s3_client = self.create_service_client(
             service_name="s3", region=region)
-        self.s3_resource = self.create_service_resource(resource_name="s3")
+        self.s3_resource = self.create_service_resource(resource_name="s3", region=region)
 
     def create_bucket(self, bucket_name, region):
         """
@@ -98,9 +101,13 @@ class S3(AWSBase):
         """
         # Create bucket
         try:
-            location = {'LocationConstraint': region}
-            response = self.s3_resource.Bucket(bucket_name).create(
-                CreateBucketConfiguration=location)
+            # For us-east-1, don't specify LocationConstraint as it's the default
+            if region == 'us-east-1':
+                response = self.s3_resource.Bucket(bucket_name).create()
+            else:
+                location = {'LocationConstraint': region}
+                response = self.s3_resource.Bucket(bucket_name).create(
+                    CreateBucketConfiguration=location)
             if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
                 return True
             else:
@@ -434,9 +441,9 @@ def main():
     args = parser.parse_args()
 
     if args.session_token:
-        s3_obj = S3(args.access_key, args.secret_key, args.session_token)
+        s3_obj = S3(args.access_key, args.secret_key, args.session_token, args.region)
     else:
-        s3_obj = S3(args.access_key, args.secret_key)
+        s3_obj = S3(args.access_key, args.secret_key, region=args.region)
 
     if args.new_bucket:
         result = {"result": s3_obj.create_bucket(args.new_bucket, args.region)}
