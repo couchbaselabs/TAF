@@ -2248,10 +2248,9 @@ class BucketUtils(ScopeUtils):
              Bucket.magmaSeqTreeDataBlockSize: magma_seq_tree_data_block_size,
              Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
-             Bucket.weight: weight,
-             Bucket.encryptionAtRestKeyId: encryption_at_rest_key_id})
+             Bucket.weight: weight})
         if enable_encryption_at_rest:
-            bucket_obj.encryptionAtRestKeyId = self.encryption_at_rest_id
+            bucket_obj.encryptionAtRestKeyId = encryption_at_rest_key_id
             if encryption_at_rest_dek_rotation_interval is not None:
                 bucket_obj.encryptionAtRestDekRotationInterval = encryption_at_rest_dek_rotation_interval
             if encryption_at_rest_dek_lifetime is not None:
