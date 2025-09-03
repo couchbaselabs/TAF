@@ -7,6 +7,7 @@ from collections import defaultdict
 import threading
 import time
 
+from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 from cbas_utils.cbas_utils import CbasUtil
 from pytests.basetestcase import BaseTestCase
 from sdk_client3 import SDKClient
@@ -77,7 +78,7 @@ class Columnar(BaseTestCase, hostedOPD):
             "end": self.input.param("num_items", 10000),
             "ops": self.input.param("ops_rate", 10000),
             "doc_size": 1024,
-            "pattern": [0, 0, 100, 0, 0], # CRUDE
+            "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0}, # CRUDE
             "load_type": ["update"],
             "cbasQPS": self.input.param("cbasQPS", 1),
             "cbas": [self.input.param("cbas_collections", 10), 10]
@@ -92,6 +93,7 @@ class Columnar(BaseTestCase, hostedOPD):
         self.drCBAS = DoctorCBAS()
         self.mongo_workload_tasks = list()
         self.cbas_util = CbasUtil(self.task_manager)
+        JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
 
     def setupRemoteCouchbase(self):
         for tenant in self.tenants:
@@ -361,6 +363,9 @@ class Columnar(BaseTestCase, hostedOPD):
                     for task in tasks:
                         self.task_manager.get_task_result(task)
                         self.assertTrue(task.result, "Scaling IN columnar failed!")
+                    for tenant in self.tenants:
+                        for cluster in tenant.columnar_instances:
+                            self.setup_columnar_sdk_clients(cluster)
                     self.sleep(600, "Lets the ingestion/query running for 30 mins post scaling")
                 for i in range(0, iterations):
                     self.PrintStep("Scaling OUT operation: %s" % str(i+1))
@@ -378,6 +383,9 @@ class Columnar(BaseTestCase, hostedOPD):
                     for task in tasks:
                         self.task_manager.get_task_result(task)
                         self.assertTrue(task.result, "Scaling OUT columnar failed!")
+                    for tenant in self.tenants:
+                        for cluster in tenant.columnar_instances:
+                            self.setup_columnar_sdk_clients(cluster)
                     self.sleep(600, "Lets the ingestion/query running for 30 mins post scaling")
             for th in self.ingestion_ths:
                 th.join()

@@ -680,7 +680,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.PrintStep("Step 7: Crash Magma/memc with Loading of docs")
             th = threading.Thread(target=self.crash_memcached,
-                                  kwargs={"graceful": False})
+                                    kwargs={"graceful": False})
             th.start()
             while self.crash_count < self.crashes:
                 continue
@@ -793,7 +793,7 @@ class Murphy(BaseTestCase, OPD):
                 failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
                 node.id = failover_node.id
                 success_failed_over = self.rest.fail_over(failover_node.id,
-                                                               graceful=True)
+                                                          graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
@@ -830,15 +830,13 @@ class Murphy(BaseTestCase, OPD):
             self.nodes = self.cluster_util.get_nodes(self.cluster.master)
             self.chosen = random.sample(self.cluster.kv_nodes, self.num_replicas)
 
-#             self.generate_docs(doc_ops=["update", "delete", "read", "create"])
-#             tasks = self.perform_load(wait_for_load=False)
             # Mark Node for failover
             self.success_failed_over = True
             for node in self.chosen:
                 failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
                 node.id = failover_node.id
                 success_failed_over = self.rest.fail_over(failover_node.id,
-                                                               graceful=True)
+                                                          graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                 self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
@@ -940,7 +938,6 @@ class Murphy(BaseTestCase, OPD):
         self.loop = 1
 
         self.initial_setup()
-
 
         self.loop = 0
         while self.loop < self.iterations:
@@ -1270,7 +1267,18 @@ class Murphy(BaseTestCase, OPD):
                 '''
                 self.PrintStep("Step 12: Failover a node and DeltaRecovery that \
                 node with loading in parallel")
-                nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
+                failover_nodes = self.cluster.kv_nodes
+                if service == "fts":
+                    failover_nodes = self.cluster.fts_nodes
+                elif service == "cbas":
+                    failover_nodes = self.cluster.cbas_nodes
+                elif service == "index":
+                    failover_nodes = self.cluster.index_nodes
+                elif service == "query":
+                    failover_nodes = self.cluster.query_nodes
+                elif service == "eventing":
+                    failover_nodes = self.cluster.eventing_nodes
+                nodes = [node for node in failover_nodes if node.ip != self.cluster.master.ip]
                 self.std_vbucket_dist = self.input.param("std_vbucket_dist", None)
                 std = self.std_vbucket_dist or 1.0
 
@@ -1749,7 +1757,13 @@ class Murphy(BaseTestCase, OPD):
             self.update_perc = perc if "update" in self.doc_ops else 0
             self.delete_perc = perc if "delete" in self.doc_ops else 0
             self.read_perc = perc if "read" in self.doc_ops else 0
-            pattern = [self.create_perc, self.read_perc, self.update_perc, self.delete_perc, self.expiry_perc]
+            pattern = {
+                "create": self.create_perc,
+                "read": self.read_perc,
+                "update":self.update_perc,
+                "delete": self.delete_perc,
+                "expiry": self.expiry_perc
+                }
         while self.mutations:
             self.mutate += 1
             for bucket in self.cluster.buckets:

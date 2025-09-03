@@ -146,6 +146,10 @@ class JavaDocLoaderUtils(object):
         if "update" in doc_ops:
             bucket.update_start = update_start or 0
             bucket.update_end = update_end or bucket.loadDefn.get("num_items")//2
+            try:
+                bucket.mutate
+            except:
+                bucket.mutate = 0
             bucket.mutate += 1
 
         if "delete" in doc_ops:

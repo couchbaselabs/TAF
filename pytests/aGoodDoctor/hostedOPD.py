@@ -15,8 +15,8 @@ import string
 from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils
 import threading
-from .workloads import default, nimbus, vector_load
-from bucket_utils.bucket_ready_functions import CollectionUtils
+from .workloads import default, nimbus, hotel_vector, siftBigANN, Hotel
+from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 from Jython_tasks.task_manager import TaskManager
 from custom_exceptions.exception import ServerUnavailableException
 
@@ -97,20 +97,17 @@ class hostedOPD(OPD):
                 cpu_monitor.start()
 
         _nimbus = self.input.param("nimbus", False)
-        expiry = self.input.param("expiry", False)
-        self.load_defn.append(default)
-        if _nimbus:
-            self.load_defn = list()
+        if self.val_type == "Hotel":
+            if self.vector:
+                self.load_defn.append(hotel_vector)
+            else:
+                self.load_defn.append(Hotel)
+        elif self.val_type == "siftBigANN":
+            self.load_defn.append(siftBigANN)
+        elif self.val_type == "Nimbus":
             self.load_defn.append(nimbus)
-
-        if expiry:
-            for load in self.load_defn:
-                load["pattern"] = [0, 0, 0, 0, 100]
-                load["load_type"] = ["expiry"]
-
-        if self.vector:
-            self.load_defn = list()
-            self.load_defn.append(vector_load)
+        else:
+            self.load_defn.append(default)
 
         #######################################################################
         for tenant in self.tenants:
@@ -160,12 +157,13 @@ class hostedOPD(OPD):
             i = 0
             for cluster in tenant.clusters:
                 for bucket in cluster.buckets:
-                    self.generate_docs(doc_ops=["create"],
+                    JavaDocLoaderUtils.generate_docs(doc_ops=["create"],
                                        create_start=0,
                                        create_end=bucket.loadDefn.get("num_items")//2,
                                        bucket=bucket)
                 if not self.skip_init:
-                    tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
+                    tasks.append(JavaDocLoaderUtils.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets,
+                                                   overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0}))
                     if self.xdcr_remote_clusters > 0:
                         self.drXDCR.set_up_replication(tenant, source_cluster=cluster, destination_cluster=tenant.xdcr_clusters[i],
                                      source_bucket=cluster.buckets[0].name,
@@ -175,7 +173,7 @@ class hostedOPD(OPD):
             i = 0
             for cluster in tenant.clusters:
                 if tasks:
-                    self.wait_for_doc_load_completion(cluster, tasks[i])
+                    JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, tasks[i])
             i += 1
 
         tasks = list()
@@ -183,17 +181,18 @@ class hostedOPD(OPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 for bucket in cluster.buckets:
-                    self.generate_docs(doc_ops=["create"],
+                    JavaDocLoaderUtils.generate_docs(doc_ops=["create"],
                                        create_start=bucket.loadDefn.get("num_items")//2,
                                        create_end=bucket.loadDefn.get("num_items"),
                                        bucket=bucket)
                 if not self.skip_init:
-                    tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets, overRidePattern=[100,0,0,0,0]))
+                    tasks.append(JavaDocLoaderUtils.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets,
+                                                   overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0}))
         for tenant in self.tenants:
             i = 0
             for cluster in tenant.clusters:
                 if tasks:
-                    self.wait_for_doc_load_completion(cluster, tasks[i])
+                    JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, tasks[i])
             i += 1
 
     def live_kv_workload(self):
@@ -204,8 +203,9 @@ class hostedOPD(OPD):
                 for bucket in cluster.buckets:
                     bucket.original_ops = bucket.loadDefn["ops"]
                     bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-                    self.generate_docs(bucket=bucket)
-                self.tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets))
+                    JavaDocLoaderUtils.generate_docs(doc_ops=["update"],
+                                                     bucket=bucket)
+                self.tasks.append(JavaDocLoaderUtils.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets))
         self.sleep(10)
 
         upgrade = self.input.capella.get("upgrade_image")
