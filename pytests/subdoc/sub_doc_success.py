@@ -10,6 +10,7 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from sdk_utils.sdk_options import SDKOptions
 from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
@@ -1017,5 +1018,44 @@ class BasicOps(DurabilityTestsBase):
             else:
                 index_retry -= 1
                 self.sleep(1, "Retrying.. Index not yet online")
+
+        client.close()
+
+    def test_subdoc_lookup_on_locked_document(self):
+        """
+        MB-66015: subdoc lookup on a locked doc
+        - should FAIL if CAS=0 (regression test)
+        """
+        bucket = self.cluster.buckets[0]
+        client = SDKClient(self.cluster, bucket)
+
+        key = "locked_doc_test"
+        doc = {"name": "test_document", "meta": {"v": 1}}
+
+        # 1) Upsert document
+        self.log.info("1) Upserting base document")
+        res = client.crud(DocLoading.Bucket.DocOps.UPDATE, key, doc)
+        self.assertTrue(res["status"], "Failed to create test document")
+        original_cas = res["cas"]
+
+        # 2) Lock the document
+        self.log.info("2) Locking the document for 60s")
+        lock_res = client.collection.get_and_lock(key, SDKOptions.get_duration(120, "seconds"))
+        locked_cas = lock_res.cas
+        self.assertNotEqual(original_cas, locked_cas, "CAS not updated after lock")
+
+        # 3) Verify GET still works
+        self.log.info("3) Verifying GET works on locked doc")
+        get_res = client.crud(DocLoading.Bucket.DocOps.READ, key)
+        self.assertTrue(get_res["status"], "GET failed on locked document")
+
+        # 4) Test subdoc lookup with CAS=0 using SDK client
+        self.log.info("4) Testing subdoc lookup with CAS=0 using SDK client")
+        result = client.crud("subdoc_read", key, "name", cas=0)
+        success_dict, fail_dict = result
+        self.assertIn(key, success_dict, "Subdoc lookup should succeed")
+        self.assertEqual(success_dict[key]["value"]["name"], "test_document", 
+                        "Subdoc lookup should return correct value")
+        self.log.info("Subdoc lookup with CAS=0 succeeded - server has MB-66015 fix")
 
         client.close()
