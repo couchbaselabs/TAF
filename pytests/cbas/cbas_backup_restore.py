@@ -270,7 +270,10 @@ class BackupRestoreTest(CBASBaseTest):
         syn_before_backup = self.cbas_util.get_synonyms(self.cluster)
         idx_before_backup = self.cbas_util.get_indexes(self.cluster)
         bucket = random.choice(self.cluster.buckets)
-        scope = random.choice(self.bucket_util.get_active_scopes(bucket))
+        # https://docs.couchbase.com/server/current/backup-restore/cbbackupmgr-restore.html#the-default-scope
+        scope = random.choice(
+            list(filter(lambda scope: scope.name != "_system",
+                        self.bucket_util.get_active_scopes(bucket))))
         collection = random.choice(self.bucket_util.get_active_collections(
             bucket, scope.name))
         path = scope.name + "." + collection.name
@@ -337,7 +340,8 @@ class BackupRestoreTest(CBASBaseTest):
         original_bucket = random.choice(self.cluster.buckets)
         # remap collections
         original_scope = random.choice(
-            self.bucket_util.get_active_scopes(original_bucket))
+            list(filter(lambda scope: scope.name != "_system",
+                        self.bucket_util.get_active_scopes(original_bucket))))
         original_collection = random.choice(
             self.bucket_util.get_active_collections(
                 original_bucket, original_scope.name))
@@ -351,7 +355,7 @@ class BackupRestoreTest(CBASBaseTest):
         else:
             remap_bucket = original_bucket
         remap_scope = random.choice(
-            list(filter(lambda scope: scope.name != original_scope.name,
+            list(filter(lambda scope: scope.name != original_scope.name and scope.name != "_system",
                         self.bucket_util.get_active_scopes(
                             remap_bucket))))
         remap_collection = random.choice(
@@ -416,7 +420,9 @@ class BackupRestoreTest(CBASBaseTest):
         syn_before_backup = self.cbas_util.get_synonyms(self.cluster)
         idx_before_backup = self.cbas_util.get_indexes(self.cluster)
         bucket = random.choice(self.cluster.buckets)
-        scope = random.choice(self.bucket_util.get_active_scopes(bucket))
+        scope = random.choice(
+            list(filter(lambda scope: scope.name != "_system",
+                        self.bucket_util.get_active_scopes(bucket))))
         collection = random.choice(self.bucket_util.get_active_collections(
             bucket, scope.name))
         paths = [(bucket.name + "." + scope.name + "." + collection.name)]
@@ -483,7 +489,8 @@ class BackupRestoreTest(CBASBaseTest):
         original_bucket = random.choice(self.cluster.buckets)
         # remap collections
         original_scope = random.choice(
-            self.bucket_util.get_active_scopes(original_bucket))
+            list(filter(lambda scope: scope.name != "_system",
+                        self.bucket_util.get_active_scopes(original_bucket))))
         original_collection = random.choice(
             self.bucket_util.get_active_collections(
                 original_bucket, original_scope.name))
@@ -497,7 +504,7 @@ class BackupRestoreTest(CBASBaseTest):
         else:
             remap_bucket = original_bucket
         remap_scope = random.choice(
-            list(filter(lambda scope: scope.name != original_scope.name,
+            list(filter(lambda scope: scope.name != original_scope.name and scope.name != "_system",
                         self.bucket_util.get_active_scopes(remap_bucket))))
         remap_collection = random.choice(
             self.bucket_util.get_active_collections(remap_bucket, remap_scope.name))

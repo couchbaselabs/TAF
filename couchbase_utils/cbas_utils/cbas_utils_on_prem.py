@@ -21,6 +21,7 @@ import importlib
 import copy
 import requests
 
+from couchbase_utils.security_utils.x509main import x509main
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
@@ -5610,7 +5611,7 @@ class CBASRebalanceUtil(object):
 class BackupUtils(object):
 
     def __init__(self):
-        pass
+        self.log = logger.get("test")
 
     def _configure_backup(self, cluster, archive, repo, disable_analytics,
                           exclude, include):
@@ -5631,6 +5632,34 @@ class BackupUtils(object):
         shell.log_command_output(o, r)
         shell.disconnect()
 
+    def _get_cluster_certificate_info(self, cluster):
+        shell = RemoteMachineShellConnection(cluster.cbas_cc_node)
+        cert_file_location = "/tmp/cert.pem"
+        try:
+            x509 = x509main(cluster.cbas_cc_node)
+            status, content, header = x509._get_cluster_ca_cert()
+            if not status:
+                raise Exception("Failed to get certificate from REST API")
+
+            cert_data = json.loads(content)
+            certificate = cert_data["cert"]["pem"]
+            cmd = "echo '{0}' > {1}".format(certificate, cert_file_location)
+            output, _ = shell.execute_command(cmd)
+
+            verify_cmd = "test -f {0} && echo 'Certificate file created successfully'".format(cert_file_location)
+            verify_output, _ = shell.execute_command(verify_cmd)
+            if not verify_output or "Certificate file created successfully" not in verify_output[0]:
+                raise Exception("Failed to create certificate file")
+
+            self.log.info("Certificate successfully retrieved and saved to: %s" % cert_file_location)
+        except Exception as e:
+            self.log.error("Error getting cluster certificate: %s" % str(e))
+            raise Exception("Failed to get CA certificate from cluster: %s" % str(e))
+        finally:
+            shell.disconnect()
+
+        return cert_file_location
+
     def cbbackupmgr_backup_cbas(
             self, cluster, archive='/tmp/backups', repo='example',
             disable_analytics=False, exclude=[], include=[],
@@ -5642,14 +5671,15 @@ class BackupUtils(object):
                 cluster, archive, repo, disable_analytics, exclude, include)
 
         if CbServer.use_https:
-            bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --no-ssl-verify'.format(
+            cacert = self._get_cluster_certificate_info(cluster)
+            bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --cacert {6}'.format(
                 shell.return_bin_path_based_on_os(shell.return_os_type()),
-                archive, repo, cluster.cbas_cc_node.ip, username, password)
+                archive, repo, cluster.cbas_cc_node.ip, username, password, cacert)
         else:
             bkup_cmd = '{0}cbbackupmgr backup -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5}'.format(
                 shell.return_bin_path_based_on_os(shell.return_os_type()),
                 archive, repo, cluster.cbas_cc_node.ip, username, password)
-
+        self.log.info("Running backup command: %s" % bkup_cmd)
         o, r = shell.execute_command(bkup_cmd)
         shell.log_command_output(o, r)
         shell.disconnect()
@@ -5664,9 +5694,10 @@ class BackupUtils(object):
         shell.log.info('Restore backup using cbbackupmgr')
 
         if CbServer.use_https:
-            restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --force-updates --no-ssl-verify'.format(
+            cacert = self._get_cluster_certificate_info(cluster)
+            restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbases://{3} --username {4} --password {5} --force-updates --cacert {6}'.format(
                 shell.return_bin_path_based_on_os(shell.return_os_type()),
-                archive, repo, cluster.cbas_cc_node.ip, username, password)
+                archive, repo, cluster.cbas_cc_node.ip, username, password, cacert)
         else:
             restore_cmd = '{0}cbbackupmgr restore -a {1} -r {2} --cluster couchbase://{3} --username {4} --password {5} --force-updates'.format(
                 shell.return_bin_path_based_on_os(shell.return_os_type()),
@@ -5674,6 +5705,7 @@ class BackupUtils(object):
 
         restore_cmd = self._build_backup_cmd_with_optional_parameters(
             disable_analytics, exclude, include, mappings, restore_cmd)
+        self.log.info("Running restore command: %s" % restore_cmd)
         o, r = shell.execute_command(restore_cmd)
         shell.log_command_output(o, r)
         shell.disconnect()

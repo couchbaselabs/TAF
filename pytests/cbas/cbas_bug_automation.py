@@ -12,6 +12,30 @@ from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 class CBASBugAutomation(CBASBaseTest):
 
+    def _remove_dataset_from_dataverse(self, dataset_name):
+        """Remove dataset from dataverse structure."""
+        parts = dataset_name.split('.')
+        if len(parts) < 2:
+            self.log.info("Invalid dataset name format: %s" % dataset_name)
+            return False
+
+        dataverse_name = '.'.join(parts[:-1])
+        dataset_name_only = parts[-1]
+        self.log.info("Removing dataset %s from dataverse %s" % (dataset_name_only, dataverse_name))
+
+        # Check if dataverse exists and contains the dataset
+        if dataverse_name in self.cbas_util.dataverses:
+            if dataset_name_only in self.cbas_util.dataverses[dataverse_name].datasets:
+                del self.cbas_util.dataverses[dataverse_name].datasets[dataset_name_only]
+                self.log.info("Successfully removed dataset %s from dataverse %s" % (dataset_name_only, dataverse_name))
+                return True
+            else:
+                self.log.info("Dataset %s not found in dataverse %s" % (dataset_name_only, dataverse_name))
+        else:
+            self.log.info("Dataverse %s not found" % dataverse_name)
+
+        return False
+
     def setUp(self):
 
         super(CBASBugAutomation, self).setUp()
@@ -243,9 +267,8 @@ class CBASBugAutomation(CBASBaseTest):
             if not self.cbas_util.drop_dataset(
                     self.cluster, dataset_to_be_dropped.full_name):
                 self.fail("Error while dropping dataset")
-            del self.cbas_util.dataverses[
-                dataset_to_be_dropped.dataverse_name].datasets[
-                dataset_to_be_dropped.name]
+            if self._remove_dataset_from_dataverse(dataset_to_be_dropped.full_name):
+                self.log.info("Successfully removed dataset from dataverse structure")
 
             self.log.info("Step {0}: Loading more docs".format(step_count))
             step_count += 1
@@ -286,9 +309,8 @@ class CBASBugAutomation(CBASBaseTest):
             if not self.cbas_util.drop_dataset(
                     self.cluster, dataset_to_be_dropped.full_name):
                 self.fail("Error while dropping dataset")
-            del self.cbas_util.dataverses[
-                dataset_to_be_dropped.dataverse_name].datasets[
-                dataset_to_be_dropped.name]
+            if self._remove_dataset_from_dataverse(dataset_to_be_dropped.full_name):
+                self.log.info("Successfully removed dataset from dataverse structure")
 
             self.log.info("Step {0}: Loading more docs".format(step_count))
             step_count += 1
@@ -369,9 +391,8 @@ class CBASBugAutomation(CBASBaseTest):
             if not self.cbas_util.drop_dataset(
                     self.cluster, dataset_to_be_dropped.full_name):
                 self.fail("Error while dropping dataset")
-            del self.cbas_util.dataverses[
-                dataset_to_be_dropped.dataverse_name].datasets[
-                dataset_to_be_dropped.name]
+            if self._remove_dataset_from_dataverse(dataset_to_be_dropped.full_name):
+                self.log.info("Successfully removed dataset from dataverse structure")
 
             self.log.info("Step {0}: Loading more docs".format(step_count))
             step_count += 1
@@ -503,9 +524,8 @@ class CBASBugAutomation(CBASBaseTest):
         if not self.cbas_util.drop_dataset(
                 self.cluster, dataset_to_be_dropped.full_name):
             self.fail("Error while dropping dataset")
-        del self.cbas_util.dataverses[
-            dataset_to_be_dropped.dataverse_name].datasets[
-            dataset_to_be_dropped.name]
+        if self._remove_dataset_from_dataverse(dataset_to_be_dropped.full_name):
+            self.log.info("Successfully removed dataset from dataverse structure")
 
         if self.do_rebalance:
             self.log.info("Step {0}: Rebalancing IN KV and CBAS nodes".format(
