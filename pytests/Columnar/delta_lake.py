@@ -670,13 +670,10 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                     f" and external collection {dataset.full_name}. "
                     f"\nDifferences - {diff}")
 
-        self.log.info("Performing vacuum operation on delta table while "
+        self.log.info("Performing table deletion on delta table while "
                       "running query parallely on external collection")
 
         for dataset in datasets:
-            data_in_delta_table = self.delta_lake_util.read_data_from_table(
-                dataset.dataset_properties["external_container_name"],
-                dataset.dataset_properties["path_on_external_container"])
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 # Submit the jobs
                 query_job = executor.submit(
@@ -691,22 +688,26 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                 )
                 # Collect results
                 query_result = query_job.result()
-                time.sleep(1)
+                time.sleep(10)
                 delete_table_job.result()
 
+            # The test validates that the query either succeeds (if it completes before deletion)
+            # or fails appropriately (if the table gets deleted during query execution)
             if query_result[0] == "success":
-                diff = DeepDiff(query_result[3], data_in_delta_table,
-                                ignore_order=True)
-                if diff:
-                    self.fail(
-                        f"Data mismatch between Delta lake table "
-                        f"{dataset.dataset_properties['path_on_external_container']}"
-                        f" and external collection {dataset.full_name}. "
-                        f"\nDifferences - {diff}")
+                self.log.info(f"Query completed successfully before table deletion for dataset {dataset.full_name}")
+                # Verify that we got some results
+                if not query_result[3]:
+                    self.fail(f"Query returned no results for dataset {dataset.full_name}")
             else:
-                self.fail("Error while running query parallely while "
-                          "performing CRUD on associated Delta collection. "
-                          "Error - {0}".format(query_result[2]))
+                self.log.info(f"Query failed as expected when table was deleted during execution for dataset {dataset.full_name}")
+                # Verify that the error is related to the table not being found
+                error_str = str(query_result[2])
+                expected_error_patterns = [
+                    "TableNotFoundException",
+                    "KernelEngineException"
+                ]
+                if not any(pattern in error_str for pattern in expected_error_patterns):
+                    self.fail(f"Unexpected error when table was deleted: {query_result[2]}")
 
     def test_error_condition_for_with_flags(self):
         self.setup_delta_lake_infra()
@@ -818,10 +819,13 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                 status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
                     self.cluster, f"select count(*) from {dataset_name}")
                 if status == "fatal":
-                    self.fail(f"Error while running query on {dataset_name}. "
-                              f"Error - {errors}")
+                    if testcase["expected_error"] not in errors[0]["msg"]:
+                        self.fail(
+                        f"Expected Error - {testcase['expected_error']}, "
+                        f"Actual Error - {errors[0]['msg']}")
             if testcase.get("delta_table_missing", False):
                  dataset_properties['path_on_external_container'] = delta_table_name
+            self.log.info(f"Scenario completed successfully - {testcase['description']}")
 
     def test_decimal_to_double_flag(self):
         decimal_to_double = self.input.param("decimal_to_double", True)

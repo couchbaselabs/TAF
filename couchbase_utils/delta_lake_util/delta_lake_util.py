@@ -11,7 +11,7 @@ This utility supports:
   - org.apache.hadoop:hadoop-aws:3.3.4
   - org.apache.hadoop:hadoop-common:3.3.4
   - com.amazonaws:aws-java-sdk-bundle:1.12.262
-  - com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.5
+  - com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.5:jar:shaded
 """
 
 import json
@@ -115,22 +115,19 @@ class DeltaLakeUtils:
             .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
             .set("spark.hadoop.fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
             .set("spark.hadoop.fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS")
-            .set("google.cloud.auth.service.account.enable", "true")
             .set("spark.hadoop.google.cloud.auth.service.account.json.keyfile", gcs_service_account_path)
+            .set("spark.hadoop.google.cloud.auth.service.account.enable", "true")
             .set("spark.sql.shuffle.partitions", str(self.sql_partitions))
             .set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
             .set("spark.driver.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
             .set("spark.executor.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
+            .set("spark.jars.excludes", "org.apache.httpcomponents:httpcore")
+            .set("spark.jars", "https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.5/gcs-connector-hadoop3-2.2.5-shaded.jar")
             .setMaster(f"local[{self.cores_to_use}]")
         )
 
-        extra_packages = [
-            "org.apache.hadoop:hadoop-common:3.3.4",
-            "com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.5",
-        ]
-
         builder = SparkSession.builder.appName(app_name).config(conf=conf)
-        self.spark_session = configure_spark_with_delta_pip(builder, extra_packages=extra_packages).getOrCreate()
+        self.spark_session = configure_spark_with_delta_pip(builder).getOrCreate()
 
     def close_spark_session(self):
         """
