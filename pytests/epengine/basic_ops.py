@@ -2417,7 +2417,7 @@ class basic_ops(ClusterSetup):
             try:
                 client.collection.unlock(t_key, d_cas)
             except AmbiguousTimeoutException as e:
-                if "KV_TEMPORARY_FAILURE" in str(e):
+                if "key_value_temporary_failure" in str(e):
                     if return_tmpfail_val == "false":
                         self.fail(f"Key '{t_key}' - KV_TEMPORARY_FAILURE")
                     else:
