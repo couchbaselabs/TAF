@@ -4,25 +4,23 @@ Created on Sep 26, 2017
 @author: riteshagarwal
 """
 
+import concurrent.futures
 import copy
+import datetime
 import importlib
 import math
 import os.path
-import re
-import threading
-import datetime
-from random import sample, choice, randint
-from time import time
-
-import requests
-import concurrent.futures
-
 import random
+import re
 import string
+import threading
 import time
 import zlib
-from subprocess import call
 from collections import defaultdict
+from random import sample, choice, randint
+from subprocess import call
+
+import requests
 
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.task_manager import TaskManager
@@ -894,7 +892,7 @@ class DocLoaderUtils(object):
         unwanted_retry_succeeded_table.set_headers(table_headers)
         unwanted_retry_failed_table.set_headers(failure_table_header)
 
-        exception_pattern = ".*(com\.[a-zA-Z0-9\.]+)"
+        exception_patterns = [".*(com\.[a-zA-Z0-9\.]+)", "([a-zA-Z0-9]+)"]
 
         if load_using != "default_loader":
             return
@@ -922,42 +920,56 @@ class DocLoaderUtils(object):
                 op_data["retried"]["success"] = dict()
 
                 if failed_keys:
+                    keys_to_remove = []
                     for key, failed_doc in op_data["fail"].items():
                         is_key_to_ignore = False
                         exception = failed_doc["error"]
-                        initial_exception = re.match(exception_pattern,
-                                                     str(exception)).group(1)
+                        for exception_pattern in exception_patterns:
+                            pattern_match = re.match(exception_pattern,
+                                                     str(exception))
+                            if pattern_match:
+                                initial_exception = pattern_match.group(1)
+                                break
 
                         for tem_exception in op_data["ignore_exceptions"]:
-                            if str(exception).find(tem_exception) != -1:
-                                if op_type == DocLoading.Bucket.DocOps.CREATE:
-                                    bucket.scopes[scope_name] \
-                                        .collections[collection_name].num_items \
-                                        -= 1
-                                elif op_type == DocLoading.Bucket.DocOps.DELETE:
-                                    bucket.scopes[scope_name] \
-                                        .collections[collection_name].num_items \
-                                        += 1
-                                is_key_to_ignore = True
+                            if not isinstance(tem_exception, list):
+                                tem_exception = [tem_exception]
+                            for t_exception in tem_exception:
+                                if str(exception).find(t_exception) != -1:
+                                    if op_type == DocLoading.Bucket.DocOps.CREATE:
+                                        bucket.scopes[scope_name] \
+                                            .collections[collection_name].num_items \
+                                            -= 1
+                                    elif op_type == DocLoading.Bucket.DocOps.DELETE:
+                                        bucket.scopes[scope_name] \
+                                            .collections[collection_name].num_items \
+                                            += 1
+                                    is_key_to_ignore = True
+                                    break_loop = True
+                                    break
+                            if break_loop:
                                 break
 
                         if is_key_to_ignore:
-                            op_data["fail"].pop(key)
+                            keys_to_remove.append(key)
                             ignored_keys_table.add_row([initial_exception, key])
                             continue
 
                         ambiguous_state = False
-                        if SDKException.DurabilityAmbiguousException \
-                                in str(exception) \
-                                or SDKException.AmbiguousTimeoutException \
-                                in str(exception) \
-                                or SDKException.TimeoutException \
-                                in str(exception) \
-                                or (SDKException.RequestCanceledException
-                                    in str(exception) and
-                                    "CHANNEL_CLOSED_WHILE_IN_FLIGHT"
-                                    in str(exception)):
-                            ambiguous_state = True
+                        exceptions_to_check = [
+                            SDKException.DurabilityAmbiguousException,
+                            SDKException.AuthenticationException,
+                            SDKException.TimeoutException,
+                        ]
+                        for tem_exception in exceptions_to_check:
+                            if SDKException.check_if_exception_exists(
+                                    tem_exception, str(exception)):
+                                ambiguous_state = True
+                                break
+                        else:
+                            if "CHANNEL_CLOSED_WHILE_IN_FLIGHT" \
+                                    in str(exception):
+                                ambiguous_state = True
 
                         if op_type in DocLoading.Bucket.DOC_OPS:
                             result = client.crud(
@@ -1014,7 +1026,7 @@ class DocLoaderUtils(object):
                             op_data[retry_strategy]["success"][key] = \
                                 result
                             if retry_strategy == "retried":
-                                op_data["fail"].pop(key)
+                                keys_to_remove.append(key)
                                 target_tbl = retry_succeeded_table
                             else:
                                 target_tbl = unwanted_retry_succeeded_table
@@ -1037,6 +1049,9 @@ class DocLoaderUtils(object):
                                 exception_pattern, str(result["error"])).group(1)
                             tbl_row = [initial_exception, key, retry_exception]
                         target_tbl.add_row(tbl_row)
+                    # Remove keys that should be ignored or succeeded in retry after iteration
+                    for key in keys_to_remove:
+                        op_data["fail"].pop(key)
                     gen_str = "%s:%s:%s - %s" \
                               % (bucket.name, scope_name, collection_name,
                                  op_type)
