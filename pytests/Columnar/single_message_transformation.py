@@ -198,6 +198,15 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                                                 wait_for_completion=True)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         self.remote_dataset_name = remote_datasets[0].full_name
+
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
+        for dataset in remote_datasets:
+            if not self.cbas_util.wait_for_ingestion_complete(
+                    self.columnar_cluster, dataset.full_name,
+                    self.initial_doc_count):
+                self.fail("Could not ingest data in remote cluster.")
+
         if self.kafka_test:
             status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
                 self.columnar_cluster, f"select * from {self.remote_dataset_name}")
@@ -279,20 +288,32 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
             self.fail("Failed to create remote collection {} from transform function {}".format(
                 remote_coll_obj.name, udf_name))
         if wait_for_ingestion:
-            self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster,
+            if not self.cbas_util.wait_for_ingestion_complete(self.columnar_cluster,
                                                        remote_coll_obj.name,
-                                                       self.initial_doc_count)
+                                                       self.initial_doc_count):
+                self.fail("Did not ingest data into cluster.")
         return remote_coll_obj
 
     def validate_collection_created_from_udf(self, udf_query, remote_query, continue_test=False):
         # Validate result by running query on remote dataset and comparing with the transform collection result.
-        status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
-            self.columnar_cluster, udf_query)
-        udf_results = results
-        status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
-            self.columnar_cluster, remote_query)
-        diff = DeepDiff(results, udf_results, ignore_order=True)
+        diff = {}
+        for i in range(3):
+            status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+                self.columnar_cluster, udf_query)
+            udf_results = results
+            status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+                self.columnar_cluster, remote_query)
+            diff = DeepDiff(results, udf_results, ignore_order=True)
+            if diff:
+                time.sleep(10)
+            else:
+                break
         if diff:
+            self.log.info("There is data mismatch between expected and actual result.")
+            self.log.info(f"Query on transformed dataset: f{udf_query}")
+            self.log.info(f"Query on remote dataset without transform: f{remote_query}")
+            self.log.info(f"Results on dataset with udf: f{udf_results}")
+            self.log.info(f"Results on remote dataset without udf: f{results}")
             self.log.info(diff)
             if continue_test:
                 return False, diff
