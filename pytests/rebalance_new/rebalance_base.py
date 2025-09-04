@@ -47,6 +47,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.items = self.num_items
         self.logs_folder = self.input.param("logs_folder")
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
+        self.bucket_num_vb = self.input.param("bucket_num_vb", 128)
 
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
@@ -217,7 +218,8 @@ class RebalanceBaseTest(BaseTestCase):
             enable_encryption_at_rest=self.enable_encryption_at_rest,
             encryption_at_rest_key_id=self.encryption_at_rest_id,
             encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
-            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
+            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime,
+            vbuckets=self.bucket_num_vb)
 
     def _create_multiple_buckets(self):
         buckets_created = self.bucket_util.create_multiple_buckets(
@@ -232,7 +234,8 @@ class RebalanceBaseTest(BaseTestCase):
             enable_encryption_at_rest=self.enable_encryption_at_rest,
             encryption_at_rest_key_id=self.encryption_at_rest_id,
             encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
-            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
+            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime,
+            vbuckets=self.bucket_num_vb)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.cluster.buckets:

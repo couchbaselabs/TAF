@@ -2246,9 +2246,12 @@ class BucketUtils(ScopeUtils):
              Bucket.historyRetentionBytes: history_retention_bytes,
              Bucket.magmaKeyTreeDataBlockSize: magma_key_tree_data_block_size,
              Bucket.magmaSeqTreeDataBlockSize: magma_seq_tree_data_block_size,
-             Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight})
+
+        if vbuckets is not None and storage == Bucket.StorageBackend.magma:
+            bucket_obj.num_vbuckets = vbuckets
+
         if enable_encryption_at_rest:
             bucket_obj.encryptionAtRestKeyId = encryption_at_rest_key_id
             if encryption_at_rest_dek_rotation_interval is not None:
@@ -3006,12 +3009,14 @@ class BucketUtils(ScopeUtils):
                         Bucket.purge_interval: purge_interval,
                         Bucket.autoCompactionDefined: autoCompactionDefined,
                         Bucket.fragmentationPercentage: fragmentation_percentage,
-                        Bucket.numVBuckets: vbuckets,
                         Bucket.weight: weight,
                         Bucket.width: width,
                         Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
                         Bucket.historyRetentionSeconds: history_retention_seconds,
                         Bucket.historyRetentionBytes: history_retention_bytes})
+
+                    if vbuckets is not None and key == Bucket.StorageBackend.magma:
+                        bucket.num_vbuckets = vbuckets
 
                     if enable_encryption_at_rest:
                         bucket.encryptionAtRestKeyId = encryption_at_rest_key_id
