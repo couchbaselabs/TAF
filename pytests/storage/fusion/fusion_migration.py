@@ -243,7 +243,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
     def test_swap_rebalance_during_extent_migration(self):
 
-        self.swap_rebalance_method = self.input.param("rebalance_out_method", "fusion") # ["fusion", "dcp"]
+        self.swap_rebalance_method = self.input.param("swap_rebalance_method", "fusion") # ["fusion", "dcp"]
         self.swap_rebalance_nodes_during_migration = self.input.param("swap_rebalance_nodes_during_migration", 1)
 
         self.log.info("Starting initial load")
