@@ -103,10 +103,7 @@ class SecurityBase(CouchbaseBaseTest):
         if self.cluster_id is not None:
             self.sleep(10, "Waiting for cluster to be responsive")
             self.allow_ip(self.cluster_id, self.project_id)
-        self.llm_model_id = self.input.capella.get("llm_model_id", None)
-        self.embedding_model_id = self.input.capella.get("embedding_model_id", None)
-        if self.llm_model_id is None and self.embedding_model_id is None:
-            self.deploy_model()
+
 
         self.log.info("-------Setup finished for CouchbaseBaseTest-------")
 
@@ -338,77 +335,6 @@ class SecurityBase(CouchbaseBaseTest):
             else:
                 self.instance_id = resp.json()["id"]
                 self.wait_for_columnar_instance_to_deploy(self.instance_id)
-
-    def get_model_payload(self, model_type="embedding"):
-
-        payload = None
-        if model_type == "embedding":
-            payload = {
-                "compute": "g6.xlarge",
-                "configuration": {
-                    "name": "intfloat/e5-mistral-7b-instruct",
-                    "kind": "embedding-generation",
-                    "parameters": {}
-                }
-            }
-        elif model_type == "text-generation":
-            payload = {
-                "compute": "g6.xlarge",
-                "configuration": {
-                    "name": "meta-llama/Llama-3.1-8B-Instruct",
-                    "kind": "text-generation",
-                    "parameters": {}
-                }
-            }
-
-        return payload
-
-    def wait_for_model_deployment(self, model_id, timeout=3600):
-        start_time = time.time()
-        while time.time() < start_time + timeout:
-            resp = self.capellaAPIv2.get_model_details(self.tenant_id, self.project_id,
-                                                       self.cluster_id, model_id)
-            if resp.status_code != 200:
-                self.sleep(10, "Could not get model details")
-            else:
-                model_details = resp.json()["data"]
-                status = model_details['status']
-                if status == "healthy":
-                    return True
-                else:
-                    self.sleep(10, "Waiting for model deployment. Status: {}".format(status))
-
-        return False
-
-    def deploy_model(self):
-        deploy_llm_model = TestInputSingleton.input.param("deploy_llm_model", False)
-        deploy_embedding_model = TestInputSingleton.input.param("deploy_embedding_model", False)
-
-        if deploy_llm_model:
-            payload = self.get_model_payload(model_type="text-generation")
-            resp = self.capellaAPIv2.deploy_model(self.tenant_id, self.project_id, self.cluster_id,
-                                                  payload)
-            if resp.status_code != 202:
-                self.fail("Failed to deploy LLM Model. Status code: {}. Error: {}".
-                          format(resp.status_code, resp.content))
-            model_id = resp.json()["id"]
-            result = self.wait_for_model_deployment(model_id=model_id)
-            if not result:
-                self.fail("Failed to deploy model even after timeout")
-            self.llm_model_id = model_id
-
-        if deploy_embedding_model:
-            payload = self.get_model_payload(model_type="embedding")
-            resp = self.capellaAPIv2.deploy_model(self.tenant_id, self.project_id, self.cluster_id,
-                                                  payload)
-            if resp.status_code != 202:
-                self.fail("Failed to deploy embedding model. Status code: {}. Error: {}".
-                          format(resp.status_code, resp.content))
-            model_id = resp.json()["id"]
-            result = self.wait_for_model_deployment(model_id=model_id)
-            if not result:
-                self.fail("Failed to deploy embedding model even after timeout")
-            self.embedding_model_id = model_id
 
     def create_cluster(self, cluster_name, server_version, provider="AWS", deploy_payload={}):
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
@@ -1068,7 +994,7 @@ class SecurityBase(CouchbaseBaseTest):
                 if resp.status_code not in expected_failure_code:
                     error = "Test failed for invalid tenant id: {}. " \
                             "Expected status code: {}, Returned status code: {}". \
-                        format(tenant_ids[tenant_id], 404, resp.status_code)
+                        format(tenant_ids[tenant_id], expected_failure_code, resp.status_code)
                     self.log.error(error)
                     return False, error
             else:
