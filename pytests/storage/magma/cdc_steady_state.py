@@ -142,11 +142,12 @@ class SteadyStateTests(MagmaBaseTest):
             self.expiry_start = self.update_start = 0
             self.expiry_end = self.update_end = self.init_items_per_collection
             self.num_items_per_collection -= self.expiry_end - self.expiry_start
-            tasks = self.java_doc_loader(wait=False, exp_ttl=self.maxttl,skip_default=True)
+            tasks, print_ops_tasks = self.java_doc_loader(wait=False, exp_ttl=self.maxttl,skip_default=True)
             self.sleep(self.maxttl, "Wait for docs to expire")
             for task in tasks:
                 self.doc_loading_tm.get_task_result(task)
-            self.printOps.end_task()
+            for task in print_ops_tasks:
+                task.end_task()
             self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")

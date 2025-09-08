@@ -134,7 +134,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.reset_doc_params()
             self.compute_docs_ranges()
 
-            temp_tasks = self.java_doc_loader(wait=False,skip_default=True)
+            temp_tasks, print_ops_tasks = self.java_doc_loader(wait=False,skip_default=True)
             self.graceful = self.input.param("graceful", False)
             wait_warmup = self.input.param("wait_warmup", True)
 
@@ -154,7 +154,8 @@ class MagmaCrashTests(MagmaBaseTest):
 
             for task in temp_tasks:
                 self.doc_loading_tm.get_task_result(task)
-            self.printOps.end_task()
+            for task in print_ops_tasks:
+                task.end_task()
 
             if self.induce_failures:
                 self.stop_crash = True
@@ -278,7 +279,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        tasks = self.java_doc_loader(wait=False,skip_default=True)
+        tasks, print_ops_tasks = self.java_doc_loader(wait=False,skip_default=True)
         self.graceful = self.input.param("graceful", False)
         wait_warmup = self.input.param("wait_warmup", True)
         self.crash_th = threading.Thread(target=self.crash,
@@ -290,7 +291,8 @@ class MagmaCrashTests(MagmaBaseTest):
             self.drop_collection_th.start()
         for task in tasks:
             self.doc_loading_tm.get_task_result(task)
-        self.printOps.end_task()
+        for task in print_ops_tasks:
+            task.end_task()
         self.stop_crash = True
         if self.drop_collections:
             self.drop_collection_th.join()
@@ -321,12 +323,13 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        tasks = self.java_doc_loader(wait=False,skip_default=True)
+        tasks, print_ops_tasks = self.java_doc_loader(wait=False,skip_default=True)
         self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 2})
         self.crash_th.start()
         for task in tasks:
             self.doc_loading_tm.get_task_result(task)
-        self.printOps.end_task()
+        for task in print_ops_tasks:
+            task.end_task()
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")

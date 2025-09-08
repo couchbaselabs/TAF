@@ -1021,7 +1021,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 # For Linux servers, use whatever paths are already configured
                 paths = f"{server.data_path} {server.cbas_path}" \
                         f"{server.eventing_path} {server.index_path}"
-                
+
                 # On Unix/Linux, use mkdir, chattr, and chown
                 ssh_sessions[server.ip].execute_command(
                     f"mkdir -p {paths} ;"

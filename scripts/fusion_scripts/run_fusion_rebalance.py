@@ -42,13 +42,16 @@ API_START_REBALANCE = "/controller/rebalance"
 
 class RebalanceAutomation:
     def __init__(self, base_url: str, username: str, password: str, current_nodes: List[str],
-                 new_nodes: List[str], config: dict, dry_run: bool = False):
+                 new_nodes: List[str], config: dict, dry_run: bool = False, replica_update: bool = False,
+                 skip_file_linking: bool = False):
         self.base_url = base_url.rstrip('/')
         self.auth = (username, password)
         self.current_nodes = current_nodes
         self.new_nodes = new_nodes
         self.dry_run = dry_run
         self.config = config
+        self.replica_update = replica_update
+        self.skip_file_linking = skip_file_linking
 
         if os.path.exists(REBALANCE_PLAN_FILE): os.remove(REBALANCE_PLAN_FILE)
         if os.path.exists(MANIFEST_OUTPUT_DIR): shutil.rmtree(MANIFEST_OUTPUT_DIR)
@@ -173,6 +176,8 @@ class RebalanceAutomation:
         try:
             ssh.connect(node, username=self.config["ssh_username"], password=self.config["ssh_password"], timeout=30)
             cmd = f"{self.config['accelerator_binary']} ns_1@{node}"
+            if self.skip_file_linking:
+                cmd += " --skip-file-linking"
             print(cmd)
 
             # Start command
@@ -206,15 +211,10 @@ class RebalanceAutomation:
         finally:
             ssh.close()
 
-    def setup_new_nodes(self):
+    def setup_new_nodes(self, nodes_involved):
         """Setup accelerator on new nodes that aren't in current nodes in parallel."""
-        new_nodes_set = set(self.new_nodes)
-        current_nodes_set = set(self.current_nodes)
 
-        if len(new_nodes_set) >= len(current_nodes_set):
-            nodes_to_setup = new_nodes_set - current_nodes_set
-        elif len(new_nodes_set) < len(current_nodes_set):
-            nodes_to_setup = new_nodes_set
+        nodes_to_setup = nodes_involved
 
         if not nodes_to_setup:
             print("No new nodes to setup")
@@ -329,6 +329,8 @@ def main():
     parser.add_argument('--env', choices=['aws', 'local'], required=True, help='Environment to run in (aws or local)')
     parser.add_argument('--sleep-time', type=int, default=0, help='Time to sleep in seconds (default: 0)')
     parser.add_argument('--reb-count', type=int, default=1, help='Rebalance count')
+    parser.add_argument('--replica-update', action='store_true', help='Replica Update Rebalance')
+    parser.add_argument('--skip-file-linking', action='store_true', help='Skip File Linking')
 
     args = parser.parse_args()
 
@@ -339,6 +341,8 @@ def main():
         validate_nodes(current_nodes, new_nodes)
         sleep_time = args.sleep_time
         reb_count = args.reb_count
+        replica_update = args.replica_update
+        skip_file_linking = args.skip_file_linking
 
         global REBALANCE_PLAN_FILE
         REBALANCE_PLAN_FILE = "/root/fusion/reb_plan{}.json".format(reb_count)
@@ -350,7 +354,9 @@ def main():
             current_nodes=current_nodes,
             new_nodes=new_nodes,
             config=config,
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            replica_update=replica_update,
+            skip_file_linking=skip_file_linking
         )
 
         # Step 1: Add/Remove nodes
@@ -377,9 +383,12 @@ def main():
         print(f"Sleeping for {sleep_time} seconds after PrepareRebalance")
         time.sleep(sleep_time)
 
+        involved_nodes_list = [node.split("@", 1)[1] for node in involved_nodes]
+        print("Involved nodes list =", involved_nodes_list)
+
         # Step 6: Setup new nodes
         print("Setting up new nodes...")
-        rebalancer.setup_new_nodes()
+        rebalancer.setup_new_nodes(nodes_involved=involved_nodes_list)
 
         # Step 7: Start rebalance
         print("Starting rebalance process...")

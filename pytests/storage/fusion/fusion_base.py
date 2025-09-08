@@ -1,4 +1,5 @@
 from collections import deque
+from copy import deepcopy
 import json
 import os
 import subprocess
@@ -10,6 +11,7 @@ from basetestcase import BaseTestCase
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
+from rebalance_utils.rebalance_util import RebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 from custom_exceptions.exception import RebalanceFailedException
 
@@ -94,6 +96,8 @@ class FusionBase(BaseTestCase):
         self.crash_loop = False
 
         self.retry_get_process_num = self.input.param("retry_get_process_num", 300)
+
+        self.spare_nodes = list()
 
 
     def setup_nfs_server(self):
@@ -212,7 +216,7 @@ class FusionBase(BaseTestCase):
         self.log.info(f"Bucket UUID: {bucket_uuid}")
 
         for kvstore in range(128):
-            kvstore_path = f"{self.nfs_server_path}/kv/{bucket}/{bucket_uuid}/kvstore-{kvstore}"
+            kvstore_path = f"{self.nfs_server_path}/kv/{bucket_uuid}/kvstore-{kvstore}"
             kvstore_dirs.append(kvstore_path)
 
         return kvstore_dirs
@@ -277,8 +281,8 @@ class FusionBase(BaseTestCase):
                     self.kvstore_stats[bucket][kvstore_num]["term"] = stat["term"]
                 if len(self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"]) == 0 or \
                     (len(self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"]) > 0 and \
-                    stat["checkpointLogID"] != self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"][-1][0]):
-                    self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"].append([stat["checkpointLogID"], curr_timestamp])
+                    stat["checkpoint"]["logID"] != self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"][-1][0]):
+                    self.kvstore_stats[bucket][kvstore_num]["checkpointLogID"].append([stat["checkpoint"]["logID"], curr_timestamp])
                 if stat["leases"] != self.kvstore_stats[bucket][kvstore_num]["leases"]:
                     self.kvstore_stats[bucket][kvstore_num]["leases"] = stat["leases"]
             except Exception as e:
@@ -390,7 +394,7 @@ class FusionBase(BaseTestCase):
         ssh.disconnect()
         nfs_ssh.disconnect()
 
-    def monitor_extent_migration(self, server, bucket, duration=300, interval=2):
+    def monitor_extent_migration(self, server, bucket, duration=3600, interval=2):
 
         ssh = RemoteMachineShellConnection(server)
 
@@ -459,7 +463,13 @@ class FusionBase(BaseTestCase):
             time.sleep(interval)
 
 
-    def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120):
+    def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
+                      rebalance_master=False, replica_update=False, skip_file_linking=False):
+
+        # Populate spare nodes list
+        if rebalance_count == 1:
+            self.spare_nodes = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
+            self.log.info(f"Spare nodes = {self.spare_nodes}")
 
         # Fetch last rebalance task to track starting of current rebalance
         self.prev_rebalance_status_id = None
@@ -471,8 +481,6 @@ class FusionBase(BaseTestCase):
         self.log.debug("Last known rebalance status_id: %s"
                        % self.prev_rebalance_status_id)
 
-        ssh = RemoteMachineShellConnection(self.cluster.master)
-
         current_nodes_str = ""
         for node in self.cluster.nodes_in_cluster:
             current_nodes_str += node.ip + ","
@@ -481,32 +489,111 @@ class FusionBase(BaseTestCase):
 
         if self.num_nodes_to_rebalance_in > 0:
             new_node_str = current_nodes_str
-            for node in self.cluster.servers[len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_rebalance_in]:
-                new_node_str += "," + node.ip
-        elif self.num_nodes_to_rebalance_out > 0:
-            new_node_str = ""
-            for node in self.cluster.servers[:len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_rebalance_out)]:
-                new_node_str += node.ip + ","
-            new_node_str = new_node_str[:-1]
-        elif self.num_nodes_to_swap_rebalance > 0:
-            new_node_str = ""
-            for node in self.cluster.servers[:len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_swap_rebalance)]:
-                new_node_str += node.ip + ","
-            new_node_str = new_node_str[:-1]
-            for node in self.cluster.servers[len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_swap_rebalance]:
-                new_node_str += "," + node.ip
-        self.log.info(f"New nodes str = {new_node_str}")
 
-        # Monitoring Extent Migration post completion of rebalance
-        if self.num_nodes_to_rebalance_in > 0:
-            # Extent Migration will take place on nodes that are newly added
-            nodes_to_monitor = self.cluster.servers[len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_rebalance_in]
+            new_node_counter = 0
+            for node in self.spare_nodes:
+                new_node_str += "," + node.ip
+                new_node_counter += 1
+                if new_node_counter == self.num_nodes_to_rebalance_in:
+                    break
+
+            self.spare_nodes = self.spare_nodes[self.num_nodes_to_rebalance_in:]
+
+            self.log.info(f"Spare nodes: {self.spare_nodes}")
+
         elif self.num_nodes_to_rebalance_out > 0:
-            # Extent Migration would take place on a subset of nodes that are still part of the cluster
-            nodes_to_monitor = self.cluster.servers[:len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_rebalance_out)]
+
+            if not rebalance_master:
+                nodes_to_rebalance_out = list()
+                for node in self.cluster.nodes_in_cluster:
+                    if node.ip != self.cluster.master.ip:
+                        nodes_to_rebalance_out.append(node.ip)
+                        self.spare_nodes.append(node)
+                        if len(nodes_to_rebalance_out) == self.num_nodes_to_rebalance_out:
+                            break
+
+            else:
+                self.log.info(f"Cluster master = {self.cluster.master}")
+                nodes_to_rebalance_out = [self.cluster.master.ip]
+                self.spare_nodes.append(self.cluster.master)
+                tmp_server_list = [server for server in self.cluster.nodes_in_cluster
+                                   if server.ip != self.cluster.master.ip]
+                self.log.info(f"Temp Server list = {tmp_server_list}")
+                for node in tmp_server_list:
+                    if len(nodes_to_rebalance_out) == self.num_nodes_to_rebalance_out:
+                        break
+                    nodes_to_rebalance_out.append(node.ip)
+                    self.spare_nodes.append(node)
+
+                # Update cluster.master
+                for server in tmp_server_list:
+                    if server.ip not in nodes_to_rebalance_out:
+                        self.cluster.master = server
+                        break
+                self.log.info(f"New master = {self.cluster.master}")
+
+            self.log.info(f"Nodes to rebalance out = {nodes_to_rebalance_out}")
+
+            new_node_str = ""
+            for server in self.cluster.nodes_in_cluster:
+                if server.ip not in nodes_to_rebalance_out:
+                    new_node_str += server.ip + ","
+            new_node_str = new_node_str[:-1]
+
+            self.log.info(f"Spare nodes = {self.spare_nodes}")
+
         elif self.num_nodes_to_swap_rebalance > 0:
-            # Extent Migration would take place on the nodes being swapped
-            nodes_to_monitor = self.cluster.servers[len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_swap_rebalance]
+
+            self.log.info(f"Spare nodes = {self.spare_nodes}")
+            nodes_to_add = self.spare_nodes[:self.num_nodes_to_swap_rebalance]
+            self.log.info(f"Nodes to add: {nodes_to_add}")
+            self.spare_nodes = self.spare_nodes[self.num_nodes_to_swap_rebalance:]
+            self.log.info(f"Spare nodes = {self.spare_nodes}")
+
+            if not rebalance_master:
+                nodes_to_swap = list()
+                for node in self.cluster.nodes_in_cluster:
+                    if node.ip != self.cluster.master.ip:
+                        nodes_to_swap.append(node.ip)
+                        self.spare_nodes.append(node)
+                        if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                            break
+                self.log.info(f"Nodes to swap = {nodes_to_swap}")
+
+            else:
+                self.log.info(f"Cluster master = {self.cluster.master}")
+                nodes_to_swap = [self.cluster.master.ip]
+                self.spare_nodes.append(self.cluster.master)
+                tmp_server_list = [server for server in self.cluster.nodes_in_cluster
+                                   if server.ip != self.cluster.master.ip]
+                for node in tmp_server_list:
+                    if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                        break
+                    nodes_to_swap.append(node.ip)
+                    self.spare_nodes.append(node)
+                self.log.info(f"Nodes to swap = {nodes_to_swap}")
+
+                # Update cluster.master
+                for server in tmp_server_list:
+                    if server.ip not in nodes_to_swap:
+                        self.cluster.master = server
+                        break
+                self.log.info(f"New master = {self.cluster.master}")
+
+            new_node_str = ""
+            for server in self.cluster.nodes_in_cluster:
+                if server.ip not in nodes_to_swap:
+                    new_node_str += server.ip + ","
+            new_node_str = new_node_str[:-1]
+            for new_node in nodes_to_add:
+                new_node_str += "," + new_node.ip
+
+            self.log.info(f"Spare nodes = {self.spare_nodes}")
+
+        else:
+            new_node_str = current_nodes_str
+
+        self.log.info(f"New nodes str = {new_node_str}")
 
         # Create a virtual environment and install necessary packages
         commands = f"""
@@ -518,14 +605,22 @@ class FusionBase(BaseTestCase):
         python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count}
         """
 
+        if replica_update:
+            commands = commands.rstrip() + " --replica-update"
+        if skip_file_linking:
+            commands = commands.rstrip() + " --skip-file-linking"
+
+        ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
         o, e = ssh.execute_command(commands, timeout=1800)
-        self.log.info(f"Output = {o}, Error = {e}")
+        self.log.info(f"Output = {o[-50:]}, Error = {e}")
 
         # Monitor rebalance progress, and wait until it's done
         self.start_time = time.time()
         self.sleep(10, "Wait before checking rebalance progress")
-        self.check_rebalance_progress()
+        rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance()
+        if not rebalance_result:
+            self.log.fail("Fusion Rebalance failed")
 
         self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout" + str(rebalance_count) + ".txt")
         self.fusion_rebalance_error = os.path.join(output_dir, "fusion_stderr" + str(rebalance_count) + ".txt")
@@ -545,23 +640,41 @@ class FusionBase(BaseTestCase):
         # Parse Fusion error logs to look for any failures/issues
         # Exclude known patterns like "Temporary failure in name resolution"
         self.log.info("Parsing Fusion Error logs to look for issues/failures")
-        grep_cmd = f"grep -v 'Temporary failure in name resolution' {self.fusion_rebalance_error}"
-        result = subprocess.run(grep_cmd, shell=True, executable="/bin/bash")
-        self.log.info(f"Output = {result.stdout}, Error = {result.stderr}")
+        grep_cmd = f"grep -v -e 'Temporary failure in name resolution' -e 'WARNING' {self.fusion_rebalance_error}"
+        result = subprocess.run(grep_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
+        output = result.stdout.strip()
+        error = result.stderr.strip()
+        self.log.info(f"Output = {output}, Error = {error}")
+
+        if output or error:
+            self.fail("Found ERROR logs during Fusion rebalance automation")
+
+
+        nodes_to_monitor = list()
+        ssh = RemoteMachineShellConnection(self.cluster.master)
+        reb_plan_path = os.path.join(self.fusion_scripts_dir, "reb_plan{}.json".format(str(rebalance_count)))
+        cat_cmd = f"cat {reb_plan_path}"
+        o, e = ssh.execute_command(cat_cmd)
+        json_str = "\n".join(o)
+        data = json.loads(json_str)
+        involved_nodes = list(data['nodes'].keys())
+        node_ips_to_monitor = set([node.split("@", 1)[1] for node in involved_nodes])
+        self.log.info(f"Node IPs to monitor = {node_ips_to_monitor}")
+        for server in self.cluster.servers:
+            if server.ip in node_ips_to_monitor:
+                nodes_to_monitor.append(server)
+        ssh.disconnect()
 
         # Updating nodes_in_cluster after rebalance
-        if self.num_nodes_to_rebalance_in > 0:
-            self.cluster.nodes_in_cluster.extend(self.cluster.servers[
-                len(self.cluster.nodes_in_cluster):len(self.cluster.nodes_in_cluster)+self.num_nodes_to_rebalance_in])
-        elif self.num_nodes_to_rebalance_out > 0:
-            self.cluster.nodes_in_cluster = self.cluster.servers[
-                :len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_rebalance_out)]
-        elif self.num_nodes_to_swap_rebalance > 0:
-            cluster_nodes_len = len(self.cluster.nodes_in_cluster)
-            self.cluster.nodes_in_cluster = self.cluster.servers[
-                :len(self.cluster.nodes_in_cluster)-abs(self.num_nodes_to_swap_rebalance)]
-            self.cluster.nodes_in_cluster.extend(self.cluster.servers[
-                cluster_nodes_len:cluster_nodes_len+self.num_nodes_to_swap_rebalance])
+        self.cluster.nodes_in_cluster = list()
+        new_node_set = set(new_node_str.split(","))
+        for server in self.cluster.servers:
+            if server.ip in new_node_set:
+                self.cluster.nodes_in_cluster.append(server)
+        self.cluster.kv_nodes = self.cluster.nodes_in_cluster
+
+        self.log.info(f"Nodes in cluster = {self.cluster.nodes_in_cluster}")
+        self.log.info(f"KV Nodes = {self.cluster.kv_nodes}")
 
         return nodes_to_monitor
 
@@ -586,52 +699,3 @@ class FusionBase(BaseTestCase):
                 shell.kill_memcached()
 
             self.sleep(interval, "Sleep before killing memcached")
-
-
-    def check_rebalance_progress(self):
-
-        self.poll = True
-        self.retry_get_progress = 0
-        self.previous_progress = 0
-
-        while self.poll:
-            self.poll = False
-            try:
-                (status, progress) = \
-                    self.cluster_util.get_rebalance_status_and_progress(
-                        self.cluster,
-                        self.prev_rebalance_status_id)
-                self.log.info(f"Rebalance - status: {status}, progress: {progress}")
-                # if ServerUnavailableException
-                if progress == -100:
-                    self.retry_get_progress += 1
-                elif self.previous_progress != progress:
-                    self.previous_progress = progress
-                    self.retry_get_progress = 0
-                else:
-                    self.retry_get_progress += 1
-            except RebalanceFailedException as ex:
-                self.result = False
-                raise ex
-            # catch and set all unexpected exceptions
-            except Exception as e:
-                self.result = False
-                raise e
-
-            # we need to wait for status to be 'none'
-            # (i.e. rebalance actually finished and not just 'running' and at 100%)
-            # before we declare ourselves done
-            if progress != -1 and status != 'none':
-                if self.retry_get_progress < self.retry_get_process_num:
-                    self.sleep(10, "Wait before next rebalance progress check")
-                    self.poll = True
-                else:
-                    exception_msg = "Seems like rebalance hangs. Please check logs!"
-                    self.result = False
-                    self.cluster_util.print_UI_logs(self.cluster.master)
-                    raise RebalanceFailedException(exception_msg)
-            else:
-                self.log.info(
-                    f"Rebalance completed with progress: {progress}% in {time.time() - self.start_time} sec")
-                self.result = True
-                return

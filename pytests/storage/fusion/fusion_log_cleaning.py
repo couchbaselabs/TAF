@@ -212,6 +212,6 @@ class FusionLogCleaning(FusionSync, FusionBase):
             self.update_end = self.num_items
             self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
             self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}")
-            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, ops_rate=self.upload_ops_rate)
+            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, ops_rate=self.upload_ops_rate, monitor_ops=False)
             num_upsert_iterations -= 1
             self.sleep(30, "Wait after update workload")

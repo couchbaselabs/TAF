@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from storage.fusion.fusion_base import FusionBase
 from storage.magma.magma_base import MagmaBaseTest
 
@@ -24,6 +25,9 @@ class FusionSync(MagmaBaseTest, FusionBase):
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
                                         checkpoint_interval=self.fusion_log_checkpoint_interval,
                                         logstore_frag_threshold=self.logstore_frag_threshold)
+        # Set Migration Rate Limit
+        ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
         # Maintain two dicts. One to monitor and one to record violations
         if self.monitor_log_store:
@@ -78,7 +82,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
             self.update_end = self.num_items
             self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
             self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}")
-            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection)
+            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, monitor_ops=False)
             num_upsert_iterations -= 1
             self.sleep(30, "Wait after update workload")
 

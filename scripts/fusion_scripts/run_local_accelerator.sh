@@ -16,6 +16,11 @@ if [ -z "$1" ]; then
 fi
 
 HOST_ID="$1"
+SKIP_FLAG=""
+
+if [ "$2" == "--skip-file-linking" ]; then
+    SKIP_FLAG="-skip-file-linking"
+fi
 
 # Create base directories
 PRIVATE_PREFIX="$GUEST_STORAGE_PATH/$HOST_ID"
@@ -63,10 +68,14 @@ process_manifest_part() {
 
     echo "Processing manifest part $part_num"
     echo "Running accelerator-cli download-files for part $part_num"
-    "$ACCELERATOR_CLI" download-files \
-        -manifest "$manifest_file" \
-        -dest "$dest_path" \
-        -base-uri "$BASE_URI" &
+    (
+        "$ACCELERATOR_CLI" download-files \
+            -manifest "$manifest_file" \
+            -dest "$dest_path" \
+            -base-uri "$BASE_URI" \
+            $SKIP_FLAG
+        chown -R couchbase:couchbase "$dest_path"
+    ) &
 }
 
 # Find number of parts by counting part files

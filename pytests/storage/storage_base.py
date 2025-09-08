@@ -825,7 +825,7 @@ class StorageBase(BaseTestCase):
 
     def java_doc_loader(self, scopes=None, collections=None, generator=None, doc_ops=None,
                         wait=True, process_concurrency=2, skip_default=False, exp_ttl=None,
-                        validate_docs=False, ops_rate=None):
+                        validate_docs=False, ops_rate=None, monitor_ops=True):
 
         doc_loading_tasks = list()
         ops_rate = ops_rate if ops_rate is not None else self.ops_rate
@@ -860,10 +860,13 @@ class StorageBase(BaseTestCase):
 
         exp_time = exp_ttl if exp_ttl is not None else 0
 
-        for bucket in self.cluster.buckets:
-            self.printOps = PrintBucketStats(self.cluster, bucket,
-                                            monitor_stats=["doc_ops"], sleep=1)
-            self.task_manager.add_new_task(self.printOps)
+        print_ops_tasks = list()
+        if monitor_ops:
+            for bucket in self.cluster.buckets:
+                self.printOps = PrintBucketStats(self.cluster, bucket,
+                                                monitor_stats=["doc_ops"], sleep=1)
+                print_ops_tasks.append(self.printOps)
+                self.task_manager.add_new_task(self.printOps)
 
         for bucket in self.cluster.buckets:
             scopes_keys = scopes or bucket.scopes.keys()
@@ -902,9 +905,11 @@ class StorageBase(BaseTestCase):
         if wait:
             for task in doc_loading_tasks:
                 self.doc_loading_tm.get_task_result(task)
-                self.printOps.end_task()
+            if monitor_ops:
+                for task in print_ops_tasks:
+                    task.end_task()
         else:
-            return doc_loading_tasks
+            return doc_loading_tasks, print_ops_tasks
 
     def loadgen_docs(self,
                      retry_exceptions=[],

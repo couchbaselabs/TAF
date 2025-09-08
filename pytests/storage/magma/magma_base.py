@@ -708,4 +708,4 @@ class MagmaBaseTest(StorageBase):
                                 process_concurrency=self.read_process_concurrency)
             read_start = read_end
             read_end = min(read_end + validate_batch_size, num_docs_to_validate)
-            self.sleep(15, "Wait after reading the current batch")
+            self.sleep(30, "Wait after reading the current batch")

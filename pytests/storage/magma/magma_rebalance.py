@@ -681,7 +681,8 @@ class MagmaRebalance(MagmaBaseTest):
 
         if self.data_load_stage == "before":
             self.log.info("Data loading before rebalance stage")
-            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,skip_default=True)
+            loader_tasks, print_ops_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,
+                                                                 skip_default=True, wait=False)
 
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
@@ -758,7 +759,8 @@ class MagmaRebalance(MagmaBaseTest):
         if self.data_load_stage == "during":
             self.sleep(10, "wait for rebalance to start")
             self.log.info("Data loading during rebalance")
-            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,skip_default=True)
+            loader_tasks, print_ops_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,
+                                                                 skip_default=True, wait=False)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
@@ -778,7 +780,8 @@ class MagmaRebalance(MagmaBaseTest):
             self.wait_for_rebalance_to_complete(rebalance)
         if self.data_load_stage == "after":
             self.log.info("Data loading after rebalance")
-            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,skip_default=True)
+            loader_tasks, print_ops_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections,
+                                                                 skip_default=True, wait=False)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
@@ -796,6 +799,8 @@ class MagmaRebalance(MagmaBaseTest):
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
         for task in loader_tasks:
             self.doc_loading_tm.get_task_result(task)
+        for task in print_ops_tasks:
+            task.end_task()
         self.sleep(30, "sleep before validation")
 
     def test_data_load_collections_with_rebalance_in(self):

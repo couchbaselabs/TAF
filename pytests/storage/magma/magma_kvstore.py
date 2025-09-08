@@ -449,7 +449,7 @@ class KVStoreTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = data_load_items
         self.PrintStep("Inserting {} items in each collection".format(self.create_end))
-        tasks = self.java_doc_loader(wait=False,skip_default=True)
+        tasks, print_ops_tasks = self.java_doc_loader(wait=False,skip_default=True)
 
         # Running cbstats commands in parallel during data load
         cbstats_cmd = "/opt/couchbase/bin/cbstats {0}:11210 -u Administrator -p password -b {1} all" \
@@ -458,7 +458,8 @@ class KVStoreTests(MagmaBaseTest):
 
         for task in tasks:
             self.doc_loading_tm.get_task_result(task)
-        self.printOps.end_task()
+        for task in print_ops_tasks:
+            task.end_task()
 
         self.bucket_util.print_bucket_stats(self.cluster)
 

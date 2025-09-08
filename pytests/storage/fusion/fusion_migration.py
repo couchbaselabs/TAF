@@ -25,7 +25,11 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         # Override Fusion default settings
         for bucket in self.cluster.buckets:
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval)
+                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
+                                        logstore_frag_threshold=self.logstore_frag_threshold)
+        # Set Migration Rate Limit
+        ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
     def tearDown(self):
 
