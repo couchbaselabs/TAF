@@ -453,7 +453,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             "dim": self.dim,
             "base64": self.base64,
             "mutate_field": self.mutate_field,
-            "mutation_timeout": self.mutation_timeout
+            "mutation_timeout": self.mutation_timeout,
+            "track_failures": self.track_failures
         }
 
         if self.value_type == "siftBigANN":
