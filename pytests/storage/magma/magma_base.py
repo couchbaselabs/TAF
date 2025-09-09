@@ -110,6 +110,12 @@ class MagmaBaseTest(StorageBase):
                     ".format(bucket.name,
                              self.disk_usage[bucket.name]))
 
+        if self.fusion_test:
+            # Override Fusion default settings
+            for bucket in self.cluster.buckets:
+                self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
+                                            checkpoint_interval=self.fusion_log_checkpoint_interval)
+
         self.log.info("==========Finished magma base setup========")
 
     def tearDown(self):

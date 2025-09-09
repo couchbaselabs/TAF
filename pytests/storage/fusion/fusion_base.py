@@ -15,6 +15,8 @@ from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from rebalance_utils.rebalance_util import RebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 from custom_exceptions.exception import RebalanceFailedException
+from cb_constants import CbServer
+
 
 nfs_server_remove = """
                     systemctl stop nfs-kernel-server;
@@ -121,6 +123,13 @@ class FusionBase(BaseTestCase):
         self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
 
         self.spare_nodes = list()
+
+        # Enable diag/eval on non-local hosts for all servers
+        self.log.info("Enabling diag/eval on non-local hosts for all servers")
+        for server in self.cluster.servers:
+            shell = RemoteMachineShellConnection(server)
+            output, error = shell.enable_diag_eval_on_non_local_hosts()
+            shell.disconnect()
 
 
     def setup_nfs_server(self):
@@ -790,19 +799,19 @@ class FusionBase(BaseTestCase):
     def execute_fusion_workflow_after_magma_test(self):
         """
         Executes the complete fusion workflow after magma test completion.
-        
+
         This method encapsulates the standard post-magma fusion operations:
         1. Captures pre-fusion rebalance resource usage (memory and disk)
         2. Executes fusion rebalance operation
         3. Monitors extent migration across nodes
         4. Validates post-fusion state and compares resource usage
-        
+
         This function eliminates code duplication across all fusion test methods
         by centralizing the common fusion workflow steps.
-        
+
         Returns:
             None
-            
+
         Raises:
             Exception: If any step in the fusion workflow fails
         """
@@ -810,11 +819,11 @@ class FusionBase(BaseTestCase):
         self.log.info("Capturing pre-fusion rebalance resource usage")
         pre_fusion_disk = {}
         pre_fusion_memory = self.get_memory_usage()
-        
+
         for bucket in self.cluster.buckets:
             pre_fusion_disk[bucket.name] = self.get_disk_usage(bucket)
             self.log.info(f"Pre-fusion rebalance disk usage for {bucket.name}: {pre_fusion_disk[bucket.name]}")
-        
+
         self.log.info(f"Pre-fusion rebalance memory usage: {pre_fusion_memory} MB")
 
         # Step 2: Execute fusion rebalance
@@ -845,24 +854,24 @@ class FusionBase(BaseTestCase):
         self.log.info("Starting post-fusion validation")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
-        
+
         # Step 5: Validate resource usage after fusion operations
         self.log.info("Validating post-fusion resource usage")
         post_fusion_memory = self.get_memory_usage()
-        
+
         for bucket in self.cluster.buckets:
             post_fusion_disk = self.get_disk_usage(bucket)
             self.log.info(f"Post-fusion disk usage for {bucket.name}: {post_fusion_disk}")
-            
+
             # Compare with pre-fusion usage
             if bucket.name in pre_fusion_disk:
                 disk_diff = [post - pre for post, pre in zip(post_fusion_disk, pre_fusion_disk[bucket.name])]
                 self.log.info(f"Disk usage change for {bucket.name}: {disk_diff} MB [kvstore, wal, keyTree, seqTree]")
-        
+
         memory_diff = post_fusion_memory - pre_fusion_memory
         self.log.info(f"Post-fusion memory usage: {post_fusion_memory} MB")
         self.log.info(f"Memory usage change: {memory_diff} MB")
-        
+
         self.log.info("Post-fusion validation completed successfully")
 
     def log_fusion_storage_stats(self):
@@ -872,65 +881,65 @@ class FusionBase(BaseTestCase):
         """
         from cb_tools.cbstats import Cbstats
         from shell_util.remote_connection import RemoteMachineShellConnection
-        
+
         self.log.info("=" * 60)
         self.log.info("FUSION STORAGE CONSISTENCY STATS")
         self.log.info("=" * 60)
-        
+
         for bucket in self.cluster.buckets:
             self.log.info(f"Analyzing bucket: {bucket.name}")
-            
+
             # Get NFS actual storage size
             try:
                 bucket_uuid = self.get_bucket_uuid(bucket.name)
                 nfs_bucket_path = f"{self.nfs_server_path}/kv/{bucket_uuid}"
-                
+
                 ssh = RemoteMachineShellConnection(self.nfs_server)
                 du_cmd = f"du -sb {nfs_bucket_path}"
                 output, error = ssh.execute_command(du_cmd)
                 ssh.disconnect()
-                
+
                 if output and len(output) > 0:
                     nfs_actual_size = int(output[0].split()[0])
                     self.log.info(f"  NFS Actual Size: {nfs_actual_size:,} bytes ({nfs_actual_size / (1024**3):.2f} GB)")
                 else:
                     self.log.warning(f"  NFS Actual Size: Could not determine (output: {output}, error: {error})")
                     continue
-                    
+
             except Exception as e:
                 self.log.warning(f"  NFS Actual Size: Error getting size - {e}")
                 continue
-            
+
             # Get Fusion's internal tracking
             fusion_total_data_size = 0
             fusion_total_summary_size = 0
-            
+
             self.log.info(f"  Fusion Internal Tracking:")
-            
+
             for node in self.cluster.nodes_in_cluster:
                 try:
                     cbstats = Cbstats(node)
                     result = cbstats.all_stats(bucket.name)
-                    
+
                     data_size = int(result.get("ep_fusion_log_store_data_size", 0))
                     summary_size = int(result.get("ep_fusion_log_store_summary_size", 0))
-                    
+
                     fusion_total_data_size += data_size
                     fusion_total_summary_size += summary_size
-                    
+
                     self.log.info(f"    Node {node.ip}: data_size={data_size:,}, summary_size={summary_size:,}")
-                    
+
                     cbstats.disconnect()
-                    
+
                 except Exception as e:
                     self.log.warning(f"    Node {node.ip}: Error getting stats - {e}")
-            
+
             fusion_total_size = fusion_total_data_size + fusion_total_summary_size
-            
+
             self.log.info(f"  Fusion Total Data Size: {fusion_total_data_size:,} bytes ({fusion_total_data_size / (1024**3):.2f} GB)")
             self.log.info(f"  Fusion Total Summary Size: {fusion_total_summary_size:,} bytes ({fusion_total_summary_size / (1024**3):.2f} GB)")
             self.log.info(f"  Fusion Combined Size: {fusion_total_size:,} bytes ({fusion_total_size / (1024**3):.2f} GB)")
-            
+
             # Log the difference for future analysis
             if fusion_total_size > 0:
                 size_diff = nfs_actual_size - fusion_total_size
@@ -938,7 +947,57 @@ class FusionBase(BaseTestCase):
                 self.log.info(f"  NFS vs Fusion Ratio: {nfs_actual_size / fusion_total_size:.3f}")
             else:
                 self.log.info(f"  Size Difference: Cannot calculate (Fusion size is 0)")
-            
+
             self.log.info("-" * 40)
-        
+
         self.log.info("=" * 60)
+
+    def induce_rebalance_test_condition(self, servers, test_failure_condition,
+                                        bucket_name="default",
+                                        vb_num=1,
+                                        delay_time=60000):
+        if test_failure_condition == "verify_replication":
+            condition = 'fail, "{}"'.format(bucket_name)
+            set_command = 'testconditions:set(verify_replication, {' \
+                          + condition + '})'
+        elif test_failure_condition == "backfill_done":
+            condition = 'for_vb_move, "{0}", {1}, fail'.format(bucket_name, vb_num)
+            set_command = 'testconditions:set(backfill_done, {' \
+                          + condition + '})'
+        elif test_failure_condition == "delay_rebalance_start":
+            condition = 'delay, {}'.format(delay_time)
+            set_command = 'testconditions:set(rebalance_start, {' \
+                          + condition + '}).'
+        elif test_failure_condition == "delay_verify_replication":
+            condition = 'delay, "{0}", {1}'.format(bucket_name, delay_time)
+            set_command = 'testconditions:set(verify_replication, {' \
+                          + condition + '})'
+        elif test_failure_condition == "delay_backfill_done":
+            condition = 'for_vb_move, "{0}", {1}, '.format(bucket_name, vb_num)
+            sub_cond = 'delay, {}'.format(delay_time)
+            set_command = 'testconditions:set(backfill_done, {' \
+                          + condition + '{' + sub_cond + '}})'
+        elif test_failure_condition == 'delay_failover_start':
+            condition = 'delay, {}'.format(delay_time)
+            set_command = 'testconditions:set(failover_start, {' \
+                          + condition + '}).'
+        else:
+            set_command = "testconditions:set({}, fail)" \
+                          .format(test_failure_condition)
+
+        if test_failure_condition.startswith("delay_"):
+            test_failure_condition = test_failure_condition[6:]
+        get_command = "testconditions:get({})".format(test_failure_condition)
+
+        for server in servers:
+            cluster_api = ClusterRestAPI(server)
+            
+            # Execute set command
+            status, content = cluster_api.diag_eval(set_command)
+            self.log.info("Set Command: {0}. Status: {1}, Return: {2}".format(
+                set_command, status, content))
+            
+            # Execute get command to verify
+            status, content = cluster_api.diag_eval(get_command)
+            self.log.info("Get Command: {0}. Status: {1}, Return: {2}".format(
+                get_command, status, content))
