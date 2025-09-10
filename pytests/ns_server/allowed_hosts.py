@@ -21,9 +21,10 @@ class AllowedHosts(ClusterSetup):
 
         rbac_util = RbacUtil()
         rest = RestConnection(self.cluster.master)
-
-        self.log.debug("Dropping user %s if exists" % uname)
-        rbac_util.remove_user_role([uname], rest)
+        try:
+            rbac_util.remove_user_role([uname], rest)
+        except Exception as e:
+            self.log.warning("User %s does not exist or could not be removed: %s" % (uname, str(e)))
 
         self.log.info("Creating user %s" % uname)
         rbac_util.create_user_source(user, 'builtin', self.cluster.master)
