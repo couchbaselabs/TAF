@@ -1768,7 +1768,7 @@ class Murphy(BaseTestCase, OPD):
             self.mutate += 1
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["pattern"] = pattern or bucket.loadDefn.get("pattern")
-                bucket.loadDefn["load_type"] = self.doc_ops if self.doc_ops else bucket.loadDefn.get("load_type")
+                bucket.loadDefn["load_type"] = self.doc_ops if self.doc_ops else bucket.loadDefn.get("doc_op_percentages").keys()
                 JavaDocLoaderUtils.generate_docs(bucket=bucket)
                 bucket.original_ops = bucket.loadDefn["ops"]
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
