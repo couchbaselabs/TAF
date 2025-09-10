@@ -326,6 +326,49 @@ class Columnar(BaseTestCase, hostedOPD):
             self.mongo_workload_tasks.extend(dataSource.perform_load(
                 [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
 
+        # Scale out/in remote Couchbase clusters in a thread until test completes
+        def scale_remote_couchbase_clusters():
+            # This thread will alternate scaling out and scaling in until test completes
+            import itertools
+            kv_loop = 0
+            while not self.stop_run:
+                for dataSource in self.data_sources.get("remoteCouchbase", []):
+                    try:
+                        self.PrintStep("Step KV-Scale-{}: Scale UP with Loading of docs".
+                               format(kv_loop))
+                        kv_loop += 1
+                        rebalance_tasks = list()
+                        config = self.rebalance_config("data", 1)
+                        for tenant in self.tenants:
+                            for cluster in tenant.clusters:
+                                # Scale OUT: add a node (simulate, or use util if available)
+                                self.log.info(f"Scaling OUT remote Couchbase cluster: {getattr(dataSource, 'name', str(dataSource))}")
+                                rebalance_task = self.task.async_rebalance_capella(self.pod, tenant, cluster,
+                                                                                config,
+                                                                                timeout=self.index_timeout)
+                                rebalance_tasks.append(rebalance_task)
+                        self.wait_for_rebalances(rebalance_tasks)
+                        self.sleep(60, "Sleep for 60s after rebalance")
+                        self.log.info(f"Scaling IN remote Couchbase cluster: {getattr(dataSource, 'name', str(dataSource))}")
+                        config = self.rebalance_config("data", -1)
+                        for tenant in self.tenants:
+                            for cluster in tenant.clusters:
+                                # Scale IN: remove a node (simulate, or use util if available)
+                                self.log.info(f"Scaling OUT remote Couchbase cluster: {getattr(dataSource, 'name', str(dataSource))}")
+                                rebalance_task = self.task.async_rebalance_capella(self.pod, tenant, cluster,
+                                                                                config,
+                                                                                timeout=self.index_timeout)
+                                rebalance_tasks.append(rebalance_task)
+                        self.wait_for_rebalances(rebalance_tasks)
+                    except Exception as e:
+                        self.log.error(f"Error scaling remote Couchbase cluster: {e}")
+                        import traceback
+                        traceback.print_exc()
+                self.sleep(120, "Wait after scaling IN/OUT remote Couchbase cluster")
+        self.remote_couchbase_scaling_thread = threading.Thread(target=scale_remote_couchbase_clusters)
+        self.remote_couchbase_scaling_thread.daemon = True
+        self.remote_couchbase_scaling_thread.start()
+
         while loop > 0:
             loop -= 1
             self.ingestion_ths = list()
@@ -393,5 +436,6 @@ class Columnar(BaseTestCase, hostedOPD):
         for ql in self.cbasQL:
             ql.stop_query_load()
 
+        self.remote_couchbase_scaling_thread.join()
         self.sleep(10, "Wait for 10s until all the query workload stops.")
         self.assertTrue(self.query_result, "Please check the logs for query failures")
