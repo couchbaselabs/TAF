@@ -368,6 +368,15 @@ class UpgradeTests(UpgradeBase):
                 node_to_upgrade = self.fetch_node_to_upgrade()
                 itr += 1
 
+                # Adding _system scope and collections under it to the local bucket object since
+                # these are added once the cluster is upgraded to 7.6
+                if itr == self.nodes_init and float(self.upgrade_version[:3]) >= 7.6 and float(self.initial_version[:3]) < 7.6:
+                    self.add_system_scope_to_all_buckets()
+
+                self.log.info("starting doc verification")
+                self.__wait_for_persistence_and_validate()
+                self.log.info("Final doc count verified")
+
             self.cluster.version = upgrade_version
             self.cluster_features = \
                 self.upgrade_helper.get_supported_features(self.cluster.version)
@@ -386,11 +395,6 @@ class UpgradeTests(UpgradeBase):
             self.rr_guardrail_limits = {"couchstore": 10, "magma": 1}
             self.bucket_size_guardrail_limits = {"couchstore": 1.6, "magma": 16}
             self.check_and_set_guardrail_limits()
-
-        # Adding _system scope and collections under it to the local bucket object since
-        # these are added once the cluster is upgraded to 7.6
-        if float(self.upgrade_version[:3]) >= 7.6 and float(self.initial_version[:3]) < 7.6:
-            self.add_system_scope_to_all_buckets()
 
         ### Migration of the storageBackend ###
         if self.migrate_storage_backend:
