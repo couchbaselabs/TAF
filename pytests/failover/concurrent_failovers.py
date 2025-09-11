@@ -16,6 +16,7 @@ from constants.sdk_constants.java_client import SDKConstants
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from com.couchbase.test.sdk import SDKClientPool
 from table_view import TableView
 
 
