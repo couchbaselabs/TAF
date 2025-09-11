@@ -153,7 +153,7 @@ class basic_ops(ClusterSetup):
         doc_gen.reset()
 
         # Open SDK client connection
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        client = SDKClient(self.cluster, self.cluster.buckets[0])
 
         query = list()
         query.append("CREATE PRIMARY INDEX index_0 on %s USING GSI"
