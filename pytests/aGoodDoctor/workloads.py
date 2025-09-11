@@ -864,6 +864,16 @@ hotel_vector = {
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`city` INCLUDE MISSING ASC, `phone`, vector VECTOR) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};',
                 'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`avg_rating`, `price`, `country`, `city`, vector VECTOR) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};'
                 ],
+            "bhive_indexes": [
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`country`) PARTITION BY hash((meta().`id`)) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`name`,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`city`, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};',
+                'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection} (`vector` VECTOR) INCLUDE (`avg_rating`, `price`, `country`, `city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, {vector}}};'
+                ],
             "queries": [
                 'SELECT meta().id from {bucket}.{scope}.{collection} WHERE country=$country ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',
                 'SELECT price, country from {bucket}.{scope}.{collection} where free_breakfast=True and `type`= $type AND free_parking=True and price is not null and array_count(public_likes)>=0 ORDER BY APPROX_VECTOR_DISTANCE(vector, $vector, "{similarity}", {nProbe}) limit 100',

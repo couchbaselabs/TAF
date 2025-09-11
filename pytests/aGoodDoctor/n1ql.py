@@ -180,23 +180,19 @@ class DoctorN1QL():
                     indexType = workload.get("indexes")
                     queryType = workload.get("queries")
                     queryParams = workload.get("queryParams")
-                    if valType == "siftBigANN":
-                        if combinational:
-                            indexType = workload.get("mix_indexes") or workload.get("indexes")
-                            queryType = workload.get("mix_queries") or workload.get("queries")
-                        elif base64:
-                            indexType = workload.get("indexes_base64")
-                            queryType = workload.get("queries_base64")
-                        elif TestInputSingleton.input.param("bhive", False):
-                            indexType = workload.get("bhive_indexes")
-                            queryType = workload.get("queries")
-                        else:
-                            indexType = workload.get("indexes")
-                            queryType = workload.get("queries")
-                        if xattr:
-                            indexType = [index.replace("`embedding`", "meta().xattrs.embedding") for index in indexType]
-                            queryType = [query.replace("embedding", "meta().xattrs.embedding") for query in queryType]
-                        queryParams = [{}] * workload.get("2i").get("num_queries")
+                    if combinational:
+                        indexType = workload.get("mix_indexes") or workload.get("indexes")
+                        queryType = workload.get("mix_queries") or workload.get("queries")
+                    elif base64:
+                        indexType = workload.get("indexes_base64")
+                        queryType = workload.get("queries_base64")
+                    elif TestInputSingleton.input.param("bhive", False):
+                        indexType = workload.get("bhive_indexes")
+                        queryType = workload.get("queries")
+                    if xattr:
+                        indexType = [index.replace("`embedding`", "meta().xattrs.embedding") for index in indexType]
+                        queryType = [query.replace("embedding", "meta().xattrs.embedding") for query in queryType]
+                    queryParams = [{}] * workload.get("2i").get("num_queries")
                     i = 0
                     q = 0
                     while i < workload.get("2i").get("num_indexes") or q < workload.get("2i").get("num_queries"):
