@@ -242,12 +242,17 @@ class BucketDurabilityBase(ClusterSetup):
     def init_java_clients(self, bucket):
         if self.load_docs_using != "sirius_java_sdk":
             return
-        SiriusSetup.reset_java_loader_tasks(self.thread_to_use)
+        self.reset_java_loader_tasks()
         self.log.info("Creating SDK clients in Java side")
         SiriusCouchbaseLoader.create_clients_in_pool(
             self.cluster.master, self.cluster.master.rest_username,
             self.cluster.master.rest_password,
             bucket.name, req_clients=self.sdk_pool_capacity)
+
+    def reset_java_loader_tasks(self):
+        if self.load_docs_using != "sirius_java_sdk":
+            return
+        SiriusSetup.reset_java_loader_tasks(self.thread_to_use)
 
     def validate_durability_with_crud(
             self, bucket, bucket_durability,

@@ -80,6 +80,8 @@ class CreateBucketTests(BucketDurabilityBase):
                 # Cbstats vbucket-details validation
                 self.cb_stat_verify(verification_dict)
 
+            # Safely close the connections before we delete the bucket
+            self.reset_java_loader_tasks()
             output = cb_cli.delete_bucket(bucket_obj.name)
             if create_failed:
                 if "ERROR: Bucket not found" not in str(output):
