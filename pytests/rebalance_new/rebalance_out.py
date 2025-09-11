@@ -251,7 +251,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.vb_distribution_analysis(
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets, std=1.0,
-            total_vbuckets=self.cluster.vbuckets, num_replicas=self.num_replicas)
+            total_vbuckets=self.cluster.buckets[0].num_vbuckets, num_replicas=self.num_replicas)
 
     """Rebalances nodes out with failover and full recovery add back of a node
 
@@ -314,7 +314,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.vb_distribution_analysis(
             self.cluster, servers=nodes,
             buckets=self.cluster.buckets, std=1.0,
-            total_vbuckets=self.cluster.vbuckets,
+            total_vbuckets=self.cluster.buckets[0].num_vbuckets,
             num_replicas=self.num_replicas)
 
     """Rebalances nodes out with failover
@@ -382,7 +382,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets,
             num_replicas=self.num_replicas, std=1.0,
-            total_vbuckets=self.cluster.vbuckets)
+            total_vbuckets=self.cluster.buckets[0].num_vbuckets)
 
 
     """Rebalances nodes out of a cluster while doing docs ops:create, delete, update along with compaction.

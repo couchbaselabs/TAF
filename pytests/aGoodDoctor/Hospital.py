@@ -1213,7 +1213,7 @@ class Murphy(BaseTestCase, OPD):
                         self.cluster,
                         servers=self.cluster.kv_nodes, buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std, total_vbuckets=self.cluster.vbuckets)
+                        std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
         
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
@@ -1316,7 +1316,7 @@ class Murphy(BaseTestCase, OPD):
                         servers=self.cluster.kv_nodes,
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
-                        std=std, total_vbuckets=self.cluster.vbuckets)
+                        std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
     
                 ###################################################################
                 '''
@@ -1395,7 +1395,7 @@ class Murphy(BaseTestCase, OPD):
                     servers=self.cluster.kv_nodes,
                     buckets=self.cluster.buckets,
                     num_replicas=self.num_replicas,
-                    std=std, total_vbuckets=self.cluster.vbuckets)
+                    std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
     
                 ###################################################################
                 '''

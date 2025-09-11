@@ -674,7 +674,7 @@ class volume(BaseTestCase):
                 self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
-                std=std, total_vbuckets=self.cluster.vbuckets)
+                std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
             self.sleep(10)
             self.tasks = []
             rebalance_task = self.rebalance(nodes_in=1, nodes_out=0)
@@ -751,7 +751,7 @@ class volume(BaseTestCase):
                 self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
-                std=std, total_vbuckets=self.cluster.vbuckets)
+                std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
             self.sleep(10)
             self.tasks = []
             self.bucket_util.print_bucket_stats(self.cluster)
@@ -819,7 +819,7 @@ class volume(BaseTestCase):
                 self.cluster,
                 servers=nodes, buckets=self.cluster.buckets,
                 num_replicas=2,
-                std=std, total_vbuckets=self.cluster.vbuckets)
+                std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
             self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
             self.get_bucket_dgm(bucket)

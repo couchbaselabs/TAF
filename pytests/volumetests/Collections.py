@@ -903,7 +903,7 @@ class volume(CollectionBase):
                             self.cluster,
                             servers=kv_nodes, buckets=self.cluster.buckets,
                             num_replicas=2,
-                            std=std, total_vbuckets=self.cluster.vbuckets)
+                            std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
                         self.sleep(10)
                     # Bring back the rebalance out node back to cluster for further steps
                     if action == "RebalanceOut":

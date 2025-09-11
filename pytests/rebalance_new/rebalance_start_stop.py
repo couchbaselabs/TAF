@@ -349,4 +349,4 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.bucket_util.vb_distribution_analysis(
             self.cluster,
             servers=nodes, std=1.0,
-            total_vbuckets=self.cluster.vbuckets)
+            total_vbuckets=self.cluster.buckets[0].num_vbuckets)

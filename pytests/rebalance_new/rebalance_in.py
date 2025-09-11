@@ -310,7 +310,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets,
             num_replicas=self.num_replicas,
-            std=std, total_vbuckets=self.cluster.vbuckets)
+            std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
 
     def rebalance_in_with_failover_full_addback_recovery(self):
         """
@@ -375,7 +375,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets,
             num_replicas=self.num_replicas,
-            std=std, total_vbuckets=self.cluster.vbuckets)
+            std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
 
     def rebalance_in_with_failover(self):
         """
@@ -466,7 +466,7 @@ class RebalanceInTests(RebalanceBaseTest):
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets,
             num_replicas=self.num_replicas,
-            std=std, total_vbuckets=self.cluster.vbuckets)
+            std=std, total_vbuckets=self.cluster.buckets[0].num_vbuckets)
 
     def rebalance_in_with_compaction_and_ops(self):
         """
