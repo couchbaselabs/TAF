@@ -19,6 +19,7 @@ from .workloads import default, nimbus, hotel_vector, siftBigANN, Hotel
 from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 from Jython_tasks.task_manager import TaskManager
 from custom_exceptions.exception import ServerUnavailableException
+import pprint
 
 
 class hostedOPD(OPD):
@@ -243,6 +244,46 @@ class hostedOPD(OPD):
             cluster.master.ip = task_details["masterNode"].split("@")[1]
             cluster.master.hostname = cluster.master.ip
             self.log.info("NEW MASTER: {}".format(cluster.master.ip))
+
+    def rebalance_config(self, rebl_service_group=None, num=0):
+        self.services = self.input.param("services", "data").split("-")
+        self.rebl_services = self.input.param("rebl_services",
+                                              self.input.param("services", "data")
+                                              ).split("-")
+        provider = self.input.param("provider", "aws").lower()
+
+        specs = []
+        for service_group in self.services:
+            _services = sorted(service_group.split(":"))
+            service = _services[0]
+            if service_group in self.rebl_services and service_group == rebl_service_group:
+                self.num_nodes[service] = self.num_nodes[service] + num
+            spec = {
+                "count": self.num_nodes[service],
+                "compute": {
+                    "type": self.compute[service],
+                },
+                "services": [{"type": self.services_map[_service.lower()]} for _service in _services],
+                "disk": {
+                    "type": self.storage_type,
+                    "sizeInGb": self.disk[service]
+                },
+                "diskAutoScaling": {"enabled": self.diskAutoScaling}
+            }
+            if provider == "aws":
+                aws_storage_range = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+                aws_min_iops = [3000, 4370, 5740, 7110, 8480, 9850, 11220, 12590, 13960, 15330, 16000]
+                for i, storage in enumerate(aws_storage_range):
+                    if self.disk[service] >= storage:
+                        self.iops[service] = aws_min_iops[i+1]
+                    if self.disk[service] < 100:
+                        self.iops[service] = aws_min_iops[0]
+                spec["disk"]["iops"] = self.iops[service]
+            specs.append(spec)
+
+        self.PrintStep("Rebalance Config:")
+        pprint.pprint(specs)
+        return specs
 
     def monitor_rebalance(self, tenant, cluster, rebalance_task):
         self.find_master(tenant, cluster)

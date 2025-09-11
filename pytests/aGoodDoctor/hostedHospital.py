@@ -126,42 +126,6 @@ class Murphy(BaseTestCase, hostedOPD):
         self.sleep(10)
         BaseTestCase.tearDown(self)
 
-    def rebalance_config(self, rebl_service_group=None, num=0):
-        provider = self.input.param("provider", "aws").lower()
-
-        specs = []
-        for service_group in self.services:
-            _services = sorted(service_group.split(":"))
-            service = _services[0]
-            if service_group in self.rebl_services and service_group == rebl_service_group:
-                self.num_nodes[service] = self.num_nodes[service] + num
-            spec = {
-                "count": self.num_nodes[service],
-                "compute": {
-                    "type": self.compute[service],
-                },
-                "services": [{"type": self.services_map[_service.lower()]} for _service in _services],
-                "disk": {
-                    "type": self.storage_type,
-                    "sizeInGb": self.disk[service]
-                },
-                "diskAutoScaling": {"enabled": self.diskAutoScaling}
-            }
-            if provider == "aws":
-                aws_storage_range = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
-                aws_min_iops = [3000, 4370, 5740, 7110, 8480, 9850, 11220, 12590, 13960, 15330, 16000]
-                for i, storage in enumerate(aws_storage_range):
-                    if self.disk[service] >= storage:
-                        self.iops[service] = aws_min_iops[i+1]
-                    if self.disk[service] < 100:
-                        self.iops[service] = aws_min_iops[0]
-                spec["disk"]["iops"] = self.iops[service]
-            specs.append(spec)
-
-        self.PrintStep("Rebalance Config:")
-        pprint.pprint(specs)
-        return specs
-
     def initial_setup(self):
         self.monitor_query_status()
         for tenant in self.tenants:
