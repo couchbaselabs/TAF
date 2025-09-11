@@ -209,7 +209,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                               % expected_progress)
                 while True:
                     _, progress = \
-                        self.cluster_util.get_rebalance_status_and_progress()
+                        self.cluster_util.get_rebalance_status_and_progress(self.cluster)
                     if progress < 0:
                         self.log.error("Rebalance progress code : {0}"
                                        .format(progress))
