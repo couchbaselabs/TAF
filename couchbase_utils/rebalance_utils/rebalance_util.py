@@ -21,7 +21,7 @@ class RebalanceUtil(object):
         _, json_parsed = self.cluster_rest.ui_logs()
         logs = json_parsed['list']
         logs.reverse()
-        logs = '\n'.join([logs[i] for i in range(min(last_n, len(logs)))])
+        logs = '\n'.join([log.get('text', str(log)) for log in logs[:last_n]])
         self.log.critical(f"Latest logs from UI on "
                           f"{self.cluster_rest.ip}:\n{logs}")
 
