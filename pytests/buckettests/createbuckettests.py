@@ -123,17 +123,22 @@ class CreateBucketTests(ClusterSetup):
         doc_op(DocLoading.Bucket.DocOps.UPDATE)
         doc_op(DocLoading.Bucket.DocOps.DELETE)
 
-        verification_dict = dict()
-        verification_dict["ops_create"] = self.num_items
-        verification_dict["ops_update"] = self.num_items
-        verification_dict["ops_delete"] = self.num_items
-        verification_dict["rollback_item_count"] = 0
-        verification_dict["sync_write_aborted_count"] = 0
-        verification_dict["sync_write_committed_count"] = 0
+        async_verification_dict = dict()
+        async_verification_dict["ops_create"] = self.num_items
+        async_verification_dict["ops_update"] = self.num_items
+        async_verification_dict["ops_delete"] = self.num_items
+        async_verification_dict["rollback_item_count"] = 0
+        async_verification_dict["sync_write_aborted_count"] = 0
+        async_verification_dict["sync_write_committed_count"] = 0
 
-        if self.durability_level not in ["", "NONE", None]:
-            verification_dict[
-                "sync_write_committed_count"] = self.num_items * 3
+        sync_verification_dict = dict()
+        sync_verification_dict["ops_create"] = self.num_items
+        sync_verification_dict["ops_update"] = self.num_items
+        sync_verification_dict["ops_delete"] = self.num_items
+        sync_verification_dict["rollback_item_count"] = 0
+        sync_verification_dict["sync_write_aborted_count"] = 0
+        sync_verification_dict["sync_write_committed_count"] \
+            = self.num_items * 3
 
         self.log.info("Validating the items on the buckets")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -143,6 +148,10 @@ class CreateBucketTests(ClusterSetup):
             self.log, self.nodes_init,
             durability=self.durability_level)
         for bucket in self.cluster.buckets:
+            verification_dict = sync_verification_dict \
+                if bucket.bucketType == Bucket.Type.EPHEMERAL \
+                or self.durability_level not in ["", "NONE", None] \
+                else async_verification_dict
             failed = d_helper.verify_vbucket_details_stats(
                 bucket, self.cluster_util.get_kv_nodes(self.cluster),
                 expected_val=verification_dict)
