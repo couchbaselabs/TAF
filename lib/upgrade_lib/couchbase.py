@@ -25,6 +25,8 @@ upgrade_chains = {
     "7.2.5": ["7.2.5-" + CB_RELEASE_BUILDS["7.2.5"]],
     "7.2.5-MP2": ["7.2.5-" + CB_RELEASE_BUILDS["7.2.5-MP2"]],
     "7.2.6": ["7.2.6-" + CB_RELEASE_BUILDS["7.2.6"]],
+    "7.2.7": ["7.2.7-" + CB_RELEASE_BUILDS["7.2.7"]],
+    "7.2.8": ["7.2.8-" + CB_RELEASE_BUILDS["7.2.8"]],
 
     "7.6.0": ["7.6.0-" + CB_RELEASE_BUILDS["7.6.0"]],
     "7.6.1": ["7.6.1-" + CB_RELEASE_BUILDS["7.6.1"]],
