@@ -193,10 +193,11 @@ class CBASBaseTest(BaseTestCase):
             services = "kv:cbas"
             # if self.input.param("runtype", "default") == "onprem-columnar":
             #     services = ""
-            self.initialize_cluster(
-                cluster_name, cluster, services=services,
-                services_mem_quota_percent=mem_quota_percent
-            )
+            if not self.skip_setup_cleanup:
+                self.initialize_cluster(
+                    cluster_name, cluster, services=services,
+                    services_mem_quota_percent=mem_quota_percent
+                )
             cluster.master.services = ["kv", "cbas"]
             cluster.nodes_in_cluster.append(cluster.master)
 
@@ -332,13 +333,18 @@ class CBASBaseTest(BaseTestCase):
                             self.set_memory_for_services(
                                 cluster, server, server.services)
 
-            if cluster.servers[1:]:
+            if cluster.servers[1:] and not self.skip_setup_cleanup:
                 self.task.rebalance(
                     cluster, cluster.servers[1:self.nodes_init[i]], [],
                     services=[
                         server.services for server in cluster.servers[
                                                       1:self.nodes_init[i]]])
                 cluster.available_servers = cluster.servers[self.nodes_init[i]:]
+            else:
+                self.cluster_util.update_cluster_nodes_service_list(
+                        cluster)
+                ips_in_cluster = [server.ip for server in cluster.nodes_in_cluster]
+                cluster.available_servers = [server for server in cluster.servers if server.ip not in ips_in_cluster]
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None

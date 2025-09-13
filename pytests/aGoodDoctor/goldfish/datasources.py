@@ -114,7 +114,7 @@ class MongoDB(object):
             return
         raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
 
-    def create_cbas_collections(self, cluster, num_collections=None, skip_init=False):
+    def create_cbas_collections(self, cluster, num_collections=None):
         while cluster.state != "ACTIVE":
             time.sleep(60)
             continue
@@ -141,8 +141,7 @@ class MongoDB(object):
             statement = 'CREATE COLLECTION `Default`.`Default`.`{0}` PRIMARY KEY (_id: string) \
                         ON `{1}.{2}.{3}` AT `{4}` WITH {5}'.format(
                                     cbas_coll_name, self.prefix, self.source_name, mongo_collection, self.link_name, json.dumps(extra))
-            if not skip_init:
-                execute_statement_on_cbas(client, statement)
+            execute_statement_on_cbas(client, statement)
         self.cbas_collections.extend(new_collections)
         return new_collections
 
@@ -165,10 +164,10 @@ class MongoDocLoading(object):
     def _loader_dict(self, databases, overRidePattern=None, workers=10, cmd={}):
         workers = workers
         loader_map = dict()
-        default_pattern = [100, 0, 0, 0, 0]
+        default_pattern = {"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0}
         for database in databases:
             per_coll_ops = self.ops//(len(database.collections))
-            pattern = overRidePattern or database.loadDefn.get("pattern", default_pattern)
+            pattern = overRidePattern or database.loadDefn.get("doc_op_percentages", default_pattern)
             for i, collection in enumerate(database.collections):
                 workloads = database.loadDefn.get("collections_defn", [database.loadDefn])
                 valType = workloads[i % len(workloads)]["valType"]
@@ -179,8 +178,8 @@ class MongoDocLoading(object):
                         is_atlas=database.atlas,
                         key_prefix=self.key_prefix, key_size=self.key_size, doc_size=self.doc_size,
                         key_type=database.key_type, value_type=valType,
-                        create_percent=pattern[0], read_percent=pattern[1], update_percent=pattern[2],
-                        delete_percent=pattern[3], expiry_percent=pattern[4],
+                        create_percent=pattern["create"], read_percent=pattern["read"], update_percent=pattern["update"],
+                        delete_percent=pattern["delete"], expiry_percent=pattern["expiry"],
                         create_start_index=database.create_start , create_end_index=database.create_end,
                         read_start_index=database.read_start, read_end_index=database.read_end,
                         update_start_index=database.update_start, update_end_index=database.update_end,
@@ -256,7 +255,7 @@ class CouchbaseRemoteCluster(object):
         if not result:
             raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
 
-    def create_cbas_collections(self, columnar, remote_collections=None, skip_init=False):
+    def create_cbas_collections(self, columnar, remote_collections=None):
         while columnar.state != "ACTIVE":
             time.sleep(60)
             continue
@@ -278,8 +277,7 @@ class CouchbaseRemoteCluster(object):
                         statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
                                                 cbas_coll_name, b.name, s, c, self.link_name)
                         new_collections.append(cbas_coll_name)
-                        if not skip_init:
-                            execute_statement_on_cbas(client, statement)
+                        execute_statement_on_cbas(client, statement)
                         i += 1
                         if remote_collections and i == remote_collections:
                             self.cbas_collections.extend(new_collections)
@@ -323,7 +321,7 @@ class s3(object):
             raise Exception("Status: %s, content: %s, Errors: %s"
                             .format(status, content, errors))
 
-    def create_cbas_collections(self, cluster, external_collections=None, skip_init=False):
+    def create_cbas_collections(self, cluster, external_collections=None):
         while cluster.state != "ACTIVE":
             time.sleep(60)
             continue
@@ -339,8 +337,7 @@ class s3(object):
             statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
                 cbas_coll_name, "columnartest", self.link_name, "hotel")
             self.log.info(statement)
-            if not skip_init:
-                execute_statement_on_cbas(client, statement)
+            execute_statement_on_cbas(client, statement)
         self.cbas_collections.append(new_collections)
         self.copy_from_s3_into_standalone(cluster, external_collections)
         return new_collections

@@ -173,7 +173,7 @@ class DoctorCBAS():
         self.log = logger.get("test")
         self.stop_run = False
 
-    def create_links(self, cluster, data_sources, skip_init=False):
+    def create_links(self, cluster, data_sources):
         for dataSource in data_sources:
             query_count = 0
             dataSource.create_link(cluster)
@@ -182,7 +182,7 @@ class DoctorCBAS():
             elif dataSource.loadDefn["valType"] == "RandomlyNestedJson":
                 queryType = HeterogeneousQueries
             # create collection
-            collections = dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0], skip_init)
+            collections = dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0])
             q = 0
             while q < dataSource.loadDefn.get("cbas")[1]:
                 coll = collections[q % dataSource.loadDefn.get("cbas")[0]]

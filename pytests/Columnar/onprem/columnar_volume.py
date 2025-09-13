@@ -13,7 +13,7 @@ import time
 from CbasLib.CBASOperations import CBASHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants import CbServer
-from bucket_utils.bucket_ready_functions import CollectionUtils
+from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 from cb_server_rest_util.rest_client import RestConnection
 from sdk_client3 import SDKClient
 
@@ -105,6 +105,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.bucket_history_retention_bytes = self.input.param("bucket_history_retention_bytes", 0)
         self.bucket_history_retention_seconds = self.input.param("bucket_history_retention_seconds", 0)
         self.steady_state_workload_sleep = self.input.param("steady_state_workload_sleep", 600)
+        JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
 
     def setupRemoteCouchbase(self):
         # Updating Remote Links Spec
@@ -206,10 +207,15 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def load_remote_couchbase_clusters(self):
-        if self.val_type == "siftBigANN":
-            self.siftBigANN_load()
-        else:
-            self.normal_load(check_core_dumps=False)
+        if not self.skip_init:
+            if self.val_type == "siftBigANN":
+                JavaDocLoaderUtils.load_sift_data(self.cluster, self.cluster.buckets,
+                                                  overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
+                                                  wait_for_stats=False,
+                                                  validate_data=False)
+            else:
+                JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets,
+                                             overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0})
 
     def tearDown(self):
         self.stop_run = True
@@ -279,7 +285,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
 
         self.setup_columnar_sdk_clients(self.analytics_cluster)
         for datasources in self.data_sources.values():
-            self.drCBAS.create_links(self.analytics_cluster, datasources, skip_init=self.skip_init)
+            self.drCBAS.create_links(self.analytics_cluster, datasources)
 
         self.load_remote_couchbase_clusters()
         
@@ -323,8 +329,8 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             self.tasks = list()
             for bucket in self.remote_cluster.buckets:
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
-                self.generate_docs(bucket=bucket)
-                self.perform_load(cluster=self.remote_cluster, wait_for_load=True, validate_data=False)
+                JavaDocLoaderUtils.generate_docs(bucket=bucket)
+                JavaDocLoaderUtils.perform_load(cluster=self.remote_cluster, wait_for_load=True, validate_data=False)
                 result = self.check_coredump_exist(self.analytics_cluster.nodes_in_cluster, force_collect=False)
                 if result:
                     self.log.critical("Core dump(s) found on analytics cluster node(s) after KV workload")
@@ -335,7 +341,7 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
         while not self.stop_run:
             for dataSource in self.data_sources["mongo"]:
                 self.mongo_doc_loading.mutate += 1
-                self.generate_docs(bucket=dataSource)
+                JavaDocLoaderUtils.generate_docs(bucket=dataSource)
                 self.mongo_doc_loading.perform_load(
                     [dataSource], wait_for_load=True)
             self.sleep(10)
