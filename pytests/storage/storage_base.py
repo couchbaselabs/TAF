@@ -303,7 +303,7 @@ class StorageBase(BaseTestCase):
                     self.log.info("Bucket: {}, Encryption Info: {}, Key ID: {}, Rotation Interval: {}, DEK Lifetime: {}".format(
                         bucket.name, bucket_stats['encryptionAtRestInfo'], bucket_stats['encryptionAtRestKeyId'],
                         bucket_stats['encryptionAtRestDekRotationInterval'], bucket_stats['encryptionAtRestDekLifetime']))
-                if self.autoCompactionDefined:
+                if self.autoCompactionDefined == "true":
                     frag_val = bucket_stats["autoCompactionSettings"] \
                                         ["magmaFragmentationPercentage"]
                     self.log.info("Bucket: {}, Fragmentation value: {}".\
