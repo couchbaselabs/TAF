@@ -361,7 +361,6 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
-            shell_conn[node.ip].disconnect()
             cbstat_obj[node.ip].disconnect()
 
         if self.durability_level \
@@ -451,7 +450,8 @@ class CollectionDurabilityTests(CollectionBase):
                             retry_reason = None
 
                         # Validate the returned error from the SDK
-                        if expected_exception not in str(fail["error"]):
+                        if not SDKException.check_if_exception_exists(
+                                expected_exception, str(fail["error"])):
                             self.log_failure("Invalid exception for %s: %s"
                                              % (key, fail["error"]))
                         if retry_reason \
@@ -479,6 +479,7 @@ class CollectionDurabilityTests(CollectionBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
@@ -522,7 +523,6 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
-            shell_conn[node.ip].disconnect()
             cbstat_obj[node.ip].disconnect()
 
         target_vbs = replica_vbs
@@ -627,6 +627,7 @@ class CollectionDurabilityTests(CollectionBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
