@@ -957,6 +957,9 @@ class UpgradeBase(BaseTestCase):
 
             self.cluster_util.print_cluster_stats(self.cluster)
 
+        if float(self.upgrade_version[:3]) >= 7.6 and float(self.initial_version[:3]) < 7.6:
+            self.add_system_scope_to_all_buckets()
+
     def perform_collection_ops_load(self, collections_spec):
         if "collections" not in self.cluster_features \
                 or self.perform_collection_ops is False:
