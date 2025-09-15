@@ -598,7 +598,7 @@ class CollectionBase(ClusterSetup):
             test_obj, test_obj.bucket_storage, buckets_spec)
 
         if hasattr(test_obj, "bucket_num_vb") and test_obj.bucket_num_vb is not None \
-                and buckets_spec[Bucket.storageBackend] == Bucket.StorageBackend.magma:
+                and buckets_spec.get(Bucket.storageBackend, Bucket.StorageBackend.magma) == Bucket.StorageBackend.magma:
             buckets_spec[Bucket.numVBuckets] = test_obj.bucket_num_vb
 
             if "buckets" in buckets_spec:
