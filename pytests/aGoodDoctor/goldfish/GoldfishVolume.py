@@ -350,6 +350,7 @@ class Columnar(BaseTestCase, hostedOPD):
                         self.wait_for_rebalances(rebalance_tasks)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         self.log.info(f"Scaling IN remote Couchbase cluster: {getattr(dataSource, 'name', str(dataSource))}")
+                        rebalance_tasks = list()
                         config = self.rebalance_config("data", -1)
                         for tenant in self.tenants:
                             for cluster in tenant.clusters:
@@ -368,7 +369,6 @@ class Columnar(BaseTestCase, hostedOPD):
         self.remote_couchbase_scaling_thread = threading.Thread(target=scale_remote_couchbase_clusters)
         self.remote_couchbase_scaling_thread.daemon = True
         self.remote_couchbase_scaling_thread.start()
-
         while loop > 0:
             loop -= 1
             self.ingestion_ths = list()

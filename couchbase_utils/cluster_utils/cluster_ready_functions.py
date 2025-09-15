@@ -1120,10 +1120,14 @@ class ClusterUtils:
                   inactive_failed=False):
         cluster_rest = ClusterRestAPI(server)
         count = 0
+        node_details = None
+        node_statuses = {}
+        cluster_details = None
         while count < 7:
             cluster_details, json_parsed = cluster_rest.cluster_details()
-            node_details, node_statuses = cluster_rest.get_node_statuses()
-            if cluster_details and node_details:
+            if server.type not in ["analytics", "dedicated"]:
+                node_details, node_statuses = cluster_rest.get_node_statuses()
+            if cluster_details:
                 break
             count += 1
             time.sleep(5)
