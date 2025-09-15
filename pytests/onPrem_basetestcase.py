@@ -1017,7 +1017,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 index_path=server.index_path,
                 cbas_path=server.cbas_path,
                 eventing_path=server.eventing_path)
-            self.assertTrue(status, f"Init node failed: {content}")
+            if not status:
+                self.log.error(f"Init node failed: {content}")
+                self.log.error(f"Data path: {server.data_path}")
+                self.log.error(f"Index path: {server.index_path}")
+                self.log.error(f"Cbas path: {server.cbas_path}")
+                self.log.error(f"Eventing path: {server.eventing_path}")
+                self.assertTrue(status, f"Init node failed: {content}")
 
             # We need to initialize only the master node
             if cluster.master != server:
@@ -1100,7 +1106,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
             else:
                 self.log.error("API perform_cb_collect returned False")
 
-    def check_coredump_exist(self, servers, force_collect=False):
+    def check_coredump_exist(self, servers, force_collect=False,
+                            skip_core_dump_check=False):
+        if self.input.param("skip_core_dump_check", False) or skip_core_dump_check:
+            return False
         bin_cb = os_constants.Linux.COUCHBASE_BIN_PATH
         lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
         crash_dir_win = os_constants.Windows.COUCHBASE_CRASH_PATH_RAW
