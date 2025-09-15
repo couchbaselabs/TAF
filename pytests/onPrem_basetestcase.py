@@ -31,6 +31,7 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from docker_utils.DockerSDK import DockerClient
 from awsLib.S3 import S3
+from azureLib.Azure import Azure
 
 
 class OnPremBaseTest(CouchbaseBaseTest):
@@ -71,6 +72,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.input.param("cbas_quota_percent", None)
         self.eventing_mem_quota_percent = \
             self.input.param("eventing_quota_percent", None)
+        # Azure Blob params
+        self.az_blob = self.input.param("az_blob", False)
+
         # CBAS setting
         self.jre_path = self.input.param("jre_path", None)
         self.enable_dp = self.input.param("enable_dp", False)
@@ -702,22 +706,38 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.columnar_s3_obj = S3(self.columnar_aws_access_key, self.columnar_aws_secret_key,
                              region=self.columnar_aws_region,
                              endpoint_url=self.columnar_aws_endpoint)
-            for i in range(5):
-                try:
-                    self.columnar_aws_bucket_name = "columnar-build-sanity-" + str(int(
-                        time.time()))
-                    self.log.info("Creating S3 bucket {}".format(self.columnar_aws_bucket_name))
-                    self.columnar_aws_bucket_created = self.columnar_s3_obj.create_bucket(
-                        self.columnar_aws_bucket_name, self.columnar_aws_region)
-                    break
-                except Exception as e:
-                    self.log.error(
-                        "Creating S3 bucket - {0} in region {1}. "
-                        "Failed.".format(
-                            self.columnar_aws_bucket_name, self.columnar_aws_region))
-                    self.log.error(str(e))
-            if not self.columnar_aws_bucket_created:
-                self.fail("Unable to create S3 bucket.")
+            if not self.az_blob:
+                for i in range(5):
+                    try:
+                        self.columnar_aws_bucket_name = "columnar-build-sanity-" + str(int(
+                            time.time()))
+                        self.log.info("Creating S3 bucket {}".format(self.columnar_aws_bucket_name))
+                        self.columnar_aws_bucket_created = self.columnar_s3_obj.create_bucket(
+                            self.columnar_aws_bucket_name, self.columnar_aws_region)
+                        break
+                    except Exception as e:
+                        self.log.error(
+                            "Creating S3 bucket - {0} in region {1}. "
+                            "Failed.".format(
+                                self.columnar_aws_bucket_name, self.columnar_aws_region))
+                        self.log.error(str(e))
+                if not self.columnar_aws_bucket_created:
+                    self.fail("Unable to create S3 bucket.")
+            else:
+                self.azure_client = Azure(
+                    account_name=self.columnar_aws_access_key,
+                    account_key=self.columnar_aws_secret_key)
+
+                self.columnar_azure_bucket_name = "columnar-build-sanity-" + str(int(
+                    time.time()))
+
+                if self.azure_client.create_container(self.columnar_azure_bucket_name):
+                    self.columnar_azure_bucket_created = True
+                    self.columnar_aws_bucket_name = self.columnar_azure_bucket_name
+                else:
+                    self.fail("Creating Azure container - {0}. Failed.".format(
+                        self.columnar_azure_bucket_name))
+
             self.log.info("Adding aws bucket credentials to analytics")
             status = self.configure_compute_storage_separation_for_analytics(
                 server=cluster.master, aws_access_key=self.columnar_aws_access_key,
@@ -965,6 +985,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if not self.columnar_s3_obj.delete_bucket(self.columnar_aws_bucket_name):
                 self.log.error("AWS bucket failed to delete - {}".format(
                     self.columnar_aws_bucket_name))
+        elif self.analytics_compute_storage_separation and self.columnar_azure_bucket_created:
+            self.log.info("Deleting Azure container - {}".format(
+                self.columnar_azure_bucket_name))
+            if not self.azure_client.delete_container(self.columnar_azure_bucket_name):
+                self.log.error("Azure container {} failed to delete.".format(self.columnar_azure_bucket_name))
 
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
@@ -1546,10 +1571,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
             return False
 
         self.log.info("Adding aws bucket config to analytics")
+        if self.az_blob:
+            blob_storage_scheme = "azblob"
+        else:
+            blob_storage_scheme = "s3"
         status, content = rest.update_analytics_settings(
             blob_storage_bucket=aws_bucket_name,
             blob_storage_region=aws_bucket_region, blob_storage_prefix="",
-            blob_storage_scheme="s3",
+            blob_storage_scheme=blob_storage_scheme,
             profile=server.type,
             endpoint_url=self.columnar_aws_endpoint,
             blob_storage_list_eventually_consistent=\
