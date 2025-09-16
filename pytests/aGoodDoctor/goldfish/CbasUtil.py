@@ -17,6 +17,8 @@ from couchbase.analytics import AnalyticsScanConsistency, AnalyticsStatus
 from couchbase.exceptions import (TimeoutException, UnAmbiguousTimeoutException, AmbiguousTimeoutException,
                                   RequestCanceledException, CouchbaseException, InternalServerFailureException)
 from couchbase.options import AnalyticsOptions
+from couchbase_columnar.options import QueryOptions
+from datetime import timedelta
 
 datasets = ['create dataset {} on {}.{}.{};']
 
@@ -110,11 +112,11 @@ def execute_statement_on_cbas(client, statement,
     Executes a statement on CBAS using the REST API using REST Client
     """
     try:
-        response = execute_via_sdk(client,
-                                   statement, False, client_context_id)
+        response = execute_via_columnar_sdk(client, statement, False, client_context_id)
 
         if type(response) == str:
             response = json.loads(response)
+
         if "errors" in response:
             errors = response["errors"]
         else:
@@ -125,16 +127,11 @@ def execute_statement_on_cbas(client, statement,
         else:
             results = None
 
-        if "handle" in response:
-            handle = response["handle"]
-        else:
-            handle = None
-
         if "metrics" in response:
             metrics = response["metrics"]
         else:
             metrics = None
-        return response["status"], metrics, errors, results, handle
+        return metrics, errors, results
 
     except Exception as e:
         raise e
@@ -164,6 +161,23 @@ def execute_via_sdk(client, statement, readonly=False,
         output["errors"] = None
     else:
         raise Exception("Analytics Service API failed")
+    return output
+
+def execute_via_columnar_sdk(client, statement, readonly=False, client_context_id=None):
+    output = {}
+    try:
+        if client_context_id:
+            options = QueryOptions(raw={'client_context_id':client_context_id}, metrics=True,timeout=timedelta(seconds=1200))
+        else:
+            options = QueryOptions(timeout=timedelta(seconds=1200), metrics=True)
+        result = client.execute_query(statement, options)
+        output["results"] = [row for row in result.rows()]
+        output["metrics"] = result.metadata().metrics()
+    except CouchbaseException as e:
+        # print(e)
+        raise e
+    except Exception as e:
+        raise e
     return output
 
 
@@ -205,40 +219,46 @@ class DoctorCBAS():
             query_tbl.display("N1QL Queries to run during test:")
 
     def connect_link(self, cluster, link_name):
-        client = cluster.SDKClients[0].cluster
+        client = cluster.SDKClients[0]
         statement = "CONNECT LINK %s" % link_name
-        status, _, _, _, _ = execute_statement_on_cbas(client, statement)
-        self.log.info("Connect link %s is %s" % (link_name, status))
+        execute_statement_on_cbas(client, statement)
+        self.log.info("Connect link %s is %s" % (link_name, "success"))
 
     def drop_links(self, cluster, databases):
-        client = cluster.SDKClients[0].cluster
+        client = cluster.SDKClients[0]
         for database in databases:
             for link in database.links:
                 statement = "drop link %s" % link
-                status, _, _, _, _ = execute_statement_on_cbas(client, statement)
-                self.log.info("Dropping link %s is %s" % (link, status))
+                execute_statement_on_cbas(client, statement)
+                self.log.info("Dropping link %s is %s" % (link, "success"))
 
     def drop_collections(self, cluster, databases):
-        client = cluster.SDKClients[0].cluster
+        client = cluster.SDKClients[0]
         for database in databases:
             for collection in database.cbas_collections:
                 statement = "drop collection %s" % collection
-                status, _, _, _, _ = execute_statement_on_cbas(client, statement)
-                self.log.info("Dropping Collection %s is %s" % (collection, status))
+                try:
+                    execute_statement_on_cbas(client, statement)
+                    self.log.info("Dropping Collection %s is %s" % (collection, "success"))
+                except Exception as e:
+                    self.log.info("Dropping Collection %s is %s" % (collection, "failed"))
 
     def disconnect_link(self, cluster, link_name):
-        client = cluster.SDKClients[0].cluster
+        client = cluster.SDKClients[0]
         statement = "DISCONNECT LINK %s" % link_name
-        status, _, _, _, _ = execute_statement_on_cbas(client, statement)
-        self.log.info("Disconnect link %s is %s" % (link_name, status))
+        try:
+            execute_statement_on_cbas(client, statement)
+            self.log.info("Disconnect link %s is %s" % (link_name, "success"))
+        except Exception as e:
+            self.log.info("Disconnect link %s is %s" % (link_name, "failed"))
 
     def wait_for_link_disconnect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
-        client = random.choice(cluster.SDKClients).cluster
+        client = random.choice(cluster.SDKClients)
         while time.time() < st_time + timeout:
             time.sleep(10)
-            status, _, _, results, _= execute_statement_on_cbas(client, "SELECT * FROM Metadata.`Link`")
-            if status:
+            metrics, errors, results = execute_statement_on_cbas(client, "SELECT * FROM Metadata.`Link`")
+            if errors is None:
                 for result in results:
                     if result["Link"]['Name'] == link_name and \
                         not result["Link"]["IsActive"]:
@@ -250,11 +270,11 @@ class DoctorCBAS():
 
     def wait_for_link_connect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
-        client = random.choice(cluster.SDKClients).cluster
+        client = random.choice(cluster.SDKClients)
         while time.time() < st_time + timeout:
             time.sleep(10)
-            status, _, _, results, _= execute_statement_on_cbas(client, "SELECT * FROM Metadata.`Link`")
-            if status:
+            metrics, errors, results = execute_statement_on_cbas(client, "SELECT * FROM Metadata.`Link`")
+            if errors is None:
                 for result in results:
                     if result["Link"]['Name'] == link_name and \
                         result["Link"]["IsActive"]:
@@ -273,13 +293,13 @@ class DoctorCBAS():
             status = False
             stop_time = time.time() + timeout
             while time.time() < stop_time:
-                client = random.choice(cluster.SDKClients).cluster
+                client = random.choice(cluster.SDKClients)
                 statement = "select count(*) cnt from {};".format(collection)
                 try:
                     if cluster.state == "ACTIVE":
-                        _status, _, _, results, _ = execute_statement_on_cbas(client, statement)
+                        metrics, errors, results = execute_statement_on_cbas(client, statement)
                         self.log.debug("dataset: {}, status: {}, actual count: {}, expected count: {}"
-                                       .format(collection, _status,
+                                       .format(collection, "success",
                                                results[0]["cnt"],
                                                items))
                         if results[0]["cnt"] >= items:
@@ -351,7 +371,7 @@ class CBASQueryLoad:
         name = threading.currentThread().getName()
         i = 0
         while not self.stop_run:
-            self.cluster_conn = random.choice(self.cluster.SDKClients).cluster
+            self.cluster_conn = random.choice(self.cluster.SDKClients)
             if self.cluster.state != "ACTIVE":
                 time.sleep(60)
                 continue
@@ -366,7 +386,7 @@ class CBASQueryLoad:
                 original_query = query_tuple[1]
                 # print query
                 # print original_query
-                status, metrics, _, results, _ = execute_statement_on_cbas(
+                metrics, errors, results = execute_statement_on_cbas(
                     self.cluster_conn, query, client_context_id)
                 try:
                     self.query_stats[original_query][0] += metrics.execution_time().total_seconds()*1000.0
@@ -375,7 +395,7 @@ class CBASQueryLoad:
                     self.query_stats[original_query] = [0, 0]
                     self.query_stats[original_query][0] = metrics.execution_time().total_seconds()*1000.0
                     self.query_stats[original_query][1] = 1
-                if status == AnalyticsStatus.SUCCESS:
+                if errors is None:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
                             next(self.failed_count)

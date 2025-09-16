@@ -118,7 +118,7 @@ class MongoDB(object):
         while cluster.state != "ACTIVE":
             time.sleep(60)
             continue
-        client = cluster.SDKClients[0].cluster
+        client = cluster.SDKClients[0]
         num_collections = num_collections or len(self.collections)
         i = 0
         new_collections = list()
@@ -260,7 +260,7 @@ class CouchbaseRemoteCluster(object):
             time.sleep(60)
             continue
         i = 0
-        client = columnar.SDKClients[0].cluster
+        client = columnar.SDKClients[0]
         # self.cbas_collections = list()
         new_collections = list()
         while i < remote_collections:
@@ -325,7 +325,7 @@ class s3(object):
         while cluster.state != "ACTIVE":
             time.sleep(60)
             continue
-        client = cluster.SDKClients[0].cluster
+        client = cluster.SDKClients[0]
         num_collections = external_collections or len(self.collections)
         new_collections = list()
         i = 0
@@ -346,7 +346,7 @@ class s3(object):
         while cluster.state != "ACTIVE":
             time.sleep(60)
             continue
-        client = cluster.SDKClients[0].cluster
+        client = cluster.SDKClients[0]
         num_collections = standalone_collections or len(self.collections)
         self.log.info("creating standalone collections - datasource is s3")
         i = 0

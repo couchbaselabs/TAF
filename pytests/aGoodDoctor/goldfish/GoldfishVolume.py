@@ -10,7 +10,7 @@ import time
 from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 from cbas_utils.cbas_utils import CbasUtil
 from pytests.basetestcase import BaseTestCase
-from sdk_client3 import SDKClient
+# from sdk_client3 import SDKClient
 
 from .CbasUtil import DoctorCBAS, CBASQueryLoad
 from Jython_tasks.task import ScaleColumnarInstance
@@ -183,10 +183,32 @@ class Columnar(BaseTestCase, hostedOPD):
     #     client = SDKClient(master, "None")
     #     client.connectCluster()
     #     columnar.SDKClients.append(client)
-    def setup_columnar_sdk_clients(self, columnar):
+    # def setup_columnar_sdk_clients(self, columnar):
+    #     columnar.SDKClients = list()
+    #     client = SDKClient(columnar, None)
+    #     columnar.SDKClients.append(client)
+    #     self.sleep(1, "Wait for SDK client pool to warmup")
+
+    def setup_columnar_sdk_clients_1_0(self, columnar):
+        from datetime import timedelta
+
+        import couchbase_columnar
+        from couchbase_columnar.cluster import Cluster
+        from couchbase_columnar.credential import Credential
+        from couchbase_columnar.options import (ClusterOptions,SecurityOptions,TimeoutOptions)
+
+
+        from couchbase_columnar.common.core._certificates import _Certificates
+        sec_opts = SecurityOptions(disable_server_certificate_verification=True)
+        timeout_ops = TimeoutOptions(connect_timeout=timedelta(seconds=60), dispatch_timeout=timedelta(seconds=30))
+        opts = ClusterOptions(security_options=sec_opts, timeout_options=timeout_ops, dump_configuration=True)
+
+        connstr = 'couchbases://' + columnar.srv
+        cred = Credential.from_username_and_password(columnar.username, columnar.password)
+        cluster = Cluster.create_instance(connstr, cred, opts)
+
         columnar.SDKClients = list()
-        client = SDKClient(columnar, None)
-        columnar.SDKClients.append(client)
+        columnar.SDKClients.append(cluster)
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def load_remote_couchbase_clusters(self):
@@ -239,7 +261,7 @@ class Columnar(BaseTestCase, hostedOPD):
 
         for tenant in self.tenants:
             for columnar in tenant.columnar_instances:
-                self.setup_columnar_sdk_clients(columnar)
+                self.setup_columnar_sdk_clients_1_0(columnar)
                 for datasources in self.data_sources.values():
                     self.drCBAS.create_links(columnar, datasources)
 
@@ -393,6 +415,8 @@ class Columnar(BaseTestCase, hostedOPD):
                 iterations = self.input.param("iterations", 1)
                 nodes = self.num_nodes_in_columnar_instance
                 for i in range(iterations-1, -1, -1):
+                    # for ql in self.cbasQL:
+                    #     ql.stop_query_load()
                     self.PrintStep("Scaling IN operation: %s" % str(i+1))
                     tasks = list()
                     nodes = nodes//2
@@ -408,7 +432,9 @@ class Columnar(BaseTestCase, hostedOPD):
                         self.assertTrue(task.result, "Scaling IN columnar failed!")
                     for tenant in self.tenants:
                         for cluster in tenant.columnar_instances:
-                            self.setup_columnar_sdk_clients(cluster)
+                            self.setup_columnar_sdk_clients_1_0(cluster)
+                    # for ql in self.cbasQL:
+                    #     ql.start_query_load()
                     self.sleep(600, "Lets the ingestion/query running for 30 mins post scaling")
                 for i in range(0, iterations):
                     self.PrintStep("Scaling OUT operation: %s" % str(i+1))
@@ -428,8 +454,8 @@ class Columnar(BaseTestCase, hostedOPD):
                         self.assertTrue(task.result, "Scaling OUT columnar failed!")
                     for tenant in self.tenants:
                         for cluster in tenant.columnar_instances:
-                            self.setup_columnar_sdk_clients(cluster)
-                    self.sleep(600, "Lets the ingestion/query running for 30 mins post scaling")
+                            self.setup_columnar_sdk_clients_1_0(cluster)
+                    self.sleep(120, "Lets the ingestion/query running for 2 mins post scaling")
             for th in self.ingestion_ths:
                 th.join()
 
