@@ -200,7 +200,6 @@ class Bucket_DGM_Tests(ClusterSetup):
                                                             "active")
             node_data[node]["replica"] = cbstat.vbucket_list(bucket.name,
                                                              "replica")
-            cbstat.disconnect()
 
         target_dgm = 30
         run_eviction_check = True
@@ -274,6 +273,6 @@ class Bucket_DGM_Tests(ClusterSetup):
 
         # Close shell connections
         for node in kv_nodes:
-            node_data[node]["cbstat"].shellConn.disconnect()
+            cbstat.disconnect()
 
         self.validate_test_failure()
