@@ -219,7 +219,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.rest = RestConnection(self.cluster.master)
         self.af_timeout = self.input.param("af_timeout", 600)
-        self.af_enable = self.input.param("af_enable", False)
+        self.af_enable = self.input.param("af_enable", True)
         storageModeGSI = self.input.param("storageModeGSI", "plasma")
         self.rest.set_indexer_storage_mode(storageModeGSI)
         self.assertTrue(
@@ -291,6 +291,8 @@ class Murphy(BaseTestCase, OPD):
             if reranking is False:
                 self.sleep(0, "sleep before setting indexer params")
                 self.gsi_rest.set_index_settings({"indexer.scan.vector.rerank_factor": 0})
+            self.gsi_rest.set_index_settings({"indexer.settings.enable_corrupt_index_backup": True})
+            self.gsi_rest.set_index_settings({"indexer.settings.corrupt_index_num_backups": 10})
         # self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
