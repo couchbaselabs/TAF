@@ -16,3 +16,5 @@ pyspark==3.5.3
 google-cloud-storage
 deepdiff
 pandas==2.2.3
+protobuf
+azure-core
