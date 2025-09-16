@@ -2,6 +2,7 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from basetestcase import ClusterSetup
+from bucket_collections.collections_base import CollectionBase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from table_view import TableView
@@ -11,6 +12,7 @@ class Bucket_DGM_Tests(ClusterSetup):
     def setUp(self):
         super(Bucket_DGM_Tests, self).setUp()
         self.create_bucket(self.cluster)
+        CollectionBase.create_clients_for_sdk_pool(self)
 
         self.cluster_util.print_cluster_stats(self.cluster)
         doc_create = doc_generator(
