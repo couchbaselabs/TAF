@@ -603,8 +603,7 @@ class CollectionBase(ClusterSetup):
 
             if "buckets" in buckets_spec:
                 for bucket in buckets_spec["buckets"]:
-                    if buckets_spec["buckets"][bucket].get(Bucket.storageBackend,
-                            buckets_spec[Bucket.storageBackend]) == Bucket.StorageBackend.couchstore:
+                    if buckets_spec["buckets"][bucket].get(Bucket.storageBackend, Bucket.StorageBackend.magma) == Bucket.StorageBackend.couchstore:
                         buckets_spec["buckets"][bucket][Bucket.numVBuckets] = 1024
 
         if test_obj.enable_encryption_at_rest and \
