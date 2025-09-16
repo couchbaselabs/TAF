@@ -423,8 +423,10 @@ class AppBase(BaseTestCase):
             if "description" in backup_config:
                 plan_params["description"] = backup_config["description"]
             if "archive_path" in backup_config:
-                repo_params["archive"] = backup_config["archive_path"]
-                shell.execute_command("mkdir -p {0} ; chmod 777 {0}"
+              if backup_config["archive_path"].startswith("/data"):
+                backup_config["archive_path"] = "/tmp{0}".format(backup_config["archive_path"])
+              repo_params["archive"] = backup_config["archive_path"]
+              shell.execute_command("mkdir -p {0} ; chmod 777 {0}"
                                       .format(backup_config["archive_path"]))
             if "bucket" in backup_config:
                 repo_params["bucket"] = backup_config["bucket"]
