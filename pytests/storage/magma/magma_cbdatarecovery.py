@@ -1,4 +1,3 @@
-import random
 from BucketLib.BucketOperations import BucketHelper
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
@@ -6,6 +5,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from cb_tools.cbstats import Cbstats
 
 
 class MagmaRecovery(BaseTestCase):
@@ -55,6 +55,38 @@ class MagmaRecovery(BaseTestCase):
             if cb_cluster.name == cluster_name:
                 return cb_cluster
 
+    def _sum_items_in_vbucket_range(self, cluster, bucket_name, start_vb, end_vb, state_filter="active"):
+        """
+        Sum items in vbucket range for specified state.
+        Note: Only counts from nodes where vbuckets are in the specified state to avoid double counting.
+        """
+        total = 0
+        nodes = self.cluster_util.get_nodes_in_cluster(cluster)
+
+        for node in nodes:
+            cbstat = Cbstats(node, username=self.username, password=self.password)
+            try:
+                vb_details = cbstat.vbucket_details(bucket_name)
+                for vb_str, stat_map in vb_details.items():
+                    try:
+                        vb = int(vb_str)
+                        if start_vb <= vb <= end_vb:
+                            state = stat_map.get("state", stat_map.get("type"))
+                            # Only count if state matches (or no filter specified)
+                            if not state_filter or state == state_filter:
+                                if "num_items" in stat_map:
+                                    total += int(stat_map["num_items"])
+                    except (ValueError, TypeError) as e:
+                        self.log.warning("Failed to process vbucket {}: {}".format(vb_str, e))
+                        continue
+            except Exception as e:
+                self.log.error("Failed to get vbucket details from node {}: {}".format(node.ip, e))
+            finally:
+                cbstat.disconnect()
+
+        return total
+
+
     def validate_document_metadata(self, bucket_name, scope, collection):
 
         for bucket in self.first_cluster.buckets:
@@ -75,13 +107,15 @@ class MagmaRecovery(BaseTestCase):
 
         target_vbs = None
         if self.include_vbucket_filter:
-            target_vbs = [i for i in range(512)]
+            #take 50% of vbuckets from start
+            target_vbs = [i for i in range(src_bucket.num_vbuckets//2)]
         if self.transfer_dead_vbuckets:
-            target_vbs = [i for i in range(100)]
+            #take 10% of vbuckets from start
+            target_vbs = [i for i in range(src_bucket.num_vbuckets//10)]
 
-        doc_gen = doc_generator(self.doc_prefix, 0, 100, target_vbucket=target_vbs, doc_size=1024)
+        doc_gen = doc_generator(self.doc_prefix, 0, 100, target_vbucket=target_vbs, vbuckets=src_bucket.num_vbuckets, doc_size=1024)
 
-        self.log.info("Validating document metdata for bucket: {}".format(bucket_name))
+        self.log.info("Validating document metadata for bucket: {}".format(bucket_name))
         while doc_gen.has_next():
             doc_id, val = doc_gen.next()
             self.log.info("Validating doc: {}".format(doc_id))
@@ -212,12 +246,18 @@ class MagmaRecovery(BaseTestCase):
             buckets_to_recover = [bucket for bucket in self.second_cluster.buckets
                                   if bucket.name == self.bucket_to_include]
 
-        if self.make_node_offline:
-            self.log.info("Stopping couchbase server to make nodes offline")
-            for node in self.first_cluster.nodes_in_cluster:
-                shell = RemoteMachineShellConnection(node)
-                shell.stop_couchbase()
-            self.sleep(20, "Wait for a few second after stopping Couchbase on nodes")
+              # Store expected counts for vbucket filtering BEFORE any server operations
+        vbucket_filtered_counts = {}
+        vbucket_end = 0
+        if self.include_vbucket_filter:
+            reference_bucket = self.first_cluster.buckets[0]
+            vbucket_end = reference_bucket.num_vbuckets // 2
+            for bucket in self.first_cluster.buckets:
+                vbucket_filtered_counts[bucket.name] = self._sum_items_in_vbucket_range(
+                    self.first_cluster, bucket.name, 0, vbucket_end, "active"
+                )
+                self.log.info("Bucket {} vbucket range 0-{} item count: {}".format(
+                    bucket.name, vbucket_end, vbucket_filtered_counts[bucket.name]))
 
         if self.transfer_dead_vbuckets:
             shell = RemoteMachineShellConnection(self.first_cluster_master)
@@ -251,6 +291,15 @@ class MagmaRecovery(BaseTestCase):
                           "a few vbuckets state to dead = {}".format(bucket_item_count))
             items_to_transfer = self.item_count - bucket_item_count
 
+
+        if self.make_node_offline:
+            self.log.info("Stopping couchbase server to make nodes offline")
+            for node in self.first_cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(node)
+                shell.stop_couchbase()
+            self.sleep(20, "Wait for a few second after stopping Couchbase on nodes")
+
+
         for server in self.first_cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(server)
             if self.encryption_level == "strict":
@@ -264,7 +313,7 @@ class MagmaRecovery(BaseTestCase):
             if self.include_single_bucket:
                 recovery_cmd += ' --include-data {}'.format(self.bucket_to_include)
             if self.include_vbucket_filter:
-                recovery_cmd += ' --vbucket-filter 0-511'
+                recovery_cmd += " --vbucket-filter 0-{}".format(vbucket_end)
             if self.test_auto_create_collections:
                 recovery_cmd += ' --auto-create-collections'
             if self.transfer_replica_vbuckets:
@@ -286,11 +335,10 @@ class MagmaRecovery(BaseTestCase):
         self.bucket_util.print_bucket_stats(self.second_cluster)
         self.log.info("Verifying bucket item count after recovery")
         for bucket in buckets_to_recover:
-            actual_count = self.bucket_util.get_bucket_current_item_count(self.second_cluster,
-                                                                          bucket)
+            actual_count = self.bucket_util.get_bucket_current_item_count(self.second_cluster, bucket)
             expected_count = initial_bucket_count[bucket.name]
-            if self.include_vbucket_filter:
-                expected_count = initial_bucket_count[bucket.name] // 2
+            if self.include_vbucket_filter and bucket.name in vbucket_filtered_counts:
+                expected_count = vbucket_filtered_counts[bucket.name]
             if self.transfer_dead_vbuckets:
                 expected_count = items_to_transfer
             err_msg = "Bucket item count does not match for bucket:{}".format(bucket.name)
