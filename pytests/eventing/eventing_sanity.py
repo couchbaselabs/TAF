@@ -362,7 +362,7 @@ class EventingSanity(EventingBaseTest):
 
         failed = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
-            vbuckets=self.cluster.vbuckets, expected_val=verification_dict)
+            vbuckets=def_bucket.num_vbuckets, expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details verification failed")
         self.validate_test_failure()
@@ -548,7 +548,7 @@ class EventingSanity(EventingBaseTest):
                     self.index_name, verification_dict["ops_create"])
         _ = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
-            vbuckets=self.cluster.vbuckets, expected_val=verification_dict)
+            vbuckets=def_bucket.num_vbuckets, expected_val=verification_dict)
         # if failed:
         #     self.sleep(6000)
         #     self.log_failure("Cbstat vbucket-details verification failed")

@@ -353,7 +353,7 @@ class BucketDurabilityBase(ClusterSetup):
         failed = self.durability_helper.verify_vbucket_details_stats(
             self.cluster.buckets[0],
             self.kv_nodes,
-            vbuckets=self.cluster.vbuckets,
+            vbuckets=self.cluster.buckets[0].num_vbuckets,
             expected_val=verification_dict)
         if failed:
             self.log_failure("Cbstat vbucket-details validation failed")
