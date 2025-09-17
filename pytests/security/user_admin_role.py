@@ -13,25 +13,25 @@ class UserAdminRole(ClusterSetup):
         self.rbac_util = RbacUtils(self.cluster.master)
         self.expected_error = "Forbidden. User needs the following permissions"
         self.rest = RestConnection(self.cluster.master)
-        self.security_users = ["user_admin_local", "user_admin_external", "security_admin"]
+        self.security_users = ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"]
         self.user_permission_map = {
             "create_local_user": ["user_admin_local"],
             "get_local_user": ["user_admin_local"],
-            "list_local_users": ["user_admin_local", "security_admin"],
+            "list_local_users": ["user_admin_local", "security_admin", "ro_security_admin"],
             "delete_local_user": ["user_admin_local"],
             "create_external_user": ["user_admin_external"],
             "get_external_user": ["user_admin_external"],
-            "list_external_users": ["user_admin_external", "security_admin", "user_admin_local"],
+            "list_external_users": ["user_admin_external", "security_admin", "user_admin_local", "ro_security_admin"],
             "delete_external_user": ["user_admin_external"],
             "create_group": ["user_admin_local", "user_admin_external"],
             "get_group": ["user_admin_local", "user_admin_external"],
             "delete_group": ["user_admin_local", "user_admin_external"],
             "list_groups": ["user_admin_local", "user_admin_external"],
-            "backup_users": ["user_admin_local", "user_admin_external", "security_admin"],
+            "backup_users": ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"],
             "restore_users": ["user_admin_local"],
-            "get_audit_settings": ["security_admin"],
+            "get_audit_settings": ["security_admin", "ro_security_admin"],
             "set_audit_settings": ["security_admin"],
-            "get_security_settings": ["security_admin"],
+            "get_security_settings": ["security_admin", "ro_security_admin"],
             "set_security_settings": ["security_admin"]
         }
 
@@ -422,7 +422,7 @@ class UserAdminRole(ClusterSetup):
 
         # Test that both the user cannot create any users with admin roles
         admin_roles = ["admin", "ro_admin" , "security_admin" , "user_admin_local" ,
-                       "user_admin_external" , "cluster_admin"]
+                       "user_admin_external" , "cluster_admin", "ro_security_admin"]
         sample_users = self.get_sample_users(len(admin_roles) * 2)
 
         for idx, admin in enumerate(admin_roles):
@@ -484,7 +484,7 @@ class UserAdminRole(ClusterSetup):
         # Create some local and external users as well as all the admin users
         self.log.info("Testing backup/restore for local user admin")
         admin_roles = ["admin", "ro_admin", "security_admin", "user_admin_local",
-                       "user_admin_external", "cluster_admin"]
+                       "user_admin_external", "cluster_admin", "ro_security_admin"]
         sample_users = self.get_sample_users(4 + len(admin_roles))
         sample_local_users = sample_users[:2]
         sample_external_users = sample_users[2:4]
@@ -547,7 +547,7 @@ class UserAdminRole(ClusterSetup):
         # Create some local and external users as well as all the admin users
         self.log.info("Testing backup/restore for external user admin")
         admin_roles = ["admin", "ro_admin", "security_admin", "user_admin_local",
-                       "user_admin_external", "cluster_admin"]
+                       "user_admin_external", "cluster_admin", "ro_security_admin"]
 
         self.log.info("Creating sample external users")
         for user in sample_external_users:
@@ -625,3 +625,15 @@ class UserAdminRole(ClusterSetup):
 
             self.log.info("Test set security settings for {}".format(user))
             self.set_security_settings(user, user not in self.user_permission_map["set_security_settings"])
+
+    def test_ro_security_admin_permissions(self):
+
+        # Test that security read only admin has cluster.admin.security!read:True and cluster.admin.user!all:False and cluster.admin.security!all:False
+
+        #Create a security read only admin user
+        self.rbac_util._create_user_and_grant_role("ro_security_admin", "ro_security_admin")
+
+        resp = self.rest.check_user_permission("ro_security_admin", "password", "cluster.admin.security!all,cluster.admin.users!all,cluster.admin.security!read,cluster.admin.users!read")
+
+        if not resp['cluster.admin.security!read'] or not resp['cluster.admin.users!read'] or resp['cluster.admin.users!all'] or resp['cluster.admin.security!all']:
+            self.fail("Permission incorrect for security read only admin. Error: {}".format(resp))
