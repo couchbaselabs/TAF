@@ -997,18 +997,36 @@ class OnPremBaseTest(CouchbaseBaseTest):
             # Make sure that data_and index_path are writable by couchbase user
             if self.create_KMIP_secret:
                 self.get_KMIP_certificate(server)
-            if not server.index_path:
-                server.index_path = server.data_path
-            if not server.cbas_path:
-                server.cbas_path = server.data_path
-            if not server.eventing_path:
-                server.eventing_path = server.data_path
-            paths = f"{server.data_path} {server.cbas_path}" \
-                    f"{server.eventing_path} {server.index_path}"
-            ssh_sessions[server.ip].execute_command(
-                f"chattr -i {paths} ;"
-                f"mkdir -p {paths} ;"
-                f"chown -R couchbase:couchbase {paths}")
+
+            # Check if this is a Windows server and set appropriate paths
+            is_windows = ssh_sessions[server.ip].info.distribution_type.lower() == 'windows'
+
+            # Set paths and execute platform-specific commands
+            if is_windows:
+                # Define Windows path components
+                couchbase_data_path = "Couchbase/Server/var/lib/couchbase/data"
+                windows_couchbase_path = f"C:/Program Files/{couchbase_data_path}"
+                cygwin_couchbase_path = f"/cygdrive/c/Program\\ Files/{couchbase_data_path}"
+
+                # Always use Windows paths for Windows servers (for Couchbase API calls)
+                server.data_path = windows_couchbase_path
+                server.index_path = windows_couchbase_path
+                server.cbas_path = windows_couchbase_path
+                server.eventing_path = windows_couchbase_path
+
+                # Use Cygwin paths for shell commands and create directories
+                paths = cygwin_couchbase_path
+                ssh_sessions[server.ip].execute_command(f"mkdir -p {paths}")
+            else:
+                # For Linux servers, use whatever paths are already configured
+                paths = f"{server.data_path} {server.cbas_path}" \
+                        f"{server.eventing_path} {server.index_path}"
+                
+                # On Unix/Linux, use mkdir, chattr, and chown
+                ssh_sessions[server.ip].execute_command(
+                    f"mkdir -p {paths} ;"
+                    f"chattr -i {paths} ;"
+                    f"chown -R couchbase:couchbase {paths}")
 
             status, content = ClusterRestAPI(server).initialize_node(
                 server.rest_username,
