@@ -11,7 +11,7 @@ class RbacUtils():
 
     cb_server_roles = ["admin", "analytics_admin", "analytics_reader", "cluster_admin",
                        "query_external_access", "query_system_catalog", "replication_admin",
-                       "ro_admin", "security_admin", "analytics_manager[*]",
+                       "ro_admin", "security_admin", "analytics_manager[*]", "ro_security_admin",
                        "analytics_select[*]", "bucket_admin[*]", "bucket_full_access[*]", "data_backup[*]",
                        "data_dcp_reader[*]", "data_monitoring[*]", "data_reader[*]", "data_writer[*]", "fts_admin[*]",
                        "fts_searcher[*]", "mobile_sync_gateway[*]", "query_delete[*]", "query_insert[*]",
@@ -26,6 +26,9 @@ class RbacUtils():
                                     password="password"):
         user = [{'id': username, 'password': password, 'name': 'Some Name'}]
         _ = RbacBase().create_user_source(user, source, self.master)
+        self._update_user_roles(username, role, source)
+
+    def _update_user_roles(self, username, role, source='builtin'):
         user_role_list = [{'id': username, 'name': 'Some Name', 'roles': role}]
         _ = RbacBase().add_user_role(user_role_list, self.rest, source)
 
