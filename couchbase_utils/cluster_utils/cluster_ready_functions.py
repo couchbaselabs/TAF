@@ -190,6 +190,7 @@ class ClusterUtils:
 
     @staticmethod
     def generate_random_name(prefix, length=8):
+        random.seed()
         chars = string.ascii_letters + string.digits
         suffix = ''.join(random.choice(chars) for _ in range(length))
         return prefix + suffix
@@ -2129,6 +2130,7 @@ class ClusterUtils:
                 name=ClusterUtils.generate_random_name("EncryptionSecret"),
                 rotationIntervalInSeconds=secret_rotation_interval
             )
+            self.log.info("Log Params: {}".format(log_params))
             status, response = rest.create_secret(log_params)
             response_dict = json.loads(response)
             result['encryption_at_rest_id'] = response_dict.get('id')
@@ -2141,6 +2143,7 @@ class ClusterUtils:
                 usage=["config-encryption"],
                 rotationIntervalInSeconds=secret_rotation_interval
             )
+            self.log.info("Config Log Params: {}".format(log_params))
             status, response = rest.create_secret(log_params)
             response_dict = json.loads(response)
             config_encryption_at_rest_id = response_dict.get('id')
@@ -2165,6 +2168,7 @@ class ClusterUtils:
                 usage=["log-encryption"],
                 rotationIntervalInSeconds=secret_rotation_interval
             )
+            self.log.info("Log Log Params: {}".format(log_params))
             status, response = rest.create_secret(log_params)
             response_dict = json.loads(response)
             log_encryption_at_rest_id = response_dict.get('id')
@@ -2189,6 +2193,7 @@ class ClusterUtils:
                 usage=["audit-encryption"],
                 rotationIntervalInSeconds=secret_rotation_interval
             )
+            self.log.info("Audit Log Log Params: {}".format(log_params))
             status, response = rest.create_secret(log_params)
             response_dict = json.loads(response)
             audit_encryption_at_rest_id = response_dict.get('id')
