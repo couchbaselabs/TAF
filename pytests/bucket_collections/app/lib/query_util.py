@@ -1,3 +1,5 @@
+import time
+import threading
 from random import sample, choice, randint
 
 from couchbase.options import QueryOptions
@@ -10,20 +12,24 @@ from cb_constants import DocLoading
 
 
 class CommonUtil(object):
+    # Class-level lock for thread synchronization
+    _lock = threading.Lock()
+
     @staticmethod
     def get_next_id(scope, collection):
-        doc_key = "%s.%s" % (scope, collection)
-        client = sdk_clients["bucket_data_writer"]
-        client.select_collection(scope, "meta_data")
-        success, fail = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
-                                    doc_key, ["doc_counter", 1],
-                                    create_path=True,
-                                    store_semantics=StoreSemantics.UPSERT)
-        if success:
-            success, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
-                                     doc_key, "doc_counter")
-            return int(success[doc_key]["value"]["doc_counter"])
-        raise Exception(f"CRUD COUNTER operation failed: {fail}")
+        with CommonUtil._lock:
+            doc_key = "%s.%s" % (scope, collection)
+            client = sdk_clients["bucket_data_writer"]
+            client.select_collection(scope, "meta_data")
+            success, fail = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
+                                        doc_key, ["doc_counter", 1],
+                                        create_path=True,
+                                        store_semantics=StoreSemantics.UPSERT)
+            if success:
+                success, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+                                         doc_key, "doc_counter")
+                return int(success[doc_key]["value"]["doc_counter"])
+            raise Exception(f"CRUD COUNTER operation failed: {fail}")
 
     @staticmethod
     def get_current_date(scope_name):
