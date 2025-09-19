@@ -288,7 +288,8 @@ class CBASSystemEventLogs(CBASBaseTest):
         dataset_obj = self.cbas_util.create_dataset_obj(
             self.cluster, self.bucket_util, dataset_cardinality=3,
             bucket_cardinality=3, enabled_from_KV=False,
-            no_of_objs=1, exclude_collection=["_default"])[0]
+            no_of_objs=1, exclude_collection=["_default", "_query", "_mobile"],
+            exclude_scope=["_system"])[0]
         if not self.cbas_util.create_dataset(
                 self.cluster, dataset_obj.name,
                 dataset_obj.full_kv_entity_name,
