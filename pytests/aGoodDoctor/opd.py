@@ -699,8 +699,10 @@ class OPD:
                 if graceful:
                     shell.restart_couchbase()
                 if "kv" in services:
+                    self.log.info("Killing memcached on %s" % server.ip)
                     shell.kill_memcached()
                 if "indexer" in services:
+                    self.log.info("Killing indexer on %s" % server.ip)
                     shell.kill_process("indexer", "indexer")
                 shell.disconnect()
             self.sleep(5, "Sleep for 5 seconds before killing memc on next node.")

@@ -68,7 +68,7 @@ Hotel = {
     "key_type": _input.param("key_type", "SimpleKey"),
     "valType": "Hotel",
     "scopes": 1,
-    "collections": 2,
+    "collections": _input.param("collections", 2),
     "num_items": _input.param("num_items", 1000000000),
     "start": 0,
     "end": _input.param("num_items", 1000000000),
