@@ -369,7 +369,9 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.rest.perform_graceful_failover(chosen[0].id)
         else:
             self.rest.perform_hard_failover(chosen[0].id)
-        self.nodes = self.cluster_util.get_nodes()
+        self.nodes = self.cluster_util.get_nodes(self.cluster.master,
+                                                 inactive_added=True,
+                                                 inactive_failed=True)
         self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
                             eject_nodes=[chosen[0].id])
         reb_util = RebalanceUtil(self.cluster)
