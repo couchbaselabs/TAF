@@ -2432,6 +2432,10 @@ class basic_ops(ClusterSetup):
                 self.assertTrue(err_found,
                                 f"Key '{t_key}' - Unexpected error: {e}")
 
+        if self.bucket_type == Bucket.Type.EPHEMERAL:
+            self.log.critical("Test not applicable for Ephemeral buckets")
+            return
+
         key_1 = "test_doc_1"
         key_2 = "test_doc_2"
         key_3 = "test_doc_3"
