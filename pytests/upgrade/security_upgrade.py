@@ -207,6 +207,10 @@ class SecurityUpgradeTests(UpgradeBase):
 
                 self.log.info("Upgrade of node {0} : {1} complete".format(itr, node_to_upgrade.ip))
 
+                # Updating the rest connection to the orchestrator node which may have changed after upgrade
+                self.rest = RestConnection(self.cluster.master)
+                self.rbac_util = RbacUtils(self.cluster.master)
+
                 ### Fetching the next node to upgrade ##
                 node_to_upgrade = self.fetch_node_to_upgrade()
 
