@@ -28,7 +28,7 @@ class UserAdminRole(ClusterSetup):
             "delete_group": ["user_admin_local", "user_admin_external"],
             "list_groups": ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"],
             "backup_users": ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"],
-            "restore_users": ["user_admin_local"],
+            "restore_users": ["user_admin_local", "user_admin_external"],
             "get_audit_settings": ["security_admin", "ro_security_admin"],
             "set_audit_settings": ["security_admin"],
             "get_security_settings": ["security_admin", "ro_security_admin"],
