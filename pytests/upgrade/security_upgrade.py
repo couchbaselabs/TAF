@@ -256,6 +256,7 @@ class SecurityUpgradeTests(UpgradeBase):
         # Create a user with ro_security_admin role and validate permissions
         self.log.info("Creating user: ro_security_admin with ro_security_admin role")
         self.rbac_util._create_user_and_grant_role("ro_security_admin", "ro_security_admin")
+        self.users["ro_security_admin"] = {'name': "ro_security_admin", 'password': "password", 'roles': ["ro_security_admin"]}
         self._validate_rbac()
         self._validate_ro_admin_permissions(upgrade_complete=True)
 
