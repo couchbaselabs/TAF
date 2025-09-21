@@ -24,9 +24,9 @@ class UserAdminRole(ClusterSetup):
             "list_external_users": ["user_admin_external", "security_admin", "user_admin_local", "ro_security_admin"],
             "delete_external_user": ["user_admin_external"],
             "create_group": ["user_admin_local", "user_admin_external"],
-            "get_group": ["user_admin_local", "user_admin_external"],
+            "get_group": ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"],
             "delete_group": ["user_admin_local", "user_admin_external"],
-            "list_groups": ["user_admin_local", "user_admin_external"],
+            "list_groups": ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"],
             "backup_users": ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"],
             "restore_users": ["user_admin_local"],
             "get_audit_settings": ["security_admin", "ro_security_admin"],
@@ -362,13 +362,21 @@ class UserAdminRole(ClusterSetup):
         for user in self.security_users:
             self.rbac_util._create_user_and_grant_role(user, user)
 
-        groups = ["security_group_1", "security_group_2", "security_group_3"]
+        groups = ["security_group_1", "security_group_2", "security_group_3", "security_group_4"]
 
         for idx, user in enumerate(self.security_users):
 
             self.log.info("Testing create group {}".format(user))
             self.create_group(groups[idx], username=user,
                               verify_error=user not in self.user_permission_map["create_group"])
+
+            # If group does not exist, create it with Administrator user
+            try:
+                rest = self.get_rest_object_for_user("Administrator")
+                _ = rest.get_builtin_group(groups[idx])
+            except Exception as err:
+                # Group does not exist, create it
+                self.create_group(groups[idx], username="Administrator")
 
             self.log.info("Testing get group for {}".format(user))
             self.get_group(groups[idx], username=user,
@@ -378,8 +386,7 @@ class UserAdminRole(ClusterSetup):
             self.list_groups(username=user, verify_error=user not in self.user_permission_map["list_groups"])
 
             self.log.info("Testing delete group for {}".format(user))
-            self.create_group(groups[idx])
-            self.delete_group(groups[idx], username="user_admin_local",
+            self.delete_group(groups[idx], username=user,
                               verify_error=user not in self.user_permission_map["delete_group"])
 
     def test_external_user_management(self):
