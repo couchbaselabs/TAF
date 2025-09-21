@@ -20,8 +20,8 @@ class UserAdminRole(ClusterSetup):
             "list_local_users": ["user_admin_local", "security_admin", "ro_security_admin"],
             "delete_local_user": ["user_admin_local"],
             "create_external_user": ["user_admin_external"],
-            "get_external_user": ["user_admin_external"],
-            "list_external_users": ["user_admin_external", "security_admin", "user_admin_local", "ro_security_admin"],
+            "get_external_user": ["user_admin_external", "security_admin", "ro_security_admin"],
+            "list_external_users": ["user_admin_external", "security_admin", "ro_security_admin"],
             "delete_external_user": ["user_admin_external"],
             "create_group": ["user_admin_local", "user_admin_external"],
             "get_group": ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"],
@@ -406,12 +406,19 @@ class UserAdminRole(ClusterSetup):
         # Get sample users
         users = self.get_sample_users(num_users=len(self.security_users))
 
-
         for idx, user in enumerate(self.security_users):
             # CREATE EXTERNAL USERS
             self.log.info("Test external user creation for {}".format(user))
             self.create_external_user(users[idx], user,
                                       user not in self.user_permission_map["create_external_user"])
+
+            # If user does not exist, create it with Administrator user
+            try:
+                rest = self.get_rest_object_for_user("Administrator")
+                _ = rest.get_external_user(users[idx])
+            except Exception as err:
+                # User does not exist, create it
+                self.create_external_user(users[idx], username="Administrator")
 
             # GET EXTERNAL USER
             self.log.info("Testing get external user details for {}".format(user))
@@ -424,7 +431,6 @@ class UserAdminRole(ClusterSetup):
 
             # DELETE EXTERNAL USER
             self.log.info("Testing delete external user for local user admin")
-            self.create_external_user(users[idx])
             self.delete_external_user(users[idx]['id'], user,
                                       user not in self.user_permission_map["delete_external_user"])
 

@@ -3672,7 +3672,7 @@ class RestConnection(newRC):
     '''
     def get_external_user(self, user_id):
 
-        url = "settings/rbac/users/local/" + user_id
+        url = "settings/rbac/users/external/" + user_id
         api = self.baseUrl + url
         status, content, _ = self._http_request(api, 'GET')
         if not status:
