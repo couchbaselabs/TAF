@@ -16,7 +16,7 @@ class UserAdminRole(ClusterSetup):
         self.security_users = ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"]
         self.user_permission_map = {
             "create_local_user": ["user_admin_local"],
-            "get_local_user": ["user_admin_local"],
+            "get_local_user": ["user_admin_local", "security_admin", "ro_security_admin"],
             "list_local_users": ["user_admin_local", "security_admin", "ro_security_admin"],
             "delete_local_user": ["user_admin_local"],
             "create_external_user": ["user_admin_external"],
@@ -341,6 +341,14 @@ class UserAdminRole(ClusterSetup):
             self.create_local_user(sample_users[idx], user,
                                    user not in self.user_permission_map["create_local_user"])
 
+            # If user does not exist, create it with Administrator user
+            try:
+                rest = self.get_rest_object_for_user("Administrator")
+                _ = rest.get_builtin_user(sample_users[idx])
+            except Exception as err:
+                # User does not exist, create it
+                self.create_local_user(sample_users[idx], username="Administrator")
+
             ## GET LOCAL USER
             self.log.info("Testing get user details for {}".format(user))
             self.get_local_user(sample_users[idx]['id'], user,
@@ -352,7 +360,6 @@ class UserAdminRole(ClusterSetup):
 
             ## DELETE LOCAL USER
             self.log.info("Testing delete user for {}".format(user))
-            self.create_local_user(sample_users[idx])
             self.delete_local_user(sample_users[idx]['id'], user,
                                    user not in self.user_permission_map["delete_local_user"])
 
