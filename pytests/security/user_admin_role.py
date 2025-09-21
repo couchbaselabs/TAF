@@ -13,7 +13,7 @@ class UserAdminRole(ClusterSetup):
         self.rbac_util = RbacUtils(self.cluster.master)
         self.expected_error = "Forbidden. User needs the following permissions"
         self.rest = RestConnection(self.cluster.master)
-        self.security_users = ["user_admin_local", "user_admin_external", "security_admin", "ro_security_admin"]
+        self.security_users = ["user_admin_local", "user_admin_external", "ro_security_admin", "security_admin"]
         self.user_permission_map = {
             "create_local_user": ["user_admin_local"],
             "get_local_user": ["user_admin_local", "security_admin", "ro_security_admin"],
