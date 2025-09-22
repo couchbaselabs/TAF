@@ -192,7 +192,8 @@ class DoctorN1QL():
                     if xattr:
                         indexType = [index.replace("`embedding`", "meta().xattrs.embedding") for index in indexType]
                         queryType = [query.replace("embedding", "meta().xattrs.embedding") for query in queryType]
-                    queryParams = [{}] * workload.get("2i").get("num_queries")
+                    if b.loadDefn.get("valType") == "siftBigANN":
+                        queryParams = [{}] * workload.get("2i").get("num_queries")
                     i = 0
                     q = 0
                     while i < workload.get("2i").get("num_indexes") or q < workload.get("2i").get("num_queries"):

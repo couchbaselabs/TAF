@@ -322,7 +322,7 @@ class JavaDocLoaderUtils(object):
                     model = bucket.loadDefn.get("model")
                     mockVector = bucket.loadDefn.get("mockVector")
                     base64 = bucket.loadDefn.get("base64")
-                    process_concurrency = bucket.loadDefn.get("process_concurrency")
+                    process_concurrency = JavaDocLoaderUtils.process_concurrency
                     valType = workload["valType"]
                     dim = workload.get("dim", 128)
                     if collection == "_default" and scope == "_default" and skip_default:
