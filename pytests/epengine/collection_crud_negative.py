@@ -706,8 +706,6 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
-            shell_conn[node.ip].disconnect()
-            cbstat_obj[node.ip].disconnect()
 
         target_vbs = replica_vbs
         if self.durability_level \
@@ -839,6 +837,8 @@ class CollectionDurabilityTests(CollectionBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loading_task)
