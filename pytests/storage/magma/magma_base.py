@@ -623,7 +623,7 @@ class MagmaBaseTest(StorageBase):
                                 history_retention_seconds=time,
                                 history_retention_bytes=size)
 
-    def get_seqnumber_count(self, bucket=None):
+    def get_seqnumber_count(self, bucket=None, retry_count=5):
         result = dict()
         for node in self.cluster.nodes_in_cluster:
             result["_".join(node.ip.split("."))] = dict()
@@ -646,6 +646,12 @@ class MagmaBaseTest(StorageBase):
                     #dump += ' --kvstore {} --docs-by-seq --history | wc -l'.format(kvstore_num)
                     dump += ' docs --index seq --kvstore {} --history | wc -l'.format(kvstore_num)
                     seqnumber_count = shell.execute_command(dump)[0][0].strip()
+                    retry = retry_count
+                    while int(seqnumber_count) == 0 and retry > 0:
+                        self.log.info("CMD: {} failed, retrying again...".format(dump))
+                        seqnumber_count = shell.execute_command(dump)[0][0].strip()
+                        retry -= 1
+                        time.sleep(5)
                     result["_".join(node.ip.split("."))][kvstore] = seqnumber_count
         self.log.info("seqnumber_count/kvstore {}".format(result))
         seqnumber_count = 0

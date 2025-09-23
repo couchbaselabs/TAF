@@ -1,4 +1,5 @@
 import random
+from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -15,8 +16,25 @@ class SteadyStateTests(MagmaBaseTest):
     def tearDown(self):
         super(SteadyStateTests, self).tearDown()
 
+    def get_history_stats(self, bucket):
+
+        self.history_stats = dict()
+
+        for server in self.cluster.nodes_in_cluster:
+            cbstats = Cbstats(server)
+            self.history_stats[server.ip] = dict()
+            result = cbstats.all_stats(bucket.name)
+            for stat in ["ep_history_retention_bytes", "ep_history_retention_seconds",
+                         "ep_magma_history_logical_data_size", "ep_magma_history_logical_disk_size",
+                         "ep_magma_history_size_evicted", "ep_magma_history_time_evicted"]:
+                self.history_stats[server.ip][stat] = result[stat]
+
+        self.log.info("History stats = {}".format(self.history_stats))
+
+
     def test_history_retention_for_n_upsert_iterations(self):
         self.PrintStep("test_history_retention_for_n_upsert_iterations starts")
+        bucket = self.cluster.buckets[0]
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
@@ -55,6 +73,7 @@ class SteadyStateTests(MagmaBaseTest):
                     self.log.info("history_start_seq after initial creates and upserts  {}".format(init_history_start_seq[bucket]))
 
             self.PrintStep("Step 2.%s.1: Comparing history start seq number"% (count))
+            self.get_history_stats(bucket)
             history_start_seq_stats = dict()
             history_start_seq_stats = self.get_history_start_seq_for_each_vb()
             for bucket in self.cluster.buckets:
@@ -75,8 +94,8 @@ class SteadyStateTests(MagmaBaseTest):
 
         self.PrintStep("Step 4: Sequence number count check")
 
-        expected_count = ((count) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1))) \
-                            + (3 * (self.vbuckets*(self.num_replicas+1)))
+        expected_count = ((count) * ((bucket.replicaNumber+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (bucket.num_vbuckets*(bucket.replicaNumber+1))) \
+                            + (3 * (bucket.num_vbuckets*(bucket.replicaNumber+1)))
         seq_count = self.get_seqnumber_count()
         self.log.info("expected_count = {}".format(expected_count))
         self.assertEqual(seq_count, expected_count, "Not all sequence numbers are present")
@@ -112,7 +131,7 @@ class SteadyStateTests(MagmaBaseTest):
                 self.log.info(" New history_start_seq_stats {}".format(history_start_seq_stats[bucket]))
                 for key in history_start_seq_stats[bucket].keys():
                     msg = "init_history_start_seq {} > curr_history_start_seq {} for  bucket {} and vbucket {} ".format(init_history_start_seq[bucket][key]["active"]["history_start_seqno"],
-                                                                                                                    history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], 
+                                                                                                                    history_start_seq_stats[bucket][key]["active"]["history_start_seqno"],
                                                                                                                     bucket.name, key)
                     self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] <= history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
             seq_count = self.get_seqnumber_count()
@@ -252,7 +271,7 @@ class SteadyStateTests(MagmaBaseTest):
                 self.log.info(" New history_start_seq_stats {}".format(history_start_seq_stats[bucket]))
                 for key in history_start_seq_stats[bucket].keys():
                     msg = "init_history_start_seq {} > curr_history_start_seq {} for  bucket {} and vbucket {} ".format(init_history_start_seq[bucket][key]["active"]["history_start_seqno"],
-                                                                                                                    history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], 
+                                                                                                                    history_start_seq_stats[bucket][key]["active"]["history_start_seqno"],
                                                                                                                     bucket.name, key)
                     self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] <= history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
             seq_count = self.get_seqnumber_count()
