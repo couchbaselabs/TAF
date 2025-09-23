@@ -821,8 +821,9 @@ class CollectionDurabilityTests(CollectionBase):
                             if result[0]:
                                 self.log_failure(
                                     "Doc crud succeeded for %s" % op_type)
-                            elif expected_exception \
-                                    not in str(result[1][key]["error"]):
+                            elif not (SDKException.check_if_exception_exists(
+                                    expected_exception,
+                                    result[1][key]["error"])):
                                 self.log_failure(
                                     "Invalid exception for key %s: %s"
                                     % (key, result[1][key]["error"]))
