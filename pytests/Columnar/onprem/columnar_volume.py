@@ -202,8 +202,19 @@ class ColumnarOnPremVolumeTest(ColumnarOnPremBase, OPD):
             self.kafka_util.deleteKafkaTopics(dataSource.kafka_topics)
 
     def setup_columnar_sdk_clients(self, columnar):
-        client = SDKClient(columnar, None)
-        columnar.SDKClients = [client]
+        from datetime import timedelta
+        import couchbase_columnar
+        from couchbase_columnar.cluster import Cluster
+        from couchbase_columnar.credential import Credential
+        from couchbase_columnar.options import (ClusterOptions,SecurityOptions,TimeoutOptions)
+        from couchbase_columnar.common.core._certificates import _Certificates
+        sec_opts = SecurityOptions(disable_server_certificate_verification=True)
+        timeout_ops = TimeoutOptions(connect_timeout=timedelta(seconds=60), dispatch_timeout=timedelta(seconds=30))
+        opts = ClusterOptions(security_options=sec_opts, timeout_options=timeout_ops, dump_configuration=True)
+        connstr = 'couchbases://' + columnar.master.ip
+        cred = Credential.from_username_and_password(columnar.master.rest_username, columnar.master.rest_password)
+        cluster = Cluster.create_instance(connstr, cred, opts)
+        columnar.SDKClients = [cluster]
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def load_remote_couchbase_clusters(self):
