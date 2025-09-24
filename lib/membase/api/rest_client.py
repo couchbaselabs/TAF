@@ -1070,7 +1070,7 @@ class RestConnection(newRC):
     def reset_node(self):
         api = self.baseUrl + "controller/hardResetNode"
         headers = self._create_headers()
-        status, _, _ = self._http_request(api, "POST", headers=headers)
+        status, _, _ = self._http_request(api, "POST", headers=headers, timeout=300)
         if not status:
             raise Exception("Failed during hard resetting '%s'" % self.ip)
 
