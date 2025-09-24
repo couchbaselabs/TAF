@@ -209,7 +209,7 @@ class N1qlBase(CollectionBase):
         name = clause[0].split('.')
         if "name" in clause[-1]:
             queries = []
-            value = '{ "abcd": { "def": repeat("abcd", 102400)}}'
+            value = '{ "abcd": { "def": "abcd" * 102400}}'
             docs["key1234"] = value
             query_params["memory_quota"] = self.memory_quota
             for key, value in docs.iteritems():
