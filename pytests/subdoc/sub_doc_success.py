@@ -377,7 +377,7 @@ class BasicOps(DurabilityTestsBase):
 
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=def_bucket.vbuckets,
+            vbuckets=def_bucket.num_vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
@@ -529,7 +529,7 @@ class BasicOps(DurabilityTestsBase):
         # Verify vb-details cbstats
         failed = self.durability_helper.verify_vbucket_details_stats(
             def_bucket, self.cluster_util.get_kv_nodes(self.cluster),
-            vbuckets=def_bucket.vbuckets,
+            vbuckets=def_bucket.num_vbuckets,
             expected_val=verification_dict)
         if failed:
             self.fail("Cbstat vbucket-details verification failed")
