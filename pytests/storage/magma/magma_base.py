@@ -645,10 +645,11 @@ class MagmaBaseTest(StorageBase):
                     #dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
                     #dump += ' --kvstore {} --docs-by-seq --history | wc -l'.format(kvstore_num)
                     dump += ' docs --index seq --kvstore {} --history | wc -l'.format(kvstore_num)
-                    seqnumber_count = shell.execute_command(dump)[0][0].strip()
+                    output, error = shell.execute_command(dump)
+                    seqnumber_count = output[0].strip()
                     retry = retry_count
                     while int(seqnumber_count) == 0 and retry > 0:
-                        self.log.info("CMD: {} failed, retrying again...".format(dump))
+                        self.log.info("CMD: {} failed, Error: {}, retrying again...".format(dump, error))
                         seqnumber_count = shell.execute_command(dump)[0][0].strip()
                         retry -= 1
                         time.sleep(5)
