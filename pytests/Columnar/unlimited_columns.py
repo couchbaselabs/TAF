@@ -7,6 +7,7 @@ Created on 14-July-2025
 from queue import Queue
 from Columnar.columnar_base import ColumnarBaseTest
 from Jython_tasks.sirius_task import CouchbaseUtil
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from common_lib import sleep
 
 
@@ -75,6 +76,52 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
 
         self.log_setup_status(self.__class__.__name__,
                               "Finished", stage="Teardown")
+
+    def load_remote_collection(self):
+        # creating bucket scope and collections for remote collection
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster)
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster)
+
+        # create remote link and remote collection in columnar
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_doc_to_remote_collections(self.remote_cluster, "RandomlyNestedJson",
+                                            create_start_index=0, create_end_index=self.initial_doc_count)
+
+        remote_links = self.cbas_util.get_all_link_objs("couchbase")
+        remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
+
+        for link in remote_links:
+            if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
+                self.fail("Failed to connect link")
+
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
+        for dataset in remote_datasets:
+            if not self.cbas_util.wait_for_ingestion_complete(
+                    self.columnar_cluster, dataset.full_name,
+                    dataset.num_of_items):
+                self.fail("Doc count mismatch.")
+
+        self.log.info(
+            f"{self.initial_doc_count} docs loaded into remote cluster")
 
     def create_standalone_collection(self):
         database_name = self.input.param("database", "Default")
@@ -710,4 +757,31 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
             ),
         ]
         self.validate_queries(queries)
+        return
+
+    """
+    ingest 100K (RandomlyNestedJson) -> query -> verify results
+    https://jira.issues.couchbase.com/browse/MB-68738
+    """
+    def test_randomly_nested_json(self):
+
+        # ingest data
+        self.load_remote_collection()
+
+        # validate queries
+        datasets = self.cbas_util.get_all_dataset_objs("remote")
+        for dataset in datasets:
+            try:
+                queries = [
+                    (
+                        f"select count(*) from {dataset.name};",
+                        [{"$1": self.initial_doc_count}],
+                    )]
+                self.validate_queries(queries)
+                self.log.info(
+                    f"Validation completed for cmd {queries} in collection {dataset.name}")
+            except Exception as e:
+                self.fail(f"Failed to validate cmd {queries} {e}")
+
+        self.log.info("Validation completed for test_randomly_nested_json")
         return
