@@ -788,7 +788,7 @@ class CBASBaseTest(BaseTestCase):
             elif user in ["security_admin", "security_admin_local", "security_admin_external",
                           "query_external_access",
                           "query_system_catalog", "replication_admin",
-                          "ro_admin", "bucket_full_access",
+                          "ro_admin", "ro_security_admin", "bucket_full_access",
                           "replication_target", "mobile_sync_gateway",
                           "data_reader", "data_writer",
                           "data_dcp_reader", "data_monitoring",
