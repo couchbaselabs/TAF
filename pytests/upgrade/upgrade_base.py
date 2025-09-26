@@ -573,6 +573,8 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Upgrade failed")
             return
 
+        self.sleep(30, "Wait before recovering the node")
+
         rest.set_recovery_type(otp_node.id,
                                recoveryType=recovery_type)
 
