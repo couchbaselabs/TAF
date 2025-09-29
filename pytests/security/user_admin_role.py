@@ -1,5 +1,6 @@
 import json
 import random
+import uuid
 import string
 
 from membase.api.rest_client import RestConnection
@@ -60,29 +61,21 @@ class UserAdminRole(ClusterSetup):
                                                                                   err_msg))
 
     @staticmethod
-    def get_sample_users(num_users=1, usernames=[], passwords=[]):
-
-        if len(usernames) == 0:
-            for _ in range(num_users):
-                base_name = "security_user"
-                # Generate a random string of lowercase letters and digits
-                random_suffix = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
-
-                # Combine the base name with the random suffix
-                username = "{}_{}".format(base_name, random_suffix)
-                usernames.append(username)
-
-        if len(passwords) == 0:
-            for _ in range(num_users):
-                password = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
-                passwords.append(password)
+    def get_sample_users(num_users=1):
 
         users = []
-        for uname, psswd in zip(usernames, passwords):
+        for _ in range(num_users):
+            base_name = "security_user"
+            random_suffix = str(uuid.uuid4())
+
+            # Combine the base name with the random suffix
+            username = "{}_{}".format(base_name, random_suffix)
+            password = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
+
             user_dict = {
-                'id': uname,
-                'password': psswd,
-                'name': uname
+                'id': username,
+                'password': password,
+                'name': username
             }
             users.append(user_dict)
 
