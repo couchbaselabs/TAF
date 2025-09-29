@@ -46,6 +46,7 @@ class StorageBase(BaseTestCase):
         self.fusion_log_store_uri = self.input.param("fusion_log_store_uri", None)
         self.fusion_upload_interval = self.input.param("fusion_upload_interval", 60)
         self.fusion_log_checkpoint_interval = self.input.param("fusion_log_checkpoint_interval", 180)
+        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 78643200) # 75MB/s
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
         self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100000) # 100GB
         self.logstore_frag_threshold = self.input.param("logstore_frag_threshold", 0.5) # 50%
@@ -823,13 +824,14 @@ class StorageBase(BaseTestCase):
                                            vbuckets=vbuckets,
                                            key_size=key_size)
 
-    def java_doc_loader(self, scopes=None, collections=None, generator=None, doc_ops=None,
+    def java_doc_loader(self, buckets=None, scopes=None, collections=None, generator=None, doc_ops=None,
                         wait=True, process_concurrency=2, skip_default=False, exp_ttl=None,
                         validate_docs=False, ops_rate=None, monitor_ops=True):
 
         doc_loading_tasks = list()
         ops_rate = ops_rate if ops_rate is not None else self.ops_rate
         self.doc_loading_tm = TaskManager(self.process_concurrency)
+        buckets = buckets if buckets is not None else self.cluster.buckets
 
         # Mapping operations to their corresponding attributes
         op_map = {
@@ -862,13 +864,13 @@ class StorageBase(BaseTestCase):
 
         print_ops_tasks = list()
         if monitor_ops:
-            for bucket in self.cluster.buckets:
+            for bucket in buckets:
                 self.printOps = PrintBucketStats(self.cluster, bucket,
                                                 monitor_stats=["doc_ops"], sleep=1)
                 print_ops_tasks.append(self.printOps)
                 self.task_manager.add_new_task(self.printOps)
 
-        for bucket in self.cluster.buckets:
+        for bucket in buckets:
             scopes_keys = scopes or bucket.scopes.keys()
             for scope in scopes_keys:
                 if scope == CbServer.system_scope:
@@ -1421,14 +1423,12 @@ class StorageBase(BaseTestCase):
                                 enable_sync_threshold=self.enable_sync_threshold)
         self.log.info(f"Status = {status}, Result = {content}")
 
-    def enable_fusion(self):
+    def enable_fusion(self, buckets=None, timeout=3600):
 
-        self.log.info("Enabling Fusion")
         fusion_client = FusionRestAPI(self.cluster.master)
-
-        status, _ = fusion_client.enable_fusion()
+        status, content = fusion_client.enable_fusion(buckets=buckets)
+        self.log.info(f"Enabling Fusion, Status: {status}, Content: {content}")
         if status:
-            timeout = 600
             end_time = time.time() + timeout
             fusion_enabled = False
             while time.time() < end_time:
@@ -1442,7 +1442,9 @@ class StorageBase(BaseTestCase):
             if fusion_enabled:
                 self.log.info("Fusion Enabled successfully")
             else:
-                self.log.info("Enabling Fusion failed after timeout")
+                self.fail("Enabling Fusion failed after timeout")
+        else:
+            self.fail(f"Enabling Fusion failed. Error = {content}")
 
     def PrintStep(self, msg=None):
         print("\n")

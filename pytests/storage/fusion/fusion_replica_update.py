@@ -14,15 +14,6 @@ class FusionReplicaUpdate(MagmaBaseTest, FusionBase):
 
         self.log.info("FusionReplicaUpdate setUp Started")
 
-        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
-        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
-        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
-
-        split_path = self.local_test_path.split("/")
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
-        self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
-        subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
-
         self.skip_file_linking = self.input.param("skip_file_linking", False)
 
         # Override Fusion default settings

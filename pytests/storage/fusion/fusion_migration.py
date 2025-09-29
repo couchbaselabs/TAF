@@ -13,15 +13,6 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("FusionMigration setUp Started")
 
-        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 1)
-        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
-        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
-
-        split_path = self.local_test_path.split("/")
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
-        self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
-        subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
-
         # Override Fusion default settings
         for bucket in self.cluster.buckets:
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
@@ -40,7 +31,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("Starting initial load")
         self.initial_load()
-        self.sleep(30, "Sleep after data loading")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
@@ -63,7 +55,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("Starting initial load")
         self.initial_load()
-        self.sleep(30, "Sleep after data loading")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
         # Set Migration Rate Limit to 0 so that extent migration doesn't take place
         ClusterRestAPI(self.cluster.master).\
@@ -103,7 +96,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("Starting initial load")
         self.initial_load()
-        self.sleep(30, "Sleep after data loading")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
@@ -133,7 +127,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("Starting initial load")
         self.initial_load()
-        self.sleep(30, "Sleep after data loading")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
         # Set Migration Rate Limit to 0 so that extent migration doesn't take place
         ClusterRestAPI(self.cluster.master).\
@@ -198,7 +193,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("Starting initial load")
         self.initial_load()
-        self.sleep(30, "Sleep after data loading")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
         # Set Migration Rate Limit to 0 so that extent migration doesn't take place
         ClusterRestAPI(self.cluster.master).\
@@ -252,7 +248,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("Starting initial load")
         self.initial_load()
-        self.sleep(30, "Sleep after data loading")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
         # Set Migration Rate Limit to 0 so that extent migration doesn't take place
         ClusterRestAPI(self.cluster.master).\
@@ -308,7 +305,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info("Starting initial load")
         self.initial_load()
-        self.sleep(30, "Sleep after data loading")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)

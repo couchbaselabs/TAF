@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from cb_tools.cbstats import Cbstats
@@ -12,10 +13,6 @@ class FusionLogCleaning(FusionSync, FusionBase):
         self.monitor_log_store = self.input.param("monitor_log_store", True)
         self.upload_ops_rate = self.input.param("upload_ops_rate", 20000)
 
-        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
-        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
-        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 1)
-
         self.log.info("FusionLogCleaning setUp Started")
 
     def tearDown(self):
@@ -25,24 +22,20 @@ class FusionLogCleaning(FusionSync, FusionBase):
 
         self.log.info("Monitoring Log Store Disk Usage")
 
+        bucket_uuid = self.get_bucket_uuid(bucket.name)
+        self.log.info(f"Bucket UUID: {bucket_uuid}")
+        fusion_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
+
+        du_cmd = f"du -sb {fusion_bucket_path}"
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+
         if validate:
-            shell = RemoteMachineShellConnection(self.nfs_server)
-            bucket_uuid = self.get_bucket_uuid(bucket.name)
-            fusion_bucket_path = f"{self.nfs_server_path}/kv/{bucket_uuid}/{bucket_uuid}"
-            o, e = shell.execute_command(f"du -sb {fusion_bucket_path}")
+            # Fetch the initial log store DU after creates, which will be used to compare and validate
+            o, e = ssh.execute_command(du_cmd)
             current_du = int(o[0].split("\t")[0])
             self.log.info(f"Log Store Size of {bucket.name} after initial creates = {current_du}")
             self.max_allowed_log_store_du = (1 + self.logstore_frag_threshold + 0.25) * current_du
             self.log.info(f"Log Store DU should be always under {self.max_allowed_log_store_du} bytes")
-
-        bucket_uuid = self.get_bucket_uuid(bucket.name)
-        self.log.info(f"Bucket UUID: {bucket_uuid}")
-
-        fusion_bucket_path = f"{self.nfs_server_path}/kv/{bucket_uuid}/{bucket_uuid}"
-
-        du_cmd = f"du -sb {fusion_bucket_path}"
-
-        ssh = RemoteMachineShellConnection(self.nfs_server)
 
         du_violations = 0
         total_checks = 0

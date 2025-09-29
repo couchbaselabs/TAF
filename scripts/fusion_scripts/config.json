@@ -4,6 +4,7 @@
         "accelerator_binary": "/root/fusion/run_local_accelerator.sh",
         "manifest_parts": 20,
         "manifest_dest_path": "/mnt/nfs/share/fusion-manifests",
+        "base_uri": "/mnt/nfs/share/buckets",
         "ssh_username": "root",
         "ssh_password": "couchbase"
     },

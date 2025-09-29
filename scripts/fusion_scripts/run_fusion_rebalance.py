@@ -78,7 +78,7 @@ class RebalanceAutomation:
             return result
         except subprocess.CalledProcessError as e:
             print(f"Command failed with exit code {e.returncode}")
-            print("Error output:", e.stderr)
+            print("Error output:", e.stderr, e.stdout)
             raise
 
     def get_ejected_nodes(self) -> Set[str]:
@@ -113,7 +113,7 @@ class RebalanceAutomation:
         if not os.path.exists(REBALANCE_PLAN_FILE) and not self.dry_run:
             raise FileNotFoundError(f"Rebalance plan file {REBALANCE_PLAN_FILE} not found")
 
-        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.config['manifest_parts']}"
+        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.config['manifest_parts']} -base-uri {self.config['base_uri']}"
         self._execute_command(cmd, "Splitting rebalance manifest")
 
     def sync_manifests(self):

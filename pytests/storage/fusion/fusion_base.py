@@ -1,3 +1,4 @@
+import ast
 from collections import deque
 from copy import deepcopy
 import json
@@ -44,6 +45,8 @@ class FusionBase(BaseTestCase):
         self.nfs_server_ip = self.input.param("nfs_server_ip", "172.23.219.42")
         self.nfs_server_path = self.input.param("nfs_server_path", "/data/nfs/share/buckets")
 
+        self.skip_fusion_setup = self.input.param("skip_fusion_setup", False)
+
         self.current_version = self.input.param("current_version", "0.0.0-3025")
 
         # Virtual env path for rebalance script execution on the remote node
@@ -70,7 +73,16 @@ class FusionBase(BaseTestCase):
         self.local_scripts_path = "/" + os.path.join("/".join(split_path[1:4]), "scripts", "fusion_scripts")
         self.log.info(f"Local scripts path: {self.local_scripts_path}")
 
-        if not self.skip_cluster_reset:
+        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
+        self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
+        subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
+
+        ip_cmd = """ip -o -4 addr show scope global | awk '{split($4,a,"/"); print a[1]}'"""
+        result = subprocess.run(ip_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
+        self.slave_ip = result.stdout.strip()
+        self.log.info(f"Slave IP = {self.slave_ip}")
+
+        if not self.skip_fusion_setup:
             self.setup_nfs_server()
 
             th_arr1 = list()
@@ -91,11 +103,22 @@ class FusionBase(BaseTestCase):
                 th.join()
         else:
             self.log.info("Skipping Fusion Set Up")
+            self.log.info("Deleting contents on log store")
+            ssh = RemoteMachineShellConnection(self.nfs_server)
+            nfs_base_path = "/".join(self.nfs_server_path.split("/")[:-1])
+            nfs_cleanup_cmd = f"rm -rf {nfs_base_path}/*"
+            self.log.info(f"Executing CMD: {nfs_cleanup_cmd}")
+            o, e = ssh.execute_command(nfs_cleanup_cmd)
+            ssh.disconnect()
 
         self.monitor = True
         self.crash_loop = False
 
         self.retry_get_process_num = self.input.param("retry_get_process_num", 300)
+
+        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
+        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
+        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
 
         self.spare_nodes = list()
 
@@ -406,6 +429,7 @@ class FusionBase(BaseTestCase):
         end_time = start_time + duration
 
         stat_dict = dict()
+        zero_retry_count = 0
 
         while time.time() < end_time:
             try:
@@ -415,6 +439,13 @@ class FusionBase(BaseTestCase):
                     v = int(stat.split(":")[1].strip())
                     stat_dict[k] = v
                 self.log.debug(f"Extent Migration stats on {server.ip} :{stat_dict}")
+
+                if int(stat_dict['ep_fusion_migration_total_bytes']) == 0:
+                    zero_retry_count += 1
+                    if zero_retry_count == 10:
+                        self.log.info(f"No extent migration is taking place on {server.ip}:{bucket.name}")
+                        break
+                    continue
 
                 extent_migration_percent = round((stat_dict['ep_fusion_migration_completed_bytes'] / stat_dict['ep_fusion_migration_total_bytes']) * 100, 2)
                 self.log.info(f"Extent Migration Progress: {extent_migration_percent}% "
@@ -464,7 +495,8 @@ class FusionBase(BaseTestCase):
 
 
     def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
-                      rebalance_master=False, replica_update=False, skip_file_linking=False):
+                      rebalance_master=False, replica_update=False, skip_file_linking=False,
+                      wait_for_rebalance_to_complete=True):
 
         # Populate spare nodes list
         if rebalance_count == 1:
@@ -615,13 +647,6 @@ class FusionBase(BaseTestCase):
         o, e = ssh.execute_command(commands, timeout=1800)
         self.log.info(f"Output = {o[-50:]}, Error = {e}")
 
-        # Monitor rebalance progress, and wait until it's done
-        self.start_time = time.time()
-        self.sleep(10, "Wait before checking rebalance progress")
-        rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance()
-        if not rebalance_result:
-            self.log.fail("Fusion Rebalance failed")
-
         self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout" + str(rebalance_count) + ".txt")
         self.fusion_rebalance_error = os.path.join(output_dir, "fusion_stderr" + str(rebalance_count) + ".txt")
 
@@ -637,6 +662,14 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
+        # Monitor rebalance progress, and wait until it's done
+        if wait_for_rebalance_to_complete:
+            self.start_time = time.time()
+            self.sleep(10, "Wait before checking rebalance progress")
+            rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance()
+            if not rebalance_result:
+                self.fail("Fusion Rebalance failed")
+
         # Parse Fusion error logs to look for any failures/issues
         # Exclude known patterns like "Temporary failure in name resolution"
         self.log.info("Parsing Fusion Error logs to look for issues/failures")
@@ -645,10 +678,8 @@ class FusionBase(BaseTestCase):
         output = result.stdout.strip()
         error = result.stderr.strip()
         self.log.info(f"Output = {output}, Error = {error}")
-
         if output or error:
             self.fail("Found ERROR logs during Fusion rebalance automation")
-
 
         nodes_to_monitor = list()
         ssh = RemoteMachineShellConnection(self.cluster.master)
@@ -664,6 +695,13 @@ class FusionBase(BaseTestCase):
             if server.ip in node_ips_to_monitor:
                 nodes_to_monitor.append(server)
         ssh.disconnect()
+
+        # Save rebalance plan on the slave to artifact it
+        self.log.info("Copying over rebalance plan from nodes to slave")
+        copy_cmd = 'sshpass -p "{0}" scp -o StrictHostKeyChecking=no root@{1}:{2} {3}/'\
+                .format("couchbase", self.cluster.master.ip, reb_plan_path, output_dir)
+        self.log.info(f"Copy CMD: {copy_cmd}")
+        subprocess.run(copy_cmd, shell=True, executable="/bin/bash")
 
         # Updating nodes_in_cluster after rebalance
         self.cluster.nodes_in_cluster = list()
@@ -699,3 +737,41 @@ class FusionBase(BaseTestCase):
                 shell.kill_memcached()
 
             self.sleep(interval, "Sleep before killing memcached")
+
+
+    def get_fusion_uploader_info(self, buckets=None):
+
+        self.fusion_uploader_dict = dict()
+        self.fusion_vb_uploader_map = dict()
+
+        buckets = buckets if buckets is not None else self.cluster.buckets
+
+        for bucket in buckets:
+            self.fusion_uploader_dict[bucket.name] = dict()
+            self.fusion_vb_uploader_map[bucket.name] = dict()
+            status, content = ClusterRestAPI(self.cluster.master).diag_eval('ns_bucket:get_fusion_uploaders("{}").'.format(bucket.name))
+
+            if status:
+                raw_str = content.decode("utf-8")
+
+                tuple_str = raw_str.replace("{", "(").replace("}", ")").replace("undefined", "None")
+
+                parsed_list = ast.literal_eval(tuple_str)
+
+                vb_no = 0
+                for node in parsed_list:
+                    if node[0] in self.fusion_uploader_dict[bucket.name]:
+                        self.fusion_uploader_dict[bucket.name][node[0]] += 1
+                    else:
+                        self.fusion_uploader_dict[bucket.name][node[0]] = 1
+
+                    self.fusion_vb_uploader_map[bucket.name][vb_no] = dict()
+                    if node[0] != None:
+                        self.fusion_vb_uploader_map[bucket.name][vb_no]["node"] = node[0].split("@")[1]
+                    else:
+                        self.fusion_vb_uploader_map[bucket.name][vb_no]["node"] = node[0]
+                    self.fusion_vb_uploader_map[bucket.name][vb_no]["term"] = int(node[1])
+                    vb_no += 1
+
+        self.log.info(f"Fusion Uploader Distribution = {self.fusion_uploader_dict}")
+        self.log.info(f"Fusion VB Uploader Map = {self.fusion_vb_uploader_map}")

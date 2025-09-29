@@ -20,16 +20,7 @@ class FusionUploader(MagmaBaseTest, FusionBase):
 
         self.log.info("FusionUploader setUp Started")
 
-        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 1)
-        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
-        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
-
         self.rebalance_master = self.input.param("rebalance_master", False)
-
-        split_path = self.local_test_path.split("/")
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
-        self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
-        subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
 
         self.upsert_iterations = self.input.param("upsert_iterations", 2)
 
@@ -326,42 +317,6 @@ class FusionUploader(MagmaBaseTest, FusionBase):
                 self.log.debug(f"Bucket:{bucket.name}, VB:{vb_no}, Stale log files: {stale_log_files}")
 
         ssh.disconnect()
-
-
-    def get_fusion_uploader_info(self):
-
-        self.fusion_uploader_dict = dict()
-        self.fusion_vb_uploader_map = dict()
-
-        for bucket in self.cluster.buckets:
-            self.fusion_uploader_dict[bucket.name] = dict()
-            self.fusion_vb_uploader_map[bucket.name] = dict()
-            status, content = ClusterRestAPI(self.cluster.master).diag_eval('ns_bucket:get_fusion_uploaders("{}").'.format(bucket.name))
-
-            if status:
-                raw_str = content.decode("utf-8")
-
-                tuple_str = raw_str.replace("{", "(").replace("}", ")").replace("undefined", "None")
-
-                parsed_list = ast.literal_eval(tuple_str)
-
-                vb_no = 0
-                for node in parsed_list:
-                    if node[0] in self.fusion_uploader_dict[bucket.name]:
-                        self.fusion_uploader_dict[bucket.name][node[0]] += 1
-                    else:
-                        self.fusion_uploader_dict[bucket.name][node[0]] = 1
-
-                    self.fusion_vb_uploader_map[bucket.name][vb_no] = dict()
-                    if node[0] != None:
-                        self.fusion_vb_uploader_map[bucket.name][vb_no]["node"] = node[0].split("@")[1]
-                    else:
-                        self.fusion_vb_uploader_map[bucket.name][vb_no]["node"] = node[0]
-                    self.fusion_vb_uploader_map[bucket.name][vb_no]["term"] = int(node[1])
-                    vb_no += 1
-
-        self.log.info(f"Fusion Uploader Distribution = {self.fusion_uploader_dict}")
-        self.log.info(f"Fusion VB Uploader Map = {self.fusion_vb_uploader_map}")
 
 
     def parse_reb_plan_dict(self, rebalance_counter):

@@ -15,10 +15,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         self.log.info("FusionSanity setUp")
 
-        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 1)
-        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
-        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
-
         self.upsert_iterations = self.input.param("upsert_iterations", 1)
         self.validate_docs = self.input.param("validate_docs", True)
         self.read_ops_rate = self.input.param("read_ops_rate", 10000)
@@ -32,11 +28,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.monitor_log_store = self.input.param("monitor_log_store", True)
 
         self.rebalance_master = self.input.param("rebalance_master", False)
-
-        split_path = self.local_test_path.split("/")
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
-        self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
-        subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
 
         self.kvstore_stats = dict()
         for bucket in self.cluster.buckets:
