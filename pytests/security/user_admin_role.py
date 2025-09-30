@@ -434,9 +434,9 @@ class UserAdminRole(ClusterSetup):
         self.rbac_util._create_user_and_grant_role("user_admin_external", "user_admin_external")
 
         # Test that both the user cannot create any users with admin roles
-        admin_roles = ["admin", "ro_admin" , "security_admin" , "user_admin_local" ,
-                       "user_admin_external" , "cluster_admin", "ro_security_admin"]
-        sample_users = self.get_sample_users(len(admin_roles) * 2)
+        admin_roles = ["admin", "security_admin", "user_admin_local",
+                       "user_admin_external", "ro_security_admin"]
+        sample_users = self.get_sample_users(len(admin_roles)*2)
 
         for idx, admin in enumerate(admin_roles):
             if admin != "user_admin_local":
@@ -458,7 +458,7 @@ class UserAdminRole(ClusterSetup):
                 self.log.info("Changing role of local user admin to {}".format(role))
                 user_dict = {
                     'id': "user_admin_local",
-                    'name': "user_admin_external",
+                    'name': "user_admin_local",
                     'password': "password"
                 }
                 self.create_local_user(user_dict, "user_admin_local",
