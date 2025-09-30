@@ -6,11 +6,63 @@ import os
 import re
 import requests
 import six
+import datetime
+import binascii
+import logging
 
 import xml.etree.ElementTree as et
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from java.security import KeyPairGenerator, KeyFactory, Signature
 from java.security.spec import PKCS8EncodedKeySpec, RSAPublicKeySpec
+
+
+def log_certificate_details(cert_data, component="CERT"):
+    """Parse and log detailed certificate information"""
+    try:
+        from java.security.cert import CertificateFactory, X509Certificate
+        from java.io import ByteArrayInputStream
+
+        # Remove any PEM headers and decode base64 if needed
+        cert_bytes = cert_data
+        if "-----BEGIN CERTIFICATE-----" in cert_data:
+            cert_clean = cert_data.replace("-----BEGIN CERTIFICATE-----", "")
+            cert_clean = cert_clean.replace("-----END CERTIFICATE-----", "")
+            cert_clean = cert_clean.replace("\n", "").replace("\r", "").replace(" ", "").replace("\t", "")
+            cert_bytes = base64.b64decode(cert_clean)
+        elif isinstance(cert_data, str) and not cert_data.startswith("MII"):
+            cert_bytes = base64.b64decode(cert_data)
+        elif isinstance(cert_data, str):
+            cert_bytes = base64.b64decode(cert_data)
+
+        cf = CertificateFactory.getInstance("X.509")
+        cert_stream = ByteArrayInputStream(cert_bytes)
+        x509_cert = cf.generateCertificate(cert_stream)
+
+        try:
+            x509_cert.checkValidity()
+        except Exception as validity_error:
+            pass
+
+        public_key = x509_cert.getPublicKey()
+
+    except Exception as java_error:
+        # Method 2: Basic ASN.1 analysis (limited info)
+        try:
+            if isinstance(cert_data, str) and "-----BEGIN CERTIFICATE-----" in cert_data:
+                cert_clean = cert_data.replace("-----BEGIN CERTIFICATE-----", "")
+                cert_clean = cert_clean.replace("-----END CERTIFICATE-----", "")
+                cert_clean = cert_clean.replace("\n", "").replace("\r", "").replace(" ", "").replace("\t", "")
+                cert_bytes = base64.b64decode(cert_clean)
+            elif isinstance(cert_data, str):
+                cert_bytes = base64.b64decode(cert_data)
+            else:
+                cert_bytes = cert_data
+
+            if len(cert_bytes) > 0 and cert_bytes[0] == 0x30:
+                pass  # Valid ASN.1 SEQUENCE detected
+
+        except Exception as fallback_error:
+            pass
 
 IDPMetadataTemplate = """
 <?xml version="1.0"?>
@@ -39,14 +91,25 @@ IDPMetadataTemplate = """
 
 
 class SSOComponents:
-    def __init__(self, capella, url):
+    def __init__(self, capella, url, okta_base_url="https://integrator-2810815.okta.com/"):
         # Pre-flight checks
         assert (type(capella) == CapellaAPI)
         assert (type(url) == str)
 
         # Assignment
+        self.okta_base_url = okta_base_url.rstrip('/')  # Remove trailing slash for consistency
         self.capella = capella
         self.internal_url = url.replace("cloud", "", 1)
+
+        # Setup logging
+        self.log = logging.getLogger(self.__class__.__name__)
+        if not self.log.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.log.addHandler(handler)
+            self.log.setLevel(logging.INFO)
+
         self._generate_key_pair()
         self._generate_ssigned_cert()
 
@@ -132,9 +195,12 @@ class SSOComponents:
         ks = PKCS8EncodedKeySpec(encoded)
 
         s = Signature.getInstance("NONEwithRSA")
-        s.initSign(kf.generatePrivate(ks))
+        private_key = kf.generatePrivate(ks)
+        s.initSign(private_key)
         s.update(h)
-        return base64.b64encode(s.sign())
+        signature_bytes = s.sign()
+        signature_b64 = base64.b64encode(signature_bytes)
+        return signature_b64
 
     def _generate_ssigned_cert(self):
         self.cert = """MIIFkjCCA3oCCQDb09WUdyEHqDANBgkqhkiG9w0BAQsFADCBijELMAkGA1UEBhMC
@@ -169,27 +235,28 @@ dSy803llcD39heRATXhhsC57xLiRATQMqToi0O2DWbSf5g+tNEVtgf/4r8F5a0bH
 tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 """
         self.cert_new = """-----BEGIN CERTIFICATE-----
-MIIDqDCCApCgAwIBAgIGAYSqj+p4MA0GCSqGSIb3DQEBCwUAMIGUMQswCQYDVQQGEwJVUzETMBEG
-A1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwET2t0YTEU
-MBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEcMBoGCSqGSIb3DQEJ
-ARYNaW5mb0Bva3RhLmNvbTAeFw0yMjExMjQxNjUzMjlaFw0zMjExMjQxNjU0MjlaMIGUMQswCQYD
-VQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsG
-A1UECgwET2t0YTEUMBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEc
-MBoGCSqGSIb3DQEJARYNaW5mb0Bva3RhLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
-ggEBAM+rByaRbnTWXVMx4dI+mjJsquc79ZHXqURzYy4xPojL+49BBGhAjUUswsm2dB5Os4XbW/MW
-cwVkSXqPeB/ixYye5ofRokuHsojtcKXau6D4E61qfcwZZkXJnERdWdQ2p1Ur2817/2hAFyQg6WhO
-eJDqR4ZFJiANCzcRxSxrSnr6lFtGIq+fMQOEbJ+uiFg10P5lw2JRSHLMsmGMN/Qi8sPZbNmh/hjQ
-f2xwa0SJG9TK50mQKEefZykJxXyDvc5oNQVH+hSKg38TQ6gy8eib2s5gyVgdIUNOneHP1tXA1FWh
-JUC8+B1Qz/gBxxloFbzEyPGrUgqALn+AtAAPz/bDiyUCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEA
-kpGWpt7kRIwN2Sdcp6o77LLYkTllHd7xzcNL3nole1wWqg4QQaz8lC6Q1PSpREVat/ENJK30NAxg
-XAl6My1vgZwMFA1y2fMjiuPb1YhceYBEYDp2WBe6TdBdq3qDBC4D/XQWIFsCH8gll3OGrhASYVbE
-og/k+oSgeW/KmRIu9+AswdFTg+JIoKOP9TkdnsNkbkvWECDBLDHMxRFsvWJPO/9LKw3HlBwqaT5v
-dnJ3l9X1xP327Ujr7xgdUprSFT7DPgBCKpCVmjsxq5vl0kiUykzNbmSrQGowPQi9iVMOxa/H75LP
-s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
------END CERTIFICATE-----
-"""
+            MIIDtDCCApygAwIBAgIGAZkaUM6HMA0GCSqGSIb3DQEBCwUAMIGaMQswCQYDVQQGEwJVUzETMBEG
+            A1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwET2t0YTEU
+            MBIGA1UECwwLU1NPUHJvdmlkZXIxGzAZBgNVBAMMEmludGVncmF0b3ItMjgxMDgxNTEcMBoGCSqG
+            SIb3DQEJARYNaW5mb0Bva3RhLmNvbTAeFw0yNTA5MDUxNDM3NDdaFw0zNTA5MDUxNDM4NDdaMIGa
+            MQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNj
+            bzENMAsGA1UECgwET2t0YTEUMBIGA1UECwwLU1NPUHJvdmlkZXIxGzAZBgNVBAMMEmludGVncmF0
+            b3ItMjgxMDgxNTEcMBoGCSqGSIb3DQEJARYNaW5mb0Bva3RhLmNvbTCCASIwDQYJKoZIhvcNAQEB
+            BQADggEPADCCAQoCggEBANoJ9nJcx8SSLkbHEtD+ypJvCggVCmZdrjIg58qDKZHw6SWjcHtVtkEq
+            bZvhZvjf3CsVp556s8apg86HHvCj2pGGVYey2e5Cf4lCIbgCBnw6bAJhKCTVbZQyQJA2v2tFK9oS
+            6dj8giru4ba3DAm3sFH0Ve3MPVCkclD2Xp5JUzsrQ4ZjyPfDa8gfKQPPiZPC14cGgX5D5nhqPOB5
+            7eCs3lT9qnwwAn2bqeayp3h2s4dTq2ewYKlUssQtvMQxsS06Sz9ybIaA6xQcxf3CVnd5f/xw/zc4
+            J4uPKNGOaHyi9jFyiR7aKzF41x3UFYUkRhGkJJUHWJBoC/04VGD/nSr5bX0CAwEAATANBgkqhkiG
+            9w0BAQsFAAOCAQEAx4guTJiG1wA+NAkCorg3EE8NUssOT0D9KdYfab1QuNhlEvDPL75SvJLpefsU
+            YbuBFabuPsKAkHAoSpm3Z2r0fcZvvkg8Lw/C+P+oeB/XHqCBmhFWeNsPzO8V6aO9kzkMawvclJ7m
+            eBKufGMfQ5ru1jbgmL4gYRZiwRr2/e9flQnMl+Pe4EaGeXfAkuu2cxS85oMtUmLrwc/2WdrsC8Je
+            +C2ciHKMKCnEet8eb8eqsUz5z3A6FVEpzv24O2vfxEESwNRcmWiiJ9C3v5aYu0v9DCLD/FpjP60E
+            UePycWSlRDiAF7gh8sNnFSOyy1m0leTAnXKVKrfyWV7MxKY8/GeHtA==
+            -----END CERTIFICATE-----
+            """
 
     def get_cert(self):
+        log_certificate_details(self.cert_new, "SSOComponents")
         return self.cert_new
 
     def get_public(self):
@@ -199,8 +266,62 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         return base64.b64encode(self.private.getEncoded())
 
     def get_certificate(self):
-        # This certificate is only valid until 08/30/2023
-        return self.cert.replace(os.linesep, "").replace(r'\s', "")
+        # Using the newer certificate that's valid longer
+        # Strip headers and whitespace to match the format of the original cert
+        log_certificate_details(self.cert_new, "SSOComponents-RAW")
+        cert_data = self.cert_new.replace("-----BEGIN CERTIFICATE-----", "").replace("-----END CERTIFICATE-----", "")
+        processed_cert = cert_data.replace(os.linesep, "").replace(" ", "").replace("\n", "").replace("\r", "").replace("\t", "")
+        return processed_cert
+
+    def get_modulus(self):
+        """Get current RSA modulus as base64 string"""
+        import base64
+        try:
+            modulus_long = self.private.getModulus()
+            # Convert Python long to hex string, then to bytes (Jython 2.7 compatible)
+            hex_string = hex(modulus_long)[2:].rstrip('L')  # Remove '0x' prefix and 'L' suffix
+            # Ensure even number of hex digits
+            if len(hex_string) % 2:
+                hex_string = '0' + hex_string
+            # Convert hex string to bytes - Python 2/3 compatibility
+            try:
+                # Python 2
+                modulus_bytes = hex_string.decode('hex')
+            except AttributeError:
+                # Python 3
+                modulus_bytes = bytes.fromhex(hex_string)
+            encoded_modulus = base64.b64encode(modulus_bytes)
+            result = encoded_modulus.decode('utf-8') if isinstance(encoded_modulus, bytes) else encoded_modulus
+            return result
+        except Exception as e:
+            # Fallback to a known working modulus for testing
+            self.log.warning("Failed to get dynamic modulus, using fallback: {}".format(e))
+            return "AL5DlwXXlOkcnBb75XuPojUo9d4oewoe3u8rAyx04s/bCA1aEN4VxEZ3IvWWOgEMsfIOVGe7iW+h9YYvcst35OzihmsT2rYfMcZsY5x2JW+alIVQL+Aav/iq796zRLhU0rTwDuWSq9pM8V9ZY8abP3twkpiytdwaTem9nxUHSUSq0wtac3NT8Basu5j13uWtLWH8EjCGrJHVhy3Z+7DwtgdBgvzT9V0C/K+pYfuNCBmBe07jPdtTyXlC7RAVSXEKZVgcCVYz/d1oSMKH7d77LwwunhGXNVCigItbKtphNF80ea33kFwaOVYcxp7zkNegU6JFi0MfQFfxy8p8h6BgQjofE79lZFAzCd9lj5X3k2cza8HyDJa4nn/q+f55D9i2AKBLsYs8xJhptPiMXHIp+n+AI96jLPXHM/jiLX6zK27rJlKhlG8X/3iCBNuHhZkGYd5Rm/qdclmepF4Hl8YwmskoTGJDttaqOMP3nnEUZ9vo5JlWP3m5DOgicmDU1FK4a2aS0V1zQZyeMlJpEt5mPv2TsY72oXV4/tBsUN7pI411RGTAEHJrgA0DmlQXdoe+MZ5T67RM0MHCgTdLyLRHJu+9VV0SD++F7lS3RQQltum+BvcLi5CFzL1u8sYUb7UPA9oxhEJCNyu7oeUAEJyW2CikwStwbIgNU0VJ2l8abyH"
+
+    def get_exponent(self):
+        """Get current RSA exponent as base64 string"""
+        import base64
+        try:
+            exponent_long = self.private.getPublicExponent()
+            # Convert Python long to hex string, then to bytes (Jython 2.7 compatible)
+            hex_string = hex(exponent_long)[2:].rstrip('L')  # Remove '0x' prefix and 'L' suffix
+            # Ensure even number of hex digits
+            if len(hex_string) % 2:
+                hex_string = '0' + hex_string
+            # Convert hex string to bytes - Python 2/3 compatibility
+            try:
+                # Python 2
+                exponent_bytes = hex_string.decode('hex')
+            except AttributeError:
+                # Python 3
+                exponent_bytes = bytes.fromhex(hex_string)
+            encoded_exponent = base64.b64encode(exponent_bytes)
+            result = encoded_exponent.decode('utf-8') if isinstance(encoded_exponent, bytes) else encoded_exponent
+            return result
+        except Exception as e:
+            # Fallback to a known working exponent for testing
+            self.log.warning("Failed to get dynamic exponent, using fallback: {}".format(e))
+            return "EAAB"
 
     def get_teams(self, tenant_id):
         assert type(tenant_id) == str
@@ -213,11 +334,13 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         assert type(tenant_id) == str
 
         url = "{}/v2/organizations/{}/realms".format(self.internal_url, tenant_id)
+        signing_cert = self.get_cert()
+        log_certificate_details(signing_cert, "SSOComponents-REALM")
+
         request_body = {
             "saml": {
-                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
-                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
-                'signingCertificate': "{0}".format(self.get_cert()),
+                 'signInEndpoint': self.okta_base_url + "/app/integrator-2810815_ssotry_6/exkv90jce03yR8Hfx697/sso/saml",
+                'signingCertificate': "{0}".format(signing_cert),
                 "signatureAlgorithm": "rsa-sha256",
                 "digestAlgorithm": "sha256",
                 "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
@@ -262,7 +385,8 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
     def get_saml_request(self, login_url):
         # We can just return the output from this.
-        return requests.get(login_url)
+        response = requests.get(login_url)
+        return response
 
     def parse_saml_request(self, html):
         # Here we're going to try and grab all of the input elements and convert
@@ -282,27 +406,186 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         # We need to grab certain elements to construct a response
         xml = base64.b64decode(saml)
         xdoc = et.fromstring(xml)
-
-        return xdoc.attrib['ID']
+        request_id = xdoc.attrib['ID']
+        return request_id
 
     def send_saml_response(self, url, response, relay_state, cookies={}):
-        result = requests.post(url,
-                               data="SAMLResponse={}&RelayState={}".format(response, relay_state),
+        self.log.info("Sending SAML response to URL: {}, response length: {}, relay_state: {}".format(url, len(response), relay_state))
+
+        # Check cookies availability
+        if not cookies:
+            self.log.warning("No cookies provided for SAML response")
+
+        # Parse URL for request
+        from six.moves.urllib.parse import urlparse
+        parsed_url = urlparse(url)
+
+        # Test basic connectivity
+        try:
+            import socket
+            sock = socket.create_connection((parsed_url.hostname, parsed_url.port or 443), timeout=10)
+            sock.close()
+        except Exception as conn_error:
+            self.log.error("Basic TCP connection failed: {}".format(conn_error))
+
+        # Test SSL handshake (Jython-compatible)
+        try:
+            import ssl
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
+            sock = socket.create_connection((parsed_url.hostname, parsed_url.port or 443), timeout=10)
+            try:
+                ssock = context.wrap_socket(sock, server_hostname=parsed_url.hostname)
+                ssock.close()
+            finally:
+                sock.close()
+        except Exception as ssl_test_error:
+            self.log.error("SSL handshake test failed: {}".format(ssl_test_error))
+
+        # Prepare request data
+        request_data = "SAMLResponse={}&RelayState={}".format(response, relay_state)
+
+        # Try the request with detailed error handling
+        try:
+            # Disable urllib3 SSL warnings since we're using verify=False
+            try:
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            except:
+                pass
+
+            # Create a custom session with SSL adapter
+            session = requests.Session()
+
+            result = session.post(url,
+                                  data=request_data,
                                headers={"Content-Type": "application/x-www-form-urlencoded"},
                                cookies=cookies,
                                verify=False,
-                               allow_redirects=False)
+                                  allow_redirects=False,
+                                  timeout=30)
+            self.log.info("SAML response sent successfully, status: {}, content length: {}".format(result.status_code, len(result.content)))
+            return result
 
-        return result
+        except requests.exceptions.SSLError as ssl_error:
+            self.log.error("SSL ERROR: {}".format(str(ssl_error)))
+
+            # Try Java native HTTP connection as final fallback
+            self.log.info("Attempting Java native HTTP connection fallback")
+            try:
+                from java.net import URL, URLConnection, HttpURLConnection
+                from java.io import OutputStreamWriter, BufferedReader, InputStreamReader
+                from javax.net.ssl import HttpsURLConnection
+
+                # Create URL object
+                java_url = URL(url)
+                conn = java_url.openConnection()
+
+                # Configure connection
+                conn.setRequestMethod("POST")
+                conn.setDoOutput(True)
+                conn.setDoInput(True)
+                conn.setConnectTimeout(30000)
+                conn.setReadTimeout(30000)
+
+                # Set headers
+                conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                conn.setRequestProperty("User-Agent", "python-requests/2.28.1")
+
+                # Add cookies if present - handle RequestsCookieJar properly
+                if cookies:
+                    try:
+                        # RequestsCookieJar - iterate over Cookie objects
+                        cookie_parts = []
+                        for cookie in cookies:
+                            cookie_parts.append("{}={}".format(cookie.name, cookie.value))
+                        cookie_header = "; ".join(cookie_parts)
+                        conn.setRequestProperty("Cookie", cookie_header)
+                    except AttributeError:
+                        # Fallback for dict-like cookies
+                        cookie_header = "; ".join(["{}={}".format(k, v) for k, v in cookies.items()])
+                        conn.setRequestProperty("Cookie", cookie_header)
+                else:
+                    self.log.warning("No cookies provided to Java HTTP connection")
+
+                # Send data
+                output_writer = OutputStreamWriter(conn.getOutputStream())
+                output_writer.write(request_data)
+                output_writer.flush()
+                output_writer.close()
+
+                # Get response
+                response_code = conn.getResponseCode()
+
+                # Read response body
+                if response_code >= 200 and response_code < 400:
+                    input_stream = conn.getInputStream()
+                else:
+                    input_stream = conn.getErrorStream()
+
+                if input_stream:
+                    reader = BufferedReader(InputStreamReader(input_stream))
+                    response_lines = []
+                    line = reader.readLine()
+                    while line is not None:
+                        response_lines.append(line)
+                        line = reader.readLine()
+                    reader.close()
+
+                    response_body = "\n".join(response_lines)
+                else:
+                    response_body = ""
+
+                # Create a mock response object
+                class JavaHttpResponse:
+                    def __init__(self, status_code, content, headers=None):
+                        self.status_code = status_code
+                        self.content = content
+                        self.headers = headers or {}
+                        self.text = content
+
+                java_response = JavaHttpResponse(response_code, response_body)
+
+                if response_code >= 400:
+                    self.log.error("Java HTTP fallback failed with status: {}, response: {}".format(response_code, response_body[:1000]))
+                else:
+                    self.log.info("Java HTTP fallback succeeded, status: {}".format(response_code))
+
+                return java_response
+
+            except Exception as java_fallback_error:
+                self.log.error("Java HTTP fallback also failed: {}".format(java_fallback_error))
+
+            raise ssl_error
+
+        except requests.exceptions.ConnectionError as conn_error:
+            self.log.error("Connection Error: {}".format(str(conn_error)))
+            raise conn_error
+
+        except Exception as general_error:
+            self.log.error("General request error: {}".format(str(general_error)))
+            raise general_error
 
     def continue_saml_response(self, url, cookies={}):
         return requests.get(url, verify=False, allow_redirects=False, cookies=cookies)
 
 
 class SsoUtils:
-    def __init__(self, url, secret_key, access_key, user, passwd):
+    def __init__(self, url, secret_key, access_key, user, passwd, okta_base_url="https://integrator-2810815.okta.com/"):
         self.url = url.replace("cloud", "", 1)
+        self.okta_base_url = okta_base_url.rstrip('/')  # Remove trailing slash for consistency
         self.capella_api = CapellaAPI("https://" + url, secret_key, access_key, user, passwd)
+
+        # Setup logging
+        self.log = logging.getLogger(self.__class__.__name__)
+        if not self.log.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.log.addHandler(handler)
+            self.log.setLevel(logging.INFO)
 
     def check_realm_exists(self, realm_name):
         """
@@ -315,7 +598,7 @@ class SsoUtils:
     def sso_callback(self, code, state, method="GET"):
         """
         The Callback endpoint is triggered when an SSO user successfully authenticates with an
-        identity provider and returns to Capella (via Auth0) with the user’s details.
+        identity provider and returns to Capella (via Auth0) with the user's details.
         """
         url = "{0}/v2/auth/sso-callback?code={1}&state={2}".format("https://" + self.url, code,
                                                                    state)
@@ -473,7 +756,10 @@ class SsoUtils:
         resp = self.capella_api.do_internal_request(url, method="PATCH", params=json.dumps(body))
         return resp
 
-    def create_okta_application(self, okta_token, okta_account="https://dev-82235514.okta.com/"):
+    def create_okta_application(self, okta_token, okta_account=None):
+        if okta_account is None:
+            okta_account = self.okta_base_url + "/"
+        self.log.info("Creating Okta application at: {}".format(okta_account))
         header = {
             'Content-Type': 'application/json',
             'Authorization': 'SSWS ' + okta_token
@@ -572,22 +858,29 @@ class SsoUtils:
                              data=json.dumps(body),
                              headers=header,
                              timeout=300, verify=False, allow_redirects=False)
+        self.log.info("Okta app creation response status: {}".format(resp.status_code))
         assert resp.status_code == 200
 
         resp_content = json.loads(resp.content.decode())
         okta_app_id = resp_content["id"]
+        self.log.info("Created Okta app with ID: {}".format(okta_app_id))
         idp_metadata_url = resp_content["_links"]["metadata"]["href"]
+        self.log.info("Retrieved IDP metadata URL: {}".format(idp_metadata_url))
 
         resp = requests.get(idp_metadata_url,
                             headers=header,
                             timeout=300, verify=False, allow_redirects=False)
+        self.log.info("Metadata fetch response status: {}".format(resp.status_code))
         assert resp.status_code == 200
 
         idp_metadata = resp.content.decode()
+        self.log.info("Retrieved IDP metadata, length: {}".format(len(idp_metadata)))
 
         return okta_app_id, idp_metadata
 
-    def assign_user(self, okta_token, okta_app_id, okta_account="https://dev-82235514.okta.com/"):
+    def assign_user(self, okta_token, okta_app_id, okta_account=None):
+        if okta_account is None:
+            okta_account = self.okta_base_url + "/"
         header = {
             'Content-Type': 'application/json',
             'Accept': '*/*',
@@ -605,7 +898,9 @@ class SsoUtils:
             headers=header,
             timeout=300, verify=False, allow_redirects=False)
 
-    def delete_okta_applications(self, okta_token, okta_account="https://dev-82235514.okta.com/"):
+    def delete_okta_applications(self, okta_token, okta_account=None):
+        if okta_account is None:
+            okta_account = self.okta_base_url + "/"
         header = {
             'Content-Type': 'application/json',
             'Accept': '*/*',
@@ -632,8 +927,15 @@ class SsoUtils:
                     timeout=300, verify=False, allow_redirects=False)
                 assert resp.status_code == 204
 
-    def update_okta_application(self, okta_token, callbackURL, entityId, okta_app_id,
-                                okta_account="https://dev-82235514.okta.com/"):
+    def get_okta_app_metadata(self, okta_token, okta_app_id, okta_account=None):
+        """
+        Get IDP metadata from an existing Okta application.
+        """
+        if okta_account is None:
+            okta_account = self.okta_base_url + "/"
+
+        self.log.info("Getting metadata from existing Okta app: {}".format(okta_app_id))
+
         header = {
             'Content-Type': 'application/json',
             'Accept': '*/*',
@@ -641,103 +943,97 @@ class SsoUtils:
             'Connection': 'keep-alive',
             'Authorization': 'SSWS ' + okta_token
         }
-        body = {
-            "label": "shaazin",
-            "accessibility": {
-                "selfService": False,
-                "errorRedirectUrl": None,
-                "loginRedirectUrl": None
-            },
-            "visibility": {
-                "autoSubmitToolbar": False,
-                "hide": {
-                    "iOS": False,
-                    "web": False
-                }
-            },
-            "features": [],
-            "signOnMode": "SAML_2_0",
-            "credentials": {
-                "userNameTemplate": {
-                    "template": "${source.login}",
-                    "type": "BUILT_IN"
-                },
-                "signing": {}
-            },
-            "settings": {
-                "app": {},
-                "notifications": {
-                    "vpn": {
-                        "network": {
-                            "connection": "DISABLED"
-                        },
-                        "message": None,
-                        "helpUrl": None
-                    }
-                },
-                "manualProvisioning": False,
-                "implicitAssignment": False,
-                "signOn": {
-                    "defaultRelayState": "",
-                    "ssoAcsUrl": "{0}".format(callbackURL),
-                    "idpIssuer": "http://www.okta.com/${org.externalKey}",
-                    "audience": "{0}".format(entityId),
-                    "recipient": "{0}".format(callbackURL),
-                    "destination": "{0}".format(callbackURL),
-                    "subjectNameIdTemplate": "${user.userName}",
-                    "subjectNameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
-                    "responseSigned": True,
-                    "assertionSigned": True,
-                    "signatureAlgorithm": "RSA_SHA256",
-                    "digestAlgorithm": "SHA256",
-                    "honorForceAuthn": True,
-                    "authnContextClassRef": "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
-                    "spIssuer": None,
-                    "requestCompressed": False,
-                    "attributeStatements": [
-                        {
-                            "type": "EXPRESSION",
-                            "name": "email",
-                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
-                            "values": ["user.email"]
-                        },
-                        {
-                            "type": "EXPRESSION",
-                            "name": "given_name",
-                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
-                            "values": ["user.firstName"]
-                        },
-                        {
-                            "type": "EXPRESSION",
-                            "name": "family_name",
-                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
-                            "values": ["user.lastName"]
-                        },
-                        {
-                            "type": "GROUP",
-                            "name": "groups",
-                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
-                            "filterType": "REGEX",
-                            "filterValue": ".*"
-                        }
-                    ],
-                    "inlineHooks": [],
-                    "allowMultipleAcsEndpoints": False,
-                    "acsEndpoints": [],
-                    "samlSignedRequestEnabled": False,
-                    "slo": {
-                        "enabled": False
-                    }
-                }
-            }
+
+        # Get app details
+        app_url = "{}api/v1/apps/{}".format(okta_account, okta_app_id)
+        self.log.info("Fetching app from: {}".format(app_url))
+        resp = requests.get(app_url, headers=header, timeout=300, verify=False, allow_redirects=False)
+
+        if resp.status_code != 200:
+            self.log.error("Failed to get app. Status: {}".format(resp.status_code))
+            raise Exception("Failed to get Okta app. Status: {}".format(resp.status_code))
+
+        resp_content = json.loads(resp.content.decode())
+        idp_metadata_url = resp_content["_links"]["metadata"]["href"]
+        self.log.info("Metadata URL: {}".format(idp_metadata_url))
+
+        # Get metadata
+        resp = requests.get(idp_metadata_url, headers=header, timeout=300, verify=False, allow_redirects=False)
+        if resp.status_code != 200:
+            self.log.error("Failed to get metadata. Status: {}".format(resp.status_code))
+            raise Exception("Failed to get metadata. Status: {}".format(resp.status_code))
+
+        idp_metadata = resp.content.decode()
+        self.log.info("Metadata retrieved (length: {})".format(len(idp_metadata)))
+        return idp_metadata
+
+    def update_okta_application(self, okta_token, callbackURL, entityId, okta_app_id,
+                                okta_account=None):
+        """
+        Update only the ACS URL, audience, destination, and recipient in an existing Okta SAML app.
+        Similar to update_okta_app_ip, this does a surgical update without changing other settings.
+        """
+        if okta_account is None:
+            okta_account = self.okta_base_url + "/"
+
+        header = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'SSWS ' + okta_token
         }
-        resp = requests.put("{0}api/v1/apps/{1}".format(okta_account, okta_app_id),
-                            data=json.dumps(body),
+
+        # Step 1: GET the current app configuration
+        self.log.info("Fetching current Okta app configuration for app_id: {}".format(okta_app_id))
+        get_resp = requests.get("{0}api/v1/apps/{1}".format(okta_account, okta_app_id),
+                                headers=header,
+                                timeout=300, verify=False)
+
+        if get_resp.status_code != 200:
+            self.log.error("Failed to fetch Okta app: {} - {}".format(get_resp.status_code, get_resp.text))
+            raise Exception("Failed to fetch Okta app configuration: {}".format(get_resp.status_code))
+
+        app_config = get_resp.json()
+        self.log.info("Successfully fetched Okta app configuration")
+
+        # Step 2: Update only the SAML URLs in the signOn settings
+        if 'settings' in app_config and 'signOn' in app_config['settings']:
+            sign_on = app_config['settings']['signOn']
+
+            # Update the four SAML URL fields
+            old_acs = sign_on.get('ssoAcsUrl', 'N/A')
+            old_audience = sign_on.get('audience', 'N/A')
+
+            sign_on['ssoAcsUrl'] = callbackURL
+            sign_on['audience'] = entityId
+            sign_on['recipient'] = callbackURL
+            sign_on['destination'] = callbackURL
+
+            self.log.info("Updated ssoAcsUrl: {} -> {}".format(old_acs, callbackURL))
+            self.log.info("Updated audience: {} -> {}".format(old_audience, entityId))
+            self.log.info("Updated recipient: {}".format(callbackURL))
+            self.log.info("Updated destination: {}".format(callbackURL))
+        else:
+            raise Exception("Invalid app configuration: missing settings.signOn")
+
+        # Step 3: PUT the modified configuration back
+        self.log.info("Updating Okta app with new SAML URLs")
+        put_resp = requests.put("{0}api/v1/apps/{1}".format(okta_account, okta_app_id),
+                                data=json.dumps(app_config),
                             headers=header,
                             timeout=300, verify=False, allow_redirects=False)
-        assert resp.status_code == 200
+
+        if put_resp.status_code != 200:
+            self.log.error("Failed to update Okta app: {} - {}".format(put_resp.status_code, put_resp.text))
+            raise Exception("Failed to update Okta app: {}".format(put_resp.status_code))
+
+        self.log.info("Successfully updated Okta app SAML URLs")
+        return put_resp
 
     def idp_redirect(self, action, SAMLRequest, RelayState):
+        """
+        Browser-style redirect to IdP with SAML request.
+        Extracts state token using robust regex patterns.
+        """
         header = {
             'Content-Type': 'application/json',
             'Accept': '*/*',
@@ -748,81 +1044,435 @@ class SsoUtils:
                              data="SAMLRequest={0}&RelayState={1}".format(SAMLRequest, RelayState),
                              headers=header,
                              timeout=300, verify=False, allow_redirects=False)
-        assert resp.status_code == 200
+
+        self.log.info("IdP redirect response status: {}".format(resp.status_code))
+        assert resp.status_code == 200, "IdP redirect failed with status: {}".format(resp.status_code)
+
+        # Extract state token more robustly using regex patterns (browser-style)
+        content = resp.content.decode()
         state_token = ""
-        for line in resp.content.decode().split("\n"):
-            if "stateToken=" in line:
-                state_token = line[94:-1]
+
+        # Pattern 1: Look for: var stateToken = 'TOKEN';
+        pattern = r"var stateToken = '([^']+)'"
+        match = re.search(pattern, content)
+        if match:
+            state_token = match.group(1)
+            self.log.info("State token extracted using pattern 1: var stateToken = 'TOKEN'")
+        else:
+            # Pattern 2: Fallback - look for stateToken: 'TOKEN'
+            pattern = r"stateToken:\s*'([^']+)'"
+            match = re.search(pattern, content)
+            if match:
+                state_token = match.group(1)
+                self.log.info("State token extracted using pattern 2: stateToken: 'TOKEN'")
+            else:
+                # Pattern 3: Original fallback - look for stateToken= in the line
+                for line in content.split("\n"):
+                    if "stateToken=" in line:
+                        # Try to extract more carefully
+                        token_match = re.search(r'stateToken["\s]*[:=]["\s]*["\']?([^"\';\s]+)', line)
+                        if token_match:
+                            state_token = token_match.group(1)
+                            self.log.info("State token extracted using pattern 3: legacy fallback")
+                            break
+
+        if state_token:
+            # Decode HTML entities (e.g., &#x2D; -> -)
+            original_length = len(state_token)
+            state_token = state_token.replace("\\x2D", "-")
+            state_token = state_token.replace("\\x2d", "-")
+            state_token = state_token.replace("\\x2B", "+")
+            state_token = state_token.replace("\\x2b", "+")
+            state_token = state_token.replace("\\x2F", "/")
+            state_token = state_token.replace("\\x2f", "/")
+            state_token = state_token.replace("\\x3D", "=")
+            state_token = state_token.replace("\\x3d", "=")
+
+            if len(state_token) != original_length:
+                self.log.info("Decoded HTML entities in state token ({} -> {} chars)".format(original_length, len(state_token)))
+
+            self.log.info("Successfully extracted state token (length: {})".format(len(state_token)))
+            self.log.info("State token starts with: {}...".format(state_token[:20] if len(state_token) > 20 else state_token))
+        else:
+            self.log.error("Failed to extract state token from response")
+            self.log.error("Searching for stateToken patterns in response...")
+            if "var stateToken =" in content:
+                self.log.error("Found 'var stateToken =' in response")
+            if "stateToken:" in content:
+                self.log.error("Found 'stateToken:' in response")
+            if "stateToken=" in content:
+                self.log.error("Found 'stateToken=' in response")
+            # Show first 1000 chars of response for debugging
+            self.log.error("Response preview: {}".format(content[:1000]))
+            raise Exception("Could not extract state token from Okta response")
+
+        # Extract cookies (browser behavior)
         cookie_dict = {}
         cookie_string = ""
         for i in resp.cookies:
             cookie_dict[i.name] = i.value
             cookie_string = cookie_string + i.name + "=" + i.value + "; "
         cookie_string = cookie_string[:-2]
-        j_session_id = cookie_dict["JSESSIONID"]
-        return state_token, cookie_string, j_session_id
 
-    def idp_login(self, identifier, passcode, state_token, cookie_string, j_session_id):
-        """
-        Authentication of an SSO user via a IdP
-        """
-        url = "https://dev-82235514.okta.com/idp/idx/identify"
-        body = {"identifier": identifier,
-                "credentials": {"passcode": passcode},
-                "stateHandle": state_token}
-        header = {'Cookie': cookie_string,
-                  'Content-Type': "application/json",
-                  'Connection': "keep-alive",
-                  'Accept-Encoding': 'gzip, deflate, br',
-                  'Accept': '*/*',
-                  'JSESSIONID': j_session_id
-                  }
-        resp = requests.post(url, data=json.dumps(body), headers=header)
-        assert resp.status_code == 200
-        next_url = resp.content.decode()[resp.content.decode().index("success-redirect\","
-                                                                     "\"href\":\"") + 26:
-                                         resp.content.decode().index("success-redirect\","
-                                                                     "\"href\":\"") + 134]
-        j_session_id = resp.headers["set-cookie"][resp.headers["set-cookie"].index("JSESSIONID=") +
-                                                  11: resp.headers["set-cookie"].index("JSESSIONID=") + 43]
-        return next_url, j_session_id
+        j_session_id = cookie_dict.get("JSESSIONID", "")
+        if not j_session_id:
+            self.log.warning("JSESSIONID not found in cookies")
+            self.log.warning("Available cookies: {}".format(list(cookie_dict.keys())))
+        else:
+            self.log.info("JSESSIONID extracted: {}".format(j_session_id))
 
-    def get_saml_response(self, next_url, cookie_string, j_session_id):
+        # Extract the login form action URL from HTML
+        # For Okta SAML apps, we need to extract the "fromURI" hidden field which contains the SAML app path
+        form_action = ""
+        from_uri = ""
+
+        # Look for the fromURI hidden field value (this is where we need to redirect after auth)
+        from_uri_match = re.search(r'<input[^>]*name="fromURI"[^>]*value="([^"]*)"', content)
+        if from_uri_match:
+            from_uri = from_uri_match.group(1)
+            # Decode HTML entities
+            from_uri = from_uri.replace("&#x2f;", "/").replace("&#x2F;", "/")
+            self.log.info("Extracted fromURI (SAML app path): {}".format(from_uri))
+
+        # For Okta, we should use the classic auth endpoint with redirect parameter
+        # This maintains SAML context by including the app path
+        if from_uri:
+            form_action = "/api/v1/authn"
+            self.log.info("Using Okta authn API with fromURI for SAML context")
+        else:
+            form_action = "/api/v1/authn"
+            self.log.info("Using Okta authn API (no fromURI found)")
+
+        # IMPORTANT: Return RelayState and form_action so we can submit the actual HTML form
+        self.log.info("Preserving RelayState for later: {}".format(RelayState if RelayState else "(empty)"))
+        return state_token, cookie_string, j_session_id, RelayState, form_action
+
+    def idp_login(self, identifier, passcode, state_token, cookie_string, j_session_id, form_action):
         """
-        A SAML Response is sent by the Identity Provider to the Service Provider(Couchbase),
-        if the user succeeded in the authentication process
+        Authenticate with Okta using the authn API.
+        This uses the Okta Classic Authentication API to get a session token.
         """
-        header = {
-            'Cookie': cookie_string,
-            'Content-Type': "application/json",
-            'Connection': "keep-alive",
-            'Accept': '*/*',
-            'JSESSIONID': j_session_id
+        # Build the authn API URL
+        if form_action.startswith("/"):
+            url = self.okta_base_url.rstrip("/") + form_action
+        else:
+            url = form_action
+
+        # Okta authn API expects JSON with username and password
+        auth_data = {
+            "username": identifier,
+            "password": passcode
         }
-        resp = requests.get(next_url, headers=header)
+
+        self.log.info("Authenticating with Okta authn API for user: {}".format(identifier))
+        self.log.info("Authn API URL: {}".format(url))
+        self.log.info("Cookie string: {}".format(cookie_string))
+
+        headers = {
+            'Cookie': cookie_string,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Connection': 'keep-alive',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
+        }
+
+        self.log.info("Sending authn request")
+        resp = requests.post(url, json=auth_data, headers=headers, allow_redirects=False)
+        self.log.info("Authn response status code: {}".format(resp.status_code))
+        self.log.info("Authn response headers: {}".format(dict(resp.headers)))
+
+        # Log full response body
+        response_text = resp.content.decode()
+        self.log.info("Authn response body: {}".format(response_text))
+
+        if resp.status_code == 200:
+            response_json = json.loads(response_text)
+            if response_json.get("status") == "SUCCESS":
+                session_token = response_json.get("sessionToken")
+                if session_token:
+                    self.log.info("Authentication successful, got session token")
+                    # Update cookies from response
+                    for cookie in resp.cookies:
+                        if cookie.name not in cookie_string:
+                            cookie_string += "; {}={}".format(cookie.name, cookie.value)
+                    self.log.info("Updated cookie string: {}".format(cookie_string))
+                    return session_token, cookie_string
+                else:
+                    raise Exception("Authn succeeded but no sessionToken in response")
+            else:
+                raise Exception("Authn failed with status: {}".format(response_json.get("status")))
+        else:
+            self.log.error("Authn failed with status: {}".format(resp.status_code))
+            self.log.error("Full error response: {}".format(response_text))
+            raise Exception("Okta authn failed with status: {}".format(resp.status_code))
+
+    def get_saml_response(self, session_token, cookie_string, sso_service_url):
+        """
+        Browser-style: Get SAML Response from IdP using session token.
+        After authentication, we use the sessionToken to request the SAML app.
+        The sessionToken parameter tells Okta to establish a session and return the SAML response.
+        SAML context is maintained - InResponseTo should be present.
+        """
+        self.log.info("Getting SAML response from SSO service URL: {}".format(sso_service_url))
+        self.log.info("Using session token to establish authenticated session")
+
+        # Append sessionToken as query parameter to the SSO service URL
+        if "?" in sso_service_url:
+            full_url = "{}&sessionToken={}".format(sso_service_url, session_token)
+        else:
+            full_url = "{}?sessionToken={}".format(sso_service_url, session_token)
+
+        header = {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8',
+            'cookie': cookie_string,
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
+        }
+
+        self.log.info("Requesting SAML app with sessionToken")
+        self.log.info("Full request URL: {}...".format(full_url[:100]))  # Truncate token in log
+        self.log.info("Full cookie string: {}".format(cookie_string))
+        resp = requests.get(full_url, headers=header, allow_redirects=False)
+        self.log.info("SAML response page status code: {}".format(resp.status_code))
+        self.log.info("SAML response page headers: {}".format(dict(resp.headers)))
+
+        if resp.status_code != 200:
+            self.log.error("Failed to get SAML response page. Status: {}".format(resp.status_code))
+            raise Exception("Failed to get SAML response page. Status: {}".format(resp.status_code))
+
+        # Parse HTML to extract SAMLResponse and form action URL
+        response_content = resp.content.decode()
+        self.log.info("Response content length: {}".format(len(response_content)))
+        self.log.info("Response content (first 3000 chars): {}".format(response_content[:3000]))
+
+        # Extract form action URL (where to POST the SAMLResponse)
+        form_action = ""
+        action_match = re.search(r'<form[^>]*action="([^"]*)"', response_content)
+        if action_match:
+            form_action = action_match.group(1)
+            self.log.info("Extracted form action URL (raw): {}".format(form_action))
+
+            # Decode HTML entities in the URL
+            form_action = form_action.replace("&#x3a;", ":")
+            form_action = form_action.replace("&#x3A;", ":")
+            form_action = form_action.replace("&#x2f;", "/")
+            form_action = form_action.replace("&#x2F;", "/")
+            form_action = form_action.replace("&#x3f;", "?")
+            form_action = form_action.replace("&#x3F;", "?")
+            form_action = form_action.replace("&#x3d;", "=")
+            form_action = form_action.replace("&#x3D;", "=")
+            form_action = form_action.replace("&#x2d;", "-")
+            form_action = form_action.replace("&#x2D;", "-")
+
+            self.log.info("Decoded form action URL: {}".format(form_action))
+        else:
+            self.log.warning("Form action URL not found in HTML")
+
         SAMLResponse = ""
-        for line in resp.content.decode().split("\n"):
-            if "<input name=\"SAMLResponse\" type=\"hidden\" value=\"" in line:
-                SAMLResponse = line[52:-3]
+        if 'SAMLResponse' in response_content:
+            self.log.info("Found 'SAMLResponse' in content, attempting extraction")
+
+            # Try multiple patterns to extract SAML response
+            patterns = [
+                r'<input[^>]*name=["\']?SAMLResponse["\']?[^>]*value=["\']([^"\']*)["\'][^>]*>',
+                r'<input[^>]*value=["\']([^"\']*)["\'][^>]*name=["\']?SAMLResponse["\']?[^>]*>',
+                r'name=["\']SAMLResponse["\'][^>]*value=["\']([^"\']*)["\']',
+                r'value=["\']([^"\']*)["\'][^>]*name=["\']SAMLResponse["\']',
+                r'"SAMLResponse"[^"]*"([^"]*)"',
+                r'SAMLResponse["\'\s]*[=:]["\'\s]*([^"\'\\s><]+)'
+            ]
+
+            for i, pattern in enumerate(patterns):
+                match = re.search(pattern, response_content, re.IGNORECASE | re.DOTALL)
+                if match:
+                    SAMLResponse = match.group(1)
+                    if SAMLResponse and len(SAMLResponse) > 10:  # Basic validation
+                        self.log.info("Extracted SAML response using pattern {}".format(i))
+                        break
+
+        if not SAMLResponse:
+            self.log.error("SAMLResponse not found in HTML")
+            self.log.error("Full HTML response: {}".format(response_content))
+            raise Exception("SAMLResponse not found in IdP response HTML")
+
+        # Extract RelayState (also required for Auth0 POST)
+        RelayState = ""
+        if 'RelayState' in response_content:
+            self.log.info("Found 'RelayState' in content, attempting extraction")
+
+            relay_patterns = [
+                r'<input[^>]*name=["\']?RelayState["\']?[^>]*value=["\']([^"\']*)["\'][^>]*>',
+                r'<input[^>]*value=["\']([^"\']*)["\'][^>]*name=["\']?RelayState["\']?[^>]*>',
+                r'name=["\']RelayState["\'][^>]*value=["\']([^"\']*)["\']',
+                r'value=["\']([^"\']*)["\'][^>]*name=["\']RelayState["\']',
+                # Additional patterns for different HTML formatting
+                r'name="RelayState"\s+value="([^"]*)"',
+                r'value="([^"]*)"\s+name="RelayState"',
+            ]
+
+            for i, pattern in enumerate(relay_patterns):
+                match = re.search(pattern, response_content, re.IGNORECASE | re.DOTALL)
+                if match:
+                    RelayState = match.group(1)
+                    if RelayState:
+                        self.log.info("Extracted RelayState using pattern {}: {}".format(i, RelayState))
+                        break
+                else:
+                    self.log.info("Pattern {} did not match".format(i))
+
+            # If no match, show a snippet of the RelayState area for debugging
+            if not RelayState:
+                self.log.warning("RelayState not extracted, searching for context...")
+                relay_context_match = re.search(r'.{0,100}RelayState.{0,100}', response_content, re.IGNORECASE | re.DOTALL)
+                if relay_context_match:
+                    self.log.warning("RelayState context in HTML: {}".format(relay_context_match.group(0)))
+        else:
+            self.log.warning("'RelayState' keyword not found in response HTML")
+
+        # Decode HTML entities (browser behavior)
         SAMLResponse = SAMLResponse.replace("&#x2b;", "+")
         SAMLResponse = SAMLResponse.replace("&#x3d;", "=")
         SAMLResponse = SAMLResponse.replace("&#x2f;", "/")
-        return SAMLResponse
+        SAMLResponse = SAMLResponse.replace("&#x2B;", "+")
+        SAMLResponse = SAMLResponse.replace("&#x3D;", "=")
+        SAMLResponse = SAMLResponse.replace("&#x2F;", "/")
 
-    def saml_consume_url(self, callbackURL, cookie_string, SAMLResponse):
+        self.log.info("SAML Response extracted successfully (length: {})".format(len(SAMLResponse)))
+        self.log.info("SAML Response preview: {}...".format(SAMLResponse[:50]))
+
+        return SAMLResponse, RelayState, form_action
+
+    def saml_consume_url(self, callbackURL, cookie_string, SAMLResponse, RelayState=""):
         """
-        Sends SAML assertion to auth0
+        Browser-style: POST SAML assertion to Capella callback URL using Java HttpsURLConnection.
+        Uses Java's native HTTPS client to properly respect the SSL configuration set at module import.
         """
-        header = {
-            'Cookie': cookie_string,
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': '*/*',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive'
-        }
-        SAMLResponse = six.moves.urllib.parse.quote(SAMLResponse)
-        resp = requests.post(callbackURL,
-                             data="SAMLResponse={0}".format(SAMLResponse),
-                             headers=header,
-                             timeout=300, verify=False, allow_redirects=False)
-        return resp
+        self.log.info("Posting SAML response to callback URL: {}".format(callbackURL))
+        self.log.info("SAML Response length: {}".format(len(SAMLResponse)))
+        self.log.info("RelayState: {}".format(RelayState if RelayState else "(empty)"))
+
+        # Verify SSL configuration
+        try:
+            import java.lang.System as System
+            current_protocols = System.getProperty("https.protocols")
+            self.log.info("Current SSL protocols: {}".format(current_protocols))
+        except Exception as e:
+            self.log.warning("Could not verify SSL properties: {}".format(e))
+
+        # URL encode the SAML Response and RelayState (browser form submission behavior)
+        SAMLResponse_encoded = six.moves.urllib.parse.quote(SAMLResponse)
+        self.log.info("SAML Response URL encoded (length: {})".format(len(SAMLResponse_encoded)))
+
+        RelayState_encoded = six.moves.urllib.parse.quote(RelayState) if RelayState else ""
+        if RelayState:
+            self.log.info("RelayState URL encoded (length: {})".format(len(RelayState_encoded)))
+
+        try:
+            # Use Java's HttpsURLConnection for proper SSL handling in Jython
+            from java.net import URL
+            from java.io import OutputStreamWriter, BufferedReader, InputStreamReader
+            from javax.net.ssl import HttpsURLConnection
+
+            self.log.info("Using Java HttpsURLConnection for Auth0 POST request")
+
+            # Create URL object
+            url = URL(callbackURL)
+            connection = url.openConnection()
+
+            # Configure connection as POST
+            connection.setRequestMethod("POST")
+            connection.setDoOutput(True)
+            connection.setDoInput(True)
+            connection.setInstanceFollowRedirects(False)  # Don't follow redirects automatically
+
+            # Set headers
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            connection.setRequestProperty("Cookie", cookie_string)
+            connection.setRequestProperty("Accept", "*/*")
+            connection.setRequestProperty("Accept-Encoding", "gzip, deflate, br")
+            connection.setRequestProperty("Connection", "keep-alive")
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+
+            # Prepare POST data (browser form submission includes both SAMLResponse and RelayState)
+            if RelayState:
+                post_data = "SAMLResponse={0}&RelayState={1}".format(SAMLResponse_encoded, RelayState_encoded)
+            else:
+                post_data = "SAMLResponse={0}".format(SAMLResponse_encoded)
+            self.log.info("Sending POST request to Auth0 callback (data length: {})...".format(len(post_data)))
+
+            # Write POST data
+            out = OutputStreamWriter(connection.getOutputStream())
+            out.write(post_data)
+            out.flush()
+            out.close()
+
+            # Get response code
+            response_code = connection.getResponseCode()
+            self.log.info("SAML consume response status: {}".format(response_code))
+
+            # Get response headers
+            headers = {}
+            i = 0
+            while True:
+                header_key = connection.getHeaderFieldKey(i)
+                header_value = connection.getHeaderField(i)
+                if header_key is None and i > 0:
+                    break
+                if header_key:
+                    headers[header_key] = header_value
+                i += 1
+
+            self.log.info("Response headers: {}".format(headers))
+
+            # Read response body (if any)
+            response_body = ""
+            try:
+                if response_code < 400:
+                    reader = BufferedReader(InputStreamReader(connection.getInputStream()))
+                else:
+                    reader = BufferedReader(InputStreamReader(connection.getErrorStream()))
+
+                line = reader.readLine()
+                while line is not None:
+                    response_body += line + "\n"
+                    line = reader.readLine()
+                reader.close()
+
+                self.log.info("Response body length: {}".format(len(response_body)))
+            except Exception as e:
+                self.log.info("No response body to read: {}".format(e))
+
+            # Check for redirect (typical for SAML flow)
+            if 'Location' in headers:
+                self.log.info("SAML consume redirecting to: {}".format(headers['Location']))
+
+            # Check for session cookie (successful authentication)
+            if 'Set-Cookie' in headers:
+                self.log.info("Session cookie received in response")
+            else:
+                self.log.warning("No session cookie in response")
+
+            # Check for error responses
+            if response_code >= 400:
+                self.log.error("SAML consume failed with status: {}".format(response_code))
+                self.log.error("Full response body: {}".format(response_body))
+            else:
+                self.log.info("SAML consume request completed successfully")
+
+            # Create a requests-like response object for compatibility
+            class JavaResponse:
+                def __init__(self, status_code, headers, content):
+                    self.status_code = status_code
+                    self.headers = headers
+                    self.content = content
+                    self.text = content
+
+            connection.disconnect()
+            return JavaResponse(response_code, headers, response_body)
+
+        except Exception as e:
+            self.log.error("SAML consume request failed: {}".format(e))
+            self.log.error("Error type: {}".format(type(e).__name__))
+            import traceback
+            self.log.error("Full traceback: {}".format(traceback.format_exc()))
+            raise

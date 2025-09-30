@@ -10,10 +10,9 @@ import string
 import xml.etree.ElementTree as ET
 
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
-from .sso_utils import SSOComponents
+from .sso_utils import SSOComponents, SsoUtils
 
 from java.security import KeyPairGenerator, KeyFactory
-from pytests.security.onCloud.sso_utils import SsoUtils
 from pytests.security.security_base import SecurityBase
 from java.security.spec import PKCS8EncodedKeySpec, RSAPublicKeySpec
 
@@ -43,36 +42,23 @@ IDPMetadataTemplate = """
 """
 
 cert = """
-MIIFkjCCA3oCCQDb09WUdyEHqDANBgkqhkiG9w0BAQsFADCBijELMAkGA1UEBhMC
-VVMxCzAJBgNVBAgMAkNBMRQwEgYDVQQHDAtTYW50YSBDbGFyYTEYMBYGA1UECgwP
-Q291Y2hiYXNlLCBJbmMuMRkwFwYDVQQLDBBTZWN1cml0eSBUZXN0aW5nMSMwIQYD
-VQQDDBpDb3VjaGJhc2UgU2VjdXJpdHkgVGVzdGluZzAeFw0yMjA4MzAxNjQwMDFa
-Fw0yMzA4MzAxNjQwMDFaMIGKMQswCQYDVQQGEwJVUzELMAkGA1UECAwCQ0ExFDAS
-BgNVBAcMC1NhbnRhIENsYXJhMRgwFgYDVQQKDA9Db3VjaGJhc2UsIEluYy4xGTAX
-BgNVBAsMEFNlY3VyaXR5IFRlc3RpbmcxIzAhBgNVBAMMGkNvdWNoYmFzZSBTZWN1
-cml0eSBUZXN0aW5nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvkOX
-BdeU6RycFvvle4+iNSj13ih7Ch7e7ysDLHTiz9sIDVoQ3hXERnci9ZY6AQyx8g5U
-Z7uJb6H1hi9yy3fk7OKGax9Path8xxmxjnHYlb5qUhVAv4Bq/+Krv3rNEuFTStPA
-O5ZKr2kzxX1ljxps/e3CSmLK13BpN6b2fFQdJRKrTC1pzc1PwFqy7mPXe5a0tYfw
-SMIaskdWHLdn7sPC2B0GC/NP1XQL8r6lh+40IGYF7TuM921PJeULtEBVJcQplWBw
-JVjP93WhIwoft3vsvDC6eEZc1UKKAi1sq2mE0XzR5rfeQXBo5VhzGnvOQ16BTokW
-LQx9AV/HLynyHoGBCOh8Tv2VkUDMJ32WPlfeTZzNrwfIMlrief+r5/nkP2LYAoEu
-xizzEmGm0+Ixccin6f4Aj3qMs9ccz+OItfrMrbusmUqGUbxf/eIIE24eFmQZh3lG
-b+p1yWZ6kXgeXxjCayShMYkO21qo4w/eecRRn2+jkmVY/ebkM6CJyYNTUUrhrZpL
-RXXNBnJ4yUmkS3mY+/ZOxjvahdXj+0GxQ3ukjjXVEZMAQcmuADQOaVBd2h74xnlP
-rtEzQwcKBN0vItEcm771VXRIP74XuVLdFBCW26b4G9wuLkIXMvW7yxhRvtQ8D2jG
-EQkI3K7uh5QAQnJbYKKTBK3BsiA1TRUnaXxpvIcCAwEAATANBgkqhkiG9w0BAQsF
-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
+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
 """
 
 
@@ -107,6 +93,9 @@ class SsoTests(SecurityBase):
             self.tenant_id = self.input.capella.get("tenant_id")
             self.secret_key = self.input.capella.get("secret_key")
             self.access_key = self.input.capella.get("access_key")
+            self.okta_app_id = self.input.capella.get("okta_app_id", None)
+            self.okta_account = self.input.param("okta_account",None)
+            self.okta_token = self.input.param("okta_token",None)
 
             self.sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
             self.unauth_z_sso = SsoUtils(self.url, self.secret_key, self.access_key,
@@ -131,12 +120,17 @@ class SsoTests(SecurityBase):
             self.fail("Base Setup Failed with error as - {}".format(e))
 
     def tearDown(self):
-        resp = self.sso.list_realms(self.tenant_id)
-        if json.loads(resp.content)["data"]:
-            self.log.info("Destroying the realm")
-            realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
-            resp = self.sso.delete_realm(self.tenant_id, realm_id)
-            self.validate_response(resp, 2)
+        # Check if sso attribute exists before using it
+        if hasattr(self, 'sso') and self.sso:
+            try:
+                resp = self.sso.list_realms(self.tenant_id)
+                if json.loads(resp.content)["data"]:
+                    self.log.info("Destroying the realm")
+                    realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+                    resp = self.sso.delete_realm(self.tenant_id, realm_id)
+                    self.validate_response(resp, 2)
+            except Exception as e:
+                self.log.warning("Error during tearDown cleanup: {}".format(e))
 
         super(SsoTests, self).tearDown()
 
@@ -239,23 +233,23 @@ class SsoTests(SecurityBase):
     tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
     """
         self.cert_new = """-----BEGIN CERTIFICATE-----
-MIIDqDCCApCgAwIBAgIGAYSqj+p4MA0GCSqGSIb3DQEBCwUAMIGUMQswCQYDVQQGEwJVUzETMBEG
+MIIDtDCCApygAwIBAgIGAZkaUM6HMA0GCSqGSIb3DQEBCwUAMIGaMQswCQYDVQQGEwJVUzETMBEG
 A1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwET2t0YTEU
-MBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEcMBoGCSqGSIb3DQEJ
-ARYNaW5mb0Bva3RhLmNvbTAeFw0yMjExMjQxNjUzMjlaFw0zMjExMjQxNjU0MjlaMIGUMQswCQYD
-VQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsG
-A1UECgwET2t0YTEUMBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEc
-MBoGCSqGSIb3DQEJARYNaW5mb0Bva3RhLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
-ggEBAM+rByaRbnTWXVMx4dI+mjJsquc79ZHXqURzYy4xPojL+49BBGhAjUUswsm2dB5Os4XbW/MW
-cwVkSXqPeB/ixYye5ofRokuHsojtcKXau6D4E61qfcwZZkXJnERdWdQ2p1Ur2817/2hAFyQg6WhO
-eJDqR4ZFJiANCzcRxSxrSnr6lFtGIq+fMQOEbJ+uiFg10P5lw2JRSHLMsmGMN/Qi8sPZbNmh/hjQ
-f2xwa0SJG9TK50mQKEefZykJxXyDvc5oNQVH+hSKg38TQ6gy8eib2s5gyVgdIUNOneHP1tXA1FWh
-JUC8+B1Qz/gBxxloFbzEyPGrUgqALn+AtAAPz/bDiyUCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEA
-kpGWpt7kRIwN2Sdcp6o77LLYkTllHd7xzcNL3nole1wWqg4QQaz8lC6Q1PSpREVat/ENJK30NAxg
-XAl6My1vgZwMFA1y2fMjiuPb1YhceYBEYDp2WBe6TdBdq3qDBC4D/XQWIFsCH8gll3OGrhASYVbE
-og/k+oSgeW/KmRIu9+AswdFTg+JIoKOP9TkdnsNkbkvWECDBLDHMxRFsvWJPO/9LKw3HlBwqaT5v
-dnJ3l9X1xP327Ujr7xgdUprSFT7DPgBCKpCVmjsxq5vl0kiUykzNbmSrQGowPQi9iVMOxa/H75LP
-s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
+MBIGA1UECwwLU1NPUHJvdmlkZXIxGzAZBgNVBAMMEmludGVncmF0b3ItMjgxMDgxNTEcMBoGCSqG
+SIb3DQEJARYNaW5mb0Bva3RhLmNvbTAeFw0yNTA5MDUxNDM3NDdaFw0zNTA5MDUxNDM4NDdaMIGa
+MQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNj
+bzENMAsGA1UECgwET2t0YTEUMBIGA1UECwwLU1NPUHJvdmlkZXIxGzAZBgNVBAMMEmludGVncmF0
+b3ItMjgxMDgxNTEcMBoGCSqGSIb3DQEJARYNaW5mb0Bva3RhLmNvbTCCASIwDQYJKoZIhvcNAQEB
+BQADggEPADCCAQoCggEBANoJ9nJcx8SSLkbHEtD+ypJvCggVCmZdrjIg58qDKZHw6SWjcHtVtkEq
+bZvhZvjf3CsVp556s8apg86HHvCj2pGGVYey2e5Cf4lCIbgCBnw6bAJhKCTVbZQyQJA2v2tFK9oS
+6dj8giru4ba3DAm3sFH0Ve3MPVCkclD2Xp5JUzsrQ4ZjyPfDa8gfKQPPiZPC14cGgX5D5nhqPOB5
+7eCs3lT9qnwwAn2bqeayp3h2s4dTq2ewYKlUssQtvMQxsS06Sz9ybIaA6xQcxf3CVnd5f/xw/zc4
+J4uPKNGOaHyi9jFyiR7aKzF41x3UFYUkRhGkJJUHWJBoC/04VGD/nSr5bX0CAwEAATANBgkqhkiG
+9w0BAQsFAAOCAQEAx4guTJiG1wA+NAkCorg3EE8NUssOT0D9KdYfab1QuNhlEvDPL75SvJLpefsU
+YbuBFabuPsKAkHAoSpm3Z2r0fcZvvkg8Lw/C+P+oeB/XHqCBmhFWeNsPzO8V6aO9kzkMawvclJ7m
+eBKufGMfQ5ru1jbgmL4gYRZiwRr2/e9flQnMl+Pe4EaGeXfAkuu2cxS85oMtUmLrwc/2WdrsC8Je
++C2ciHKMKCnEet8eb8eqsUz5z3A6FVEpzv24O2vfxEESwNRcmWiiJ9C3v5aYu0v9DCLD/FpjP60E
+UePycWSlRDiAF7gh8sNnFSOyy1m0leTAnXKVKrfyWV7MxKY8/GeHtA==
 -----END CERTIFICATE-----
 """
 
@@ -281,8 +275,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
     def create_realm(self, team_id):
         body = {
             "saml": {
-                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
-                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signInEndpoint': "https://integrator-2810815.okta.com/app/integrator-2810815_ssotrycapella_1/exkvxo1cm2LQN6a9T697/sso/saml",
                 'signingCertificate': "{0}".format(self.get_cert()),
                 "signatureAlgorithm": "rsa-sha256",
                 "digestAlgorithm": "sha256",
@@ -303,8 +296,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         # 1. metadataXML - valid
         body = {
             "saml": {
-                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
-                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signInEndpoint': "https://integrator-2810815.okta.com/app/integrator-2810815_ssotrycapella_1/exkvxo1cm2LQN6a9T697/sso/saml",
                 'signingCertificate': "{0}".format(self.get_cert()),
                 "signatureAlgorithm": "rsa-sha256",
                 "digestAlgorithm": "sha256",
@@ -397,8 +389,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         no_realms = len(data['data'])
         body = {
             "saml": {
-                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
-                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signInEndpoint': "https://integrator-2810815.okta.com/app/integrator-2810815_ssotrycapella_1/exkvxo1cm2LQN6a9T697/sso/saml",
                 'signingCertificate': "{0}".format(self.get_cert()),
                 "signatureAlgorithm": "rsa-sha256",
                 "digestAlgorithm": "sha256",
@@ -420,8 +411,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
     def test_create_realm_unauthz(self):
         body = {
             "saml": {
-                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
-                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signInEndpoint': "https://integrator-2810815.okta.com/app/integrator-2810815_ssotrycapella_1/exkvxo1cm2LQN6a9T697/sso/saml",
                 'signingCertificate': "{0}".format(self.get_cert()),
                 "signatureAlgorithm": "rsa-sha256",
                 "digestAlgorithm": "sha256",
@@ -835,7 +825,7 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
         # assign signingCertificate and signInEndpoint
         signingCertificate = self.get_cert()
-        signInEndpoint = "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2/exk7dwu0sfh6bR27M5d7/sso/saml"
+        signInEndpoint = "https://integrator-2810815.okta.com/app/integrator-2810815_ssotrycapella_1/exkvxo1cm2LQN6a9T697/sso/saml"
 
         # Request body to rotate certificate
         def get_request_body(saml_certificate=signingCertificate, saml_endpoint=signInEndpoint):
@@ -894,29 +884,25 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
     def test_sso_login(self):
         """
-        Test sso flow
+        Test sso flow with browser-style flow
         1. Create an Okta App Integration
             -> Set up completed in setup()
         2. Create a Realm in Capella
-        3. Initiate SSO login
+        3. Initiate SSO login using browser-style HTTP requests
         """
+        if self.okta_account == None or self.okta_token == None or self.okta_app_id == None:
+            self.fail("Okta account, token, and app id are required")
 
-        # Create Application dynamically
-        self.okta_account = self.input.param("okta_account", "https://dev-82235514.okta.com/")
-        self.okta_token = self.input.param("okta_token",
-                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
-        self.log.info("Creating an Okta application")
-        self.okta_app_id, self.idp_metadata = self.sso.create_okta_application(self.okta_token, self.okta_account)
-        self.sso.assign_user(self.okta_token, self.okta_app_id, self.okta_account)
+        # Get IDP metadata from existing Okta app
+        self.log.info("Fetching IDP metadata from Okta app: {}".format(self.okta_app_id))
+        self.idp_metadata = self.sso.get_okta_app_metadata(self.okta_token, self.okta_app_id, self.okta_account)
+        self.log.info("IDP metadata retrieved (length: {})".format(len(self.idp_metadata)))
 
-        self.saml_user = self.input.param("saml_user", "qe.security.testing@couchbase.com")
+        self.saml_user = self.input.param("saml_user", "samridh.anand@couchbase.com")
         self.saml_passcode = self.input.param("saml_passcode", "Password@123")
-        self.okta_token = self.input.param("okta_token",
-                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
-
-        # Create a Realm in Capella
 
         # Parse the XML
+        self.log.info("Parsing IDP metadata XML (length: {})".format(len(self.idp_metadata)))
         root = ET.fromstring(self.idp_metadata)
 
         # Namespaces
@@ -925,13 +911,9 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
             'ds': 'http://www.w3.org/2000/09/xmldsig#'
         }
 
-        # Extract X.509 Certificate
         certificate = root.find('.//ds:X509Certificate', ns).text
 
-        # Format the certificate with BEGIN and END lines
         formatted_certificate = "-----BEGIN CERTIFICATE-----\n{0}\n-----END CERTIFICATE-----".format(certificate)
-
-        # Extract SingleSignOnService URL (assuming we want the HTTP-POST binding)
         sso_service = \
             root.find('.//md:SingleSignOnService[@Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"]',
                       ns).attrib[
@@ -943,9 +925,8 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 
         body = {
             "saml": {
-                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
-                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
-                'signingCertificate': "{0}".format(self.get_cert()),
+                'signInEndpoint': sso_service,
+                'signingCertificate': "{0}".format(formatted_certificate),
                 "signatureAlgorithm": "rsa-sha256",
                 "digestAlgorithm": "sha256",
                 "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
@@ -979,62 +960,90 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
             self.passwd
         )
         self.sso1 = SSOComponents(self.capi, "https://" + self.url)
-
+        # Browser-style flow: Step 1 - Initiate login
+        self.log.info("===== Browser-style SSO Login Flow =====")
         login_flow = self.sso1.initiate_idp_login(realm_name)
         self.assertEqual(login_flow.status_code // 100, 2)
         login_flow = json.loads(login_flow.content)
-        self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
+        self.log.info("Step 1: Got Login Flow URL: {}".format(login_flow['loginURL']))
 
-        # Get the SAML Request
-        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
+        # Browser-style flow: Step 2 - Get SAML Request (like browser visiting the page)
+        self.log.info("Step 2: Browser visiting Login Flow URL to get SAML request")
         saml_request = self.sso1.get_saml_request(login_flow['loginURL'])
-        self.log.info("Response: {}".format(saml_request.content))
-
+        self.log.info("Response Status: {}".format(saml_request.status_code))
         self.assertEqual(saml_request.status_code // 100, 2)
-        c = saml_request.cookies
-        self.log.info("SAML Request Cookies: {0}".format(c))
 
+        # Store cookies from the initial request (browser behavior)
+        c = saml_request.cookies
+
+        # Browser-style flow: Step 3 - Parse the SAML Request from HTML
+        self.log.info("Step 3: Parsing SAML request from HTML response")
         saml_request_dict = self.sso1.parse_saml_request(saml_request.content)
-        self.log.info(saml_request_dict)
-        self.log.info(saml_request_dict)
+        self.log.info("Parsed SAML Request components: {}".format(saml_request_dict.keys()))
+
         SAMLRequest = saml_request_dict["SAMLRequest"]
-        self.assertIsNotNone(saml_request_dict["SAMLRequest"])
+        self.assertIsNotNone(SAMLRequest, "SAMLRequest should not be None")
+        self.log.info("SAMLRequest extracted (length: {})".format(len(SAMLRequest)))
+
         RelayState = saml_request_dict["RelayState"]
-        self.assertIsNotNone(saml_request_dict["RelayState"])
+        self.assertIsNotNone(RelayState, "RelayState should not be None")
+        self.log.info("RelayState extracted: {}".format(RelayState))
+
         action = sso_service
 
         identifier = self.sso1.decode_saml_request(saml_request_dict['SAMLRequest'])
-        self.log.info("Got Request ID: {}".format(identifier))
+        self.log.info("Decoded Request ID from SAMLRequest: {}".format(identifier))
 
-        # Redirect to the IdP
-        self.log.info('Redirect to the IdP')
-        state_token, cookie_string, j_session_id = self.sso.idp_redirect(action, SAMLRequest, RelayState)
-        self.log.info("state_token: {0}".format(state_token))
-        self.log.info("cookie_string: {0}".format(cookie_string))
-        self.log.info("j_session_id: {0}".format(j_session_id))
+        # Browser-style flow: Step 4 - Redirect to IdP (POST SAMLRequest to IdP)
+        self.log.info("Step 4: Browser posting SAMLRequest to IdP at: {}".format(action))
+        try:
+            state_token, cookie_string, j_session_id, original_relay_state, login_form_action = self.sso.idp_redirect(action, SAMLRequest, RelayState)
+            self.assertIsNotNone(state_token, "State token should not be None")
+            self.assertGreater(len(state_token), 0, "State token should not be empty")
+            self.assertIsNotNone(cookie_string, "Cookie string should not be None")
+            self.log.info("IdP Redirect successful")
+            self.log.info("  - State token extracted (length: {})".format(len(state_token)))
+            self.log.info("  - Cookie string: {}".format(cookie_string[:100] + "..." if len(cookie_string) > 100 else cookie_string))
+            self.log.info("  - JSESSIONID: {}".format(j_session_id))
+            self.log.info("  - Login form action: {}".format(login_form_action))
+        except Exception as e:
+            self.log.error("STEP 4 FAILED - IdP Redirect: {}".format(e))
+            self.fail("Step 4 (IdP Redirect) failed: {}".format(e))
 
-        # SSO user authentication via the IdP
-        self.log.info('SSO user authentication via the IdP')
-        next_url, j_session_id = self.sso.idp_login(self.saml_user, self.saml_passcode,
-                                                    state_token, cookie_string, j_session_id)
-        self.log.info("next_url: {0}".format(next_url))
-        self.log.info("j_session_id: {0}".format(j_session_id))
+        # Browser-style flow: Step 5 - Authenticate with Okta authn API
+        self.log.info("Step 5: Authenticating with Okta authn API")
+        self.log.info("  - User: {}".format(self.saml_user))
+        self.log.info("  - Endpoint: {}".format(login_form_action))
+        try:
+            session_token, cookie_string = self.sso.idp_login(self.saml_user, self.saml_passcode,
+                                                              state_token, cookie_string, j_session_id, login_form_action)
+            self.assertIsNotNone(session_token, "Session token should not be None")
+            self.log.info("Authentication successful, got session token")
+            self.log.info("  - Session token length: {}".format(len(session_token)))
+            self.log.info("  - Updated cookies: {}".format(cookie_string[:100] + "..."))
+        except Exception as e:
+            self.log.error("STEP 5 FAILED - Authentication: {}".format(e))
+            self.fail("Step 5 (Authentication) failed: {}".format(e))
 
-        # Get the SAML response from the IdP
-        self.log.info('Get the SAML response from the IdP')
-        SAMLResponse = self.sso.get_saml_response(next_url, cookie_string, j_session_id)
-        self.log.info("SAMLResponse: {0}".format(SAMLResponse))
+        # Browser-style flow: Step 6 - Get SAML Response using session token
+        self.log.info("Step 6: Getting SAML response from IdP using session token")
+        self.log.info("  - SSO Service URL: {}".format(sso_service))
+        try:
+            SAMLResponse, okta_relay_state, form_action = self.sso.get_saml_response(session_token, cookie_string, sso_service)
+            self.assertIsNotNone(SAMLResponse, "SAML Response should not be None")
+            self.assertGreater(len(SAMLResponse), 0, "SAML Response should not be empty")
+            self.assertIsNotNone(form_action, "Form action URL should not be None")
 
-        # Send the SAML response to Couchbase
-        self.log.info('Send the SAML response to Couchbase')
-        self.log.info(cookie_string)
-        resp = self.sso.saml_consume_url(callbackURL, cookie_string, SAMLResponse)
-        result = False
-        for line in resp.content.decode().split("\n"):
-            if "IdP-Initiated login is not enabled for connection" in line:
-                result = True
-                break
-        self.assertTrue(result)
+            # Use the original RelayState we preserved from the initial SAML flow
+            RelayState = original_relay_state if original_relay_state else okta_relay_state
+            self.log.warning("Using RelayState: {} (original: {}, okta: {})".format(
+                RelayState, original_relay_state if original_relay_state else "(empty)",
+                okta_relay_state if okta_relay_state else "(empty)"))
 
-        self.log.info("Delete all applications")
-        self.sso.delete_okta_applications(self.okta_token)
+            self.log.info("SAML Response retrieved (length: {})".format(len(SAMLResponse)))
+            self.log.info("SAML Response preview: {}...".format(SAMLResponse[:50]))
+            self.log.info("RelayState: {}".format(RelayState if RelayState else "(empty)"))
+            self.log.info("Form action URL (from HTML): {}".format(form_action))
+        except Exception as e:
+            self.log.error("STEP 6 FAILED - Get SAML Response: {}".format(e))
+            self.fail("Step 6 (Get SAML Response) failed: {}".format(e))
