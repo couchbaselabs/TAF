@@ -314,7 +314,7 @@ class DocHistoryRetention(ClusterSetup):
                 continue
             active_cols = self.bucket_util.get_active_collections(
                 bucket, s_name, only_names=True)
-            collection_list += [[s_name, c_name] for c_name in active_cols]
+            collection_list += [[s_name, c_name] for c_name in active_cols if c_name != "_default"]
         return sample(collection_list, req_num)
 
     def test_create_bucket_with_doc_history_enabled(self):
@@ -773,6 +773,7 @@ class DocHistoryRetention(ClusterSetup):
         # Selecting collections to disable retention history
         bucket = self.cluster.buckets[0]
         selected_cols = self.__get_collection_samples(bucket, req_num=3)
+        self.log.info("Selected colls = {}".format(selected_cols))
         # Disable collection for history
         for scope_col in selected_cols:
             s_name, c_name = scope_col
@@ -782,6 +783,12 @@ class DocHistoryRetention(ClusterSetup):
             bucket.scopes[s_name].collections[c_name].history = "false"
 
         self.run_data_ops_on_individual_collection(bucket)
+        for _, scope in bucket.scopes.items():
+            if scope.name == "_system":
+                continue
+            for _, collection in scope.collections.items():
+                bucket.scopes[scope.name].collections[collection.name].num_items += 1000
+
         self.log.info("Setting new values for history_retention size/bytes")
         new_hist_ret_bytes = self.bucket_dedup_retention_bytes + 10000
         new_hist_ret_seconds = self.bucket_dedup_retention_seconds + 10000
@@ -789,7 +796,7 @@ class DocHistoryRetention(ClusterSetup):
             self.cluster.master, bucket,
             history_retention_bytes=new_hist_ret_bytes,
             history_retention_seconds=new_hist_ret_seconds)
-        self.sleep(5, "Wait for new values to get updates across the cluster")
+        self.sleep(15, "Wait for new values to get updates across the cluster")
         self.log.info("Validating hist_retention values")
         self.validate_retention_settings_on_all_nodes()
 
