@@ -351,6 +351,8 @@ class Columnar(BaseTestCase, hostedOPD):
         # Scale out/in remote Couchbase clusters in a thread until test completes
         def scale_remote_couchbase_clusters():
             # This thread will alternate scaling out and scaling in until test completes
+            if not self.input.param("scale_remote_couchbase", True):
+                return
             import itertools
             kv_loop = 0
             while not self.stop_run:
