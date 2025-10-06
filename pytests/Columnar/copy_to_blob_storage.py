@@ -24,6 +24,8 @@ from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
 from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
 from TestInput import TestInputSingleton
+from Columnar.s3_cross_account_auth import CrossAccountSetup
+from common_lib import sleep
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
 if runtype == "columnar":
     from Columnar.columnar_base import ColumnarBaseTest
@@ -118,6 +120,15 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
+
+        # Setup cross account auth
+        if runtype == "columnar" and self.input.param("auth_type", "none") == "cross_account":
+            self.columnar_api = ColumnarAPI(self.pod.url_public, self.tenant.api_secret_key, self.tenant.api_access_key, self.tenant.user, self.tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=self.pod.TOKEN)
+            self.cross_account_setup = CrossAccountSetup(self.columnar_api, self.tenant.id, self.tenant.project_id, self.columnar_cluster.instance_id, self.columnar_cluster.cluster_id, self.sink_blob_bucket_name)
+            self.role_arn = self.cross_account_setup.create_cross_account()
+            self.log.info(f"Created role ARN: {self.role_arn}")
+            sleep(60)
+
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
 
@@ -129,6 +140,16 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 self.columnar_spec_name),
             remote_cluster=self.remote_cluster,
             external_collection_file_formats=["json", "parquet", "csv"])
+
+        # Configure cross account auth for external link if requested
+        if runtype == "columnar" and self.input.param("auth_type", "none") == "cross_account" and self.link_type == "s3":
+            self.columnar_spec["external_link"]["properties"] = [{
+                "type": "s3",
+                "region": self.aws_region,
+                "instanceProfile": "true",
+                "roleArn": self.role_arn,
+                "externalId": self.cross_account_setup.external_id
+            }]
 
         if self.input.param("primary_key", None) is not None:
             self.columnar_spec["standalone_dataset"]["primary_key"] = json.loads(self.input.param("primary_key"))
@@ -232,6 +253,11 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         if self.sink_blob_bucket_name:
                 self.delete_blob_bucket()
+
+        # destroy cross account
+        if runtype == "columnar" and hasattr(self, "cross_account_setup") and self.cross_account_setup:
+            self.cross_account_setup.destroy_cross_account()
+            self.log.info(f"Cross account destroyed")
 
         super(CopyToBlobStorage, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
@@ -1019,7 +1045,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         for i in range(no_of_dynamic_collection):
             dataset_obj = self.cbas_util.create_external_dataset_obj(self.columnar_cluster, link_type=self.link_type,
                                                                      external_container_names={
-                                                                         self.s3_source_bucket: self.aws_region},
+                                                                         self.sink_blob_bucket_name: self.aws_region},
                                                                      paths_on_external_container=[
                                                                          path_on_external_container],
                                                                      file_format=self.columnar_spec["file_format"])[0]

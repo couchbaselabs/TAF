@@ -7,6 +7,9 @@ import time
 
 from queue import Queue
 from TestInput import TestInputSingleton
+from Columnar.s3_cross_account_auth import CrossAccountSetup
+from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
+from common_lib import sleep
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
 if runtype == "columnar":
     from Columnar.columnar_base import ColumnarBaseTest
@@ -53,8 +56,51 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
                 "json": 240000, "parquet": 120000,
                 "csv": 240000, "tsv": 240000, "avro": 240000}
 
+        # Setup cross account auth
+        if runtype == "columnar" and self.input.param("auth_type", "none") == "cross_account":
+            self.columnar_api = ColumnarAPI(self.pod.url_public, self.tenant.api_secret_key, self.tenant.api_access_key, self.tenant.user, self.tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=self.pod.TOKEN)
+            self.cross_account_setup = CrossAccountSetup(self.columnar_api, self.tenant.id, self.tenant.project_id, self.columnar_cluster.instance_id, self.columnar_cluster.cluster_id, self.s3_source_bucket)
+            self.role_arn = self.cross_account_setup.create_cross_account()
+            self.log.info(f"Created role ARN: {self.role_arn}")
+            sleep(60)
+
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
+
+    def populate_columnar_infra_spec(self, columnar_spec, remote_cluster=None,
+                                     external_collection_file_formats=[],
+                                     path_on_external_container="", aws_kafka_cluster_details=[],
+                                     confluent_kafka_cluster_details=[], external_dbs=[],
+                                     kafka_topics={}, aws_kafka_schema_registry_details=[],
+                                     confluent_kafka_schema_registry_details=[]):
+        """
+        Override to automatically configure cross account auth after populating the spec.
+        """
+        # Call parent method to populate the spec
+        columnar_spec = super(CopyIntoStandaloneCollectionFromBlobStorage, self).populate_columnar_infra_spec(
+            columnar_spec=columnar_spec,
+            remote_cluster=remote_cluster,
+            external_collection_file_formats=external_collection_file_formats,
+            path_on_external_container=path_on_external_container,
+            aws_kafka_cluster_details=aws_kafka_cluster_details,
+            confluent_kafka_cluster_details=confluent_kafka_cluster_details,
+            external_dbs=external_dbs,
+            kafka_topics=kafka_topics,
+            aws_kafka_schema_registry_details=aws_kafka_schema_registry_details,
+            confluent_kafka_schema_registry_details=confluent_kafka_schema_registry_details
+        )
+
+        # Automatically configure cross account auth if requested
+        if runtype == "columnar" and self.input.param("auth_type", "none") == "cross_account" and self.link_type == "s3":
+            columnar_spec["external_link"]["properties"] = [{
+                "type": "s3",
+                "region": self.aws_region,
+                "instanceProfile": "true",
+                "roleArn": self.role_arn,
+                "externalId": self.cross_account_setup.external_id
+            }]
+
+        return columnar_spec
 
     def tearDown(self):
         """
@@ -65,6 +111,12 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.columnar_cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
+
+        # destroy cross account
+        if runtype == "columnar" and hasattr(self, "cross_account_setup") and self.cross_account_setup:
+            self.cross_account_setup.destroy_cross_account()
+            self.log.info(f"Cross account destroyed")
+
         super(CopyIntoStandaloneCollectionFromBlobStorage, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 

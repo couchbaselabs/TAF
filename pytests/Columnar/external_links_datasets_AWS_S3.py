@@ -7,6 +7,9 @@ import random
 from queue import Queue
 
 from TestInput import TestInputSingleton
+from Columnar.s3_cross_account_auth import CrossAccountSetup
+from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
+from common_lib import sleep
 
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
 if runtype == "columnar":
@@ -42,6 +45,13 @@ class S3LinksDatasets(ColumnarBaseTest):
             "json": 1560000, "parquet": 1560000,
             "csv": 1560000, "tsv": 1560000, "avro": 1560000}
 
+        if runtype == "columnar" and self.input.param("auth_type", "none") == "cross_account":
+            self.columnar_api = ColumnarAPI(self.pod.url_public, self.tenant.api_secret_key, self.tenant.api_access_key, self.tenant.user, self.tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=self.pod.TOKEN)
+            self.cross_account_setup = CrossAccountSetup(self.columnar_api, self.tenant.id, self.tenant.project_id, self.columnar_cluster.instance_id, self.columnar_cluster.cluster_id, self.s3_source_bucket)
+            self.role_arn = self.cross_account_setup.create_cross_account()
+            self.log.info(f"Created role ARN: {self.role_arn}")
+            sleep(60)
+
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
 
@@ -51,6 +61,12 @@ class S3LinksDatasets(ColumnarBaseTest):
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.columnar_cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
+
+        # destroy cross account
+        if runtype == "columnar" and hasattr(self, "cross_account_setup") and self.cross_account_setup:
+            self.cross_account_setup.destroy_cross_account()
+            self.log.info(f"Cross account destroyed")
+
         super(S3LinksDatasets, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage="Teardown")
@@ -64,6 +80,15 @@ class S3LinksDatasets(ColumnarBaseTest):
         dataset_properties["path_on_external_container"] = (
             self.input.param("path_on_external_container",
                              "level_{level_no:int}_folder_{folder_no:int}"))
+
+        if self.input.param("auth_type", "none") == "cross_account":
+            self.columnar_spec["external_link"]["properties"] = [{
+                "type": "s3",
+                "region": self.aws_region,
+                "instanceProfile": "true",
+                "roleArn": self.role_arn,
+                "externalId": self.cross_account_setup.external_id
+            }]
 
         if file_format in ["csv", "tsv"]:
             dataset_properties["object_construction_def"] = (
