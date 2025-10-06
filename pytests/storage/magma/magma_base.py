@@ -449,7 +449,7 @@ class MagmaBaseTest(StorageBase):
         shell.disconnect()
         return random.choice(keyIndex)
 
-    def get_tombstone_count_key(self, servers=[]):
+    def get_tombstone_count_key(self, servers=[], retry_count=5):
         total_tombstones = {'final_count' : 0}
         ts_per_node = dict()
         for server in servers:
@@ -475,7 +475,14 @@ class MagmaBaseTest(StorageBase):
                     kvstore_num = kvstore.split("-")[1].strip()
                     # dump += ' --kvstore {} --tree key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
                     dump += ' tree --kvstore {} --index key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
-                    ts_count = shell.execute_command(dump)[0][0].strip()
+                    output, error = shell.execute_command(dump)
+                    ts_count = output[0].strip()
+                    retry = retry_count
+                    while int(ts_count) == 0 and retry > 0:
+                        self.log.info("CMD: {} failed, Error: {}, retrying again...".format(dump, error))
+                        ts_count = shell.execute_command(dump)[0][0].strip()
+                        retry -= 1
+                        time.sleep(5)
                     self.log.debug("kvstore_num=={}, ts_count=={}".format(kvstore_num, ts_count))
                     result_str += str(ts_count) + "+"
                     result += int(ts_count)
