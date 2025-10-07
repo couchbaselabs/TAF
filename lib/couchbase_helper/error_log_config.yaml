@@ -79,6 +79,8 @@ file_name_patterns:
   - file: 'analytics_info*'
     grep_for:
       - string: "fata"
+        exclude_patterns:
+          - 'sun.security.ssl.TransportContext.fatal'
       - string: "MERGE operation.*failed"
       - string: "Analytics Service is temporarily unavailable"
       - string: "Failed during startup task"
