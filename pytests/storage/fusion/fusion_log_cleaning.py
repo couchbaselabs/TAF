@@ -28,7 +28,7 @@ class FusionLogCleaning(FusionSync, FusionBase):
         if validate:
             shell = RemoteMachineShellConnection(self.nfs_server)
             bucket_uuid = self.get_bucket_uuid(bucket.name)
-            fusion_bucket_path = f"{self.nfs_server_path}/kv/{bucket.name}/{bucket_uuid}"
+            fusion_bucket_path = f"{self.nfs_server_path}/kv/{bucket_uuid}/{bucket_uuid}"
             o, e = shell.execute_command(f"du -sb {fusion_bucket_path}")
             current_du = int(o[0].split("\t")[0])
             self.log.info(f"Log Store Size of {bucket.name} after initial creates = {current_du}")
@@ -38,7 +38,7 @@ class FusionLogCleaning(FusionSync, FusionBase):
         bucket_uuid = self.get_bucket_uuid(bucket.name)
         self.log.info(f"Bucket UUID: {bucket_uuid}")
 
-        fusion_bucket_path = f"{self.nfs_server_path}/kv/{bucket.name}/{bucket_uuid}"
+        fusion_bucket_path = f"{self.nfs_server_path}/kv/{bucket_uuid}/{bucket_uuid}"
 
         du_cmd = f"du -sb {fusion_bucket_path}"
 

@@ -45,7 +45,7 @@ class MagmaUtils:
         flag = units_to_flag[units]
 
         def get_command(glob):
-            path = os.path.join(data_path, bucket.name, glob)
+            path = os.path.join(data_path, bucket.uuid, glob)
             return "du {} {} | tail -1 | awk '{{print $1}}'".format(flag, path)
 
         for server in servers:

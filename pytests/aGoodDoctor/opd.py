@@ -423,7 +423,7 @@ class OPD:
 
         for server in servers:
             shell = RemoteMachineShellConnection(server)
-            bucket_path = os.path.join(RestConnection(server).get_data_path(),bucket.name)
+            bucket_path = os.path.join(RestConnection(server).get_data_path(),bucket.uuid)
             kvstore += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
             " % os.path.join(bucket_path, "magma.*/kv*"))[0][0].split('\n')[0])
             wal += int(shell.execute_command("du -cm %s | tail -1 | awk '{print $1}'\
@@ -501,7 +501,7 @@ class OPD:
         while not self.stop_stats:
             for bucket in self.cluster.buckets:
                 self.log.info(self.get_magma_stats(bucket, server)[server.ip]["rw_0:magma"])
-                self.dump_seq_index(shell, data_path, bucket.name, shard, kvstore)
+                self.dump_seq_index(shell, data_path, bucket.uuid, shard, kvstore)
             self.sleep(600)
         shell.disconnect()
 

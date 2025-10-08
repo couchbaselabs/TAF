@@ -678,7 +678,7 @@ class MagmaBaseTest(StorageBase):
         self.log.info("Sizes of each vbucket in bucket: {}".format(bucket.name))
         for node in self.cluster.kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            path_to_bucket = os.path.join(self.data_path, bucket.name)
+            path_to_bucket = os.path.join(self.data_path, bucket.uuid)
             path_arr, e = shell.execute_command("find {} -name kvstore-*".format(path_to_bucket))
             for path in path_arr:
                 o = shell.execute_command("du -H {}".format(path))

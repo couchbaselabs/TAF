@@ -923,8 +923,8 @@ class FailoverTests(FailoverBaseTest):
             for bucket in buckets:
                 if type.lower() == 'windows':
                     self.data_path = 'c:/Program\ Files/Couchbase/Server/var/lib/couchbase/data'
-                bucket_data_path = self.data_path + "/" + bucket.name + "/" + "check.txt"
-                full_path = self.data_path + "/" + bucket.name + "/"
+                bucket_data_path = self.data_path + "/" + bucket.uuid + "/" + "check.txt"
+                full_path = self.data_path + "/" + bucket.uuid + "/"
                 map[bucket.name] = full_path
                 shell.create_file(bucket_data_path, "check")
             fileMap[server.ip] = map
