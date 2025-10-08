@@ -21,8 +21,6 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
         # Since all the test cases are being run on 1 cluster only
         if runtype == "columnar":
             self.columnar_cluster = self.tenant.columnar_instances[0]
-        else:
-            self.columnar_cluster = self.cluster
 
         self.columnar_spec_name = self.input.param("columnar_spec_name", None)
         if not self.columnar_spec_name:
@@ -30,7 +28,7 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
 
         self.link_type = self.input.param("external_link_source", "s3")
 
-        if self.link_type == "s3":
+        if self.link_type == "s3" or self.link_type == "azureblob":
             self.files_to_use_in_include = {
                 "json": [["*/file_1.json"], 7800000],
                 "csv": [["*/file_2.csv"], 7800000],
@@ -46,7 +44,7 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
                 "parquet": [["*/file_5.parquet"], 120000],
                 "avro": [["*/file_4.avro"], 120000]
             }
-        if self.link_type == "s3":
+        if self.link_type == "s3" or self.link_type == "azureblob":
             self.doc_count_per_format = {
                 "json": 7920000, "parquet": 7920000,
                 "csv": 7920000, "tsv": 7920000, "avro": 7920000}
@@ -126,7 +124,7 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy into command failure")
 
-        if self.link_type == "s3":
+        if self.link_type == "s3" or self.link_type == "azureblob":
             doc_count = {
                 "json": 1560000, "csv": 1560000, "tsv": 1560000, "parquet": 1560000
             }

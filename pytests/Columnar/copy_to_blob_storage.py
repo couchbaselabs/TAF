@@ -11,6 +11,7 @@ import random
 import time
 from queue import Queue
 
+from azureLib.Azure import Azure
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from CbasLib.CBASOperations import CBASHelper
 from itertools import combinations, product
@@ -61,11 +62,16 @@ class CopyToBlobStorage(ColumnarBaseTest):
         self.sink_blob_bucket_name = None
         self.link_type = self.input.param("external_link_source", "s3")
         self.gcs_client = None
+        self.azure_client = None
         if self.link_type == "gcs":
             with open(gcs_certificate, 'r') as file:
                 # Load JSON data from file
                 credentials = json.load(file)
                 self.gcs_client = GCS(credentials)
+        if self.link_type == "azureblob":
+            self.azure_client = Azure(
+                account_name=self.columnar_aws_access_key,
+                account_key=self.columnar_aws_secret_key)
 
         for i in range(5):
             try:
@@ -91,6 +97,16 @@ class CopyToBlobStorage(ColumnarBaseTest):
                     self.log.info("Creating gcs bucket : {}".format(self.sink_blob_bucket_name))
                     if self.gcs_client.create_bucket(self.sink_blob_bucket_name):
                         break
+                elif self.link_type == "azureblob":
+                    self.sink_blob_bucket_name = "copy-to-azure-" + str(random.randint(1, 100000))
+
+                    if self.azure_client.create_container(self.sink_blob_bucket_name):
+                        self.columnar_azure_bucket_created = True
+                        self.columnar_aws_bucket_name = self.sink_blob_bucket_name
+                        break
+                    else:
+                        self.fail("Creating Azure container - {0}. Failed.".format(
+                            self.sink_blob_bucket_name))
 
             except Exception as e:
                 self.log.error("Creating blob storage bucket - {0} failed".format(self.sink_blob_bucket_name))
@@ -144,8 +160,13 @@ class CopyToBlobStorage(ColumnarBaseTest):
                             region=self.aws_region,
                             endpoint_url=self.aws_endpoint):
                         break
-                else:
+                elif self.link_type == "gcs":
                     if self.gcs_client.empty_gcs_bucket(self.sink_blob_bucket_name):
+                        break
+                elif self.link_type == "azureblob":
+                    if not self.azure_client.empty_container(self.sink_blob_bucket_name):
+                        self.log.info("Container not emptied")
+                    else:
                         break
 
             except Exception as e:
@@ -176,6 +197,15 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 elif self.link_type == "gcs":
                     if self.gcs_client.delete_bucket(self.sink_blob_bucket_name):
                         break
+                elif self.link_type == "azureblob":
+                    self.log.info("Deleting Azure container - {}".format(
+                        self.sink_blob_bucket_name))
+                    if not self.azure_client.delete_container(self.sink_blob_bucket_name):
+                        self.log.error("Azure container {} failed to delete.".format(self.sink_blob_bucket_name))
+                    else:
+                        self.log.info("Azure container {} deleted.".format(self.sink_blob_bucket_name))
+                        break
+
             except Exception as e:
                 self.log.error("Unable to delete blob bucket - {0}".format(
                     self.sink_blob_bucket_name))
@@ -655,6 +685,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
+        elif self.link_type == "azureblob":
+            files = self.azure_client.list_objects_in_azure_container(self.sink_blob_bucket_name)
 
         objects_in_blob_storage = [str(x) for x in files]
 
@@ -744,6 +776,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                      get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
+        elif self.link_type == "azureblob":
+            files = self.azure_client.list_objects_in_azure_container(self.sink_blob_bucket_name)
 
         objects_in_blob_storage = [str(x) for x in files]
 
@@ -867,6 +901,9 @@ class CopyToBlobStorage(ColumnarBaseTest):
     def test_create_copyTo_from_collection_to_non_existing_S3_bucket(self):
         expected_error = ("External sink error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: "
                           "The specified bucket does not exist")
+        if self.link_type == "azureblob":
+            self.log.info("Test only valid for S3 links")
+            return
         if self.link_type != "s3":
             self.log.info("Test only valid for S3 links")
             expected_error = ("External sink error. com.google.cloud.storage.StorageException: The specified bucket "
@@ -1100,6 +1137,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                       get_bucket_objects=True)]
         elif self.link_type == "gcs":
             verification_file = [str(x) for x in self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)]
+        elif self.link_type == "azureblob":
+            verification_file = [str(x) for x in self.azure_client.list_objects_in_azure_container(self.sink_blob_bucket_name)]
 
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
@@ -1117,6 +1156,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          )
             elif self.link_type == 'gcs':
                 self.gcs_client.download_file_from_gcs(self.sink_blob_bucket_name, file_to_download, dest_path)
+            elif self.link_type == 'azureblob':
+                self.azure_client.download_file_from_azure_container(self.sink_blob_bucket_name, file_to_download, dest_path)
 
             json_data = []
             with open(dest_path, 'r') as json_file:
@@ -1209,6 +1250,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                                                       get_bucket_objects=True)]
         elif self.link_type == "gcs":
             verification_file = [str(x) for x in self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)]
+        elif self.link_type == "azureblob":
+            verification_file = [str(x) for x in self.azure_client.list_objects_in_azure_container(self.sink_blob_bucket_name)]
 
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
@@ -1226,6 +1269,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          )
             elif self.link_type == 'gcs':
                 self.gcs_client.download_file_from_gcs(self.sink_blob_bucket_name, file_to_download, dest_path)
+            elif self.link_type == 'azureblob':
+                self.azure_client.download_file_from_azure_container(self.sink_blob_bucket_name, file_to_download, dest_path)
 
             json_data = []
             with open(dest_path, 'r') as json_file:
@@ -1296,7 +1341,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
     def test_create_copyTo_from_collection_to_different_region_existing_s3_bucket(self):
         if self.link_type != "s3":
             self.log.info("Test only valid for s3 links")
-            pass
+            return
         self.base_setup()
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
         no_of_docs = self.input.param("no_of_docs", 100)
@@ -1455,6 +1500,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
+        elif self.link_type == "azureblob":
+            files = self.azure_client.list_objects_in_azure_container(self.sink_blob_bucket_name)
         objects_in_blob_storage = [str(x) for x in files]
 
         results = []
@@ -1547,6 +1594,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
+        elif self.link_type == "azureblob":
+            files = self.azure_client.list_objects_in_azure_container(self.sink_blob_bucket_name)
 
         objects_in_blob_storage = [str(x) for x in files]
         if len(objects_in_blob_storage) == 0:
@@ -1603,6 +1652,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
                                          get_bucket_objects=True)
         elif self.link_type == "gcs":
             files = self.gcs_client.list_objects_in_gcs_bucket(self.sink_blob_bucket_name)
+        elif self.link_type == "azureblob":
+            files = self.azure_client.list_objects_in_azure_container(self.sink_blob_bucket_name)
 
         objects_in_s3 = [str(x) for x in files]
         if len(objects_in_s3) != 0:

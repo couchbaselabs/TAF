@@ -691,6 +691,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                                         self.aws_access_key)
         self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key",
                                                         self.aws_secret_key)
+
+        if self.az_blob:
+            self.columnar_aws_secret_key = self.columnar_aws_secret_key + "=="
+            self.aws_secret_key = self.aws_secret_key + "=="
         self.columnar_aws_region = self.input.param("columnar_aws_region",
                                                            self.aws_region)
         self.columnar_aws_session_token = self.input.param("columnar_aws_session_token",

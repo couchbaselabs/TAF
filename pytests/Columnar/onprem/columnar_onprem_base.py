@@ -157,13 +157,22 @@ class ColumnarOnPremBase(CBASBaseTest):
         columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param("num_external_links", 0)
         if columnar_spec["external_link"]["no_of_external_links"]:
-            columnar_spec["external_link"]["properties"] = [{
-                "type": "s3",
-                "region": self.aws_region,
-                "accessKeyId": self.aws_access_key,
-                "secretAccessKey": self.aws_secret_key,
-                "serviceEndpoint": self.aws_endpoint
-            }]
+            if self.input.param("external_link_source", "s3") == "azureblob":
+                columnar_spec["external_link"]["properties"] = [{
+                    "type": "azureblob",
+                    "region": self.aws_region,
+                    "accountName": self.aws_access_key,
+                    "accountKey": self.aws_secret_key,
+                    "endpoint": self.aws_endpoint
+                }]
+            else:
+                columnar_spec["external_link"]["properties"] = [{
+                    "type": "s3",
+                    "region": self.aws_region,
+                    "accessKeyId": self.aws_access_key,
+                    "secretAccessKey": self.aws_secret_key,
+                    "serviceEndpoint": self.aws_endpoint
+                }]
 
         # Updating Kafka Links Spec
         columnar_spec["kafka_link"]["no_of_kafka_links"] = self.input.param(

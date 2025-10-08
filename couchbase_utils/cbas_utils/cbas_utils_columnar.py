@@ -2306,9 +2306,17 @@ class Dataset_Util(KafkaLink_Util):
             cmd += " if exists"
         cmd += ";"
         self.log.info(f"Dropping dataset using cmd: {cmd}")
-        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
-            cluster, cmd, username=username, password=password,
-            timeout=timeout, analytics_timeout=analytics_timeout)
+        for i in range(5):
+            try:
+                status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
+                    cluster, cmd, username=username, password=password,
+                    timeout=timeout, analytics_timeout=analytics_timeout)
+                if status == "success":
+                    break
+            except Exception:
+                self.log.info(f"Failed to drop dataset for {i} attempt.")
+                time.sleep(5)
+
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
@@ -3164,7 +3172,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
         # get all external link objects
         link_types = dataset_spec.get("include_link_types", [])
         if not link_types:
-            link_types = ["s3", "azure", "gcs"]
+            link_types = ["s3", "azure", "gcs", "azureblob"]
 
         if set(link_types) == set(
                 dataset_spec.get("exclude_link_types", [])):
@@ -6598,7 +6606,7 @@ class CbasUtil(CBOUtil):
 
         self.log.info("Disconnecting all the Links")
         for link in self.get_all_link_objs():
-            if link.link_type != "s3" and link.link_type != "gcs":
+            if link.link_type != "s3" and link.link_type != "gcs" and link.link_type != "azureblob":
                 link_info = self.get_link_info(
                     cluster, link.name, link.link_type)
                 if ((type(link_info) is not None) and len(link_info) > 0 and

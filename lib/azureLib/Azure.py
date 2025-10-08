@@ -207,3 +207,62 @@ class Azure(AzureBase):
         except Exception as e:
             self.logger.error(f"Failed to empty container '{container_name}': {e}")
             return False
+
+    def list_objects_in_azure_container(self, container_name):
+        """
+        List all objects (blobs) in an Azure Blob Storage container.
+        
+        :param container_name: Name of the container to list objects from
+        :return: List of blob names in the container
+        """
+        try:
+            self.logger.info(f"Listing objects in container: {container_name}")
+            
+            container_client = self.blob_service_client.get_container_client(container_name)
+            
+            # List all blobs in the container
+            blob_list = container_client.list_blobs()
+            objects = []
+            
+            for blob in blob_list:
+                objects.append(blob.name)
+                
+            self.logger.info(f"Found {len(objects)} objects in container '{container_name}'")
+            return objects
+            
+        except ResourceNotFoundError:
+            self.logger.warning(f"Container '{container_name}' not found")
+            return []
+        except Exception as e:
+            self.logger.error(f"Failed to list objects in container '{container_name}': {e}")
+            return []
+
+    def download_file_from_azure_container(self, container_name, blob_name, dest_path):
+        """
+        Download a file from an Azure Blob Storage container.
+        
+        :param container_name: Name of the container
+        :param blob_name: Name of the blob to download
+        :param dest_path: Local path where the file should be saved
+        :return: True if download successful, else False
+        """
+        try:
+            self.logger.info(f"Downloading blob '{blob_name}' from container '{container_name}' to '{dest_path}'")
+            
+            container_client = self.blob_service_client.get_container_client(container_name)
+            blob_client = container_client.get_blob_client(blob_name)
+            
+            # Download the blob to local file
+            with open(dest_path, "wb") as download_file:
+                download_stream = blob_client.download_blob()
+                download_file.write(download_stream.readall())
+                
+            self.logger.info(f"Successfully downloaded blob '{blob_name}' to '{dest_path}'")
+            return True
+            
+        except ResourceNotFoundError:
+            self.logger.error(f"Blob '{blob_name}' not found in container '{container_name}'")
+            return False
+        except Exception as e:
+            self.logger.error(f"Failed to download blob '{blob_name}' from container '{container_name}': {e}")
+            return False
