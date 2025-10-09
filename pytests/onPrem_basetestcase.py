@@ -911,9 +911,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 cluster.sdk_client_pool.shutdown()
 
         result = self.check_coredump_exist(self.servers, force_collect=True)
-        if self.skip_teardown_cleanup:
-            self.log.debug("Skipping tearDownEverything")
-        else:
+        if not self.skip_teardown_cleanup:
             self.tearDownEverything()
         if not self.crash_warning:
             self.assertFalse(result, msg="Cb_log file validation failed")
@@ -970,13 +968,18 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.bucket_util.delete_all_buckets(cluster)
                     self.cluster_util.reset_env_variables(cluster)
 
-            self.log.info("Delete all buckets and rebalance out "
-                          "other nodes from '%s'" % cluster_name)
-            self.cluster_util.cluster_cleanup(cluster,
-                                                self.bucket_util)
-            if not self.skip_cluster_reset:
-                self.log.info("Resetting cluster nodes")
-                self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
+                if self.input.param("runtype", "default") == "onprem-columnar":
+                    # Doing this only for Enterprise Analytics edition
+                    # to avoid unwanted cleanup for default server runs
+                    self.log.info("Delete all buckets and rebalance out "
+                                  "other nodes from '%s'" % cluster_name)
+                    self.cluster_util.cluster_cleanup(cluster,
+                                                        self.bucket_util)
+                    if not self.skip_cluster_reset:
+                        self.log.info("Resetting cluster nodes")
+                        self.node_utils.reset_cluster_nodes(
+                            self.cluster_util, cluster)
+
         # delete aws bucket that was created for compute storage separation
         if (self.analytics_compute_storage_separation and
                 self.columnar_aws_bucket_created):
