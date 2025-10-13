@@ -162,13 +162,13 @@ class MagmaCompactionTests(MagmaBaseTest):
                               retry_exceptions=self.retry_exceptions,
                               ignore_exceptions=self.ignore_exceptions)
             if self.gen_create is not None:
-                self.create_start = self.gen_create.key_counter
+                self.create_start = self.gen_create.itr
             if self.gen_update is not None:
-                self.update_start = self.gen_update.key_counter
+                self.update_start = self.gen_update.itr
             if self.gen_delete is not None:
-                self.delete_start = self.gen_delete.key_counter
+                self.delete_start = self.gen_delete.itr
             if self.gen_expiry is not None:
-                self.expiry_start = self.gen_expiry.key_counter
+                self.expiry_start = self.gen_expiry.itr
 
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                  mem_item_count}
