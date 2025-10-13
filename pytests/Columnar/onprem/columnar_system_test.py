@@ -40,7 +40,7 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         self.num_external_collections = self.input.param("num_external_collections", 2)
         self.columnar_spec_name = self.input.param(
             "columnar_spec_name", "bvf_e2e")
-        self.columnar_spec = self.columnar_cbas_utils.get_columnar_spec(
+        self.columnar_spec = self.cbas_util.get_columnar_spec(
             self.columnar_spec_name)
         self.copy_to_s3_bucket_created = False
         self.create_start_index = 0
@@ -51,7 +51,7 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         self.cbas_helper = CBASHelper(self.analytics_cluster)
 
     def tearDown(self):
-        self.columnar_cbas_utils.cleanup_cbas(self.analytics_cluster)
+        self.cbas_util.cleanup_cbas(self.analytics_cluster)
         self.log.info("Delete the copy to bucket created on Netapp storage.")
         if self.copy_to_s3_bucket_created:
             self.log.info("Deleting AWS S3 bucket for Copy to S3 - {}".format(
@@ -170,7 +170,7 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         self.columnar_spec["index"]["indexed_fields"] = [
             "id:string", "id:string-product_name:string"]
 
-        if not self.columnar_cbas_utils.create_cbas_infra_from_spec(
+        if not self.cbas_util.create_cbas_infra_from_spec(
                 cluster=self.analytics_cluster, cbas_spec=self.columnar_spec,
                 bucket_util=self.bucket_util, wait_for_ingestion=False,
                 remote_clusters=[self.remote_cluster]):
@@ -255,7 +255,7 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         """
 
         # Get all remote datasets
-        remote_datasets = self.columnar_cbas_utils.get_all_dataset_objs("remote")
+        remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         if not remote_datasets:
             self.fail("No remote datasets found")
 
@@ -340,8 +340,8 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
 
         # wait for initial ingestion to complete.
         self.log.info("Waiting for initial ingestion into Remote dataset")
-        for dataset in self.columnar_cbas_utils.get_all_dataset_objs("remote"):
-            if not self.columnar_cbas_utils.wait_for_ingestion_complete(
+        for dataset in self.cbas_util.get_all_dataset_objs("remote"):
+            if not self.cbas_util.wait_for_ingestion_complete(
                     self.analytics_cluster, dataset.full_name,
                     dataset.num_of_items, 72000):
                 self.fail("FAILED: Initial ingestion into {}.".format(
@@ -360,22 +360,34 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         t2.join()
         t3.join()
 
-        # Create external link for NetApp Storage
-        self.log.info("Creating external link for NetApp Storage")
-        external_link_properties = {
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "region": self.aws_region,
-            "serviceEndpoint": self.aws_endpoint,
-            "name": "netapp_external_link",
-            "type": "s3"
-        }
+        # Create external link for NetApp/Azure Storage
+        self.log.info("Creating external link for NetApp/Azure Storage")
+        if not self.az_blob:
+            link_name = "netapp_external_link"
+            external_link_properties = {
+                "accessKeyId": self.aws_access_key,
+                "secretAccessKey": self.aws_secret_key,
+                "region": self.aws_region,
+                "serviceEndpoint": self.aws_endpoint,
+                "name": link_name,
+                "type": "s3"
+            }
+        else:
+            link_name = "azure_external_link"
+            external_link_properties = {
+                    "type": "azureblob",
+                    "region": self.aws_region,
+                    "accountName": self.aws_access_key,
+                    "accountKey": self.aws_secret_key,
+                    "endpoint": self.aws_endpoint,
+                    "name": link_name
+                }
 
-        if not self.columnar_cbas_utils.create_external_link(
+        if not self.cbas_util.create_external_link(
                 self.analytics_cluster,
                 link_properties=external_link_properties):
-            self.fail("Failed to create external link for AWS")
-        self.log.info("Successfully created external link for AWS")
+            self.fail("Failed to create external link for Netapp/Azure")
+        self.log.info("Successfully created external link.")
 
         # Create external datasets for different file formats
         file_formats = ["json", "parquet", "avro"]
@@ -390,7 +402,7 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
                 if not self.cbas_util.create_dataset_on_external_resource(cluster=self.columnar_cluster,
                                                                           dataset_name=dataset_name,
                                                                           external_container_name=dataset_container_name,
-                                                                          link_name="netapp_external_link",
+                                                                          link_name=link_name,
                                                                           file_format=file_format,
                                                                           include="*." + file_format):
                     self.fail("Failed to create dataset on netapp storage.")
@@ -398,21 +410,21 @@ class ColumnarOnPremSystemTest(ColumnarOnPremBase):
         self.log.info("Run query on external collections.")
         self.run_query_on_external_collections()
 
-        self.log.info("Copy to Netapp Storage.")
+        self.log.info("Copy to Netapp Storage/AzureBlob.")
         self.sink_blob_bucket_name = "copy-to-blob-" + str(random.randint(1, 100000))
         self.copy_to_s3_bucket_created = True
         self.columnar_s3_obj.create_bucket(self.sink_blob_bucket_name, self.aws_region)
         jobs = Queue()
         results = []
-        for i, dataset in enumerate(self.columnar_cbas_utils.get_all_dataset_objs("remote")):
+        for i, dataset in enumerate(self.cbas_util.get_all_dataset_objs("remote")):
             path = "copy_dataset_" + str(i)
             jobs.put((self.cbas_util.copy_to_s3,
                       {"cluster": self.columnar_cluster, "collection_name": dataset.name,
                        "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
                        "destination_bucket": self.sink_blob_bucket_name,
-                       "destination_link_name": "netapp_external_link",
+                       "destination_link_name": link_name,
                        "path": path}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
-            self.fail("Copy to netapp storage statement failure")
+            self.fail("Copy to netapp/azureblob storage statement failure")

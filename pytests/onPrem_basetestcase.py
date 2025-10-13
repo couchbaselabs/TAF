@@ -731,7 +731,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.azure_client = Azure(
                     account_name=self.columnar_aws_access_key,
                     account_key=self.columnar_aws_secret_key)
-
+                self.log.info("Account Name {0}".format(self.columnar_aws_access_key))
+                self.log.info("Account key {0}".format(self.columnar_aws_secret_key))
                 self.columnar_azure_bucket_name = "columnar-build-sanity-" + str(int(
                     time.time()))
 
