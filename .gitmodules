@@ -2,21 +2,9 @@
 	path = lib/capellaAPI
 	url = https://github.com/couchbaselabs/CapellaRESTAPIs
 	branch = master
-[submodule "platform_utils/ssh_util"]
-	path = platform_utils/ssh_util
-	url = https://github.com/couchbaselabs/ssh_util
-    branch = master
-[submodule "couchbase_utils/cb_server_rest_util"]
-	path = couchbase_utils/cb_server_rest_util
-	url = https://github.com/couchbaselabs/cb_server_rest_util
-    branch = master
 [submodule "sirius"]
 	path = sirius
 	url = https://github.com/couchbaselabs/sirius.git
-	branch = master
-[submodule "py_constants"]
-	path = py_constants
-	url = https://github.com/couchbaselabs/py_constants.git
 	branch = master
 [submodule "JavaDocLoader"]
 	path = DocLoader
