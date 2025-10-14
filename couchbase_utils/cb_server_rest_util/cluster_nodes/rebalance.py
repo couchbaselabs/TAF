@@ -9,7 +9,8 @@ class RebalanceRestAPI(CBRestConnection):
         super(RebalanceRestAPI, self).__init__()
 
     def rebalance(self, known_nodes, eject_nodes=None, topology=None,
-                  defrag_options=None, delta_recovery_buckets=None):
+                  defrag_options=None, delta_recovery_buckets=None,
+                  plan_uuid=None):
         """
         POST :: /controller/rebalance
         docs.couchbase.com/server/current/rest-api/rest-cluster-rebalance.html
@@ -34,6 +35,10 @@ class RebalanceRestAPI(CBRestConnection):
             # These options are valid only for serverless mode
             params['defragmentZones'] = defrag_options["defragmentZones"]
             params['knownNodes'] = defrag_options["knownNodes"]
+
+        if plan_uuid:
+            # Required for Fusion Rebalance
+            params["planUUID"] = plan_uuid
 
         status, content, _ = self.request(api, self.POST, params)
         return status, content

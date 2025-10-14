@@ -92,21 +92,33 @@ class RebalanceAutomation:
         keep_nodes = ','.join(f'ns_1@{node}' for node in self.new_nodes)
         url = f"{self.base_url}{API_PREPARE_REBALANCE}"
 
-        try:
-            response = requests.post(url, auth=self.auth, data={'keepNodes': keep_nodes})
-            response.raise_for_status()
-            plan_data = response.json()
+        retry_count = 5
 
-            # Save the rebalance plan
-            with open(REBALANCE_PLAN_FILE, 'w') as f:
-                json.dump(plan_data, f, indent=2)
+        while retry_count > 0:
 
-            # Extract involved nodes from the plan, keeping the "ns_1@" prefix
-            involved_nodes = list(plan_data['nodes'].keys())
-            return plan_data['planUUID'], involved_nodes
-        except requests.exceptions.RequestException as e:
-            print(f"Failed to prepare rebalance: {str(e)}")
-            raise
+            try:
+                retry_count -= 1
+                start_time = time.time()
+                response = requests.post(url, auth=self.auth, data={'keepNodes': keep_nodes})
+                response.raise_for_status()
+                plan_data = response.json()
+                end_time = time.time()
+
+                print("prepareRebalance time taken = ", end_time - start_time, "seconds")
+
+                # Save the rebalance plan
+                with open(REBALANCE_PLAN_FILE, 'w') as f:
+                    json.dump(plan_data, f, indent=2)
+
+                # Extract involved nodes from the plan, keeping the "ns_1@" prefix
+                involved_nodes = list(plan_data['nodes'].keys())
+                return plan_data['planUUID'], involved_nodes
+            except requests.exceptions.RequestException as e:
+                print(f"Failed to prepare rebalance: {str(e)}")
+                print(f"Sleeping for 60 seconds before retrying PrepareRebalance")
+                time.sleep(60)
+                if retry_count == 0:
+                    raise
 
     def split_manifest(self):
         """Split the rebalance manifest."""
@@ -203,7 +215,11 @@ class RebalanceAutomation:
             # Get exit status
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0:
-                raise Exception(f"Command failed on node {node} with exit status {exit_status}")
+                stderr_output = stderr.read().decode('utf-8', errors='ignore')
+                raise Exception(
+                    f"Command failed on node {node} with exit status {exit_status}\n"
+                    f"STDERR:\n{stderr_output}"
+                )
 
         except Exception as e:
             print(f"Error setting up node {node}: {str(e)}")
@@ -365,12 +381,22 @@ def main():
 
         # Step 2: Prepare rebalance and get UUID
         print("Preparing rebalance plan...")
+        start = time.time()
         plan_uuid, involved_nodes = rebalancer.prepare_rebalance()
+        reb_plan_time = time.time() - start
         print(f"Rebalance plan UUID: {plan_uuid}")
+        print(f"prepareRebalance time taken = {reb_plan_time} seconds")
+
+        sleep_time = sleep_time + 60 - reb_plan_time
+        print(f"Sleeping for {sleep_time} seconds after PrepareRebalance")
+        time.sleep(sleep_time)
 
         # Step 3: Split manifest
+        start = time.time()
         print("Splitting manifest...")
         rebalancer.split_manifest()
+        split_time_taken = time.time() - start
+        print(f"Split manifest time taken = {split_time_taken} seconds")
 
         # Step 4: Sync manifests
         print("Syncing manifests...")
@@ -380,15 +406,15 @@ def main():
         print("Uploading mounted volumes configuration...")
         rebalancer.upload_mounted_volumes(plan_uuid, involved_nodes)
 
-        print(f"Sleeping for {sleep_time} seconds after PrepareRebalance")
-        time.sleep(sleep_time)
-
         involved_nodes_list = [node.split("@", 1)[1] for node in involved_nodes]
         print("Involved nodes list =", involved_nodes_list)
 
         # Step 6: Setup new nodes
         print("Setting up new nodes...")
+        start = time.time()
         rebalancer.setup_new_nodes(nodes_involved=involved_nodes_list)
+        acceleration_time_taken = time.time() - start
+        print(f"Accleration time taken = {acceleration_time_taken} seconds")
 
         # Step 7: Start rebalance
         print("Starting rebalance process...")

@@ -12,6 +12,7 @@ from basetestcase import BaseTestCase
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
+from cb_tools.cbstats import Cbstats
 from rebalance_utils.rebalance_util import RebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 from custom_exceptions.exception import RebalanceFailedException
@@ -49,8 +50,6 @@ class FusionBase(BaseTestCase):
 
         self.skip_fusion_setup = self.input.param("skip_fusion_setup", False)
 
-        self.current_version = self.input.param("current_version", "0.0.0-3025")
-
         # Virtual env path for rebalance script execution on the remote node
         self.venv_path = "/root/myenv"
 
@@ -84,14 +83,16 @@ class FusionBase(BaseTestCase):
         self.slave_ip = result.stdout.strip()
         self.log.info(f"Slave IP = {self.slave_ip}")
 
+        self.client_share_dir = "share"
+
         if not self.skip_fusion_setup:
-            self.setup_nfs_server()
+            self.setup_nfs_server_new()
 
             th_arr1 = list()
             th_arr2 = list()
 
             for nfs_client in self.cluster.servers:
-                th1 = threading.Thread(target=self.setup_nfs_client, args=[nfs_client])
+                th1 = threading.Thread(target=self.setup_nfs_client_new, args=[nfs_client])
                 th2 = threading.Thread(target=self.copy_scripts_to_nodes, args=[nfs_client])
                 th1.start()
                 th2.start()
@@ -113,6 +114,9 @@ class FusionBase(BaseTestCase):
             o, e = ssh.execute_command(nfs_cleanup_cmd)
             ssh.disconnect()
 
+        self.nfs_server_path = f"/data/nfs/{self.client_share_dir}/buckets"
+        self.log.info(f"NFS Server path: {self.nfs_server_path}")
+
         self.monitor = True
         self.crash_loop = False
 
@@ -130,6 +134,7 @@ class FusionBase(BaseTestCase):
             shell = RemoteMachineShellConnection(server)
             output, error = shell.enable_diag_eval_on_non_local_hosts()
             shell.disconnect()
+        self.reb_plan_uuids = list()
 
 
     def setup_nfs_server(self):
@@ -206,6 +211,82 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
+
+    def setup_nfs_server_new(self):
+
+        shell = RemoteMachineShellConnection(self.nfs_server)
+
+        # Create required directories
+        create_dir_cmd = f"mkdir -p {self.nfs_scripts_dir}"
+        o, e = shell.execute_command(create_dir_cmd)
+
+        # Copy over nfs server script
+        self.log.info(f"Copying over NFS server script to server: {self.nfs_server.ip}")
+        copy_cmd = 'sshpass -p "{2}" scp -o StrictHostKeyChecking=no' \
+                    ' {3}/setup_server_new.sh root@{0}:{1}/setup_server_new.sh'\
+                    .format(self.nfs_server.ip, self.nfs_scripts_dir, "couchbase", self.local_scripts_path)
+        subprocess.run(copy_cmd, shell=True, executable="/bin/bash")
+
+        # Provide execute permissions to the script and run it
+        self.log.info(f"Running NFS server setup on {self.nfs_server.ip}")
+        run_cmd = f"chmod +x {self.nfs_scripts_dir}/setup_server_new.sh; bash {self.nfs_scripts_dir}/setup_server_new.sh"
+        self.log.info(f"Server Setup CMD: {run_cmd}")
+        o, e = shell.execute_command(run_cmd)
+        shell.log_command_output(o, e)
+
+        self.sleep(20, "Wait after setting up NFS server")
+
+        new_share_dir = None
+        for line in o:
+            if line.startswith("NEW_SHARE_DIR="):
+                new_share_dir = line.split("=", 1)[1].strip()
+                break
+        self.log.info(f"New Shared dir = {new_share_dir}")
+        self.client_share_dir = new_share_dir.split("/")[-1]
+        self.log.info(f"Client shared dir = {self.client_share_dir}")
+
+        shell.disconnect()
+
+
+    def setup_nfs_client_new(self, client):
+
+        self.log.info(f"Setting up NFS client on server: {client.ip}")
+
+        ssh = RemoteMachineShellConnection(client)
+
+        # Remove existing packages and dependencies
+        self.log.info("Removing NFS client packages")
+        o, e = ssh.execute_command(nfs_client_remove)
+
+        self.sleep(30, "Wait after removing packages on client")
+
+        df_cmd = "df -H"
+        o, e = ssh.execute_command(df_cmd)
+        self.log.info(f"After removing NFS client mount on {client.ip} = {o}")
+
+        self.log.info(f"Creating NFS script directory on server: {client.ip}")
+        create_cmd = f"mkdir -p {self.nfs_scripts_dir}"
+        o, e = ssh.execute_command(create_cmd)
+
+        # Copy over nfs server script
+        self.log.info(f"Copying over NFS client setup script to: {client.ip}")
+        copy_cmd = 'sshpass -p "{2}" scp -o StrictHostKeyChecking=no' \
+                    ' {3}/setup_client_mount_new.sh root@{0}:{1}/setup_client_mount_new.sh'\
+                        .format(client.ip, self.nfs_scripts_dir, "couchbase", self.local_scripts_path)
+        subprocess.run(copy_cmd, shell=True, executable="/bin/bash")
+
+        # Provide execute permissions to the script and run it
+        self.log.info(f"Running NFS client script on server: {client.ip}")
+        run_cmd = f"chmod +x {self.nfs_scripts_dir}/setup_client_mount_new.sh; bash {self.nfs_scripts_dir}/setup_client_mount_new.sh {self.nfs_server.ip} {self.client_share_dir}"
+        self.log.info(f"Client Setup CMD: {run_cmd}")
+        o, e = ssh.execute_command(run_cmd)
+
+        self.sleep(30, "Wait after setting up NFS client")
+
+        o, e = ssh.execute_command(df_cmd)
+        self.log.info(f"After mouting NFS client on {client.ip} = {o}")
+
+        ssh.disconnect()
 
     def copy_scripts_to_nodes(self, client):
 
@@ -385,48 +466,7 @@ class FusionBase(BaseTestCase):
 
         return monitor_threads
 
-    def get_log_file_count_size(self, dir_path, migration_count=1, rebalance_count=1):
-
-        ssh = RemoteMachineShellConnection(self.cluster.master)
-        reb_plan_path = os.path.join(dir_path, "reb_plan{}.json".format(str(rebalance_count)))
-        cat_cmd = f"cat {reb_plan_path}"
-        o, e = ssh.execute_command(cat_cmd)
-        json_str = "\n".join(o)
-        data = json.loads(json_str)
-
-        if migration_count == 1:
-            self.total_size = dict()
-            self.total_log_files = dict()
-
-        for node in data['nodes']:
-            if node[5:] not in self.total_size:
-                self.total_size[node[5:]] = 0
-            if node[5:] not in self.total_log_files:
-                self.total_log_files[node[5:]] = 0
-            for log_manifest in data['nodes'][node]:
-                for log_file in log_manifest['logFiles']:
-                    self.total_size[node[5:]] += log_file['size']
-                    self.total_log_files[node[5:]] += 1
-        self.log.info(f"Total size of all log files = {self.total_size}")
-        self.log.info(f"Total log files = {self.total_log_files}")
-
-        guest_storage_dir = os.path.join("/".join(self.nfs_server_path.split("/")[:-1]), "guest_storage")
-        self.log.info(f"Guest Storage dir = {guest_storage_dir}")
-        nfs_ssh = RemoteMachineShellConnection(self.nfs_server)
-
-        output, e = nfs_ssh.execute_command(f"ls {guest_storage_dir}")
-        self.guest_storage_log_files = dict()
-        for node in output:
-            node_path = os.path.join(guest_storage_dir, node.strip())
-            o, e = nfs_ssh.execute_command(f"find {node_path} -name 'log-*' | wc -l")
-            self.log.info(f"Node: {node}, Guest Storage log files: {o}")
-            self.guest_storage_log_files[node[5:]] = int(o[0].strip())
-        self.log.info(f"Guest Storage Log Files: {self.guest_storage_log_files}")
-
-        ssh.disconnect()
-        nfs_ssh.disconnect()
-
-    def monitor_extent_migration(self, server, bucket, duration=3600, interval=2):
+    def monitor_extent_migration(self, server, bucket, duration=18000, interval=2):
 
         ssh = RemoteMachineShellConnection(server)
 
@@ -512,16 +552,6 @@ class FusionBase(BaseTestCase):
             self.spare_nodes = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
             self.log.info(f"Spare nodes = {self.spare_nodes}")
 
-        # Fetch last rebalance task to track starting of current rebalance
-        self.prev_rebalance_status_id = None
-        server_task = self.cluster_util.get_cluster_tasks(
-            self.cluster.master, task_type="rebalance",
-            task_sub_type="rebalance")
-        if server_task and "statusId" in server_task:
-            self.prev_rebalance_status_id = server_task["statusId"]
-        self.log.debug("Last known rebalance status_id: %s"
-                       % self.prev_rebalance_status_id)
-
         current_nodes_str = ""
         for node in self.cluster.nodes_in_cluster:
             current_nodes_str += node.ip + ","
@@ -591,50 +621,62 @@ class FusionBase(BaseTestCase):
             self.spare_nodes = self.spare_nodes[self.num_nodes_to_swap_rebalance:]
             self.log.info(f"Spare nodes = {self.spare_nodes}")
 
-            if not rebalance_master:
-                nodes_to_swap = list()
-                for node in self.cluster.nodes_in_cluster:
-                    if node.ip != self.cluster.master.ip:
-                        nodes_to_swap.append(node.ip)
-                        self.spare_nodes.append(node)
-                        if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
-                            break
-                self.log.info(f"Nodes to swap = {nodes_to_swap}")
+            if self.num_nodes_to_swap_rebalance == len(self.cluster.nodes_in_cluster):
+
+                new_node_str = ""
+                for new_node in nodes_to_add:
+                    new_node_str += new_node.ip + ","
+                new_node_str = new_node_str[:-1]
 
             else:
-                self.log.info(f"Cluster master = {self.cluster.master}")
-                nodes_to_swap = [self.cluster.master.ip]
-                self.spare_nodes.append(self.cluster.master)
-                tmp_server_list = [server for server in self.cluster.nodes_in_cluster
-                                   if server.ip != self.cluster.master.ip]
-                for node in tmp_server_list:
-                    if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
-                        break
-                    nodes_to_swap.append(node.ip)
-                    self.spare_nodes.append(node)
-                self.log.info(f"Nodes to swap = {nodes_to_swap}")
 
-                # Update cluster.master
-                for server in tmp_server_list:
+                if not rebalance_master:
+                    nodes_to_swap = list()
+                    for node in self.cluster.nodes_in_cluster:
+                        if node.ip != self.cluster.master.ip:
+                            nodes_to_swap.append(node.ip)
+                            self.spare_nodes.append(node)
+                            if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                                break
+                    self.log.info(f"Nodes to swap = {nodes_to_swap}")
+
+                else:
+                    self.log.info(f"Cluster master = {self.cluster.master}")
+                    nodes_to_swap = [self.cluster.master.ip]
+                    self.spare_nodes.append(self.cluster.master)
+                    tmp_server_list = [server for server in self.cluster.nodes_in_cluster
+                                    if server.ip != self.cluster.master.ip]
+                    for node in tmp_server_list:
+                        if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                            break
+                        nodes_to_swap.append(node.ip)
+                        self.spare_nodes.append(node)
+                    self.log.info(f"Nodes to swap = {nodes_to_swap}")
+
+                    # Update cluster.master
+                    for server in tmp_server_list:
+                        if server.ip not in nodes_to_swap:
+                            self.cluster.master = server
+                            break
+                    self.log.info(f"New master = {self.cluster.master}")
+
+                new_node_str = ""
+                for server in self.cluster.nodes_in_cluster:
                     if server.ip not in nodes_to_swap:
-                        self.cluster.master = server
-                        break
-                self.log.info(f"New master = {self.cluster.master}")
+                        new_node_str += server.ip + ","
+                new_node_str = new_node_str[:-1]
+                for new_node in nodes_to_add:
+                    new_node_str += "," + new_node.ip
 
-            new_node_str = ""
-            for server in self.cluster.nodes_in_cluster:
-                if server.ip not in nodes_to_swap:
-                    new_node_str += server.ip + ","
-            new_node_str = new_node_str[:-1]
-            for new_node in nodes_to_add:
-                new_node_str += "," + new_node.ip
-
-            self.log.info(f"Spare nodes = {self.spare_nodes}")
+                self.log.info(f"Spare nodes = {self.spare_nodes}")
 
         else:
             new_node_str = current_nodes_str
 
         self.log.info(f"New nodes str = {new_node_str}")
+
+        fusion_rebalance_setup = True
+        fusion_rebalance_result = True
 
         # Create a virtual environment and install necessary packages
         commands = f"""
@@ -656,8 +698,8 @@ class FusionBase(BaseTestCase):
         o, e = ssh.execute_command(commands, timeout=1800)
         self.log.info(f"Output = {o[-50:]}, Error = {e}")
 
-        self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout" + str(rebalance_count) + ".txt")
-        self.fusion_rebalance_error = os.path.join(output_dir, "fusion_stderr" + str(rebalance_count) + ".txt")
+        self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout" + str(rebalance_count) + ".log")
+        self.fusion_rebalance_error = os.path.join(output_dir, "fusion_stderr" + str(rebalance_count) + ".log")
 
         with open(self.fusion_rebalance_output, "w") as fp:
             for line in o:
@@ -675,20 +717,25 @@ class FusionBase(BaseTestCase):
         if wait_for_rebalance_to_complete:
             self.start_time = time.time()
             self.sleep(10, "Wait before checking rebalance progress")
-            rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance()
-            if not rebalance_result:
-                self.fail("Fusion Rebalance failed")
+            try:
+                rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance(progress_count=500)
+                if not rebalance_result:
+                    fusion_rebalance_result = False
+            except Exception as ex:
+                self.log.error(f"Fusion Rebalance failed: {ex}")
+                fusion_rebalance_result = False
 
         # Parse Fusion error logs to look for any failures/issues
         # Exclude known patterns like "Temporary failure in name resolution"
         self.log.info("Parsing Fusion Error logs to look for issues/failures")
-        grep_cmd = f"grep -v -e 'Temporary failure in name resolution' -e 'WARNING' {self.fusion_rebalance_error}"
+        grep_cmd = f"grep -v -E 'Temporary failure in name resolution|WARNING|^\[[0-9.]+\][[:space:]]*$|^[[:space:]]*$' {self.fusion_rebalance_error}"
         result = subprocess.run(grep_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
         output = result.stdout.strip()
         error = result.stderr.strip()
         self.log.info(f"Output = {output}, Error = {error}")
         if output or error:
-            self.fail("Found ERROR logs during Fusion rebalance automation")
+            self.log.error("Found ERROR logs during Fusion rebalance automation")
+            fusion_rebalance_setup = False
 
         nodes_to_monitor = list()
         ssh = RemoteMachineShellConnection(self.cluster.master)
@@ -697,6 +744,7 @@ class FusionBase(BaseTestCase):
         o, e = ssh.execute_command(cat_cmd)
         json_str = "\n".join(o)
         data = json.loads(json_str)
+        self.reb_plan_uuids.append(data['planUUID'])
         involved_nodes = list(data['nodes'].keys())
         node_ips_to_monitor = set([node.split("@", 1)[1] for node in involved_nodes])
         self.log.info(f"Node IPs to monitor = {node_ips_to_monitor}")
@@ -711,6 +759,11 @@ class FusionBase(BaseTestCase):
                 .format("couchbase", self.cluster.master.ip, reb_plan_path, output_dir)
         self.log.info(f"Copy CMD: {copy_cmd}")
         subprocess.run(copy_cmd, shell=True, executable="/bin/bash")
+
+        if not fusion_rebalance_setup:
+            self.fail("Error during Fusion Rebalance setup")
+        if not fusion_rebalance_result:
+            self.fail("Error during Fusion Rebalance")
 
         # Updating nodes_in_cluster after rebalance
         self.cluster.nodes_in_cluster = list()
@@ -729,7 +782,7 @@ class FusionBase(BaseTestCase):
 
         ssh = RemoteMachineShellConnection(self.nfs_server)
 
-        cleanup_cmd = f"rm -rf /data/nfs/share/fusion-manifests; rm -rf /data/nfs/share/guest_storage"
+        cleanup_cmd = f"rm -rf /data/nfs/{self.client_share_dir}/fusion-manifests; rm -rf /data/nfs/{self.client_share_dir}/guest_storage"
         o, e = ssh.execute_command(cleanup_cmd)
 
         ssh.disconnect()
@@ -879,8 +932,6 @@ class FusionBase(BaseTestCase):
         Logs Fusion storage consistency stats for analysis.
         Compares NFS actual storage vs Fusion's internal tracking.
         """
-        from cb_tools.cbstats import Cbstats
-        from shell_util.remote_connection import RemoteMachineShellConnection
 
         self.log.info("=" * 60)
         self.log.info("FUSION STORAGE CONSISTENCY STATS")
@@ -991,13 +1042,44 @@ class FusionBase(BaseTestCase):
 
         for server in servers:
             cluster_api = ClusterRestAPI(server)
-            
+
             # Execute set command
             status, content = cluster_api.diag_eval(set_command)
             self.log.info("Set Command: {0}. Status: {1}, Return: {2}".format(
                 set_command, status, content))
-            
+
             # Execute get command to verify
             status, content = cluster_api.diag_eval(get_command)
             self.log.info("Get Command: {0}. Status: {1}, Return: {2}".format(
                 get_command, status, content))
+
+    def get_otp_node(self, rest_node, target_node):
+        nodes = self.cluster_util.get_nodes(rest_node)
+        for node in nodes:
+            if node.ip == target_node.ip:
+                return node
+
+
+    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None):
+
+        ops_rate = ops_rate if ops_rate is not None else 20000
+
+        self.reset_doc_params(doc_ops=doc_op)
+        if doc_op == "create":
+            self.create_start = start
+            self.create_end = end
+            self.num_items = self.create_end
+        elif doc_op == "update":
+            self.update_start = start
+            self.update_end = end
+
+        doc_loading_tasks, _ = self.java_doc_loader(wait=False,
+                                                    skip_default=self.skip_load_to_default_collection,
+                                                    ops_rate=ops_rate, doc_ops=doc_op,
+                                                    monitor_ops=False,
+                                                    buckets=buckets)
+        if wait:
+            for task in doc_loading_tasks:
+                self.doc_loading_tm.get_task_result(task)
+        else:
+            return doc_loading_tasks

@@ -32,19 +32,6 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         self.reb_plan_dict = dict()
         self.vb_log_ckpt_dict = dict()
         self.bucket_uuid_map = dict()
-        
-        # Override Fusion default settings
-        for bucket in self.cluster.buckets:
-            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
-                                        logstore_frag_threshold=self.logstore_frag_threshold)
-
-        for server in self.cluster.servers:
-            self.log.info(f"Enabling diag/eval on non local hosts for server: {server.ip}")
-            shell = RemoteMachineShellConnection(server)
-            o, e = shell.enable_diag_eval_on_non_local_hosts()
-            self.log.info(f"Output = {o}, Error = {e}")
-            shell.disconnect()
 
     def tearDown(self):
         super(FusionDcpRebalance, self).tearDown()

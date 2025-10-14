@@ -2600,7 +2600,7 @@ class BucketUtils(ScopeUtils):
             bucket_obj.fusionLogstoreURI = fusion_log_store_uri
 
         if vbuckets is not None and storage == Bucket.StorageBackend.magma:
-            bucket_obj.num_vbuckets = vbuckets
+            bucket_obj.numVBuckets = vbuckets
 
         if enable_encryption_at_rest:
             bucket_obj.encryptionAtRestKeyId = encryption_at_rest_key_id
@@ -3259,7 +3259,7 @@ class BucketUtils(ScopeUtils):
                     cluster_node.rest_password, total_buckets,
                     cluster_node.ip, cluster_node.port)
         shell = RemoteMachineShellConnection(cluster_node)
-        output, error = shell.execute_command_raw_jsch(command)
+        output, error = shell.execute_command_raw(command)
         shell.log_command_output(output, error)
         shell.disconnect()
 
@@ -3369,7 +3369,7 @@ class BucketUtils(ScopeUtils):
                         Bucket.fusionLogstoreURI: fusion_log_store_uri})
 
                     if vbuckets is not None and key == Bucket.StorageBackend.magma:
-                        bucket.num_vbuckets = vbuckets
+                        bucket.numVBuckets = vbuckets
 
                     if enable_encryption_at_rest:
                         bucket.encryptionAtRestKeyId = encryption_at_rest_key_id
@@ -3399,7 +3399,7 @@ class BucketUtils(ScopeUtils):
             # Check for warm_up
             for bucket in cluster.buckets:
                 self.get_updated_bucket_server_list(cluster, bucket)
-                warmed_up = self._wait_warmup_completed(bucket, wait_time=300)
+                warmed_up = self._wait_warmup_completed(bucket, wait_time=600)
                 if not warmed_up:
                     success = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name

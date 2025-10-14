@@ -48,8 +48,15 @@ class StorageBase(BaseTestCase):
         self.fusion_log_checkpoint_interval = self.input.param("fusion_log_checkpoint_interval", 180)
         self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 78643200) # 75MB/s
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
-        self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100000) # 100GB
+        self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100) # 100MB
         self.logstore_frag_threshold = self.input.param("logstore_frag_threshold", 0.5) # 50%
+
+        self.set_kv_quota = self.input.param("set_kv_quota", False)
+        if self.set_kv_quota:
+            self.kv_quota_mem = self.input.param("kv_quota_mem", None)
+            self.log.info("Setting KV Memory quota to {0} MB".format(self.kv_quota_mem))
+            self.rest.configure_memory(
+                {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
 
         if self.fusion_test:
             self.configure_fusion()
@@ -101,12 +108,16 @@ class StorageBase(BaseTestCase):
         self.cluster.index_nodes = self.find_nodes_with_service("index", nodes_in)
         self.cluster.kv_nodes = self.find_nodes_with_service("kv", nodes_in).insert(0,self.cluster.master)
 
-        self.set_kv_quota = self.input.param("set_kv_quota", False)
-        if self.set_kv_quota:
-            self.kv_quota_mem = self.input.param("kv_quota_mem", None)
-            self.log.info("Setting KV Memory quota to {0} MB".format(self.kv_quota_mem))
-            self.rest.configure_memory(
-                {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
+        self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster, self.cluster.nodes_in_cluster)
+        self.log.info(f"KV nodes in cluster = {self.cluster.kv_nodes}")
+
+        for server in self.cluster.servers:
+            self.log.info(f"Enabling diag/eval on non local hosts for server: {server.ip}")
+            shell = RemoteMachineShellConnection(server)
+            o, e = shell.enable_diag_eval_on_non_local_hosts()
+            self.log.info(f"Output = {o}, Error = {e}")
+            shell.disconnect()
+
         # Create Buckets
         if self.standard_buckets == 1:
             self.bucket_util.create_default_bucket(
@@ -1378,6 +1389,33 @@ class StorageBase(BaseTestCase):
         shell.disconnect()
 
 
+    def override_fusion_settings(self):
+
+        # Override Fusion default settings
+        for bucket in self.cluster.buckets:
+            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
+                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
+                                        logstore_frag_threshold=self.logstore_frag_threshold)
+        # Restart couchbase
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command("systemctl restart couchbase-server")
+            ssh.disconnect()
+
+        self.sleep(30, "Wait after restarting Couchbase server")
+        for bucket in self.cluster.buckets:
+            warmed_up = self.bucket_util._wait_warmup_completed(bucket, wait_time=600)
+            # self.assertTrue(warmed_up, f"Bucket: {bucket.name} didn't warmup in 600 seconds")
+
+        for bucket in self.cluster.buckets:
+            for server in self.cluster.nodes_in_cluster:
+                cbstats = Cbstats(server)
+                result = cbstats.all_stats(bucket.name)
+                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
+                            f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, "
+                            f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}")
+
+
     def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None,
                                logstore_frag_threshold=None):
 
@@ -1406,21 +1444,6 @@ class StorageBase(BaseTestCase):
             o, e = ssh.execute_command(diag_eval_cmd)
             self.log.debug(f"Server: {server}, Output: {o}, Error: {e}")
             ssh.disconnect()
-
-        # Restart couchbase
-        for server in self.cluster.nodes_in_cluster:
-            ssh = RemoteMachineShellConnection(server)
-            o, e = ssh.execute_command("systemctl restart couchbase-server")
-            ssh.disconnect()
-
-        self.sleep(30, "Wait after restarting Couchbase server")
-
-        for server in self.cluster.nodes_in_cluster:
-            cbstats = Cbstats(server)
-            result = cbstats.all_stats(bucket.name)
-            self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
-                          f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, "
-                          f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}")
 
     def configure_fusion(self):
 

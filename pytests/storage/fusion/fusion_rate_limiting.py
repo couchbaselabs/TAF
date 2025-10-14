@@ -21,16 +21,6 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
                       f"upload_ops_rate={self.upload_ops_rate / (1024*1024)}MB/s, "
                       f"rate_limit={self.rate_limit / (1024*1024)}MB/s")
 
-        # Override Fusion default settings
-        for bucket in self.cluster.buckets:
-            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval)
-
-        split_path = self.local_test_path.split("/")
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
-        self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
-        subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
-
     def tearDown(self):
         super(FusionUploaderRateLimitTest, self).tearDown()
 

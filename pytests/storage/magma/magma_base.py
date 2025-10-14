@@ -5,8 +5,10 @@ import time
 import threading
 import json
 
+from BucketLib.bucket import Bucket
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants.CBServer import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
@@ -50,10 +52,12 @@ class MagmaBaseTest(StorageBase):
             self.monitor_stats = ["doc_ops"]
 
         # Disk usage before data load
-        self.empty_bucket_disk_usage = self.get_disk_usage(
-            self.buckets[0], self.cluster.nodes_in_cluster)[0]
-        self.log.info("Empty magma bucket disk usage: {}".format(
-            self.empty_bucket_disk_usage))
+        for bucket in self.cluster.buckets:
+            if bucket.storageBackend != Bucket.StorageBackend.magma:
+                self.empty_bucket_disk_usage = self.get_disk_usage(
+                    bucket, self.cluster.nodes_in_cluster)[0]
+                self.log.info("Empty magma bucket disk usage: {}".format(
+                    self.empty_bucket_disk_usage))
 
         # self.thread_count is used to define number of thread use
         # to read same number of documents parallelly
@@ -112,9 +116,12 @@ class MagmaBaseTest(StorageBase):
 
         if self.fusion_test:
             # Override Fusion default settings
-            for bucket in self.cluster.buckets:
-                self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                            checkpoint_interval=self.fusion_log_checkpoint_interval)
+            self.override_fusion_settings()
+            # Set Rate Limits
+            status, content = ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+                                fusion_sync_rate_limit=self.fusion_sync_rate_limit,
+                                fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+            self.log.info(f"Status = {status}, Content = {content}")
 
         self.log.info("==========Finished magma base setup========")
 

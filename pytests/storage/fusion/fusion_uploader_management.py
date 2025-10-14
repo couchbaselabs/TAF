@@ -24,22 +24,6 @@ class FusionUploader(MagmaBaseTest, FusionBase):
 
         self.upsert_iterations = self.input.param("upsert_iterations", 2)
 
-        # Override Fusion default settings
-        for bucket in self.cluster.buckets:
-            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
-                                        logstore_frag_threshold=self.logstore_frag_threshold)
-        # Set Migration Rate Limit
-        ClusterRestAPI(self.cluster.master).\
-            manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
-
-        for server in self.cluster.servers:
-            self.log.info(f"Enabling diag/eval on non local hosts for server: {server.ip}")
-            shell = RemoteMachineShellConnection(server)
-            o, e = shell.enable_diag_eval_on_non_local_hosts()
-            self.log.info(f"Output = {o}, Error = {e}")
-            shell.disconnect()
-
     def tearDown(self):
         super(FusionUploader, self).tearDown()
 
@@ -199,12 +183,12 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.log.info(f"Failing over the node {otp_node.id}")
         success, _ = rest.perform_graceful_failover(otp_node.id)
         if not success:
-            self.log.fail("Failover unsuccessful")
+            self.fail("Failover unsuccessful")
 
         # Monitor failover rebalance
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
         if not rebalance_passed:
-            self.log.fail("Graceful failover rebalance failed")
+            self.fail("Graceful failover rebalance failed")
 
         # Get Uploader Map after failover
         self.get_fusion_uploader_info()
@@ -355,10 +339,3 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.log.info(f"Log checkpoint dict = {self.vb_log_ckpt_dict}")
 
         ssh.disconnect()
-
-
-    def get_otp_node(self, rest_node, target_node):
-        nodes = self.cluster_util.get_nodes(rest_node)
-        for node in nodes:
-            if node.ip == target_node.ip:
-                return node

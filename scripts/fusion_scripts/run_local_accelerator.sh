@@ -88,6 +88,7 @@ fi
 
 echo "Found $PARTS_COUNT manifest parts"
 
+pids=()  # Store background PIDs
 # Process each part
 for ((i=1; i<=PARTS_COUNT; i++)); do
     # Create guest directory and symlink
@@ -95,10 +96,16 @@ for ((i=1; i<=PARTS_COUNT; i++)); do
 
     # Process manifest part in parallel
     process_manifest_part "$i"
+    pids+=($!)  # Capture PID of background job
 done
 
-# Wait for all background processes to complete
+# Wait for all background processes and check exit codes
 echo "Waiting for all accelerator-cli processes to complete..."
-wait
+for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+        echo "Error: accelerator-cli job (PID $pid) failed."
+        exit 1
+    fi
+done
 
 echo "Local accelerator setup completed successfully"

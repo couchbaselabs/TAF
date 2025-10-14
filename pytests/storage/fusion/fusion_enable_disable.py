@@ -17,29 +17,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
     def setUp(self):
         super(FusionEnableDisable, self).setUp()
 
-        self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(
-                    self.cluster, self.cluster.nodes_in_cluster)
-        self.log.info(f"KV nodes = {self.cluster.kv_nodes}")
-
         self.log.info("FusionEnableDisable setUp started")
-
-        # Override Fusion default settings
-        for bucket in self.cluster.buckets:
-            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
-                                        logstore_frag_threshold=self.logstore_frag_threshold)
-        # Set sync rate limit and migration rate limit
-        status, content = ClusterRestAPI(self.cluster.master).\
-            manage_global_memcached_setting(fusion_sync_rate_limit=self.fusion_sync_rate_limit,
-                                            fusion_migration_rate_limit=self.fusion_migration_rate_limit)
-        self.log.info(f"Status = {status}, Content = {content}")
-
-        for server in self.cluster.servers:
-            self.log.info(f"Enabling diag/eval on non local hosts for server: {server.ip}")
-            shell = RemoteMachineShellConnection(server)
-            o, e = shell.enable_diag_eval_on_non_local_hosts()
-            self.log.info(f"Output = {o}, Error = {e}")
-            shell.disconnect()
 
 
     def tearDown(self):
@@ -123,7 +101,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         # Load more data after Fusion is enabled
         self.log.info("Performing data load after Fusion is enabled")
-        self.perform_workload(self.num_items, self.create_start + (self.create_start // 2), "create", True)
+        self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after subsequent data loading")
 
@@ -195,7 +173,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         # Load more data after Fusion is disabled
         self.log.info("Performing data load after Fusion is enabled")
-        self.perform_workload(self.num_items, self.create_start + (self.create_start // 2), "create", True)
+        self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after subsequent data loading")
 
@@ -575,7 +553,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         # Perform a data workload while fusion is in stopped state
         self.log.info("Performing data load while fusion is in stopped state")
-        self.perform_workload(self.num_items, self.create_start + (self.num_items // 2), "create", True)
+        self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
         self.sleep(60, "Wait after data loading")
 
         # Try a Fusion Rebalance
@@ -603,7 +581,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
             # Perform a data workload after DCP rebalance
             self.log.info("Performing data load after DCP rebalance")
-            self.perform_workload(self.num_items, self.create_start + (self.num_items // 2), "create", True)
+            self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
             self.sleep(60, "Wait after data loading")
 
         self.sleep(30, "Wait before stopping monitoring threads")
@@ -626,7 +604,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
             # Perform a data workload after fusion is enabled again
             self.log.info("Performing data load after Fusion is enabled again")
-            self.perform_workload(self.num_items, self.create_start + (self.num_items // 2), "create", True)
+            self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
             sleep_time = 120 + self.fusion_upload_interval + 30
             self.sleep(sleep_time, "Sleep after data loading")
 
@@ -655,7 +633,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
                 # Perform a data workload after the Fusion rebalance
                 self.log.info("Performing data load after Fusion rebalance")
-                self.perform_workload(self.num_items, self.create_start + (self.num_items // 2), "create", True)
+                self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
                 sleep_time = 120 + self.fusion_upload_interval + 30
                 self.sleep(sleep_time, "Sleep after data loading")
 
@@ -980,25 +958,3 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             ssh.disconnect()
             self.log.info(f"Log store Bucket DU = {bucket_du}")
             time.sleep(5)
-
-    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None):
-
-        self.reset_doc_params(doc_ops=doc_op)
-        if doc_op == "create":
-            self.create_start = start
-            self.create_end = end
-            self.num_items = self.create_end
-        elif doc_op == "update":
-            self.update_start = start
-            self.update_end = end
-
-        doc_loading_tasks, _ = self.java_doc_loader(wait=False,
-                                                    skip_default=self.skip_load_to_default_collection,
-                                                    ops_rate=20000, doc_ops=doc_op,
-                                                    monitor_ops=False,
-                                                    buckets=buckets)
-        if wait:
-            for task in doc_loading_tasks:
-                self.doc_loading_tm.get_task_result(task)
-        else:
-            return doc_loading_tasks
