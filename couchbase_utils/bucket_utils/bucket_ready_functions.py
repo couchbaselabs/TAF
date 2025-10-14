@@ -137,7 +137,7 @@ class JavaDocLoaderUtils(object):
         if not hasattr(bucket, "end"):
             bucket.end = 0
 
-        doc_ops = doc_ops or bucket.loadDefn.get("load_type")
+        doc_ops = doc_ops or bucket.loadDefn.get("doc_op_percentages").keys()
 
         if "read" in doc_ops:
             bucket.read_start = read_start or 0

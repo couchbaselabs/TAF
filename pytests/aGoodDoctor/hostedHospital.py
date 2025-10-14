@@ -9,23 +9,27 @@ import threading
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from pytests.basetestcase import BaseTestCase
 from py_constants.cb_constants.CBServer import CbServer
-from workloads import default, nimbus, vector_load, siftBigANN, hotel_vector
+from .workloads import default, siftBigANN, hotel_vector
 try:
-    from fts import DoctorFTS, FTSQueryLoad
-except:
+    from .fts import DoctorFTS
+    from .fts import FTSQueryLoad
+except ImportError as e:
+    print(e)
     pass
-from n1ql import QueryLoad, DoctorN1QL
-from cbas import DoctorCBAS, CBASQueryLoad
-from hostedXDCR import DoctorXDCR
-from hostedBackupRestore import DoctorHostedBackupRestore
-from hostedOnOff import DoctorHostedOnOff
-from hostedEventing import DoctorEventing
+from .n1ql import QueryLoad, DoctorN1QL
+from .cbas import DoctorCBAS, CBASQueryLoad
+from .hostedXDCR import DoctorXDCR
+from .hostedBackupRestore import DoctorHostedBackupRestore
+from .hostedOnOff import DoctorHostedOnOff
+from .hostedEventing import DoctorEventing
 from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
 import time
 from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 import pprint
-from elasticsearch import EsClient
-from hostedOPD import hostedOPD
+# from elasticsearch import EsClient
+from .hostedOPD import hostedOPD
+from .workloads import default, nimbus, hotel_vector, siftBigANN, Hotel
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 
 class Murphy(BaseTestCase, hostedOPD):
@@ -106,6 +110,7 @@ class Murphy(BaseTestCase, hostedOPD):
             self.esHost = "http://" + self.esHost + ":9200"
         if self.esAPIKey:
             self.esAPIKey = "".join(self.esAPIKey.split(","))
+        JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
 
     def tearDown(self):
         self.stop_crash = True
@@ -134,28 +139,17 @@ class Murphy(BaseTestCase, hostedOPD):
                                                kwargs={"cluster": cluster})
                 cpu_monitor.start()
 
-        _nimbus = self.input.param("nimbus", False)
-        expiry = self.input.param("expiry", False)
-        self.load_defn.append(default)
-        if _nimbus:
-            self.load_defn = list()
-            self.load_defn.append(nimbus)
-
-        if expiry:
-            for load in self.load_defn:
-                load["pattern"] = [0, 80, 0, 0, 20]
-                load["load_type"] = ["read", "expiry"]
-
-        self.siftFileName = None
-        if self.vector:
-            self.load_defn = list()
-            if self.input.param("services").find("index") != -1:
-                if self.val_type == "Hotel":
-                    self.load_defn.append(hotel_vector)
-                if self.val_type == "siftBigANN":
-                    self.load_defn.append(siftBigANN)
+        if self.val_type == "Hotel":
+            if self.vector:
+                self.load_defn.append(hotel_vector)
             else:
-                self.load_defn.append(vector_load)
+                self.load_defn.append(Hotel)
+        elif self.val_type == "siftBigANN":
+            self.load_defn.append(siftBigANN)
+        elif self.val_type == "Nimbus":
+            self.load_defn.append(nimbus)
+        else:
+            self.load_defn.append(default)
 
         #######################################################################
         for tenant in self.tenants:
@@ -167,6 +161,10 @@ class Murphy(BaseTestCase, hostedOPD):
                         bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
                         num_clients = self.input.param("clients_per_db",
                                                        min(5, bucket.loadDefn.get("collections")))
+                        SiriusCouchbaseLoader.create_clients_in_pool(
+                            cluster.master, cluster.master.rest_username,
+                            cluster.master.rest_password,
+                            bucket.name, req_clients=num_clients)
                         self.create_sdk_client_pool(cluster, [bucket],
                                                     num_clients)
                         for scope in bucket.scopes.keys():
@@ -432,10 +430,8 @@ class Murphy(BaseTestCase, hostedOPD):
         elif provider == "azure":
             computeList = AZURE.compute
 
-        self.services = self.input.param("services", "data").split("-")
-        self.rebl_services = self.input.param("rebl_services",
-                                              self.input.param("services", "data")
-                                              ).split("-")
+        self.services = self.input.param("services", "data")
+        self.rebl_services = self.input.param("rebl_services", self.services).split("-")
         query_upscale = 10
         if self.vector:
             query_upscale = 1
@@ -646,7 +642,7 @@ class Murphy(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             i = 0
             for cluster in tenant.clusters:
-                self.wait_for_doc_load_completion(cluster, self.tasks[i])
+                JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, self.tasks[i])
 
         tasks = list()
         if self.track_failures:
@@ -667,17 +663,31 @@ class Murphy(BaseTestCase, hostedOPD):
 
 
     def normal_mutations(self, cluster):
+        # while self.mutations:
+        #     self.mutate += 1
+        #     for bucket in cluster.buckets:
+        #         bucket.original_ops = bucket.loadDefn["ops"]
+        #         bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
+        #         pprint.pprint(bucket.loadDefn)
+        #     JavaDocLoaderUtils.load_data(cluster=cluster,
+        #                                   buckets=cluster.buckets,
+        #                                   validate_data=False,
+        #                                   wait_for_stats=False,
+        #                                   mutate=self.mutate)
         while self.mutations:
             self.mutate += 1
             for bucket in cluster.buckets:
+                JavaDocLoaderUtils.generate_docs(bucket=bucket)
                 bucket.original_ops = bucket.loadDefn["ops"]
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-                pprint.pprint(bucket.loadDefn)
-            JavaDocLoaderUtils.load_data(cluster=cluster,
-                                          buckets=cluster.buckets,
-                                          validate_data=False,
-                                          wait_for_stats=False,
-                                          mutate=self.mutate)
+            self.loader_tasks = JavaDocLoaderUtils.perform_load(cluster=cluster,
+                                                                buckets=cluster.buckets,
+                                                                wait_for_load=False,
+                                                                suppress_error_table=self.suppress_error_table,
+                                                                track_failures=self.track_failures)
+            for task in self.loader_tasks:
+                self.task_manager.get_task_result(task)
+                self.loader_tasks.remove(task)
             self.check_index_pending_mutations(cluster)
 
     def sift_mutations(self, cluster):

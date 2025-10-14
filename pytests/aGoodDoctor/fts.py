@@ -15,28 +15,53 @@ from threading import Thread
 
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
-from serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
+from .serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
     HotelIndex, template
 from global_vars import logger
-from elasticsearch import EsClient
+# from elasticsearch import EsClient
 from py_constants.cb_constants.CBServer import CbServer
 import traceback
-from couchbase.exceptions import RequestCanceledException, CouchbaseException
-from couchbase.search import SearchOptions, SearchQuery, SearchRequest, VectorSearch, VectorQuery
-from couchbase.exceptions import TimeoutException, AmbiguousTimeoutException, UnambiguousTimeoutException, RateLimitedException
+from couchbase.exceptions import (RequestCanceledException, CouchbaseException, 
+                                 TimeoutException, AmbiguousTimeoutException, 
+                                 UnAmbiguousTimeoutException, RateLimitedException)
+from couchbase.search import SearchRequest
+from couchbase.search import QueryStringQuery, MatchQuery, PrefixQuery
+from couchbase.vector_search import VectorSearch, VectorQuery
+from couchbase.options import SearchOptions
 
+
+# Vector class stub to replace missing Java Vector class
+class Vector:
+    def __init__(self, ws=None):
+        self.predictor = None
+        self.colors = ["red", "blue", "green", "yellow", "purple", "orange"]
+        self.clothingType = ["shirt", "pants", "dress", "jacket", "shoes"]
+        self.fashionBrands = ["Nike", "Adidas", "Puma", "Gucci", "Prada"]
+        self.flt_buf = None
+        self.flt_buf_length = 0
+        
+    def setEmbeddingsModel(self, model):
+        # Stub implementation - in real usage, this would load a ML model
+        pass
+        
+    def convertToBase64Bytes(self, floats):
+        import base64
+        import struct
+        # Convert float array to bytes and then to base64
+        byte_data = struct.pack('f' * len(floats), *floats)
+        return base64.b64encode(byte_data).decode('utf-8')
 
 
 NimbusPQueries = [
-    SearchQuery.queryString("000000000000000000000000000000406101"),
-    SearchQuery.match("Bhutan"),
-    SearchQuery.prefix("Zim"),
+    QueryStringQuery("000000000000000000000000000000406101"),
+    MatchQuery("Bhutan"),
+    PrefixQuery("Zim"),
 ]
 
 NimbusMQueries = [
-    SearchQuery.queryString("uWKyrYzYhD"),
-    SearchQuery.match("000000000000000000000000000000833238"),
-    SearchQuery.prefix("0000"),
+    QueryStringQuery("uWKyrYzYhD"),
+    MatchQuery("000000000000000000000000000000833238"),
+    PrefixQuery("0000"),
 ]
 
 vectorIndex = {
@@ -264,12 +289,12 @@ class FTSQueryLoad:
             e = ""
             try:
                 self.total_query_count += 1
-                request = SearchRequest.create(VectorSearch.create(
-                VectorQuery.create("embedding", vector_float
-                ).numCandidates(k)))
+                vector_query = VectorQuery.create("embedding", vector_float, num_candidates=k)
+                vector_search = VectorSearch.from_vector_query(vector_query)
+                request = SearchRequest(vector_search)
         
-                result = self.cluster_conn.search(index, request, 
-                                      SearchOptions.searchOptions().limit(k).fields("productDescription"))
+                search_options = SearchOptions(limit=k, fields=["productDescription"])
+                result = self.cluster_conn.search(index, request, search_options)
                 if result.metaData().errors():
                     if str(result.metaData().errors()).find("query request rejected") != -1:
                         self.rejected_count.next()
@@ -373,10 +398,12 @@ class FTSQueryLoad:
 
     def execute_fts_query(self, index, query):
         """
-        Executes a statement on CBAS using the REST API using REST Client
+        Executes a FTS query using the Couchbase Python SDK
         """
         try:
-            result = self.cluster_conn.search_query(index, query, SearchOptions())
+            search_request = SearchRequest(query)
+            search_options = SearchOptions()
+            result = self.cluster_conn.search(index, search_request, search_options)
             return result
         except CouchbaseException as e:
             self.log.error(f"Failed to execute FTS query: {e}")

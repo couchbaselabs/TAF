@@ -1778,7 +1778,6 @@ class Murphy(BaseTestCase, OPD):
                 JavaDocLoaderUtils.generate_docs(bucket=bucket)
                 bucket.original_ops = bucket.loadDefn["ops"]
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-                pprint.pprint(bucket.loadDefn)
             self.loader_tasks = JavaDocLoaderUtils.perform_load(cluster=self.cluster,
                                                                 buckets=self.cluster.buckets,
                                                                 wait_for_load=False,

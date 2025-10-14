@@ -19,3 +19,5 @@ pandas==2.2.3
 protobuf
 azure-core
 beautifultable
+faker
+elasticsearch

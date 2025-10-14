@@ -11,7 +11,7 @@ from threading import Thread
 import threading
 import time
 
-from constants.cb_constants.CBServer import CbServer
+from py_constants.cb_constants.CBServer import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
 from global_vars import logger
@@ -19,12 +19,13 @@ from table_view import TableView
 from membase.api.rest_client import RestConnection
 from _collections import defaultdict
 from copy import deepcopy
+from couchbase.search import QueryStringQuery, MatchQuery, PrefixQuery
 
 
 ftsQueries = [
-            SearchQuery.queryString("pJohn"),
-            SearchQuery.match("pJohn"),
-            SearchQuery.prefix("Cari")
+            QueryStringQuery("pJohn"),
+            MatchQuery("pJohn"),
+            PrefixQuery("Cari")
             ]
 
 ftsIndex = {
@@ -54,9 +55,9 @@ ftsIndex = {
     }
 
 HotelQueries = [
-            SearchQuery.queryString("United Kingdom"),
-            SearchQuery.match("Algeria"),
-            SearchQuery.prefix("Serbi"),
+            QueryStringQuery("United Kingdom"),
+            MatchQuery("Algeria"),
+            PrefixQuery("Serbi"),
     ]
 
 HotelIndex = {
