@@ -190,6 +190,7 @@ class ColumnarDeployments(ColumnarBaseTest):
             retry_count = 0
             max_retries = 3
             status = False
+            instance_obj = None
             while not status and retry_count < max_retries:
                 try:
                     # Columnar deployment
@@ -253,16 +254,26 @@ class ColumnarDeployments(ColumnarBaseTest):
                         self.log_deployment_state(
                             comb_id, comb, 'Failed', error_msg="Deployment failed - no instance ID returned")
                         if instance_id:
+                            # Create a minimal instance object for deletion
+                            temp_instance_obj = ColumnarInstance(
+                                tenant_id=self.tenant.id,
+                                project_id=self.tenant.project_id,
+                                instance_id=instance_id)
                             self.columnar_utils.delete_instance(
-                                self.pod, self.tenant, self.tenant.project_id, instance_obj)
+                                self.pod, self.tenant, self.tenant.project_id, temp_instance_obj)
                         retry_count += 1
 
                 except Exception as e:
                     self.log_deployment_state(
                         comb_id, comb, 'Failed', error_msg=f"Deployment exception: {str(e)}")
                     if instance_id:
+                        # Create a minimal instance object for deletion
+                        temp_instance_obj = ColumnarInstance(
+                            tenant_id=self.tenant.id,
+                            project_id=self.tenant.project_id,
+                            instance_id=instance_id)
                         self.columnar_utils.delete_instance(
-                            self.pod, self.tenant, self.tenant.project_id, instance_obj)
+                            self.pod, self.tenant, self.tenant.project_id, temp_instance_obj)
                     retry_count += 1
 
                 if retry_count >= max_retries:
