@@ -36,10 +36,10 @@ class ColumnarDeployments(ColumnarBaseTest):
             self.instance = self.tenant.columnar_instances[0]
         self.columnar_cbas_utils = columnarCBASUtil(
             self.task, self.use_sdk_for_cbas)
-
+        self.columnar_image = self.input.capella.get("columnar_image", None)
         if self.input.param("columnar_provider", "aws") == "gcp":
             self.deployment_regions = self.deployment_regions_gcp
-        self.columnar_image = self.input.capella.get("columnar_image", None)
+            self.columnar_image = self.columnar_image.replace(".", "-")
         self.override_key = self.input.capella.get("override_key")
         self.wait_timeout = 1800  # 30 minutes
 
