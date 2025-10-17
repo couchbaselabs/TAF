@@ -14,13 +14,17 @@ from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_columnar import Standalone_Dataset
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.sirius_task import CouchbaseUtil
-from cb_server_rest_util.py_constants.cb_constants import DocLoading
+from py_constants.cb_constants import DocLoading
 from couchbase_helper.documentgenerator import doc_generator
 from kafka_util.confluent_utils import ConfluentUtils
 from kafka_util.kafka_connect_util import KafkaConnectUtil
 from couchbase_utils.kafka_util.common_utils import KafkaClusterUtils
-from pytests.Columnar.columnar_base import ColumnarBaseTest
-
+from TestInput import TestInputSingleton
+runtype = TestInputSingleton.input.param("runtype", "default").lower()
+if runtype == "columnar":
+    from Columnar.columnar_base import ColumnarBaseTest
+else:
+    from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
 
 class SingleMessageTransformationTest(ColumnarBaseTest):
     """
@@ -40,16 +44,17 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                           % (self._testMethodName, self._testMethodDoc))
         else:
             self.log.info("Starting Test: %s" % self._testMethodName)
-        self.columnar_cluster = self.tenant.columnar_instances[0]
-        self.remote_cluster = None
-        if len(self.tenant.clusters) > 0:
-            self.remote_cluster = self.tenant.clusters[0]
-            self.couchbase_doc_loader = CouchbaseUtil(
-                task_manager=self.task_manager,
-                hostname=self.remote_cluster.master.ip,
-                username=self.remote_cluster.master.rest_username,
-                password=self.remote_cluster.master.rest_password,
-            )
+        if runtype == "columnar":
+            self.columnar_cluster = self.tenant.columnar_instances[0]
+            self.remote_cluster = None
+            if len(self.tenant.clusters) > 0:
+                self.remote_cluster = self.tenant.clusters[0]
+        self.couchbase_doc_loader = CouchbaseUtil(
+            task_manager=self.task_manager,
+            hostname=self.remote_cluster.master.ip,
+            username=self.remote_cluster.master.rest_username,
+            password=self.remote_cluster.master.rest_password,
+        )
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.kafka_test = self.input.param("kafka_test", False)
         self.doc_size = self.input.param("doc_size", 1024)
@@ -68,9 +73,10 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                 self.columnar_cluster):
             self.fail("Error while deleting cbas entities")
 
-        if hasattr(self, "remote_cluster") and self.remote_cluster:
-            self.delete_all_buckets_from_capella_cluster(
-                self.tenant, self.remote_cluster)
+        if runtype == "columnar":
+            if hasattr(self, "remote_cluster") and self.remote_cluster:
+                self.delete_all_buckets_from_capella_cluster(
+                    self.tenant, self.remote_cluster)
 
         # Clean up Kafka resources if they were used
         if hasattr(self, "confluent_util") and hasattr(self, "confluent_cluster_obj"):
@@ -111,9 +117,12 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def test_setup(self, load_docs=True):
-        self.create_bucket_scopes_collections_in_capella_cluster(
-            self.tenant, self.remote_cluster,
-            self.input.param("num_buckets", 1))
+        if runtype == "columnar":
+            self.create_bucket_scopes_collections_in_capella_cluster(
+                self.tenant, self.remote_cluster,
+                self.input.param("num_buckets", 1))
+        else:
+            self.collectionSetUp(cluster=self.remote_cluster, load_data=False)
         if self.kafka_test:
             # Initialize variables for Kafka
             self.kafka_topic_prefix = f"smt_regression_{int(time.time())}"
@@ -193,19 +202,21 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                     self.remote_cluster.master.rest_password,
                     bucket.name, req_clients=1)
 
-            self.load_doc_to_remote_collections(self.remote_cluster, valType="Product",
-                                                create_start_index=0, create_end_index=self.initial_doc_count,
-                                                wait_for_completion=True)
+            self.log.info("Started Doc loading on remote cluster")
+            self.load_remote_collections(self.remote_cluster, template="Product",
+                                         create_start_index=0, create_end_index=self.initial_doc_count,
+                                         wait_for_completion=True)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         self.remote_dataset_name = remote_datasets[0].full_name
 
         self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
 
-        for dataset in remote_datasets:
-            if not self.cbas_util.wait_for_ingestion_complete(
-                    self.columnar_cluster, dataset.full_name,
-                    self.initial_doc_count):
-                self.fail("Could not ingest data in remote cluster.")
+        if load_docs:
+            for dataset in remote_datasets:
+                if not self.cbas_util.wait_for_ingestion_complete(
+                        self.columnar_cluster, dataset.full_name,
+                        self.initial_doc_count):
+                    self.fail("Could not ingest data in remote cluster.")
 
         if self.kafka_test:
             status, _, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
@@ -305,7 +316,7 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                 self.columnar_cluster, remote_query)
             diff = DeepDiff(results, udf_results, ignore_order=True)
             if diff:
-                time.sleep(10)
+                time.sleep(30)
             else:
                 break
         if diff:
@@ -552,9 +563,13 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
 
         delete_end_index = self.initial_doc_count // 2
         self.log.info(f"Deleting {delete_end_index} docs from remote cluster")
-        self.load_doc_to_remote_collections(self.remote_cluster, "Product",
-                                            delete_start_index=0, delete_end_index=delete_end_index,
-                                            create_percent=0, delete_percent=100)
+        # self.load_doc_to_remote_collections(self.remote_cluster, "Product",
+        #                                     delete_start_index=0, delete_end_index=delete_end_index,
+        #                                     create_percent=0, delete_percent=100)
+
+        self.load_remote_collections(self.remote_cluster, template="Product",
+                                     delete_start_index=0, delete_end_index=delete_end_index,
+                                     wait_for_completion=True)
 
         udf_select_query = f"select quantity, product_name from {udf_coll_obj.name}"
         remote_query = f"select quantity, product_name from {self.remote_dataset_name}"
@@ -583,8 +598,12 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
 
         update_end_index = self.initial_doc_count // 2
         self.log.info(f"Updating {update_end_index} docs from remote cluster")
-        self.load_doc_to_remote_collections(self.remote_cluster, "Product",
-                                            update_start_index=0, update_end_index=update_end_index)
+        # self.load_doc_to_remote_collections(self.remote_cluster, "Product",
+        #                                     update_start_index=0, update_end_index=update_end_index)
+
+        self.load_remote_collections(self.remote_cluster, template="Product",
+                                     update_start_index=0, update_end_index=update_end_index,
+                                     wait_for_completion=True)
 
         udf_select_query = f"select quantity, product_name from {udf_coll_obj.name}"
         remote_query = f"select quantity, product_name from {self.remote_dataset_name}"
@@ -1015,9 +1034,9 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                 self.remote_cluster.master.rest_password,
                 bucket.name, req_clients=1)
 
-        self.load_doc_to_remote_collections(self.remote_cluster, valType="Product",
-                                            create_start_index=0, create_end_index=self.initial_doc_count,
-                                            wait_for_completion=False)
+        self.load_remote_collections(self.remote_cluster, template="Product",
+                                     create_start_index=0, create_end_index=self.initial_doc_count,
+                                     wait_for_completion=True)
         
         udf_select_query = f"select product_name from {udf_coll_obj.name}"
         remote_query = f"select product_name from {self.remote_dataset_name} where num_sold>10000"
@@ -1119,10 +1138,11 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                     for collection_name, collection in scope.collections.items():
                         self.log.info(f"Dropping collection {bucket.name}.{scope_name}.{collection_name}")
                         # Drop the collection from the remote cluster
-                        if not self.couchbase_doc_loader.drop_collection(
-                            bucket=bucket.name,
-                            scope=scope_name,
-                            collection=collection_name):
+                        if not self.bucket_util.drop_collection(
+                        node=self.columnar_cluster.master, bucket=bucket.name,
+                        scope_name=scope_name,
+                        collection_name=collection_name
+                        ):
                             self.fail(f"Error while dropping collection {bucket.name}.{scope_name}.{collection_name}")
         
         # Validate the collection created with the transform function after dropping remote collection
@@ -1130,10 +1150,11 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
         remote_query = f"select quantity, product_name from {self.remote_dataset_name}"
         self.log.info("Validate collection created with the transform function after dropping remote collection.")
         self.validate_collection_created_from_udf(udf_select_query, remote_query)
-        
-        # Drop buckets from remote cluster
-        if hasattr(self, "remote_cluster") and self.remote_cluster:
-            self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
+
+        if runtype == "columnar":
+            # Drop buckets from remote cluster
+            if hasattr(self, "remote_cluster") and self.remote_cluster:
+                self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
         
         self.log.info("Test completed successfully.")
 
