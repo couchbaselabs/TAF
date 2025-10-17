@@ -16,7 +16,8 @@ CB_RELEASE_BUILDS = {"0.0.0": "0000",
                      "7.6.0": "2176", "7.6.1": "3200", "7.6.2": "3722",
                      "7.6.3": "4200", "7.6.4": "5146", "7.6.5": "5704",
                      "7.6.6": "6126", "7.6.7": "6706",
-                     "7.7.0": "0000", "8.0.0": "0000"}
+                     "7.7.0": "0000", "8.0.0": "0000",
+                     "8.1.0": "0000"}
 
 CB_VERSION_NAME = {"0.0": "master",
                    "4.0": "sherlock", "4.1": "sherlock",
@@ -24,7 +25,8 @@ CB_VERSION_NAME = {"0.0": "master",
                    "5.0": "spock", "5.1": "spock", "5.5": "vulcan",
                    "6.0": "alice", "6.5": "mad-hatter", "6.6": "mad-hatter",
                    "7.0": "cheshire-cat", "7.1": "neo", "7.2": "neo",
-                   "7.5": "elixir", "7.6": "trinity", "7.7": "cypher", "8.0": "morpheus"}
+                   "7.5": "elixir", "7.6": "trinity", "7.7": "cypher", "8.0": "morpheus",
+                   "8.1": "totoro"}
 
 SYSTEMD_SERVER = ["centos 8", "centos 7",
                   "suse 12", "suse 15",
