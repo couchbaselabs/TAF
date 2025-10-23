@@ -37,6 +37,7 @@ class BuildUrl(object):
         "7.1": "neo", "7.2": "neo",
         "7.5": "elixir",
         "7.6": "trinity",
-        "8.0": "morpheus"}
+        "8.0": "morpheus",
+        "8.1": "totoro"}
 
     CB_BUILD_FILE_PREFIX = "couchbase-server"

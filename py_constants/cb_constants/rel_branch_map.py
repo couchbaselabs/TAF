@@ -6,7 +6,8 @@ CB_VERSION_NAME = {"0.0": "master",
                    "7.5": "elixir",
                    "7.6": "trinity",
                    "7.7": "cypher",
-                   "8.0": "morpheus"}
+                   "8.0": "morpheus",
+                   "8.1": "totoro"}
 
 
 COLUMNAR_VERSION_NAME = {
@@ -18,7 +19,7 @@ COLUMNAR_VERSION_NAME = {
 
 CB_RELEASE_BUILDS = {"0.0.0": "0000",
                      "8.1.0": "0000",
-                     "8.0.0": "0000",
+                     "8.0.0": "3777",
                      "7.7.0": "1000",
                      "7.6.0": "0000", "7.6.1": "0000", "7.6.2": "0000",
                      "7.6.3": "0000", "7.6.4": "0000",
