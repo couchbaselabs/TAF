@@ -497,27 +497,46 @@ class audit:
             # Convert the string to a datetime object
             try:
                 timestamp = datetime.strptime(actualTime, '%Y-%m-%dT%H:%M:%S.%fZ')
-                timezone = "+00:00"
+                # If timestamp is in UTC (Z), we need to compare with UTC time
+                is_utc = True
             except ValueError:
                 timestamp = datetime.strptime(actualTime[:-6], '%Y-%m-%dT%H:%M:%S.%f')
                 timezone = actualTime[-6:]
+                is_utc = False
 
-            # Extract the date, time, and timezone
+            # If not UTC, convert actualTime to UTC
+            if not is_utc:
+                # Parse timezone offset (e.g., "+05:30" or "-08:00")
+                tz_hours = int(timezone[1:3])
+                tz_minutes = int(timezone[4:6])
+                if timezone[0] == '+':
+                    # Subtract timezone offset to convert to UTC
+                    timestamp = timestamp.replace(hour=timestamp.hour - tz_hours,
+                                                minute=timestamp.minute - tz_minutes)
+                else:
+                    # Add timezone offset to convert to UTC
+                    timestamp = timestamp.replace(hour=timestamp.hour + tz_hours,
+                                                minute=timestamp.minute + tz_minutes)
+                self.log.info("Converted actualTime to UTC: {0}".format(timestamp))
+
+            # Extract the date, time, and timezone (now always UTC)
             date = timestamp.date()
             time = timestamp.time()
 
             shell = RemoteMachineShellConnection(self.host)
             try:
-                curr_timestamp = shell.execute_command('date '
-                                                       '+%Y-%m-%dT%H:%M:%S%:z')
-                currTimeZone = curr_timestamp[0][0].rstrip()[-6:]
+                # Always get current time in UTC for comparison
+                curr_timestamp = shell.execute_command('date -u '
+                                                       '+%Y-%m-%dT%H:%M:%S')
                 curr_timestamp = datetime.strptime(curr_timestamp[0][
-                    0].rstrip()[:-6], '%Y-%m-%dT%H:%M:%S')
+                    0].rstrip(), '%Y-%m-%dT%H:%M:%S')
+
                 currDate = curr_timestamp.date()
                 currtime = curr_timestamp.time()
             finally:
                 shell.disconnect()
 
+            self.log.info("Comparing actualTime and currTime: {0}, {1}".format(timestamp, curr_timestamp))
             self.log.info (" Matching expected date - currDate {0}; actual "
                            "Date - {1}".format(currDate, date))
             if date != currDate:
@@ -529,18 +548,12 @@ class audit:
                     " Matching expected time - currTime {0} ; actual "
                     "Time - {1}".format(currtime, time))
                 if currtime >= time:
-                    self.log.info('Compare timezone')
-                    if timezone != currTimeZone:
-                        self.log.info("Mis-match in value of timezone. "
-                                      "Actual: %s Expected: %s" % (
-                                          timezone, currTimeZone))
-                        return False
                     return True
                 else:
                     self.log.info("Mis-match in values for timestamp - time")
                     return False
 
-        except Exception, e:
+        except Exception as e:
             self.log.info ("Value of execption is {0}".format(e))
             return False
 

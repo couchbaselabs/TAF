@@ -103,7 +103,7 @@ class CBASExternalLinks(CBASBaseTest):
                 bucket_created = False
                 aws_bucket_name = self.input.param(
                     "aws_bucket_name", "cbas-regression-{0}".format(
-                        self.cbas_util.generate_name(max_length=10)))
+                        random.randint(1, 10000)))
 
                 while (not bucket_created) and retry < 10:
                     try:
