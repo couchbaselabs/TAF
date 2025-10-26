@@ -49,8 +49,12 @@ class UpgradeBase(BaseTestCase):
         self.migrate_storage_backend = self.input.param("migrate_storage_backend", False)
         self.preferred_storage_mode = self.input.param("preferred_storage_mode",
                                                       Bucket.StorageBackend.magma)
+        self.preferred_eviction_policy = self.input.param("preferred_eviction_policy",
+                                                         Bucket.EvictionPolicy.FULL_EVICTION)
         self.range_scan_timeout = self.input.param("range_scan_timeout",
                                                    None)
+        self.allow_online_eviction_policy_change = self.input.param("allow_online_eviction_policy_change",
+                                                                    True)
         self.range_scan_collections = self.input.param("range_scan_collections", None)
         self.rest = RestConnection(self.cluster.master)
         self.server_index_to_fail = self.input.param("server_index_to_fail",

@@ -5009,6 +5009,21 @@ class RemoteMachineShellConnection:
         output, error = self.execute_command(diag_eval_command)
         return output, error
 
+    def set_allow_online_eviction_policy_change(self, value, userId="Administrator",
+                                                password="password"):
+        """
+        Set allow_online_eviction_policy_change using a simple curl diag/eval command.
+        Accepts bool or 'true'/'false'.
+        """
+        if isinstance(value, bool):
+            value = str(value).lower()
+        diag_eval_command = (
+            "curl -w '\\n' -u {0}:{1} localhost:8091/diag/eval -d "
+            "'ns_config:set(allow_online_eviction_policy_change, {2}).'"
+        ).format(userId, password, value)
+        output, error = self.execute_command(diag_eval_command)
+        return output, error
+
     def validate_slow_disk_setting(self, user_id="Administrator",
                                    password="password"):
         diag_eval_command = (

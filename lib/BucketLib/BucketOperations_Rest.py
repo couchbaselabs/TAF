@@ -506,7 +506,8 @@ class BucketHelper(RestConnection):
                             history_retention_bytes=None,
                             history_retention_seconds=None,
                             magma_key_tree_data_block_size=None,
-                            magma_seq_tree_data_block_size=None):
+                            magma_seq_tree_data_block_size=None,
+                            noRestart=None,eviction_policy=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -552,6 +553,13 @@ class BucketHelper(RestConnection):
                 = magma_seq_tree_data_block_size
         if storageBackend is not None:
             params_dict[Bucket.storageBackend] = storageBackend
+        if eviction_policy is not None:
+            params_dict[Bucket.evictionPolicy] = eviction_policy
+        if noRestart is not None:
+            if isinstance(noRestart, bool):
+                params_dict["noRestart"] = "true" if noRestart else "false"
+            else:
+                params_dict["noRestart"] = str(noRestart).lower()
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)

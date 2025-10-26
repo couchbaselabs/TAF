@@ -417,6 +417,8 @@ class UpgradeTests(UpgradeBase):
             self.add_system_scope_to_all_buckets()
 
         ### Migration of the storageBackend ###
+        if self.allow_online_eviction_policy_change:
+            RemoteMachineShellConnection(self.cluster.master).set_allow_online_eviction_policy_change(True)
         if self.migrate_storage_backend:
             self.PrintStep("Migration of the storageBackend to {0}".format(
                                                     self.preferred_storage_mode))
@@ -425,8 +427,10 @@ class UpgradeTests(UpgradeBase):
             for bucket in self.cluster.buckets:
                 try:
                     self.bucket_util.update_bucket_property(self.cluster.master,
-                                                        bucket,
-                                                        storageBackend=self.preferred_storage_mode)
+                                                            bucket,
+                                                            storageBackend=self.preferred_storage_mode,
+                                                            eviction_policy=self.preferred_eviction_policy,
+                                                            no_restart=True)
                     if self.test_guardrail_migration and self.breach_guardrail:
                         self.fail("Migration was allowed even when it would breach guardrail limits")
                 except Exception as e:
@@ -444,7 +448,6 @@ class UpgradeTests(UpgradeBase):
             else:
                 for bucket in self.cluster.buckets:
                     self.verify_storage_key_for_migration(bucket, self.bucket_storage)
-
                 ### Swap Rebalance/Failover recovery of all nodes post upgrade for migration ###
                 if self.migration_procedure == "failover_recovery":
                     self.failover_recovery_all_nodes()
@@ -1655,6 +1658,8 @@ class UpgradeTests(UpgradeBase):
                 self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
                 self.cluster_util.print_cluster_stats(self.cluster)
                 self.validate_mixed_storage_during_migration(otp_node)
+                self.assertTrue(self.validate_mixed_eviction_during_migration(otp_node),
+                                "Expected eviction policy to be updated on the node")
 
     def verify_storage_key_for_migration(self, bucket, storage_backend):
         bucket_helper = BucketHelper(self.cluster.master)
@@ -1667,6 +1672,73 @@ class UpgradeTests(UpgradeBase):
             else:
                 self.log.info("storageBackend key introduced correctly for node {0}".format(
                                                                         node['hostname']))
+    def verify_eviction_policy_for_all_nodes(self, bucket, expected_eviction_policy):
+        """
+        Verify per-node evictionPolicy matches the expected value.
+
+        Args:
+            bucket (Bucket|str): Bucket object or name.
+            expected_eviction_policy (str): Expected eviction policy (e.g. 'fullEviction').
+
+        Returns:
+            (bool, dict): overall_success, results per hostname.
+                          results[hostname] = {'ok': bool, 'reported': <str or None>}
+        Raises:
+            ValueError: If bucket stats are malformed.
+        """
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_json = bucket_helper.get_bucket_json(bucket)
+        results = {}
+        all_ok = True
+
+        for node_entry in bucket_json['nodes']:
+            hostname = node_entry.get('hostname', 'unknown')
+            reported = node_entry.get('evictionPolicy')
+            self.log.info("reported")
+            self.log.info(reported)
+
+            if reported is None:
+                self.log.info("delete: evictionPolicy key missing on node %s", hostname)
+                results[hostname] = {'ok': False, 'reported': None}
+                all_ok = False
+                continue
+
+            if reported != expected_eviction_policy:
+                self.log.info("delete: evictionPolicy mismatch on node %s (reported=%s expected=%s)",
+                                 hostname, reported, expected_eviction_policy)
+                results[hostname] = {'ok': False, 'reported': reported}
+                all_ok = False
+            else:
+                self.log.info("delete: evictionPolicy correct on node %s (%s)", hostname, reported)
+                results[hostname] = {'ok': True, 'reported': reported}
+
+        return all_ok, results
+
+
+    def validate_mixed_eviction_during_migration(self, migrated_node):
+        """
+        Simple check that the migrated node now reports the expected evictionPolicy.
+        Logs use prefix "delete: ".
+        Returns:
+            bool: True if all buckets show the expected policy on the migrated node, else False.
+        """
+        bucket_helper = BucketHelper(self.cluster.master)
+        all_ok = True
+
+        for bucket in self.cluster.buckets:
+            bucket_stats = bucket_helper.get_bucket_json(bucket.name)
+            for node in bucket_stats.get('nodes', []):
+                # Match node by IP (hostname like "ip:port")
+                if migrated_node.ip == node.get('hostname', '').split(':')[0]:
+                    reported = node.get('evictionPolicy')
+                    if 'evictionPolicy' not in node:
+                        self.log.info("delete: evictionPolicy updated for node %s -> %s",
+                                      migrated_node.ip, reported)
+                    else:
+                        self.log.info("delete: evictionPolicy NOT updated for node %s (reported=%s expected=%s)",
+                                      migrated_node.ip, reported, expected_eviction_policy)
+                        all_ok = False
+        return all_ok
 
     def validate_mixed_storage_during_migration(self, migrated_node):
         bucket_helper = BucketHelper(self.cluster.master)
@@ -1735,6 +1807,10 @@ class UpgradeTests(UpgradeBase):
                 migrated_node_in = self.spare_node
                 self.spare_node = node
                 self.validate_mixed_storage_during_migration(migrated_node_in)
+                self.assertTrue(
+                    self.validate_mixed_eviction_during_migration(migrated_node_in),
+                    "Expected eviction policy to be updated on the node"
+                )
             else:
                 self.log.info("Swap rebalance of node {0} failed".format(node.ip))
 
@@ -1766,6 +1842,8 @@ class UpgradeTests(UpgradeBase):
                 self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
                 self.cluster_util.print_cluster_stats(self.cluster)
                 self.validate_mixed_storage_during_migration(otp_node)
+                self.assertTrue(self.validate_mixed_eviction_during_migration(otp_node),
+                                "Expected eviction policy to be updated on the node")
 
     def swap_rebalance_batch_migrate(self, nodes):
         rest = RestConnection(nodes[0])
@@ -1789,6 +1867,8 @@ class UpgradeTests(UpgradeBase):
             self.spare_nodes = nodes
             for node in spare_node_list:
                 self.validate_mixed_storage_during_migration(node)
+                self.assertTrue(self.validate_mixed_eviction_during_migration(node),
+                                "Expected eviction policy to be updated on the node")
         else:
             self.log.info("Batch Swap rebalance failed")
 
