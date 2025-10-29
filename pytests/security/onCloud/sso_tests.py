@@ -105,7 +105,7 @@ class SsoTests(SecurityBase):
             self._generate_key_pair()
             self._generate_ssigned_cert()
             self.get_team_id()
-            self.invalid_id = "00000000-0000-0000-0000-000000000000"
+            self.invalid_id = "00000000"
 
             self.log.info("Deleting any realms that are already present")
             resp = self.sso.list_realms(self.tenant_id)
@@ -116,11 +116,13 @@ class SsoTests(SecurityBase):
                 self.assertEqual(resp.status_code // 100, 2)
 
         except Exception as e:
+            self.log.critical("Ran into exception while setup: {}".format(str(e)))
             self.tearDown()
             self.fail("Base Setup Failed with error as - {}".format(e))
 
     def tearDown(self):
         # Check if sso attribute exists before using it
+        self.log.info("Teardown called after individual test")
         if hasattr(self, 'sso') and self.sso:
             try:
                 resp = self.sso.list_realms(self.tenant_id)
@@ -129,10 +131,13 @@ class SsoTests(SecurityBase):
                     realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
                     resp = self.sso.delete_realm(self.tenant_id, realm_id)
                     self.validate_response(resp, 2)
+                else:
+                    self.log.info("Could no find data key in response object, {}".format(resp))
             except Exception as e:
                 self.log.warning("Error during tearDown cleanup: {}".format(e))
-
-        super(SsoTests, self).tearDown()
+            super(SsoTests, self).tearDown()
+        else:
+            self.log.info("no sso attribute found in teardown")
 
     def _generate_key_pair(self):
         self.key = """-----BEGIN PRIVATE KEY-----
@@ -443,16 +448,20 @@ UePycWSlRDiAF7gh8sNnFSOyy1m0leTAnXKVKrfyWV7MxKY8/GeHtA==
         # different tenant id
         self.log.info("invalid tenant id")
         resp = self.sso.show_realm(self.invalid_id, realm_id)
-        self.validate_response(resp, 4)
-
-        # user without sufficient permissions
-        resp = self.unauth_z_sso.show_realm(self.tenant_id, realm_id)
+        self.log.info("Response from invalid tenant id case: {}".format(resp))
         self.validate_response(resp, 4)
 
         # invalid realm id
         self.log.info("invalid realm id")
         resp = self.sso.show_realm(self.tenant_id, self.invalid_id)
+        self.log.info(resp)
         self.validate_response(resp, 4)
+
+        # user without sufficient permissions
+        resp = self.unauth_z_sso.show_realm(self.tenant_id, realm_id)
+        self.log.info("Response from unauthorised user: {}".format(resp))
+        self.validate_response(resp, 4)
+
 
     def test_list_realms(self):
         self.create_realm(self.team_id)

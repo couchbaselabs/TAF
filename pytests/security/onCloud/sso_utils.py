@@ -635,6 +635,8 @@ class SsoUtils:
         """
         url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id,
                                                            realm_id)
+        header = self.capella_api.get_authorization_internal()
+        self.log.info("Calling url, {}, with auth header: {}".format(url, header))
         resp = self.capella_api.do_internal_request(url, method="GET")
         return resp
 
