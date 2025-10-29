@@ -21,10 +21,28 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.log.info("FusionUploader setUp Started")
 
         self.rebalance_master = self.input.param("rebalance_master", False)
+        self.nodes_with_blocked_chronicle = list()
 
         self.upsert_iterations = self.input.param("upsert_iterations", 2)
 
+        # Override Fusion default settings
+        for bucket in self.cluster.buckets:
+            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
+                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
+                                        logstore_frag_threshold=self.logstore_frag_threshold)
+        # Set Migration Rate Limit
+        ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+        for server in self.cluster.servers:
+            self.log.info(f"Enabling diag/eval on non local hosts for server: {server.ip}")
+            shell = RemoteMachineShellConnection(server)
+            o, e = shell.enable_diag_eval_on_non_local_hosts()
+            self.log.info(f"Output = {o}, Error = {e}")
+            shell.disconnect()
+
     def tearDown(self):
+        self.cleanup_iptables_rules()
         super(FusionUploader, self).tearDown()
 
 
@@ -339,3 +357,145 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.log.info(f"Log checkpoint dict = {self.vb_log_ckpt_dict}")
 
         ssh.disconnect()
+
+
+    def get_otp_node(self, rest_node, target_node):
+        nodes = self.cluster_util.get_nodes(rest_node)
+        for node in nodes:
+            if node.ip == target_node.ip:
+                return node
+
+    def block_chronicle_communication(self, node):
+        """
+        Block Fusion Chronicle (uploader) ports on localhost so uploads fail,
+        but rebalance and node addition still succeed.
+        """
+        shell = RemoteMachineShellConnection(node)
+        self.log.info(f"Blocking Chronicle uploader ports on {node.ip}")
+
+        chronicle_ports = [21200, 21300]
+
+        for port in chronicle_ports:
+            # Block only localhost loopback for these ports
+            cmds = [
+                f"iptables -A OUTPUT -o lo -p tcp -d 127.0.0.1 --dport {port} -j DROP",
+                f"iptables -A INPUT -i lo -p tcp -s 127.0.0.1 --sport {port} -j DROP"
+            ]
+            for cmd in cmds:
+                o, e = shell.execute_command(cmd)
+                if e:
+                    self.log.warning(f"Error executing iptables command on {node.ip}: {e}")
+                else:
+                    self.log.info(f"Executed iptables command on {node.ip}: {cmd}")
+
+        # Show rules for verification
+        o, e = shell.execute_command("iptables -L -n -v | grep 127.0.0.1 | grep DROP || true")
+        self.log.info(f"iptables rules on {node.ip} after blocking uploader:\n{o}")
+
+        # Keep track of nodes where we blocked ports
+        if node not in self.nodes_with_blocked_chronicle:
+            self.nodes_with_blocked_chronicle.append(node)
+
+        shell.disconnect()
+
+
+    def cleanup_iptables_rules(self):
+        """
+        Remove Chronicle uploader-blocking iptables rules from all nodes
+        where we blocked them.
+        """
+        chronicle_ports = [21100, 21200, 21300]
+
+        for node in self.nodes_with_blocked_chronicle:
+            shell = RemoteMachineShellConnection(node)
+            self.log.info(f"Cleaning up Chronicle uploader iptables rules on {node.ip}")
+
+            for port in chronicle_ports:
+                cmds = [
+                    f"iptables -D OUTPUT -o lo -p tcp -d 127.0.0.1 --dport {port} -j DROP",
+                    f"iptables -D INPUT -i lo -p tcp -s 127.0.0.1 --sport {port} -j DROP"
+                ]
+                for cmd in cmds:
+                    o, e = shell.execute_command(cmd)
+                    if e:
+                        self.log.warning(f"Error removing iptables rule on {node.ip}: {e}")
+                    else:
+                        self.log.info(f"Removed iptables rule on {node.ip}: {cmd}")
+
+            shell.execute_command("iptables -L -n -v | grep 127.0.0.1 | grep DROP || true")
+            shell.disconnect()
+            self.log.info(f"Cleanup complete for {node.ip}")
+
+    def verify_uploader_not_started(self, node):
+        """
+        Check that the uploader did not start (ep_fusion_syncs == 0)
+        """
+        shell = RemoteMachineShellConnection(node)
+        self.log.info(f"Verifying uploader did NOT start on {node.ip}")
+
+        test_passed = True
+        for bucket in self.cluster.buckets:
+            cmd = f"/opt/couchbase/bin/cbstats localhost:11210 all -b {bucket.name} " \
+                  f"-u {self.cluster.master.rest_username} " \
+                  f"-p {self.cluster.master.rest_password} | grep 'ep_fusion_syncs:'"
+            o, e = shell.execute_command(cmd)
+
+            if o:
+                syncs = int(o[0].split(":")[1].strip())
+                self.log.info(f"  Bucket {bucket.name}: ep_fusion_syncs = {syncs}")
+                if syncs > 0:
+                    self.log.error(f"FAIL: Uploader started! Found {syncs} syncs")
+                    test_passed = False
+            else:
+                self.log.info(f"  No fusion stats found for bucket {bucket.name}")
+
+        shell.disconnect()
+
+        if not test_passed:
+            self.fail(f"Test FAILED: Uploader started on {node.ip} despite blocked Chronicle")
+
+        self.log.info(f"Verification PASSED: Uploader did NOT start on {node.ip}")
+        return True
+
+
+    def test_fusion_uploader_cannot_start_without_chronicle(self):
+
+        self.log.info("Test: Uploader Cannot Start Without Chronicle")
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        spare_nodes = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
+        if not spare_nodes:
+            self.fail("No spare nodes available for test")
+
+        new_node = spare_nodes[0]
+        self.log.info(f"Node that will be added: {new_node.ip}")
+        self.log.info(f"Master node (Chronicle): {self.cluster.master.ip}")
+
+        self.log.info("Blocking Chronicle communication on new node")
+        self.block_chronicle_communication(new_node)
+        self.sleep(5, "Wait after blocking Chronicle")
+
+        self.log.info("Running Fusion rebalance (will attempt to start uploader)")
+        nodes_to_monitor = self.run_rebalance(
+            output_dir=self.fusion_output_dir,
+            rebalance_count=1
+        )
+        self.sleep(30, "Wait after rebalance")
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.log.info(f"Nodes to monitor: {[n.ip for n in nodes_to_monitor]}")
+
+        self.log.info("Verifying uploader did not start")
+        for node in nodes_to_monitor:
+            if node.ip == new_node.ip:
+                self.log.info(f"Checking node with blocked Chronicle: {node.ip}")
+                self.verify_uploader_not_started(node)
+
+        self.log.info("Cleaning up test")
+        self.log_store_rebalance_cleanup()
+
+        self.log.info("TEST PASSED: Uploader correctly refused to start without Chronicle access")
