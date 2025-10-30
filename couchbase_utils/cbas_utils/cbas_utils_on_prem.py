@@ -5255,6 +5255,7 @@ class CBASRebalanceUtil(object):
 
         # Start health monitoring if requested
         health_monitor_thread = None
+        health_monitor = None
         if monitor_health:
             health_monitor = HealthMonitorUtil(cluster, self.cluster_util)
             health_monitor_thread = health_monitor.start_health_monitoring_thread(
