@@ -58,6 +58,7 @@ class CollectionBase(ClusterSetup):
         self.retry_get_process_num = \
             self.input.param("retry_get_process_num", 200)
         self.change_magma_quota = self.input.param("change_magma_quota", False)
+        self.bucket_num_vb = self.input.param("bucket_num_vb", None)
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
         self.range_scan_task = None
@@ -587,9 +588,21 @@ class CollectionBase(ClusterSetup):
         # Process params to over_ride values if required
         CollectionBase.over_ride_bucket_template_params(
             test_obj, test_obj.bucket_storage, buckets_spec)
-        if test_obj.enable_encryption_at_rest and buckets_spec[Bucket.bucketType] != Bucket.Type.EPHEMERAL:
-            buckets_spec[
-                Bucket.encryptionAtRestKeyId] = test_obj.encryption_at_rest_id
+
+        if hasattr(test_obj, "bucket_num_vb") and test_obj.bucket_num_vb is not None \
+                and buckets_spec.get(Bucket.storageBackend, Bucket.StorageBackend.magma) == Bucket.StorageBackend.magma:
+            buckets_spec[Bucket.numVBuckets] = test_obj.bucket_num_vb
+
+            if "buckets" in buckets_spec:
+                for bucket in buckets_spec["buckets"]:
+                    if buckets_spec["buckets"][bucket].get(Bucket.storageBackend, Bucket.StorageBackend.magma) == Bucket.StorageBackend.couchstore:
+                        buckets_spec["buckets"][bucket][Bucket.numVBuckets] = 1024
+
+        if test_obj.enable_encryption_at_rest and \
+                buckets_spec.get(Bucket.bucketType, Bucket.Type.MEMBASE) \
+                != Bucket.Type.EPHEMERAL:
+            buckets_spec[Bucket.encryptionAtRestKeyId] = \
+                test_obj.encryption_at_rest_id
             buckets_spec[Bucket.encryptionAtRestDekRotationInterval] = \
                 test_obj.encryptionAtRestDekRotationInterval
             if "buckets" in buckets_spec:

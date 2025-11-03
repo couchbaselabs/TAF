@@ -2587,7 +2587,6 @@ class BucketUtils(ScopeUtils):
              Bucket.historyRetentionBytes: history_retention_bytes,
              Bucket.magmaKeyTreeDataBlockSize: magma_key_tree_data_block_size,
              Bucket.magmaSeqTreeDataBlockSize: magma_seq_tree_data_block_size,
-             Bucket.numVBuckets: vbuckets,
              Bucket.width: width,
              Bucket.weight: weight,
              Bucket.durabilityImpossibleFallback: durability_impossible_fallback,
@@ -2595,6 +2594,9 @@ class BucketUtils(ScopeUtils):
 
         if fusion_log_store_uri is not None:
             bucket_obj.fusionLogstoreURI = fusion_log_store_uri
+
+        if vbuckets is not None and storage == Bucket.StorageBackend.magma:
+            bucket_obj.num_vbuckets = vbuckets
 
         if cluster.type == "dedicated":
             bucket_params = {
@@ -3343,7 +3345,6 @@ class BucketUtils(ScopeUtils):
                         Bucket.purge_interval: purge_interval,
                         Bucket.autoCompactionDefined: autoCompactionDefined,
                         Bucket.fragmentationPercentage: fragmentation_percentage,
-                        Bucket.numVBuckets: vbuckets,
                         Bucket.weight: weight,
                         Bucket.width: width,
                         Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
@@ -3351,6 +3352,10 @@ class BucketUtils(ScopeUtils):
                         Bucket.historyRetentionBytes: history_retention_bytes,
                         Bucket.warmupBehavior: warmup_behavior,
                         Bucket.fusionLogstoreURI: fusion_log_store_uri})
+
+                    if vbuckets is not None and key == Bucket.StorageBackend.magma:
+                        bucket.num_vbuckets = vbuckets
+
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1
 

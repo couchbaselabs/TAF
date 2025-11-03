@@ -46,6 +46,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.items = self.num_items
         self.logs_folder = self.input.param("logs_folder")
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
+        self.bucket_num_vb = self.input.param("bucket_num_vb", 128)
 
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
@@ -218,7 +219,8 @@ class RebalanceBaseTest(BaseTestCase):
             replica=self.num_replicas,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
-            bucket_durability=self.bucket_durability_level)
+            bucket_durability=self.bucket_durability_level,
+            vbuckets=self.bucket_num_vb)
 
     def _create_multiple_buckets(self):
         buckets_created = self.bucket_util.create_multiple_buckets(
@@ -229,7 +231,9 @@ class RebalanceBaseTest(BaseTestCase):
             bucket_type=self.bucket_type,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
-            bucket_durability=self.bucket_durability_level)
+            bucket_durability=self.bucket_durability_level,
+            enable_encryption_at_rest=self.enable_encryption_at_rest,
+            vbuckets=self.bucket_num_vb)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 
         for bucket in self.cluster.buckets:

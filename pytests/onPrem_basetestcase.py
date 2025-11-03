@@ -87,6 +87,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         self.bucket_replica_index = self.input.param("bucket_replica_index",
                                                      1)
+        self.bucket_num_vb = self.input.param("bucket_num_vb", None)
         # End of bucket parameters
 
         self.services_in = self.input.param("services_in", None)
@@ -1698,6 +1699,9 @@ class ClusterSetup(OnPremBaseTest):
             "magma_seq_tree_data_block_size": self.magma_seq_tree_data_block_size,
             "durability_impossible_fallback": self.durability_impossible_fallback,
         }
+
+        if self.bucket_num_vb is not None:
+            create_bucket_params["vbuckets"] = self.bucket_num_vb
 
         # This is needed because server will throw the error saying,
         # "Support for variable number of vbuckets is not enabled"

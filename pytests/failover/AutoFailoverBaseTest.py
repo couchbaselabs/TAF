@@ -51,6 +51,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                                                     True)
         self.include_range_scan = self.input.param("include_range_scan",
                                                    True)
+        self.bucket_num_vb = self.input.param("bucket_num_vb", 128)
         if self.server_index_to_fail is None:
             self.server_to_fail = self._servers_to_fail()
         else:
@@ -102,7 +103,8 @@ class AutoFailoverBaseTest(ClusterSetup):
                 self.cluster,
                 replica=self.num_replicas,
                 bucket_type=self.bucket_type,
-                ram_quota=self.bucket_size)
+                ram_quota=self.bucket_size,
+                vbuckets=self.bucket_num_vb)
             self.sleep(5, "Wait for bucket to accept SDK connections")
 
             if self.cluster.sdk_client_pool:

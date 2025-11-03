@@ -60,6 +60,7 @@ class StorageBase(BaseTestCase):
         self.magma_buckets = self.input.param("magma_buckets", 0)
         self.change_magma_quota = self.input.param("change_magma_quota", False)
         self.skip_load_to_default_collection = self.input.param("skip_load_to_default_collection", False)
+        self.bucket_num_vb = self.input.param("bucket_num_vb", 128)
 
         # SDK Exceptions
         self.check_temporary_failure_exception = False
@@ -123,7 +124,7 @@ class StorageBase(BaseTestCase):
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
                 history_retention_bytes=self.bucket_dedup_retention_bytes,
-                weight=self.bucket_weight, width=self.bucket_width)
+                weight=self.bucket_weight, width=self.bucket_width, vbuckets=self.bucket_num_vb)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
@@ -138,6 +139,7 @@ class StorageBase(BaseTestCase):
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled,
                 weight=self.bucket_weight, width=self.bucket_width,
+                vbuckets=self.bucket_num_vb,
                 autoCompactionDefined=self.autoCompactionDefined,
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
