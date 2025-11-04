@@ -19,6 +19,7 @@ class ColumnarOnPremBase(CBASBaseTest):
         # renaming from columnar_cbas_utils to cbas_util - Consistent with ColumnarBaseTest (Cloud)
         self.cbas_util = columnarCBASUtil(
             self.task, self.use_sdk_for_cbas)
+        self.columnar_cbas_utils = self.cbas_util
         
         for cluster in self.cb_clusters.values():
             cluster.srv = None
