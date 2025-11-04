@@ -25,6 +25,7 @@ from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
+from cluster_utils.encryption_util import EncryptionUtil
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -205,6 +206,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
+        self.encryption_util = EncryptionUtil(self.task_manager)
         global_vars.cluster_util = self.cluster_util
         global_vars.bucket_util = self.bucket_util
 
@@ -491,130 +493,43 @@ class OnPremBaseTest(CouchbaseBaseTest):
             # Enforce tls on nodes of all clusters
             self.enable_tls_on_nodes()
 
+            # Enable diag/eval on non-local hosts for all servers
+            self.log.info("Enabling diag/eval on non-local hosts for all servers")
+            for server in self.cluster.servers:
+                shell = RemoteMachineShellConnection(server)
+                output, error = shell.enable_diag_eval_on_non_local_hosts()
+                shell.disconnect()
+
             # Creating encryption keys
-            rest = RestConnection(self.cluster.master)
-            if self.create_KMIP_secret:
-                params = ClusterUtils.create_secret_params(
-                    name=ClusterUtils.generate_random_name(
-                        "kmip"),
-                    secret_type="kmip-aes-key-256",
-                    usage=["KEK-encryption", "bucket-encryption",
-                           "config-encryption", "log-encryption",
-                           "audit-encryption"],
-                    caSelection="useSysAndCbCa",
-                    reqTimeoutMs=5000,
-                    encryptionApproach="useGet",
-                    encryptWith="nodeSecretManager",
-                    encryptWithKeyId=-1,
-                    activeKey={"kmipId": self.kmip_key_uuid},
-                    keyPath=self.client_certs_path + self.KMIP_pkcs8_file_name,
-                    certPath=self.client_certs_path + self.KMIP_cert_file_name,
-                    keyPassphrase=self.private_key_passphrase,
-                    host=self.kmip_host_name,
-                    port=5696
-                )
-                status, response = rest.create_secret(params)
-                response_dict = json.loads(response)
-                self.KMIP_id = response_dict.get('id')
-            if self.enable_encryption_at_rest:
-                self.log.info("Initializing encryption at rest")
-                log_params = ClusterUtils.create_secret_params(
-                    name = ClusterUtils.generate_random_name(
-                        "EncryptionSecret"),
-                    rotationIntervalInSeconds=self.secret_rotation_interval
-                )
-                rest = RestConnection(self.cluster.master)
-                status, response = rest.create_secret(log_params)
-                response_dict = json.loads(response)
-                self.encryption_at_rest_id = response_dict.get('id')
-                self.log.info("Encryption at rest ID: {0}".format(
-                    self.encryption_at_rest_id))
+            encryption_result = self.encryption_util.setup_encryption_at_rest(
+                cluster_master=self.cluster.master,
+                bypass_encryption_func=self.bypass_encryption_setting,
+                create_KMIP_secret=self.create_KMIP_secret,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                enable_config_encryption_at_rest=self.enable_config_encryption_at_rest,
+                enable_log_encryption_at_rest=self.enable_log_encryption_at_rest,
+                enable_audit_encryption_at_rest=self.enable_audit_encryption_at_rest,
+                secret_rotation_interval=self.secret_rotation_interval,
+                kmip_key_uuid=self.kmip_key_uuid,
+                client_certs_path=self.client_certs_path,
+                KMIP_pkcs8_file_name=self.KMIP_pkcs8_file_name,
+                KMIP_cert_file_name=self.KMIP_cert_file_name,
+                private_key_passphrase=self.private_key_passphrase,
+                kmip_host_name=self.kmip_host_name,
+                KMIP_for_config_encryption=self.KMIP_for_config_encryption,
+                config_dekLifetime=self.config_dekLifetime,
+                config_dekRotationInterval=self.config_dekRotationInterval,
+                KMIP_for_log_encryption=self.KMIP_for_log_encryption,
+                log_dekLifetime=self.log_dekLifetime,
+                log_dekRotationInterval=self.log_dekRotationInterval,
+                KMIP_for_audit_encryption=self.KMIP_for_audit_encryption,
+                audit_dekLifetime=self.audit_dekLifetime,
+                audit_dekRotationInterval=self.audit_dekRotationInterval
+            )
 
-            if self.enable_config_encryption_at_rest:
-                self.log.info("Initializing config encryption at rest")
-                log_params = ClusterUtils.create_secret_params(
-                    name = ClusterUtils.generate_random_name(
-                        "ConfigEncryptionSecret"),
-                    usage=["config-encryption"],
-                    rotationIntervalInSeconds=self.secret_rotation_interval
-                )
-                rest = RestConnection(self.cluster.master)
-                status, response = rest.create_secret(log_params)
-                response_dict = json.loads(response)
-                self.config_encryption_at_rest_id = response_dict.get('id')
-                if self.KMIP_for_config_encryption:
-                    self.config_encryption_at_rest_id = self.KMIP_id
-                self.log.info("Config encryption at rest ID: {0}".format(
-                    self.config_encryption_at_rest_id))
-                valid_params = {
-                    "config.encryptionMethod": "encryptionKey",
-                    "config.encryptionKeyId": self.KMIP_id,
-                    "config.dekLifetime": self.config_dekLifetime,
-                    "config.dekRotationInterval": self.config_dekRotationInterval
-                }
-                status, response = rest.configure_encryption_at_rest(
-                    valid_params)
-                self.log.info(
-                    "Config encryption at rest status: {0}".format(status))
-                self.assertTrue(status,
-                                "Failed to enable config encryption values")
+            # Set the returned IDs back to self
+            self.encryption_util.set_encryption_ids(self, encryption_result)
 
-            if self.enable_log_encryption_at_rest:
-                self.log.info("Initializing log encryption at rest")
-                log_params = ClusterUtils.create_secret_params(
-                    name=ClusterUtils.generate_random_name(
-                        "LogEncryptionSecret"),
-                    usage=["log-encryption"],
-                    rotationIntervalInSeconds=self.secret_rotation_interval
-                )
-                rest = RestConnection(self.cluster.master)
-                status, response = rest.create_secret(log_params)
-                response_dict = json.loads(response)
-                self.log_encryption_at_rest_id = response_dict.get('id')
-                if self.KMIP_for_log_encryption:
-                    self.log_encryption_at_rest_id = self.KMIP_id
-                self.log.info("Log encryption at rest ID: {0}".format(
-                    self.log_encryption_at_rest_id))
-                valid_params = {
-                    "log.encryptionMethod": "encryptionKey",
-                    "log.encryptionKeyId": self.log_encryption_at_rest_id,
-                    "log.dekLifetime": self.log_dekLifetime,
-                    "log.dekRotationInterval": self.log_dekRotationInterval
-                }
-                status, response = rest.configure_encryption_at_rest(
-                    valid_params)
-                self.log.info(
-                    "Log encryption at rest status: {0}".format(status))
-                self.assertTrue(status,
-                                "Failed to set valid log encryption values")
-            if self.enable_audit_encryption_at_rest:
-                self.log.info("Initializing audit encryption at rest")
-                log_params = ClusterUtils.create_secret_params(
-                    name=ClusterUtils.generate_random_name(
-                        "AuditEncryptionSecret"),
-                    usage=["audit-encryption"],
-                    rotationIntervalInSeconds=self.secret_rotation_interval
-                )
-                rest = RestConnection(self.cluster.master)
-                status, response = rest.create_secret(log_params)
-                response_dict = json.loads(response)
-                self.audit_encryption_at_rest_id = response_dict.get('id')
-                if self.KMIP_for_audit_encryption:
-                    self.audit_encryption_at_rest_id = self.KMIP_id
-                self.log.info("Audit encryption at rest ID: {0}".format(
-                    self.audit_encryption_at_rest_id))
-                valid_params = {
-                    "audit.encryptionMethod": "encryptionKey",
-                    "audit.encryptionKeyId": self.audit_encryption_at_rest_id,
-                    "audit.dekLifetime": self.audit_dekLifetime,
-                    "audit.dekRotationInterval": self.audit_dekRotationInterval
-                }
-                status, response = rest.configure_encryption_at_rest(
-                    valid_params)
-                self.log.info(
-                    "Audit encryption at rest status: {0}".format(status))
-                self.assertTrue(status,
-                                "Failed to set valid Audit encryption values")
 
             if self.use_https:
                 if ClusterRun.is_enabled:
@@ -1598,6 +1513,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.log.error(f"Failed to set aws bucket config to analytics: {status} {str(content)}")
             return False
         return True
+
+    def bypass_encryption_setting(self):
+        self.log.info("Bypassing encryption restrictions")
+        self.encryption_util.bypass_encryption_restrictions(server=self.cluster.master)
 
 
 class ClusterSetup(OnPremBaseTest):

@@ -2548,7 +2548,12 @@ class BucketUtils(ScopeUtils):
             vbuckets=None, weight=None, width=None,
             durability_impossible_fallback=None,
             warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
-            fusion_log_store_uri=None):
+            fusion_log_store_uri=None,
+            enable_encryption_at_rest=False,
+            encryption_at_rest_key_id=None,
+            encryption_at_rest_dek_rotation_interval=None,
+            encryption_at_rest_dek_lifetime=None):
+
         node_info = global_vars.cluster_util.get_nodes_self(cluster.master)
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2597,6 +2602,13 @@ class BucketUtils(ScopeUtils):
 
         if vbuckets is not None and storage == Bucket.StorageBackend.magma:
             bucket_obj.num_vbuckets = vbuckets
+
+        if enable_encryption_at_rest:
+            bucket_obj.encryptionAtRestKeyId = encryption_at_rest_key_id
+            if encryption_at_rest_dek_rotation_interval is not None:
+                bucket_obj.encryptionAtRestDekRotationInterval = encryption_at_rest_dek_rotation_interval
+            if encryption_at_rest_dek_lifetime is not None:
+                bucket_obj.encryptionAtRestDekLifetime = encryption_at_rest_dek_lifetime
 
         if cluster.type == "dedicated":
             bucket_params = {
@@ -3303,7 +3315,10 @@ class BucketUtils(ScopeUtils):
             history_retention_bytes=0,
             history_retention_seconds=0,
             warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
-            fusion_log_store_uri=None):
+            fusion_log_store_uri=None,enable_encryption_at_rest=False,
+            encryption_at_rest_key_id=None,
+            encryption_at_rest_dek_rotation_interval=None,
+            encryption_at_rest_dek_lifetime=None):
         success = True
         info = self.cluster_util.get_nodes_self(cluster.master)
         tasks = dict()
@@ -3355,6 +3370,13 @@ class BucketUtils(ScopeUtils):
 
                     if vbuckets is not None and key == Bucket.StorageBackend.magma:
                         bucket.num_vbuckets = vbuckets
+
+                    if enable_encryption_at_rest:
+                        bucket.encryptionAtRestKeyId = encryption_at_rest_key_id
+                        if encryption_at_rest_dek_rotation_interval is not None:
+                            bucket.encryptionAtRestDekRotationInterval = encryption_at_rest_dek_rotation_interval
+                        if encryption_at_rest_dek_lifetime is not None:
+                            bucket.encryptionAtRestDekLifetime = encryption_at_rest_dek_lifetime
 
                     tasks[bucket] = self.async_create_bucket(cluster, bucket)
                     count += 1

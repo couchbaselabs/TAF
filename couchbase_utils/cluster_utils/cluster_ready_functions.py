@@ -49,6 +49,22 @@ class Nebula:
         self.endpoint.srv = srv
         self.update_server_list()
 
+    def assertTrue(self, expr, msg=None):
+        if msg:
+            msg = "{0} is not true : {1}".format(expr, msg)
+        else:
+            msg = "{0} is not true".format(expr)
+        if not expr:
+            raise (Exception(msg))
+
+    def assertFalse(self, expr, msg=None):
+        if msg:
+            msg = "{0} is not false: {1}".format(expr, msg)
+        else:
+            msg = "{0} is false".format(expr)
+        if expr:
+            raise (Exception(msg))
+
     def update_server_list(self):
         self.servers = dict()
         self.rest = RestConnection(self.endpoint)
@@ -145,84 +161,6 @@ class ClusterUtils:
         self.task_manager = task_manager
         self.log = logger.get("test")
 
-    @staticmethod
-    def generate_random_name(prefix, length=8):
-        chars = string.ascii_letters + string.digits
-        suffix = ''.join(random.choice(chars) for _ in range(length))
-        return prefix + suffix
-
-    @staticmethod
-    def create_secret_params(secret_type="auto-generated-aes-key-256",
-                             name="Default secret", usage=None,
-                             autoRotation=True, rotationIntervalInDays=60,
-                             rotationIntervalInSeconds=None, keyARN=None,
-                             region=None, useIMDS=None, credentialsFile=None,
-                             configFile=None, profile=None,
-                             caSelection=None, reqTimeoutMs=None,
-                             encryptionApproach=None, encryptWith=None,
-                             encryptWithKeyId=None, activeKey=None,
-                             keyPath=None, certPath=None, keyPassphrase=None,
-                             host=None, port=None):
-        if usage is None:
-            usage = ["bucket-encryption-*"]
-
-        data = {}
-        if host is None:
-            data = {
-                "autoRotation": autoRotation,
-                "rotationIntervalInDays": rotationIntervalInDays
-            }
-
-            if rotationIntervalInSeconds is not None:
-                data["nextRotationTime"] = (datetime.utcnow() + timedelta(
-                    seconds=rotationIntervalInSeconds)).isoformat() + "Z"
-            else:
-                data["nextRotationTime"] = (datetime.utcnow() + timedelta(
-                    days=rotationIntervalInDays)).isoformat() + "Z"
-
-        if keyARN is not None:
-            data["keyARN"] = keyARN
-        if region is not None:
-            data["region"] = region
-        if useIMDS is not None:
-            data["useIMDS"] = useIMDS
-        if credentialsFile is not None:
-            data["credentialsFile"] = credentialsFile
-        if configFile is not None:
-            data["configFile"] = configFile
-        if profile is not None:
-            data["profile"] = profile
-
-        if caSelection is not None:
-            data["caSelection"] = caSelection
-        if reqTimeoutMs is not None:
-            data["reqTimeoutMs"] = reqTimeoutMs
-        if encryptionApproach is not None:
-            data["encryptionApproach"] = encryptionApproach
-        if encryptWith is not None:
-            data["encryptWith"] = encryptWith
-        if encryptWithKeyId is not None:
-            data["encryptWithKeyId"] = encryptWithKeyId
-        if activeKey is not None:
-            data["activeKey"] = activeKey
-        if keyPath is not None:
-            data["keyPath"] = keyPath
-        if certPath is not None:
-            data["certPath"] = certPath
-        if keyPassphrase is not None:
-            data["keyPassphrase"] = keyPassphrase
-        if host is not None:
-            data["host"] = host
-        if port is not None:
-            data["port"] = port
-
-        params = {
-            "type": secret_type,
-            "name": name,
-            "usage": usage,
-            "data": data
-        }
-        return params
 
     @staticmethod
     def flush_network_rules(shell_conn, default_interface_name):
@@ -2619,3 +2557,4 @@ class ClusterUtils:
             # a good start until we figure what is happening
             self.log.error(f'Error while processing cluster info {content}')
         return False
+

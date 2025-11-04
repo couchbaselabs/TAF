@@ -919,6 +919,36 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         self.enable_tls_on_nodes()
 
+        # Creating encryption keys
+        encryption_result = self.encryption_util.setup_encryption_at_rest(
+            cluster_master=self.cluster.master,
+            bypass_encryption_func=self.bypass_encryption_setting,
+            create_KMIP_secret=self.create_KMIP_secret,
+            enable_encryption_at_rest=self.enable_encryption_at_rest,
+            enable_config_encryption_at_rest=self.enable_config_encryption_at_rest,
+            enable_log_encryption_at_rest=self.enable_log_encryption_at_rest,
+            enable_audit_encryption_at_rest=self.enable_audit_encryption_at_rest,
+            secret_rotation_interval=self.secret_rotation_interval,
+            kmip_key_uuid=self.kmip_key_uuid,
+            client_certs_path=self.client_certs_path,
+            KMIP_pkcs8_file_name=self.KMIP_pkcs8_file_name,
+            KMIP_cert_file_name=self.KMIP_cert_file_name,
+            private_key_passphrase=self.private_key_passphrase,
+            kmip_host_name=self.kmip_host_name,
+            KMIP_for_config_encryption=self.KMIP_for_config_encryption,
+            config_dekLifetime=self.config_dekLifetime,
+            config_dekRotationInterval=self.config_dekRotationInterval,
+            KMIP_for_log_encryption=self.KMIP_for_log_encryption,
+            log_dekLifetime=self.log_dekLifetime,
+            log_dekRotationInterval=self.log_dekRotationInterval,
+            KMIP_for_audit_encryption=self.KMIP_for_audit_encryption,
+            audit_dekLifetime=self.audit_dekLifetime,
+            audit_dekRotationInterval=self.audit_dekRotationInterval
+        )
+
+        # Set the returned IDs back to self
+        self.encryption_util.set_encryption_ids(self, encryption_result)
+
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.disk_optimized_thread_settings = \
