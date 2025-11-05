@@ -2315,7 +2315,7 @@ class Dataset_Util(KafkaLink_Util):
                     break
             except Exception:
                 self.log.info(f"Failed to drop dataset for {i} attempt.")
-                time.sleep(5)
+                time.sleep(30)
 
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(

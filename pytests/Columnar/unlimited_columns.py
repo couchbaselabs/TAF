@@ -257,7 +257,7 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
     def set_storage_page_zero_writer(self, writer):
         self.update_storage_page_zero_writer({"storagePageZeroWriter": writer})
         self.restart_cluster()
-        sleep(30)
+        sleep(180)
         current_writer = self.get_storage_page_zero_writer()
         self.log.info(f"updated writer: {current_writer}")
 
@@ -398,13 +398,13 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
             )
 
             field = ""
-            for i in range(1, levels + 1):
-                field += f"level{i}."
+            for j in range(1, levels + 1):
+                field += f"level{j}."
             field += f"column{levels+1}"
 
             queries = [
                 (
-                    f"select count({field}) from <dataset_name> where id = '1';",
+                    f"select count(*) from <dataset_name> where id = '1' and {field} is not missing;",
                     [{"$1": 1}],
                 )
             ]
@@ -725,11 +725,7 @@ class UnlimitedColumnsTest(ColumnarBaseTest):
                 f"select count(1) from {datasets[0].name} x join {datasets[1].name} y on x.commonColumn = y.commonColumn;",
                 [
                     {
-                        "$1": self.calculate_columns(
-                            self.initial_doc_count,
-                            self.no_of_columns,
-                            self.no_of_levels,
-                        )
+                        "$1": self.initial_doc_count * self.initial_doc_count
                     }
                 ],
             ),
