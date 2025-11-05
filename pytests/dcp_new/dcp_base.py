@@ -11,7 +11,7 @@ from dcp_new.constants import *
 from memcacheConstants import *
 from dcp_bin_client import DcpClient
 from mc_bin_client import MemcachedClient as McdClient
-from dcp_data_persist import LogData
+from dcp_new.dcp_data_persist import LogData
 import uuid
 from mc_bin_client import MemcachedError
 
