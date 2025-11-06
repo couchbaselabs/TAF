@@ -455,10 +455,10 @@ class CrashTest(CollectionBase):
             consider_buckets="all")
 
         bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
-                                            bucket_dict.keys()[0])
-        scope_name = bucket_dict[bucket.name]["scopes"].keys()[0]
-        collection_name = bucket_dict[bucket.name][
-            "scopes"][scope_name]["collections"].keys()[0]
+                                            list(bucket_dict.keys())[0])
+        scope_name = list(bucket_dict[bucket.name]["scopes"].keys())[0]
+        collection_name = list(bucket_dict[bucket.name][
+            "scopes"][scope_name]["collections"].keys())[0]
         scope = BucketUtils.get_scope_obj(
             bucket, scope_name)
         collection = BucketUtils.get_collection_obj(scope, collection_name)
@@ -565,10 +565,10 @@ class CrashTest(CollectionBase):
             consider_buckets="all")
 
         bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
-                                            bucket_dict.keys()[0])
-        scope_name = bucket_dict[bucket.name]["scopes"].keys()[0]
-        collection_name = bucket_dict[bucket.name][
-            "scopes"][scope_name]["collections"].keys()[0]
+                                            list(bucket_dict.keys())[0])
+        scope_name = list(bucket_dict[bucket.name]["scopes"].keys())[0]
+        collection_name = list(bucket_dict[bucket.name][
+            "scopes"][scope_name]["collections"].keys())[0]
         scope = BucketUtils.get_scope_obj(
             bucket, scope_name)
         collection = BucketUtils.get_collection_obj(
