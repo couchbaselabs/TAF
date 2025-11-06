@@ -6,7 +6,11 @@ import random
 import re
 import string
 
-from com.couchbase.client.java.json import JsonObject
+try:
+    from com.couchbase.client.java.json import JsonObject
+except ImportError:
+    JsonObject = None
+
 from couchbase_helper.data import COUNTRIES, COUNTRY_CODE, FIRST_NAMES, LAST_NAMES
 from couchbase_helper.documentgenerator import DocumentGenerator
 
