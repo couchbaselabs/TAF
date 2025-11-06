@@ -76,7 +76,6 @@ from testconstants import MAX_COMPACTION_THRESHOLD, \
 from sdk_client3 import SDKClient
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.tuq_generators import JsonGenerator
-from StatsLib.StatsOperations import StatsHelper
 
 
 """
