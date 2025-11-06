@@ -137,10 +137,10 @@ class SDKExceptionTests(CollectionBase):
             elif result["status"] is True:
                 self.log_failure("Create didn't fail as expected for key: %s"
                                  % key)
-            elif (SDKException.AmbiguousTimeoutException
-                    not in str(result["error"])
-                    and (SDKException.RequestCanceledException
-                         not in str(result["error"]))
+            elif (not SDKException.check_if_exception_exists(
+                    SDKException.AmbiguousTimeoutException, result["error"])
+                    and not SDKException.check_if_exception_exists(
+                        SDKException.RequestCanceledException, result["error"]))
                   or (retry_reason.COLLECTION_NOT_FOUND
                       not in str(result["error"])
                       and (retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
@@ -293,8 +293,8 @@ class SDKExceptionTests(CollectionBase):
         result = client.crud("create", "key", "value")
         if result["status"] is True:
             self.log_failure("Collection create successful")
-        elif SDKException.AmbiguousTimeoutException \
-                not in str(result["error"]):
+        elif not SDKException.check_if_exception_exists(
+                SDKException.AmbiguousTimeoutException, result["error"]):
             self.log_failure("Invalid exception during doc create")
 
         # Drop scope
