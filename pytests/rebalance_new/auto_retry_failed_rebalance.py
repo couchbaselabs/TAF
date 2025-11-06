@@ -4,7 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
-from rebalance_base import RebalanceBaseTest
+from rebalance_new.rebalance_base import RebalanceBaseTest
 from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
