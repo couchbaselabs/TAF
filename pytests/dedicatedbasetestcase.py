@@ -38,7 +38,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
         self.api_keys = self.input.param("api_keys", 1)
 
         self.pod_table = TableView(self.log.info)
-        self.pod_table.set_headers(["Tenant", "Creds", "Cluster"])
+        self.pod_table.set_headers(["Tenant", "Creds", "Cluster", "SRV"])
 
         self.wait_timeout = self.input.param("wait_timeout", 120)
         self.use_https = self.input.param("use_https", True)
@@ -295,7 +295,8 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                         cluster.sdk_client_pool = SDKClientPool()
                     self.pod_table.add_row([tenant.id,
                                             tenant.user + " / " + tenant.pwd,
-                                            cluster.id])
+                                            cluster.id,
+                                            cluster.srv])
             self.pod_table.display("POD: %s" % self.pod.url_public)
             self.sleep(10)
         except Exception as e:
@@ -437,7 +438,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         provider = self.input.param("provider", AWS.__str__).lower()
         if provider == "aws":
             self.provider = "aws"
-            self.package = "Developer Pro"
+            self.package = "Enterprise"
         elif provider == "gcp":
             self.provider = "hostedGCP"
             self.package = "Enterprise"
@@ -506,7 +507,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         self.log.info("Specs are {} . Provider is {}. Region is {}".format(specs, provider, self.region))
         if provider == "aws":
             provider = "hostedAWS"
-            package = "developerPro"
+            package = "enterprise"
         elif provider == "gcp":
             provider = "hostedGCP"
             package = "enterprise"
@@ -514,15 +515,16 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             provider = "hostedAzure"
             package = "enterprise"
         else:
-            raise Exception("Provider has to be one of aws or gcp")
+            raise Exception("Provider has to be one of aws, gcp, or azure")
         self.capella_cluster_config = {
             "region": self.region,
             "provider": provider,
             "name": str(uuid.uuid4()),
             "cidr": None,
-            "singleAZ": True,
+            "singleAZ": self.input.param("singleAZ", False),
             "specs": specs,
             "package": package,
+            "enableFusion": self.input.param("enableFusion", False),
             "projectId": None,
             "description": "",
         }
@@ -533,6 +535,8 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             self.capella_cluster_config["overRide"] = {"token": self.pod.TOKEN,
                                                        "image": self.provisioned_image,
                                                        "server": server_version}
+            if self.input.capella.get("image_hash"):
+                self.capella_cluster_config["overRide"]["agent"] = {"hash": self.input.capella.get("image_hash", None)}
             if release_id:
                 self.capella_cluster_config["overRide"]["releaseId"] = release_id
 

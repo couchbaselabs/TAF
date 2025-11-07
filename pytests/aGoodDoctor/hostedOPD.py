@@ -30,6 +30,11 @@ class hostedOPD(OPD):
     def threads_calculation(self):
         self.process_concurrency = self.input.param("pc", self.process_concurrency)
         num_clusters = self.num_clusters or 1 
+        print("process_concurrency: ", self.process_concurrency)
+        print("num_tenants: ", self.num_tenants)
+        print("num_clusters: ", num_clusters)
+        print("num_buckets: ", self.num_buckets)
+        print("total_threads: ", self.process_concurrency*self.num_tenants*num_clusters*self.num_buckets)
         self.doc_loading_tm = TaskManager(self.process_concurrency*self.num_tenants*num_clusters*self.num_buckets)
 
     def print_cluster_cpu_ram(self, cluster, step=300):
@@ -285,7 +290,7 @@ class hostedOPD(OPD):
         pprint.pprint(specs)
         return specs
 
-    def monitor_rebalance(self, tenant, cluster, rebalance_task):
+    def monitor_rebalance(self, tenant, cluster, rebalance_task, rebl_poll_interval=60):
         self.find_master(tenant, cluster)
         self.rest = RestConnection(cluster.master)
         state = CapellaUtils.get_cluster_state(
@@ -298,7 +303,7 @@ class hostedOPD(OPD):
                                                 "scaleFailed"] and \
                 state != "healthy":
             try:
-                result = self.rest.newMonitorRebalance(sleep_step=60,
+                result = self.rest.newMonitorRebalance(sleep_step=rebl_poll_interval,
                                                        progress_count=1000)
                 if result is False:
                     progress = self.rest.new_rebalance_status_and_progress()[1]
@@ -323,17 +328,20 @@ class hostedOPD(OPD):
                         msg="Cluster rebalance failed")
         self.cluster_util.print_cluster_stats(cluster)
 
-    def wait_for_rebalances(self, rebalance_tasks):
+    def wait_for_rebalances(self, rebalance_tasks, rebl_poll_interval=60):
         rebl_ths = list()
         for task in rebalance_tasks:
             th = threading.Thread(target=self.monitor_rebalance,
                                   kwargs=dict({"tenant":task.tenant,
                                                "cluster":task.cluster,
-                                               "rebalance_task":task}))
+                                               "rebalance_task":task,
+                                               "rebl_poll_interval":rebl_poll_interval}))
             th.start()
             rebl_ths.append(th)
         for th in rebl_ths:
             th.join()
         for task in rebalance_tasks:
             self.task_manager.get_task_result(task)
+            if not task.result:
+                self.stop_run = True
             self.assertTrue(task.result, "Cluster Upgrade Failed...")

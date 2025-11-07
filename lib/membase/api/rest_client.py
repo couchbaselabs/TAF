@@ -1325,13 +1325,19 @@ class RestConnection(newRC):
     def newMonitorRebalance(self, stop_if_loop=True, sleep_step=3, progress_count=100):
         start = time.time()
         progress = 0
+        wasRunning = False
         same_progress_count = 0
         previous_progress = 0
         while progress != -1 \
                 and (progress != 100
                      or self._rebalance_progress_status() == 'running'):
             # -1 is error , -100 means could not retrieve progress
-            progress = self.new_rebalance_status_and_progress()[1]
+            running, progress = self.new_rebalance_status_and_progress()
+            if running is "none" and wasRunning is False:
+                self.test_log.info("Rebalance is not running")
+                return True
+            else:
+                wasRunning = True
             if stop_if_loop:
                 # reset same_progress_count if get a different result,
                 # or progress is still O
@@ -1350,7 +1356,7 @@ class RestConnection(newRC):
         if progress < 0:
             self.test_log.error("Rebalance progress code: %s" % progress)
             raise ServerUnavailableException
-        else:
+        elif wasRunning:
             duration = time.time() - start
             self.test_log.info("Rebalance done. Taken %s seconds to complete"
                                % duration)

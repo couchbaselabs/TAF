@@ -208,6 +208,7 @@ class JavaDocLoaderUtils(object):
                     key_prefix = key_prefix or bucket.loadDefn.get("key_prefix", "test_docs-")
                     key_size = key_size or bucket.loadDefn.get("key_size", 20)
                     key_type = key_type or bucket.loadDefn.get("key_type", "SimpleKey")
+                    doc_size = workloads[i % len(workloads)].get("doc_size", 256)
                     model = model or bucket.loadDefn.get("model", "Hotel")
                     mockVector = mockVector or bucket.loadDefn.get("mockVector", False)
                     base64 = base64 or bucket.loadDefn.get("base64", False)
@@ -216,16 +217,20 @@ class JavaDocLoaderUtils(object):
                         continue
                     if collection == "_default" and scope == "_default" and skip_default:
                         continue
-                    per_coll_ops = bucket.loadDefn.get("ops")//(len(bucket.scopes[scope].collections.keys()) - 1)
+                    if bucket.loadDefn.get("ops") and bucket.loadDefn.get("ops") not in [None, "None"]:
+                        per_coll_ops = bucket.loadDefn.get("ops")//(len(bucket.scopes[scope].collections.keys()) - 1)
+                    else:
+                        per_coll_ops = None
+                    JavaDocLoaderUtils.log.info(f"Loading {per_coll_ops} ops for {bucket.name+scope+collection}")
                     loader = SiriusCouchbaseLoader(
                         server_ip=cluster.master.ip, server_port=cluster.master.port,
                         username="Administrator", password="password",
                         bucket=bucket,
                         scope_name=scope, collection_name=collection,
-                        key_prefix=key_prefix, key_size=key_size, doc_size=256,
+                        key_prefix=key_prefix, key_size=key_size, doc_size=doc_size,
                         key_type=key_type, value_type=valType,
-                        create_percent=pattern["create"], read_percent=pattern["read"], update_percent=pattern["update"],
-                        delete_percent=pattern["delete"], expiry_percent=pattern["expiry"],
+                        create_percent=pattern.get("create", 0), read_percent=pattern.get("read", 0), update_percent=pattern.get("update", 0),
+                        delete_percent=pattern.get("delete", 0), expiry_percent=pattern.get("expiry", 0),
                         create_start_index=bucket.create_start , create_end_index=bucket.create_end,
                         read_start_index=bucket.read_start, read_end_index=bucket.read_end,
                         update_start_index=bucket.update_start, update_end_index=bucket.update_end,
@@ -276,10 +281,12 @@ class JavaDocLoaderUtils(object):
                     if collection == "_default" and scope == "_default" and skip_default:
                         continue
                     loader = loader_map[bucket.name+scope+collection]
-                    loader.create_doc_load_task()
+                    result, json_response = loader.create_doc_load_task()
+                    if not result:
+                        JavaDocLoaderUtils.log.critical("Failed to create doc load task: %s" % json_response)
+                        return False
                     JavaDocLoaderUtils.doc_loading_tm.add_new_task(loader)
                     tasks.append(loader)
-
         if wait_for_load:
             JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
         else:
@@ -287,6 +294,7 @@ class JavaDocLoaderUtils(object):
 
         if validate_data:
             JavaDocLoaderUtils.data_validation(cluster, skip_default=skip_default)
+        return []
 
     @staticmethod
     def load_sift_data(cluster=None, buckets=None, overRidePattern=None, skip_default=True,
@@ -318,6 +326,7 @@ class JavaDocLoaderUtils(object):
                     key_prefix = bucket.loadDefn.get("key_prefix")
                     key_size = bucket.loadDefn.get("key_size")
                     key_type = bucket.loadDefn.get("key_type")
+                    doc_size = workload.get("doc_size", 256)
                     model = bucket.loadDefn.get("model")
                     mockVector = bucket.loadDefn.get("mockVector")
                     base64 = bucket.loadDefn.get("base64")
@@ -332,7 +341,7 @@ class JavaDocLoaderUtils(object):
                         username="Administrator", password="password",
                         bucket=bucket,
                         scope_name=scope, collection_name=collection,
-                        key_prefix=key_prefix, key_size=key_size, doc_size=256,
+                        key_prefix=key_prefix, key_size=key_size, doc_size=doc_size,
                         key_type=key_type, value_type=valType,
                         create_percent=pattern["create"], read_percent=pattern["read"], update_percent=pattern["update"],
                         delete_percent=pattern["delete"], expiry_percent=pattern["expiry"],
@@ -380,7 +389,7 @@ class JavaDocLoaderUtils(object):
                                create_end=override_num_items or bucket.loadDefn.get("num_items"),
                                bucket=bucket)
 
-        JavaDocLoaderUtils.perform_load(cluster=cluster,
+        return JavaDocLoaderUtils.perform_load(cluster=cluster,
                             buckets=buckets,
                             overRidePattern=overRidePattern,
                             validate_data=validate_data,
@@ -389,21 +398,6 @@ class JavaDocLoaderUtils(object):
                             mutate=mutate,
                             suppress_error_table=suppress_error_table,
                             track_failures=track_failures)
-        if update:
-            for bucket in buckets:
-                JavaDocLoaderUtils.generate_docs(doc_ops=["update"],
-                                   update_start=0,
-                                   update_end=override_num_items or bucket.loadDefn.get("num_items"),
-                                   bucket=bucket)
-            JavaDocLoaderUtils.perform_load(cluster=cluster,
-                              buckets=buckets,
-                              overRidePattern={"create": 0, "read": 0, "update": 100, "delete": 0, "expiry": 0},
-                              validate_data=False,
-                              wait_for_load=wait_for_load,
-                              wait_for_stats=wait_for_stats,
-                              mutate=mutate,
-                              suppress_error_table=suppress_error_table,
-                              track_failures=track_failures)
 
 class DocLoaderUtils(object):
     log = logger.get("test")

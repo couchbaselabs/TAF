@@ -289,7 +289,8 @@ class CapellaUtils(object):
                 pod, tenant, cluster.id)
             if state == "healthy":
                 break
-            time.sleep(1)
+            CapellaUtils.log.info(f"Cluster {cluster.id} is not healthy hence cannot create bucket, waiting for 10 seconds..")
+            time.sleep(10)
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
@@ -392,7 +393,7 @@ class CapellaUtils(object):
             if resp.status_code != 202:
                 result = json.loads(resp.content)
                 CapellaUtils.log.critical(result)
-                if result["errorType"] in ["ClusterModifySpecsInvalidState", "EntityNotWritable"]:
+                if result["errorType"] in ["ClusterModifySpecsInvalidState", "EntityNotWritable", "EntityStateInvalid"]:
                     CapellaUtils.wait_until_done(
                         pod, tenant, cluster.id,
                         "Wait for healthy cluster state", timeout=timeout)
@@ -707,3 +708,87 @@ class CapellaUtils(object):
             raise Exception("Fetching Root CA Cert failed: {}".
                             format(resp.content))
         return json.loads(resp.content)
+
+    @staticmethod
+    def enable_fusion(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.enable_fusion(tenant.id, tenant.projects[0], cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Enabling Fusion failed for cluster {}:{}".
+                                      format(cluster_id, resp.status_code))
+            raise Exception("Enabling Fusion failed: {}".
+                            format(resp.content))
+        return resp
+
+    @staticmethod
+    def disable_fusion(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.disable_fusion(cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Disabling Fusion failed for cluster {}:{}".
+                                      format(cluster_id, resp.status_code))
+            raise Exception("Disabling Fusion failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    @staticmethod
+    def get_fusion_status(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.fusion_status_internal(cluster_id=cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Getting Fusion status failed for cluster {}:{}".
+                                      format(cluster_id, resp.status_code))
+            raise Exception("Getting Fusion status failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    @staticmethod
+    def stop_fusion(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.stop_fusion(tenant_id=tenant.id, project_id=tenant.projects[0], cluster_id=cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Stopping Fusion failed for cluster {}:{}".
+                                      format(cluster_id, resp.status_code))
+            raise Exception("Stopping Fusion failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    @staticmethod
+    def update_fusion_feature_flag(pod, tenant):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.update_global_feature_flag("fusion-rebalances", {"value": True})
+        if resp.status_code != 204:
+            CapellaUtils.log.critical("Updating Fusion Feature \
+                                       Flag fusion-rebalances failed for pod {}".
+                                      format(resp.status_code))
+            raise Exception("Updating Fusion Feature Flag failed: {}".
+                            format(resp.content))
+        resp = capella_api.update_global_feature_flag("fusion-fallback-replace", {"value": True})
+        if resp.status_code != 204:
+            CapellaUtils.log.critical("Updating Fusion Feature \
+                                       Flag fusion-fallback-replace failed for cluster {}".
+                                      format(resp.status_code))
+            raise Exception("Updating Fusion Feature Flag failed: {}".
+                            format(resp.content))

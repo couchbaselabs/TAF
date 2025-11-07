@@ -903,7 +903,6 @@ class OPD:
     def refresh_cluster(self, tenant, cluster, type="dedicated"):
         while True:
             if cluster.nodes_in_cluster:
-                self.log.info("Cluster Nodes: {}".format(cluster.nodes_in_cluster))
                 try:
                     cluster.refresh_object(self.cluster_util.get_nodes(
                         random.choice(cluster.nodes_in_cluster)))

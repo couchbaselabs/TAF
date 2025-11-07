@@ -202,10 +202,13 @@ class RestConnection(object):
                        params={}, timeout=300, verify=False):
         session = requests.Session()
         headers = headers or self.get_headers_for_content_type_json()
-        params = json.dumps(params)
+        # For GET requests, params should be a dict for query parameters
+        # For other methods, JSON-encode as request body
+        if method != "GET":
+            params = json.dumps(params)
         try:
             if method == "GET":
-                resp = session.get(api, params=params, headers=headers,
+                resp = session.get(api, params=params if params else None, headers=headers,
                                    timeout=timeout, verify=verify)
             elif method == "POST":
                 resp = session.post(api, data=params, headers=headers,

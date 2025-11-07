@@ -23,9 +23,11 @@ default = {
     "2iQPS": _input.param("2iQPS", 10),
     "ftsQPS": _input.param("ftsQPS", 10),
     "cbasQPS": _input.param("cbasQPS", 10),
+    "process_concurrency": _input.param("process_concurrency", 10),
     "collections_defn": [
         {
             "valType": "SimpleValue",
+            "doc_size": _input.param("doc_size", 1024),
             "queries": [
                 'select name from {bucket}.{scope}.{collection} where age between 30 and 50 limit 100;',
                 'select name from {bucket}.{scope}.{collection} where body is not null and age between 0 and 50 limit 100;',
@@ -67,20 +69,22 @@ Hotel = {
     "key_size": 20,
     "key_type": _input.param("key_type", "SimpleKey"),
     "valType": "Hotel",
+    "doc_size": _input.param("doc_size", 1024),
     "scopes": 1,
     "collections": _input.param("collections", 2),
     "num_items": _input.param("num_items", 1000000000),
     "start": 0,
     "end": _input.param("num_items", 1000000000),
     "ops": _input.param("ops_rate", 100000),
-    "doc_size": 1024,
     "doc_op_percentages": {"create": 0, "update": 50, "delete": 0, "read": 50, "expiry": 0},
     "2iQPS": _input.param("2iQPS", 300),
     "ftsQPS": _input.param("ftsQPS", 100),
     "cbasQPS": _input.param("cbasQPS", 100),
+    "process_concurrency": _input.param("process_concurrency", 10),
     "collections_defn": [
         {
             "valType": "Hotel",
+            "doc_size": _input.param("doc_size", 1024),
             "2i": {"num_queries": _input.param("2i_queries", 2),
                    "num_indexes": _input.param("2i_indexes", 3)},
             "FTS": {"num_queries": _input.param("fts_queries", 0),
@@ -150,6 +154,7 @@ nimbus = {
     "2iQPS": _input.param("2iQPS", 300),
     "ftsQPS": _input.param("ftsQPS", 100),
     "cbasQPS": _input.param("cbasQPS", 100),
+    "process_concurrency": _input.param("process_concurrency", 10),
     "collections_defn": [
         {
             "valType": "NimbusP",
@@ -214,6 +219,7 @@ siftBigANN = {
     "2iQPS": _input.param("2iQPS", 50),
     "ftsQPS": _input.param("ftsQPS", 10),
     "cbasQPS": _input.param("cbasQPS", 10),
+    "process_concurrency": _input.param("process_concurrency", 10),
     "collections_defn": [
         {
             "collection_id": "1M",

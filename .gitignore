@@ -38,9 +38,6 @@ build
 /bin/
 **/settings
 
-# Factory/AI tools
-**/.factory
-
 # Jython cache
 .jython_cache/
 
