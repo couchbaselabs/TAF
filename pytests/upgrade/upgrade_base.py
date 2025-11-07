@@ -10,6 +10,7 @@ from collections_helper.collections_spec_constants import \
 from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
 from BucketLib.bucket import Collection, Scope
+from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from rebalance_utils.rebalance_util import RebalanceUtil
