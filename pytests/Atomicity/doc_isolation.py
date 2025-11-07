@@ -57,15 +57,12 @@ class IsolationDocTest(ClusterSetup):
         if expected_exception is None:
             for key in keys:
                 result = client.crud("read", key)
-                expected_val[key] = \
-                    client.translate_to_json_object(result["value"])
+                expected_val[key] = result["value"]
             self.log.info("Current values read complete")
 
         while not self.stop_thread:
             for key in keys:
                 result = client.crud("read", key)
-                result["value"] = \
-                    client.translate_to_json_object(result["value"])
                 if expected_exception is not None:
                     if expected_exception not in str(result["error"]):
                         self.read_failed[bucket] = True
@@ -114,9 +111,7 @@ class IsolationDocTest(ClusterSetup):
 
     def __create_transaction_docs(self):
         self.value = {'value': 'value1'}
-        self.content = \
-            self.sdk_clients[self.cluster.buckets[0].name] \
-            .translate_to_json_object(self.value)
+        self.content = self.value
         for i in range(self.num_items):
             key = "test_docs-" + str(i)
             doc = Tuples.of(key, self.content)
@@ -139,7 +134,7 @@ class IsolationDocTest(ClusterSetup):
                     self.transaction_commit, self.operation, self.keys[-1],
                     self.transaction_fail)
                 self.value = {'mutated': 1, 'value': 'value1'}
-                self.content = client.translate_to_json_object(self.value)
+                self.content = self.value
             else:
                 exception = Transaction().MockRunTransaction(
                     client.cluster, self.transaction_config,
@@ -202,20 +197,19 @@ class IsolationDocTest(ClusterSetup):
                     or self.transaction_commit is False \
                     or self.verify is False:
                 if result['status']:
-                    actual_val = client.translate_to_json_object(
-                        result['value'])
+                    actual_val = result['value']
                     self.log.info("Actual value for key %s is %s"
                                   % (key, actual_val))
                     self.log_failure(
                         "Key '%s' should be deleted but present in the bucket"
                         % key)
             else:
-                actual_val = client.translate_to_json_object(
-                    result['value'])
+                actual_val = result['value']
                 if self.doc_op == "update":
-                    self.content.put("mutated", 1)
+                    self.content["mutated"] = 1
                 elif self.doc_op == "delete":
-                    self.content.removeKey("value")
+                    if "value" in self.content:
+                        del self.content["value"]
 
                 if self.content != actual_val:
                     self.log.info("Key %s Actual: %s, Expected: %s"
@@ -286,21 +280,20 @@ class IsolationDocTest(ClusterSetup):
                     or self.transaction_commit is False \
                     or self.verify is False:
                 if result['status']:
-                    actual_val = client.translate_to_json_object(
-                        result['value'])
+                    actual_val = result['value']
                     self.log.info("Actual value for key %s is %s"
                                   % (key, actual_val))
                     self.log_failure(
                         "Key '%s' should be deleted but present in the bucket"
                         % key)
             else:
-                actual_val = client.translate_to_json_object(
-                    result['value'])
+                actual_val = result['value']
 
                 if self.doc_op == "update":
-                    self.content.put("mutated", 1)
+                    self.content["mutated"] = 1
                 elif self.doc_op == "delete":
-                    self.content.removeKey("value")
+                    if "value" in self.content:
+                        del self.content["value"]
 
                 if self.content != actual_val:
                     self.log.info("Key %s Actual: %s, Expected: %s"
