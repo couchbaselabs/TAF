@@ -1058,12 +1058,11 @@ class ClusterUtils:
                   inactive_failed=False):
         cluster_rest = ClusterRestAPI(server)
         count = 0
-        node_details = None
         node_statuses = {}
-        cluster_details = None
         while count < 7:
             cluster_details, json_parsed = cluster_rest.cluster_details()
-            if server.type not in ["analytics", "dedicated"]:
+            if (hasattr(server, 'type') and
+                    server.type not in ["analytics", "dedicated"]):
                 node_details, node_statuses = cluster_rest.get_node_statuses()
             if cluster_details:
                 break
@@ -2557,4 +2556,3 @@ class ClusterUtils:
             # a good start until we figure what is happening
             self.log.error(f'Error while processing cluster info {content}')
         return False
-
