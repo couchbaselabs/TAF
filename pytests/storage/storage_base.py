@@ -700,7 +700,7 @@ class StorageBase(BaseTestCase):
         super(StorageBase, self).tearDown()
 
     def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0,
-                           total_vbuckets=CbServer.total_vbuckets):
+                           total_vbuckets=CbServer.total_vbuckets, load_using='default_loader'):
         return doc_generator(self.key, start, end,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
@@ -712,7 +712,7 @@ class StorageBase(BaseTestCase):
                              mix_key_size=self.mix_key_size,
                              mutate=mutate,
                              deep_copy=self.deep_copy,
-                             load_using=self.load_docs_using)
+                             load_using=load_using)
 
     def generate_sub_docs_basic(self, start, end):
         return self.custom_sub_doc_generator(self.key, start, end, key_size=self.key_size)
