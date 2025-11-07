@@ -871,7 +871,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
     def setUp(self):
         super(DiskAutoFailoverBasetest, self).bareSetUp()
         self.log.info("=========Starting Diskautofailover base setup=========")
-        self.original_data_path = self.rest.get_data_path()
+        self.original_data_path = self.cluster_util.fetch_data_path(self.orchestrator)
         self.reset_cluster()
         self.disk_location = self.input.param("data_location", "/data")
         self.disk_location_size = self.input.param("data_location_size", 5120)
