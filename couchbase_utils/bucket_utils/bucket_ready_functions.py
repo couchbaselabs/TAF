@@ -976,7 +976,7 @@ class DocLoaderUtils(object):
 
                         if op_type in DocLoading.Bucket.DOC_OPS:
                             result = client.crud(
-                                op_type, key, failed_doc["value"],
+                                op_type, key, failed_doc.get("value", None),
                                 exp=op_data["doc_ttl"],
                                 durability=op_data["durability_level"],
                                 timeout=op_data["sdk_timeout"],
@@ -1011,20 +1011,20 @@ class DocLoaderUtils(object):
 
                         if result["status"] \
                                 or (ambiguous_state
-                                    and SDKException.DocumentExistsException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.DocumentExistsException, str(result["error"]))
                                     and op_type in ["create", "update"]) \
                                 or (ambiguous_state
-                                    and SDKException.PathExistsException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.PathExistsException, str(result["error"]))
                                     and op_type in [DocLoading.Bucket.SubDocOps.INSERT]) \
                                 or (ambiguous_state
-                                    and SDKException.DocumentNotFoundException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.DocumentNotFoundException, str(result["error"]))
                                     and op_type == "delete") \
                                 or (ambiguous_state
-                                    and SDKException.PathNotFoundException
-                                    in result["error"]
+                                    and SDKException.check_if_exception_exists(
+                                        SDKException.PathNotFoundException, str(result["error"]))
                                     and op_type == DocLoading.Bucket.SubDocOps.REMOVE):
                             op_data[retry_strategy]["success"][key] = \
                                 result
