@@ -453,7 +453,7 @@ class MemcachedClient(KeepRefs):
         if self.is_xerror_supported():
             self.error_map = self.get_error_map()
 
-        return struct.unpack('>' + ('H' * (len(data)/2)), data)
+        return struct.unpack('>' + ('H' * (len(data)//2)), data)
 
     def send_set(self, key, exp, flags, val, vbucket=-1, scope=None, collection=None):
         """Set a value in the memcached server without handling the response"""
