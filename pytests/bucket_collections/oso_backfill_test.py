@@ -91,8 +91,12 @@ class KvOsoBackfillTests(CollectionBase):
                             "name='{}'".format(i_name)
                     retry = 300
                     while retry > 0:
-                        state = sdk_client.cluster.query(query)\
-                            .rowsAsObject()[0].get("state")
+                        result = sdk_client.cluster.query(query)
+                        rows = list(result.rows())
+                        if rows:
+                            state = rows[0].get("state")
+                        else:
+                            state = None
                         if state == "online":
                             break
                         self.sleep(15, "Sleep before checking status for '{}'"
@@ -114,8 +118,12 @@ class KvOsoBackfillTests(CollectionBase):
                         query = "SELECT count(*) as num_items from " \
                                 "`{0}`.`{1}`.`{2}`"\
                             .format(bucket.name, s_name, c_name)
-                        doc_count = sdk_client.cluster.query(query)\
-                            .rowsAsObject()[0].getNumber("num_items")
+                        result = sdk_client.cluster.query(query)
+                        rows = list(result.rows())
+                        if rows:
+                            doc_count = rows[0].get("num_items")
+                        else:
+                            doc_count = 0
                         if err_pattern \
                                 and bucket.bucketType == Bucket.Type.EPHEMERAL:
                             continue

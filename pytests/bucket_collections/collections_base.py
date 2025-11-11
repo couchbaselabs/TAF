@@ -289,8 +289,12 @@ class CollectionBase(ClusterSetup):
                     .format(i_name)
                 retry = 90
                 while retry > 0:
-                    state = sdk_client.cluster.query(query) \
-                        .rowsAsObject()[0].get("state")
+                    result = sdk_client.cluster.query(query)
+                    rows = list(result.rows())
+                    if rows:
+                        state = rows[0].get("state")
+                    else:
+                        state = None
                     if state == "online":
                         test_obj.log.debug("Index {} online".format(i_name))
                         break
@@ -306,8 +310,12 @@ class CollectionBase(ClusterSetup):
                         query = "SELECT count(*) as num_items from " \
                                 "`{0}`.`{1}`.`{2}`" \
                             .format(bucket.name, scope.name, col.name)
-                        doc_count = sdk_client.cluster.query(query) \
-                            .rowsAsObject()[0].getNumber("num_items")
+                        result = sdk_client.cluster.query(query)
+                        rows = list(result.rows())
+                        if rows:
+                            doc_count = rows[0].get("num_items")
+                        else:
+                            doc_count = 0
                         if doc_count != col.num_items:
                             test_obj.fail(
                                 "Doc count mismatch. Exp {} != {} actual"
