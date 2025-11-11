@@ -173,14 +173,16 @@ class EncryptionUtil:
             self.log.info("Config encryption at rest ID: {0}".format(config_encryption_at_rest_id))
             valid_params = {
                 "config.encryptionMethod": "encryptionKey",
-                "config.encryptionKeyId": config_encryption_at_rest_id,
-                "config.dekLifetime": config_dekLifetime,
-                "config.dekRotationInterval": config_dekRotationInterval
+                "config.encryptionKeyId": config_encryption_at_rest_id
             }
+            if config_dekLifetime is not None:
+                valid_params["config.dekLifetime"] = config_dekLifetime
+            if config_dekRotationInterval is not None:
+                valid_params["config.dekRotationInterval"] = config_dekRotationInterval
             status, response = rest.configure_encryption_at_rest(valid_params)
             self.log.info("Config encryption at rest status: {0}".format(status))
             if not status:
-                raise Exception("Failed to enable config encryption values")
+                raise Exception("Failed to enable config encryption values: {0}".format(response))
 
         if enable_log_encryption_at_rest:
             self.log.info("Initializing log encryption at rest")
@@ -199,14 +201,16 @@ class EncryptionUtil:
             self.log.info("Log encryption at rest ID: {0}".format(log_encryption_at_rest_id))
             valid_params = {
                 "log.encryptionMethod": "encryptionKey",
-                "log.encryptionKeyId": log_encryption_at_rest_id,
-                "log.dekLifetime": log_dekLifetime,
-                "log.dekRotationInterval": log_dekRotationInterval
+                "log.encryptionKeyId": log_encryption_at_rest_id
             }
+            if log_dekLifetime is not None:
+                valid_params["log.dekLifetime"] = log_dekLifetime
+            if log_dekRotationInterval is not None:
+                valid_params["log.dekRotationInterval"] = log_dekRotationInterval
             status, response = rest.configure_encryption_at_rest(valid_params)
             self.log.info("Log encryption at rest status: {0}".format(status))
             if not status:
-                raise Exception("Failed to set valid log encryption values")
+                raise Exception("Failed to set valid log encryption values: {0}".format(response))
 
         if enable_audit_encryption_at_rest:
             self.log.info("Initializing audit encryption at rest")
@@ -225,13 +229,15 @@ class EncryptionUtil:
             self.log.info("Audit encryption at rest ID: {0}".format(audit_encryption_at_rest_id))
             valid_params = {
                 "audit.encryptionMethod": "encryptionKey",
-                "audit.encryptionKeyId": audit_encryption_at_rest_id,
-                "audit.dekLifetime": audit_dekLifetime,
-                "audit.dekRotationInterval": audit_dekRotationInterval
+                "audit.encryptionKeyId": audit_encryption_at_rest_id
             }
+            if audit_dekLifetime is not None:
+                valid_params["audit.dekLifetime"] = audit_dekLifetime
+            if audit_dekRotationInterval is not None:
+                valid_params["audit.dekRotationInterval"] = audit_dekRotationInterval
             status, response = rest.configure_encryption_at_rest(valid_params)
             self.log.info("Audit encryption at rest status: {0}".format(status))
             if not status:
-                raise Exception("Failed to set valid Audit encryption values")
+                raise Exception("Failed to set valid Audit encryption values: {0}".format(response))
 
         return result
