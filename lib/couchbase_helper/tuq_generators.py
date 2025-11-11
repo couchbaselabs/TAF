@@ -6,11 +6,6 @@ import random
 import re
 import string
 
-try:
-    from com.couchbase.client.java.json import JsonObject
-except ImportError:
-    JsonObject = None
-
 from couchbase_helper.data import COUNTRIES, COUNTRY_CODE, FIRST_NAMES, LAST_NAMES
 from couchbase_helper.documentgenerator import DocumentGenerator
 
@@ -129,7 +124,7 @@ class TuqGenerators(object):
                                                     ' doc["%s"]["%s"] ' % (self.aliases[parent], child))
                 else:
                     conditions = conditions.replace(' %s.%s ' % (parent, child),
-                                                    ' doc["%s"] ' % (child))
+                                                    ' doc["%s"] ' % child)
         for attr in attributes:
             conditions = conditions.replace(' %s ' % attr, ' doc["%s"] ' % attr)
         if satisfy_expr:
@@ -577,7 +572,6 @@ class TuqGenerators(object):
 
 
 class JsonGenerator:
-
     def generate_docs_employee(self, key_prefix, docs_per_day=1, start=0, isShuffle=False):
         types = ['Engineer', 'Sales', 'Support']
         skills = ['Python', 'Java', 'C++', 'Testing', 'Development']
@@ -588,7 +582,6 @@ class JsonGenerator:
         for i in range(start, docs_per_day):
             random.seed(i)
             month = random.choice(join_mo)
-            prefix = "_employee"+str(i)
             name = "employee-%s" % (str(i))
             email = ["%s-mail@couchbase.com" % (str(i))]
             vms = [{"RAM": month, "os": "ubuntu",
@@ -596,20 +589,19 @@ class JsonGenerator:
                    {"RAM": month, "os": "windows",
                     "name": "vm_%s"% (month + 1), "memory": month}
                  ]
-            template = JsonObject.create()
-            template.put("name", name)
-            template.put("join_yr", random.choice(join_yr))
-            template.put("join_mo" , month)
-            template.put("join_day" , random.choice(join_day))
-            template.put("email" , email)
-            template.put("job_title" , random.choice(types))
-            template.put("test_rate" , range(1, 10))
-            template.put("skills" , random.sample(skills, 2))
-            template.put("vms" , [vms])
-            templates.append(template)
-        gen_load = DocumentGenerator(key_prefix, templates,
-                                start=start, end=docs_per_day)
-        return gen_load
+            templates.append({
+                "name": name,
+                "join_yr": random.choice(join_yr),
+                "join_mo": month,
+                "join_day": random.choice(join_day),
+                "email": email,
+                "job_title": random.choice(types),
+                "test_rate": range(1, 10),
+                "skills": random.sample(skills, 2),
+                "vms": [vms],
+            })
+        return DocumentGenerator(key_prefix, templates,
+                                 start=start, end=docs_per_day)
 
     def generate_docs_employee_more_field_types(self, key_prefix, docs_per_day=1, start=0):
         types = ['Engineer', 'Sales', 'Support', "Pre-Sales", "Info-Tech",
@@ -631,72 +623,48 @@ class JsonGenerator:
                             "Portuguese", "Thai", "Hindi", "Africans", "Urdu", "Malay",
                             "Spanish", "French", "Nepalese", "Dutch", "Vietnamese", "Arabic",
                             "Japanese"]
-        join_yr = [2010, 2011,2012,2013,2014,2015,2016]
+        join_yr = [2010, 2011, 2012, 2013, 2014, 2015, 2016]
         join_mo = range(1, 12 + 1)
         join_day = range(1, 28 + 1)
         is_manager = [True,False]
         salary = range(10000, 200000)
         emp_id = range(0, 10000)
-        count = 1
-        templates = []
-#             languanges_known = {}
-#             languanges_known["first"] = random.choice(languanges)
-#             languanges_known["second"] = random.choice(languanges)
-#             languanges_known["third"] = random.choice(languanges)
-#             if is_manager:
-#                 manages = {}
-#                 manages["team_size"] = random.choice(range(4, 8))
-#                 manages["reports"] = []
-#                 for _ in range(manages["team_size"]):
-#                     manages["reports"].append(random.choice(Firstname) + " "
-
-#             template.put("name", name)
-#             template.put("email" , email)
-#             template.put("languanges_known",languanges_known)
-#             if is_manager:
-#                 template.put("manages", manages)
-        template = JsonObject.create()
-        template.put("name", None)
-        template.put("join_yr", None)
-        template.put("join_mo" , None)
-        template.put("join_day" , None)
-#         template.put("email" , email)
-        template.put("emp_id", None)
-        template.put("job_title" , None)
-        template.put("skills" ,None)
-        template.put("is_manager", None)
-        template.put("salary", None)
-        template.put("citizen_of", None)
-        template.put("Working_country", None)
-        template.put("languanges_known", None)
-        template.put("key", None)
-#         if is_manager:
-#             template.put("manages", manages)
-        templates.append(template)
-        gen_load = DocumentGenerator(key_prefix,
-                                               template,
-                                               name=lambda: random.choice(Firstname) + " " + random.choice(Second_name),
-                                               join_yr=join_yr,
-                                               join_mo=join_mo, emp_id=emp_id,
-                                               job_title=types, skills=skills,
-                                               is_manager=is_manager,
-                                               salary=salary, citizen_of=countries,
-                                               Working_country=countries,
-                                               languanges_known=languanges,
-                                               join_day=join_day, randomize=True,
-                                               deep_copy=True,
-                                               start=start, end=docs_per_day)
-        return gen_load
+        template = {
+            "name": None,
+            "join_yr": None,
+            "join_mo": None,
+            "join_day": None,
+            "emp_id": None,
+            "job_title": None,
+            "skills": None,
+            "is_manager": None,
+            "salary": None,
+            "citizen_of": None,
+            "Working_country": None,
+            "languanges_known": None,
+            "key": None,
+        }
+        return DocumentGenerator(key_prefix,
+                                 template,
+                                 name=lambda: random.choice(Firstname) + " " + random.choice(Second_name),
+                                 join_yr=join_yr,
+                                 join_mo=join_mo, emp_id=emp_id,
+                                 job_title=types, skills=skills,
+                                 is_manager=is_manager,
+                                 salary=salary, citizen_of=countries,
+                                 Working_country=countries,
+                                 languanges_known=languanges,
+                                 join_day=join_day, randomize=True,
+                                 deep_copy=True,
+                                 start=start, end=docs_per_day)
 
     def generate_docs_employee_array(self, key_prefix, docs_per_day=1, start=0):
-        generators = []
-        #simple array
+        # simple array
         department = ['Developer', 'Support','HR','Tester','Manager']
         sport = ['Badminton','Cricket','Football','Basketball','American Football','ski']
         dance = ['classical','bollywood','salsa','hip hop','contemporary','bhangra']
         join_yr = [2010, 2011,2012,2013,2014,2015,2016]
         join_mo = range(1, 12 + 1)
-        join_day = range(1, 28 + 1)
         engineer = ["Query","Search","Indexing","Storage","Android","IOS"]
         marketing = ["East","West","North","South","International"]
         cities = ['Mumbai','Delhi','New York','San Francisco']
@@ -712,7 +680,6 @@ class JsonGenerator:
         for i in range(start, docs_per_day):
             random.seed(count)
             month = random.choice(join_mo)
-            prefix = "employee" + str(i)
             # array of  single objects
             name = [{"FirstName": "employeefirstname-%s" % (str(i))},
                     {"MiddleName": "employeemiddlename-%s" % (str(i))},
@@ -736,27 +703,27 @@ class JsonGenerator:
                    {"RAM": month, "os": "centos", "name": "vm_%s" % (month + 2), "memory": month},
                    {"RAM": month, "os": "macos", "name": "vm_%s" % (month + 3), "memory": month}
                    ]
-            addressvalue = [[ {"city": random.choice(cities)},{"street":random.choice(streets)}],[{"apartment":123,"country":random.choice(countries)}]]
+            addressvalue = [[{"city": random.choice(cities)},
+                             {"street": random.choice(streets)}],
+                            [{"apartment": 123,
+                              "country":random.choice(countries)}]]
             count += 1
-            template = JsonObject.create()
-            template.put("fullname", [name])
-            template.put("department", random.choice(department))
-            template.put("join_yr", [[ y for y in joining]])
-            template.put("email", email)
-            template.put("hobbies", random.choice(hobbies))
-            template.put("vms", [vms])
-            template.put("address", [addressvalue])
-            template.put("task", taskValue)
-            templates.append(template)
-        gen_docs = DocumentGenerator(key_prefix, templates,
-                                        start=start, end=docs_per_day)
-
-        return gen_docs
+            templates.append({
+                "fullname": [name],
+                "department": random.choice(department),
+                "join_yr": [[ y for y in joining]],
+                "email": email,
+                "hobbies": random.choice(hobbies),
+                "vms": [vms],
+                "address": [addressvalue],
+                "task": taskValue,
+            })
+        return DocumentGenerator(key_prefix, templates,
+                                 start=start, end=docs_per_day)
 
     def generate_docs_sabre(self, key_prefix, docs_per_day=1, start=0, isShuffle=False, years=2, indexes=[1,4,8]):
         all_airports = ["ABR", "ABI", "ATL","BOS", "BUR", "CHI", "MDW", "DAL", "SFO", "SAN", "SJC", "LGA", "JFK", "MSP",
                         "MSQ", "MIA", "LON", "DUB"]
-        dests = [all_airports[i] for i in indexes]
         join_yr = self._shuffle(range(2010, 2010 + years), isShuffle)
         join_mo = self._shuffle(range(1, 12 + 1),isShuffle)
         join_day = self._shuffle(range(1, 28 + 1),isShuffle)
@@ -768,8 +735,7 @@ class JsonGenerator:
             year = random.choice(join_yr)
             month = random.choice(join_mo)
             day = random.choice(join_day)
-            count +=1
-            prefix = '%s_%s-%s-%s' % (dest, year, month, day)
+            count += 1
             amount = [float("%s.%s" % (month, month))]
             currency = [("USD", "EUR")[month in [1,3,5]]]
             decimal_tax = [1,2]
@@ -796,39 +762,39 @@ class JsonGenerator:
                            {"FlightSegment": [
                              {"TPA_Extensions":
                                {"eTicket": {"Ind": True}},
-                               "MarketingAirline": {"Code": dest},
-                               "StopQuantity": month,
-                               "DepartureTimeZone": {"GMTOffset": -7},
-                               "OperatingAirline": {"Code": "DL",
-                                                    "FlightNumber": year + month},
-                               "DepartureAirport": {"LocationCode": "SFO"},
-                               "ArrivalTimeZone": {"GMTOffset": -5},
-                               "ResBookDesigCode": "X",
-                               "FlightNumber": year + day,
-                               "ArrivalDateTime": "2014-07-12T06:07:00",
-                               "ElapsedTime": 212,
-                               "Equipment": {"AirEquipType": 763},
-                               "DepartureDateTime": "2014-07-12T00:35:00",
-                               "MarriageGrp": "O",
-                               "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}},
+                                "MarketingAirline": {"Code": dest},
+                                "StopQuantity": month,
+                                "DepartureTimeZone": {"GMTOffset": -7},
+                                "OperatingAirline": {"Code": "DL",
+                                                     "FlightNumber": year + month},
+                                "DepartureAirport": {"LocationCode": "SFO"},
+                                "ArrivalTimeZone": {"GMTOffset": -5},
+                                "ResBookDesigCode": "X",
+                                "FlightNumber": year + day,
+                                "ArrivalDateTime": "2014-07-12T06:07:00",
+                                "ElapsedTime": 212,
+                                "Equipment": {"AirEquipType": 763},
+                                "DepartureDateTime": "2014-07-12T00:35:00",
+                                "MarriageGrp": "O",
+                                "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}},
                             {"TPA_Extensions":
-                               {"eTicket": {"Ind": False}},
-                               "MarketingAirline": {"Code": dest},
-                               "StopQuantity": month,
-                               "DepartureTimeZone": {"GMTOffset": -7},
-                               "OperatingAirline": {"Code": "DL",
-                                                    "FlightNumber": year + month + 1},
-                               "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
-                               "ArrivalTimeZone": {"GMTOffset": -3},
-                               "ResBookDesigCode": "X",
-                               "FlightNumber": year + day,
-                               "ArrivalDateTime": "2014-07-12T06:07:00",
-                               "ElapsedTime": 212,
-                               "Equipment": {"AirEquipType": 764},
-                               "DepartureDateTime": "2014-07-12T00:35:00",
-                               "MarriageGrp": "1",
-                               "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}}],
-                        "ElapsedTime": 619},
+                                {"eTicket": {"Ind": False}},
+                                 "MarketingAirline": {"Code": dest},
+                                 "StopQuantity": month,
+                                 "DepartureTimeZone": {"GMTOffset": -7},
+                                 "OperatingAirline": {"Code": "DL",
+                                                      "FlightNumber": year + month + 1},
+                                 "DepartureAirport": {"LocationCode": random.sample(all_airports, 1)},
+                                 "ArrivalTimeZone": {"GMTOffset": -3},
+                                 "ResBookDesigCode": "X",
+                                 "FlightNumber": year + day,
+                                 "ArrivalDateTime": "2014-07-12T06:07:00",
+                                 "ElapsedTime": 212,
+                                 "Equipment": {"AirEquipType": 764},
+                                 "DepartureDateTime": "2014-07-12T00:35:00",
+                                 "MarriageGrp": "1",
+                                 "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}}],
+                               "ElapsedTime": 619},
                        {"FlightSegment": [
                              {"TPA_Extensions":
                                {"eTicket": {"Ind": True}},
@@ -865,29 +831,28 @@ class JsonGenerator:
                                "MarriageGrp": "1",
                                "ArrivalAirport": {"LocationCode": random.sample(all_airports, 1)}}]}]},
                          "DirectionInd": "Return"}
-            TotalTax = {"DecimalPlaces" : decimal_tax, "Amount" : amount_tax,\
-            "CurrencyCode" : currency_tax}
-            template = JsonObject.create()
-            template.put("Amount", amount)
-            template.put("CurrencyCode", currency)
-            template.put("TotalTax", TotalTax)
-            template.put("Tax", [taxes])
-            template.put( "FareBasisCode", [fare_basis])
-            template.put("PassengerTypeQuantity", pass_amount)
-            template.put("TicketType", ticket_type)
-            template.put("SequenceNumber", sequence)
-            template.put("DirectionInd", direction)
-            template.put("Itinerary", [itinerary])
-            template.put("Destination", [dest])
-            template.put("join_yr", [year])
-            template.put("join_mo", [month])
-            template.put("join_day", [day])
-            template.put("Codes",[[dest, dest]])
-            templates.append(template)
+            TotalTax = {"DecimalPlaces": decimal_tax, "Amount": amount_tax,
+                        "CurrencyCode": currency_tax}
+            templates.append({
+                "Amount": amount,
+                "CurrencyCode": currency,
+                "TotalTax": TotalTax,
+                "Tax": [taxes],
+                "FareBasisCode": [fare_basis],
+                "PassengerTypeQuantity": pass_amount,
+                "TicketType": ticket_type,
+                "SequenceNumber": sequence,
+                "DirectionInd": direction,
+                "Itinerary": [itinerary],
+                "Destination": [dest],
+                "join_yr": [year],
+                "join_mo": [month],
+                "join_day": [day],
+                "Codes": [[dest, dest]],
+            })
             count += 1
-        gen_load = DocumentGenerator(key_prefix, templates,
-                                                start=start, end=docs_per_day)
-        return gen_load
+        return DocumentGenerator(key_prefix, templates,
+                                 start=start, end=docs_per_day)
 
     def generate_docs_sales(self, key_prefix = "sales_dataset", test_data_type = True, start=0, docs_per_day=None, isShuffle = False):
         end = docs_per_day
@@ -901,31 +866,27 @@ class JsonGenerator:
         sales = [200000, 400000, 600000, 800000]
         rate = [x * 0.1 for x in range(0, 10)]
         for i in range(start, docs_per_day):
-            contact = "contact_"+ str(random.random()*10000000)
-            name ="name_"+ str(random.random()*100000)
+            contact = "contact_" + str(random.random()*10000000)
+            name = "name_" + str(random.random()*100000)
             year = random.choice(join_yr)
             month = random.choice(join_mo)
             day = random.choice(join_day)
             random.seed(count)
             count +=1
-            prefix = "prefix_"+str(i)
             delivery = str(datetime.date(year, month, day))
-            template = JsonObject.create()
-            template.put("join_yr" , [year])
-            template.put("join_mo" , [month])
-            template.put("join_day" , [day])
-            template.put("sales" , random.choice(sales))
-            template.put("delivery_date" , [delivery])
-            template.put("is_support_included" , random.choice(is_support))
-            template.put("is_high_priority_client" , random.choice(is_priority))
-            template.put("client_contact" , [contact])
-            template.put("client_name" , [name])
-            template.put("client_reclaims_rate" , random.choice(rate))
-            templates.append(template)
-        gen_load = DocumentGenerator(key_prefix,
-                                                  templates,
-                                                  start=start, end=end)
-        return gen_load
+            templates.append({
+                "join_yr": [year],
+                "join_mo": [month],
+                "join_day": [day],
+                "sales": random.choice(sales),
+                "delivery_date": [delivery],
+                "is_support_included": random.choice(is_support),
+                "is_high_priority_client": random.choice(is_priority),
+                "client_contact": [contact],
+                "client_name": [name],
+                "client_reclaims_rate": random.choice(rate),
+            })
+        return DocumentGenerator(key_prefix, templates, start=start, end=end)
 
     def generate_docs_bigdata(self, key_prefix="big_dataset", value_size=1024,
                               start=0, docs_per_day=1, end=None):
@@ -933,15 +894,11 @@ class JsonGenerator:
             end = docs_per_day
         age = range(start, end)
         name = ['a' * value_size]
-        template = JsonObject.create()
-        template.put("age", age)
-        template.put("name", name)
-
-        gen_load = DocumentGenerator(key_prefix, template,
-                                     start=start, end=end,
-                                     randomize=True,
-                                     age=age)
-        return gen_load
+        template = {"age": age, "name": name}
+        return DocumentGenerator(key_prefix, template,
+                                 start=start, end=end,
+                                 randomize=True,
+                                 age=age)
 
     def generate_docs_simple(self, key_prefix="simple_dataset", start=0,
                              docs_per_day=1000, isShuffle=False):
@@ -949,15 +906,12 @@ class JsonGenerator:
         age = self._shuffle(range(start, end), isShuffle)
         name = [key_prefix + '-' + str(i)
                 for i in self._shuffle(range(start, end), isShuffle)]
-        template = JsonObject.create()
-        template.put("age", age)
-        template.put("name", name)
-        gen_load = DocumentGenerator(key_prefix, template,
-                                     start=start, end=end,
-                                     randomize=True,
-                                     name=name,
-                                     age=age)
-        return gen_load
+        template = {"age": age, "name": name}
+        return DocumentGenerator(key_prefix, template,
+                                 start=start, end=end,
+                                 randomize=True,
+                                 name=name,
+                                 age=age)
 
     def generate_docs_array(self, key_prefix="array_dataset", start=0,
                             docs_per_day=1):
@@ -987,15 +941,13 @@ class JsonGenerator:
             cde = COUNTRY_CODE[start_pnt:end_pnt]
             codes.append(cde)
             prefix = "{0}-{1}".format(key_prefix,i)
-            template = JsonObject.create()
-            template.put("email", email)
-            template.put("name", name)
-            template.put("countries", countries)
-            template.put("code", codes)
-            templates.append(template)
-        gen_load = DocumentGenerator(prefix, templates,
-                                                 start=start, end=end)
-        return gen_load
+            templates.append({
+                "email": email,
+                "name": name,
+                "countries": countries,
+                "code": codes,
+            })
+        return DocumentGenerator(prefix, templates, start=start, end=end)
 
     def random_date(self):
         earliest = datetime.date(1910,1,1)
@@ -1033,23 +985,21 @@ class JsonGenerator:
         Depth = range(10, 40)
         Version = range(3)
         NST = range(1, 10)
-        templates = []
+        templates = list()
         for i in range(start, end):
             random.seed(i)
             prefix = "{0}-{1}".format(key_prefix,i)
-            template = JsonObject.create()
-            template.put("src", random.choice(Src))
-            template.put("Region", random.choice(Region))
-            template.put("Magnitude", random.choice(Magnitude))
-            template.put("Depth", random.choice(Depth))
-            template.put("Version", random.choice(Version))
-            template.put("NST", random.choice(NST))
-            random_date = self.random_date()
-            template.put("Date", random_date)
+            template = {
+                "src": random.choice(Src),
+                "Region": random.choice(Region),
+                "Magnitude": random.choice(Magnitude),
+                "Depth": random.choice(Depth),
+                "Version": random.choice(Version),
+                "NST": random.choice(NST),
+                "Date": self.random_date()
+            }
             templates.append(template)
-        gen_load = DocumentGenerator(prefix, templates,
-                                                 start=start, end=end)
-        return gen_load
+        return DocumentGenerator(prefix, templates, start=start, end=end)
 
     def generate_all_type_documents_for_gsi(self, start=0, docs_per_day=10):
         """
@@ -1080,7 +1030,6 @@ class JsonGenerator:
         :param isShuffle:
         :return:
         """
-        generators = []
         bool_vals = [True, False]
         templates = []
         template = r'{{ "name":"{0}", "email":"{1}", "age":{2}, "premium_customer":{3}, ' \
@@ -1115,24 +1064,26 @@ class JsonGenerator:
             booking = {"source": random.choice(COUNTRIES), "destination": random.choice(COUNTRIES)}
             confirm_question_values = [random.choice(bool_vals) for i in range(5)]
             prefix = "airline_record_" + str(random.random()*100000)
-            template = JsonObject.create()
-            template.put("name", [name])
-            template.put("email", email)
-            template.put("age", age)
-            template.put("premium_customer", premium_customer)
-            template.put("travel_history", travel_history)
-            template.put("travel_history_code", travel_history_code)
-            template.put("travel_details", travel_details)
-            template.put("booking", booking)
-            template.put("credit_cards", credit_cards)
-            template.put("secret_combo", secret_combo)
-            template.put("countries_visited", countries_visited)
-            template.put("confirm_question_values", confirm_question_values)
+            template = {
+                "name": [name],
+                "email": email,
+                "age": age,
+                "premium_customer": premium_customer,
+                "travel_history": travel_history,
+                "travel_history_code": travel_history_code,
+                "travel_details": travel_details,
+                "booking": booking,
+                "credit_cards": credit_cards,
+                "secret_combo": secret_combo,
+                "countries_visited": countries_visited,
+                "confirm_question_values": confirm_question_values,
+            }
             templates.append(template)
-        gen_load = DocumentGenerator(prefix, template, start=start, end=docs_per_day)
-        return gen_load
+        return DocumentGenerator(prefix, templates,
+                                 start=start, end=docs_per_day)
 
-    def generate_docs_employee_data(self, key_prefix ="employee_dataset", start=0, docs_per_day = 1, isShuffle = False):
+    def generate_docs_employee_data(self, key_prefix="employee_dataset",
+                                    start=0, docs_per_day=1, isShuffle = False):
         generators = []
         count = 1
         sys_admin_info = {"title" : "System Administrator and heliport manager",
@@ -1171,7 +1122,7 @@ class JsonGenerator:
 
     def generate_docs_using_monster(self,
             executatble_path=None, key_prefix="", bag_dir="lib/couchbase_helper/monster/bags",
-            pod_name = None, num_items = 1, seed = None):
+            pod_name=None, num_items=1, seed=None):
         "This method runs monster tool using localhost, creates a map of json based on a pattern"
         doc_list = list()
         command = executatble_path
