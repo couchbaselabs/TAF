@@ -140,7 +140,10 @@ class CBASBaseTest(BaseTestCase):
                     = CbServer.Settings.MinRAMQuota.INDEX
                 total_memory -= service_memory_config[
                     CbServer.Settings.INDEX_MEM_QUOTA]
-            service_memory_config[CbServer.Settings.KV_MEM_QUOTA] = total_memory
+            if cluster.master.type == "analytics":
+                service_memory_config[CbServer.Settings.KV_MEM_QUOTA] = 100
+            else:
+                service_memory_config[CbServer.Settings.KV_MEM_QUOTA] = total_memory
             status, content = cluster.rest.cluster.configure_memory(
                 service_memory_config)
             if not status:
