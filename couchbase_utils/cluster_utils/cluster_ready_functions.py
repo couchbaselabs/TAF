@@ -573,29 +573,31 @@ class ClusterUtils:
             result = result and data_validation and failover_validation
         return result
 
-    def validate_orchestrator_selection(self, cluster, removed_nodes=[]):
-        result = False
-        target_node = cluster.master
-        if cluster.master.ip in [node.ip for node in removed_nodes]:
-            target_node = [node for node in cluster.nodes_in_cluster
-                           if node not in removed_nodes][0]
+    def validate_orchestrator_selection(self, cluster, removed_nodes=[], max_retries=5, wait_time=3):
+        for attempt in range(max_retries):
+            target_node = cluster.master
+            if cluster.master.ip in [node.ip for node in removed_nodes]:
+                target_node = [node for node in cluster.nodes_in_cluster
+                               if node not in removed_nodes][0]
 
-        status, ns_node = self.find_orchestrator(cluster, node=target_node)
-        if not status:
-            return result
-        self.update_cluster_nodes_service_list(cluster,
-                                               inactive_added=True,
-                                               inactive_failed=True)
-        nodes = self.get_possible_orchestrator_nodes(cluster)
-        ns_node = ns_node.split("@")[1]
-        self.log.critical("Orchestrator: {}".format(ns_node))
-        if ns_node not in nodes:
-            self.log.critical("Unexpected orchestrator. "
-                              "Expected orchestrators: {}".format(nodes))
-        else:
-            result = True
-            self.log.debug("Orchestartor candidates: %s" % nodes)
-        return result
+            status, ns_node = self.find_orchestrator(cluster, node=target_node)
+            if not status:
+                time.sleep(wait_time)
+                continue
+            self.update_cluster_nodes_service_list(cluster,
+                                                   inactive_added=True,
+                                                   inactive_failed=True)
+            nodes = self.get_possible_orchestrator_nodes(cluster)
+            ns_node = ns_node.split("@")[1]
+            self.log.critical("Orchestrator: {}".format(ns_node))
+            if ns_node not in nodes:
+                self.log.critical("Unexpected orchestrator. "
+                                  "Expected orchestrators: {}".format(nodes))
+                time.sleep(wait_time)
+            else:
+                self.log.debug("Orchestartor candidates: %s" % nodes)
+                return True
+        return False
 
     def set_rebalance_moves_per_nodes(self, cluster_node,
                                       rebalanceMovesPerNode=4):
