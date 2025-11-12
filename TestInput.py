@@ -1,5 +1,6 @@
-import re
+import json
 import os
+import re
 from configparser import ConfigParser
 
 from builds.build_query import BuildQuery
@@ -287,6 +288,9 @@ class TestInputParser:
                 server.index_path = global_properties['index_path']
             if server.cbas_path == '' and 'cbas_path' in global_properties:
                 server.cbas_path = global_properties['cbas_path']
+                if server.cbas_path.startswith("["):
+                    server.cbas_path = json.loads(
+                        server.cbas_path.replace("'", "\""))
             if server.eventing_path == '' and 'eventing_path' in global_properties:
                 server.eventing_path = global_properties['eventing_path']
             if server.services == '' and 'services' in global_properties:

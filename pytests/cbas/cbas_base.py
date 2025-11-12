@@ -175,9 +175,8 @@ class CBASBaseTest(BaseTestCase):
             # Construct dict of mem. quota percent / mb per service
             mem_quota_percent = dict()
 
-
-            servers = [
-                server for server in self.servers if server.type == "analytics"]
+            servers = [server for server in self.servers
+                       if server.type == "analytics"]
             cluster_name = cluster_name_format % str(i+1)
             cluster = CBCluster(
                 name=cluster_name,
