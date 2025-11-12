@@ -257,7 +257,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             self.loadgen_docs(_sync=True,
                               retry_exceptions=self.retry_exceptions)
-            start = self.gen_create.key_counter
+            start = self.gen_create.itr
 
             ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                  mem_only_items}
@@ -387,13 +387,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                                   retry_exceptions=self.retry_exceptions)
 
                 if self.gen_create is not None:
-                    self.create_start = self.gen_create.key_counter
+                    self.create_start = self.gen_create.itr
                 if self.gen_update is not None:
-                    self.update_start = self.gen_update.key_counter
+                    self.update_start = self.gen_update.itr
                 if self.gen_delete is not None:
-                    self.delete_start = self.gen_delete.key_counter
+                    self.delete_start = self.gen_delete.itr
                 if self.gen_expiry is not None:
-                    self.expiry_start = self.gen_expiry.key_counter
+                    self.expiry_start = self.gen_expiry.itr
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
@@ -541,13 +541,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=self.retry_exceptions)
                 if self.gen_create is not None:
-                    self.create_start = self.gen_create.key_counter
+                    self.create_start = self.gen_create.itr
                 if self.gen_update is not None:
-                    self.update_start = self.gen_update.key_counter
+                    self.update_start = self.gen_update.itr
                 if self.gen_delete is not None:
-                    self.delete_start = self.gen_delete.key_counter
+                    self.delete_start = self.gen_delete.itr
                 if self.gen_expiry is not None:
-                    self.expiry_start = self.gen_expiry.key_counter
+                    self.expiry_start = self.gen_expiry.itr
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
@@ -721,7 +721,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.loadgen_docs(_sync=True,
                                   retry_exceptions=self.retry_exceptions)
 
-                start = self.gen_create.key_counter
+                start = self.gen_create.itr
 
                 if time.time() < time_start + 60:
                     self.sleep(time_start + 60 - time.time(),
@@ -803,7 +803,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-                start_2 = self.gen_create.key_counter
+                start_2 = self.gen_create.itr
 
                 self.log.debug("slave_itr == {}, Loading docs on master".format(slave_itr))
                 self.gen_create = self.genrate_docs_basic(start_2, mem_only_items,
@@ -812,7 +812,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                   self.ignore_exceptions,
                                   _sync=True)
 
-                start_2 = self.gen_create.key_counter
+                start_2 = self.gen_create.itr
 
                 ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                                      0}
@@ -958,13 +958,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.loadgen_docs(_sync=True,
                                       retry_exceptions=self.retry_exceptions)
                     if self.gen_create is not None:
-                        self.create_start = self.gen_create.key_counter
+                        self.create_start = self.gen_create.itr
                     if self.gen_update is not None:
-                        self.update_start = self.gen_update.key_counter
+                        self.update_start = self.gen_update.itr
                     if self.gen_delete is not None:
-                        self.delete_start = self.gen_delete.key_counter
+                        self.delete_start = self.gen_delete.itr
                     if self.gen_expiry is not None:
-                        self.expiry_start = self.gen_expiry.key_counter
+                        self.expiry_start = self.gen_expiry.itr
 
                     if time.time() < time_start + 60:
                         self.log.info("Rollback Iteration== {}, itr== {}, Active-Node== {}, Node=={}".format(i, itr, x+1, node))
@@ -1138,13 +1138,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.loadgen_docs(_sync=True,
                                       retry_exceptions=self.retry_exceptions)
                     if self.gen_create is not None:
-                        self.create_start = self.gen_create.key_counter
+                        self.create_start = self.gen_create.itr
                     if self.gen_update is not None:
-                        self.update_start = self.gen_update.key_counter
+                        self.update_start = self.gen_update.itr
                     if self.gen_delete is not None:
-                        self.delete_start = self.gen_delete.key_counter
+                        self.delete_start = self.gen_delete.itr
                     if self.gen_expiry is not None:
-                        self.expiry_start = self.gen_expiry.key_counter
+                        self.expiry_start = self.gen_expiry.itr
 
                     if time.time() < time_start + 60:
                         self.log.info("Rollback Iteration== {}, itr== {}, Active-Node=={}, Node=={}".format(i, itr, x+1, node))
@@ -1386,13 +1386,13 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.bucket_util.log_doc_ops_task_failures(tasks_in)
 
                     if self.gen_create is not None:
-                        self.create_start = self.gen_create.key_counter
+                        self.create_start = self.gen_create.itr
                     if self.gen_update is not None:
-                        self.update_start = self.gen_update.key_counter
+                        self.update_start = self.gen_update.itr
                     if self.gen_delete is not None:
-                        self.delete_start = self.gen_delete.key_counter
+                        self.delete_start = self.gen_delete.itr
                     if self.gen_expiry is not None:
-                        self.expiry_start = self.gen_expiry.key_counter
+                        self.expiry_start = self.gen_expiry.itr
                     self.log.info("Rollback Iteration== {}, itr== {}, Active-Node== {}, Node=={}".
                                   format(i, itr, x+1, node))
                     if time.time() < time_start + 60:
@@ -1704,7 +1704,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.task_manager.get_task_result(task)
 
                 if self.gen_create is not None:
-                        start_items = self.gen_create.key_counter
+                        start_items = self.gen_create.itr
                 self.log.debug("start_items after load during rollback is {}"
                                .format(start_items))
                 #self.stop_crash = True
@@ -1977,7 +1977,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.task_manager.get_task_result(task)
 
             if self.gen_create is not None:
-                start_items = self.gen_create.key_counter
+                start_items = self.gen_create.itr
                 self.log.debug("Iteration-{},start_items after load during rollback is {}"
                                .format(i, start_items))
 

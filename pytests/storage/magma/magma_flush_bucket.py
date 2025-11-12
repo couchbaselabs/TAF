@@ -416,13 +416,13 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                     self.loadgen_docs(_sync=True,
                                       retry_exceptions=self.retry_exceptions)
                     if self.gen_create is not None:
-                        self.create_start = self.gen_create.key_counter
+                        self.create_start = self.gen_create.itr
                     if self.gen_update is not None:
-                        self.update_start = self.gen_update.key_counter
+                        self.update_start = self.gen_update.itr
                     if self.gen_delete is not None:
-                        self.delete_start = self.gen_delete.key_counter
+                        self.delete_start = self.gen_delete.itr
                     if self.gen_expiry is not None:
-                        self.expiry_start = self.gen_expiry.key_counter
+                        self.expiry_start = self.gen_expiry.itr
 
                     if time.time() < time_start + 60:
                         self.log.info("Rollback Iteration== {}, itr== {}, Active-Node=={}, Node=={}".format(i, itr, x+1, node))

@@ -3389,6 +3389,13 @@ class BucketUtils(ScopeUtils):
                 else:
                     raise_exception = "Create bucket %s failed" % bucket.name
 
+            if raise_exception:
+                raise Exception(raise_exception)
+
+            # Populate bucket UUIDs and other properties from server
+            if cluster.type != "serverless":
+                self.get_all_buckets(cluster)
+
             # Check for warm_up
             for bucket in cluster.buckets:
                 self.get_updated_bucket_server_list(cluster, bucket)
@@ -5085,7 +5092,7 @@ class BucketUtils(ScopeUtils):
         bucket_conn.vbucket_map_ready(bucket, 60)
         vbucket_count = len(bucket.vbuckets)
         vbuckets = bucket.vbuckets
-        obj = VBucketAwareMemcached(rest, bucket, self.cluster_util, info=node)
+        obj = VBucketAwareMemcached(rest, bucket, info=node)
         _, vbucket_map, _ = obj.request_map(rest, bucket)
         # Create dictionary with key:"ip:port" and value: a list of vbuckets
         server_dict = defaultdict(list)

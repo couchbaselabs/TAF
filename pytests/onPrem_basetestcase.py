@@ -171,6 +171,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             "encryptionAtRestDekRotationInterval", 2592000)
         self.rotationIntervalInSeconds = self.input.param(
             "rotationIntervalInSeconds", 2592000)
+        self.encryption_at_rest_dek_lifetime = self.input.param(
+            "encryption_at_rest_dek_lifetime", CbServer.encryption_at_rest_dek_lifetime_interval)
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)

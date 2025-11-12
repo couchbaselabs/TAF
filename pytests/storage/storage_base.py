@@ -124,7 +124,11 @@ class StorageBase(BaseTestCase):
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
                 history_retention_bytes=self.bucket_dedup_retention_bytes,
-                weight=self.bucket_weight, width=self.bucket_width, vbuckets=self.bucket_num_vb)
+                weight=self.bucket_weight, width=self.bucket_width, vbuckets=self.bucket_num_vb,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                encryption_at_rest_key_id=self.encryption_at_rest_id,
+                encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
         else:
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
@@ -143,7 +147,11 @@ class StorageBase(BaseTestCase):
                 autoCompactionDefined=self.autoCompactionDefined,
                 history_retention_collection_default=self.bucket_collection_history_retention_default,
                 history_retention_seconds=self.bucket_dedup_retention_seconds,
-                history_retention_bytes=self.bucket_dedup_retention_bytes)
+                history_retention_bytes=self.bucket_dedup_retention_bytes,
+                enable_encryption_at_rest=self.enable_encryption_at_rest,
+                encryption_at_rest_key_id=self.encryption_at_rest_id,
+                encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+                encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
         if self.change_magma_quota:
             bucket_helper = BucketHelper(self.cluster.master)
