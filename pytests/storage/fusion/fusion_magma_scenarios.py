@@ -517,7 +517,7 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
         self.bucket_util.print_bucket_stats(self.cluster)
 
         self.sleep(30, "Wait after Fusion Rebalance")
-        self.log_store_rebalance_cleanup()
+        self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
         # Perform data load on the bucket/s
         self.log.info("Performing data load after flushing")

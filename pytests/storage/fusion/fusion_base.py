@@ -546,7 +546,7 @@ class FusionBase(BaseTestCase):
     def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
                       rebalance_master=False, replica_update=False, skip_file_linking=False,
                       wait_for_rebalance_to_complete=True, force_sync_during_sleep=False, stop_before_rebalance=False,
-                      min_storage_size=None):
+                      min_storage_size=None, skip_add_nodes=False):
 
         # Populate spare nodes list
         if rebalance_count == 1:
@@ -558,6 +558,8 @@ class FusionBase(BaseTestCase):
             current_nodes_str += node.ip + ","
         current_nodes_str = current_nodes_str[:-1]
         self.log.info(f"Current nodes str = {current_nodes_str}")
+
+        new_master = self.cluster.master
 
         if self.num_nodes_to_rebalance_in > 0:
             new_node_str = current_nodes_str
@@ -624,6 +626,7 @@ class FusionBase(BaseTestCase):
 
             if self.num_nodes_to_swap_rebalance == len(self.cluster.nodes_in_cluster):
 
+                new_master = nodes_to_add[0]
                 new_node_str = ""
                 for new_node in nodes_to_add:
                     new_node_str += new_node.ip + ","
@@ -699,6 +702,8 @@ class FusionBase(BaseTestCase):
             commands = commands.rstrip() + " --stop-before-rebalance"
         if min_storage_size is not None:
             commands = commands.rstrip() + f" --min-storage-size {min_storage_size}"
+        if skip_add_nodes:
+            commands = commands.rstrip() + " --skip-add-nodes"
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
@@ -749,7 +754,7 @@ class FusionBase(BaseTestCase):
         # Parse Fusion error logs to look for any failures/issues
         # Exclude known patterns like "Temporary failure in name resolution"
         self.log.info("Parsing Fusion Error logs to look for issues/failures")
-        grep_cmd = f"grep -v -E 'Temporary failure in name resolution|WARNING|^\[[0-9.]+\][[:space:]]*$|^[[:space:]]*$' {self.fusion_rebalance_error}"
+        grep_cmd = f"grep -v -E 'Temporary failure in name resolution|unable to resolve host|WARNING|^\[[0-9.]+\][[:space:]]*$|^[[:space:]]*$' {self.fusion_rebalance_error}"
         result = subprocess.run(grep_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
         output = result.stdout.strip()
         error = result.stderr.strip()
@@ -787,28 +792,34 @@ class FusionBase(BaseTestCase):
             self.fail("Error during Fusion Rebalance")
 
         # Updating nodes_in_cluster after rebalance
-        if not stop_before_rebalance:
-            self.cluster.nodes_in_cluster = list()
-            new_node_set = set(new_node_str.split(","))
-            for server in self.cluster.servers:
-                if server.ip in new_node_set:
-                    self.cluster.nodes_in_cluster.append(server)
-            self.cluster.kv_nodes = self.cluster.nodes_in_cluster
+        self.cluster.nodes_in_cluster = list()
+        new_node_set = set(new_node_str.split(","))
+        for server in self.cluster.servers:
+            if server.ip in new_node_set:
+                self.cluster.nodes_in_cluster.append(server)
+        self.cluster.kv_nodes = self.cluster.nodes_in_cluster
+        self.cluster.master = new_master
 
-            self.log.info(f"Nodes in cluster = {self.cluster.nodes_in_cluster}")
-            self.log.info(f"KV Nodes = {self.cluster.kv_nodes}")
+        self.log.info(f"Nodes in cluster = {self.cluster.nodes_in_cluster}")
+        self.log.info(f"KV Nodes = {self.cluster.kv_nodes}")
 
-        if stop_before_rebalance:
-            return nodes_to_monitor, plan_uuid, involved_nodes_list
-        else:
+        if not stop_before_rebalance and wait_for_rebalance_to_complete:
             return nodes_to_monitor
+        else:
+            return nodes_to_monitor, current_nodes_str, new_node_str
 
-    def log_store_rebalance_cleanup(self):
+    def log_store_rebalance_cleanup(self, nodes, rebalance_count=1):
 
         ssh = RemoteMachineShellConnection(self.nfs_server)
 
-        cleanup_cmd = f"rm -rf /data/nfs/{self.client_share_dir}/fusion-manifests; rm -rf /data/nfs/{self.client_share_dir}/guest_storage"
+        cleanup_cmd = f"rm -rf /data/nfs/{self.client_share_dir}/fusion-manifests"
         o, e = ssh.execute_command(cleanup_cmd)
+        self.log.info(f"Executing CMD: {cleanup_cmd}, O = {o}, E = {e}")
+
+        for node in nodes:
+            cleanup_cmd = f"rm -rf /data/nfs/{self.client_share_dir}/guest_storage/ns_1@{node.ip}/reb{rebalance_count}"
+            o, e = ssh.execute_command(cleanup_cmd)
+            self.log.info(f"Executing CMD: {cleanup_cmd}, O = {o}, E = {e}")
 
         ssh.disconnect()
 
@@ -1136,3 +1147,30 @@ class FusionBase(BaseTestCase):
                         self.log.info(f"Term number not changed for {bucket.name}:vb_{vb_no} as expected")
                     else:
                         self.log.info(f"Expected term number: {prev_term}, Actual term number: {new_term}")
+
+    def get_fusion_status_info(self, duration=3600):
+
+        end_time = time.time() + duration
+        self.monitor_fusion_info = True
+
+        while self.monitor_fusion_info and time.time() < end_time:
+
+            status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+            self.log.info(f"Status = {status}, Content = {content}")
+
+            bucket_du = dict()
+            ssh = RemoteMachineShellConnection(self.nfs_server)
+
+            for bucket in self.cluster.buckets:
+                try:
+                    bucket_uuid = self.get_bucket_uuid(bucket.name)
+                    log_store_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
+                    du_cmd = f"du -sh {log_store_bucket_path}"
+                    o, e = ssh.execute_command(du_cmd)
+                    bucket_du[bucket.name] = o[0].split("\t")[0]
+                except Exception as ex:
+                    self.log.info(f"Exception = {ex}, O = {o}, E = {e}")
+
+            ssh.disconnect()
+            self.log.info(f"Log store Bucket DU = {bucket_du}")
+            time.sleep(5)

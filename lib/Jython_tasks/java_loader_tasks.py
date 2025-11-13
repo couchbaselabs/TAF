@@ -96,7 +96,7 @@ class BaseSiriusLoader:
         failed_item_view.display("Keys failed in %s:%s:%s"
                                % (bucket, scope, collection))
 
-    def _make_api_request(self, api_endpoint, data, timeout=10):
+    def _make_api_request(self, api_endpoint, data, timeout=600):
         """Common method to make API requests"""
         url = f"{SiriusSetup.sirius_url}/{api_endpoint}"
         response = requests.post(url, data,
@@ -461,7 +461,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             api_endpoint = "sift_doc_load"
 
         data = BaseSiriusLoader._flatten_param_to_str(data)
-        success, json_response = self._make_api_request(api_endpoint, data, 10)
+        success, json_response = self._make_api_request(api_endpoint, data, 600)
 
         if success and json_response:
             self.task_ids = json_response["tasks"]

@@ -76,15 +76,18 @@ class MagmaDiskFull(MagmaBaseTest):
             iterations -= 1
         raise Exception("Could not hit Write Commit Failures: ep_data_write_failed>0")
 
-    def fill_disk(self, server, free=100):
+    def fill_disk(self, server, free=100, path=None):
+
+        path = path if path is not None else server.data_path
+
         def _get_disk_usage_in_MB(remote_client, path):
             disk_info = remote_client.get_disk_info(in_MB=True, path=path)
             disk_space = disk_info[1].split()[-3][:-1]
             return disk_space
 
         remote_client = RemoteMachineShellConnection(server)
-        du = int(_get_disk_usage_in_MB(remote_client, server.data_path)) - free
-        _file = os.path.join(self.cluster.master.data_path, "full_disk_")
+        du = int(_get_disk_usage_in_MB(remote_client, path)) - free
+        _file = os.path.join(path, "full_disk_")
 
         cmd = "fallocate -l {0}M {1}"
         cmd = cmd.format(du, _file + str(du) + "MB_" + str(time.time()))
@@ -94,14 +97,17 @@ class MagmaDiskFull(MagmaBaseTest):
         if error:
             self.log.error("".join(error))
 
-        du = int(_get_disk_usage_in_MB(remote_client, server.data_path))
+        du = int(_get_disk_usage_in_MB(remote_client, path))
         self.log.info("disk usage after disk full {}".format(du))
 
         remote_client.disconnect()
 
-    def free_disk(self, server):
+    def free_disk(self, server, path=None):
+
+        path = path if path is not None else server.data_path
+
         remote_client = RemoteMachineShellConnection(server)
-        _file = os.path.join(server.data_path, "full_disk_")
+        _file = os.path.join(path, "full_disk_")
         command = "rm -rf {}*".format(_file)
         output, error = remote_client.execute_command(command)
         if output:

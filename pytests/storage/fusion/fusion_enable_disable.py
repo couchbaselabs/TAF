@@ -19,6 +19,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         self.log.info("FusionEnableDisable setUp started")
 
+        self.chaos_action = self.input.param("chaos_action", None) # kill_memcached/restart_couchbase
+
 
     def tearDown(self):
         super(FusionEnableDisable, self).tearDown()
@@ -34,17 +36,21 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         while time.time() < end_time:
 
-            result = cbstats_obj.all_stats(bucket.name)
-            completed_bytes = result["ep_fusion_sync_session_completed_bytes"]
-            total_bytes = result["ep_fusion_sync_session_total_bytes"]
+            try:
+                result = cbstats_obj.all_stats(bucket.name)
+                completed_bytes = result["ep_fusion_sync_session_completed_bytes"]
+                total_bytes = result["ep_fusion_sync_session_total_bytes"]
 
-            self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, "
-                          f"Completed bytes: {completed_bytes}, Total bytes: {total_bytes}")
+                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, "
+                            f"Completed bytes: {completed_bytes}, Total bytes: {total_bytes}")
 
-            if int(completed_bytes) == int(total_bytes) and int(total_bytes) != 0:
-                sync_complete = True
-                break
-            time.sleep(2)
+                if int(completed_bytes) == int(total_bytes) and int(total_bytes) != 0:
+                    sync_complete = True
+                    break
+                time.sleep(2)
+
+            except Exception as e:
+                self.log.info(f"Cbstats exception: {e}")
 
         if sync_complete:
             self.log.info(f"Sync complete for bucket: {bucket.name} on server: {server.ip}")
@@ -91,7 +97,17 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
                 monitor_sync_threads.append(th)
                 th.start()
 
+        # Perform chaos actions during enabling Fusion
+        if self.chaos_action is not None:
+            self.sleep(30, "Wait before performing chaos actions")
+            chaos_th = threading.Thread(target=self.perform_chaos_actions, args=[self.chaos_action])
+            chaos_th.start()
+
         enable_fusion_th.join()
+
+        if self.chaos_action is not None:
+            self.chaos = False
+            chaos_th.join()
 
         for th in monitor_sync_threads:
             th.join()
@@ -904,7 +920,6 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         # Override Fusion default settings
         for bucket in new_buckets:
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
                                         logstore_frag_threshold=self.logstore_frag_threshold)
 
         self.sleep(30, "Wait before enabling Fusion")
@@ -932,29 +947,116 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         monitor_fusion_th.join()
 
 
-    def get_fusion_status_info(self, duration=3600):
+    def test_chaos_during_stopping_fusion(self):
 
-        end_time = time.time() + duration
-        self.monitor_fusion_info = True
+        self.log.info("Verifying that Fusion is enabled initially")
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"Status = {status}, Content = {content}")
 
-        while self.monitor_fusion_info and time.time() < end_time:
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
 
-            status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
-            self.log.info(f"Status = {status}, Content = {content}")
+        # Set Migration Rate Limit to 0 so that extent migration doesn't take place
+        ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=0)
 
-            bucket_du = dict()
-            ssh = RemoteMachineShellConnection(self.nfs_server)
+        # Perform a Fusion Rebalance
+        self.log.info("Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1)
 
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        self.sleep(10, "Wait after rebalance completion")
+        status, content = FusionRestAPI(self.cluster.master).stop_fusion()
+        self.log.info(f"Stopping Fusion, Status = {status}, Content = {content}")
+
+        monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
+        monitor_fusion_th.start()
+
+        # Perform chaos action during 'stopping' state
+        self.sleep(10, "Wait before performing chaos actions")
+        self.perform_chaos_actions(self.chaos_action, duration=300)
+
+        # Update Migration Rate Limit so that extent migration starts
+        ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
             for bucket in self.cluster.buckets:
-                try:
-                    bucket_uuid = self.get_bucket_uuid(bucket.name)
-                    log_store_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
-                    du_cmd = f"du -sh {log_store_bucket_path}"
-                    o, e = ssh.execute_command(du_cmd)
-                    bucket_du[bucket.name] = o[0].split("\t")[0]
-                except Exception as ex:
-                    self.log.info(f"Exception = {ex}, O = {o}, E = {e}")
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
 
-            ssh.disconnect()
-            self.log.info(f"Log store Bucket DU = {bucket_du}")
-            time.sleep(5)
+        for th in extent_migration_array:
+            th.join()
+
+        self.sleep(60, "Wait after extent migration completion")
+        self.monitor_fusion_info = False
+        monitor_fusion_th.join()
+
+
+    def test_chaos_during_disabling_fusion(self):
+
+        self.log.info("Verifying that Fusion is enabled initially")
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"Status = {status}, Content = {content}")
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        # Remove permissions for 'couchbase' user from the log store directory
+        log_store_dir = "/" + self.fusion_log_store_uri.split("///")[-1]
+        remove_perm_cmd = f"chown -R root:root {log_store_dir}"
+        self.log.info(f"Removing permissions CMD: {remove_perm_cmd}")
+        ssh = RemoteMachineShellConnection(self.cluster.master)
+        o, e = ssh.execute_command(remove_perm_cmd)
+
+        # Disable Fusion
+        status, content = FusionRestAPI(self.cluster.master).disable_fusion()
+        self.log.info(f"Disabling Fusion, Status = {status}, Content = {content}")
+
+        monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
+        monitor_fusion_th.start()
+
+        # Perform chaos action during 'stopping' state
+        self.sleep(10, "Wait before performing chaos actions")
+        self.perform_chaos_actions(self.chaos_action, duration=300)
+
+        self.sleep(60, "Wait before re-introduing permissions")
+        restore_perm_cmd = f"chown -R couchbase:couchbase {log_store_dir}"
+        o, e = ssh.execute_command(restore_perm_cmd)
+        ssh.disconnect()
+
+        self.sleep(60, "Wait before stopping all monitoring threads")
+        self.monitor_fusion_info = False
+        monitor_fusion_th.join()
+
+
+    def perform_chaos_actions(self, chaos_action, interval=60, duration=1800):
+
+        self.chaos = True
+        end_time = time.time() + duration
+
+        shell_dict = dict()
+        for server in self.cluster.nodes_in_cluster:
+            shell_dict[server.ip] = RemoteMachineShellConnection(server)
+
+        while self.chaos and time.time() < end_time:
+            for server in self.cluster.nodes_in_cluster:
+                shell = shell_dict[server.ip]
+                if chaos_action == "kill_memcached":
+                    self.log.info(f"Killing memcached on {server.ip}")
+                    shell.kill_memcached()
+                elif chaos_action == "restart_couchbase":
+                    self.log.info(f"Restarting Couchbase on {server.ip}")
+                    shell.restart_couchbase()
+
+            self.sleep(interval, "Wait before next chaos action")

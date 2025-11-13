@@ -146,7 +146,7 @@ class RebalanceAutomation:
             # Create destination directory if it doesn't exist
             if not self.dry_run and not os.path.exists(self.config['manifest_dest_path']):
                 os.makedirs(self.config['manifest_dest_path'])
-            cmd = f"cp -rp {MANIFEST_OUTPUT_DIR}/* {self.config['manifest_dest_path']}"
+            cmd = f"rm -rf {self.config['manifest_dest_path']}/* ; cp -rp {MANIFEST_OUTPUT_DIR}/* {self.config['manifest_dest_path']}"
 
         self._execute_command(cmd, "Syncing manifest parts to destination")
 
@@ -367,7 +367,9 @@ def main():
     parser.add_argument('--skip-file-linking', action='store_true', help='Skip File Linking')
     parser.add_argument('--force-sync-during-sleep', action='store_true', help='Force sync to log store during sleep after prepare rebalance')
     parser.add_argument('--stop-before-rebalance', action='store_true', help='Stop execution after acceleration, before calling start rebalance API')
-    parser.add_argument('--min-storage-size', type=int, default=53687091200, help='Minimum storage size per split part in bytes (default: 50GB)')
+    parser.add_argument('--min-storage-size', type=int, default=536870912, help='Minimum storage size per split part in bytes (default: 50GB)')
+    parser.add_argument('--skip-add-nodes', action='store_true', help='To skip adding nodes API')
+
 
     args = parser.parse_args()
 
@@ -384,6 +386,7 @@ def main():
         force_sync_during_sleep = args.force_sync_during_sleep
         stop_before_rebalance = args.stop_before_rebalance
         min_storage_size = args.min_storage_size
+        skip_add_nodes = args.skip_add_nodes
 
         global REBALANCE_PLAN_FILE
         REBALANCE_PLAN_FILE = "/root/fusion/reb_plan{}.json".format(reb_count)
@@ -405,8 +408,9 @@ def main():
         )
 
         # Step 1: Add/Remove nodes
-        print("Adding new nodes to cluster...")
-        rebalancer.add_nodes()
+        if not skip_add_nodes:
+            print("Adding new nodes to cluster...")
+            rebalancer.add_nodes()
 
         # Step 2: Prepare rebalance and get UUID
         print("Preparing rebalance plan...")

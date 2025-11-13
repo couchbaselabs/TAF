@@ -408,7 +408,8 @@ class BucketHelper(BucketRestApi):
             init_params[Bucket.weight] = serverless.weight
             init_params[Bucket.width] = serverless.width
         num_vbs = bucket_params.get("numVBuckets")
-        if num_vbs:
+        self.log.info(f"Num VBs: {num_vbs}, Type: {type(num_vbs)}")
+        if num_vbs is not None and num_vbs != "None":
             init_params[Bucket.numVBuckets] = num_vbs
             if num_vbs == 1024 and init_params[Bucket.storageBackend] == Bucket.StorageBackend.magma:
                     ClusterRestAPI(self.server).set_internal_settings(
@@ -471,6 +472,8 @@ class BucketHelper(BucketRestApi):
         self.log.info("Creating '%s' bucket %s"
                       % (init_params['bucketType'], init_params['name']))
         create_start_time = time.time()
+
+        self.log.info(f"Init params: {init_params}")
 
         maxwait = 60
         for numsleep in range(maxwait):

@@ -8,6 +8,7 @@ from BucketLib.bucket import Bucket
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from cb_tools.cbstats import Cbstats
+from couchbase_helper.documentgenerator import doc_generator
 from storage.fusion.fusion_base import FusionBase
 from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -21,6 +22,10 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         self.upsert_iterations = self.input.param("upsert_iterations", 2)
         self.monitor_log_store = self.input.param("monitor_log_store", True)
+
+        self.nfs_rate_limit = self.input.param("nfs_rate_limit", None)
+        self.nfs_latency = self.input.param("nfs_latency", None)
+        self.nfs_packet_loss = self.input.param("nfs_packet_loss", None)
 
         # Maintain two dicts. One to monitor and one to record violations
         if self.monitor_log_store:
@@ -207,6 +212,8 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
     def test_fusion_sync_throttling(self):
 
+        force_sync_during_upload = self.input.param("force_sync_during_upload", False)
+
         self.log.info("Starting initial load")
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 60
@@ -216,7 +223,9 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.sleep(60, "Wait before applying throttling limits")
 
         # Apply NFS throttling
-        self.throttle_nfs_traffic(rate_limit="800kbit")
+        self.throttle_nfs_traffic(rate_limit=self.nfs_rate_limit,
+                                  latency_ms=self.nfs_latency,
+                                  loss_percent=self.nfs_packet_loss)
 
         self.sleep(30, "Wait after applying throttling limits")
 
@@ -229,12 +238,25 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         # Perform another data load
         self.log.info("Starting another workload")
-        self.perform_workload(self.num_items,
-                              self.num_items * 2,
-                              ops_rate=10000)
+        doc_loading_tasks = self.perform_workload(self.num_items,
+                                                  self.num_items * 2,
+                                                  ops_rate=10000,
+                                                  wait=False)
+
+        self.sleep(120, "Wait before starting force sync in a loop")
+
+        if force_sync_during_upload:
+            sync_th = threading.Thread(target=self.force_fusion_sync_loop)
+            sync_th.start()
+
+        for task in doc_loading_tasks:
+            self.doc_loading_tm.get_task_result(task)
 
         self.sleep(300, "Sleep after data loading")
         self.bucket_util.print_bucket_stats(self.cluster)
+
+        if force_sync_during_upload:
+            sync_th.join()
 
         # Remove NFS throttling
         self.remove_nfs_throttling()
@@ -481,18 +503,18 @@ class FusionSync(MagmaBaseTest, FusionBase):
                 sync_failures = int(stats['ep_fusion_sync_failures'])
                 migration_failures = int(stats['ep_fusion_migration_failures'])
                 read_failures = int(stats['ep_data_read_failed'])
-                
+
                 self.log.info("Final - Node {0}, Bucket {1}: "
                             "Sync failures={2}, Migration failures={3}, Read failures={4}".format(
                                 node.ip, bucket.name, sync_failures, migration_failures, read_failures))
-                
+
                 self.assertEqual(sync_failures, 0,
                     "Sync failures on {0}:{1}".format(node.ip, bucket.name))
                 self.assertEqual(migration_failures, 0,
                     "Migration failures on {0}:{1}".format(node.ip, bucket.name))
                 self.assertEqual(read_failures, 0,
                     "Read failures on {0}:{1}".format(node.ip, bucket.name))
-                
+
                 cbstats.disconnect()
 
 
@@ -565,6 +587,312 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.bucket_util.print_bucket_stats(self.cluster)
 
 
+    def test_fusion_bucket_delete_during_slow_uploads(self):
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        self.sleep(60, "Wait before applying throttling limits")
+
+        # Apply NFS throttling
+        self.throttle_nfs_traffic(rate_limit="400kbit")
+
+        self.sleep(30, "Wait after applying throttling limits")
+
+        # Perform another data load
+        self.log.info("Starting another workload")
+        self.perform_workload(self.num_items, self.num_items * 2, ops_rate=10000)
+
+        # Delete bucket during slow sync
+        for bucket in self.cluster.buckets:
+            self.log.info(f"Deleting bucket: {bucket.name}")
+            self.bucket_util.delete_bucket(self.cluster, bucket)
+
+        self.sleep(300, "Sleep after data loading")
+
+        # Remove NFS throttling
+        self.remove_nfs_throttling()
+
+
+    def test_fusion_rebalance_during_slow_uploads(self):
+
+        rebalance_method = self.input.param("rebalance_method", "fusion") # fusion / dcp
+        dcp_rebalance_type = self.input.param("dcp_rebalance_type", "rebalance_out") # rebalance_out / swap_rebalance
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        self.sleep(60, "Wait before applying throttling limits")
+
+        # Apply NFS throttling
+        self.throttle_nfs_traffic(rate_limit="400kbit")
+
+        self.sleep(30, "Wait after applying throttling limits")
+
+        # Perform another data load
+        self.log.info("Starting another workload")
+        doc_loading_tasks = self.perform_workload(self.num_items,
+                                                  self.num_items * 2,
+                                                  ops_rate=10000,
+                                                  wait=False)
+
+        self.sleep(2 * self.fusion_upload_interval, "Sleep after starting data load")
+
+        # Perform a Rebalance
+        if rebalance_method == "fusion":
+            self.log.info("Running a Fusion rebalance")
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                  rebalance_count=1,
+                                                  rebalance_sleep_time=30)
+
+            extent_migration_array = list()
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                    extent_th.start()
+                    extent_migration_array.append(extent_th)
+
+            for th in extent_migration_array:
+                th.join()
+
+        elif rebalance_method == "dcp":
+
+            self.log.info(f"Running a DCP rebalance of type: {dcp_rebalance_type}")
+
+            if dcp_rebalance_type == "rebalance_out":
+
+                nodes_to_rebalance_out = self.cluster.nodes_in_cluster[-self.num_nodes_to_rebalance_out:]
+
+                self.log.info(f"Rebalancing-out {nodes_to_rebalance_out} during slow uploads")
+                result = self.task.rebalance(self.cluster, [],
+                                             nodes_to_rebalance_out, services=["kv"])
+                self.assertTrue(result, "Rebalance-out failed during slow uploads")
+
+            elif dcp_rebalance_type == "swap_rebalance":
+
+                nodes_to_rebalance_out = self.cluster.nodes_in_cluster[-self.num_nodes_to_swap_rebalance:]
+                nodes_to_rebalance_in = self.cluster.servers[len(self.cluster.nodes_in_cluster):\
+                                        len(self.cluster.nodes_in_cluster)+self.num_nodes_to_swap_rebalance]
+
+                self.log.info(f"Swap Rebalancing {nodes_to_rebalance_out} during extent migration")
+                result = self.task.rebalance(self.cluster, nodes_to_rebalance_in,
+                                             nodes_to_rebalance_out,
+                                             services=["kv"] * self.num_nodes_to_swap_rebalance)
+                self.assertTrue(result, "Swap rebalance during slow uploads failed")
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        for task in doc_loading_tasks:
+            self.doc_loading_tm.get_task_result(task)
+
+        self.sleep(120, "Sleep after data loading")
+
+        # Remove NFS throttling
+        self.remove_nfs_throttling()
+
+
+    def test_fusion_large_log_file_sync(self):
+
+        du_th = threading.Thread(target=self.monitor_fusion_disk_usage)
+        for bucket in self.cluster.buckets:
+            stats_th = threading.Thread(target=self.monitor_fusion_sync_stats, args=[bucket])
+
+        du_th.start()
+        stats_th.start()
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 180
+        self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Fetch vbucket data density
+        for bucket in self.cluster.buckets:
+            self.fetch_vbucket_size(bucket)
+
+        # Stopping monitoring threads
+        self.monitor_du = False
+        self.monitor_stats = False
+        du_th.join()
+        stats_th.join()
+
+        # Perform another Fusion Rebalance
+        self.log.info("Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              rebalance_sleep_time=60)
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        status, content = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
+        self.log.info(f"Active Guest Volumes: {content}")
+
+        self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
+        self.sleep(60, "Wait after deleting guest volumes")
+
+        # Perform read workload
+        self.log.info("Starting read workload")
+        self.perform_workload(0, self.num_items, ops_rate=20000, doc_op="read")
+
+
+    def test_fusion_sync_with_large_docs(self):
+
+        # Number of docs of different sizes
+        self.num_2mb_docs = self.input.param("num_2mb_docs", 2000)
+        self.num_4mb_docs = self.input.param("num_4mb_docs", 2000)
+        self.num_8mb_docs = self.input.param("num_8mb_docs", 2000)
+        self.num_16mb_docs = self.input.param("num_16mb_docs", 2000)
+        self.num_20mb_docs = self.input.param("num_20mb_docs", 2000)
+
+        for bucket in self.cluster.buckets:
+            # Loading docs of sizes 2MB - 20MB (large docs) using cbc-pillowfight
+            th1 = threading.Thread(target=self.load_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_2mb_docs, 2548000, "2mbbig_docs", 1, 10])
+            th2 = threading.Thread(target=self.load_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_4mb_docs, 4548000, "4mbbig_docs", 1, 10])
+            th3 = threading.Thread(target=self.load_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_4mb_docs, 4548000, "4mbbig_docs", 1, 10])
+            th4 = threading.Thread(target=self.load_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_8mb_docs, 8548000, "8mbbig_docs", 1, 10])
+            th5 = threading.Thread(target=self.load_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_16mb_docs, 16548000, "16mbbig_docs", 1, 10])
+            th6 = threading.Thread(target=self.load_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_20mb_docs, 20548000, "20mbbig_docs", 1, 10])
+            doc_loading_threads = [th1, th2, th3, th4, th5, th6]
+            th1.start()
+            th2.start()
+            th3.start()
+            th4.start()
+            th5.start()
+            th6.start()
+
+            for th in doc_loading_threads:
+                th.join()
+
+        sleep_time = 120 + self.fusion_upload_interval + 180
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        # Perform another Fusion Rebalance
+        self.log.info("Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              rebalance_sleep_time=60)
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
+        self.sleep(60, "Wait after deleting guest volumes")
+
+        self.validate_read_failures_pillowfight()
+
+
+    def test_fusion_vbucket_skew(self):
+
+        num_target_vbs = self.input.param("num_target_vbs", 5)
+
+        bucket_doc_gen = dict()
+        for bucket in self.cluster.buckets:
+            target_vbs = random.sample(range(bucket.numVBuckets), int(num_target_vbs))
+            self.log.info(f"Creating doc_generator for bucket: {bucket.name}, Target VBs: {target_vbs}")
+            doc_gen = doc_generator(
+                self.key, 0, self.num_items,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                target_vbucket=target_vbs,
+                vbuckets=bucket.numVBuckets)
+            self.log.info(f"Bucket: {bucket.name}, doc_generator created")
+            bucket_doc_gen[bucket.name] = doc_gen
+
+        doc_loading_tasks = list()
+        for bucket in self.cluster.buckets:
+            self.log.info(f"Loading docs into bucket: {bucket.name}")
+            load_task = self.task.async_load_gen_docs(
+                            self.cluster, bucket, bucket_doc_gen[bucket.name],
+                            "create", 0, batch_size=10, process_concurrency=2,
+                            timeout_secs=self.sdk_timeout,
+                            load_using=self.load_docs_using)
+            doc_loading_tasks.append(load_task)
+
+        for load_task in doc_loading_tasks:
+            self.task_manager.get_task_result(load_task)
+
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Perform Update workload
+        while self.upsert_iterations > 0:
+            update_load_tasks = list()
+            for bucket in self.cluster.buckets:
+                self.log.info(f"Updating docs in bucket: {bucket.name}")
+                update_task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, bucket_doc_gen[bucket.name],
+                    "update", 0, batch_size=10, process_concurrency=2,
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using)
+                update_load_tasks.append(update_task)
+
+            for load_task in update_load_tasks:
+                self.task_manager.get_task_result(load_task)
+
+            self.upsert_iterations -= 1
+            self.sleep(5, "Wait after update workload iteration")
+
+        self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Perform a Fusion Rebalance
+        self.log.info("Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              rebalance_sleep_time=60)
+        self.get_guest_volumes_sizes(nodes=nodes_to_monitor)
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+
     def crash_during_sync(self, interval=None, timeout=None):
 
         self.stop_crash = False
@@ -615,7 +943,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
             shell.disconnect()
 
 
-    def throttle_nfs_traffic(self, rate_limit):
+    def throttle_nfs_traffic(self, rate_limit=None, latency_ms=None, loss_percent=None):
 
         for server in self.cluster.servers:
 
@@ -627,12 +955,46 @@ class FusionSync(MagmaBaseTest, FusionBase):
             o, e = shell.execute_command(interface_cmd)
             interface = o[0].strip()
 
-            cmd1 = f"sudo tc qdisc add dev {interface} root handle 1: htb default 12"
-            cmd2 = f"sudo tc class add dev {interface} parent 1: classid 1:1 htb rate {rate_limit} ceil {rate_limit}"
-            cmd3 = f"sudo tc filter add dev {interface} protocol ip parent 1:0 prio 1 u32 match ip dst {self.nfs_server_ip} flowid 1:1"
+            commands_to_run = list()
 
-            for cmd in [cmd1, cmd2, cmd3]:
-                self.log.info(f"Executing CMD: {cmd}")
+            if rate_limit:
+                cmd1 = f"sudo tc qdisc add dev {interface} root handle 1: htb default 12"
+                cmd2 = f"sudo tc class add dev {interface} parent 1: classid 1:1 htb rate {rate_limit} ceil {rate_limit}"
+                commands_to_run.append(cmd1)
+                commands_to_run.append(cmd2)
+                parent_class = "1:1"
+            else:
+                cmd1 = f"sudo tc qdisc add dev {interface} root handle 1: prio"
+                commands_to_run.append(cmd1)
+                parent_class = "1:1"
+
+            netem_args = []
+            if latency_ms:
+                netem_args.append(f"delay {latency_ms}ms")
+            if loss_percent:
+                netem_args.append(f"loss {loss_percent}%")
+
+            if netem_args:
+                netem_cmd = (
+                    f"sudo tc qdisc add dev {interface} parent {parent_class} "
+                    f"handle 10: netem {' '.join(netem_args)}"
+                )
+                commands_to_run.append(netem_cmd)
+
+            filter_cmd = (
+                f"sudo tc filter add dev {interface} protocol ip parent 1:0 prio 1 "
+                f"u32 match ip dst {self.nfs_server_ip} flowid {parent_class}"
+            )
+            commands_to_run.append(filter_cmd)
+
+            filter_cmd2 = (
+                f"sudo tc filter add dev {interface} protocol ip parent 1:0 prio 1 "
+                f"u32 match ip src {self.nfs_server_ip} flowid {parent_class}"
+            )
+            commands_to_run.append(filter_cmd2)
+
+            for cmd in commands_to_run:
+                self.log.info(f"Server: {server.ip}, Executing CMD: {cmd}")
                 shell.execute_command(cmd)
 
             shell.disconnect()
@@ -667,10 +1029,14 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         while self.monitor_du:
 
-            o, e = ssh.execute_command(du_cmd)
-            current_du = int(o[0].split("\t")[0])
+            try:
+                o, e = ssh.execute_command(du_cmd)
+                current_du = int(o[0].split("\t")[0])
 
-            self.log.info(f"Log Store DU = {current_du}")
+                self.log.info(f"Log Store DU = {current_du}")
+
+            except Exception as e:
+                self.log.info(e)
 
             time.sleep(interval)
 
@@ -685,17 +1051,21 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         while self.monitor_stats:
 
-            stat_dict = dict()
+            try:
+                stat_dict = dict()
 
-            for server in self.cluster.nodes_in_cluster:
-                stat_dict[server.ip] = dict()
-                cbstats = Cbstats(server)
-                result = cbstats.all_stats(bucket.name)
+                for server in self.cluster.nodes_in_cluster:
+                    stat_dict[server.ip] = dict()
+                    cbstats = Cbstats(server)
+                    result = cbstats.all_stats(bucket.name)
 
-                for stat in stats_to_monitor:
-                    stat_dict[server.ip][stat] = result[stat]
+                    for stat in stats_to_monitor:
+                        stat_dict[server.ip][stat] = result[stat]
 
-            self.log.info(f"Bucket: {bucket.name}, Sync Stats = {stat_dict}")
+                self.log.info(f"Bucket: {bucket.name}, Sync Stats = {stat_dict}")
+
+            except Exception as e:
+                self.log.info(e)
 
             time.sleep(interval)
 
@@ -893,18 +1263,18 @@ class FusionSync(MagmaBaseTest, FusionBase):
                 sync_failures = int(stats['ep_fusion_sync_failures'])
                 migration_failures = int(stats['ep_fusion_migration_failures'])
                 read_failures = int(stats['ep_data_read_failed'])
-                
+
                 self.log.info("Final - Node {0}, Bucket {1}: "
                             "Sync failures={2}, Migration failures={3}, Read failures={4}".format(
                                 node.ip, bucket.name, sync_failures, migration_failures, read_failures))
-                
+
                 self.assertEqual(sync_failures, 0,
                     "Sync failures on {0}:{1}".format(node.ip, bucket.name))
                 self.assertEqual(migration_failures, 0,
                     "Migration failures on {0}:{1}".format(node.ip, bucket.name))
                 self.assertEqual(read_failures, 0,
                     "Read failures on {0}:{1}".format(node.ip, bucket.name))
-                
+
                 cbstats.disconnect()
 
 
@@ -923,11 +1293,11 @@ class FusionSync(MagmaBaseTest, FusionBase):
         # Wait for approximately 20GB to be synced before flushing
         target_bytes_synced = 20 * 1024 * 1024 * 1024  # 20GB in bytes
         self.log.info(f"Waiting for approximately 20GB ({target_bytes_synced} bytes) to be synced before flush")
-        
+
         max_wait_time = 3600  # 1 hour max wait
         start_time = time.time()
         sync_threshold_reached = False
-        
+
         while time.time() - start_time < max_wait_time:
             total_bytes_synced = 0
             for bucket in self.cluster.buckets:
@@ -937,16 +1307,16 @@ class FusionSync(MagmaBaseTest, FusionBase):
                     bytes_synced = int(stats.get('ep_fusion_bytes_synced', 0))
                     total_bytes_synced += bytes_synced
                     cbstats.disconnect()
-            
+
             self.log.info(f"Total bytes synced so far: {total_bytes_synced} bytes ({total_bytes_synced / (1024**3):.2f} GB)")
-            
+
             if total_bytes_synced >= target_bytes_synced:
                 self.log.info(f"Target sync threshold of 20GB reached. Proceeding with flush.")
                 sync_threshold_reached = True
                 break
-            
+
             self.sleep(30, "Waiting for more data to sync")
-        
+
         if not sync_threshold_reached:
             self.log.warning(f"Did not reach 20GB sync target in {max_wait_time}s. Proceeding with flush anyway.")
 
@@ -985,11 +1355,11 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.log.info(f"Checking NFS directory size after flush: {self.nfs_server_path}")
         o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
         self.log.info(f"NFS directory size after flush: {o}")
-        
+
         # Verify directory exists and has some data
         dir_check_o, dir_check_e = ssh.execute_command(f"[ -d {self.nfs_server_path} ] && echo 'exists' || echo 'not_exists'")
         ssh.disconnect()
-        
+
         self.assertIn('exists', dir_check_o[0], f"Log store path should exist after flush")
         self.log.info("Validation passed: NFS directory exists after flush (not empty/deleted)")
 
@@ -1021,8 +1391,8 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.log.info("Loading 100k documents after flush using cbc-pillowfight")
         self.num_items = 100000
         for bucket in self.cluster.buckets:
-            self.load_data_cbc_pillowfight(self.cluster.master, bucket, 
-                                          self.num_items, self.doc_size, 
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket,
+                                          self.num_items, self.doc_size,
                                           key_prefix="post_flush", threads=4)
 
         sleep_time = 120 + self.fusion_upload_interval + 60
@@ -1121,7 +1491,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
         # Monitor if Fusion enabling completes despite flush (max 5 min)
         self.log.info("Monitoring if Fusion enabling completes despite flush (timeout=300s)")
         monitor_start = time.time()
-        fusion_enabled = self.monitor_fusion_enabled(timeout=600)
+        fusion_enabled = self.monitor_fusion_state_transition(state="enabled", timeout=600)
 
         if not fusion_enabled:
             self.fail("Fusion did not enable within 5 minutes after flush during enabling")
@@ -1259,7 +1629,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
         # Monitor if Fusion enabling completes after memcached restart (max 5 min)
         self.log.info("Monitoring if Fusion enabling completes after memcached restart (timeout=300s)")
         monitor_start = time.time()
-        fusion_enabled = self.monitor_fusion_enabled(timeout=600)
+        fusion_enabled = self.monitor_fusion_state_transition(state="enabled", timeout=600)
 
         if not fusion_enabled:
             self.fail("Fusion did not enable within 5 minutes after killing memcached during enabling")
@@ -1302,3 +1672,78 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.log.info("Test completed successfully: kill memcached during Fusion enabling")
+
+    def validate_read_failures_pillowfight(self):
+
+        # Check ep_data_read_failed stat before read workload
+        read_failure_dict = dict()
+        for server in self.cluster.nodes_in_cluster:
+            read_failure_dict[server.ip] = dict()
+            for bucket in self.cluster.buckets:
+                result = Cbstats(server).all_stats(bucket.name)
+                read_failure_dict[server.ip][bucket.name] = result["ep_data_read_failed"]
+        self.log.info(f"Read failure dict before workload = {read_failure_dict}")
+
+        # Clear page cache
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command(f"sudo sync; sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'")
+            self.log.info(f"Dropping cache on {server.ip}, O = {o}, E = {e}")
+            ssh.disconnect()
+
+        self.sleep(30, "Wait after clearing page cache")
+
+        # Perform read workload
+        for bucket in self.cluster.buckets:
+            # Reading docs of sizes 2MB - 20MB (large docs) using cbc-pillowfight
+            th1 = threading.Thread(target=self.read_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_2mb_docs, "2mbbig_docs", 1, 10])
+            th2 = threading.Thread(target=self.read_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_4mb_docs, "4mbbig_docs", 1, 10])
+            th3 = threading.Thread(target=self.read_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_4mb_docs, "4mbbig_docs", 1, 10])
+            th4 = threading.Thread(target=self.read_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_8mb_docs, "8mbbig_docs", 1, 10])
+            th5 = threading.Thread(target=self.read_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_16mb_docs, "16mbbig_docs", 1, 10])
+            th6 = threading.Thread(target=self.read_data_cbc_pillowfight, args=[self.cluster.master, bucket,
+                                                                self.num_20mb_docs, "20mbbig_docs", 1, 10])
+            doc_loading_threads = [th1, th2, th3, th4, th5, th6]
+            th1.start()
+            th2.start()
+            th3.start()
+            th4.start()
+            th5.start()
+            th6.start()
+
+            for th in doc_loading_threads:
+                th.join()
+
+        # Check ep_data_read_failed stat before read workload
+        read_failure_dict2 = dict()
+        for server in self.cluster.nodes_in_cluster:
+            read_failure_dict2[server.ip] = dict()
+            for bucket in self.cluster.buckets:
+                result = Cbstats(server).all_stats(bucket.name)
+                read_failure_dict2[server.ip][bucket.name] = result["ep_data_read_failed"]
+        self.log.info(f"Read failure dict after workload = {read_failure_dict2}")
+
+
+    def force_fusion_sync_loop(self, interval=30, num_syncs=5):
+
+       for i in range(num_syncs):
+
+            status, content = FusionRestAPI(self.cluster.master).sync_log_store()
+            self.log.info(f"Force Sync {i+1}, Status: {status}, Content: {content}")
+
+            self.sleep(interval)
+
+
+    def get_guest_volumes_sizes(self, nodes, rebalance_count=1):
+
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+
+        for node in nodes:
+            du_cmd = f"du -sh /data/nfs/{self.client_share_dir}/guest_storage/ns_1@{node.ip}/reb{rebalance_count}/guest*"
+            o, e = ssh.execute_command(du_cmd)
+            self.log.info(f"Server: {node.ip}, Guest Volume Distribution: {o}, {e}")

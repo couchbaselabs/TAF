@@ -45,11 +45,12 @@ class StorageBase(BaseTestCase):
         self.fusion_test = self.input.param("fusion_test", False)
         self.fusion_log_store_uri = self.input.param("fusion_log_store_uri", None)
         self.fusion_upload_interval = self.input.param("fusion_upload_interval", 60)
-        self.fusion_log_checkpoint_interval = self.input.param("fusion_log_checkpoint_interval", 180)
         self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 78643200) # 75MB/s
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
         self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100) # 100MB
         self.logstore_frag_threshold = self.input.param("logstore_frag_threshold", 0.5) # 50%
+        self.fusion_max_log_size = self.input.param("fusion_max_log_size", 1073741824) # 1GB
+        self.fusion_max_num_log_files = self.input.param("fusion_max_num_log_files", 100)
 
         self.set_kv_quota = self.input.param("set_kv_quota", False)
         if self.set_kv_quota:
@@ -1371,7 +1372,7 @@ class StorageBase(BaseTestCase):
                                   key_prefix="test_docs", threads=1,
                                   ops_rate=None):
         self.log.info(f"Loading {items} items of doc size: {doc_size} "
-                      f"into the bucket with cbc-pillowfight")
+                      f"into bucket: {bucket.name} with cbc-pillowfight")
         shell = RemoteMachineShellConnection(server)
         pillowfight_base_cmd = \
             "/opt/couchbase/bin/cbc-pillowfight -U {0}/{1} " \
@@ -1389,14 +1390,35 @@ class StorageBase(BaseTestCase):
         self.sleep(30, "Wait after executing pillowfight command")
         shell.disconnect()
 
+    def read_data_cbc_pillowfight(self, server, bucket, items, key_prefix, threads=1, ops_rate=None):
+
+        self.log.info(f"Reading {items} items from "
+                      f"bucket: {bucket.name} with cbc-pillowfight")
+        shell = RemoteMachineShellConnection(server)
+        pillowfight_base_cmd = \
+            "/opt/couchbase/bin/cbc-pillowfight -U {0}/{1} " \
+            "-u Administrator -P password -I {2}" \
+            " -t {3} --no-population -r 0" \
+            " --key-prefix={4} -Dtimeout=10"
+
+        cmd = pillowfight_base_cmd.format(server.ip, bucket.name, items,
+                                          threads, key_prefix)
+        if ops_rate is not None:
+            cmd += " --rate-limit {}".format(ops_rate)
+
+        self.log.info("Executing pillowfight command = {}".format(cmd))
+        _, _ = shell.execute_command(cmd, timeout=300)
+        self.sleep(30, "Wait after executing pillowfight command")
+        shell.disconnect()
 
     def override_fusion_settings(self):
 
         # Override Fusion default settings
         for bucket in self.cluster.buckets:
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
-                                        logstore_frag_threshold=self.logstore_frag_threshold)
+                                        logstore_frag_threshold=self.logstore_frag_threshold,
+                                        fusion_max_log_size=self.fusion_max_log_size,
+                                        fusion_max_num_log_files=self.fusion_max_num_log_files)
         # Restart couchbase
         for server in self.cluster.nodes_in_cluster:
             ssh = RemoteMachineShellConnection(server)
@@ -1412,10 +1434,15 @@ class StorageBase(BaseTestCase):
             for server in self.cluster.nodes_in_cluster:
                 cbstats = Cbstats(server)
                 result = cbstats.all_stats(bucket.name)
-                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}")
+                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
+                            f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}, "
+                            f"Fusion Max Log Size: {result['ep_magma_fusion_max_log_size']}, "
+                            f"Fusion Max Log Files: {result['ep_magma_fusion_max_num_log_files']}")
 
-    def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None,
-                               logstore_frag_threshold=None):
+
+    def change_fusion_settings(self, bucket, upload_interval=None,
+                               logstore_frag_threshold=None, fusion_max_log_size=None,
+                               fusion_max_num_log_files=None):
 
         fusion_settings = ""
         if upload_interval is not None:
@@ -1423,15 +1450,20 @@ class StorageBase(BaseTestCase):
         else:
             fusion_settings += f"magma_fusion_upload_interval={self.fusion_upload_interval};"
 
-        if checkpoint_interval is not None:
-            fusion_settings += f"magma_fusion_log_checkpoint_interval={checkpoint_interval};"
-        else:
-            fusion_settings += f"magma_fusion_log_checkpoint_interval={self.fusion_log_checkpoint_interval};"
-
         if logstore_frag_threshold is not None:
             fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={logstore_frag_threshold};"
         else:
             fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={self.logstore_frag_threshold};"
+
+        if fusion_max_log_size is not None:
+            fusion_settings += f"magma_fusion_max_log_size={fusion_max_log_size};"
+        else:
+            fusion_settings += f"magma_fusion_max_log_size={self.fusion_max_log_size};"
+
+        if fusion_max_num_log_files is not None:
+            fusion_settings += f"magma_fusion_max_num_log_files={fusion_max_num_log_files};"
+        else:
+            fusion_settings += f"magma_fusion_max_num_log_files={self.fusion_max_num_log_files};"
         fusion_settings = fusion_settings[:-1] # Trimming the semicolon at the end
 
         diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{fusion_settings}"}}]).' http://localhost:8091/diag/eval"""
@@ -1454,29 +1486,29 @@ class StorageBase(BaseTestCase):
                                 enable_sync_threshold=self.enable_sync_threshold)
         self.log.info(f"Status = {status}, Result = {content}")
 
-    def monitor_fusion_enabled(self, timeout=300):
+    def monitor_fusion_state_transition(self, state="enabled", timeout=300):
         """
         Monitor if Fusion reaches enabled state within timeout.
         Returns: True if enabled, False if timeout
         """
         fusion_client = FusionRestAPI(self.cluster.master)
         end_time = time.time() + timeout
-        fusion_enabled = False
+        fusion_state_transition_complete = False
 
         while time.time() < end_time:
             status, content = fusion_client.get_fusion_status()
             self.log.info(f"Fusion Status = {content}")
-            if content['state'] == "enabled":
-                fusion_enabled = True
+            if content['state'] == state:
+                fusion_state_transition_complete = True
                 break
             time.sleep(2)
 
-        if fusion_enabled:
-            self.log.info("Fusion Enabled successfully")
+        if fusion_state_transition_complete:
+            self.log.info(f"Fusion {state} successfully")
         else:
-            self.log.warning(f"Fusion not enabled after {timeout} seconds")
+            self.log.warning(f"Fusion not {state} after {timeout} seconds")
 
-        return fusion_enabled
+        return fusion_state_transition_complete
 
     def enable_fusion(self, buckets=None, timeout=3600):
 
@@ -1484,7 +1516,7 @@ class StorageBase(BaseTestCase):
         status, content = fusion_client.enable_fusion(buckets=buckets)
         self.log.info(f"Enabling Fusion, Status: {status}, Content: {content}")
         if status:
-            fusion_enabled = self.monitor_fusion_enabled(timeout=timeout)
+            fusion_enabled = self.monitor_fusion_state_transition(state="enabled", timeout=timeout)
             if not fusion_enabled:
                 self.fail("Enabling Fusion failed after timeout")
         else:
@@ -1496,57 +1528,58 @@ class StorageBase(BaseTestCase):
         status, content = fusion_client.disable_fusion()
         self.log.info(f"Disabling Fusion, Status: {status}, Content: {content}")
         if status:
-            end_time = time.time() + timeout
-            fusion_disabled = False
-            while time.time() < end_time:
-                status, content = fusion_client.get_fusion_status()
-                self.log.info(f"Fusion Status = {content}")
-                if content['state'] == "disabled":
-                    fusion_disabled = True
-                    break
-                time.sleep(2)
-
-            if fusion_disabled:
-                self.log.info("Fusion Disabled successfully")
-            else:
+            fusion_disabled = self.monitor_fusion_state_transition(state="disabled", timeout=timeout)
+            if not fusion_disabled:
                 self.fail("Disabling Fusion failed after timeout")
         else:
             self.fail(f"Disabling Fusion failed. Error = {content}")
+
+    def stop_fusion(self, timeout=3600):
+
+        fusion_client = FusionRestAPI(self.cluster.master)
+        status, content = fusion_client.stop_fusion()
+        self.log.info(f"Stopping Fusion, Status: {status}, Content: {content}")
+        if status:
+            fusion_stopped = self.monitor_fusion_state_transition(state="stopped", timeout=timeout)
+            if not fusion_stopped:
+                self.fail("Stopping Fusion failed after timeout")
+        else:
+            self.fail(f"Stopping Fusion failed. Error = {content}")
 
     def check_log_files_on_nfs(self, nfs_server, nfs_server_path):
         """
         Check if log files exist on NFS server.
         Returns: (log_files_exist: bool, log_file_count: int)
         """
-        
+
         ssh = RemoteMachineShellConnection(nfs_server)
         self.log.info(f"Checking for log files on NFS: {nfs_server_path}")
-        
+
         # Find all log files in the NFS path
         find_cmd = f"find {nfs_server_path} -name 'log-*' -type f 2>/dev/null | wc -l"
         o, e = ssh.execute_command(find_cmd)
-        
+
         log_file_count = 0
         if o and len(o) > 0:
             try:
                 log_file_count = int(o[0].strip())
             except ValueError:
                 log_file_count = 0
-        
+
         # Also list some sample log files for debugging
         list_cmd = f"find {nfs_server_path} -name 'log-*' -type f 2>/dev/null | head -10"
         list_o, list_e = ssh.execute_command(list_cmd)
-        
+
         ssh.disconnect()
-        
+
         log_files_exist = log_file_count > 0
-        
+
         self.log.info(f"Log files found: {log_file_count}")
         if log_files_exist and list_o:
             self.log.info("Sample log files:")
             for log_file in list_o[:5]:
                 self.log.info(f"  {log_file.strip()}")
-        
+
         return log_files_exist, log_file_count
 
     def PrintStep(self, msg=None):

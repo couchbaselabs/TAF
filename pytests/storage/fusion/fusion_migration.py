@@ -159,7 +159,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             th.join()
 
         # Deleting guest volumes after extent migration
-        self.log_store_rebalance_cleanup()
+        self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
         self.log.info("Performing a read workload post extent migration")
         self.perform_batch_reads()
@@ -415,7 +415,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         for th in extent_migration_array:
             th.join()
 
-        self.log_store_rebalance_cleanup()
+        self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
         rebalance_counter = 2
         rebalance_types = ["rebalance_in", "rebalance_out", "swap_rebalance"]
@@ -455,7 +455,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             for th in extent_migration_array:
                 th.join()
 
-            self.log_store_rebalance_cleanup()
+            self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
             rebalance_types.remove(rebalance_type)
 

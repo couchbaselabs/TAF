@@ -11,7 +11,7 @@ class ManageClusterNodes(CBRestConnection):
         docs.couchbase.com/server/current/rest-api/rest-servergroup-post-add.html
         POST :: /pools/default/serverGroups/<uuid>/addNode
         """
-        api = self.base_url + f"/pools/default/serverGroups/{uuid}/addNone"
+        api = self.base_url + f"/pools/default/serverGroups/{uuid}/addNode"
         params = {'hostname': f"{hostname}:{port}",
                   'user': username,
                   'password': password}

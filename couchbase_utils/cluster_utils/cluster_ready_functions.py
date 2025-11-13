@@ -944,16 +944,16 @@ class ClusterUtils:
             /opt/couchbase/bin/couchbase-server | cut -d \"=\" -f 2",)
             self.log.debug("Current vBuckets on node %s: %s"
                            % (server, vb_on_node))
+            self.log.info(f"Cluster vbuckets: {cluster.vbuckets}")
             if vb_on_node:
                 vb_on_node = int(vb_on_node[0])
             else:
                 vb_on_node = 1024
-            if cluster.vbuckets != vb_on_node:
-                env_dict = dict()
-                if cluster.vbuckets and cluster.vbuckets != 1024:
-                    env_dict["COUCHBASE_NUM_VBUCKETS"] = cluster.vbuckets
-                if len(env_dict) >= 1:
-                    remote_client.change_env_variables(env_dict)
+            # if cluster.vbuckets != vb_on_node:
+            env_dict = dict()
+            env_dict["COUCHBASE_NUM_VBUCKETS"] = cluster.vbuckets
+            if len(env_dict) >= 1:
+                remote_client.change_env_variables(env_dict)
             remote_client.disconnect()
             self.log.debug("========= CHANGED ENVIRONMENT SETTING ===========")
 

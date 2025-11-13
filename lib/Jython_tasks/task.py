@@ -4905,6 +4905,7 @@ class BucketCreateTask(Task):
             self.bucket.threadsNumber = self.bucket_priority
 
         try:
+            self.log.info(f"Bucket obj : {self.bucket.__dict__}")
             self.result = BucketHelper(self.server)\
                 .create_bucket(self.bucket.__dict__)
             if self.result is False:

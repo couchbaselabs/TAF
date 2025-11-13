@@ -5,7 +5,7 @@
 
 set -e
 
-MAX_SHARES=5
+MAX_SHARES=15
 NFS_CLIENT_CIDR=${1:-*}
 BASE_DIR="/data/nfs"
 EXPORTS_FILE="/etc/exports"

@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from rebalance_utils.rebalance_util import RebalanceUtil
 from storage.fusion.fusion_base import FusionBase
 from storage.magma.magma_base import MagmaBaseTest
@@ -24,22 +25,6 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.nodes_with_blocked_chronicle = list()
 
         self.upsert_iterations = self.input.param("upsert_iterations", 2)
-
-        # Override Fusion default settings
-        for bucket in self.cluster.buckets:
-            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
-                                        logstore_frag_threshold=self.logstore_frag_threshold)
-        # Set Migration Rate Limit
-        ClusterRestAPI(self.cluster.master).\
-            manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
-
-        for server in self.cluster.servers:
-            self.log.info(f"Enabling diag/eval on non local hosts for server: {server.ip}")
-            shell = RemoteMachineShellConnection(server)
-            o, e = shell.enable_diag_eval_on_non_local_hosts()
-            self.log.info(f"Output = {o}, Error = {e}")
-            shell.disconnect()
 
     def tearDown(self):
         self.cleanup_iptables_rules()
@@ -102,7 +87,7 @@ class FusionUploader(MagmaBaseTest, FusionBase):
             for th in extent_migration_array:
                 th.join()
 
-            self.log_store_rebalance_cleanup()
+            self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
             self.parse_reb_plan_dict(rebalance_counter)
 
@@ -160,16 +145,244 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         for th in extent_migration_array:
             th.join()
 
-        self.log_store_rebalance_cleanup()
+        self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
         self.parse_reb_plan_dict(rebalance_counter)
 
         self.validate_stale_log_deletion()
 
 
-    # TODO
-    # StopUploader Fusion API
-    # def test_fusion_update_broken_uploaders(self)
+    def test_fusion_update_broken_uploaders(self):
+
+        janitor_interval = self.input.param("janitor_interval", 900000)
+        stop_uploader_during = self.input.param("stop_uploader_during", "sync") # [sync, rebalance, failover]
+        failover_type = self.input.param("failover_type", "graceful") # [graceful, hard]
+        post_failover_step = self.input.param("post_failover_step", "recovery") # [recovery, rebalance_out]
+        recovery_type = self.input.param("recovery_type", "full") # [full, delta]
+
+        janitor_interval_in_seconds = janitor_interval // 1000
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        # Get Uploader Map
+        self.get_fusion_uploader_info()
+
+        # Set Janitor Interval to a higher value (300 seconds)
+        # "'ns_config:set({ns_orchestrator, janitor_interval}, 300000)'"
+        for server in self.cluster.nodes_in_cluster:
+            status, content = ClusterRestAPI(server).ns_config_set(key="{ns_orchestrator, janitor_interval}", value=janitor_interval)
+            self.log.info(f"Server: {server.ip}, Status: {status}, Content: {content}")
+
+        self.sleep(120, "Sleep after updating janitor interval")
+
+        # For every bucket, pick a few VBs from every node to stop uploaders on
+        for bucket in self.cluster.buckets:
+            vbuckets = list()
+            start_vb = 0
+            for node in list(self.fusion_uploader_dict[bucket.name].keys()):
+                end_vb = start_vb + self.fusion_uploader_dict[bucket.name][node]
+                node_vbs = random.sample(range(start_vb, end_vb), (end_vb - start_vb) // 2)
+                vbuckets.extend(node_vbs)
+                start_vb = end_vb
+
+            vbuckets_str = "[" + ",".join(str(n) for n in vbuckets) + "]"
+            self.log.info(f"Bucket: {bucket.name}, Vbuckets to stop uploaders on = {vbuckets_str}")
+
+            # Stop Uploaders on some VBs
+            stop_uploader_cmd = f'ns_memcached:maybe_stop_fusion_uploaders("{bucket.name}", {vbuckets_str}).'
+            for server in self.cluster.nodes_in_cluster:
+                status, content = ClusterRestAPI(server).diag_eval(code=stop_uploader_cmd)
+                self.log.info(f"Server: {server.ip}, CMD: {stop_uploader_cmd}, Status: {status}, Content: {content}")
+
+        stop_upload_time = time.time()
+        self.sleep(30, "Sleep after stopping uploaders on some VBs")
+
+        # Start DU tracking
+        du_th_array = list()
+        for bucket in self.cluster.buckets:
+            for vb in vbuckets:
+                log_store_vb_path = os.path.join(self.nfs_server_path, "kv", bucket.uuid, f"kvstore-{str(vb)}")
+                du_th = threading.Thread(target=self.monitor_disk_usage, args=[log_store_vb_path])
+                du_th_array.append(du_th)
+                du_th.start()
+
+        # Get Uploader Map
+        self.get_fusion_uploader_info()
+
+        # Start a data load
+        self.perform_workload(start=self.num_items, end=self.num_items * 2, ops_rate=20000)
+
+        if stop_uploader_during == "sync":
+            if int(time.time() - stop_upload_time) < janitor_interval_in_seconds:
+                self.sleep(janitor_interval_in_seconds - int(time.time() - stop_upload_time) + 60, "Wait for Janitor to start uploaders again")
+            self.sleep(300, "Wait for uploaders to catch up")
+            # Get Uploader Map after Rebalance
+            self.get_fusion_uploader_info()
+
+        self.sleep(60, "Wait before performing rebalance/failover")
+
+        if stop_uploader_during == "failover":
+
+            # Perform failover
+            candidates = [server for server in self.cluster.nodes_in_cluster if server.ip != self.cluster.master.ip]
+            node_to_failover = candidates[0] if candidates else None
+            if not node_to_failover:
+                self.fail("No node can be failed over")
+            self.log.info(f"Node to failover: {node_to_failover.ip}")
+
+            rest = ClusterRestAPI(self.cluster.master)
+            otp_node = self.get_otp_node(self.cluster.master, node_to_failover)
+
+            if failover_type == "graceful":
+                self.log.info(f"Gracefully Failing over the node {otp_node.id}")
+                success, _ = rest.perform_graceful_failover(otp_node.id)
+                self.assertTrue(success, "Failover unsuccessful")
+                # Monitor failover rebalance
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
+                self.assertTrue(rebalance_passed, "Graceful failover rebalance failed")
+
+            elif failover_type == "hard":
+                self.log.info(f"Hard Failover of node {otp_node.id}")
+                success, _ = rest.perform_hard_failover(otp_node.id)
+                self.assertTrue(success, "Failover unsuccessful")
+
+            self.sleep(60, "Wait before recovering/rebalancing-out the node")
+            if post_failover_step == "recovery":
+                rest.set_failover_recovery_type(otp_node.id, recovery_type)
+                self.sleep(15, "Wait after setting failover recovery type")
+
+            elif post_failover_step == "rebalance_out":
+                self.num_nodes_to_rebalance_out = 1
+
+        # Perform a Fusion Rebalance
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              rebalance_sleep_time=60)
+        self.sleep(30, "Wait after rebalance")
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        self.monitor_du = False
+        for th in du_th_array:
+            th.join()
+
+        # Get Uploader Map after Rebalance
+        self.get_fusion_uploader_info()
+
+
+    def test_fusion_stop_disable_while_uploaders_are_broken(self):
+
+        stop_uploader_post_action = self.input.param("stop_uploader_post_action", "stop") # stop/disable
+
+        janitor_interval = self.input.param("janitor_interval", 900000)
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        # Get Uploader Map
+        self.get_fusion_uploader_info()
+
+        # Set Janitor Interval to a higher value (300 seconds)
+        # "'ns_config:set({ns_orchestrator, janitor_interval}, 300000)'"
+        for server in self.cluster.nodes_in_cluster:
+            status, content = ClusterRestAPI(server).ns_config_set(key="{ns_orchestrator, janitor_interval}", value=janitor_interval)
+            self.log.info(f"Server: {server.ip}, Status: {status}, Content: {content}")
+
+        self.sleep(120, "Sleep after updating janitor interval")
+
+        # For every bucket, pick a few VBs from every node to stop uploaders on
+        for bucket in self.cluster.buckets:
+            vbuckets = list()
+            start_vb = 0
+            for node in list(self.fusion_uploader_dict[bucket.name].keys()):
+                end_vb = start_vb + self.fusion_uploader_dict[bucket.name][node]
+                node_vbs = random.sample(range(start_vb, end_vb), (end_vb - start_vb) // 2)
+                vbuckets.extend(node_vbs)
+                start_vb = end_vb
+
+            vbuckets_str = "[" + ",".join(str(n) for n in vbuckets) + "]"
+            self.log.info(f"Bucket: {bucket.name}, Vbuckets to stop uploaders on = {vbuckets_str}")
+
+            # Stop Uploaders on some VBs
+            stop_uploader_cmd = f'ns_memcached:maybe_stop_fusion_uploaders("{bucket.name}", {vbuckets_str}).'
+            for server in self.cluster.nodes_in_cluster:
+                status, content = ClusterRestAPI(server).diag_eval(code=stop_uploader_cmd)
+                self.log.info(f"Server: {server.ip}, CMD: {stop_uploader_cmd}, Status: {status}, Content: {content}")
+
+        self.sleep(30, "Sleep after stopping uploaders on some VBs")
+
+        # Start DU tracking
+        du_th_array = list()
+        for bucket in self.cluster.buckets:
+            for vb in vbuckets:
+                log_store_vb_path = os.path.join(self.nfs_server_path, "kv", bucket.uuid, f"kvstore-{str(vb)}")
+                du_th = threading.Thread(target=self.monitor_disk_usage, args=[log_store_vb_path])
+                du_th_array.append(du_th)
+                du_th.start()
+
+        # Get Uploader Map
+        self.get_fusion_uploader_info()
+
+        # Start a data load
+        self.perform_workload(start=self.num_items, end=self.num_items * 2, ops_rate=20000)
+
+        self.sleep(60, "Wait before stopping/disabling Fusion")
+
+        if stop_uploader_post_action == "stop":
+            self.stop_fusion()
+        elif stop_uploader_post_action == "disable":
+            self.disable_fusion()
+
+        self.sleep(120, "Wait after stopping/disabling Fusion")
+
+        self.log.info("Enabling Fusion again")
+        self.enable_fusion()
+
+        # Get Uploader Map
+        self.get_fusion_uploader_info()
+
+        self.sleep(120, "Wait after enabling Fusion")
+
+        # Perform a Fusion Rebalance
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              rebalance_sleep_time=60)
+        self.sleep(30, "Wait after rebalance")
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        self.monitor_du = False
+        for th in du_th_array:
+            th.join()
+
+        # Get Uploader Map after Rebalance
+        self.get_fusion_uploader_info()
+
 
     def test_fusion_uploader_failover(self):
 
@@ -261,6 +474,49 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.get_fusion_uploader_info()
 
 
+    def test_fusion_uploader_cannot_start_without_chronicle(self):
+
+        self.log.info("Test: Uploader Cannot Start Without Chronicle")
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        spare_nodes = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
+        if not spare_nodes:
+            self.fail("No spare nodes available for test")
+
+        new_node = spare_nodes[0]
+        self.log.info(f"Node that will be added: {new_node.ip}")
+        self.log.info(f"Master node (Chronicle): {self.cluster.master.ip}")
+
+        self.log.info("Blocking Chronicle communication on new node")
+        self.block_chronicle_communication(new_node)
+        self.sleep(5, "Wait after blocking Chronicle")
+
+        self.log.info("Running Fusion rebalance (will attempt to start uploader)")
+        nodes_to_monitor = self.run_rebalance(
+            output_dir=self.fusion_output_dir,
+            rebalance_count=1
+        )
+        self.sleep(30, "Wait after rebalance")
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.log.info(f"Nodes to monitor: {[n.ip for n in nodes_to_monitor]}")
+
+        self.log.info("Verifying uploader did not start")
+        for node in nodes_to_monitor:
+            if node.ip == new_node.ip:
+                self.log.info(f"Checking node with blocked Chronicle: {node.ip}")
+                self.verify_uploader_not_started(node)
+
+        self.log.info("Cleaning up test")
+        self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
+
+        self.log.info("TEST PASSED: Uploader correctly refused to start without Chronicle access")
+
+
     def validate_stale_log_deletion(self):
 
         self.log.info("Validating stale log file deletion")
@@ -304,12 +560,10 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.vb_log_ckpt_dict = dict()
         self.bucket_uuid_map = dict()
 
-        ssh = RemoteMachineShellConnection(self.cluster.master)
-        reb_plan_path = os.path.join(self.fusion_scripts_dir, "reb_plan{}.json".format(str(rebalance_counter)))
-        cat_cmd = f"cat {reb_plan_path}"
-        o, e = ssh.execute_command(cat_cmd)
-        json_str = "\n".join(o)
-        data = json.loads(json_str)
+        reb_plan_path = os.path.join(self.fusion_output_dir, "reb_plan{}.json".format(str(rebalance_counter)))
+        with open(reb_plan_path, "r") as f:
+            data = json.load(f)
+        self.involved_nodes = list(data['nodes'].keys())
 
         for bucket in self.cluster.buckets:
             self.reb_plan_dict[bucket.name] = set()
@@ -330,8 +584,6 @@ class FusionUploader(MagmaBaseTest, FusionBase):
 
         self.log.info(f"Reb plan dict = {self.reb_plan_dict}")
         self.log.info(f"Log checkpoint dict = {self.vb_log_ckpt_dict}")
-
-        ssh.disconnect()
 
 
     def get_otp_node(self, rest_node, target_node):
@@ -433,44 +685,23 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         return True
 
 
-    def test_fusion_uploader_cannot_start_without_chronicle(self):
+    def monitor_disk_usage(self, path, interval=10, timeout=1800):
 
-        self.log.info("Test: Uploader Cannot Start Without Chronicle")
+        self.log.info(f"Monitoring DU on path: {path}")
 
-        self.log.info("Starting initial load")
-        self.initial_load()
-        sleep_time = 120 + self.fusion_upload_interval + 30
-        self.sleep(sleep_time, "Sleep after data loading")
+        du_cmd = f"du -sb {path}"
+        ssh = RemoteMachineShellConnection(self.nfs_server)
 
-        spare_nodes = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
-        if not spare_nodes:
-            self.fail("No spare nodes available for test")
+        self.monitor_du = True
+        end_time = time.time() + timeout
 
-        new_node = spare_nodes[0]
-        self.log.info(f"Node that will be added: {new_node.ip}")
-        self.log.info(f"Master node (Chronicle): {self.cluster.master.ip}")
+        while self.monitor_du and time.time() < end_time:
 
-        self.log.info("Blocking Chronicle communication on new node")
-        self.block_chronicle_communication(new_node)
-        self.sleep(5, "Wait after blocking Chronicle")
+            o, e = ssh.execute_command(du_cmd)
+            current_du = int(o[0].split("\t")[0])
 
-        self.log.info("Running Fusion rebalance (will attempt to start uploader)")
-        nodes_to_monitor = self.run_rebalance(
-            output_dir=self.fusion_output_dir,
-            rebalance_count=1
-        )
-        self.sleep(30, "Wait after rebalance")
+            self.log.info(f"Path: {path} DU = {current_du}")
 
-        self.cluster_util.print_cluster_stats(self.cluster)
-        self.log.info(f"Nodes to monitor: {[n.ip for n in nodes_to_monitor]}")
+            time.sleep(interval)
 
-        self.log.info("Verifying uploader did not start")
-        for node in nodes_to_monitor:
-            if node.ip == new_node.ip:
-                self.log.info(f"Checking node with blocked Chronicle: {node.ip}")
-                self.verify_uploader_not_started(node)
-
-        self.log.info("Cleaning up test")
-        self.log_store_rebalance_cleanup()
-
-        self.log.info("TEST PASSED: Uploader correctly refused to start without Chronicle access")
+        ssh.disconnect()
