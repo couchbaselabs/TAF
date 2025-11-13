@@ -68,7 +68,7 @@ class DcpTestCase(DCPBase):
 
     def get_collection_id(self, bucket_name, scope_name, collection_name=None):
         uid = None
-        status, content = self.bucket_helper_obj.list_collections(bucket_name)
+        status, content = self.bucket_helper_obj.list_scope_collections(bucket_name)
         content = json.loads(content)
         for scope in content["scopes"]:
             if scope["name"] == scope_name:
@@ -97,7 +97,7 @@ class DcpTestCase(DCPBase):
         while retry > 0:
             scope_dict = self.bucket_util.get_random_scopes(
                 self.cluster.buckets, 1, 1)
-            scope_name = scope_dict[self.bucket.name]["scopes"].keys()[0]
+            scope_name = list(scope_dict[self.bucket.name]["scopes"].keys())[0]
             if scope_name != CbServer.default_scope:
                 break
             retry -= 1
@@ -123,8 +123,8 @@ class DcpTestCase(DCPBase):
         collections = self.bucket_util.get_random_collections(
             [self.bucket], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
-        scope_name = scope_dict.keys()[0]
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        scope_name = list(scope_dict.keys())[0]
+        collection_name = list(scope_dict[scope_name]["collections"].keys())[0]
         self.bucket_util.drop_collection(self.cluster.master,
                                          self.bucket,
                                          scope_name,
@@ -263,8 +263,8 @@ class DcpTestCase(DCPBase):
         collections = self.bucket_util.get_random_collections(
             [self.bucket], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
-        scope_name = scope_dict.keys()[0]
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        scope_name = list(scope_dict.keys())[0]
+        collection_name = list(scope_dict[scope_name]["collections"].keys())[0]
         bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                  self.bucket.name)
         bucket.scopes[scope_name] \
@@ -309,7 +309,7 @@ class DcpTestCase(DCPBase):
         # get a random scope
         scope_dict = self.bucket_util.get_random_scopes(
             self.cluster.buckets, 1, 1)
-        scope_name = scope_dict[self.bucket.name]["scopes"].keys()[0]
+        scope_name = list(scope_dict[self.bucket.name]["scopes"].keys())[0]
 
         if self.create_collection:
             collection_name = self.bucket_util.get_random_name()
@@ -408,8 +408,8 @@ class DcpTestCase(DCPBase):
         collections = self.bucket_util.get_random_collections(
             [self.bucket], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
-        scope_name = scope_dict.keys()[0]
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        scope_name = list(scope_dict.keys())[0]
+        collection_name = list(scope_dict[scope_name]["collections"].keys())[0]
 
         self.load_gen = doc_generator(self.key, 0, self.num_items)
         self.task.load_gen_docs(

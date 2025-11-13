@@ -289,7 +289,7 @@ class DcpStream(object):
 
         self.__generator = generator
         self.vbucket = vbucket
-        response = self.__generator.next()
+        response = next(self.__generator)
         assert response is not None
 
         self.failover_log = response.get('failover_log')
@@ -306,7 +306,7 @@ class DcpStream(object):
 
         if self._ended: return None
 
-        response = self.__generator.next()
+        response = next(self.__generator)
 
         if response:
 
