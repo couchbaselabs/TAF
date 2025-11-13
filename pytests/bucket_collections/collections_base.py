@@ -467,7 +467,8 @@ class CollectionBase(ClusterSetup):
                             if t_bucket.name == bucket:
                                 sdk_list.append(SDKClient(
                                     test_obj.cluster,
-                                    t_bucket, scope, collection))
+                                    t_bucket,
+                                    scope=scope, collection=collection))
                                 collections_created.append(collection)
             if test_obj.skip_range_scan_collection_mutation:
                 test_obj.skip_collections_during_data_load = collections_selected_for_range_scan
