@@ -1450,6 +1450,24 @@ class ClusterUtils:
         return data_path
 
     @staticmethod
+    def is_node_healthy(server):
+        _, content = ClusterRestAPI(server).node_details()
+        node_status = content["status"]
+        if node_status == "healthy":
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def is_node_cluster_member(server):
+        _, content = ClusterRestAPI(server).node_details()
+        node_status = content["clusterMembership"]
+        if node_status == "active":
+            return True
+        else:
+            return False
+
+    @staticmethod
     def add_remove_servers(cluster, server_list=[],
                            remove_list=[], add_list=[]):
         """ Add or Remove servers from server_list """
@@ -1493,7 +1511,7 @@ class ClusterUtils:
     def rebalance(cluster, wait_for_completion=True, ejected_nodes=[],
                   validate_bucket_ranking=True):
         rest = ClusterRestAPI(cluster.master)
-        nodes = ClusterUtils.get_nodes(cluster.master, inactive_added=True)
+        nodes = ClusterUtils.get_nodes(cluster.master, inactive_added=True, inactive_failed=True)
         result, _ = rest.rebalance(known_nodes=[node.id for node in nodes],
                                    eject_nodes=ejected_nodes)
         if result and wait_for_completion:

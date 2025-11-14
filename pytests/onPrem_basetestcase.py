@@ -250,6 +250,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         self.cb_clusters[cluster_name].servers):
                     status, result = ClusterRestAPI(server).cluster_details()
                     if status:
+                        is_healthy = ClusterUtils.is_node_healthy(server)
+                        is_cluster_member = ClusterUtils.is_node_cluster_member(server)
+                        if not is_healthy or not is_cluster_member:
+                            continue
                         self.cb_clusters[cluster_name].master = server
                         # Swap servers to avoid failures within the test
                         self.cb_clusters[cluster_name].servers[0], \
@@ -268,6 +272,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.cb_clusters[cluster_name].servers):
                 status, result = ClusterRestAPI(server).cluster_details()
                 if status:
+                    is_healthy = ClusterUtils.is_node_healthy(server)
+                    is_cluster_member = ClusterUtils.is_node_cluster_member(server)
+                    if not is_healthy or not is_cluster_member:
+                        continue
                     self.cb_clusters[cluster_name].master = server
                     # Swap servers to avoid failures within the test
                     self.cb_clusters[cluster_name].servers[0], \
