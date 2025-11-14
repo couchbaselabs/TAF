@@ -545,7 +545,7 @@ class FusionBase(BaseTestCase):
 
     def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
                       rebalance_master=False, replica_update=False, skip_file_linking=False,
-                      wait_for_rebalance_to_complete=True):
+                      wait_for_rebalance_to_complete=True, force_sync_during_sleep=False):
 
         # Populate spare nodes list
         if rebalance_count == 1:
@@ -692,6 +692,8 @@ class FusionBase(BaseTestCase):
             commands = commands.rstrip() + " --replica-update"
         if skip_file_linking:
             commands = commands.rstrip() + " --skip-file-linking"
+        if force_sync_during_sleep:
+            commands = commands.rstrip() + " --force-sync-during-sleep"
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")

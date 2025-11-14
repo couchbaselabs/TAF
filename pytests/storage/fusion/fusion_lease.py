@@ -3,22 +3,21 @@ import os
 import threading
 import time
 import subprocess
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.fusion.fusion_base import FusionBase
 from storage.magma.magma_base import MagmaBaseTest
+from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 
 class FusionLease(MagmaBaseTest, FusionBase):
     def setUp(self):
         super(FusionLease, self).setUp()
-        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
-        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
-        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
-        
+
         split_path = self.local_test_path.split("/")
         self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
         subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
-
         self.volume_ids = []
+
     def tearDown(self):
         super().tearDown()
 
@@ -91,6 +90,32 @@ class FusionLease(MagmaBaseTest, FusionBase):
             raise Exception("Lease release check failed")
         self.log.info("All leases released successfully")
 
+    def throttle_nfs_traffic(self, rate_limit):
+        for server in self.cluster.servers:
+            self.log.info(f"Throttling NFS traffic on {server.ip}")
+            shell = RemoteMachineShellConnection(server)
+            interface_cmd = f"ip route get {self.nfs_server_ip} | grep -oP 'dev \K\S+'"
+            o, e = shell.execute_command(interface_cmd)
+            interface = o[0].strip()
+            cmd1 = f"sudo tc qdisc add dev {interface} root handle 1: htb default 12"
+            cmd2 = f"sudo tc class add dev {interface} parent 1: classid 1:1 htb rate {rate_limit} ceil {rate_limit}"
+            cmd3 = f"sudo tc filter add dev {interface} protocol ip parent 1:0 prio 1 u32 match ip dst {self.nfs_server_ip} flowid 1:1"
+            for cmd in [cmd1, cmd2, cmd3]:
+                self.log.info(f"Executing CMD: {cmd}")
+                shell.execute_command(cmd)
+            shell.disconnect()
+
+    def remove_nfs_throttling(self):
+        for server in self.cluster.servers:
+            self.log.info(f"Removing NFS throttling on {server.ip}")
+            shell = RemoteMachineShellConnection(server)
+            interface_cmd = f"ip route get {self.nfs_server_ip} | grep -oP 'dev \K\S+'"
+            o, e = shell.execute_command(interface_cmd)
+            interface = o[0].strip()
+            cmd = f"sudo tc qdisc del dev {interface} root"
+            self.log.info(f"Executing CMD: {cmd}")
+            shell.execute_command(cmd)
+            shell.disconnect()
 
     def test_lease_acquire_and_release(self):
         self.initial_load()
@@ -140,7 +165,6 @@ class FusionLease(MagmaBaseTest, FusionBase):
 
         self.induce_rebalance_test_condition(self.servers, delay_time=5 * 60 * 1000,test_failure_condition="delay_rebalance_start")
         self.sleep(5, "Wait for rebalance_start delay to take effect")
-
         ssh = RemoteMachineShellConnection(self.cluster.master)
         try:
             rebalance_thread = threading.Thread(
@@ -169,5 +193,42 @@ class FusionLease(MagmaBaseTest, FusionBase):
                         self.validate_leases_released(ssh)
                     time.sleep(2)
             rebalance_thread.join()
+        finally:
+            ssh.disconnect()
+
+    def test_lease_expiry_before_rebalance_completion(self):
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Wait for data to sync to log store")
+
+        lease_timeout_ms = self.input.param("lease_timeout_ms", 30000)
+        status, content = ClusterRestAPI(self.cluster.master).diag_eval(
+            f'ns_config:set({{ns_rebalancer, fusion_snapshot_lifetime}}, {lease_timeout_ms}).'
+        )
+        self.log.info(f"Set lease timeout - Status: {status}, Content: {content}")
+
+        ssh = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            rebalance_thread = threading.Thread(
+                target=self.run_rebalance,
+                kwargs={"output_dir": self.fusion_output_dir, "rebalance_count": 1, 
+                        "rebalance_sleep_time": 900, "force_sync_during_sleep": True}
+            )
+            rebalance_thread.start()
+            
+            plan_file = self.wait_for_plan(ssh, rebalance_count=1)
+            
+            for bucket in self.cluster.buckets:
+                self.task.compact_bucket(self.cluster.master, bucket)
+            
+            rebalance_result = True
+            try:
+                rebalance_thread.join()
+            except Exception as ex:
+                self.log.info(f"Rebalance failed as expected: {ex}")
+                rebalance_result = False
+            
+            self.assertFalse(rebalance_result,
+                           "Rebalance should have failed due to deleted snapshot")
         finally:
             ssh.disconnect()

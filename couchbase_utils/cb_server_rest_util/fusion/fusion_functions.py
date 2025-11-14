@@ -80,3 +80,12 @@ class FusionFunctions(CBRestConnection):
         api = self.base_url + "/controller/fusion/prepareRebalance"
         status, content, _ = self.request(api, CBRestConnection.POST, params=params)
         return status, content
+
+    def sync_log_store(self):
+        """
+        POST :: /controller/fusion/syncLogStore
+        Force the latest snapshot on disk to LogStore.
+        """
+        api = self.base_url + "/controller/fusion/syncLogStore"
+        status, content, _ = self.request(api, CBRestConnection.POST)
+        return status, content

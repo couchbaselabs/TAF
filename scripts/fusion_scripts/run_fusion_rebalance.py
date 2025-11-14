@@ -43,7 +43,7 @@ API_START_REBALANCE = "/controller/rebalance"
 class RebalanceAutomation:
     def __init__(self, base_url: str, username: str, password: str, current_nodes: List[str],
                  new_nodes: List[str], config: dict, dry_run: bool = False, replica_update: bool = False,
-                 skip_file_linking: bool = False):
+                 skip_file_linking: bool = False, force_sync_during_sleep: bool = False):
         self.base_url = base_url.rstrip('/')
         self.auth = (username, password)
         self.current_nodes = current_nodes
@@ -52,6 +52,7 @@ class RebalanceAutomation:
         self.config = config
         self.replica_update = replica_update
         self.skip_file_linking = skip_file_linking
+        self.force_sync_during_sleep = force_sync_during_sleep
 
         if os.path.exists(REBALANCE_PLAN_FILE): os.remove(REBALANCE_PLAN_FILE)
         if os.path.exists(MANIFEST_OUTPUT_DIR): shutil.rmtree(MANIFEST_OUTPUT_DIR)
@@ -249,6 +250,20 @@ class RebalanceAutomation:
                     print(f"Failed to set up node {node}: {str(e)}")
                     raise
 
+    def sync_log_store(self):
+        """Force sync to log store."""
+        url = f"{self.base_url}/controller/fusion/syncLogStore"
+        
+        try:
+            print("Forcing sync to log store...")
+            response = requests.post(url, auth=self.auth)
+            response.raise_for_status()
+            print(f"Force sync completed - Status: {response.status_code}")
+            return response.status_code
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to force sync: {str(e)}")
+            raise
+
     def start_rebalance(self, plan_uuid: str):
         """Start the rebalance process."""
         if not plan_uuid:
@@ -347,6 +362,7 @@ def main():
     parser.add_argument('--reb-count', type=int, default=1, help='Rebalance count')
     parser.add_argument('--replica-update', action='store_true', help='Replica Update Rebalance')
     parser.add_argument('--skip-file-linking', action='store_true', help='Skip File Linking')
+    parser.add_argument('--force-sync-during-sleep', action='store_true', help='Force sync to log store during sleep after prepare rebalance')
 
     args = parser.parse_args()
 
@@ -359,6 +375,7 @@ def main():
         reb_count = args.reb_count
         replica_update = args.replica_update
         skip_file_linking = args.skip_file_linking
+        force_sync_during_sleep = args.force_sync_during_sleep
 
         global REBALANCE_PLAN_FILE
         REBALANCE_PLAN_FILE = "/root/fusion/reb_plan{}.json".format(reb_count)
@@ -372,7 +389,8 @@ def main():
             config=config,
             dry_run=args.dry_run,
             replica_update=replica_update,
-            skip_file_linking=skip_file_linking
+            skip_file_linking=skip_file_linking,
+            force_sync_during_sleep = force_sync_during_sleep
         )
 
         # Step 1: Add/Remove nodes
@@ -390,6 +408,11 @@ def main():
         sleep_time = sleep_time + 60 - reb_plan_time
         print(f"Sleeping for {sleep_time} seconds after PrepareRebalance")
         time.sleep(sleep_time)
+        
+        if force_sync_during_sleep:
+            rebalancer.sync_log_store()
+            rebalancer.sync_log_store()
+            time.sleep(60)
 
         # Step 3: Split manifest
         start = time.time()
