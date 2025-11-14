@@ -1000,7 +1000,7 @@ class XDCReplication:
     def __convert_test_to_xdcr_params(self):
         xdcr_params = {}
         xdcr_param_map = TEST_XDCR_PARAM.get_test_to_create_repl_param_map()
-        for test_param, value in self.__test_xdcr_params.iteritems():
+        for test_param, value in self.__test_xdcr_params.items():
             xdcr_params[xdcr_param_map[test_param]] = value
         return xdcr_params
 

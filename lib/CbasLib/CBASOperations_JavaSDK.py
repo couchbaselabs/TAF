@@ -162,7 +162,7 @@ class CBASHelper(object):
         return output
 
     def generate_response_object(self, output):
-        for key, value in output.iteritems():
+        for key, value in output.items():
             if key == "metrics" and isinstance(value, AnalyticsMetrics):
                 match = re.search(r'{raw=(.*?})', value.toString())
                 output["metrics"] = json.loads(match.group(1))

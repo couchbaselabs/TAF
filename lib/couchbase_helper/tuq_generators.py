@@ -17,41 +17,41 @@ class TuqGenerators(object):
         self.query = None
         self.type_args = {}
         self.nests = self._all_nested_objects(full_set[0])
-        self.type_args['str'] = [attr[0] for attr in full_set[0].iteritems()
-                            if isinstance(attr[1], unicode)]
-        self.type_args['int'] = [attr[0] for attr in full_set[0].iteritems()
+        self.type_args['str'] = [attr[0] for attr in full_set[0].items()
+                            if isinstance(attr[1], str)]
+        self.type_args['int'] = [attr[0] for attr in full_set[0].items()
                             if isinstance(attr[1], int)]
-        self.type_args['float'] = [attr[0] for attr in full_set[0].iteritems()
+        self.type_args['float'] = [attr[0] for attr in full_set[0].items()
                             if isinstance(attr[1], float)]
-        self.type_args['bool'] = [attr[0] for attr in full_set[0].iteritems()
+        self.type_args['bool'] = [attr[0] for attr in full_set[0].items()
                             if isinstance(attr[1], bool)]
-        self.type_args['list_str'] = [attr[0] for attr in full_set[0].iteritems()
-                            if isinstance(attr[1], list) and isinstance(attr[1][0], unicode)]
-        self.type_args['list_int'] = [attr[0] for attr in full_set[0].iteritems()
+        self.type_args['list_str'] = [attr[0] for attr in full_set[0].items()
+                            if isinstance(attr[1], list) and isinstance(attr[1][0], str)]
+        self.type_args['list_int'] = [attr[0] for attr in full_set[0].items()
                             if isinstance(attr[1], list) and isinstance(attr[1][0], int)]
-        self.type_args['list_obj'] = [attr[0] for attr in full_set[0].iteritems()
+        self.type_args['list_obj'] = [attr[0] for attr in full_set[0].items()
                             if isinstance(attr[1], list) and isinstance(attr[1][0], dict)]
-        self.type_args['obj'] = [attr[0] for attr in full_set[0].iteritems()
+        self.type_args['obj'] = [attr[0] for attr in full_set[0].items()
                              if isinstance(attr[1], dict)]
         for obj in self.type_args['obj']:
-            self.type_args['_obj%s_str' % (self.type_args['obj'].index(obj))] = [attr[0] for attr in full_set[0][obj].iteritems()
+            self.type_args['_obj%s_str' % (self.type_args['obj'].index(obj))] = [attr[0] for attr in full_set[0][obj].items()
                                                                                     if isinstance(attr[1], str)]
-            self.type_args['_obj%s_int'% (self.type_args['obj'].index(obj))] = [attr[0] for attr in full_set[0][obj].iteritems()
+            self.type_args['_obj%s_int'% (self.type_args['obj'].index(obj))] = [attr[0] for attr in full_set[0][obj].items()
                                                                                     if isinstance(attr[1], int)]
         for obj in self.type_args['list_obj']:
-            self.type_args['_list_obj%s_str' % (self.type_args['list_obj'].index(obj))] = [attr[0] for attr in full_set[0][obj][0].iteritems()
-                                                                                    if isinstance(attr[1], str) or isinstance(attr[1], unicode)]
-            self.type_args['_list_obj%s_int'% (self.type_args['list_obj'].index(obj))] = [attr[0] for attr in full_set[0][obj][0].iteritems()
+            self.type_args['_list_obj%s_str' % (self.type_args['list_obj'].index(obj))] = [attr[0] for attr in full_set[0][obj][0].items()
+                                                                                    if isinstance(attr[1], str) or isinstance(attr[1], str)]
+            self.type_args['_list_obj%s_int'% (self.type_args['list_obj'].index(obj))] = [attr[0] for attr in full_set[0][obj][0].items()
                                                                                     if isinstance(attr[1], int)]
         for i in range(2, 5):
             self.type_args['nested_%sl' % i] = [attr for attr in self.nests if len(attr.split('.')) == i]
         for i in range(2, 5):
-            self.type_args['nested_list_%sl' % i] = [attr[0] for attr in self.nests.iteritems() if len(attr[0].split('.')) == i and isinstance(attr[1], list)]
+            self.type_args['nested_list_%sl' % i] = [attr[0] for attr in self.nests.items() if len(attr[0].split('.')) == i and isinstance(attr[1], list)]
         self._clear_current_query()
 
     def generate_query(self, template):
         query = template
-        for name_type, type_arg in self.type_args.iteritems():
+        for name_type, type_arg in self.type_args.items():
             for attr_type_arg in type_arg:
                 query = query.replace('$%s%s' % (name_type, type_arg.index(attr_type_arg)), attr_type_arg)
         for expr in [' where ', ' select ', ' from ', ' order by', ' limit ', 'end',
@@ -142,7 +142,7 @@ class TuqGenerators(object):
             else:
                 conditions += '' + satisfy_expr
         if from_clause and from_clause.find('.') != -1:
-            sub_attrs = [att for name, group in self.type_args.iteritems()
+            sub_attrs = [att for name, group in self.type_args.items()
                          for att in group if att not in attributes]
             for attr in sub_attrs:
                 conditions = conditions.replace(' %s ' % attr, ' doc["%s"] ' % attr)
@@ -346,7 +346,7 @@ class TuqGenerators(object):
             result = self._group_results(result)
         if self.aggr_fns:
             if not self._create_groups()[0] or len(result) == 0:
-                for fn_name, params in self.aggr_fns.iteritems():
+                for fn_name, params in self.aggr_fns.items():
                     if fn_name == 'COUNT':
                         result = [{params['alias'] : len(result)}]
         return result
@@ -358,7 +358,7 @@ class TuqGenerators(object):
         order_clause = order_clause.replace(',"', '"')
         diff = set(order_clause.split(',')) - set(re.compile('doc\["[\w\']+"\]').findall(select_clause))
         diff = [attr.replace(",",'"') for attr in diff if attr != '']
-        for k, v in self.aliases.iteritems():
+        for k, v in self.aliases.items():
             if k.endswith(','):
                 self.aliases[k[:-1]] = v
                 del self.aliases[k]
@@ -489,7 +489,7 @@ class TuqGenerators(object):
 
     def _group_results(self, result):
         attrs, groups = self._create_groups()
-        for fn_name, params in self.aggr_fns.iteritems():
+        for fn_name, params in self.aggr_fns.items():
             if fn_name == 'COUNT':
                 result = [{attrs[0] : group[0], attrs[1] : group[1],
                                 params['alias'] : len([doc for doc in result
@@ -514,13 +514,13 @@ class TuqGenerators(object):
         return result
 
     def get_alias_for(self, value_search):
-        for key, value in self.aliases.iteritems():
+        for key, value in self.aliases.items():
             if value == value_search:
                 return key
         return ''
 
     def get_all_attributes(self):
-        return [att for name, group in self.type_args.iteritems()
+        return [att for name, group in self.type_args.items()
                 for att in group if not name.startswith('_')]
 
     def _is_parent_selected(self, clause, diff):

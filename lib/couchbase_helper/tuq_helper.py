@@ -198,7 +198,7 @@ class N1QLHelper:
             self.log.info("TOTAL ELAPSED TIME: %s" % result["metrics"]["elapsedTime"])
 
         if isinstance(result, str) or 'errors' in result:
-            for key, value in result["errors"][0].iteritems():
+            for key, value in result["errors"][0].items():
                 if "cause" in key:
                     err = value
                 else:
@@ -716,7 +716,7 @@ class N1QLHelper:
         actual_result = []
         for item in result:
             curr_item = {}
-            for key, value in item.iteritems():
+            for key, value in item.items():
                 if isinstance(value, list) or isinstance(value, set):
                     curr_item[key] = sorted(value)
                 else:
@@ -1128,10 +1128,10 @@ class N1QLHelper:
         for node in host_names_after_rebalance:
             index_distribution_map_after_rebalance[node] = index_distribution_map_after_rebalance.get(node, 0) + 1
         self.log.info("Distribution of indexes before rebalance")
-        for k, v in index_distribution_map_before_rebalance.iteritems():
+        for k, v in index_distribution_map_before_rebalance.items():
             print(k, v)
         self.log.info("Distribution of indexes after rebalance")
-        for k, v in index_distribution_map_after_rebalance.iteritems():
+        for k, v in index_distribution_map_after_rebalance.items():
             print(k, v)
 
     def verify_replica_indexes(self, index_names, index_map, num_replicas, expected_nodes=None):

@@ -370,7 +370,7 @@ class CBASExternalLinks(CBASBaseTest):
                 self.log.info(testcase["description"])
                 link_properties = copy.deepcopy(link.properties)
                 # Copying link property values for the testcase, to link_property dict, to create a new link.
-                for key, value in testcase.iteritems():
+                for key, value in testcase.items():
                     if key == "username" and not testcase[key]:
                         link_properties[key] = value
                     elif key in link_properties and key != "username":
@@ -831,7 +831,7 @@ class CBASExternalLinks(CBASBaseTest):
 
                 link_properties = copy.deepcopy(link.properties)
                 # Copying link property values for the testcase, to link_property dict, to create a new link.
-                for key, value in testcase.iteritems():
+                for key, value in testcase.items():
                     if key == "username" and not testcase[key]:
                         link_properties[key] = value
                     elif key in link_properties and key != "username":

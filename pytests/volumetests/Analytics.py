@@ -445,7 +445,7 @@ class volume(BaseTestCase):
 
     def get_tasks_results(self, tasks, rebalance=False):
         results = list()
-        for cluster,task in tasks.iteritems():
+        for cluster,task in tasks.items():
             if rebalance:
                 results.append(cluster.rebalance_util.wait_for_rebalance_task_to_complete(task))
             else:
@@ -935,7 +935,7 @@ class volume(BaseTestCase):
                 if self.remote_cluster:
                     cluster_init_dict[self.remote_cluster] = self.input.param("remote_init_nodes", 1)
                 # Flush buckets(s)
-                for cluster, init_node in cluster_init_dict.iteritems():
+                for cluster, init_node in cluster_init_dict.items():
                     self.bucket_util.flush_all_buckets(
                         cluster, skip_resetting_num_items=True)
                     self.sleep(10)

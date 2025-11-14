@@ -81,8 +81,8 @@ class CGroup(CGroupBase):
                       format(resp_json['num_cpu_core'], self.cpus))
         resource_dict = self.parse_indexer_log(matched_lines)
         cpu_log, mem_log = resource_dict['cpu'], resource_dict['memory']
-        print("Service memory map:{}".format(self.service_and_memory_allocation.iteritems()))
-        for service, memory in self.service_and_memory_allocation.iteritems():
+        print("Service memory map:{}".format(self.service_and_memory_allocation.items()))
+        for service, memory in self.service_and_memory_allocation.items():
             if service == "index":
                 allocated_mem = int(memory) * 1024 * 1024
         if cpu_log != self.cpus:

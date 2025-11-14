@@ -151,12 +151,12 @@ class KafkaClusterUtils(object):
             self.log.info("Fetching info for topic {}".format(topic_name))
             response = self.client.list_topics(topic_name, timeout)
             response = response.__dict__
-            for broker_index, broker in response["brokers"].iteritems():
+            for broker_index, broker in response["brokers"].items():
                 response["brokers"][broker_index] = broker.__dict__
-            for topic_name, topic in response["topics"].iteritems():
+            for topic_name, topic in response["topics"].items():
                 response["topics"][topic_name] = topic.__dict__
                 for partition_idx, partition in response["topics"][
-                    topic_name]["partitions"].iteritems():
+                        topic_name]["partitions"].items():
                     response["topics"][topic_name]["partitions"][
                         partition_idx] = partition.__dict__
             return response

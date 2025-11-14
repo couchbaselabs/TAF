@@ -26,7 +26,7 @@ class DoctorXDCR:
         }}
         if not all_scopes:
             payload['scopes'] = []
-            for item, value in scope_map.iteritems():
+            for item, value in scope_map.items():
                 source_scope, source_coll_list = item.split(";")[0], ast.literal_eval(item.split(";")[1])
                 destination_scope, destination_coll_list = value.split(";")[0], ast.literal_eval(value.split(";")[1])
                 for i in range(len(source_coll_list)):

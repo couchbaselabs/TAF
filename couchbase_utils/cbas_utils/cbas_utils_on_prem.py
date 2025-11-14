@@ -279,7 +279,7 @@ class BaseUtil(object):
         :param cbas_spec dict, original cbas spec dict
         :param updated_specs dict, keys or sub dicts to be updated
         """
-        for key, value in updated_specs.iteritems():
+        for key, value in updated_specs.items():
             if key in cbas_spec:
                 if isinstance(value, dict):
                     BaseUtil.update_cbas_spec(cbas_spec[key], value)
@@ -805,9 +805,9 @@ class Link_Util(Dataverse_Util):
                     CBASHelper.unformat_name(link_prop["name"]), safe=""))
                 del link_prop["name"]
 
-            for key, value in link_prop.iteritems():
+            for key, value in link_prop.items():
                 if value:
-                    if isinstance(value, unicode):
+                    if isinstance(value, str):
                         params[key] = str(value)
                     else:
                         params[key] = value
@@ -926,9 +926,9 @@ class Link_Util(Dataverse_Util):
                 CBASHelper.unformat_name(link_prop["name"]), safe=""))
             del link_prop["name"]
 
-        for key, value in link_prop.iteritems():
+        for key, value in link_prop.items():
             if value:
-                if isinstance(value, unicode):
+                if isinstance(value, str):
                     params[key] = str(value)
                 else:
                     params[key] = value
@@ -1057,7 +1057,7 @@ class Link_Util(Dataverse_Util):
 
                 dataverse = None
                 while not dataverse:
-                    dataverse = random.choice(self.dataverses.values())
+                    dataverse = random.choice(list(self.dataverses.values()))
                     if link_spec.get("include_dataverses",
                                      []) and CBASHelper.unformat_name(
                         dataverse.name) not in link_spec.get(
@@ -2985,7 +2985,7 @@ class Synonym_Util(Dataset_Util):
 
                 dataverse = None
                 while not dataverse:
-                    dataverse = random.choice(self.dataverses.values())
+                    dataverse = random.choice(list(self.dataverses.values()))
                     if synonym_spec[
                         "include_dataverses"] and CBASHelper.unformat_name(
                         dataverse.name) not in synonym_spec[
@@ -3331,7 +3331,7 @@ class Index_Util(Synonym_Util):
 
                 dataverse = None
                 while not dataverse:
-                    dataverse = random.choice(self.dataverses.values())
+                    dataverse = random.choice(list(self.dataverses.values()))
                     if index_spec.get("include_dataverses",
                                       []) and CBASHelper.unformat_name(
                         dataverse.name) not in index_spec[
@@ -3346,7 +3346,7 @@ class Index_Util(Synonym_Util):
 
                 dataset = None
                 while not dataset:
-                    dataset = random.choice(dataverse.datasets.values())
+                    dataset = random.choice(list(dataverse.datasets.values()))
                     if index_spec.get("include_datasets",
                                       []) and CBASHelper.unformat_name(
                         dataset.name) not in index_spec["include_datasets"]:
@@ -5275,7 +5275,7 @@ class CBASRebalanceUtil(object):
                 retries += 1
             if health_monitor:
                 health_monitor.set_rebl_running(False)
-                
+
         # Wait for health monitoring thread to complete if it was started
         if health_monitor_thread and health_monitor_thread.is_alive():
             health_monitor_thread.join(timeout=60)
@@ -5413,7 +5413,7 @@ class CBASRebalanceUtil(object):
             compaction_tasks = self.bucket_util._run_compaction(
                 cluster, number_of_times=1, async_run=async_compaction)
             if not async_compaction:
-                for bucket, task in compaction_tasks.iteritems():
+                for bucket, task in compaction_tasks.items():
                     if not task.result:
                         raise Exception("Compaction failed on bucket - %s" % bucket)
                 time.sleep(60)

@@ -82,7 +82,7 @@ class CBASBaseTest(BaseTestCase):
         """
         start = 0
         end = self.nodes_init[0]
-        cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
+        cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
         # Instead of cluster.servers , use cluster.nodes_in_cluster
         cluster.servers = self.servers[start:end]
         if "cbas" in cluster.master.services:
@@ -223,7 +223,7 @@ class CBASBaseTest(BaseTestCase):
         }
         # Add nodes to the cluster as per node_init param.
         for i, (cluster_name, cluster) in enumerate(self.cb_clusters.items()):
-
+            cluster.rest = RestConnection(cluster.master)
             cluster_services = self.cluster_util.get_services_map(cluster)
             cluster_info = self.cluster_util.get_nodes_self(cluster.master)
 
@@ -243,7 +243,9 @@ class CBASBaseTest(BaseTestCase):
                     if "kv" in server.services:
                         cluster.kv_nodes.append(server)
                     rest = RestConnection(server)
-                    rest.set_data_path(
+                    rest.cluster.initialize_node(
+                        server.rest_username,
+                        server.rest_password,
                         data_path=server.data_path,
                         index_path=server.index_path,
                         cbas_path=server.cbas_path)
@@ -495,7 +497,7 @@ class CBASBaseTest(BaseTestCase):
                         RAM allocation if needed."""
                         if service == "cbas":
                             memory_quota_available = memory_quota_available * \
-                                           self.cbas_memory_quota_percent / 100
+                                           self.cbas_memory_quota_percent // 100
 
                         """if memory_quota_available is greater than
                         service_mem_in_cluster, then we don't need to
@@ -541,7 +543,7 @@ class CBASBaseTest(BaseTestCase):
                 else:
                     if service == "cbas":
                         memory_quota_available = memory_quota_available * \
-                                                 self.cbas_memory_quota_percent / 100
+                                                 self.cbas_memory_quota_percent // 100
                     property_name = self.service_mem_dict[service][0]
                     self.log.info("Setting {0} memory quota for {1}".format(
                         memory_quota_available, service))

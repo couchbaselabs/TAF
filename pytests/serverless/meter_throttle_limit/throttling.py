@@ -51,16 +51,17 @@ class ServerlessThrottling(LMT):
         self.generate_data_for_vbuckets(target_vbucket)
 
         for op_type in ["create", "update", "replace"]:
-            for key, value in self.key_value.iteritems():
+            for key, value in self.key_value.items():
                 result = self.client.crud(op_type, key, value,
-                                              durability=self.durability_level)
+                                          durability=self.durability_level)
                 if throttle_limit == 0 and result["status"] is False:
                     self.log.info("Load failed as expected for throttle limit")
                 elif result["status"] is False:
                     self.log.critical("%s Loading failed: %s" % (key, result["error"]))
-                throttle_limit, expected_num_throttled = self.calculate_expected_num_throttled(
-                                                        node, self.bucket, throttle_limit,
-                                                        write_units, expected_num_throttled)
+                throttle_limit, expected_num_throttled = \
+                    self.calculate_expected_num_throttled(
+                        node, self.bucket, throttle_limit,
+                        write_units, expected_num_throttled)
 
             self.sleep(10)
             num_throttled, ru, wu = self.get_stat(self.bucket)
@@ -70,7 +71,7 @@ class ServerlessThrottling(LMT):
             if num_throttled > 0:
                 if num_throttled < (expected_num_throttled - 10):
                     self.fail("num_throlled value %s expected_num_throttled %s"
-                                  %(num_throttled, expected_num_throttled))
+                              % (num_throttled, expected_num_throttled))
             expected_num_throttled = num_throttled
 
     def test_subdoc_throttling(self):
@@ -88,7 +89,7 @@ class ServerlessThrottling(LMT):
         self.generate_data_for_vbuckets(target_vbucket)
 
         # create the documents
-        for key, value in self.key_value.iteritems():
+        for key, value in self.key_value.items():
             result = self.client.crud(DocLoading.Bucket.DocOps.CREATE, key, value,
                                           durability=self.durability_level)
             if result["status"] is False:

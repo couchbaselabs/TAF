@@ -669,7 +669,7 @@ class GoldfishE2E(GoldFishBaseTest):
         dataverse = None
         cluster_entities = cluster.cbas_util
         while not dataverse:
-            dataverse = random.choice(cluster_entities.crud_dataverses.values())
+            dataverse = random.choice(list(cluster_entities.crud_dataverses.values()))
         new_dataset.dataverse_name = dataverse_name = dataverse.name
         new_dataset.full_name = CBASHelper.format_name(new_dataset.dataverse_name, new_dataset.name)
         self.log.info("Creating dataset: {}".format(new_dataset.full_name))
@@ -710,7 +710,7 @@ class GoldfishE2E(GoldFishBaseTest):
         dataverse = None
         cluster_entities = cluster.cbas_util
         while not dataverse:
-            dataverse = random.choice(cluster_entities.crud_dataverses.values())
+            dataverse = random.choice(list(cluster_entities.crud_dataverses.values()))
         new_dataset.dataverse_name = dataverse_name = dataverse.name
         new_dataset.full_name = CBASHelper.format_name(new_dataset.dataverse_name, new_dataset.name)
         if dataverse_name == "Default":
@@ -1168,7 +1168,7 @@ class GoldfishE2E(GoldFishBaseTest):
             for i in range(3):
                 for dataset in remote_datasets:
                     dataset.name = cluster.cbas_util.generate_name()
-                    dataverse = random.choice(cluster.cbas_util.dataverses.values())
+                    dataverse = random.choice(list(cluster.cbas_util.dataverses.values()))
                     dataset.dataverse_name = dataverse.name
                     if not cluster.cbas_util.create_remote_dataset(
                             cluster, dataset.name,
@@ -1366,7 +1366,7 @@ class GoldfishE2E(GoldFishBaseTest):
             for i in range(4):
                 dataset = random.choice(remote_datasets)
                 dataset.name = cluster.cbas_util.generate_name()
-                dataverse = random.choice(cluster.cbas_util.dataverses.values())
+                dataverse = random.choice(list(cluster.cbas_util.dataverses.values()))
                 dataset.dataverse_name = dataverse.name
                 creation_method = "COLLECTION"
                 if not cluster.cbas_util.create_remote_dataset(

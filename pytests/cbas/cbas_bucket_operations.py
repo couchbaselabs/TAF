@@ -18,7 +18,7 @@ class CBASBucketOperations(CBASBaseTest):
         super(CBASBucketOperations, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
         self.disconnect_link = self.input.param('disconnect_link', False)
 
         self.setup_cbas_for_test()

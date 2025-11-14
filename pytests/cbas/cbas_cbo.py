@@ -94,7 +94,7 @@ class CBASCBO(CBASBaseTest):
 
         if wait_for_ingestion:
             if self.data_load_type == "travel-sample":
-                for collection, doc_count in self.cbas_util.travel_sample_inventory_collections.iteritems():
+                for collection, doc_count in self.cbas_util.travel_sample_inventory_collections.items():
                     result = self.cbas_util.wait_for_ingestion_complete(
                         self.cluster, "`travel-sample`.inventory.{0}".format(collection), doc_count)
                     if not result:

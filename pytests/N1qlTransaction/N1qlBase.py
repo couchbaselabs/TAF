@@ -208,10 +208,10 @@ class N1qlBase(CollectionBase):
             value = '{ "abcd": { "def": repeat("abcd", 102400)}}'
             docs["key1234"] = value
             query_params["memory_quota"] = self.memory_quota
-            for key, value in docs.iteritems():
-                queries.append("INSERT INTO default:`%s`.`%s`.`%s` " \
-                        "(KEY, value) VALUES ( '%s', '%s') RETURNING *" \
-                        % (name[0], name[1], name[2], key, value))
+            for key, value in docs.items():
+                queries.append("INSERT INTO default:`%s`.`%s`.`%s` "
+                               "(KEY, value) VALUES ( '%s', '%s') RETURNING *"
+                               % (name[0], name[1], name[2], key, value))
         else:
             select_query = "SELECT DISTINCT t.name AS k1,t " \
                            "FROM default:`%s`.`%s`.`%s` t WHERE %s LIMIT 10"\

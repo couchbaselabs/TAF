@@ -773,7 +773,7 @@ class BaseSecondaryIndexingTests(QueryTests):
         index_map = self.cluster_util.get_index_stats()
         for bucket_name in index_map.keys():
             self.log.info("Bucket: {0}".format(bucket_name))
-            for index_name, index_val in index_map[bucket_name].iteritems():
+            for index_name, index_val in index_map[bucket_name].items():
                 self.log.info("Index: {0}".format(index_name))
                 self.log.info("number of docs pending: {0}".format(index_val["num_docs_pending"]))
                 self.log.info("number of docs queued: {0}".format(index_val["num_docs_queued"]))

@@ -264,7 +264,7 @@ class CBASExternalAzureLinks(CBASBaseTest):
 
                 # Copying link property values for the testcase,
                 # to link_property dict, to create a new link.
-                for key, value in testcase.iteritems():
+                for key, value in testcase.items():
                     if key in link_properties:
                         link_properties[key] = value
                 if testcase["description"]== "Create a link with an invalid credentials":
@@ -1138,7 +1138,7 @@ class CBASExternalAzureLinks(CBASBaseTest):
                 link_properties = copy.deepcopy(link.properties)
 
                 # Copying link property values for the testcase, to link_property dict, to create a new link.
-                for key, value in testcase.iteritems():
+                for key, value in testcase.items():
                     if key in link_properties:
                         link_properties[key] = value
 
