@@ -1,25 +1,16 @@
-'''
-Created on 04-Jun-2021
-@author: Umang Agrawal
-'''
-
-from basetestcase import BaseTestCase
-from TestInput import TestInputSingleton
-from cluster_utils.cluster_ready_functions import CBCluster
-from cb_constants import CbServer
-from cbas_utils.cbas_utils import CbasUtil
-from bucket_collections.collections_base import CollectionBase
-from collections_helper.collections_spec_constants import MetaConstants
 from BucketLib.bucket import Bucket
-from security_utils.security_utils import SecurityUtils
-from tpch_utils.tpch_utils import TPCHUtil
-from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
-from sdk_client3 import SDKClient
+from TestInput import TestInputSingleton
+from basetestcase import BaseTestCase
+from bucket_collections.collections_base import CollectionBase
+from cb_constants import CbServer
 from cb_server_rest_util.rest_client import RestConnection
-import time
-from awsLib.S3 import S3
-from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
-from columnarbasetestcase import ColumnarBaseTest
+from cbas_utils.cbas_utils import CbasUtil
+from cluster_utils.cluster_ready_functions import CBCluster
+from collections_helper.collections_spec_constants import MetaConstants
+from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
+from security_utils.security_utils import SecurityUtils
+from sdk_client3 import SDKClient
+from tpch_utils.tpch_utils import TPCHUtil
 
 
 class CBASBaseTest(BaseTestCase):
@@ -49,18 +40,6 @@ class CBASBaseTest(BaseTestCase):
                 self.input.test_params.update({
                 "ipv4_only": False, "ipv6_only": False})
 
-        """
-        Cluster node services. Parameter value format
-        serv1:serv2-serv1:ser2|serv1:serv2-ser1:serv2
-        | -> separates services per cluster.
-        - -> separates services on each node of the cluster.
-        : -> separates services on a node.
-        """
-        services_init = [x for x in self.input.param(
-            "services_init", "kv:n1ql:index").split("|")]
-        if len(services_init) > 1:
-            self.input.test_params["services_init"] = services_init[0]
-
         super(CBASBaseTest, self).setUp()
 
         """
@@ -70,7 +49,19 @@ class CBASBaseTest(BaseTestCase):
         - -> separates services on each node of the cluster.
         : -> separates services on a node.
         """
-        self.services_init = [x.split("-") for x in services_init]
+        self.services_init = [x.split("-") for x in self.input.param(
+            "services_init", "kv:n1ql:index").split("|")]
+
+        """
+        Number of nodes per cluster. Parameter value format
+        num_nodes_cluster1|num_nodes_cluster2|....
+        | -> separates number of nodes per cluster.
+        """
+        if not isinstance(self.input.param("nodes_init", 1), int):
+            self.nodes_init = [int(x) for x in self.input.param(
+                "nodes_init", 1).split("|")]
+        else:
+            self.nodes_init = [self.input.param("nodes_init", 1)]
 
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
@@ -85,125 +76,69 @@ class CBASBaseTest(BaseTestCase):
         self.num_of_clusters = self.input.param('num_of_clusters', 1)
 
         """
-        For columnar on-prem tests
-        """
-        if self.input.param("runtype", "default") == "onprem-columnar":
-            self.analytics_compute_storage_separation = True
-
-        """
         Since BaseTestCase will initialize at least one cluster, we need to
         modify the initialized cluster server property to correctly reflect the
         servers in that cluster.
         """
-        cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
-        if self.num_of_clusters == 1:
-            if cluster.master.type != "analytics":
-                self.num_of_clusters = 2
-                cluster.servers = [
-                    server for server in self.servers if server.type == "default"]
-            elif self.input.param("runtype", "default") == "onprem-columnar":
-                cluster.servers = [
-                    server for server in self.servers if server.type == "analytics"]
-
+        start = 0
+        end = self.nodes_init[0]
+        cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
+        # Instead of cluster.servers , use cluster.nodes_in_cluster
+        cluster.servers = self.servers[start:end]
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
-        cluster.rest = RestConnection(cluster.master)
-        cluster.rest.activate_service_api(["cbas", "security"])
-
-        """
-        Number of nodes per cluster. Parameter value format
-        num_nodes_cluster1|num_nodes_cluster2|....
-        | -> separates number of nodes per cluster.
-        """
-        if not isinstance(self.input.param("nodes_init", 1), int):
-            self.nodes_init = [int(x) for x in self.input.param(
-                "nodes_init", 1).split("|")]
-        elif self.num_of_clusters > 1:
-            self.nodes_init = [1] * self.num_of_clusters
-        else:
-            self.nodes_init = [self.input.param("nodes_init", 1)]
-
-
-        """
-        For the remote cluster set max memory for KV
-        """
-        if self.num_of_clusters > 1:
-            service_memory_config = dict()
-            self.log.info(cluster.master.services)
-            self.log.info(cluster.nodes_in_cluster)
-            self.log.info(cluster.rest.server)
-            _, info = cluster.rest.cluster.node_details()
-            total_memory = int(info["mcdMemoryReserved"] * 0.8)
-            if "index" in cluster.master.services:
-                service_memory_config[CbServer.Settings.INDEX_MEM_QUOTA] \
-                    = CbServer.Settings.MinRAMQuota.INDEX
-                total_memory -= service_memory_config[
-                    CbServer.Settings.INDEX_MEM_QUOTA]
-            if cluster.master.type == "analytics":
-                service_memory_config[CbServer.Settings.KV_MEM_QUOTA] = 100
-            else:
-                service_memory_config[CbServer.Settings.KV_MEM_QUOTA] = total_memory
-            status, content = cluster.rest.cluster.configure_memory(
-                service_memory_config)
-            if not status:
-                self.fail("Unable to modify memory setting for remote cluster: {0}".format(content))
-
         # Force disable TLS to avoid initial connection issues
-        # tasks = [self.node_utils.async_disable_tls(server)
-        #          for server in self.servers]
-        # for task in tasks:
-        #     self.task_manager.get_task_result(task)
-        # for server in self.servers:
-        #     self.set_ports_for_server(server, "non_ssl")
-        # CbServer.use_https = False
+        tasks = [self.node_utils.async_disable_tls(server)
+                 for server in self.servers]
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+        for server in self.servers:
+            self.set_ports_for_server(server, "non_ssl")
+        CbServer.use_https = False
 
         """
         Since BaseTestCase will initialize at least one cluster, we need to
         initialize only total clusters required - 1.
         """
         """
-        In case of On-Prem columnar tests, make sure to specify remote 
-        cluster services first in conf file followed by services for analytics 
-        cluster i.e. services_init=kv:n1ql:index-kv:n1ql:index(remote 
-        cluster)|kv:cbas-cbas(analytics cluster), this is required since we 
-        initialize the first cluster in onPrem_basetestcase file. The 
-        analytics cluster will be initialised below with or without compute 
-        storage separation based on runtype parameter. 
-        In order to setup analytics cluster with compute storage separation, 
-        the runtype should be passed as onprem-columnar 
+        In case of On-Prem columnar tests, make sure to specify analytics 
+        cluster services first in conf file followed by services for remote 
+        cluster i.e. services_init=kv:cbas-cbas(analytics cluster)|
+        kv:n1ql:index-kv:n1ql:index(remote cluster), this is required so 
+        that we don't set compute storage separation for remote cluster. 
         """
         cluster_name_format = "C%s"
         for i in range(1, self.num_of_clusters):
             # Construct dict of mem. quota percent / mb per service
             mem_quota_percent = dict()
-
-            servers = [server for server in self.servers
-                       if server.type == "analytics"]
+            reset_analytics_compute_storage_separation = False
+            if self.analytics_compute_storage_separation:
+                self.analytics_compute_storage_separation = False
+                # Construct dict of mem. quota percent per service
+                mem_quota_percent[CbServer.Services.KV] = 90
+                reset_analytics_compute_storage_separation = True
+            start = end
+            end += self.nodes_init[i]
             cluster_name = cluster_name_format % str(i+1)
             cluster = CBCluster(
                 name=cluster_name,
-                servers=servers)
+                servers=self.servers[start:end])
             self.cb_clusters[cluster_name] = cluster
+            if self.use_https:
+                SDKClient.enable_tls_in_env(cluster)
+            SDKClient.singleton_env_build(cluster)
             cluster.kv_nodes.append(cluster.master)
 
-            if self.analytics_compute_storage_separation:
-                # Construct dict of mem. quota percent per service
-                mem_quota_percent[CbServer.Services.CBAS] = 80
-                mem_quota_percent[CbServer.Services.KV] = 10
+            self.initialize_cluster(
+                cluster_name, cluster, services=self.services_init[i][0],
+                services_mem_quota_percent=mem_quota_percent
+            )
+            cluster.master.services = self.services_init[i][0].replace(":", ",")
+            if reset_analytics_compute_storage_separation:
+                self.analytics_compute_storage_separation = True
 
-            services = "kv:cbas"
-            # if self.input.param("runtype", "default") == "onprem-columnar":
-            #     services = ""
-            if not self.skip_setup_cleanup:
-                self.initialize_cluster(
-                    cluster_name, cluster, services=services,
-                    services_mem_quota_percent=mem_quota_percent
-                )
-            cluster.master.services = ["kv", "cbas"]
-            cluster.nodes_in_cluster.append(cluster.master)
-
-            if "cbas" in cluster.master.services or "analytics" in cluster.master.services:
+            if "cbas" in cluster.master.services:
                 cluster.cbas_nodes.append(cluster.master)
 
             if self.input.param("cluster_ip_family", ""):
@@ -220,13 +155,6 @@ class CBASBaseTest(BaseTestCase):
                 if not status:
                     self.fail(msg)
             self.modify_cluster_settings(cluster)
-            cluster.rest = RestConnection(cluster.master)
-            cluster.rest.activate_service_api(["cbas", "security"])
-            # Set this unconditionally
-            status, content = cluster.rest.cluster.set_internal_settings(
-                "magmaMinMemoryQuota", 256)
-            if not status:
-                self.fail(str(content))
 
         # Enforce tls on nodes of all clusters
         self.enable_tls_on_nodes()
@@ -234,6 +162,8 @@ class CBASBaseTest(BaseTestCase):
             for server in self.servers:
                 self.set_ports_for_server(server, "ssl")
             CbServer.use_https = True
+
+        self.available_servers = self.servers[end:]
 
         """
         KV infra to be created per cluster.
@@ -305,53 +235,51 @@ class CBASBaseTest(BaseTestCase):
 
             j = 1
             for server in cluster.servers:
-                # This check ensures that only the number of nodes that are
-                # mentioned in node_init param are added to the cluster.
-                if j < self.nodes_init[i] and len(self.services_init[i]) > j:
-                    if server.ip != cluster.master.ip:
-                        server.services = self.services_init[i][j].replace(":", ",")
-                        j += 1
-                        if self.set_default_cbas_memory:
-                            self.log.info(
-                                "Setting the min possible memory quota so that adding "
-                                "more nodes to the cluster wouldn't be a problem.")
-                            cluster.rest.cluster.configure_memory(
-                                {
-                                    CbServer.Settings.KV_MEM_QUOTA:
-                                        CbServer.Settings.MinRAMQuota.KV,
-                                    CbServer.Settings.FTS_MEM_QUOTA:
-                                        CbServer.Settings.MinRAMQuota.FTS,
-                                    CbServer.Settings.INDEX_MEM_QUOTA:
-                                        CbServer.Settings.MinRAMQuota.INDEX
-                                })
+                if server.ip != cluster.master.ip:
+                    server.services = self.services_init[i][j].replace(":", ",")
+                    j += 1
+                    if "cbas" in server.services:
+                        cluster.cbas_nodes.append(server)
+                    if "kv" in server.services:
+                        cluster.kv_nodes.append(server)
+                    rest = RestConnection(server)
+                    rest.set_data_path(
+                        data_path=server.data_path,
+                        index_path=server.index_path,
+                        cbas_path=server.cbas_path)
+                    if self.set_default_cbas_memory:
+                        self.log.info(
+                            "Setting the min possible memory quota so that adding "
+                            "more nodes to the cluster wouldn't be a problem.")
+                        cluster.rest.set_service_mem_quota(
+                            {
+                                CbServer.Settings.KV_MEM_QUOTA:
+                                    CbServer.Settings.MinRAMQuota.KV,
+                                CbServer.Settings.FTS_MEM_QUOTA:
+                                    CbServer.Settings.MinRAMQuota.FTS,
+                                CbServer.Settings.INDEX_MEM_QUOTA:
+                                    CbServer.Settings.MinRAMQuota.INDEX
+                            })
 
-                            self.log.info("Setting %d memory quota for CBAS" % CbServer.Settings.MinRAMQuota.CBAS)
-                            cluster.cbas_memory_quota = CbServer.Settings.MinRAMQuota.CBAS
-                            cluster.rest.cluster.configure_memory(
-                                {
-                                    CbServer.Settings.CBAS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.CBAS
-                                })
-                        else:
-                            self.set_memory_for_services(
-                                cluster, server, server.services)
+                        self.log.info("Setting %d memory quota for CBAS" % CbServer.Settings.MinRAMQuota.CBAS)
+                        cluster.cbas_memory_quota = CbServer.Settings.MinRAMQuota.CBAS
+                        cluster.rest.cluster.configure_memory(
+                            {
+                                CbServer.Settings.CBAS_MEM_QUOTA: CbServer.Settings.MinRAMQuota.CBAS
+                            })
+                    else:
+                        self.set_memory_for_services(
+                            cluster, server, server.services)
 
-            if cluster.servers[1:] and not self.skip_setup_cleanup:
+            if cluster.servers[1:]:
                 self.task.rebalance(
-                    cluster, cluster.servers[1:self.nodes_init[i]], [],
-                    services=[
-                        server.services for server in cluster.servers[
-                                                      1:self.nodes_init[i]]])
-                cluster.available_servers = cluster.servers[self.nodes_init[i]:]
-            else:
-                self.cluster_util.update_cluster_nodes_service_list(
-                        cluster)
-                ips_in_cluster = [server.ip for server in cluster.nodes_in_cluster]
-                cluster.available_servers = [server for server in cluster.servers if server.ip not in ips_in_cluster]
+                    cluster, cluster.servers[1:], [],
+                    services=[server.services for server in cluster.servers[1:]])
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
                 retry = 0
-                while True and retry < 30:
+                while True and retry < 3:
                     cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
                         cluster)
                     if cbas_cc_node_ip:
@@ -370,7 +298,7 @@ class CBASBaseTest(BaseTestCase):
                         break
 
             if "cbas" in cluster.master.services:
-                self.cbas_util.cleanup_cbas(cluster)
+                self.cbas_util.cleanup_cbas(cluster, retry=1)
 
             cluster.otpNodes = self.cluster_util.get_otp_nodes(cluster.master)
 
@@ -427,8 +355,8 @@ class CBASBaseTest(BaseTestCase):
 
             if self.input.param("analytics_loggers", None):
                 """
-                This flag is used for setting analytics internal log levels. 
-                These logs are helpful while dubugging issues as they 
+                This flag is used for setting analytics internal log levels.
+                These logs are helpful while dubugging issues as they
                 provide a deeper insight into working on CBAS service.
                 This flag can be used to set one or more logger for analytics.
                 logger_name_1:level-logger_name_2:level-......
@@ -500,18 +428,6 @@ class CBASBaseTest(BaseTestCase):
 
             self.bucket_util.add_rbac_user(cluster.master)
 
-        for cluster in sorted(self.cb_clusters.values(), key=lambda x: x.name):
-            cluster.srv = None
-            if hasattr(cluster, "cbas_cc_node"):
-                self.analytics_cluster = cluster
-            else:
-                self.remote_cluster = cluster
-                self.analytics_cluster = cluster
-        self.sdk_clients_per_user = self.input.param("sdk_clients_per_user", 1)
-        ColumnarBaseTest.init_sdk_pool_object(
-            self.analytics_cluster, self.sdk_clients_per_user,
-            self.analytics_cluster.master.rest_username,
-            self.analytics_cluster.master.rest_password)
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 

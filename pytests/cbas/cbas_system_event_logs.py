@@ -3,10 +3,11 @@ Created on 7-December-2021
 @author: umang.agrawal
 '''
 
-import random
-from cbas.cbas_base import CBASBaseTest
-from cbas_utils.cbas_utils import CBASRebalanceUtil
 import copy
+import random
+
+from cbas.cbas_base_server import CBASBaseTest
+from cbas_utils.cbas_utils import CBASRebalanceUtil
 from remote.remote_util import RemoteUtilHelper
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from CbasLib.CBASOperations import CBASHelper

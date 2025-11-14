@@ -3,7 +3,7 @@ Created on 4-April-2024
 
 @author: umang.agrawal@couchbase.com
 """
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_EA import CBASBaseTest
 from couchbase_utils.cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
@@ -20,7 +20,7 @@ class ColumnarOnPremBase(CBASBaseTest):
         self.cbas_util = columnarCBASUtil(
             self.task, self.use_sdk_for_cbas)
         self.columnar_cbas_utils = self.cbas_util
-        
+
         for cluster in self.cb_clusters.values():
             cluster.srv = None
             if hasattr(cluster, "cbas_cc_node"):

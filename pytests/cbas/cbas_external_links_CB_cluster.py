@@ -3,9 +3,10 @@ Created on 13-May-2020
 
 @author: umang.agrawal
 """
-from cbas.cbas_base import CBASBaseTest
 import random, json, copy, time, os
 from threading import Thread
+
+from cbas.cbas_base_server import CBASBaseTest
 from remote.remote_util import RemoteUtilHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from CbasLib.CBASOperations import CBASHelper

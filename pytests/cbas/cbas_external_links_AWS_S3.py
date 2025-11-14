@@ -6,7 +6,7 @@ from remote.remote_util import RemoteUtilHelper
 from threading import Thread
 from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
 from couchbase_helper.tuq_helper import N1QLHelper
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_server import CBASBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection

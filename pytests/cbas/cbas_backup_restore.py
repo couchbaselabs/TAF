@@ -1,11 +1,11 @@
 import random
+import urllib
 
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_server import CBASBaseTest
 from Jython_tasks.task import CreateDatasetsTask, DropDatasetsTask, \
     CreateSynonymsTask, DropSynonymsTask, DropDataversesTask, \
     CreateCBASIndexesTask, DropCBASIndexesTask, CreateUDFTask, DropUDFTask
 from cbas_utils.cbas_utils import BackupUtils
-import urllib
 
 
 class BackupRestoreTest(CBASBaseTest):
@@ -546,4 +546,3 @@ class BackupRestoreTest(CBASBaseTest):
                 idx_before_backup,include, exclude, original_bucket,
                 original_scope, original_collection, remap_bucket, remap_scope,
                 remap_collection)
-

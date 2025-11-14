@@ -8,7 +8,7 @@ import json
 import re
 from queue import Queue
 
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_server import CBASBaseTest
 from security.rbac_base import RbacBase
 from Jython_tasks.task import RunQueriesTask
 from cbas_utils.cbas_utils import CBASRebalanceUtil

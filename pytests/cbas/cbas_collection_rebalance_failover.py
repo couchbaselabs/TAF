@@ -3,7 +3,7 @@
 TO-DO : Extend this to support remote cluster rebalance operations also, once cbas_base refactoring is done
 '''
 
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_server import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 
 

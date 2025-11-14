@@ -4,7 +4,7 @@ from BucketLib.BucketOperations import BucketHelper
 from memcached.helper.data_helper import MemcachedClientHelper
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_server import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import DocumentGenerator
 from CbasLib.CBASOperations import CBASHelper

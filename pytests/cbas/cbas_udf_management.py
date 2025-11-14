@@ -7,8 +7,8 @@ Created on 21-February-2020
 import random
 
 from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity_on_prem import Dataverse, Synonym, CBAS_Index, CBAS_UDF
-from cbas.cbas_base import CBASBaseTest
+from CbasLib.cbas_entity_on_prem import CBAS_UDF
+from cbas.cbas_base_server import CBASBaseTest
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 
 
@@ -613,4 +613,3 @@ class CBASUDF(CBASBaseTest):
             elif i in udf_deleted_successfully:
                 i += 1
         self.log.info("Test Finished")
-

@@ -2,7 +2,7 @@ import json
 import random
 
 from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_server import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from couchbase_helper.tuq_helper import N1QLHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils

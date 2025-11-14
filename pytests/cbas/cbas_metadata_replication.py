@@ -6,7 +6,7 @@ Created on March 4, 2022
 import time
 import copy
 
-from cbas.cbas_base import CBASBaseTest
+from cbas.cbas_base_server import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 
