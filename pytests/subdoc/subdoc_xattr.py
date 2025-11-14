@@ -2916,7 +2916,7 @@ class TxnTransition:
         task = self.subdoc_task(gen, "read", kwds)
 
         # Grab the expected value of the document from generator
-        _, path_value_list = next(gen)
+        _, path_value_list = gen.next()
         expected_value = path_value_list[0][1]
 
         if not exists:
@@ -3018,7 +3018,7 @@ class TxnTransition:
         task = self.subdoc_task(self.get_generator(), "read", kwds)
 
         # Grab a document body
-        body = task.success.values()[0]['value'][0].get('body').toString()
+        body = str(list(task.success.values())[0]['value'][0].get('body'))
 
         # upsert-and-remove the xattribute
         self.upsert_and_remove()
