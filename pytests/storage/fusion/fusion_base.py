@@ -545,7 +545,8 @@ class FusionBase(BaseTestCase):
 
     def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
                       rebalance_master=False, replica_update=False, skip_file_linking=False,
-                      wait_for_rebalance_to_complete=True, force_sync_during_sleep=False):
+                      wait_for_rebalance_to_complete=True, force_sync_during_sleep=False, stop_before_rebalance=False,
+                      min_storage_size=None):
 
         # Populate spare nodes list
         if rebalance_count == 1:
@@ -694,11 +695,29 @@ class FusionBase(BaseTestCase):
             commands = commands.rstrip() + " --skip-file-linking"
         if force_sync_during_sleep:
             commands = commands.rstrip() + " --force-sync-during-sleep"
+        if stop_before_rebalance:
+            commands = commands.rstrip() + " --stop-before-rebalance"
+        if min_storage_size is not None:
+            commands = commands.rstrip() + f" --min-storage-size {min_storage_size}"
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
         o, e = ssh.execute_command(commands, timeout=1800)
         self.log.info(f"Output = {o[-50:]}, Error = {e}")
+
+        plan_uuid = None
+        involved_nodes_list = None
+
+        if stop_before_rebalance:
+            for line in o:
+                if line.startswith("PLAN_UUID="):
+                    plan_uuid = line.split("=", 1)[1].strip()
+                if line.startswith("INVOLVED_NODES="):
+                    involved_nodes_str = line.split("=", 1)[1].strip()
+                    involved_nodes_list = involved_nodes_str.split(",")
+
+            self.log.info(f"Extracted plan_uuid: {plan_uuid}")
+            self.log.info(f"Extracted involved_nodes: {involved_nodes_list}")
 
         self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout" + str(rebalance_count) + ".log")
         self.fusion_rebalance_error = os.path.join(output_dir, "fusion_stderr" + str(rebalance_count) + ".log")
@@ -716,7 +735,7 @@ class FusionBase(BaseTestCase):
         ssh.disconnect()
 
         # Monitor rebalance progress, and wait until it's done
-        if wait_for_rebalance_to_complete:
+        if wait_for_rebalance_to_complete and not stop_before_rebalance:
             self.start_time = time.time()
             self.sleep(10, "Wait before checking rebalance progress")
             try:
@@ -764,21 +783,25 @@ class FusionBase(BaseTestCase):
 
         if not fusion_rebalance_setup:
             self.fail("Error during Fusion Rebalance setup")
-        if not fusion_rebalance_result:
+        if not fusion_rebalance_result and not stop_before_rebalance:
             self.fail("Error during Fusion Rebalance")
 
         # Updating nodes_in_cluster after rebalance
-        self.cluster.nodes_in_cluster = list()
-        new_node_set = set(new_node_str.split(","))
-        for server in self.cluster.servers:
-            if server.ip in new_node_set:
-                self.cluster.nodes_in_cluster.append(server)
-        self.cluster.kv_nodes = self.cluster.nodes_in_cluster
+        if not stop_before_rebalance:
+            self.cluster.nodes_in_cluster = list()
+            new_node_set = set(new_node_str.split(","))
+            for server in self.cluster.servers:
+                if server.ip in new_node_set:
+                    self.cluster.nodes_in_cluster.append(server)
+            self.cluster.kv_nodes = self.cluster.nodes_in_cluster
 
-        self.log.info(f"Nodes in cluster = {self.cluster.nodes_in_cluster}")
-        self.log.info(f"KV Nodes = {self.cluster.kv_nodes}")
+            self.log.info(f"Nodes in cluster = {self.cluster.nodes_in_cluster}")
+            self.log.info(f"KV Nodes = {self.cluster.kv_nodes}")
 
-        return nodes_to_monitor
+        if stop_before_rebalance:
+            return nodes_to_monitor, plan_uuid, involved_nodes_list
+        else:
+            return nodes_to_monitor
 
     def log_store_rebalance_cleanup(self):
 
@@ -1074,6 +1097,9 @@ class FusionBase(BaseTestCase):
         elif doc_op == "update":
             self.update_start = start
             self.update_end = end
+        elif doc_op == "read":
+            self.read_start = start
+            self.read_end = end
 
         doc_loading_tasks, _ = self.java_doc_loader(wait=False,
                                                     skip_default=self.skip_load_to_default_collection,

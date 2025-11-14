@@ -3,6 +3,7 @@
         "accelerator_cli": "/opt/couchbase/bin/fusion/accelerator-cli",
         "accelerator_binary": "/root/fusion/run_local_accelerator.sh",
         "manifest_parts": 20,
+        "min_storage_size": 53687091200,
         "manifest_dest_path": "/mnt/nfs/share/fusion-manifests",
         "base_uri": "/mnt/nfs/share/buckets",
         "ssh_username": "root",
@@ -12,6 +13,7 @@
         "accelerator_cli": "/opt/couchbase/bin/fusion/accelerator-cli",
         "accelerator_binary": "/home/ubuntu/accelerator/run_accelerator",
         "manifest_parts": 20,
+        "min_storage_size": 53687091200,
         "manifest_dest_path": "s3://fusion-manifests/",
         "ssh_username": "ubuntu"
     }

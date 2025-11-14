@@ -43,7 +43,7 @@ API_START_REBALANCE = "/controller/rebalance"
 class RebalanceAutomation:
     def __init__(self, base_url: str, username: str, password: str, current_nodes: List[str],
                  new_nodes: List[str], config: dict, dry_run: bool = False, replica_update: bool = False,
-                 skip_file_linking: bool = False, force_sync_during_sleep: bool = False):
+                 skip_file_linking: bool = False, force_sync_during_sleep: bool = False, stop_before_rebalance: bool = False, min_storage_size: int = None):
         self.base_url = base_url.rstrip('/')
         self.auth = (username, password)
         self.current_nodes = current_nodes
@@ -53,6 +53,8 @@ class RebalanceAutomation:
         self.replica_update = replica_update
         self.skip_file_linking = skip_file_linking
         self.force_sync_during_sleep = force_sync_during_sleep
+        self.stop_before_rebalance = stop_before_rebalance
+        self.min_storage_size = min_storage_size
 
         if os.path.exists(REBALANCE_PLAN_FILE): os.remove(REBALANCE_PLAN_FILE)
         if os.path.exists(MANIFEST_OUTPUT_DIR): shutil.rmtree(MANIFEST_OUTPUT_DIR)
@@ -126,7 +128,7 @@ class RebalanceAutomation:
         if not os.path.exists(REBALANCE_PLAN_FILE) and not self.dry_run:
             raise FileNotFoundError(f"Rebalance plan file {REBALANCE_PLAN_FILE} not found")
 
-        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.config['manifest_parts']} -base-uri {self.config['base_uri']}"
+        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.config['manifest_parts']} -min-storage-size {self.min_storage_size} -base-uri {self.config['base_uri']}"
         self._execute_command(cmd, "Splitting rebalance manifest")
 
     def sync_manifests(self):
@@ -253,7 +255,7 @@ class RebalanceAutomation:
     def sync_log_store(self):
         """Force sync to log store."""
         url = f"{self.base_url}/controller/fusion/syncLogStore"
-        
+
         try:
             print("Forcing sync to log store...")
             response = requests.post(url, auth=self.auth)
@@ -363,6 +365,8 @@ def main():
     parser.add_argument('--replica-update', action='store_true', help='Replica Update Rebalance')
     parser.add_argument('--skip-file-linking', action='store_true', help='Skip File Linking')
     parser.add_argument('--force-sync-during-sleep', action='store_true', help='Force sync to log store during sleep after prepare rebalance')
+    parser.add_argument('--stop-before-rebalance', action='store_true', help='Stop execution after acceleration, before calling start rebalance API')
+    parser.add_argument('--min-storage-size', type=int, default=53687091200, help='Minimum storage size per split part in bytes (default: 50GB)')
 
     args = parser.parse_args()
 
@@ -376,6 +380,8 @@ def main():
         replica_update = args.replica_update
         skip_file_linking = args.skip_file_linking
         force_sync_during_sleep = args.force_sync_during_sleep
+        stop_before_rebalance = args.stop_before_rebalance
+        min_storage_size = args.min_storage_size
 
         global REBALANCE_PLAN_FILE
         REBALANCE_PLAN_FILE = "/root/fusion/reb_plan{}.json".format(reb_count)
@@ -390,7 +396,9 @@ def main():
             dry_run=args.dry_run,
             replica_update=replica_update,
             skip_file_linking=skip_file_linking,
-            force_sync_during_sleep = force_sync_during_sleep
+            force_sync_during_sleep = force_sync_during_sleep,
+            stop_before_rebalance = stop_before_rebalance,
+            min_storage_size = min_storage_size
         )
 
         # Step 1: Add/Remove nodes
@@ -408,7 +416,7 @@ def main():
         sleep_time = sleep_time + 60 - reb_plan_time
         print(f"Sleeping for {sleep_time} seconds after PrepareRebalance")
         time.sleep(sleep_time)
-        
+
         if force_sync_during_sleep:
             rebalancer.sync_log_store()
             rebalancer.sync_log_store()
@@ -439,11 +447,16 @@ def main():
         acceleration_time_taken = time.time() - start
         print(f"Accleration time taken = {acceleration_time_taken} seconds")
 
-        # Step 7: Start rebalance
-        print("Starting rebalance process...")
-        rebalancer.start_rebalance(plan_uuid)
-
-        print("Rebalance automation completed successfully!")
+        # Step 7: Start rebalance (only if not stopping early)
+        if not stop_before_rebalance:
+            print("Starting rebalance process...")
+            rebalancer.start_rebalance(plan_uuid)
+            print("Rebalance automation completed successfully!")
+        else:
+            print("Stopping before rebalance as requested")
+            print(f"PLAN_UUID={plan_uuid}")
+            print(f"INVOLVED_NODES={','.join(involved_nodes_list)}")
+            print("Acceleration completed successfully!")
 
     except Exception as e:
         print(f"Error during rebalance automation: {str(e)}", file=sys.stderr)
