@@ -597,13 +597,13 @@ class CBASExternalAzureLinks(CBASBaseTest):
                 "file_format": "tsv",
                 "object_construction_def": "name STRING",
                 "header": False,
-                "null_string": "\N",
+                "null_string": "\\N",
                 "validate_error_msg": False
             },
             {
                 "description": "Create dataset with null flag for json file format",
                 "file_format": "json",
-                "null_string": "\N",
+                "null_string": "\\N",
                 "validate_error_msg": True,
                 "expected_error": "Invalid parameter \'null\' (in line 1, at column 1)"
             },
