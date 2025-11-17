@@ -198,7 +198,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             is_safe = False
             # Reference ticket
             # MB-51791
-            if self.preserve_durability_during_auto_fo and \
+            if self.preserve_durability_during_auto_fo == "true" and \
                     self.min_bucket_replica >= 2:
                 self.min_bucket_replica -= 1
 
