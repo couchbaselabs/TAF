@@ -49,6 +49,15 @@ class SecurityUtils():
             return False, content
         return True, content
 
+    def get_hash_algo(self, cluster=None):
+        self.log.info("Cluster master: {}".format(cluster.master.ip))
+        self.rest = RestConnection(cluster.master)
+        status, content = self.rest.get_security_settings()
+        if not status:
+            return False, content
+        json_parsed = json.loads(content)
+        return True, json_parsed["passwordHashAlg"]
+
     def rotate_password_for_internal_users(self, cluster=None):
         self.log.info("Cluster master: {}".format(cluster.master.ip))
         self.rest = RestConnection(cluster.master)

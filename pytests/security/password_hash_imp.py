@@ -62,18 +62,10 @@ class PasswordHashImp(ClusterSetup):
                 self.sleep(5, "Wait for failover to start")
 
     def validate_hash_algo(self, username, expected_hash_algo):
-        lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
-        isasl_file = lib_cb + "isasl.pw"
+        result, observed_hash_algo = self.security_util.get_hash_algo(self.cluster)
+        if not result:
+            self.fail("Failed to get password hash algorithm: {}".format(observed_hash_algo))
 
-        shell = RemoteMachineShellConnection(self.cluster.master)
-        file_output = shell.execute_command("cat " + isasl_file)[0]
-        x = ''
-        for i in file_output:
-            x = x + i
-
-        res = json.loads(x)
-
-        observed_hash_algo = res[username]["hash"]["algorithm"]
         if observed_hash_algo == expected_hash_algo:
             self.log.info("Hash algorithm validation success")
         else:
