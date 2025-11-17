@@ -5647,9 +5647,12 @@ class CBOUtil(UDFUtil):
     """
 
     def create_sample_for_analytics_collections(
-            self, cluster, collection_name, sample_size=None, sample_seed=None):
+            self, cluster, collection_name, sample_size=None, sample_seed=None, analytics=True):
 
-        cmd = "ANALYZE ANALYTICS COLLECTION %s" % collection_name
+        if analytics:
+            cmd = "ANALYZE ANALYTICS COLLECTION %s" % collection_name
+        else:
+            cmd = "ANALYZE COLLECTION %s" % collection_name
         params = dict()
         if sample_seed is not None:
             params["sample-seed"] = sample_seed

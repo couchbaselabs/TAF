@@ -512,7 +512,7 @@ class HeterogeneousIndexTest(ColumnarBaseTest):
         # analyze collection
         for dataset in datasets:
             cboutil = CBOUtil()
-            cboutil.create_sample_for_analytics_collections(self.columnar_cluster, dataset.name, sample_size="high")
+            cboutil.create_sample_for_analytics_collections(self.columnar_cluster, dataset.name, sample_size="high", analytics=False)
 
         # create index
         for dataset in datasets:
