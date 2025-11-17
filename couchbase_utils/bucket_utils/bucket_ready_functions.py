@@ -1214,6 +1214,7 @@ class DocLoaderUtils(object):
                                                             input_spec,
                                                             mutation_num,
                                                             op_details)
+        sleep(15, "Wait for SDK to warmup")
         doc_loading_task = DocLoaderUtils.perform_doc_loading_for_spec(
             task_manager,
             cluster,
