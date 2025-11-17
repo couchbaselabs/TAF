@@ -299,13 +299,22 @@ class DCPBase(CollectionBase):
         sid = response['streamId']
         output_string = ""
         if self.keys:
-            output_string += "KEY:" + response['key'] + " from collection:" + str(
+            key = response['key']
+            if isinstance(key, bytes):
+                key = key.decode('utf-8')
+            output_string += "KEY:" + key + " from collection:" + str(
                 response['collection_id']) + ", vb:" + str(vb) + " sid:" + str(sid) + " "
         if self.docs:
-            output_string += "BODY:" + response['value']
+            value = response['value']
+            if isinstance(value, bytes):
+                value = value.decode('utf-8')
+            output_string += "BODY:" + value
         if self.xattrs:
             if 'xattrs' in response and response['xattrs'] != None:
-                output_string += " XATTRS:" + response['xattrs']
+                xattrs = response['xattrs']
+                if isinstance(xattrs, bytes):
+                    xattrs = xattrs.decode('utf-8')
+                output_string += " XATTRS:" + xattrs
             else:
                 output_string += " XATTRS: - "
         if output_string != "":
