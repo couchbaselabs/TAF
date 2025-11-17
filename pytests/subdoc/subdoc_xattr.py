@@ -32,6 +32,7 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from storage_utils.magma_utils import MagmaUtils
 from Jython_tasks.task import FunctionCallTask
 from StatsLib.StatsOperations import StatsHelper
+from couchbase.subdocument import StoreSemantics
 
 
 class SubdocBaseTest(ClusterSetup):
