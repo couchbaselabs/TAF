@@ -69,8 +69,12 @@ class DcpTestCase(DCPBase):
     def get_collection_id(self, bucket_name, scope_name, collection_name=None):
         uid = None
         status, content = self.bucket_helper_obj.list_scope_collections(bucket_name)
-        if isinstance(content, (str, bytes, bytearray)):
+        if isinstance(content, dict):
+            pass  # Already parsed, no need to parse again
+        elif isinstance(content, (str, bytes, bytearray)):
             content = json.loads(content)
+        else:
+            raise TypeError("Expected content to be dict, str, bytes, or bytearray, got %s" % type(content))
         for scope in content["scopes"]:
             if scope["name"] == scope_name:
                 uid = scope["uid"]
