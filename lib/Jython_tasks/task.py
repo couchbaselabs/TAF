@@ -7864,11 +7864,13 @@ class FailoverTask(Task):
 
     def _failover_nodes(self):
         # call REST fail_over for the nodes to be failed over all at once
+        allow_unsafe_str = "true" if self.allow_unsafe else "false"
         if self.all_at_once:
             if self.graceful:
                 status, _ = self.rest.perform_graceful_failover(self.otp_nodes_to_fo)
             else:
-                status, _ = self.rest.perform_hard_failover(self.otp_nodes_to_fo)
+                status, _ = self.rest.perform_hard_failover(self.otp_nodes_to_fo,
+                                                            allow_unsafe=allow_unsafe_str if self.allow_unsafe else None)
 
             if not status:
                 self.set_exception("Node failover failed!!")
@@ -7878,7 +7880,8 @@ class FailoverTask(Task):
                 if self.graceful:
                     status, _ = self.rest.perform_graceful_failover(otp_node)
                 else:
-                    status, _ = self.rest.perform_hard_failover(otp_node)
+                    status, _ = self.rest.perform_hard_failover(otp_node,
+                                                                allow_unsafe=allow_unsafe_str if self.allow_unsafe else None)
 
                 if not status:
                     self.set_exception("Node failover failed!!")

@@ -2,11 +2,12 @@ import math
 import sys
 
 from BucketLib.BucketOperations_Rest import BucketHelper
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
 
 from couchbase_utils.bucket_utils.bucket_ready_functions import BucketUtils
-from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -20,7 +21,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
         self.create_zones = self.input.param("create_zones", False)
         self.skip_validations = self.input.param("skip_validations", True)
-        self.data_path = RestConnection(self.cluster.master).get_data_path()
+        self.data_path = self.cluster_util.fetch_data_path(self.cluster.master)
 
     def tearDown(self):
         if self.failover_action:
@@ -132,7 +133,6 @@ class CollectionsQuorumLoss(CollectionBase):
             self.log.info("also modifying self.nodes.in.cluster to {0} ".format(self.nodes_in_cluster))
         else:
             servers_to_fail = self.nodes_in_cluster[1:self.num_node_failures + 1]
-        self.rest = RestConnection(self.cluster.master)
         return servers_to_fail
 
     def custom_induce_failure(self, nodes=None):
@@ -184,9 +184,9 @@ class CollectionsQuorumLoss(CollectionBase):
         :return: nodes of 2nd zone
         """
         serverinfo = self.cluster.master
-        rest = RestConnection(serverinfo)
+        server_groups = ServerGroupsAPI(serverinfo)
         zones = ["Group 1", "Group 2"]
-        rest.add_zone("Group 2")
+        server_groups.create_server_group("Group 2")
         nodes_in_zone = {"Group 1": [serverinfo.ip], "Group 2": []}
         second_zone_servers = list()  # Keep track of second zone's nodes
         # Divide the nodes between zones.
@@ -196,13 +196,15 @@ class CollectionsQuorumLoss(CollectionBase):
             if zones[server_group] == "Group 2":
                 second_zone_servers.append(self.nodes_in_cluster[i])
         # Shuffle the nodes
+        existing_nodes_in_zone = self.cluster_util.get_nodes_in_zone(serverinfo, zones[1])
         node_in_zone = list(set(nodes_in_zone[zones[1]]) -
-                            set([node for node in rest.get_nodes_in_zone(zones[1])]))
+                            set([node for node in existing_nodes_in_zone]))
         moved_nodes = []
-        for otp_node in rest.node_statuses():
+        all_nodes = self.cluster_util.get_nodes(serverinfo)
+        for otp_node in all_nodes:
             if otp_node.ip in node_in_zone:
                 moved_nodes.append(otp_node)
-        rest.shuffle_nodes_in_zones(moved_nodes, zones[0], zones[1])
+        self.cluster_util.shuffle_nodes_in_zones(serverinfo, moved_nodes, zones[0], zones[1])
         self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
         return second_zone_servers
@@ -214,7 +216,11 @@ class CollectionsQuorumLoss(CollectionBase):
         if removed_nodes is None:
             removed_nodes = self.server_to_fail
         for node in removed_nodes:
-            RestConnection(node).reset_node()
+            try:
+                ClusterRestAPI(node).reset_node()
+            except Exception as e:
+                self.log.warning("Unable to reset node {0}: {1}. Node may already be unavailable."
+                                 .format(node.ip, str(e)))
         self.sleep(5, "Wait for nodes to respond")
         for node in removed_nodes:
             if not self.cluster_util.is_ns_server_running(node):
@@ -292,7 +298,7 @@ class CollectionsQuorumLoss(CollectionBase):
             self.sleep(20, "Wait before failing over")
 
         self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
-        result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
+        result = self.task.failover(self.cluster, failover_nodes=self.server_to_fail,
                                     graceful=False, wait_for_pending=120,
                                     allow_unsafe=True,
                                     all_at_once=True)
@@ -345,7 +351,7 @@ class CollectionsQuorumLoss(CollectionBase):
                       format(self.failover_action, failed_over_node))
         self.custom_induce_failure(nodes=[failed_over_node])
         self.sleep(10, "Wait before failing over")
-        result = self.task.failover(self.nodes_in_cluster, failover_nodes=[failed_over_node],
+        result = self.task.failover(self.cluster, failover_nodes=[failed_over_node],
                                     graceful=False, wait_for_pending=120)
         self.assertTrue(result, "Failover Failed")
 
@@ -360,7 +366,7 @@ class CollectionsQuorumLoss(CollectionBase):
 
         self.server_to_fail.append(failed_over_node)
         self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
-        result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
+        result = self.task.failover(self.cluster, failover_nodes=self.server_to_fail,
                                     graceful=False, wait_for_pending=120,
                                     allow_unsafe=True,
                                     all_at_once=True)
@@ -417,7 +423,7 @@ class CollectionsQuorumLoss(CollectionBase):
 
         failover_nodes = [node for node in self.server_to_fail]
         failover_nodes.append(self.nodes_in_cluster[-1])  # healthy node
-        result = self.task.failover(self.nodes_in_cluster, failover_nodes=failover_nodes,
+        result = self.task.failover(self.cluster, failover_nodes=failover_nodes,
                                     graceful=False, wait_for_pending=120,
                                     allow_unsafe=True,
                                     all_at_once=True)
@@ -474,7 +480,7 @@ class CollectionsQuorumLoss(CollectionBase):
             self.sleep(20, "Wait before failing over")
 
             self.log.info("Failing over nodes explicitly {0}".format(this_step_failed_nodes))
-            result = self.task.failover(self.nodes_in_cluster, failover_nodes=this_step_failed_nodes,
+            result = self.task.failover(self.cluster, failover_nodes=this_step_failed_nodes,
                                         graceful=False, wait_for_pending=120,
                                         allow_unsafe=True,
                                         all_at_once=True)
@@ -520,14 +526,14 @@ class CollectionsQuorumLoss(CollectionBase):
         """
         self.failover_orchestrator = True
         self.server_to_fail = self.servers_to_fail()
-        self.rest = RestConnection(self.cluster.master)
+        cluster_rest = ClusterRestAPI(self.cluster.master)
         self.log.info("Failing over nodes {0}".format(self.server_to_fail))
         otp_nodes = list()
         for node in self.server_to_fail:
             ip = "ns_1@" + node.ip
             otp_nodes.append(ip)
         try:
-            self.rest.fail_over(otp_nodes, graceful=False, allowUnsafe=True, all_at_once=True)
+            cluster_rest.perform_hard_failover(otp_nodes, allow_unsafe="true")
         except:
             self.log.info("Failed as expected: {0} {1}"
                           .format(sys.exc_info()[0], sys.exc_info()[1]))
@@ -549,7 +555,7 @@ class CollectionsQuorumLoss(CollectionBase):
         self.sleep(20, "Wait before failing over")
 
         self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
-        result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
+        result = self.task.failover(self.cluster, failover_nodes=self.server_to_fail,
                                     graceful=False, wait_for_pending=120,
                                     allow_unsafe=True,
                                     all_at_once=True)
@@ -562,12 +568,12 @@ class CollectionsQuorumLoss(CollectionBase):
 
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
-        self.rest = RestConnection(self.cluster.master)
+        cluster_rest = ClusterRestAPI(self.cluster.master)
         for node in self.server_to_fail:
             try:
-                self.rest.add_node(user=self.cluster.master.rest_username,
-                                   password=self.cluster.master.rest_password,
-                                   remoteIp=node.ip)
+                cluster_rest.add_node(host_name=node.ip,
+                                      username=self.cluster.master.rest_username,
+                                      password=self.cluster.master.rest_password)
             except:
                 self.log.info("Failed as expected: {0} {1}"
                               .format(sys.exc_info()[0], sys.exc_info()[1]))

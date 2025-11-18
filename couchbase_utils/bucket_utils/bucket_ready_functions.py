@@ -6062,7 +6062,7 @@ class BucketUtils(ScopeUtils):
     def validate_manifest_uid(cluster_node, bucket):
         status = True
         manifest_uid = BucketHelper(cluster_node) \
-            .get_bucket_manifest_uid(bucket)
+            .get_bucket_manifest_uid(bucket.name)
         if bucket.stats.manifest_uid != int(manifest_uid, 16):
             BucketUtils.log.debug("Bucket UID mismatch. "
                                   "Expected: %s, Actual: %s"

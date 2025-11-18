@@ -165,8 +165,9 @@ class StorageBase(BaseTestCase):
                 encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
             self.assertTrue(buckets_created, "Unable to create multiple buckets")
         if self.change_magma_quota:
-            bucket_helper = BucketHelper(self.cluster.master)
-            bucket_helper.set_magma_quota_percentage()
+            bucket_rest = BucketRestApi(self.cluster.master)
+            for bucket in self.cluster.buckets:
+                bucket_rest.edit_bucket(bucket.name, {"storageQuotaPercentage": 10})
             self.sleep(30, "Sleep while magma storage quota setting is taking effect")
 
         self.buckets = self.cluster.buckets

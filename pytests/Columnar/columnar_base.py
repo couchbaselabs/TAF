@@ -274,7 +274,7 @@ class ColumnarBaseTest(BaseTestCase):
                     for collection_name, collection in (
                             scope.collections.items()):
                         coll_id = bucket_helper_obj.get_collection_id(
-                            bucket, scope_name, collection_name)
+                            bucket.name, scope_name, collection_name)
                         param = get_stats_param(bucket.name, scope_name, coll_id)
                         status, content, _ = bucket_helper_obj.request(
                             stats_api, "POST", params=param)

@@ -11,6 +11,7 @@ from collections_helper.collections_spec_constants import \
 from couchbase_helper.durability_helper import DurabilityHelper
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_tools.cbstats import Cbstats
 from sdk_client3 import SDKClient, SDKClientPool
@@ -158,8 +159,9 @@ class CollectionBase(ClusterSetup):
 
         # Change magma quota only for bloom filter testing
         if self.change_magma_quota:
-            bucket_helper = BucketHelper(self.cluster.master)
-            bucket_helper.set_magma_quota_percentage()
+            bucket_rest = BucketRestApi(self.cluster.master)
+            for bucket in self.cluster.buckets:
+                bucket_rest.edit_bucket(bucket.name, {"storageQuotaPercentage": 10})
             self.sleep(30, "Wait for magma storage setting to apply")
 
         validate_docs = False if self.spec_name in ttl_buckets else True

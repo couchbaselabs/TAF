@@ -489,20 +489,6 @@ class BucketHelper(BucketRestApi):
             return False
         return True
 
-    def set_magma_quota_percentage(self, bucket="default", storageQuotaPercentage=10):
-        api = '{0}{1}{2}'.format(self.base_url, 'pools/default/buckets/',
-                                 urllib.quote_plus("%s" % bucket))
-        params_dict = {}
-        params_dict["storageQuotaPercentage"] = storageQuotaPercentage
-        params = urllib.urlencode(params_dict)
-        self.log.info("Updating bucket properties for %s" % bucket)
-        self.log.debug("%s with param: %s" % (api, params))
-        status, content, _ = self._http_request(api, 'POST', params)
-        if not status:
-            self.log.error("Failed to update magma storage quota percentage: %s"
-                           % content)
-        return status
-
     def set_throttle_n_storage_limit(self, bucket_name, throttle_limit=5000, storage_limit=500, service="data"):
         key_throttle_limit = service + "ThrottleLimit"
         key_storage_limit = service + "StorageLimit"
@@ -825,18 +811,18 @@ class BucketHelper(BucketRestApi):
         return collection_count
 
     def get_bucket_manifest_uid(self, bucket):
-        _, json_parsed = self.list_scope_collections(bucket.name)
+        _, json_parsed = self.list_scope_collections(bucket)
         return json_parsed["uid"]
 
     def get_scope_id(self, bucket, scope_name):
-        _, json_parsed = self.list_scope_collections(bucket.name)
+        _, json_parsed = self.list_scope_collections(bucket)
         for scope_data in json_parsed["scopes"]:
             if scope_data["name"] == scope_name:
                 sid = scope_data["uid"]
                 return sid
 
     def get_collection_id(self, bucket, scope_name, collection_name):
-        _, json_parsed = self.list_scope_collections(bucket.name)
+        _, json_parsed = self.list_scope_collections(bucket)
         for scope_data in json_parsed["scopes"]:
             if scope_data["name"] == scope_name:
                 collections_data = scope_data["collections"]
