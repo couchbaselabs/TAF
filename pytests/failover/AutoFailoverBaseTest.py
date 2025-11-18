@@ -9,7 +9,6 @@ from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbstats import Cbstats
-from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from bucket_utils.bucket_ready_functions import CollectionUtils
@@ -1018,25 +1017,24 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                         "Failed to enable disk autofailover for the cluster")
         self.sleep(5)
         _, settings = self.rest.get_auto_failover_settings()
-        self.assertTrue(settings.enabled, "Failed to enable "
-                                          "autofailover_settings!")
-        self.assertEqual(self.timeout, settings.timeout,
+        self.assertTrue(settings["enabled"],
+                        "Failed to enable autofailover_settings!")
+        self.assertEqual(self.timeout, settings["timeout"],
                          "Incorrect timeout set. Expected timeout : {0} "
                          "Actual timeout set : {1}"
-                         .format(self.timeout, settings.timeout))
-        self.assertTrue(settings.failoverOnDataDiskIssuesEnabled,
+                         .format(self.timeout, settings["timeout"]))
+        self.assertTrue(settings["failoverOnDataDiskIssues"]["enabled"],
                         "Failed to enable disk autofailover for the cluster")
         self.assertEqual(
-            self.disk_timeout, settings.failoverOnDataDiskIssuesTimeout,
-            "Incorrect timeout period for disk failover set. "
-            "Expected Timeout: {0} Actual timeout: {1}"
-            .format(self.disk_timeout,
-                    settings.failoverOnDataDiskIssuesTimeout))
+            self.disk_timeout, settings["failoverOnDataDiskIssues"]["timePeriod"],
+            f"Incorrect timeout period for disk failover set. "
+            f"Expected Timeout: {self.disk_timeout}, "
+            f"Actual timeout: {settings['failoverOnDataDiskIssues']['timePeriod']}")
 
     def disable_disk_autofailover(self, disable_autofailover=False):
         status, _ = self.rest.update_auto_failover_settings(
-            not disable_autofailover, self.timeout, fo_on_disk_issue="false",
-            fo_on_disk_timeout=self.disk_timeout)
+            "true" if not disable_autofailover else "false", self.timeout,
+            fo_on_disk_issue="false", fo_on_disk_timeout=self.disk_timeout)
         return status
 
     def disable_disk_autofailover_and_validate(self,
@@ -1045,9 +1043,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.assertTrue(status, "Failed to update autofailover settings. "
                                 "Failed to disable disk failover settings")
         _, settings = self.rest.get_auto_failover_settings()
-        self.assertEqual(not disable_autofailover, settings.enabled,
+        self.assertEqual(not disable_autofailover, settings["enabled"],
                          "Failed to update autofailover settings.")
-        self.assertFalse(settings["failoverOnDataDiskIssuesEnabled"],
+        self.assertFalse(settings["failoverOnDataDiskIssues"]["enabled"],
                          "Failed to disable disk autofailover for the cluster")
 
     def _create_data_locations(self, server):
