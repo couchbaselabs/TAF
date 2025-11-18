@@ -796,6 +796,7 @@ class SecurityTest(SecurityBase):
                                                                            name='dummy user',
                                                                            resources=[
                                                                                {"id": self.project_id,
+                                                                               "type": "project",
                                                                                 "roles": ["projectOwner"]
                                                                                 }])
 

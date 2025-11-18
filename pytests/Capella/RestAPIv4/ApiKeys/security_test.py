@@ -711,7 +711,7 @@ class SecurityTest(SecurityBase):
         content = resp.json()
         self.assertEqual(resp.status_code, 200)
         print("Content keys: {}".format(content.keys()))
-        self.assertSetEqual(set(content.keys()), {"secretKey"})
+        self.assertSetEqual(set(content.keys()), {"secretKey", "token"})
 
         # since secret key is changed this request should be unauthenticated.
         resp = self.capellaAPI.org_ops_apis.rotate_api_key(self.tenant_id, organizationOwner_apiKey['id'])
@@ -806,13 +806,13 @@ class SecurityTest(SecurityBase):
                                                                                         'id'])
 
                 if user == "organizationOwner":
-                    self.assertEqual(projApiKey_rotates_orgApiKey.status_code, 201)
+                    self.assertEqual(projApiKey_rotates_orgApiKey.status_code, 200)
 
-                    self.assertEqual(projApiKey_rotates_projApiKey.status_code, 201)
+                    self.assertEqual(projApiKey_rotates_projApiKey.status_code, 200)
 
-                    self.assertEqual(orgApiKey_rotates_orgApiKey.status_code, 201)
+                    self.assertEqual(orgApiKey_rotates_orgApiKey.status_code, 200)
 
-                    self.assertEqual(orgApiKey_rotates_projApiKey.status_code, 201)
+                    self.assertEqual(orgApiKey_rotates_projApiKey.status_code, 200)
 
                 else:
                     self.assertEqual(projApiKey_rotates_orgApiKey.status_code, 403)
