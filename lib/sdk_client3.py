@@ -341,8 +341,13 @@ class SDKClient(object):
         }
 
         if self.compression is not None:
-            cluster_opts["compression"] = (
-                Compression(self.compression.get("enabled", "NONE")))
+            compression_enabled = self.compression.get("enabled", "NONE")
+            # Accepted Compression enum values: NONE, IN, OUT, INOUT, FORCE
+            if compression_enabled is True:
+                compression_enabled = "INOUT"
+            elif compression_enabled is False:
+                compression_enabled = "NONE"
+            cluster_opts["compression"] = Compression(compression_enabled)
             cluster_opts["compression_min_size"] = self.compression["minSize"]
             cluster_opts["compression_min_ratio"] = self.compression["minRatio"]
 
