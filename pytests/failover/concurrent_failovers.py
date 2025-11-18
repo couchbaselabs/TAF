@@ -64,8 +64,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         #######################################################################
 
         self.load_during_fo = self.input.param("load_during_fo", False)
-        self.preserve_durability_during_auto_fo = self.input.param(
-            "preserve_durability_during_auto_fo", "false")
+        self.preserve_durability_during_auto_fo = str(
+            self.input.param("preserve_durability_during_auto_fo", "false")
+        ).lower()
         self.log.info("Updating Auto-failover settings")
         self.rest.update_auto_failover_settings(
             enabled="true", timeout=self.timeout, max_count=self.max_count,
