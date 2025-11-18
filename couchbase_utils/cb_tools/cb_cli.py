@@ -23,6 +23,48 @@ class CbCli(CbCmdBase):
             return self.port - 10000
         return self.port
 
+    def node_init(self, cluster_url="localhost:8091",
+                  username="Administrator", password="password",
+                  client_cert=None, client_cert_password=None,
+                  client_key=None, client_key_password=None,
+                  node_init_data_path=None,
+                  node_init_index_path=None,
+                  node_init_analytics_path=None,
+                  node_init_eventing_path=None,
+                  node_init_hostname=None,
+                  node_init_java_home=None,
+                  ipv4=None, ipv6=None):
+        cmd = f"{self.cbstatCmd} node-init -c {cluster_url} " \
+               f"-u {username} -p {password}"
+        if node_init_hostname:
+            cmd += f" --node-init-hostname {node_init_hostname}"
+        if node_init_data_path:
+            cmd += f" --node-init-data-path {node_init_data_path}"
+        if node_init_index_path:
+            cmd += f" --node-init-index-path {node_init_index_path}"
+        if node_init_analytics_path:
+            cmd += f" --node-init-analytics-path {node_init_analytics_path}"
+        if node_init_eventing_path:
+            cmd += f" --node-init-eventing-path {node_init_eventing_path}"
+        if node_init_java_home:
+            cmd += f" --node-init-java-home {node_init_java_home}"
+
+        if client_cert:
+            cmd += f" --client-cert {client_cert}"
+        if client_cert_password:
+            cmd += f" --client-cert-password {client_cert_password}"
+        if client_key:
+            cmd += f" --client-key {client_key}"
+        if client_key_password:
+            cmd += f" --client-key-password {client_key_password}"
+
+        if ipv4:
+            cmd += " --ipv4"
+        if ipv6:
+            cmd += " --ipv6"
+
+        return self._execute_cmd(cmd)
+
     def cluster_init(self, data_ramsize, index_ramsize, fts_ramsize, services,
                      index_storage_mode, cluster_name,
                      cluster_username, cluster_password, cluster_port):

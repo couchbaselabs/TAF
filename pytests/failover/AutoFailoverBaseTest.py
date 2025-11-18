@@ -7,6 +7,7 @@ from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
+from cb_tools.cb_cli import CbCli
 from cb_tools.cbstats import Cbstats
 from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator
@@ -1063,9 +1064,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         init_port = server.port or CbServer.port
         if init_port == CbServer.ssl_port:
             init_port = CbServer.port
-        cli = CouchbaseCLI(server, server.rest_username, server.rest_password)
-        cli.hostname = "%s:%s" % (server.ip, init_port)
-        output, error, _ = cli.node_init(data_location, None, None)
+        shell_conn = RemoteMachineShellConnection(server)
+        cb_cli = CbCli(shell_conn)
+        output, error = cb_cli.node_init(node_init_data_path=data_location)
+        cb_cli.disconnect()
         self.log.info(output)
         if error or "ERROR" in output:
             self.log.info(error)
