@@ -27,7 +27,7 @@ class CBASDataverseAndScopes(CBASBaseTest):
         super(CBASDataverseAndScopes, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
 
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(
@@ -257,7 +257,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.iterations = int(self.input.param("iterations", 1))
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
 
         self.run_concurrent_query = self.input.param("run_query", False)
         self.parallel_load_percent = int(self.input.param(
@@ -1337,16 +1337,16 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         collectionTTL = int(self.input.param('collectionTTL', 0))
         bucketTTL = int(self.input.param('bucketTTL', 0))
         ttl_dict = dict()
-        selected_bucket = random.choice(buckets_spec["buckets"].keys())
+        selected_bucket = random.choice(list(buckets_spec["buckets"].keys()))
         if bucketTTL:
             buckets_spec["buckets"][selected_bucket]["maxTTL"] = bucketTTL
             ttl_dict["bucketTTL"] = bucketTTL
         if collectionTTL:
-            selected_scope = random.choice(
-                buckets_spec["buckets"][selected_bucket]["scopes"].keys())
-            selected_collection = random.choice(
+            selected_scope = random.choice(list(
+                buckets_spec["buckets"][selected_bucket]["scopes"].keys()))
+            selected_collection = random.choice(list(
                 buckets_spec["buckets"][selected_bucket]["scopes"][
-                    selected_scope]["collections"].keys())
+                    selected_scope]["collections"].keys()))
             buckets_spec["buckets"][selected_bucket]["scopes"][selected_scope][
                 "collections"][selected_collection]["maxTTL"] = collectionTTL
             selected_collection = CBASHelper.format_name(
@@ -1595,7 +1595,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                         "analytics_index": self.input.param('analytics_index', False)}))
                 elif func_name == self.cbas_util.verify_index_used:
                     statement = 'SELECT VALUE v FROM {0} v WHERE age > 2'
-                    for index in dataset.indexes.values():
+                    for index in list(dataset.indexes.values()):
                         jobs.put((func_name, {
                             "cluster":self.cluster,
                             "statement": statement.format(index.full_dataset_name),
@@ -1693,7 +1693,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
                               "deleted KV collection")
                 if not self.cbas_util.verify_index_used(
                     self.cluster, statement.format(dataset.full_name), True,
-                    dataset.indexes.keys()[0]):
+                    list(dataset.indexes.keys())[0]):
                     self.fail("Index was not used while querying the dataset")
             else:
                 if not self.cbas_util.validate_cbas_dataset_items_count(
@@ -1876,7 +1876,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if not dataset_creation_result:
             self.fail("Datasets creation failed")
         links = [dataverse + ".Local" for dataverse in
-                 self.cbas_util.dataverses.keys()] * self.input.param(
+                 list(self.cbas_util.dataverses.keys())] * self.input.param(
                      "tamper_links_count", 0)
         connect_disconnect_task = self.cbas_util.start_connect_disconnect_links_task(
             self.cluster, links=links)
