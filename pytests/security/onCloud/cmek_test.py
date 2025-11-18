@@ -280,7 +280,7 @@ class CMEKTest(SecurityBase):
         self.log.info("gcp-capella-project: {0}".format(gcp_account))
 
         # 2
-        arn = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        arn = "arn:aws:kms:us-east-1:264138468394:key/012f30ec-ec32-4c08-a343-a21ba1fa1a80"
         resourceName = "projects/cbc-capella-test/locations/global/keyRings/cmek-ga/cryptoKeys/cmek-ga-key"
 
         # 3
@@ -330,7 +330,7 @@ class CMEKTest(SecurityBase):
         self.log.info("gcp-capella-project: {0}".format(gcp_account))
 
         # 2
-        arn = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        arn = "arn:aws:kms:us-east-1:264138468394:key/012f30ec-ec32-4c08-a343-a21ba1fa1a80"
         resourceName = "projects/cbc-capella-test/locations/global/keyRings/cmek-ga/cryptoKeys/cmek-ga-key"
 
         # 3
@@ -386,7 +386,7 @@ class CMEKTest(SecurityBase):
         self.log.info("gcp-capella-project: {0}".format(gcp_account))
 
         # 2
-        arn = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        arn = "arn:aws:kms:us-east-1:264138468394:key/012f30ec-ec32-4c08-a343-a21ba1fa1a80"
 
         # 3
         self.log.info("Create key as an Org Member")
@@ -440,7 +440,7 @@ class CMEKTest(SecurityBase):
         self.log.info("gcp-capella-project: {0}".format(gcp_account))
 
         # 2
-        arn = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        arn = "arn:aws:kms:us-east-1:264138468394:key/012f30ec-ec32-4c08-a343-a21ba1fa1a80"
         resourceName = "projects/cbc-capella-test/locations/global/keyRings/cmek-ga/cryptoKeys/cmek-ga-key"
 
         # 3
@@ -540,7 +540,7 @@ class CMEKTest(SecurityBase):
         self.log.info("gcp-capella-project: {0}".format(gcp_account))
 
         # 2
-        arn = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        arn = "arn:aws:kms:us-east-1:264138468394:key/012f30ec-ec32-4c08-a343-a21ba1fa1a80"
         resourceName = "projects/cbc-capella-test/locations/nam3/keyRings/diff-region/cryptoKeys/test-reg"
 
         # 3
