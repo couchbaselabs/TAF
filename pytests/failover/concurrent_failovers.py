@@ -84,7 +84,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             ["Enabled", "Auto FO count", "Max Events configured",
              "Auto FO timeout", "Disk Auto FO", "Disk Auto FO timeout"])
 
-        self.validate_failover_settings("true", self.timeout, 0, self.max_count)
+        self.validate_failover_settings(True, self.timeout, 0, self.max_count)
 
         # Init sdk_client_pool if not initialized before
         if self.cluster.sdk_client_pool is None:
@@ -458,7 +458,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
     def __run_test(self):
         reb_util = RebalanceUtil(self.cluster)
         # Validate count before the start of failover procedure
-        self.validate_failover_settings("true", self.timeout,
+        self.validate_failover_settings(True, self.timeout,
                                         self.fo_events, self.max_count)
 
         # Before failure - nodes' information
@@ -563,7 +563,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         self.bucket_util.print_bucket_stats(self.cluster)
         # Validate count at the end of failover procedure
-        self.validate_failover_settings("true", self.timeout,
+        self.validate_failover_settings(True, self.timeout,
                                         self.fo_events, self.max_count)
 
     def test_concurrent_failover(self):
@@ -659,7 +659,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.assertTrue(result, "Final rebalance failed")
 
         # Validate count is reset back to 0 after rebalance operation
-        self.validate_failover_settings("true", self.timeout, 0, self.max_count)
+        self.validate_failover_settings(True, self.timeout, 0, self.max_count)
 
         # Perform collection crud + doc_ops
         if load_data_after_fo:
@@ -722,7 +722,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         def post_failover_procedure():
             RebalanceUtil(self.cluster.master).monitor_rebalance()
-            self.validate_failover_settings("true", self.timeout,
+            self.validate_failover_settings(True, self.timeout,
                                             num_nodes_to_fo,
                                             self.max_count)
             recover_from_split(node_split_1 + node_split_2)
@@ -731,7 +731,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.assertTrue(rebalance_res, "Post failover rebalance failed")
 
             # Validate failover count reset post rebalance
-            self.validate_failover_settings("true", self.timeout,
+            self.validate_failover_settings(True, self.timeout,
                                             0, self.max_count)
 
         fo_happens = self.input.param("fo_happens", True)
@@ -741,7 +741,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.fail("Nothing to test. split_nodes is None")
 
         # Validate count before the start of failover procedure
-        self.validate_failover_settings("true", self.timeout,
+        self.validate_failover_settings(True, self.timeout,
                                         self.fo_events, self.max_count)
 
         self.log.info("Fetching current cluster_nodes")
@@ -792,7 +792,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             elif len([t_serv for t_serv in self.services_init.split("-")
                       if CbServer.Services.KV in t_serv]) > 2:
                 self.log.info("Expecting no failover will be triggered")
-                self.validate_failover_settings("true", self.timeout,
+                self.validate_failover_settings(True, self.timeout,
                                                 0, self.max_count)
                 if (self.nodes_init % 2) == 1:
                     # Pick new master based on split network
@@ -874,7 +874,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                              "Nodes failed over though nodes became active")
 
             # Validate auto_failover_settings
-            self.validate_failover_settings("true", self.timeout,
+            self.validate_failover_settings(True, self.timeout,
                                             0, self.max_count)
 
             # Make sure the new auto-failover timing is honoured
@@ -888,7 +888,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             RebalanceUtil(self.cluster).monitor_rebalance()
 
             # Validate auto_failover_settings after actual auto failover
-            self.validate_failover_settings("true", self.timeout,
+            self.validate_failover_settings(True, self.timeout,
                                             expected_fo_nodes, self.max_count)
         finally:
             # Recover all nodes from induced failures
@@ -1012,7 +1012,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.assertTrue(failover_task.result, failure_msg)
 
             # Validate auto_failover_settings after failover
-            self.validate_failover_settings("true", self.timeout,
+            self.validate_failover_settings(True, self.timeout,
                                             expected_fo_nodes, self.max_count)
 
             # Stop background doc_ops
@@ -1066,7 +1066,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.assertTrue(result, "Rebalance failed")
 
         # Validate auto_failover_settings after rebalance operation
-        self.validate_failover_settings("true", self.timeout, 0,
+        self.validate_failover_settings(True, self.timeout, 0,
                                         self.max_count)
 
         # Perform collection crud + doc_ops after rebalance operation
