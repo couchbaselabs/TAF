@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux
@@ -519,14 +519,14 @@ class audit:
                 # Parse timezone offset (e.g., "+05:30" or "-08:00")
                 tz_hours = int(timezone[1:3])
                 tz_minutes = int(timezone[4:6])
+                # Create timedelta for timezone offset
+                tz_offset = timedelta(hours=tz_hours, minutes=tz_minutes)
                 if timezone[0] == '+':
                     # Subtract timezone offset to convert to UTC
-                    timestamp = timestamp.replace(hour=timestamp.hour - tz_hours,
-                                                minute=timestamp.minute - tz_minutes)
+                    timestamp = timestamp - tz_offset
                 else:
                     # Add timezone offset to convert to UTC
-                    timestamp = timestamp.replace(hour=timestamp.hour + tz_hours,
-                                                minute=timestamp.minute + tz_minutes)
+                    timestamp = timestamp + tz_offset
                 self.log.info("Converted actualTime to UTC: {0}".format(timestamp))
 
             # Extract the date, time, and timezone (now always UTC)
