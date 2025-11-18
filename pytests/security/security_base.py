@@ -24,7 +24,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.prefix = "Security_API_Test_"
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         self.count = 0
-        self.server_version = self.input.capella.get("server_version", "7.2")
+        self.server_version = self.input.capella.get("server_version", "8.0")
         self.provider = self.input.param("provider", AWS.__str__).lower()
         self.num_nodes = {
             "data": self.input.param("kv_nodes", 3),
@@ -67,6 +67,7 @@ class SecurityBase(CouchbaseBaseTest):
             "aws": 3000,
             "azure": 240
         }
+        self.capellaAPIv2 = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key, self.user, self.passwd)
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
         self.create_initial_v4_api_keys()
         self.create_different_organization_roles()
