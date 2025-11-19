@@ -159,7 +159,9 @@ class SDKOptions(object):
         if store_semantics:
             params["store_semantics"] = store_semantics
         if access_deleted is not None:
-            raise NotImplementedError()
+            params["access_deleted"] = access_deleted
+        if create_as_deleted:
+            params["create_as_deleted"] = create_as_deleted
         return options.MutateInOptions(**params)
 
     @staticmethod

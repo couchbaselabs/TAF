@@ -1945,7 +1945,7 @@ class XattrTests(SubdocBaseTest):
 
         # A generator for regular documents
         doc_gen = doc_generator(
-            doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=1000)
+            doc_prefix, key_min, key_max, doc_type=self.doc_type, doc_size=1000, key_size=8)
 
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen, "create", **self.async_gen_common)
@@ -2179,10 +2179,10 @@ class XattrTests(SubdocBaseTest):
             access_deleted=access_deleted)
 
         accessible = success and (
-            success[doc_key]['value'][0] != "PATH_NOT_FOUND")
+            success[doc_key]['value'][path] != "PATH_NOT_FOUND")
 
         if accessible:
-            xattrvalue = success[doc_key]['value'][0]
+            xattrvalue = success[doc_key]['value'][path]
         else:
             xattrvalue = None
 
@@ -2911,6 +2911,7 @@ class TxnTransition:
 
         # Grab the expected value of the document from generator
         _, path_value_list = gen.next()
+        path_key = path_value_list[0][0]  # Extract the path name
         expected_value = path_value_list[0][1]
 
         if not exists:
@@ -2918,10 +2919,8 @@ class TxnTransition:
             self.base.assertTrue(task.fail)
             self.base.assertFalse(task.success)
         else:
-            # Expect the value of actual the document to match the expected
-            # value
             for value in task.success.values():
-                actual_value = value['value'][0].toMap()
+                actual_value = value['value'][path_key]
                 actual_value.pop('mutated', None)
                 self.base.assertEqual(actual_value, expected_value)
 
@@ -3011,8 +3010,8 @@ class TxnTransition:
         kwds = {'xattr': True, 'access_deleted': True}
         task = self.subdoc_task(self.get_generator(), "read", kwds)
 
-        # Grab a document body
-        body = str(list(task.success.values())[0]['value'][0].get('body'))
+        # Grab a document body (value is now a dict with path as key)
+        body = str(list(task.success.values())[0]['value'][self.path].get('body'))
 
         # upsert-and-remove the xattribute
         self.upsert_and_remove()

@@ -522,30 +522,32 @@ class SDKClient(object):
                 SDKClient.__make_sure_key_exists_in_dict(fail, doc_key)
                 fail[doc_key]['error'] = result
             elif not result.success:
+                # Overall lookup operation failed (e.g., document not found)
                 SDKClient.__make_sure_key_exists_in_dict(fail, doc_key,
                                                          result.cas)
-                for lookup_spec_result in data["application"].value:
-                    if not lookup_spec_result["exists"]:
-                        pass
-                if not result['exists']:
-                    fail[doc_key]['error'] = "PathNotFoundException"
-                else:
-                    fail[doc_key]['error'] = "PathNotFoundException"
+                fail[doc_key]['error'] = "LookupFailedException"
                 if path_val:
                     fail[doc_key]['path_val'] = path_val[doc_key]
             elif result.success:
-                SDKClient.__make_sure_key_exists_in_dict(success, doc_key,
-                                                         result.cas)
-                for lookup_spec_result in result.value:
-                    lookup_key = lookup_spec_result['path']
-                    if lookup_spec_result["exists"]:
-                        success[doc_key]['value'][lookup_key] \
-                            = lookup_spec_result["value"]
-                    else:
-                        SDKClient.__make_sure_key_exists_in_dict(
-                            fail, doc_key, result.cas)
-                        fail[doc_key]['value'][lookup_key] = \
-                            "PathNotFoundException"
+                # Check if any paths don't exist (similar to old version's pattern)
+                has_missing_paths = any(
+                    not spec["exists"] for spec in result.value
+                )
+                
+                if has_missing_paths:
+                    # Path not found -> goes to FAIL only (like old version)
+                    SDKClient.__make_sure_key_exists_in_dict(fail, doc_key, result.cas)
+                    for lookup_spec_result in result.value:
+                        lookup_key = lookup_spec_result['path']
+                        if not lookup_spec_result["exists"]:
+                            fail[doc_key]['value'][lookup_key] = "PathNotFoundException"
+                    fail[doc_key]['error'] = "PathNotFoundException"
+                else:
+                    # All paths exist -> goes to SUCCESS only
+                    SDKClient.__make_sure_key_exists_in_dict(success, doc_key, result.cas)
+                    for lookup_spec_result in result.value:
+                        lookup_key = lookup_spec_result['path']
+                        success[doc_key]['value'][lookup_key] = lookup_spec_result["value"]
         return success, fail
 
     # Translate APIs for sub-document operations
