@@ -140,7 +140,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         """
         Set doc_ttl for loading doc during failover operations
         """
-        doc_key_size = 8
+        common_doc_key  = "test_collections"
+        doc_key_size = len(common_doc_key)+8
         if self.key_size is not None:
             doc_key_size = self.key_size
         d_level = SDKConstants.DurabilityLevel.NONE
@@ -168,7 +169,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
             # Doc loading params
             "doc_crud": {
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: common_doc_key,
 
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 5000,
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 20,
