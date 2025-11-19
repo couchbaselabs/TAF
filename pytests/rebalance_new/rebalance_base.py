@@ -220,6 +220,10 @@ class RebalanceBaseTest(BaseTestCase):
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,
             bucket_durability=self.bucket_durability_level,
+            enable_encryption_at_rest=self.enable_encryption_at_rest,
+            encryption_at_rest_key_id=self.encryption_at_rest_id,
+            encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime,
             vbuckets=self.bucket_num_vb)
 
     def _create_multiple_buckets(self):
@@ -233,6 +237,9 @@ class RebalanceBaseTest(BaseTestCase):
             eviction_policy=self.bucket_eviction_policy,
             bucket_durability=self.bucket_durability_level,
             enable_encryption_at_rest=self.enable_encryption_at_rest,
+            encryption_at_rest_key_id=self.encryption_at_rest_id,
+            encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+            encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime,
             vbuckets=self.bucket_num_vb)
         self.assertTrue(buckets_created, "Unable to create multiple buckets")
 

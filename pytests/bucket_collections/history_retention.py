@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from basetestcase import ClusterSetup
 from bucket_collections.collections_base import CollectionBase
 from cb_constants import DocLoading, CbServer
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
@@ -73,12 +74,10 @@ class DocHistoryRetention(ClusterSetup):
             self.assertTrue(result, "Disk_info validation failed")
 
     def __create_bucket(self, params):
-        bucket_helper = BucketHelper(self.cluster.master)
-        api = bucket_helper.baseUrl + "pools/default/buckets"
+        bucket_api = BucketRestApi(self.cluster.master)
         self.log.info("Create bucket with params: %s" % params)
-        params = urllib.urlencode(params)
-        status, content, _ = bucket_helper._http_request(api, "POST", params)
-        return status, content
+        status, response = bucket_api.create_bucket(params)
+        return status, response
 
     def __set_history_retention_for_scope(self, bucket, scope, history):
         for c_name, col in scope.collections.items():
