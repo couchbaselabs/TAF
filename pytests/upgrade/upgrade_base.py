@@ -249,6 +249,14 @@ class UpgradeBase(BaseTestCase):
             self.cluster.servers[0:self.nodes_init])
         self.cluster_util.print_cluster_stats(self.cluster)
 
+        # Set magmaMinMemoryQuota for versions < 8.0
+        status, node_info = ClusterRestAPI(self.cluster.master).node_details()
+        if status and node_info:
+            version = node_info.get("version", "")
+            if version and float(version[:3]) < 8.0:
+                RestConnection(self.cluster.master).set_internalSetting(
+                    "magmaMinMemoryQuota", 256)
+
         self.cluster_features = \
             self.upgrade_helper.get_supported_features(self.cluster.version)
 
@@ -354,7 +362,7 @@ class UpgradeBase(BaseTestCase):
         params = bucket_helper.create_secret_params(
             secret_type="cb-server-managed-aes-key-256",
             name="TestSecretAutoRotationOn",
-            usage=["bucket-encryption-*"],
+            usage=[f"bucket-encryption-{self.cluster.buckets[0].name}"],
             autoRotation=True,
             rotationIntervalInSeconds=60
         )
