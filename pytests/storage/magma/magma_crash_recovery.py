@@ -699,7 +699,7 @@ class MagmaCrashTests(MagmaBaseTest):
 
         def upsert_doc(start_num, end_num, key_obj, val_obj):
             for i in range(start_num, end_num):
-                val_obj.put("mutated", i)
+                val_obj["mutated"] = i
                 self.client.upsert(key_obj, val_obj)
 
         self.crash_th = threading.Thread(target=self.crash, kwargs={"graceful":

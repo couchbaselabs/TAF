@@ -301,7 +301,7 @@ class MagmaFlushBucketTests(MagmaBaseTest):
         def upsert_doc(start_num, end_num, key_obj, val_obj):
             print(threading.currentThread().getName(), 'Starting')
             for i in range(start_num, end_num):
-                val_obj.put("mutated", i)
+                val_obj["mutated"] = i
                 self.client.upsert(key_obj, val_obj)
             if threading.currentThread().getName() == 't'+str(self.num_threads):
                 self.bucket_util.flush_bucket(self.cluster, self.cluster.buckets[0])
