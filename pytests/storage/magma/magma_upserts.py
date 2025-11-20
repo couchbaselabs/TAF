@@ -780,10 +780,8 @@ class BasicUpsertTests(BasicCrudTests):
         self.assertIs(key in success, True,
                       msg="key {} doesn't exist\
                       ".format(key))
-        actual_val = dict()
-        expected_val = Json.loads(val.toString())
-        actual_val = Json.loads(success[key][
-            'value'].toString())
+        expected_val = val
+        actual_val = success[key]['value']
         self.log.debug("Expected_val= {} and actual_val = {}\
         ".format(expected_val, actual_val))
         self.assertIs(expected_val == actual_val, True,

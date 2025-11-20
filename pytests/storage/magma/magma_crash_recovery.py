@@ -733,9 +733,8 @@ class MagmaCrashTests(MagmaBaseTest):
                       msg="key {} doesn't exist\
                       ".format(key))
 
-        expected_val = Json.loads(val.toString())
-        actual_val = Json.loads(success[key][
-            'value'].toString())
+        expected_val = val
+        actual_val = success[key]['value']
         self.assertIs(expected_val == actual_val, True,
                       msg="expected_val-{} != Actual_val-{}\
                       ".format(expected_val, actual_val))
