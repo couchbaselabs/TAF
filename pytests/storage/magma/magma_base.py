@@ -53,7 +53,7 @@ class MagmaBaseTest(StorageBase):
 
         # Disk usage before data load
         for bucket in self.cluster.buckets:
-            if bucket.storageBackend != Bucket.StorageBackend.magma:
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
                 self.empty_bucket_disk_usage = self.get_disk_usage(
                     bucket, self.cluster.nodes_in_cluster)[0]
                 self.log.info("Empty magma bucket disk usage: {}".format(
