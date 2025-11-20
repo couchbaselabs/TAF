@@ -402,7 +402,7 @@ class DocHistoryRetention(ClusterSetup):
                     # Cannot run docs_ops since bucket creation has failed
                     self.log.info("Validating error reason")
                     if create_by == "rest":
-                        output = json.loads(output)
+                        output = output.json()
                         exp_err = "History Retention can only used with Magma"
                         self.assertEqual(
                             output["errors"]["historyRetentionSeconds"],
