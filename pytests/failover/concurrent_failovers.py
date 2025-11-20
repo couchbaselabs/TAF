@@ -17,7 +17,6 @@ from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
 from constants.sdk_constants.java_client import SDKConstants
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
-from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 from scenario_plugins.ns_server_scenarios import NsServerFeaturePlugins
@@ -723,7 +722,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.sleep(5, "Wait for nodes to be reachable")
 
         def post_failover_procedure():
-            RebalanceUtil(self.cluster.master).monitor_rebalance()
+            RebalanceUtil(self.cluster).monitor_rebalance()
             self.validate_failover_settings(True, self.timeout,
                                             num_nodes_to_fo,
                                             self.max_count)
