@@ -883,7 +883,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             new_timer = new_timer + self.timeout
             while int(time()) < new_timer:
                 _, settings = self.rest.get_auto_failover_settings()
-                if settings.count != 0:
+                if settings["count"] != 0:
                     self.fail("Nodes failed over before new failover time")
 
             self.sleep(10, "Wait for failover rebalance to trigger")
