@@ -195,7 +195,11 @@ class DocHistoryRetention(ClusterSetup):
              eviction_policy=self.bucket_eviction_policy,
              history_retention_bytes=self.bucket_dedup_retention_bytes,
              history_retention_seconds=self.bucket_dedup_retention_seconds,
-             storage=Bucket.StorageBackend.magma)
+             storage=Bucket.StorageBackend.magma,
+             enable_encryption_at_rest=self.enable_encryption_at_rest,
+             encryption_at_rest_key_id=self.encryption_at_rest_id,
+             encryption_at_rest_dek_rotation_interval=self.encryptionAtRestDekRotationInterval,
+             encryption_at_rest_dek_lifetime=self.encryption_at_rest_dek_lifetime)
 
         # Data loading
         self.log.info("Loading initial data")
@@ -311,7 +315,7 @@ class DocHistoryRetention(ClusterSetup):
                 continue
             active_cols = self.bucket_util.get_active_collections(
                 bucket, s_name, only_names=True)
-            collection_list += [[s_name, c_name] for c_name in active_cols]
+            collection_list += [[s_name, c_name] for c_name in active_cols if c_name != "_default"]
         return sample(collection_list, req_num)
 
     def test_create_bucket_with_doc_history_enabled(self):
@@ -366,6 +370,12 @@ class DocHistoryRetention(ClusterSetup):
                 if b_type == Bucket.Type.EPHEMERAL:
                     params[Bucket.evictionPolicy] \
                         = Bucket.EvictionPolicy.NO_EVICTION
+
+                if self.enable_encryption_at_rest and b_type != Bucket.Type.EPHEMERAL:
+                    params[Bucket.encryptionAtRestKeyId] = self.encryption_at_rest_id
+                    params[Bucket.encryptionAtRestDekRotationInterval] = self.encryptionAtRestDekRotationInterval
+                    params[Bucket.encryptionAtRestDekLifetime] = self.encryption_at_rest_dek_lifetime
+
                 bucket = Bucket(params)
                 self.log.info(
                     "Create bucket '%s' with CDC enabled for %s:%s"
@@ -398,6 +408,15 @@ class DocHistoryRetention(ClusterSetup):
                 self.assertEqual(bucket_created, exp_outcome,
                                  "Unexpected outcome for %s:%s"
                                  % (b_type, storage_type))
+                if bucket_created is True:
+                    self.log.info("Creating clients for new bucket: {}".format(bucket.name))
+                    CollectionBase.create_sdk_clients(
+                        self.cluster,
+                        self.task_manager.number_of_threads,
+                        self.cluster.master,
+                        [bucket],
+                        self.sdk_compression,
+                        self.load_docs_using)
                 if bucket_created is False:
                     # Cannot run docs_ops since bucket creation has failed
                     self.log.info("Validating error reason")
@@ -575,7 +594,7 @@ class DocHistoryRetention(ClusterSetup):
         client = self.cluster.sdk_client_pool.get_client_for_bucket(
             bucket, collection=col)
         keys = list()
-        for vb_num in range(0, self.cluster.vbuckets):
+        for vb_num in range(0, bucket.bucket_num_vb):
             key, val = doc_generator("test_doc", 0, 1,
                                      target_vbucket=[vb_num]).next()
             keys.append(key)
@@ -633,6 +652,7 @@ class DocHistoryRetention(ClusterSetup):
         for _, scope in bucket.scopes.items():
             self.__set_history_retention_for_scope(bucket, scope, "false")
 
+        self.sleep(60, "Wait before running data ops")
         self.run_data_ops_on_individual_collection(bucket)
 
         self.log.info("Re-enabling history retention")
@@ -643,6 +663,7 @@ class DocHistoryRetention(ClusterSetup):
         for _, scope in bucket.scopes.items():
             self.__set_history_retention_for_scope(bucket, scope, "true")
 
+        self.sleep(60, "Wait before running data ops")
         self.run_data_ops_on_individual_collection(bucket)
 
     def test_default_collection_retention_value(self):
@@ -704,6 +725,11 @@ class DocHistoryRetention(ClusterSetup):
                           Bucket.historyRetentionSeconds]:
                 if to_test[param] is not None:
                     bucket_params[param] = to_test[param]
+
+            if self.enable_encryption_at_rest:
+                bucket_params[Bucket.encryptionAtRestKeyId] = self.encryption_at_rest_id
+                bucket_params[Bucket.encryptionAtRestDekRotationInterval] = self.encryptionAtRestDekRotationInterval
+                bucket_params[Bucket.encryptionAtRestDekLifetime] = self.encryption_at_rest_dek_lifetime
 
             bucket = Bucket(bucket_params)
             status, _ = self.__create_bucket(bucket_params)
