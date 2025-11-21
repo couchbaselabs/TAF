@@ -2602,6 +2602,9 @@ class BucketUtils(ScopeUtils):
 
         if vbuckets is not None and storage == Bucket.StorageBackend.magma:
             bucket_obj.numVBuckets = vbuckets
+            if vbuckets == 1024 and bucket_obj.ramQuotaMB < 1024:
+                ClusterRestAPI(cluster.master).set_internal_settings(
+                    setting_name="magmaMinMemoryQuota", setting_value=256)
 
         if enable_encryption_at_rest:
             bucket_obj.encryptionAtRestKeyId = encryption_at_rest_key_id
@@ -3371,7 +3374,9 @@ class BucketUtils(ScopeUtils):
 
                     if vbuckets is not None and key == Bucket.StorageBackend.magma:
                         bucket.numVBuckets = vbuckets
-
+                        if vbuckets == 1024 and bucket.ramQuotaMB < 1024:
+                            ClusterRestAPI(cluster.master).set_internal_settings(
+                                setting_name="magmaMinMemoryQuota", setting_value=256)
                     if enable_encryption_at_rest:
                         bucket.encryptionAtRestKeyId = encryption_at_rest_key_id
                         if encryption_at_rest_dek_rotation_interval is not None:

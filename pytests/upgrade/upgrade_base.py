@@ -254,8 +254,8 @@ class UpgradeBase(BaseTestCase):
         if status and node_info:
             version = node_info.get("version", "")
             if version and float(version[:3]) < 8.0:
-                RestConnection(self.cluster.master).set_internalSetting(
-                    "magmaMinMemoryQuota", 256)
+                ClusterRestAPI(self.cluster.master).set_internal_settings(
+                    setting_name="magmaMinMemoryQuota", setting_value=256)
 
         self.cluster_features = \
             self.upgrade_helper.get_supported_features(self.cluster.version)

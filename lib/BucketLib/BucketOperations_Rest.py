@@ -18,6 +18,7 @@ from custom_exceptions.exception import \
     GetBucketInfoFailed, \
     BucketCompactionException
 from datetime import datetime, timedelta
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 
 class BucketHelper(BucketRestApi):
     def __init__(self, server):
@@ -409,6 +410,9 @@ class BucketHelper(BucketRestApi):
         num_vbs = bucket_params.get("numVBuckets")
         if num_vbs:
             init_params[Bucket.numVBuckets] = num_vbs
+            if num_vbs == 1024 and init_params[Bucket.storageBackend] == Bucket.StorageBackend.magma:
+                    ClusterRestAPI(self.server).set_internal_settings(
+                        setting_name="magmaMinMemoryQuota", setting_value=256)
 
         is_enterprise = global_vars.cluster_util.is_enterprise_edition(
             cluster=None, server=self.server)
