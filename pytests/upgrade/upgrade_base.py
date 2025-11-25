@@ -876,11 +876,18 @@ class UpgradeBase(BaseTestCase):
         self.upgrade_helper.install_version_on_nodes(
             [node_to_upgrade], version)
 
+        # Wait for ns_server to be ready on the upgraded node
+        self.log.info("Wait for ns_server to accept connections on upgraded node")
+        if not self.cluster_util.is_ns_server_running(
+                node_to_upgrade, timeout_in_seconds=120):
+            self.log_failure("Server not started post upgrade on {0}"
+                            .format(node_to_upgrade))
+            return
+
         # Rebalance-in the target_node again
-        rest.add_node(self.creds.rest_username,
-                      self.creds.rest_password,
-                      node_to_upgrade.ip,
-                      node_to_upgrade.port,
+        rest.add_node(node_to_upgrade.ip,
+                      username=self.creds.rest_username,
+                      password=self.creds.rest_password,
                       services=services_on_target_node)
         otp_nodes = [node.id for node in \
                      self.cluster_util.get_nodes(rest_node)]

@@ -79,18 +79,45 @@ class CbServerUpgrade(object):
         """
         self.log.info("Installing {} on nodes {}"
                       .format(version, [node.ip for node in nodes]))
-        install_params = dict()
-        install_params['num_nodes'] = len(nodes)
-        install_params['product'] = "cb"
-        install_params['version'] = version
-        install_params['vbuckets'] = [vbuckets]
-        install_params['init_nodes'] = False
-        install_params['debug_logs'] = False
-        install_params['type'] = build_type
-        if cluster_profile == "provisioned" and float(version[:3]) >= 7.6:
-            install_params["cluster_profile"] = "provisioned"
 
-        self.installer.parallel_install(nodes, install_params)
+        edition = "community" if build_type == "community" else "enterprise"
+        cluster_profile = cluster_profile or "default"
+
+        for server in nodes:
+            server.install_status = "not_started"
+
+        self.log.info("Node health check")
+        if not self.helper.check_server_state(nodes):
+            raise Exception("Node health check failed")
+
+        try:
+            self.helper.populate_cb_server_versions()
+        except Exception as e:
+            self.log.warning("Error while reading couchbase version: {}".format(e))
+        if version[:3] not in BuildUrl.CB_VERSION_NAME.keys():
+            self.log.critical("Version '{}' not yet supported".format(version[:3]))
+            raise Exception("Version '{}' not yet supported".format(version[:3]))
+
+        node_helpers = list()
+        for node in nodes:
+            server_info = RemoteMachineShellConnection.get_info_for_server(node)
+            node_helpers.append(NodeInstallInfo(
+                                node, server_info,
+                                self.helper.get_os(server_info),
+                                version, edition,
+                                cluster_profile))
+
+        self.log.info("Starting install tasks")
+        install_server_threads = \
+                [NodeInstaller(self.log, node_helper, self.install_tasks)
+                                for node_helper in node_helpers]
+        okay = start_and_wait_for_threads(install_server_threads, 300)
+        if not okay:
+            self.log.error("Install tasks failed")
+        else:
+            self.log.info(f"Install tasks: {self.install_tasks} completed")
+
+        print_install_status(install_server_threads, self.log)
 
     def offline(self, node_to_upgrade, version,
                 rebalance_required=True, is_downgrade=False,
