@@ -179,7 +179,7 @@ def scan_all_servers():
     cluster_env = ClusterEnvironment.builder().ioConfig(IoConfig.numKvConnections(25)).timeoutConfig(TimeoutConfig.builder().connectTimeout(Duration.ofSeconds(20)).kvTimeout(Duration.ofSeconds(10)))
     cluster_options = ClusterOptions.clusterOptions("Administrator", "esabhcuoc").environment(cluster_env.build())
     cluster = Cluster.connect("172.23.217.21", cluster_options)
-    STATEMENT = "SELECT META().id FROM `QE-server-pool` WHERE os="debian" AND ("regression" IN poolId OR "magmareg" IN poolId OR "magmanew" IN poolId OR "magmaUpgrade" IN poolId);"
+    STATEMENT = "SELECT META().id FROM `QE-server-pool` WHERE os='debian' AND (regression IN poolId OR 'magmareg' IN poolId OR 'magmanew' IN poolId OR 'magmaUpgrade' IN poolId);"
     result = cluster.query(STATEMENT)
 
     count = 1
