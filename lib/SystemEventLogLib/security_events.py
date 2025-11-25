@@ -1,5 +1,5 @@
 from SystemEventLogLib.Events import Event
-from constants.cb_constants.system_event_log import Security
+from cb_constants.system_event_log import Security
 
 
 class SecurityEvents(object):
