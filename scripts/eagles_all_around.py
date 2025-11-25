@@ -178,9 +178,9 @@ def scan_all_servers():
     from com.couchbase.client.core.env import TimeoutConfig, IoConfig
     cluster_env = ClusterEnvironment.builder().ioConfig(IoConfig.numKvConnections(25)).timeoutConfig(TimeoutConfig.builder().connectTimeout(Duration.ofSeconds(20)).kvTimeout(Duration.ofSeconds(10)))
     cluster_options = ClusterOptions.clusterOptions("Administrator", "esabhcuoc").environment(cluster_env.build())
-    cluster = Cluster.connect("172.23.104.162", cluster_options)
-    STATEMENT = "select meta().id from `QE-server-pool` where os='centos' and '12hrreg' in poolId or 'regression' in poolId or 'magmareg' in poolId;"
-    result = cluster.query(STATEMENT);
+    cluster = Cluster.connect("172.23.217.21", cluster_options)
+    STATEMENT = "SELECT META().id FROM `QE-server-pool` WHERE os="debian" AND ("regression" IN poolId OR "magmareg" IN poolId OR "magmanew" IN poolId OR "magmaUpgrade" IN poolId);"
+    result = cluster.query(STATEMENT)
 
     count = 1
     for server in result.rowsAsObject():
