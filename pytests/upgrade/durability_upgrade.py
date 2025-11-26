@@ -367,7 +367,7 @@ class UpgradeTests(UpgradeBase):
                                             index_name, bucket.name, scope.name, col.name, "name")
                                 query += ' WITH { "num_replica":1 };'
                                 client_query = QueryRestAPI(self.cluster.query_nodes[0])
-                                result = client_query.run_query(query)
+                                status, result = client_query.run_query(params={"statement": query})
                                 self.log.info(f"Result for creation of index "
                                               f"{index_name}={result['status']}")
                                 if result['status'] == 'success':
@@ -2241,7 +2241,7 @@ class UpgradeTests(UpgradeBase):
             for col in self.bucket_util.get_active_collections(bucket, scope.name):
                 primary_index_query = "CREATE PRIMARY INDEX ON `{0}`.`{1}`.`{2}`".format(
                     bucket.name, scope.name, col.name)
-                result = self.query_client.run_query(primary_index_query)
+                status, result = self.query_client.run_query(params={"statement": primary_index_query})
                 self.log.info("Result for creation of index = {0}".format(result['status']))
                 if result['status'] == 'success':
                     self.index_count += 1
@@ -2257,7 +2257,7 @@ class UpgradeTests(UpgradeBase):
             primary_index_query = 'CREATE PRIMARY INDEX `{0}` ON `{1}`.`{2}`.`{3}`'.format(
                 part_idx_name, bucket.name, "_default", col.name)
             primary_index_query += ' PARTITION BY HASH(META().id) WITH {"num_partition": 8};'
-            result = self.query_client.run_query(primary_index_query)
+            status, result = self.query_client.run_query(params={"statement": primary_index_query})
             self.log.info("Result for creation of index {0} = {1}".format(part_idx_name,
                                                                     result['status']))
             if result['status'] == 'success':
@@ -2281,9 +2281,8 @@ class UpgradeTests(UpgradeBase):
                     query += ' PARTITION BY HASH(META().id) WITH {"num_partition": 8};'
                 if replica:
                     query += ' WITH { "num_replica":1 };'
-                result = self.query_client.run_query(query)
-                self.log.info("Result for creation of index {0} = {1}".format(idx_name,
-                                                                    result['status']))
+                status, result = self.query_client.run_query(params={"statement": query})
+                self.log.info(f"Result for creation of index {idx_name} = {result['status']}")
                 if result['status'] == 'success':
                     self.index_count += 1
                 break
@@ -2455,7 +2454,7 @@ class UpgradeTests(UpgradeBase):
         for idx_query in indexes:
             idx_name = idx_prefix + str(count)
             self.log.info("Index query = {}".format(idx_query))
-            result = self.query_client.run_query(idx_query)
+            status, result = self.query_client.run_query(params={"statement": idx_query})
             self.log.info("Result for creation of {0} = {1}".format(idx_name, result))
             if result['status'] == 'success':
                 self.index_count += 1

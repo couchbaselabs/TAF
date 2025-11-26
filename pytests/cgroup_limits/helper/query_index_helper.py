@@ -14,9 +14,7 @@ class CGroupQueryHelper:
         self.log.info("Query node: {}".format(self.query_node.__dict__))
 
     def create_secondary_indexes(self):
-
         query_client = QueryRestAPI(self.query_node)
-
         indexes = [
            'CREATE INDEX `{}` on `{}`.`{}`.`{}`(age) where age between 30 and 50;',
 
@@ -48,7 +46,7 @@ class CGroupQueryHelper:
                         idx_name = idx_prefix + str(count)
                         idx_query = idx_query.format(idx_name, bucket.name, scope, collection)
                         self.log.info("Index query = {}".format(idx_query))
-                        status, content = query_client.run_query(query=idx_query, timeout=2400)
+                        status, content = query_client.run_query(params={"statement": idx_query}, timeout=2400)
                         self.log.info("Result for creation of {0} = {1}, {2}".format(idx_name, status, content))
                         count += 1
 
@@ -57,7 +55,7 @@ class CGroupQueryHelper:
         query_client = QueryRestAPI(server)
 
         for i in range(iter):
-            status, content = query_client.run_query(query=query, timeout=timeout)
+            status, content = query_client.run_query(params={"statement": query}, timeout=timeout)
             self.log.info("Result of query iter: {} = {}".format(i, status))
             if not status:
                 self.log.info("Error during query = {}".format(content))
