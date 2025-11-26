@@ -1,6 +1,8 @@
+import copy
 import json
 import time
 import random
+import re
 
 from common_lib import sleep
 from couchbase_helper.tuq_generators import TuqGenerators
@@ -306,8 +308,8 @@ class N1QLHelper:
         stmt = []
         for bucket_col in collections:
             stmt.extend(self.clause.get_where_clause(
-                doc_type_list[bucket_col], bucket_col,
-                self.num_insert, self.num_update, self.num_delete,self.num_merge))
+                doc_type_list[bucket_col], bucket_col, self.num_insert, 
+                self.num_update, self.num_delete, self.num_merge))
             self.process_index_to_create(stmt, bucket_col)
         stmt = random.sample(stmt, self.num_stmt_txn)
         stmt = self.add_savepoints(stmt)
@@ -405,9 +407,11 @@ class N1QLHelper:
                         doc_gen_list[bucket_collection] = \
                             self.gen_docs("test_collections", c_dict.doc_index[0],
                                           c_dict.doc_index[1], type=type)
-        for key, value in doc_gen_list.items():
-            if key not in collections:
-                doc_gen_list.pop(key)
+        # Collect keys to remove first to avoid modifying dict during iteration
+        keys_to_remove = [key for key in doc_gen_list.keys()
+                          if key not in collections]
+        for key in keys_to_remove:
+            doc_gen_list.pop(key)
         return doc_gen_list
 
     def generate_full_docs_list(self, gens_load=[], update=False):
