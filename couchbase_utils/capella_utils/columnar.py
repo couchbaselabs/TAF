@@ -387,7 +387,7 @@ class ColumnarUtils:
     def generate_instance_configuration(
             self, name=None, description=None, provider=None, region=None,
             nodes=0, instance_types=None, support_package=None,
-            availability_zone="single", token=None, image=None):
+            availability_zone="single", token=None, image=None, image_hash=None):
         if not name:
             name = "Columnar_{0}".format(random.randint(1, 100000))
 
@@ -428,11 +428,16 @@ class ColumnarUtils:
             "availabilityZone": availability_zone
         }
         if image and token:
-            config.update({
-                "overRide": {
-                    "token": token,
-                    "image": image
+            over_ride = {
+                "token": token,
+                "image": image
+            }
+            if image_hash:
+                over_ride["agent"] = {
+                    "hash": image_hash
                 }
+            config.update({
+                "overRide": over_ride
             })
         self.log.debug(f"Columnar Instance deployment config - {str(config)}")
         return config

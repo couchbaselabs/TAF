@@ -44,6 +44,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                                               "4vCPUs:32GB").split(":")
         provider = self.input.param("columnar_provider", "aws")
         self.columnar_image = self.capella.get("columnar_image", None)
+        self.columnar_image_hash = self.capella.get("columnar_image_hash", None)
         if provider == "gcp":
             self.columnar_image = transform_couchbase_version(self.columnar_image)
 
@@ -122,7 +123,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                             "memory": self.instance_type[1]
                         },
                         token=self.pod.override_key,
-                        image=self.columnar_image))
+                        image=self.columnar_image,
+                        image_hash=self.columnar_image_hash))
 
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))

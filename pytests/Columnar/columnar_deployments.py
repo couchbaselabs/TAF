@@ -37,6 +37,7 @@ class ColumnarDeployments(ColumnarBaseTest):
         self.columnar_cbas_utils = columnarCBASUtil(
             self.task, self.use_sdk_for_cbas)
         self.columnar_image = self.input.capella.get("columnar_image", None)
+        self.columnar_image_hash = self.input.capella.get("columnar_image_hash", None)
         if self.input.param("columnar_provider", "aws") == "gcp":
             self.deployment_regions = self.deployment_regions_gcp
             self.columnar_image = self.columnar_image.replace(".", "-")
@@ -185,6 +186,10 @@ class ColumnarDeployments(ColumnarBaseTest):
                 instance_config['overRide'] = dict()
                 instance_config['overRide']['image'] = self.columnar_image
                 instance_config['overRide']['token'] = self.override_key
+                if self.columnar_image_hash:
+                    instance_config['overRide']['agent'] = {
+                        'hash': self.columnar_image_hash
+                    }
 
             # Deploy instance
             retry_count = 0
