@@ -35,7 +35,7 @@ import install_constants
 
 
 def usage(err=None):
-    print """\
+    print("""\
 Syntax: install.py [options]
 
 Options:
@@ -85,7 +85,7 @@ Examples:
    install.py -i /tmp/ubuntu.ini -p product=cb,version=5.0.0-1900,
    nr_install_dir=testnow1
 
-"""
+""")
     sys.exit(err)
 
 
@@ -245,9 +245,9 @@ class Installer(object):
 
         remote_client = RemoteMachineShellConnection(server)
         info = remote_client.extract_remote_info()
-        print "*** OS version of this server %s is %s ***" % (
+        print("*** OS version of this server %s is %s ***" % (
             remote_client.ip,
-            info.distribution_version)
+            info.distribution_version))
         remote_client.disconnect()
         if info.type.lower() == "windows":
             if "-" in version:
@@ -255,7 +255,7 @@ class Installer(object):
                     info.windows_name = 2008
                 info.deliverable_type = "msi"
             else:
-                print "Incorrect version format"
+                print("Incorrect version format")
                 sys.exit()
 
         if ok and not linux_repo:
@@ -866,7 +866,6 @@ class MongoInstaller(Installer):
         type = info.type.lower()
         if type == "windows":
             sys.exit("ERROR: please teach me about windows one day.")
-
         return remote_client
 
     def uninstall(self, params):
@@ -887,7 +886,7 @@ class MongoInstaller(Installer):
                                                    server.product_tgz)
         if not downloaded:
             log.error(downloaded,
-                      'server {1} unable to download binaries : {0}' \
+                      'server {1} unable to download binaries : {0}'
                       .format(server.product_url, server.ip))
 
         remote_client.execute_command(
@@ -898,28 +897,26 @@ class MongoInstaller(Installer):
         server = self.get_server(params)
         remote_client = self.mk_remote_client(server)
         remote_client.execute_command(
-            "mkdir -p {0}/data/data-27019 {0}/data/data-27018 {"
-            "0}/log". \
-                format(server.product_name))
+            "mkdir -p {0}/data/data-27019 {0}/data/data-27018 {0}/log"
+            .format(server.product_name))
         remote_client.execute_command(
-            "./{0}/bin/mongod --port 27019 --fork --rest --configsvr" \
-            " --logpath ./{0}/log/mongod-27019.out" \
-            " --dbpath ./{0}/data/data-27019". \
-                format(server.product_name))
+            "./{0}/bin/mongod --port 27019 --fork --rest --configsvr"
+            " --logpath ./{0}/log/mongod-27019.out"
+            " --dbpath ./{0}/data/data-27019"
+            .format(server.product_name))
         remote_client.execute_command(
-            "./{0}/bin/mongod --port 27018 --fork --rest --shardsvr" \
-            " --logpath ./{0}/log/mongod-27018.out" \
-            " --dbpath ./{0}/data/data-27018". \
-                format(server.product_name))
+            "./{0}/bin/mongod --port 27018 --fork --rest --shardsvr"
+            " --logpath ./{0}/log/mongod-27018.out"
+            " --dbpath ./{0}/data/data-27018"
+            .format(server.product_name))
 
         log.info(
             "check that config server started before launching mongos")
         if self.is_socket_active(host=server.ip, port=27019):
             remote_client.execute_command(
-                ("./{0}/bin/mongos --port 27017 --fork" \
-                 " --logpath ./{0}/log/mongos-27017.out" \
-                 " --configdb " + server.ip + ":27019"). \
-                    format(server.product_name))
+                "./{0}/bin/mongos --port 27017 --fork"
+                " --logpath ./{0}/log/mongos-27017.out"
+                " --configdb {1}:27019".format(server.product_name, server.ip))
             remote_client.disconnect()
         else:
             log.error(
@@ -1184,13 +1181,13 @@ class InstallerJob(object):
                         success &= not shell.is_couchbase_installed()
                         shell.disconnect()
                     if not success:
-                        print "Server:{0}.Couchbase is still" + \
+                        print("Server:{0}.Couchbase is still" +
                               " installed after uninstall".format(
-                                  server)
+                                  server))
                         return success
-                print "uninstall succeeded"
+                print("uninstall succeeded")
             except Exception as ex:
-                print "unable to complete the uninstallation: ", ex
+                print("unable to complete the uninstallation: ", ex)
         success = True
         for installer, _params in installers:
             try:
@@ -1198,10 +1195,10 @@ class InstallerJob(object):
                 try:
                     installer.initialize(_params)
                 except Exception as ex:
-                    print "unable to initialize the server after " \
-                          "successful installation", ex
+                    print("unable to initialize the server after " +
+                          "successful installation", ex)
             except Exception as ex:
-                print "unable to complete the installation: ", ex
+                print("unable to complete the installation: ", ex)
         return success
 
     def parallel_install(self, servers, params):
@@ -1239,7 +1236,7 @@ class InstallerJob(object):
             t.start()
         for t in uninstall_threads:
             t.join()
-            print "thread {0} finished".format(t.name)
+            print(f"thread {t.name} finished")
         if "product" in params and params["product"] in ["couchbase",
                                                          "couchbase-server",
                                                          "cb"]:
@@ -1249,26 +1246,23 @@ class InstallerJob(object):
                 success &= not shell.is_couchbase_installed()
                 shell.disconnect()
             if not success:
-                print "Server:{0}.Couchbase is still installed after " \
-                      "uninstall".format(
-                    server)
+                print(f"{server} - Couchbase still installed after uninstall")
                 return success
         for t in install_threads:
             t.start()
         for t in install_threads:
             t.join()
-            print "thread {0} finished".format(t.name)
+            print(f"thread {t.name} finished")
         while not queue.empty():
             success &= queue.get()
         if not success:
-            print "installation failed. initializer threads were " \
-                  "skipped"
+            print(f"Install failed. Initializer thread skipped")
             return success
         for t in initializer_threads:
             t.start()
         for t in initializer_threads:
             t.join()
-            print "thread {0} finished".format(t.name)
+            print(f"thread {t.name} finished")
         """ remove any capture files left after install windows """
         remote_client = RemoteMachineShellConnection(servers[0])
         type = remote_client.extract_remote_info().distribution_type
@@ -1397,7 +1391,7 @@ def main():
                 "ERROR: no servers specified. Please use the -i parameter.")
     except IndexError:
         usage()
-    except getopt.GetoptError, err:
+    except getopt.GetoptError as err:
         usage("ERROR: " + str(err))
     # TODO: This is not broken, but could be something better
     #      like a validator, to check SSH, input params etc
@@ -1415,8 +1409,8 @@ def main():
         success = InstallerJob().sequential_install(input.servers,
                                                     input.test_params)
     if "product" in input.test_params and input.test_params[
-        "product"] in ["couchbase", "couchbase-server", "cb"]:
-        print "verify installation..."
+            "product"] in ["couchbase", "couchbase-server", "cb"]:
+        print("verify installation...")
         success = True
         for server in input.servers:
             shell = RemoteMachineShellConnection(server)
