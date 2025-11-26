@@ -365,7 +365,7 @@ class UpgradeBase(BaseTestCase):
             usage=[f"bucket-encryption-{self.cluster.buckets[0].name}"],
             autoRotation=True,
             rotationIntervalInSeconds=60,
-            port=8091
+            port=None
         )
         self.log.info("Sending request to create secret with params: %s",
                       params)
