@@ -20,11 +20,9 @@ class BasicOps(N1qlBase):
         2. load to the bucket and collections
         3. run a simple query
         """
-        results = ""
         bucket_col = self.n1ql_helper.get_collections()
         stmt = self.n1ql_helper.get_stmt(bucket_col)
-        self.execute_query_and_validate_results(stmt,
-                             bucket_col)
+        self.execute_query_and_validate_results(stmt, bucket_col)
 
     def test_concurrent_txn(self):
         collections = self.n1ql_helper.get_collections()
@@ -62,10 +60,8 @@ class BasicOps(N1qlBase):
                 stmts.append(stmt)
             else:
                 stmts.append(stmt)
-        doc_gen_list = self.n1ql_helper.get_doc_gen_list(collections)
         stmts = self.n1ql_helper.add_savepoints(stmts)
-        self.execute_query_and_validate_results(stmts,
-                                            collections)
+        self.execute_query_and_validate_results(stmts, collections)
 
     def test_txn_same_collection_diff_scope(self):
         '''
@@ -85,10 +81,9 @@ class BasicOps(N1qlBase):
             bucket = self.bucket_util.get_bucket_obj(self.cluster.buckets,
                                                 bucket_name)
             for scope in scope_dict["scopes"].keys():
-                self.bucket_util.create_collection(self.cluster.master,
-                                              bucket,
-                                              scope,
-                                              {"name": collection})
+                self.bucket_util.create_collection(
+                    self.cluster.master, bucket, scope,
+                    {"name": collection})
                 name = self.n1ql_helper.get_collection_name(
                     bucket_name, scope, collection)
                 bucket_collections.append(name)
@@ -104,28 +99,26 @@ class BasicOps(N1qlBase):
                     load_using=self.load_docs_using)
                 self.task_manager.get_task_result(task)
         stmts = self.n1ql_helper.get_stmt(bucket_collections)
-        self.execute_query_and_validate_results(stmts,
-                                            bucket_collections, doc_gen_list)
+        self.execute_query_and_validate_results(
+            stmts, bucket_collections, doc_gen_list)
 
     def text_txn_same_collection_diff_bucket(self):
-        '''
+        """
         create same scope and collection on different buckets
         execute query and validate data
-        '''
+        """
         bucket_collections = []
         doc_gen_list = {}
-        doc_gen = self.n1ql_helper.gen_docs("test_collections", 0,
-                                          2000, type="employee")
+        doc_gen = self.n1ql_helper.gen_docs("test_collections", 0, 2000,
+                                            type="employee")
         scope = self.bucket_util.get_random_name()
         collection = self.bucket_util.get_random_name()
         for bucket in self.cluster.buckets:
-            self.bucket_util.create_scope(self.cluster.master,
-                                      bucket,
-                                      {"name": scope})
+            self.bucket_util.create_scope(self.cluster.master, bucket,
+                                          {"name": scope})
             self.bucket_util.create_collection(self.cluster.master,
-                                              bucket,
-                                              scope,
-                                              {"name": collection})
+                                               bucket, scope,
+                                               {"name": collection})
             name = self.n1ql_helper.get_collection_name(
                 bucket.name, scope, collection)
             bucket_collections.append(name)
@@ -141,8 +134,8 @@ class BasicOps(N1qlBase):
                 load_using=self.load_docs_using)
             self.task_manager.get_task_result(task)
         stmts = self.n1ql_helper.get_stmt(bucket_collections)
-        self.execute_query_and_validate_results(stmts,
-                                            bucket_collections, doc_gen_list)
+        self.execute_query_and_validate_results(stmts, bucket_collections,
+                                                doc_gen_list)
 
     def test_txn_same_keys(self):
         collections = self.n1ql_helper.get_collections()
@@ -165,8 +158,7 @@ class BasicOps(N1qlBase):
             else:
                 stmts.append(stmt)
         stmts = self.n1ql_helper.add_savepoints(stmts)
-        self.execute_query_and_validate_results(stmts,
-                                            collections)
+        self.execute_query_and_validate_results(stmts, collections)
 
     def test_basic_insert(self):
         queries = []
@@ -182,11 +174,11 @@ class BasicOps(N1qlBase):
         txid = query_params["txid"]
         query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
-        result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
         query = "DELETE FROM default:`%s`.`%s`.`%s` WHERE meta().id = 'KEY'"\
                 % (name[0], name[1], name[2])
-        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
-        result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
         self.check_txid(txid)
         self.n1ql_helper.end_txn(query_params, self.commit)
         query = "select * FROM default:`%s`.`%s`.`%s` WHERE meta().id = 'KEY'"\
@@ -209,13 +201,13 @@ class BasicOps(N1qlBase):
         txid = query_params["txid"]
         query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
-        result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
         query = "UPDATE default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query += "SET d=5 WHERE meta().id = 'KEY' returning *"
-        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         query = "select * FROM default:`%s`.`%s`.`%s` WHERE meta().id = 'KEY'"\
                 % (name[0], name[1], name[2])
-        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         self.check_txid(txid)
         result = self.n1ql_helper.end_txn(query_params, self.commit)
         if isinstance(result, str) or 'errors' in result:
@@ -230,7 +222,7 @@ class BasicOps(N1qlBase):
             self.fail("txid present when expected not to present")
         elif not fail:
             if txid in results["results"][0]["transactions"]["id"]:
-                self.log.info("txid is present %s"%txid)
+                self.log.info("txid is present %s" % txid)
             else:
                 self.fail("txid not present")
 
@@ -246,30 +238,30 @@ class BasicOps(N1qlBase):
                                                    atrcollection)
         txid = query_params["txid"]
         self.check_txid(txid)
-        #execute query
+        # execute query
         query1 = "INSERT INTO default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "(KEY, VALUE) VALUES ( 'KEY', 'VALUE') "
-        result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
         # check transactions
         self.check_txid(txid)
         #execute update query
         query1 = "UPDATE default:`%s`.`%s`.`%s` " %(name[0], name[1], name[2])
         query1 += "SET d=5 WHERE meta().id = 'KEY' returning *"
-        result = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query1, query_params=query_params)
         # check transactions
         self.check_txid(txid)
-        #execute delete query
+        # execute delete query
         query = "DELETE FROM default:`%s`.`%s`.`%s` WHERE meta().id = 'KEY'"\
                 % (name[0], name[1], name[2])
-        result = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
+        _ = self.n1ql_helper.run_cbq_query(query, query_params=query_params)
         # check transactions
         self.check_txid(txid)
-        #check timeout
+        # check timeout
         if self.txtimeout:
             self.sleep(150)
             self.check_txid(txid, True)
         else:
-            result = self.n1ql_helper.end_txn(query_params, self.commit)
+            _ = self.n1ql_helper.end_txn(query_params, self.commit)
             self.check_txid(txid, True)
 
     def test_memory_quota(self):
@@ -282,6 +274,5 @@ class BasicOps(N1qlBase):
         random.shuffle(stmt)
         if self.failure:
             self.doc_size += 1000
-        self.execute_query_and_validate_results(stmt,
-                                     bucket_col,
-                                     memory_quota=self.memory_quota)
+        self.execute_query_and_validate_results(stmt, bucket_col,
+                                                memory_quota=self.memory_quota)

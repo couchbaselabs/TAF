@@ -90,8 +90,8 @@ class N1qlBase(CollectionBase):
             actual_result = actual_result[:self.max_verify]
             expected_result = expected_result[:self.max_verify]
         self.assertTrue(len(actual_result) == len(expected_result))
-        expected_result=sorted(expected_result, key = lambda i: i[sort_key])
-        actual_result=sorted(actual_result, key = lambda i: i[sort_key])
+        expected_result = sorted(expected_result, key=lambda i: i[sort_key])
+        actual_result = sorted(actual_result, key=lambda i: i[sort_key])
         self.log.info(cmp(actual_result, expected_result))
 
     def validate_update_results(self, index, docs=[], dict_to_add="",
@@ -731,29 +731,34 @@ class N1qlBase(CollectionBase):
             for s_name, c_dict in scope_dict["scopes"].items():
                 for c_name, c_data in c_dict["collections"].items():
                     if random.choice([True, False]):
-                        atrcollection = ("`%s`.`%s`.`%s`"%(bucket, s_name, c_name))
+                        atrcollection = ("`%s`.`%s`.`%s`"
+                                         % (bucket, s_name, c_name))
                     else:
-                        atrcollection = ("`%s`.`%s`.`%s`"%(bucket,
-                                     CbServer.default_scope,
-                                     CbServer.default_collection))
+                        atrcollection = ("`%s`.`%s`.`%s`"
+                                         % (bucket,
+                                            CbServer.default_scope,
+                                            CbServer.default_collection))
         return atrcollection
 
-    def execute_query_and_validate_results(self, stmt, bucket_col, doc_gen_list=None,
+    def execute_query_and_validate_results(self, stmt, bucket_col,
+                                           doc_gen_list=None,
                                            memory_quota=0):
         atrcollection = ""
         if self.atrcollection:
             atrcollection = self.get_collection_for_atrcollection()
-        query_params = self.n1ql_helper.create_txn(self.txtimeout, self.durability_level,
-                                                   atrcollection, Kvtimeout=self.Kvtimeout)
+        query_params = self.n1ql_helper.create_txn(
+            self.txtimeout, self.durability_level, atrcollection,
+            Kvtimeout=self.Kvtimeout)
         collection_savepoint, savepoints, queries, rerun = \
             self.full_execute_query(stmt, self.commit, query_params,
-                                    self.rollback_to_savepoint,memory_quota=memory_quota)
+                                    self.rollback_to_savepoint,
+                                    memory_quota=memory_quota)
         self.log.info("queries ran are %s" % queries)
         if not doc_gen_list:
             doc_gen_list = self.n1ql_helper.get_doc_gen_list(bucket_col)
         if isinstance(collection_savepoint, dict):
             results = [[collection_savepoint, savepoints]]
-            self.process_value_for_verification(bucket_col,
-                                 doc_gen_list, results)
+            self.process_value_for_verification(
+                bucket_col, doc_gen_list, results)
         else:
             self.fail(collection_savepoint)
