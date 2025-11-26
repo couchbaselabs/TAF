@@ -357,7 +357,7 @@ class N1qlBase(CollectionBase):
         collection_savepoint = dict()
         savepoint = list()
         collection_map = dict()
-        txid = query_params.values()[0]
+        txid = list(query_params.values())[0]
         self.memory_quota = memory_quota
         rerun_thread = False
         if N1qlhelper:
@@ -500,7 +500,7 @@ class N1qlBase(CollectionBase):
         name_len = random.randint(1, 20)
         rand_name = ""
         rand_name = ''.join(random.choice(char_set)
-                                for _ in range(name_len))
+                            for _ in range(name_len))
         return rand_name
 
     def validate_keys(self, client, key_value, deleted_key):
@@ -508,9 +508,7 @@ class N1qlBase(CollectionBase):
         # get all the values and validate
         success, fail = client.get_multi(key_value.keys(), 120)
         for key, val in success.items():
-            if type(key_value[key]) == JsonObject:
-                expected_val = json.loads(key_value[key].toString())
-            elif isinstance(key_value[key], dict):
+            if isinstance(key_value[key], dict):
                 expected_val = key_value[key]
             else:
                 expected_val = json.loads(key_value[key])
@@ -528,7 +526,7 @@ class N1qlBase(CollectionBase):
         self.cluster.sdk_client_pool.release_client(client)
 
     def validate_error_during_commit(self, result,
-                                      collection_savepoint, savepoint):
+                                     collection_savepoint, savepoint):
         dict_to_verify = {}
         count = 0
         error_msg = result["errors"][0]["cause"]["cause"]
