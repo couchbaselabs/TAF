@@ -1103,9 +1103,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             server_group_rest.create_server_group(group)
             nodes = [server for server in self.cluster.servers[
                                              iterator:iterator + 2]]
-            self.cluster_util.shuffle_nodes_in_zones(nodes, "Group 1", group)
+            self.cluster_util.shuffle_nodes_in_zones(self.cluster.master, nodes,
+                                                     "Group 1", group)
 
-        cluster_details = self.cluster_util.get_cluster_stats()
+        cluster_details = self.cluster_util.get_cluster_stats(self.cluster.master)
         num_nodes_with_vbuckets_to_afo = 0
         if self.min_bucket_replica == 1:
             num_nodes_with_vbuckets_to_afo = 1
