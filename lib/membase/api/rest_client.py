@@ -860,7 +860,7 @@ class RestConnection(newRC):
 
     def modify_remote_cluster(self, remoteIp, remotePort, username, password, name, demandEncryption=0, certificate=''):
         self.test_log.debug("Modifying remote cluster name:{0}".format(name))
-        api = self.baseUrl + 'pools/default/remoteClusters/' + urllib.quote(name)
+        api = self.baseUrl + 'pools/default/remoteClusters/' + urllib.parse.quote(name)
         return self.__remote_clusters(api, 'modify', remoteIp, remotePort, username, password, name, demandEncryption,
                                       certificate)
 
@@ -886,9 +886,9 @@ class RestConnection(newRC):
     def remove_remote_cluster(self, name):
         # example : name:two
         self.test_log.debug("Removing remote cluster name:{0}"
-                            .format(urllib.quote(name)))
+                            .format(urllib.parse.quote(name)))
         api = self.baseUrl + 'pools/default/remoteClusters/{0}?' \
-            .format(urllib.quote(name))
+            .format(urllib.parse.quote(name))
         params = urllib.parse.urlencode({})
         status, content, header = self._http_request(api, 'DELETE', params)
         # sample response : "ok"
@@ -2948,12 +2948,12 @@ class RestConnection(newRC):
                 return eval(content)
 
             elif named_prepare and not encoded_plan:
-                params = 'prepared=' + urllib.quote(prepared, '~()')
+                params = 'prepared=' + urllib.parse.quote(prepared, '~()')
                 params = 'prepared="%s"' % named_prepare
             else:
                 prepared = json.dumps(query)
                 prepared = str(prepared.encode('utf-8'))
-                params = 'prepared=' + urllib.quote(prepared, '~()')
+                params = 'prepared=' + urllib.parse.quote(prepared, '~()')
             if 'creds' in query_params and query_params['creds']:
                 headers = self._create_headers(
                     query_params['creds'][0]['user'].encode('utf-8'),
@@ -3007,12 +3007,12 @@ class RestConnection(newRC):
                 return eval(content)
 
             elif named_prepare and not encoded_plan:
-                params = 'prepared=' + urllib.quote(prepared, '~()')
+                params = 'prepared=' + urllib.parse.quote(prepared, '~()')
                 params = 'prepared="%s"' % named_prepare
             else:
                 prepared = json.dumps(query)
                 prepared = str(prepared.encode('utf-8'))
-                params = 'prepared=' + urllib.quote(prepared, '~()')
+                params = 'prepared=' + urllib.parse.quote(prepared, '~()')
             if 'creds' in query_params and query_params['creds']:
                 headers = self._create_headers_with_auth(
                     query_params['creds'][0]['user'].encode('utf-8'),

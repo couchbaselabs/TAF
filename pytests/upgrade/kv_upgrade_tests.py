@@ -88,9 +88,9 @@ class KVUpgradeTests(UpgradeBase):
         # This is a very specific test case and chain upgrades are not required
         self.upgrade_version = self.upgrade_chain[-1]
         # Install Couchbase server on target_nodes
-        self.upgrade_helper.install_version_on_nodes(
-            self.cluster.servers[self.nodes_init:],
-            self.upgrade_version)
+        self.upgrade_helper.new_install_version_on_all_nodes(
+            nodes=self.cluster.servers[self.nodes_init:],
+            version=self.upgrade_version)
 
         upgrade_cluster = self.input.param("upgrade_cluster", "source")
         key, val = "test_key", {"f": "value"}
@@ -103,8 +103,8 @@ class KVUpgradeTests(UpgradeBase):
 
         # Install the initial version on the 2nd node as well
         # This was not done initially
-        self.upgrade_helper.install_version_on_nodes(
-            self.cluster.servers[1:2], self.upgrade_chain[0])
+        self.upgrade_helper.new_install_version_on_all_nodes(
+            nodes=self.cluster.servers[1:2], version=self.upgrade_chain[0])
 
         client = SDKClient(self.cluster, bucket)
 
@@ -149,7 +149,7 @@ class KVUpgradeTests(UpgradeBase):
             output, _ = shell.execute_command(hash_dump_cmd)
             if not output:
                 is_resident = False
-            start_index = doc_gen.key_counter
+            start_index = doc_gen.itr
             num_items += batch_size
 
         # Close the shell connections
@@ -187,8 +187,8 @@ class KVUpgradeTests(UpgradeBase):
                                                      self.upgrade_version)
         elif upgrade_cluster == "remote":
             self.log.info("Upgrading node: {}".format(in_node.ip))
-            self.upgrade_helper.install_version_on_nodes([in_node],
-                                                         self.upgrade_version)
+            self.upgrade_helper.new_install_version_on_all_nodes(
+                nodes=[in_node], version=self.upgrade_version)
 
 
         self.log.info("Starting XDCR replication")

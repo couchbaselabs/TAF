@@ -913,21 +913,19 @@ class UpgradeBase(BaseTestCase):
 
     def offline(self, node_to_upgrade, version, rebalance_required=True):
         rest = ClusterRestAPI(node_to_upgrade)
+        self.log.info("Stopping couchbase server on node %s" % node_to_upgrade.ip)
         shell = RemoteMachineShellConnection(node_to_upgrade)
-        appropriate_build = self.upgrade_helper.get_build(version, shell)
-        self.assertTrue(appropriate_build.url,
-                        msg="Unable to find build %s" % version)
-        self.assertTrue(shell.download_build(appropriate_build),
-                        "Failed while downloading the build!")
-
-        self.log.info("Starting node upgrade")
-        upgrade_success = shell.couchbase_upgrade(
-            appropriate_build, save_upgrade_config=False,
-            forcefully=self.is_downgrade)
+        shell.stop_couchbase()
         shell.disconnect()
-        if not upgrade_success:
-            self.log_failure("Upgrade failed")
-            return
+
+        install_tasks = ["populate_build_url", "check_url_status",
+                         "download_build", "install"]
+        # Install target version on the node
+        self.upgrade_helper.new_install_version_on_all_nodes(
+            nodes=[node_to_upgrade], version=version,
+            cluster_profile=self.cluster_profile,
+            install_tasks=install_tasks)
+        self.sleep(30, "Wait after installation on the node")
 
         self.log.info("Wait for ns_server to accept connections")
         if not self.cluster_util.is_ns_server_running(node_to_upgrade,
@@ -936,7 +934,8 @@ class UpgradeBase(BaseTestCase):
             return
 
         self.log.info("Validate the cluster rebalance status")
-        if not rest.cluster_status()["balanced"]:
+        status, cluster_info = rest.cluster_details()
+        if not status or not cluster_info.get("balanced", False):
             if rebalance_required:
                 otp_nodes = [node.id for node in \
                              self.cluster_util.get_nodes(node_to_upgrade)]
