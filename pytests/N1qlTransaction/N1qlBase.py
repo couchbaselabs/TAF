@@ -123,7 +123,7 @@ class N1qlBase(CollectionBase):
 
     def validate_insert_results(self, index, docs, query_params={}, server=None):
         # modify this to get values for list of docs
-        keys = docs.keys()
+        keys = list(docs.keys())
         keys = [x.encode('UTF8') for x in keys]
         name = index.split('.')
         query = "SELECT  * from default:`%s`.`%s`.`%s` WHERE META().id in %s"\
@@ -132,15 +132,15 @@ class N1qlBase(CollectionBase):
                                                 query_params=query_params,
                                                 server=server)
         for doc in result["results"]:
-            t = doc.values()[0]
+            t = list(doc.values())[0]
             if len(keys) > 1:
                 if t != docs[t["name"]]:
                     self.log.info("expected value %s and actual value %s"
                                   % (t, docs[t["name"]]))
             else:
-                if t != docs.values()[0]:
+                if t != list(docs.values())[0]:
                     self.log.info("expected value %s and actual value %s"
-                                  % (t, docs.values()[0]))
+                                  % (t, list(docs.values())[0]))
         if result["metrics"]["resultCount"] != len(keys):
             self.fail("Mismatch in result count %s and num keys_inserted %s"
                       % (result["metrics"]["resultCount"], len(keys)))
@@ -226,7 +226,7 @@ class N1qlBase(CollectionBase):
         if result["status"] == "success":
             if "name" not in clause[-1]:
                 for val in result["results"]:
-                    t = val.values()[0]
+                    t = list(val.values())[0]
                     key = t["name"]
                     docs[key] = t
             self.validate_insert_results(clause[0], docs, query_params,
@@ -299,7 +299,7 @@ class N1qlBase(CollectionBase):
                 # in case of insert, send the list of inserted docs
                 if clause[4] == 'INSERT':
                     for val in result["results"]:
-                        t = val.values()[0]
+                        t = list(val.values())[0]
                         key = t["name"]
                         inserted_docs[key] = t
                     self.validate_insert_results(clause[0], inserted_docs, query_params, server)
@@ -423,15 +423,15 @@ class N1qlBase(CollectionBase):
                     self.simulate_write_conflict(stmts, random.choice([True, False]))
             if rollback_to_savepoint and (len(savepoint) > 0):
                 savepoint = self.get_savepoint_to_verify(savepoint)
-                query, result = self.n1ql_helper.end_txn(query_params, commit,
-                                             savepoint[-1].split(':')[0],
-                                             server=server)
+                query, result = self.n1ql_helper.end_txn(
+                    query_params, commit, savepoint[-1].split(':')[0],
+                    server=server)
                 queries[txid].append(query)
             if commit is False:
                 savepoint = []
                 collection_savepoint = {}
-                query, result = self.n1ql_helper.end_txn(query_params, commit=False,
-                                                         server=server)
+                query, result = self.n1ql_helper.end_txn(
+                    query_params, commit=False, server=server)
                 queries[txid].append(query)
             else:
                 if (not rollback_to_savepoint) or len(savepoint) == 0:
@@ -506,13 +506,10 @@ class N1qlBase(CollectionBase):
     def validate_keys(self, client, key_value, deleted_key):
         # create a client
         # get all the values and validate
-        success, fail = client.get_multi(key_value.keys(), 120)
+        success, fail = client.get_multi(list(key_value.keys()), 120)
         for key, val in success.items():
-            if isinstance(key_value[key], dict):
-                expected_val = key_value[key]
-            else:
-                expected_val = json.loads(key_value[key])
-            actual_val = json.loads(val['value'].toString())
+            expected_val = key_value[key]
+            actual_val = val['value']
             if set(expected_val) != set(actual_val):
                 self.fail("expected %s and actual %s for key %s are not equal"
                           % (expected_val, actual_val, key))
@@ -539,8 +536,8 @@ class N1qlBase(CollectionBase):
         elif N1qlException.DocumentExistsException \
             in str(error_msg):
             for key in savepoint:
-                for index in collection_savepoint[key].keys():
-                    keys = collection_savepoint[key][index]["INSERT"].keys()
+                for index in list(collection_savepoint[key].keys()):
+                    keys = list(collection_savepoint[key][index]["INSERT"].keys())
                     try:
                         dict_to_verify[index].extend(keys)
                     except:
@@ -563,7 +560,7 @@ class N1qlBase(CollectionBase):
         elif N1qlException.DocumentNotFoundException in \
             str(error_msg):
             for key in savepoint:
-                for index in collection_savepoint[key].keys():
+                for index in list(collection_savepoint[key].keys()):
                     try:
                         dict_to_verify[index].extend(
                             collection_savepoint[key][index]["DELETE"])
@@ -603,7 +600,7 @@ class N1qlBase(CollectionBase):
             self.deleted_key = []
             doc_gen = copy.deepcopy(gen_load)
             while doc_gen.has_next():
-                key, val = next(doc_gen)
+                key, val = doc_gen.next()
                 self.validate_dict[key] = val
             for res in results:
                 for savepoint in res[1]:
@@ -620,7 +617,7 @@ class N1qlBase(CollectionBase):
                                         mutated[1]
                                 except:
                                     self.validate_dict[t_id].put(mutated[0],
-                                                                     mutated[1])
+                                                                 mutated[1])
             bucket_collection = collection.split('.')
             if buckets:
                 self.buckets = buckets

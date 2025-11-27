@@ -1,9 +1,12 @@
+import ast
 import copy
 import json
 import time
 import random
 import re
+import urllib.parse
 
+from cb_server_rest_util.query.query_api import QueryRestAPI
 from common_lib import sleep
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.tuq_generators import JsonGenerator
@@ -115,7 +118,6 @@ class N1QLHelper:
             else:
                 server = self.server
         cred_params = {'creds': []}
-        rest = RestConnection(server)
         if username is None and password is None:
             username = 'Administrator'
             password = 'password'
@@ -158,12 +160,75 @@ class N1QLHelper:
                     self.log.error("INCORRECT DOCUMENT IS: " + str(result1))
             else:
                 self.log.info("query_params is %s" % query_params)
-                result = rest.query_tool(query, self.n1ql_port,
-                                         query_params=query_params,
-                                         is_prepared=is_prepared,
-                                         named_prepare=self.named_prepare,
-                                         encoded_plan=encoded_plan,
-                                         servers=server, timeout=100)
+                query_rest = QueryRestAPI(server)
+                # Handle authentication headers from creds
+                headers = None
+                if 'creds' in query_params and query_params['creds']:
+                    cred = query_params['creds'][0]
+                    headers = query_rest.create_headers(
+                        username=cred.get('user', server.rest_username),
+                        password=cred.get('pass', server.rest_password))
+
+                # Handle prepared statements
+                if is_prepared:
+                    if self.named_prepare and encoded_plan:
+                        # Use encoded plan for prepared statement (JSON body)
+                        body = {'prepared': self.named_prepare,
+                                'encoded_plan': encoded_plan}
+                        if headers is None:
+                            headers = query_rest.create_headers(
+                                content_type='application/json')
+                        else:
+                            # Update existing headers with JSON content type
+                            headers['Content-Type'] = 'application/json'
+                        params = json.dumps(body)
+                    else:
+                        # Use prepared parameter (form data)
+                        params_dict = {'prepared': query}
+                        if 'creds' in query_params:
+                            # creds should be JSON-encoded array
+                            params_dict['creds'] = json.dumps(
+                                query_params['creds'])
+                        params = urllib.parse.urlencode(params_dict)
+                else:
+                    # Regular query with statement parameter (form data)
+                    params_dict = {"statement": query}
+                    # Merge additional query parameters
+                    if query_params:
+                        # Handle creds separately - include in params per documentation
+                        # creds should be JSON-encoded array
+                        if 'creds' in query_params:
+                            params_dict['creds'] = json.dumps(
+                                query_params['creds'])
+                        # Copy other params
+                        for key, value in query_params.items():
+                            if key != 'creds':
+                                params_dict[key] = value
+                    params = urllib.parse.urlencode(params_dict)
+
+                # Make the low-level REST API call
+                status, content = query_rest.run_query(params=params,
+                                                       timeout=100)
+
+                # Parse JSON response
+                try:
+                    if isinstance(content, str):
+                        result = json.loads(content)
+                    else:
+                        result = content
+                except (ValueError, TypeError):
+                    result = content
+
+                if not status:
+                    # If status is False, result may contain error information
+                    # Convert to dict format expected by error handling below
+                    if isinstance(result, str):
+                        try:
+                            result = json.loads(result)
+                        except (ValueError, TypeError):
+                            result = {"errors": [{"msg": result}]}
+                    elif not isinstance(result, dict):
+                        result = {"errors": [{"msg": str(result)}]} if result else {"errors": []}
         else:
             self.shell = RemoteMachineShellConnection(self.cluster.master)
             if self.version == "git_repo":
@@ -284,14 +349,11 @@ class N1QLHelper:
     def create_index(self, collection, index=None, params=[]):
         name = collection.split('.')
         if params:
-            query = "CREATE INDEX `%s` ON default:`%s`.`%s`.`%s`(%s)" \
-                    " USING GSI" %(index, name[0],
-                     name[1], name[2], params)
+            query = "CREATE INDEX `%s` ON default:`%s`.`%s`.`%s`(%s) " \
+                "USING GSI" % (index, name[0], name[1], name[2], params)
         else:
-            query = "CREATE PRIMARY INDEX " \
-              "on default:`%s`.`%s`.`%s` " \
-              "USING GSI" \
-              % (name[0], name[1], name[2])
+            query = "CREATE PRIMARY INDEX on default:`%s`.`%s`.`%s` " \
+                "USING GSI" % (name[0], name[1], name[2])
         return self.run_cbq_query(query)
 
     def drop_index(self):
@@ -299,8 +361,7 @@ class N1QLHelper:
             name = collection.split('.')
             for index in self.index_map[collection]:
                 query = "DROP INDEX default:`%s`.`%s`.`%s`.`%s` "\
-                        "USING GSI" %(name[0],name[1], name[2],
-                                     index)
+                        "USING GSI" % (name[0],name[1], name[2], index)
                 _ = self.run_cbq_query(query)
 
     def get_stmt(self, collections):
@@ -308,7 +369,7 @@ class N1QLHelper:
         stmt = []
         for bucket_col in collections:
             stmt.extend(self.clause.get_where_clause(
-                doc_type_list[bucket_col], bucket_col, self.num_insert, 
+                doc_type_list[bucket_col], bucket_col, self.num_insert,
                 self.num_update, self.num_delete, self.num_merge))
             self.process_index_to_create(stmt, bucket_col)
         stmt = random.sample(stmt, self.num_stmt_txn)
@@ -400,7 +461,7 @@ class N1QLHelper:
                         type = self.doc_gen_type
                     if keys:
                         key = []
-                        for i in range(c_dict.doc_index[0] ,c_dict.doc_index[1]):
+                        for i in range(c_dict.doc_index[0], c_dict.doc_index[1]):
                             key.append("test_collections-" + str(i))
                         doc_gen_list[bucket_collection] = key
                     else:
@@ -567,11 +628,11 @@ class N1QLHelper:
         if actual_result is None:
             actual_result = []
         if len(expected_result) == 1:
-            value = expected_result[0].values()[0]
+            value = list(expected_result[0].values())[0]
             if value is None or value == 0:
                 expected_result = []
         if len(actual_result) == 1:
-            value = actual_result[0].values()[0]
+            value = list(actual_result[0].values())[0]
             if value is None or value == 0:
                 actual_result = []
         return expected_result, actual_result
@@ -826,10 +887,14 @@ class N1QLHelper:
         while not check:
             next_time = time.time()
             try:
-                actual_result = self.run_cbq_query(query=query, server=server, scan_consistency=scan_consistency,
-                                                   scan_vector=scan_vector)
+                actual_result = self.run_cbq_query(
+                    query=query, server=server,
+                    scan_consistency=scan_consistency,
+                    scan_vector=scan_vector)
                 if verify_results:
-                    self._verify_results(sorted(actual_result['results']), sorted(expected_result))
+                    self._verify_results(
+                        sorted(actual_result['results']),
+                        sorted(expected_result))
                 else:
                     return "ran query with success and validated results", True
                 check = True
@@ -1216,7 +1281,7 @@ class N1QLHelper:
             if index_name in index_map[key].keys():
                 return index_map[key][index_name]['hosts'], index_map[key][index_name]['id']
             else:
-                raise Exception ("Index does not exist - {0}".format(index_name))
+                raise Exception(f"Index does not exist - {index_name}")
 
     def get_index_status_using_index_name(self, index_name, index_map):
         for key in index_map.iterkeys():

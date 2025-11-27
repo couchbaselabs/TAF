@@ -25,7 +25,6 @@ from cb_constants.ClusterRun import ClusterRun
 from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
 from sdk_utils.sdk_options import SDKOptions
-from sdk_exceptions import SDKException
 
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
@@ -533,7 +532,7 @@ class SDKClient(object):
                 has_missing_paths = any(
                     not spec["exists"] for spec in result.value
                 )
-                
+
                 if has_missing_paths:
                     # Path not found -> goes to FAIL only (like old version)
                     SDKClient.__make_sure_key_exists_in_dict(fail, doc_key, result.cas)
