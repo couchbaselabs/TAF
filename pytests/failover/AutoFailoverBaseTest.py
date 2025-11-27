@@ -917,6 +917,13 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         self.enable_tls_on_nodes()
 
+        # Enable diag/eval on non-local hosts for all servers
+        self.log.info("Enabling diag/eval on non-local hosts for all servers")
+        for server in self.cluster.servers:
+            shell = RemoteMachineShellConnection(server)
+            output, error = shell.enable_diag_eval_on_non_local_hosts()
+            shell.disconnect()
+
         # Creating encryption keys
         encryption_result = self.encryption_util.setup_encryption_at_rest(
             cluster_master=self.cluster.master,
