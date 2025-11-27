@@ -68,8 +68,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.disk_optimized_thread_settings = \
             self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            self.bucket_util.update_memcached_num_threads_settings(
-                self.cluster.master,
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
         if self.spec_name is not None:
@@ -179,8 +178,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.rest.reset_auto_failover_count()
         self.disable_autofailover()
         if self.disk_optimized_thread_settings:
-            self.bucket_util.update_memcached_num_threads_settings(
-                self.cluster.master,
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                 num_writer_threads="default",
                 num_reader_threads="default",
                 num_storage_threads="default")
@@ -954,8 +952,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.disk_optimized_thread_settings = \
             self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
-            self.bucket_util.update_memcached_num_threads_settings(
-                self.cluster.master,
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
         ClusterRestAPI(self.cluster.master).set_internal_settings(
