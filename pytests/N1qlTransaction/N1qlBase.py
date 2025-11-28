@@ -445,7 +445,7 @@ class N1qlBase(CollectionBase):
                                                          server=server)
                 queries[txid].append(query)
                 if isinstance(result, str) or 'errors' in result:
-                    #retry the entire transaction
+                    # retry the entire transaction
                     rerun_thread = self.validate_error_during_commit(result,
                                      collection_savepoint, savepoint)
                     savepoint = []

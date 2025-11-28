@@ -151,10 +151,7 @@ class CollectionsQuorumLoss(CollectionBase):
             elif self.failover_action == "kill_erlang":
                 remote = RemoteMachineShellConnection(node)
                 remote.info = remote.extract_remote_info()
-                if remote.info.type.lower() == "windows":
-                    remote.kill_erlang(os="windows")
-                else:
-                    remote.kill_erlang(os="unix")
+                remote.kill_erlang()
                 remote.disconnect()
 
     def custom_remove_failure(self, nodes=None):

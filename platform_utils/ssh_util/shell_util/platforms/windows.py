@@ -149,9 +149,9 @@ class Windows(ShellConnection, WindowsConstants):
          words = [x for x in words if x != ""]
          return words[1]
 
-    def kill_erlang(self, os="unix", delay=0):
+    def kill_erlang(self, delay=0):
         if delay:
-            time.sleep(delay)
+            self.sleep(delay)
         o, r = self.execute_command("taskkill /F /T /IM epmd.exe*")
         self.log_command_output(o, r)
         o, r = self.execute_command("taskkill /F /T /IM erl.exe*")
@@ -166,11 +166,11 @@ class Windows(ShellConnection, WindowsConstants):
                 o, r = self.execute_command("tasklist | grep erl.exe")
             if len(o) == 0:
                 kill_all = True
-                log.info("all erlang processes were killed")
+                self.log.info("all erlang processes were killed")
             else:
                 count += 1
             if count == 5:
-                log.error("erlang process is not killed")
+                self.log.error("erlang process is not killed")
                 break
 
     def kill_cbft_process(self):
@@ -218,7 +218,7 @@ class Windows(ShellConnection, WindowsConstants):
     def terminate_process(self, info=None, process_name=None, force=False):
         """Override method for Windows"""
         if not process_name:
-            log.info("Please specify process name to be terminated.")
+            self.log.info("Please specify process name to be terminated.")
             return
         o, r = self.execute_command("taskkill /F /T /IM {0}*"\
                                     .format(process_name), debug=False)
@@ -238,8 +238,7 @@ class Windows(ShellConnection, WindowsConstants):
                 self.log_command_output(o, r)
                 self.sleep(30, "Wait for windows to execute completely")
             else:
-                log.error(
-                    "Command didn't run successfully. Error: {0}".format(r))
+                self.log.error(f"Command didn't run successfully. Error: {r}")
         else:
             o, r = self.execute_command(
                 "netsh advfirewall firewall add rule name=\"block erl.exe in\" dir=in action=block program=\"%ProgramFiles%\Couchbase\Server\\bin\erl.exe\"")
@@ -341,11 +340,11 @@ class Windows(ShellConnection, WindowsConstants):
             else:
                 main_command = main_command + " -f=" + 'c:\\\\tmp\\\\test.txt'
 
-        log.info("running command on {0}: {1}".format(self.ip, main_command))
-        output=""
+        self.log.info(f"{self.ip} - Running command: {main_command}")
+        output = ""
         if self.remote:
             (stdin, stdout, stderro) = self._ssh_client.exec_command(main_command)
-            time.sleep(10)
+            self.sleep(10)
             count = 0
             for line in stdout.readlines():
                 if (count == 0) and line.lower().find("error") > 0:
@@ -367,15 +366,15 @@ class Windows(ShellConnection, WindowsConstants):
             stdout.close()
             stderro.close()
         else:
-            p = Popen(main_command , shell=True, stdout=PIPE, stderr=PIPE)
+            p = Popen(main_command, shell=True, stdout=PIPE, stderr=PIPE)
             stdout, stderro = p.communicate()
             output = stdout
             print(output)
-            time.sleep(1)
+            self.sleep(1)
         if (self.remote and not(queries=="")) :
             sftp.remove(filename)
             sftp.close()
-        elif not(queries==""):
+        elif not(queries == ""):
             os.remove(filename)
 
         output = re.sub('\s+', '', output)
@@ -450,24 +449,25 @@ class Windows(ShellConnection, WindowsConstants):
                     is_stopped =  "STOPPED" in str(info[1])
                     return is_stopped
 
-            log.error("Cannot identify service state for service {0}. "
-                      "Host response is: {1}".format(service_name, str(o)))
+            self.log.error(
+                f"Cannot identify service state for service {service_name}. "
+                f"Host response is: {0}")
             return True
-        log.error("Service name is not specified!")
+        self.log.error("Service name is not specified!")
         return False
 
     def start_couchbase(self):
         retry = 0
         running = self.is_couchbase_running()
         while not running and retry < 3:
-            log.info("Starting couchbase server")
+            self.log.info("Starting couchbase server")
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
             self.sleep(5, "Waiting for 5 secs to start...on " + self.info.ip)
             running = self.is_couchbase_running()
             retry = retry + 1
         if not running and retry >= 3:
-            sys.exit("Failed to start Couchbase server on " + self.info.ip)
+            self.log.critical("Failed to start Couchbase server on " + self.info.ip)
 
     def stop_couchbase(self, num_retries=5, poll_interval=10):
         o, r = self.execute_command("net stop couchbaseserver")
@@ -494,7 +494,7 @@ class Windows(ShellConnection, WindowsConstants):
 
         o, r = self.execute_command(remote_command, self.info)
         if r:
-            log.error("Command didn't run successfully. Error: {0}".format(r))
+            self.log.error("Command didn't run successfully. Error: {0}".format(r))
         return o
 
     def set_environment_variable(self, name, value):

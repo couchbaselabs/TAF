@@ -12,6 +12,7 @@ from EventingLib.EventingOperations_Rest import EventingHelper
 from basetestcase import BaseTestCase
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class EventingBaseTest(BaseTestCase):
@@ -509,16 +510,13 @@ class EventingBaseTest(BaseTestCase):
         remote_client = RemoteMachineShellConnection(server)
         os_info = remote_client.extract_remote_info()
         self.log.info("os_info : {0}".format(os_info))
-        if os_info.type.lower() == "windows":
-            remote_client.kill_erlang(os="windows")
-        else:
-            remote_client.kill_erlang()
+        remote_client.kill_erlang()
         remote_client.start_couchbase()
         remote_client.disconnect()
         # wait for restart and warmup on all node
         self.sleep(self.wait_timeout * 2)
         # wait till node is ready after warmup
-        self.cluster_util.wait_for_ns_servers_or_assert([server], self)
+        self.cluster_util.wait_for_ns_servers_or_assert([server])
 
     def reboot_server(self, server):
         remote_client = RemoteMachineShellConnection(server)
@@ -529,7 +527,7 @@ class EventingBaseTest(BaseTestCase):
         # disable firewall on these nodes
         self.cluster_util.stop_firewall_on_node(self.cluster, server)
         # wait till node is ready after warmup
-        self.cluster_util.wait_for_ns_servers_or_assert([server], self)
+        self.cluster_util.wait_for_ns_servers_or_assert([server])
 
     def undeploy_delete_all_functions(self):
         content=self.eventing_helper.get_deployed_eventing_apps()
