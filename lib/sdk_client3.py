@@ -31,6 +31,7 @@ from couchbase.cluster import Cluster
 from couchbase.options import (ClusterOptions, ClusterTimeoutOptions,
                                QueryOptions, WaitUntilReadyOptions,
                                GetAllReplicasOptions)
+from couchbase.management.collections import CollectionSpec
 import couchbase.subdocument as SubDoc
 
 
