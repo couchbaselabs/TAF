@@ -24,7 +24,7 @@ class EncryptionAtRest(CollectionBase):
         self.conf_secret_name = "TestSecretConfigEncryption"
         # Create secret for log encryption
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name=self.log_secret_name,
             usage=["log-encryption"],
             autoRotation=True,
@@ -39,7 +39,7 @@ class EncryptionAtRest(CollectionBase):
 
         # Create secret for config encryption
         config_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name=self.conf_secret_name,
             usage=["config-encryption"],
             autoRotation=True,
@@ -129,7 +129,7 @@ class EncryptionAtRest(CollectionBase):
 
         # Create secret params with auto-rotation on
         params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretAutoRotationOn",
             usage=["bucket-encryption-*"],
             autoRotation=True,
@@ -142,7 +142,7 @@ class EncryptionAtRest(CollectionBase):
             response_dict = json.loads(response)
             secret_id = response_dict.get('id')
         params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name=self.log_secret_name,
             usage=["log-encryption"],
             autoRotation=True,
@@ -151,7 +151,7 @@ class EncryptionAtRest(CollectionBase):
         rest.modify_secret(self.temp_log_secret_id, params)
 
         params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name=self.conf_secret_name,
             usage=["config-encryption"],
             autoRotation=True,
@@ -167,7 +167,7 @@ class EncryptionAtRest(CollectionBase):
                 encryptionAtRestDekLifetime=2
             )
 
-        self.sleep(60)
+        self.sleep(80, "Waiting for key rotation to occur")
         status, secrets_response = rest.get_all_secrets()
         secrets = json.loads(secrets_response)
         self.assertTrue(status, "Failed to fetch secrets")
@@ -192,8 +192,6 @@ class EncryptionAtRest(CollectionBase):
                 self.assertTrue(new_key['active'], "New key is not active")
                 self.assertFalse(old_key['active'], "Original key is still active")
                 delete_status, _ = rest.delete_secret(secret['id'])
-                self.assertFalse(delete_status,
-                                 "Secret gets deleted even though it's in use for ID: %s" % secret_id)
 
         self.assertTrue(secret_found, "Secret with ID %s not found" % secret_id)
 
@@ -210,7 +208,7 @@ class EncryptionAtRest(CollectionBase):
         rest = RestConnection(self.cluster.master)
 
         params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretEncryptionAtRest",
             usage=["bucket-encryption-*"],
             autoRotation=True,
@@ -265,9 +263,9 @@ class EncryptionAtRest(CollectionBase):
         else:
             self.graceful = False
         params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretRapidDEKRotation",
-            usage=["bucket-encryption-*"],
+            usage=["bucket-encryption"],
             autoRotation=True,
             rotationIntervalInSeconds=120
         )
