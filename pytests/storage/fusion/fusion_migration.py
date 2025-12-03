@@ -15,10 +15,93 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         super(FusionMigration, self).setUp()
 
         self.log.info("FusionMigration setUp Started")
+        self.rate_limit_toggle_stop = False
 
     def tearDown(self):
-
+        self.rate_limit_toggle_stop = True
         super(FusionMigration, self).tearDown()
+
+    def select_rebalance_type(self, rebalance_type):
+        """Select and configure rebalance type"""
+        self.num_nodes_to_rebalance_in = 0
+        self.num_nodes_to_rebalance_out = 0
+        self.num_nodes_to_swap_rebalance = 0
+
+        if rebalance_type == "random":
+            available_types = []
+            if len(self.cluster.servers) > len(self.cluster.nodes_in_cluster):
+                available_types.append("in")
+            if len(self.cluster.nodes_in_cluster) > 1:
+                available_types.append("out")
+            if len(self.cluster.servers) > len(self.cluster.nodes_in_cluster) and len(self.cluster.nodes_in_cluster) > 1:
+                available_types.append("swap")
+            
+            if not available_types:
+                self.fail("No valid rebalance types available")
+            
+            rebalance_type = random.choice(available_types)
+            self.log.info(f"Randomly selected rebalance type: {rebalance_type}")
+
+        if rebalance_type == "in":
+            self.num_nodes_to_rebalance_in = 1
+        elif rebalance_type == "out":
+            self.num_nodes_to_rebalance_out = 1
+        elif rebalance_type == "swap":
+            self.num_nodes_to_swap_rebalance = 1
+        else:
+            self.fail(f"Invalid rebalance_type: {rebalance_type}. Use 'in', 'out', 'swap', or 'random'")
+
+        return rebalance_type
+
+    def toggle_rate_limit(self, interval, rate_limit_value, rebalance_count):
+        """Toggle migration rate limit between X and 0"""
+        toggle_count = 0
+        while not self.rate_limit_toggle_stop:
+            current_limit = rate_limit_value if toggle_count % 2 == 0 else 0
+            self.log.info(f"[Rebalance {rebalance_count}] Toggle {toggle_count + 1}: Setting migration rate limit to {current_limit}")
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=current_limit)
+            toggle_count += 1
+            self.sleep(interval, f"[Rebalance {rebalance_count}] Wait before next rate limit toggle")
+
+    def toggle_guest_volume_permissions(self, interval, nodes_to_monitor, rebalance_count):
+        """Toggle guest volume permissions between read-only and no-access"""
+        toggle_count = 0
+        guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
+        
+        while not self.rate_limit_toggle_stop:
+            allow_read = toggle_count % 2 == 0
+            permission = "755" if allow_read else "000"
+            action = "Allow read" if allow_read else "Block read"
+            
+            self.log.info(f"[Rebalance {rebalance_count}] Toggle {toggle_count + 1}: {action} on guest volumes (chmod {permission})")
+            
+            ssh = RemoteMachineShellConnection(self.nfs_server)
+            try:
+                for node in nodes_to_monitor:
+                    node_id = "ns_1@{0}".format(node.ip)
+                    
+                    # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
+                    find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+                    output, error = ssh.execute_command(find_cmd)
+                    
+                    if not output or not output[0].strip():
+                        self.log.warning(f"[Rebalance {rebalance_count}] No guest directory found for {node_id}")
+                        continue
+                    
+                    node_guest_dir = output[0].strip()
+                    self.log.debug(f"[Rebalance {rebalance_count}] Using guest directory: {node_guest_dir}")
+                    
+                    chmod_cmd = "chmod -R {0} {1}".format(permission, node_guest_dir)
+                    output, error = ssh.execute_command(chmod_cmd)
+                    
+                    if error:
+                        self.log.warning(f"[Rebalance {rebalance_count}] Error changing permissions on {node_guest_dir}: {error}")
+            finally:
+                ssh.disconnect()
+            
+            toggle_count += 1
+            self.sleep(interval, f"[Rebalance {rebalance_count}] Wait before next permission toggle")
 
 
     def test_fusion_extent_migration(self):
@@ -408,8 +491,19 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         # Delete guest volumes for each node
         for node in nodes_to_monitor:
             node_id = f"ns_1@{node.ip}"
-            node_guest_dir = os.path.join(guest_storage_base, node_id)
             ssh = RemoteMachineShellConnection(self.nfs_server)
+            
+            # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
+            find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+            output, error = ssh.execute_command(find_cmd)
+            
+            if not output or not output[0].strip():
+                self.log.warning(f"No guest directory found for {node_id}")
+                ssh.disconnect()
+                continue
+            
+            node_guest_dir = output[0].strip()
+            self.log.info(f"Using guest directory: {node_guest_dir}")
             
             # List all available guest volumes
             list_cmd = f"ls -1 {node_guest_dir} | grep '^guest' | sort"
@@ -457,143 +551,518 @@ class FusionMigration(MagmaBaseTest, FusionBase):
     def test_kill_memcached_during_extent_migration(self):
 
         kill_after_seconds = self.input.param("kill_after_seconds", 10)
-        min_storage_size = self.input.param("min_storage_size", 536870912)  # 0.5GB default
-        num_iterations = self.input.param("num_iterations", 10)  # Number of kill/restart cycles
-        kill_type = self.input.param("kill_type", "hard_kill")  # hard_kill or graceful_restart
+        min_storage_size = self.input.param("min_storage_size", 53687091200)
+        num_iterations = self.input.param("num_iterations", 5)
+        kill_type = self.input.param("kill_type", "hard_kill")
+        kill_during_pause = self.input.param("kill_during_pause", False)
+        enable_memcached_kill = self.input.param("enable_memcached_kill", True)
+        num_rebalances = self.input.param("num_rebalances", 1)
+        read_ops_rate = self.input.param("read_ops_rate", 10000)
+        rebalance_type = self.input.param("rebalance_type", "in")
+        rate_limit_toggle_interval = self.input.param("rate_limit_toggle_interval", 30)
 
         self.log.info("Starting initial load")
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
 
-        # Set Migration Rate Limit to 0 so that extent migration doesn't take place
-        ClusterRestAPI(self.cluster.master).\
-            manage_global_memcached_setting(fusion_migration_rate_limit=0)
+        self.log.info(f"Starting continuous read workload at {read_ops_rate} ops/sec")
+        self.log.info("Read workload will run throughout all rebalances")
+        doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="read",
+                                                   wait=False, ops_rate=read_ops_rate)
+        self.sleep(10, "Wait for read workload to start")
 
-        self.log.info(f"Running a Fusion rebalance with min_storage_size={min_storage_size} bytes")
-        nodes_to_monitor = self.run_rebalance(
-            output_dir=self.fusion_output_dir,
-            min_storage_size=min_storage_size
-        )
+        for rebalance_count in range(1, num_rebalances + 1):
+            selected_rebalance_type = self.select_rebalance_type(rebalance_type)
+            self.log.info(f"\n{'='*80}")
+            self.log.info(f"REBALANCE {rebalance_count}/{num_rebalances}: Type={selected_rebalance_type}, Cluster size {len(self.cluster.nodes_in_cluster)}")
+            self.log.info(f"{'='*80}\n")
 
-        self.sleep(30, "Wait after rebalance")
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=0)
 
-        # Update Migration Rate Limit so that extent migration process starts
-        ClusterRestAPI(self.cluster.master).\
-                manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+            self.log.info(f"[Rebalance {rebalance_count}] Running a Fusion rebalance with min_storage_size={min_storage_size} bytes")
+            nodes_to_monitor = self.run_rebalance(
+                output_dir=self.fusion_output_dir,
+                rebalance_count=rebalance_count,
+                min_storage_size=min_storage_size
+            )
 
-        # Start parallel read workload with 10k ops/s
-        self.log.info("Starting parallel read workload with 10k ops/s")
-        doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="read", 
-                                                   wait=False, ops_rate=10000)
+            self.sleep(30, f"[Rebalance {rebalance_count}] Wait after rebalance")
 
-        self.log.info(f"Waiting {kill_after_seconds} seconds for migration to start")
-        self.sleep(kill_after_seconds, "Wait for migration to start")
-
-        # Capture guest volumes before crash
-        status, guest_volumes_before = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
-        self.log.info(f"Active guest volumes before crash: {guest_volumes_before}")
-
-        # Capture migration stats before crash
-        migration_stats_before = {}
-        for node in nodes_to_monitor:
-            migration_stats_before[node.ip] = {}
-            for bucket in self.cluster.buckets:
-                cbstats = Cbstats(node)
-                stats = cbstats.all_stats(bucket.name)
-                migration_stats_before[node.ip][bucket.name] = {
-                    'completed_bytes': int(stats['ep_fusion_migration_completed_bytes']),
-                    'total_bytes': int(stats['ep_fusion_migration_total_bytes'])
-                }
-                cbstats.disconnect()
-        self.log.info(f"Migration stats before crash: {migration_stats_before}")
-
-        # Perform multiple kill/restart iterations
-        for iteration in range(1, num_iterations + 1):
-            self.log.info(f"=== Iteration {iteration}/{num_iterations} - Kill Type: {kill_type} ===")
-            
-            for node in nodes_to_monitor:
-                shell = RemoteMachineShellConnection(node)
-                if kill_type == "hard_kill":
-                    self.log.info(f"Iteration {iteration}: Hard killing memcached on {node.ip}")
+            if enable_memcached_kill and kill_during_pause:
+                self.log.info(f"[Rebalance {rebalance_count}] Killing memcached while migration is PAUSED")
+                for node in nodes_to_monitor:
+                    shell = RemoteMachineShellConnection(node)
                     shell.kill_memcached()
-                elif kill_type == "graceful_restart":
-                    self.log.info(f"Iteration {iteration}: Restarting couchbase server on {node.ip}")
-                    shell.restart_couchbase()
-                else:
                     shell.disconnect()
-                    self.fail(f"Invalid kill_type: {kill_type}. Use 'hard_kill' or 'graceful_restart'")
-                shell.disconnect()
-            
-            self.sleep(30, f"Wait for service to recover (iteration {iteration})")
-            
-            # If not the last iteration, wait before next kill
-            if iteration < num_iterations:
-                self.sleep(kill_after_seconds, f"Wait before next iteration")
 
-        self.sleep(30, "Wait for migration to resume after all iterations")
+                self.sleep(30, f"[Rebalance {rebalance_count}] Wait for recovery after killing memcached during pause")
 
-        # Capture guest volumes after crash
-        status, guest_volumes_after = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
-        self.log.info(f"Active guest volumes after crash: {guest_volumes_after}")
+            rate_limit_thread = threading.Thread(target=self.toggle_rate_limit,
+                                                args=(rate_limit_toggle_interval,
+                                                      self.fusion_migration_rate_limit,
+                                                      rebalance_count))
+            rate_limit_thread.daemon = True
+            rate_limit_thread.start()
 
-        # Validate guest volumes consistency
-        for node_id in guest_volumes_before:
-            if node_id in guest_volumes_after:
-                volumes_before = set(guest_volumes_before[node_id])
-                volumes_after = set(guest_volumes_after[node_id])
-                
-                # Volumes after should be subset of volumes before (some may have completed)
-                extra_volumes = volumes_after - volumes_before
-                if extra_volumes:
-                    self.log.error(f"Node {node_id}: New volumes appeared after crash: {extra_volumes}")
-                    self.fail(f"Guest volumes that were already migrated re-appeared after crash: {extra_volumes}")
-                
-                completed_volumes = volumes_before - volumes_after
-                self.log.info(f"Node {node_id}: Volumes completed during test: {len(completed_volumes)}")
+            self.log.info(f"[Rebalance {rebalance_count}] Waiting {kill_after_seconds} seconds for migration to start")
+            self.sleep(kill_after_seconds, f"[Rebalance {rebalance_count}] Wait for migration to start")
 
-        # Wait for migration to continue
-        self.sleep(60, "Wait for migration to make progress after crash")
+            status, guest_volumes_before = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
+            self.log.info(f"[Rebalance {rebalance_count}] Active guest volumes before crash: {guest_volumes_before}")
 
-        # Capture migration stats after crash
-        migration_stats_after = {}
-        for node in nodes_to_monitor:
-            migration_stats_after[node.ip] = {}
-            for bucket in self.cluster.buckets:
-                cbstats = Cbstats(node)
-                stats = cbstats.all_stats(bucket.name)
-                migration_stats_after[node.ip][bucket.name] = {
-                    'completed_bytes': int(stats['ep_fusion_migration_completed_bytes']),
-                    'total_bytes': int(stats['ep_fusion_migration_total_bytes']),
-                    'failures': int(stats['ep_fusion_migration_failures'])
-                }
-                cbstats.disconnect()
+            migration_stats_before = {}
+            for node in nodes_to_monitor:
+                migration_stats_before[node.ip] = {}
+                for bucket in self.cluster.buckets:
+                    cbstats = Cbstats(node)
+                    stats = cbstats.all_stats(bucket.name)
+                    migration_stats_before[node.ip][bucket.name] = {
+                        'completed_bytes': int(stats['ep_fusion_migration_completed_bytes']),
+                        'total_bytes': int(stats['ep_fusion_migration_total_bytes'])
+                    }
+                    cbstats.disconnect()
+            self.log.info(f"[Rebalance {rebalance_count}] Migration stats before crash: {migration_stats_before}")
 
-        # Validate migration resumed
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                before = migration_stats_before[node.ip][bucket.name]['completed_bytes']
-                after = migration_stats_after[node.ip][bucket.name]['completed_bytes']
-                failures = migration_stats_after[node.ip][bucket.name]['failures']
-                
-                self.log.info(f"Node {node.ip}, Bucket {bucket.name}: "
-                            f"Before={before}, After={after}, Failures={failures}")
-                
-                # Migration should have made progress or completed
-                self.assertGreaterEqual(after, before, 
-                    f"Migration did not resume on {node.ip}:{bucket.name}")
-                
-                # No failures expected for crash recovery
-                self.assertEqual(failures, 0, 
-                    f"Unexpected failures after crash recovery on {node.ip}:{bucket.name}")
+            if enable_memcached_kill:
+                for iteration in range(1, num_iterations + 1):
+                    self.log.info(f"[Rebalance {rebalance_count}] Iteration {iteration}/{num_iterations} - Kill Type: {kill_type}")
 
-        # Wait for parallel read workload to complete
-        self.log.info("Waiting for parallel read workload to complete")
+                    for node in nodes_to_monitor:
+                        shell = RemoteMachineShellConnection(node)
+                        if kill_type == "hard_kill":
+                            self.log.info(f"[Rebalance {rebalance_count}] Iteration {iteration}: Hard killing memcached on {node.ip}")
+                            shell.kill_memcached()
+                        elif kill_type == "graceful_restart":
+                            self.log.info(f"[Rebalance {rebalance_count}] Iteration {iteration}: Restarting couchbase server on {node.ip}")
+                            shell.restart_couchbase()
+                        else:
+                            shell.disconnect()
+                            self.fail(f"Invalid kill_type: {kill_type}. Use 'hard_kill' or 'graceful_restart'")
+                        shell.disconnect()
+
+                    self.sleep(30, f"[Rebalance {rebalance_count}] Wait for service to recover (iteration {iteration})")
+
+                    if iteration < num_iterations:
+                        self.sleep(kill_after_seconds, f"[Rebalance {rebalance_count}] Wait before next iteration")
+            else:
+                self.log.info(f"[Rebalance {rebalance_count}] Memcached kill disabled, monitoring migration progress without crashes")
+                total_wait_time = num_iterations * (30 + kill_after_seconds)
+                self.sleep(total_wait_time, f"[Rebalance {rebalance_count}] Wait for migration progress")
+
+            self.sleep(30, f"[Rebalance {rebalance_count}] Wait for migration to resume after all iterations")
+
+            status, guest_volumes_after = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
+            self.log.info(f"[Rebalance {rebalance_count}] Active guest volumes after crash: {guest_volumes_after}")
+
+            for node_id in guest_volumes_before:
+                if node_id in guest_volumes_after:
+                    volumes_before = set(guest_volumes_before[node_id])
+                    volumes_after = set(guest_volumes_after[node_id])
+
+                    extra_volumes = volumes_after - volumes_before
+                    if extra_volumes:
+                        self.log.error(f"[Rebalance {rebalance_count}] Node {node_id}: New volumes appeared after crash: {extra_volumes}")
+                        self.fail(f"Guest volumes that were already migrated re-appeared after crash: {extra_volumes}")
+
+                    completed_volumes = volumes_before - volumes_after
+                    self.log.info(f"[Rebalance {rebalance_count}] Node {node_id}: Volumes completed during test: {len(completed_volumes)}")
+
+            self.sleep(60, f"[Rebalance {rebalance_count}] Wait for migration to make progress after crash")
+
+            migration_stats_after = {}
+            for node in nodes_to_monitor:
+                migration_stats_after[node.ip] = {}
+                for bucket in self.cluster.buckets:
+                    cbstats = Cbstats(node)
+                    stats = cbstats.all_stats(bucket.name)
+                    migration_stats_after[node.ip][bucket.name] = {
+                        'completed_bytes': int(stats['ep_fusion_migration_completed_bytes']),
+                        'total_bytes': int(stats['ep_fusion_migration_total_bytes']),
+                        'failures': int(stats['ep_fusion_migration_failures'])
+                    }
+                    cbstats.disconnect()
+
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    before = migration_stats_before[node.ip][bucket.name]['completed_bytes']
+                    after = migration_stats_after[node.ip][bucket.name]['completed_bytes']
+                    failures = migration_stats_after[node.ip][bucket.name]['failures']
+
+                    self.log.info(f"[Rebalance {rebalance_count}] Node {node.ip}, Bucket {bucket.name}: "
+                                f"Before={before}, After={after}, Failures={failures}")
+
+                    self.assertGreaterEqual(after, before,
+                        f"Migration did not resume on {node.ip}:{bucket.name}")
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+
+            self.log.info(f"[Rebalance {rebalance_count}] Stopping rate limit toggle thread")
+            self.rate_limit_toggle_stop = True
+            self.sleep(5, "Wait for rate limit thread to stop")
+            self.rate_limit_toggle_stop = False
+
+            self.log.info(f"[Rebalance {rebalance_count}] Completed successfully")
+
+            if rebalance_count < num_rebalances:
+                self.sleep(60, f"Cooldown before next rebalance (read workload continues)")
+
+        self.log.info("Waiting for continuous read workload to complete")
         for task in doc_loading_tasks:
             self.doc_loading_tm.get_task_result(task)
-        self.log.info("Parallel read workload completed successfully")
+        self.log.info("Continuous read workload completed successfully")
 
-        self.cluster_util.print_cluster_stats(self.cluster)
+        self.log.info("Performing final data validation")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+        self.log.info("Checking final migration and read stats across all nodes")
+        final_failures_detected = False
+        final_read_failures_detected = False
+        
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+                migration_failures = int(stats['ep_fusion_migration_failures'])
+                read_failures = int(stats['ep_data_read_failed'])
+                
+                self.log.info(f"Final stats - Node {node.ip}, Bucket {bucket.name}: "
+                            f"Migration failures={migration_failures}, Read failures={read_failures}")
+                
+                if migration_failures > 0:
+                    self.log.error(f"Node {node.ip}, Bucket {bucket.name}: "
+                                 f"Migration failures detected: {migration_failures}")
+                    final_failures_detected = True
+                
+                if read_failures > 0:
+                    self.log.error(f"Node {node.ip}, Bucket {bucket.name}: "
+                                 f"Read failures detected: {read_failures}")
+                    final_read_failures_detected = True
+                
+                cbstats.disconnect()
+        
+        self.assertFalse(final_failures_detected, 
+                        "Migration failures detected at end of test")
+        self.assertFalse(final_read_failures_detected,
+                        "Read failures detected at end of test")
+
+    def test_toggle_guest_volume_permissions_during_extent_migration(self):
+
+        kill_after_seconds = self.input.param("kill_after_seconds", 10)
+        min_storage_size = self.input.param("min_storage_size", 53687091200)
+        num_iterations = self.input.param("num_iterations", 5)
+        kill_type = self.input.param("kill_type", "hard_kill")
+        kill_during_pause = self.input.param("kill_during_pause", False)
+        enable_memcached_kill = self.input.param("enable_memcached_kill", True)
+        num_rebalances = self.input.param("num_rebalances", 1)
+        read_ops_rate = self.input.param("read_ops_rate", 10000)
+        rebalance_type = self.input.param("rebalance_type", "in")
+        permission_toggle_interval = self.input.param("permission_toggle_interval", 30)
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        self.log.info(f"Starting continuous read workload at {read_ops_rate} ops/sec")
+        doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="read",
+                                                   wait=False, ops_rate=read_ops_rate)
+        self.sleep(10, "Wait for read workload to start")
+
+        for rebalance_count in range(1, num_rebalances + 1):
+            selected_rebalance_type = self.select_rebalance_type(rebalance_type)
+            self.log.info(f"\n{'='*80}")
+            self.log.info(f"REBALANCE {rebalance_count}/{num_rebalances}: Type={selected_rebalance_type}")
+            self.log.info(f"{'='*80}\n")
+
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=0)
+
+            nodes_to_monitor = self.run_rebalance(
+                output_dir=self.fusion_output_dir,
+                rebalance_count=rebalance_count,
+                min_storage_size=min_storage_size
+            )
+
+            self.sleep(30, f"[Rebalance {rebalance_count}] Wait after rebalance")
+
+            if enable_memcached_kill and kill_during_pause:
+                for node in nodes_to_monitor:
+                    shell = RemoteMachineShellConnection(node)
+                    shell.kill_memcached()
+                    shell.disconnect()
+                self.sleep(30, f"[Rebalance {rebalance_count}] Wait for recovery")
+
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+            permission_toggle_thread = threading.Thread(target=self.toggle_guest_volume_permissions,
+                                                       args=(permission_toggle_interval,
+                                                             nodes_to_monitor,
+                                                             rebalance_count))
+            permission_toggle_thread.daemon = True
+            permission_toggle_thread.start()
+
+            self.sleep(kill_after_seconds, f"[Rebalance {rebalance_count}] Wait for migration to start")
+
+            migration_stats_before = {}
+            for node in nodes_to_monitor:
+                migration_stats_before[node.ip] = {}
+                for bucket in self.cluster.buckets:
+                    cbstats = Cbstats(node)
+                    stats = cbstats.all_stats(bucket.name)
+                    migration_stats_before[node.ip][bucket.name] = {
+                        'completed_bytes': int(stats['ep_fusion_migration_completed_bytes'])
+                    }
+                    cbstats.disconnect()
+
+            if enable_memcached_kill:
+                for iteration in range(1, num_iterations + 1):
+                    for node in nodes_to_monitor:
+                        shell = RemoteMachineShellConnection(node)
+                        if kill_type == "hard_kill":
+                            shell.kill_memcached()
+                        elif kill_type == "graceful_restart":
+                            shell.restart_couchbase()
+                        else:
+                            shell.disconnect()
+                            self.fail(f"Invalid kill_type: {kill_type}")
+                        shell.disconnect()
+
+                    self.sleep(30, f"[Rebalance {rebalance_count}] Wait for recovery (iteration {iteration})")
+                    if iteration < num_iterations:
+                        self.sleep(kill_after_seconds)
+            else:
+                total_wait_time = num_iterations * (30 + kill_after_seconds)
+                self.sleep(total_wait_time, f"[Rebalance {rebalance_count}] Monitoring migration")
+
+            self.sleep(60, f"[Rebalance {rebalance_count}] Wait for migration progress")
+
+            migration_stats_after = {}
+            for node in nodes_to_monitor:
+                migration_stats_after[node.ip] = {}
+                for bucket in self.cluster.buckets:
+                    cbstats = Cbstats(node)
+                    stats = cbstats.all_stats(bucket.name)
+                    migration_stats_after[node.ip][bucket.name] = {
+                        'completed_bytes': int(stats['ep_fusion_migration_completed_bytes'])
+                    }
+                    cbstats.disconnect()
+
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    before = migration_stats_before[node.ip][bucket.name]['completed_bytes']
+                    after = migration_stats_after[node.ip][bucket.name]['completed_bytes']
+                    self.assertGreaterEqual(after, before,
+                        f"Migration did not progress on {node.ip}:{bucket.name}")
+
+            self.log.info(f"[Rebalance {rebalance_count}] Stopping permission toggle and restoring access")
+            self.rate_limit_toggle_stop = True
+            self.sleep(5)
+            
+            guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
+            ssh = RemoteMachineShellConnection(self.nfs_server)
+            for node in nodes_to_monitor:
+                node_id = "ns_1@{0}".format(node.ip)
+                
+                # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
+                find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+                output, error = ssh.execute_command(find_cmd)
+                
+                if output and output[0].strip():
+                    node_guest_dir = output[0].strip()
+                    ssh.execute_command("chmod -R 755 {0}".format(node_guest_dir))
+                else:
+                    self.log.warning(f"No guest directory found for {node_id} during permission restore")
+            ssh.disconnect()
+            
+            self.rate_limit_toggle_stop = False
+
+            if rebalance_count < num_rebalances:
+                self.sleep(60)
+
+        self.log.info("Waiting for read workload to complete")
+        for task in doc_loading_tasks:
+            self.doc_loading_tm.get_task_result(task)
+
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+        self.log.info("Checking final stats")
+        final_failures_detected = False
+        final_read_failures_detected = False
+        
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+                migration_failures = int(stats['ep_fusion_migration_failures'])
+                read_failures = int(stats['ep_data_read_failed'])
+                
+                if migration_failures > 0:
+                    final_failures_detected = True
+                if read_failures > 0:
+                    final_read_failures_detected = True
+                
+                cbstats.disconnect()
+        
+        self.assertFalse(final_failures_detected, "Migration failures detected")
+        self.assertFalse(final_read_failures_detected, "Read failures detected")
+
+    def test_progressive_rebalances_with_memcached_kills(self):
+
+        num_kill_iterations = self.input.param("num_kill_iterations", 10)
+        kill_type = self.input.param("kill_type", "hard_kill")
+        read_ops_rate = self.input.param("read_ops_rate", 10000)
+        num_rebalances = self.input.param("num_rebalances", 3)
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after initial load and first upload sync")
+
+        self.log.info(f"Starting continuous read workload at {read_ops_rate} ops/sec")
+        self.log.info("Read workload will run throughout all rebalances")
+        doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="read",
+                                                   wait=False, ops_rate=read_ops_rate)
+        self.sleep(10, "Wait for read workload to start")
+
+        for rebalance_count in range(1, num_rebalances + 1):
+            self.log.info(f"\n{'='*80}")
+            self.log.info(f"REBALANCE {rebalance_count}/{num_rebalances}: Cluster size {len(self.cluster.nodes_in_cluster)} → {len(self.cluster.nodes_in_cluster) + 1}")
+            self.log.info(f"{'='*80}\n")
+
+            self.log.info(f"[Rebalance {rebalance_count}] Setting migration rate limit to 0 (pause)")
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=0)
+
+            self.log.info(f"[Rebalance {rebalance_count}] Running a Fusion rebalance")
+            nodes_to_monitor = self.run_rebalance(
+                output_dir=self.fusion_output_dir,
+                rebalance_count=rebalance_count
+            )
+
+            self.sleep(30, f"[Rebalance {rebalance_count}] Wait after rebalance")
+
+            self.log.info(f"[Rebalance {rebalance_count}] Resuming migration with rate_limit={self.fusion_migration_rate_limit / (1024*1024)} MB/s")
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+            self.sleep(30, f"[Rebalance {rebalance_count}] Wait for migration to start")
+
+            status, guest_volumes_before = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
+            self.log.info(f"[Rebalance {rebalance_count}] Active guest volumes before crash: {guest_volumes_before}")
+
+            migration_stats_before = {}
+            for node in nodes_to_monitor:
+                migration_stats_before[node.ip] = {}
+                for bucket in self.cluster.buckets:
+                    cbstats = Cbstats(node)
+                    stats = cbstats.all_stats(bucket.name)
+                    migration_stats_before[node.ip][bucket.name] = {
+                        'completed_bytes': int(stats['ep_fusion_migration_completed_bytes']),
+                        'total_bytes': int(stats['ep_fusion_migration_total_bytes'])
+                    }
+                    cbstats.disconnect()
+            self.log.info(f"[Rebalance {rebalance_count}] Migration stats before crash: {migration_stats_before}")
+
+            self.log.info(f"[Rebalance {rebalance_count}] Starting {num_kill_iterations} memcached kill iterations")
+            for iteration in range(1, num_kill_iterations + 1):
+                self.log.info(f"[Rebalance {rebalance_count}] Iteration {iteration}/{num_kill_iterations} - Kill Type: {kill_type}")
+                
+                for node in nodes_to_monitor:
+                    shell = RemoteMachineShellConnection(node)
+                    if kill_type == "hard_kill":
+                        self.log.info(f"[Rebalance {rebalance_count}] Iteration {iteration}: Hard killing memcached on {node.ip}")
+                        shell.kill_memcached()
+                    elif kill_type == "graceful_restart":
+                        self.log.info(f"[Rebalance {rebalance_count}] Iteration {iteration}: Restarting couchbase server on {node.ip}")
+                        shell.restart_couchbase()
+                    else:
+                        shell.disconnect()
+                        self.fail(f"Invalid kill_type: {kill_type}. Use 'hard_kill' or 'graceful_restart'")
+                    shell.disconnect()
+
+                self.sleep(30, f"[Rebalance {rebalance_count}] Wait for service to recover (iteration {iteration})")
+
+            self.sleep(30, f"[Rebalance {rebalance_count}] Wait for migration to resume after all iterations")
+
+            status, guest_volumes_after = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
+            self.log.info(f"[Rebalance {rebalance_count}] Active guest volumes after crash: {guest_volumes_after}")
+
+            for node_id in guest_volumes_before:
+                if node_id in guest_volumes_after:
+                    volumes_before = set(guest_volumes_before[node_id])
+                    volumes_after = set(guest_volumes_after[node_id])
+
+                    extra_volumes = volumes_after - volumes_before
+                    if extra_volumes:
+                        self.log.error(f"[Rebalance {rebalance_count}] Node {node_id}: New volumes appeared after crash: {extra_volumes}")
+                        self.fail(f"Guest volumes that were already migrated re-appeared after crash: {extra_volumes}")
+
+                    completed_volumes = volumes_before - volumes_after
+                    self.log.info(f"[Rebalance {rebalance_count}] Node {node_id}: Volumes completed during test: {len(completed_volumes)}")
+
+            self.sleep(60, f"[Rebalance {rebalance_count}] Wait for migration to make progress after crash")
+
+            migration_stats_after = {}
+            for node in nodes_to_monitor:
+                migration_stats_after[node.ip] = {}
+                for bucket in self.cluster.buckets:
+                    cbstats = Cbstats(node)
+                    stats = cbstats.all_stats(bucket.name)
+                    migration_stats_after[node.ip][bucket.name] = {
+                        'completed_bytes': int(stats['ep_fusion_migration_completed_bytes']),
+                        'total_bytes': int(stats['ep_fusion_migration_total_bytes'])
+                    }
+                    cbstats.disconnect()
+
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    before = migration_stats_before[node.ip][bucket.name]['completed_bytes']
+                    after = migration_stats_after[node.ip][bucket.name]['completed_bytes']
+
+                    self.log.info(f"[Rebalance {rebalance_count}] Node {node.ip}, Bucket {bucket.name}: "
+                                f"Before={before}, After={after}")
+
+                    self.assertGreaterEqual(after, before,
+                        f"Migration did not resume on {node.ip}:{bucket.name}")
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+
+            self.log.info(f"[Rebalance {rebalance_count}] Completed successfully")
+
+            if rebalance_count < num_rebalances:
+                self.sleep(60, f"Cooldown before next rebalance (read workload continues)")
+
+        self.log.info("Waiting for continuous read workload to complete")
+        for task in doc_loading_tasks:
+            self.doc_loading_tm.get_task_result(task)
+        self.log.info("Continuous read workload completed successfully")
+
+        self.log.info("Performing final data validation")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+        self.log.info("Checking final stats for migration and read failures")
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+                migration_failures = int(stats['ep_fusion_migration_failures'])
+                read_failures = int(stats['ep_data_read_failed'])
+                
+                self.log.info(f"Final - Node {node.ip}, Bucket {bucket.name}: "
+                            f"Migration failures={migration_failures}, Read failures={read_failures}")
+                
+                self.assertEqual(migration_failures, 0, 
+                               f"Migration failures on {node.ip}:{bucket.name}")
+                self.assertEqual(read_failures, 0,
+                               f"Read failures on {node.ip}:{bucket.name}")
+                
+                cbstats.disconnect()
 
     def test_delete_guest_volumes_before_rebalance(self):
 
@@ -624,7 +1093,17 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         ssh = RemoteMachineShellConnection(self.nfs_server)
         for node in nodes_to_monitor:
             node_id = f"ns_1@{node.ip}"
-            node_guest_dir = os.path.join(guest_storage_base, node_id)
+            
+            # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
+            find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+            output_find, error_find = ssh.execute_command(find_cmd)
+            
+            if not output_find or not output_find[0].strip():
+                self.log.warning(f"No guest directory found for {node_id}")
+                continue
+            
+            node_guest_dir = output_find[0].strip()
+            self.log.info(f"Using guest directory: {node_guest_dir}")
             
             # List all available guest volumes dynamically
             list_cmd = f"ls -1 {node_guest_dir} | grep '^guest' | sort"

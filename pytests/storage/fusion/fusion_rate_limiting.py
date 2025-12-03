@@ -17,11 +17,19 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         self.monitor_interval = self.input.param("monitor_interval", 5)  # seconds
         self.upload_ops_rate = self.input.param("upload_ops_rate", 20 * 1024 * 1024)  # 20 MB/s default
         self.rate_limit = self.input.param("rate_limit", 10 * 1024 * 1024)  # 10 MB/s default
+        self.rate_limit_toggle_interval = self.input.param("rate_limit_toggle_interval", 30)
+        self.enable_memcached_kill = self.input.param("enable_memcached_kill", True)
+        self.kill_after_seconds = self.input.param("kill_after_seconds", 30)
+        self.num_rebalances = self.input.param("num_rebalances", 3)
+        self.read_ops_rate = self.input.param("read_ops_rate", 10000)
+        self.rebalance_type = self.input.param("rebalance_type", "in")
+        self.rate_limit_toggle_stop = False
         self.log.info(f"[SETUP] monitor_interval={self.monitor_interval}s, "
                       f"upload_ops_rate={self.upload_ops_rate / (1024*1024)}MB/s, "
                       f"rate_limit={self.rate_limit / (1024*1024)}MB/s")
 
     def tearDown(self):
+        self.rate_limit_toggle_stop = True
         super(FusionUploaderRateLimitTest, self).tearDown()
 
     def get_stat(self, server, bucket, stat_key):
@@ -191,3 +199,146 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         )
 
         self.log.info("[TEST] Finished test_fusion_extent_migration_rate_limit successfully")
+
+    def toggle_upload_rate_limit(self, interval, rate_limit_value):
+        """Toggle fusion_sync_rate_limit between rate_limit_value and 0"""
+        while not self.rate_limit_toggle_stop:
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+                fusion_sync_rate_limit=rate_limit_value)
+            self.log.info("Set fusion_sync_rate_limit to {0} MB/s".format(rate_limit_value / (1024 * 1024)))
+            
+            self.sleep(interval, "Wait before toggling rate limit")
+            if self.rate_limit_toggle_stop:
+                break
+            
+            ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+                fusion_sync_rate_limit=0)
+            self.log.info("Set fusion_sync_rate_limit to 0 MB/s")
+            
+            self.sleep(interval, "Wait before toggling rate limit")
+
+    def select_rebalance_type(self, rebalance_type):
+        """Configure rebalance parameters based on type"""
+        self.num_nodes_to_rebalance_in = 0
+        self.num_nodes_to_rebalance_out = 0
+        self.num_swap_rebalance = 0
+        
+        if rebalance_type == "in":
+            self.num_nodes_to_rebalance_in = 1
+        elif rebalance_type == "out":
+            self.num_nodes_to_rebalance_out = 1
+        elif rebalance_type == "swap":
+            self.num_swap_rebalance = 1
+        elif rebalance_type == "random":
+            num_kv_nodes = len([n for n in self.cluster.nodes_in_cluster if "kv" in n.services])
+            if num_kv_nodes < 4:
+                self.num_nodes_to_rebalance_in = 1
+            else:
+                import random
+                choice = random.choice(["in", "out", "swap"])
+                if choice == "in":
+                    self.num_nodes_to_rebalance_in = 1
+                elif choice == "out":
+                    self.num_nodes_to_rebalance_out = 1
+                else:
+                    self.num_swap_rebalance = 1
+        
+        self.log.info("Rebalance type: {0}, in={1}, out={2}, swap={3}".format(
+            rebalance_type, self.num_nodes_to_rebalance_in,
+            self.num_nodes_to_rebalance_out, self.num_swap_rebalance))
+
+    def test_toggle_upload_rate_limit_with_memcached_kills(self):
+        """
+        Test upload sync stability with:
+        1. Continuous rate limit toggling (10MB/s <-> 0)
+        2. Continuous read workload
+        3. Periodic memcached kills
+        4. Multiple rebalances
+        """
+        self.log.info("Starting test_toggle_upload_rate_limit_with_memcached_kills")
+        
+        self.log.info("Starting initial load")
+        self.initial_load()
+        
+        self.log.info("Waiting for initial Fusion upload sync")
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Wait for Fusion upload sync")
+        
+        self.log.info("Starting continuous rate limit toggle thread")
+        toggle_thread = threading.Thread(
+            target=self.toggle_upload_rate_limit,
+            args=(self.rate_limit_toggle_interval, self.rate_limit))
+        toggle_thread.daemon = True
+        toggle_thread.start()
+        
+        self.log.info("Starting continuous read workload")
+        read_tasks = self.perform_workload(
+            0, self.num_items, doc_op="read",
+            wait=False, ops_rate=self.read_ops_rate)
+        
+        for rebalance_count in range(1, self.num_rebalances + 1):
+            self.log.info("=== Rebalance iteration {0}/{1} ===".format(rebalance_count, self.num_rebalances))
+            
+            self.select_rebalance_type(self.rebalance_type)
+            
+            self.log.info("Running Fusion rebalance")
+            nodes_to_monitor = self.run_rebalance(
+                output_dir=self.fusion_output_dir,
+                rebalance_count=rebalance_count)
+            
+            if self.enable_memcached_kill:
+                self.log.info("Starting memcached kill loop")
+                for kill_iteration in range(10):
+                    self.sleep(self.kill_after_seconds, "Wait before killing memcached")
+                    
+                    for node in self.cluster.nodes_in_cluster:
+                        shell = RemoteMachineShellConnection(node)
+                        try:
+                            self.log.info("Killing memcached on {0}".format(node.ip))
+                            shell.kill_memcached()
+                        finally:
+                            shell.disconnect()
+                    
+                    self.log.info("Killed memcached iteration {0}/10".format(kill_iteration + 1))
+            else:
+                self.log.info("Memcached kill disabled, waiting for rebalance progress")
+                self.sleep(300, "Wait for rebalance progress without kills")
+            
+            self.log.info("Monitoring upload sync stats")
+            for node in self.cluster.nodes_in_cluster:
+                cbstats = Cbstats(node)
+                for bucket in self.cluster.buckets:
+                    stats = cbstats.all_stats(bucket.name)
+                    self.log.info("Node: {0}, Bucket: {1}, ep_fusion_bytes_synced: {2}, ep_fusion_sync_failures: {3}".format(
+                        node.ip, bucket.name, stats.get('ep_fusion_bytes_synced', 0),
+                        stats.get('ep_fusion_sync_failures', 0)))
+                cbstats.disconnect()
+        
+        self.log.info("Stopping rate limit toggle thread")
+        self.rate_limit_toggle_stop = True
+        toggle_thread.join(timeout=60)
+        
+        self.log.info("Waiting for read workload to complete")
+        for task in read_tasks:
+            self.doc_loading_tm.get_task_result(task)
+        
+        self.log.info("Final comprehensive stats validation")
+        for node in self.cluster.nodes_in_cluster:
+            cbstats = Cbstats(node)
+            for bucket in self.cluster.buckets:
+                stats = cbstats.all_stats(bucket.name)
+                sync_failures = int(stats['ep_fusion_sync_failures'])
+                data_read_failed = int(stats['ep_data_read_failed'])
+                
+                self.log.info("Node: {0}, Bucket: {1}, ep_fusion_sync_failures: {2}, ep_data_read_failed: {3}".format(
+                    node.ip, bucket.name, sync_failures, data_read_failed))
+                
+                self.assertEqual(sync_failures, 0,
+                    "Sync failures detected on {0} for bucket {1}: {2}".format(
+                        node.ip, bucket.name, sync_failures))
+                self.assertEqual(data_read_failed, 0,
+                    "Data read failures detected on {0} for bucket {1}: {2}".format(
+                        node.ip, bucket.name, data_read_failed))
+            cbstats.disconnect()
+        
+        self.log.info("Test completed successfully")

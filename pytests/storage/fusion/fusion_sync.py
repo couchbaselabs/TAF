@@ -400,6 +400,102 @@ class FusionSync(MagmaBaseTest, FusionBase):
                                                   self.num_items)
 
 
+    def test_crash_during_upload_with_rebalance(self):
+
+        num_iterations = self.input.param("num_iterations", 5)
+        crash_wait_time = self.input.param("crash_wait_time", 30)
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        self.log.info("Setting migration rate limit to {0} MB/s".format(
+            self.fusion_migration_rate_limit / (1024 * 1024)))
+        ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+        self.log.info("Starting continuous overwrite workload at 5000 ops/sec")
+        doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="update",
+                                                   wait=False, ops_rate=5000)
+
+        rebalance_count = 1
+        for iteration in range(1, num_iterations + 1):
+            self.log.info("=== Iteration {0}/{1} ===".format(iteration, num_iterations))
+
+            self.log.info("Killing memcached on all nodes")
+            for server in self.cluster.nodes_in_cluster:
+                shell = RemoteMachineShellConnection(server)
+                try:
+                    self.log.info("Killing memcached on {0}".format(server.ip))
+                    shell.kill_memcached()
+                finally:
+                    shell.disconnect()
+
+            self.sleep(crash_wait_time, "Wait for bucket recovery")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+            self.log.info("Validating reads from disk after crash")
+            self.perform_batch_reads(num_docs_to_validate=min(self.num_items, 1000000),
+                                     batch_size=500000, validate_docs=True)
+
+            self.log.info("Running a Fusion rebalance (swap rebalance)")
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                  rebalance_count=rebalance_count)
+            rebalance_count += 1
+
+            self.log.info("Monitoring extent migration on nodes: {0}".format(nodes_to_monitor))
+            extent_migration_array = list()
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                    extent_th.start()
+                    extent_migration_array.append(extent_th)
+
+            for th in extent_migration_array:
+                th.join()
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.bucket_util.print_bucket_stats(self.cluster)
+
+            self.log.info("Validating reads from FusionFS after rebalance")
+            self.perform_batch_reads(num_docs_to_validate=min(self.num_items, 1000000),
+                                     batch_size=500000, validate_docs=True)
+
+            self.log.info("Checking uploader info (validate no upload from scratch)")
+            self.get_fusion_uploader_info()
+
+        self.log.info("Stopping continuous update workload")
+        for task in doc_loading_tasks:
+            self.doc_loading_tm.get_task_result(task)
+
+        self.log.info("Validating item count after all iterations")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+        self.log.info("Checking final stats for sync, migration, and read failures")
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+                sync_failures = int(stats['ep_fusion_sync_failures'])
+                migration_failures = int(stats['ep_fusion_migration_failures'])
+                read_failures = int(stats['ep_data_read_failed'])
+                
+                self.log.info("Final - Node {0}, Bucket {1}: "
+                            "Sync failures={2}, Migration failures={3}, Read failures={4}".format(
+                                node.ip, bucket.name, sync_failures, migration_failures, read_failures))
+                
+                self.assertEqual(sync_failures, 0,
+                    "Sync failures on {0}:{1}".format(node.ip, bucket.name))
+                self.assertEqual(migration_failures, 0,
+                    "Migration failures on {0}:{1}".format(node.ip, bucket.name))
+                self.assertEqual(read_failures, 0,
+                    "Read failures on {0}:{1}".format(node.ip, bucket.name))
+                
+                cbstats.disconnect()
+
+
     def test_fusion_sync_remove_write_permissions(self):
 
         self.log.info("Starting initial load")
