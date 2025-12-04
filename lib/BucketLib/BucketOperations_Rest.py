@@ -40,7 +40,7 @@ class BucketHelper(BucketRestApi):
             self.log.info(e)
             return False
 
-    def create_secret_params(self, secret_type="auto-generated-aes-key-256",
+    def create_secret_params(self, secret_type="cb-server-managed-aes-key-256",
                              name="Default secret", usage=None,
                              autoRotation=True, rotationIntervalInDays=60,
                              rotationIntervalInSeconds=None, keyARN=None,

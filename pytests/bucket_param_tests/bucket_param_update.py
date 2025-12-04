@@ -718,7 +718,7 @@ class BucketParamTest(ClusterSetup):
             self.assertTrue(bucket.encryptionAtRestInfo['issues'] == [],
                             "Default value mismatch for issues")
             params = bucket_helper.create_secret_params(
-                secret_type="auto-generated-aes-key-256",
+                secret_type="cb-server-managed-aes-key-256",
                 name="UTestSecret",
                 usage=["bucket-encryption-*"],
                 autoRotation=True,
@@ -780,7 +780,7 @@ class BucketParamTest(ClusterSetup):
 
         # Create secret for log encryption
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryption",
             usage=["log-encryption"],
             autoRotation=True,
@@ -794,7 +794,7 @@ class BucketParamTest(ClusterSetup):
             self.fail("Failed to create log encryption secret: %s" % response)
 
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryptionNeg",
             usage=["config-encryption"],
             autoRotation=True,
@@ -866,7 +866,7 @@ class BucketParamTest(ClusterSetup):
 
         # Create secret for log encryption
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryption",
             usage=["config-encryption"],
             autoRotation=True,
@@ -881,7 +881,7 @@ class BucketParamTest(ClusterSetup):
                 "Failed to create config encryption secret: %s" % response)
 
         log_params = bucket_helper.create_secret_params(
-            secret_type="auto-generated-aes-key-256",
+            secret_type="cb-server-managed-aes-key-256",
             name="TestSecretLogEncryptionNeg",
             usage=["log-encryption"],
             autoRotation=True,
