@@ -492,7 +492,11 @@ class SDKClient(object):
         for key, result in data.results.items():
             success[key] = dict()
             success[key]["cas"] = result.cas
-            success[key]["value"] = result.content_as[dict]
+            try:
+                val = result.content_as[dict]
+            except Exception:
+                val = result.value
+            success[key]["value"] = val
 
         for key, result in data.exceptions.items():
             fail[key] = dict()

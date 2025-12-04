@@ -115,7 +115,7 @@ class N1qlBase(CollectionBase):
             if "target" in dict_to_add[0]:
                 new_add = dict_to_add[0].split(".")[1]
                 dict_to_add[0] = new_add
-            value = doc[collection].get(dict_to_add[0].encode())
+            value = doc[collection].get(dict_to_add[0])
             if isinstance(value, list):
                 value = [x.encode('UTF8') for x in value]
                 if isinstance(dict_to_add[1], str):
@@ -620,6 +620,8 @@ class N1qlBase(CollectionBase):
                         for key, val in res[0][savepoint][collection]["UPDATE"].items():
                             mutated = key.split("=")
                             for t_id in val:
+                                if isinstance(t_id, bytes):
+                                    t_id = t_id.decode('UTF8')
                                 try:
                                     self.validate_dict[t_id][mutated[0]] = \
                                         mutated[1]
