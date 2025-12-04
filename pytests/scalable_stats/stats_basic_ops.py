@@ -4,7 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from membase.api.rest_client import RestConnection
 import json
-from ruamel.yaml import YAML # using ruamel.yaml as "import yaml" (pyyaml) doesn't work with jython
+import yaml
 
 
 class StatsBasicOps(CollectionBase):
@@ -361,7 +361,7 @@ class StatsBasicOps(CollectionBase):
             self.sleep(10, "Waiting for prometheus federation")
             for server in self.cluster.servers[:self.nodes_init]:
                 content = StatsHelper(server).query_prometheus_federation(query)
-                yaml_code = yaml.load(content["data"]["yaml"])
+                yaml_code = yaml.safe_load(content["data"]["yaml"])
                 global_scrape_interval = yaml_code["global"]["scrape_interval"]
                 if str(global_scrape_interval) != (str(expected_scrape_interval) + "s"):
                     self.fail("Expected scrape interval {0}, but Actual {1}"
@@ -369,7 +369,6 @@ class StatsBasicOps(CollectionBase):
 
         scrape_interval = self.input.param("scrape_interval", 15)
         query = "status/config"
-        yaml = YAML()
         self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
@@ -379,7 +378,7 @@ class StatsBasicOps(CollectionBase):
         verify_prometheus_config(expected_scrape_interval=scrape_interval)
 
         self.log.info("Changing scrape interval to 10s via rest api")
-        settings = StatsHelper(self.cluster.master).change_scrape_interval(10)
+        _ = StatsHelper(self.cluster.master).change_scrape_interval(10)
         verify_prometheus_config(expected_scrape_interval=10)
 
     def test_change_global_scrape_timeout(self):
@@ -399,7 +398,7 @@ class StatsBasicOps(CollectionBase):
             self.sleep(10, "Waiting for prometheus federation")
             for server in self.cluster.servers[:self.nodes_init]:
                 content = StatsHelper(server).query_prometheus_federation(query)
-                yaml_code = yaml.load(content["data"]["yaml"])
+                yaml_code = yaml.safe_load(content["data"]["yaml"])
                 global_scrape_timeout = yaml_code["global"]["scrape_timeout"]
                 if str(global_scrape_timeout) != (str(expected_scrape_timeout) + "s"):
                     self.fail("Expected scrape timeout {0}, but Actual {1}"
@@ -407,7 +406,6 @@ class StatsBasicOps(CollectionBase):
 
         scrape_timeout = self.input.param("scrape_timeout", 5)
         query = "status/config"
-        yaml = YAML()
         self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
@@ -417,7 +415,7 @@ class StatsBasicOps(CollectionBase):
         verify_prometheus_config(expected_scrape_timeout=scrape_timeout)
 
         self.log.info("Changing scrape timeout to 10s via rest api")
-        settings = StatsHelper(self.cluster.master).change_scrape_timeout(10)
+        _ = StatsHelper(self.cluster.master).change_scrape_timeout(10)
         verify_prometheus_config(expected_scrape_timeout=10)
 
     def test_stats_1000_collections(self):
