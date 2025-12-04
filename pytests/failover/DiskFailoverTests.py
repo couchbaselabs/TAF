@@ -250,7 +250,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.rest.add_node(user=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
                                remoteIp=node.ip)
-        nodes = self.rest.node_statuses()
+        nodes = self.cluster_util.get_otp_nodes(self.orchestrator)
         nodes_to_remove = [node.id for node in nodes if
                            node.ip in [t.ip for t in self.servers_to_remove]]
         nodes = [node.id for node in nodes]
@@ -305,7 +305,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.bring_back_failed_nodes_up()
         self.sleep(30)
         self.log.info(self.server_to_fail[0])
-        self.nodes = self.rest.node_statuses()
+        self.nodes = self.cluster_util.get_otp_nodes(self.orchestrator)
         self.log.info("Adding back node {0}".format(self.server_to_fail[0].ip))
         self.rest.add_back_node("ns_1@{}".format(self.server_to_fail[0].ip))
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
@@ -356,7 +356,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             count += 1
         if count == 5:
             self.fail("Disk autofailover did not get initiated")
-        self.nodes = self.rest.node_statuses()
+        self.nodes = self.cluster_util.get_otp_nodes(self.orchestrator)
         self.remove_after_failover = True
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                             ejectedNodes=[])
