@@ -117,7 +117,6 @@ class N1qlBase(CollectionBase):
                 dict_to_add[0] = new_add
             value = doc[collection].get(dict_to_add[0])
             if isinstance(value, list):
-                value = [x.encode('UTF8') for x in value]
                 if isinstance(dict_to_add[1], str):
                     dict_to_add[1] = dict_to_add[1].strip("][").split(', ')
             else:
