@@ -97,9 +97,14 @@ class N1qlBase(CollectionBase):
     def validate_update_results(self, index, docs=[], dict_to_add="",
                                 query_params={}, server=None):
         name = index.split('.')
+        # Convert docs to JSON array for N1QL query
+        # Decode bytes back to strings for JSON serialization
+        docs_for_json = [d.decode('utf-8') if isinstance(d, bytes) else d
+                         for d in docs] if isinstance(docs, list) else docs
+        docs_json = json.dumps(docs_for_json) if isinstance(docs_for_json, list) else docs_for_json
         query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
                 "WHERE META().id in %s" \
-                % (name[0], name[1], name[2], docs)
+                % (name[0], name[1], name[2], docs_json)
         dict_to_add = dict_to_add.split("=")
         dict_to_add[1] = dict_to_add[1].replace('\'', '')
         result = self.n1ql_helper.run_cbq_query(query,
@@ -124,7 +129,6 @@ class N1qlBase(CollectionBase):
     def validate_insert_results(self, index, docs, query_params={}, server=None):
         # modify this to get values for list of docs
         keys = list(docs.keys())
-        keys = [x.encode('UTF8') for x in keys]
         name = index.split('.')
         query = "SELECT  * from default:`%s`.`%s`.`%s` WHERE META().id in %s"\
                 % (name[0], name[1], name[2], keys)
@@ -148,9 +152,14 @@ class N1qlBase(CollectionBase):
     def validate_delete_results(self, index, docs, query_params={}, server=None):
         # modify this to get values for list of docs
         name = index.split('.')
+        # Convert docs to JSON array for N1QL query
+        # Decode bytes back to strings for JSON serialization
+        docs_for_json = [d.decode('utf-8') if isinstance(d, bytes) else d
+                         for d in docs] if isinstance(docs, list) else docs
+        docs_json = json.dumps(docs_for_json) if isinstance(docs_for_json, list) else docs_for_json
         query = "SELECT  META().id,* from default:`%s`.`%s`.`%s` " \
                 "WHERE META().id in %s"\
-                % (name[0], name[1], name[2], docs)
+                % (name[0], name[1], name[2], docs_json)
         result = self.n1ql_helper.run_cbq_query(query,
                                                 query_params=query_params,
                                                 server=server)
@@ -353,7 +362,6 @@ class N1qlBase(CollectionBase):
         """
         self.name_list = []
         self.prepare = prepare
-        self.log = logger.get("test")
         collection_savepoint = dict()
         savepoint = list()
         collection_map = dict()
