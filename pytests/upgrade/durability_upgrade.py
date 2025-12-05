@@ -2248,7 +2248,7 @@ class UpgradeTests(UpgradeBase):
 
     def create_primary_partitioned_indexes(self):
         bucket = self.cluster.buckets[0]
-        self.query_client = RestConnection(self.cluster.query_nodes[0])
+        self.query_client = QueryRestAPI(self.cluster.query_nodes[0])
         self.log.info("Creating primary partitioned indexes..")
         for col in self.bucket_util.get_active_collections(bucket, "_default"):
             part_idx_name = '{0}_{1}_{2}_part_index'.format(bucket.name, "_default",
@@ -2266,7 +2266,7 @@ class UpgradeTests(UpgradeBase):
     def create_secondary_indexes(self, partitioned=False, replica=True,
                                 index_suffix='sec_index', field='name'):
         bucket = self.cluster.buckets[0]
-        self.query_client = RestConnection(self.cluster.query_nodes[0])
+        self.query_client = QueryRestAPI(self.cluster.query_nodes[0])
         self.log.info("Creating secondary indexes..")
         for scope in self.bucket_util.get_active_scopes(bucket):
             if scope.name == "_system":
