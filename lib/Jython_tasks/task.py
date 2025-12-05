@@ -2271,24 +2271,19 @@ class ContinuousRangeScan(Task):
                 self.create_range_scan_terms()
             self.log.debug("Collections selected for range scan %s" %
                            self.range_scan_collections)
-            if self.cluster.sdk_client_pool is None:
-                self.log.debug("SDK pool not found creating clients" %
-                               self.range_scan_collections)
-                client_for_collection_list = list()
-                for bucket in self.buckets:
-                    for scope in bucket.scopes:
-                        if scope in self.skip_scopes:
+            client_for_collection_list = list()
+            for bucket in self.buckets:
+                for scope in bucket.scopes:
+                    if scope in self.skip_scopes:
+                        continue
+                    for collection in bucket.scopes[scope].collections:
+                        if str(collection) not in self.range_scan_collections:
                             continue
-                        for collection in bucket.scopes[scope].collections:
-                            if str(collection) not in self.range_scan_collections:
-                                continue
-                            for _ in range(
-                                    self.consecutive_runs_per_collection):
-                                client_for_collection_list.append(SDKClient(
-                                    self.cluster, bucket,
-                                    scope=scope, collection=collection))
-            else:
-                client_for_collection_list = self.cluster.sdk_client_pool
+                        for _ in range(
+                                self.consecutive_runs_per_collection):
+                            client_for_collection_list.append(SDKClient(
+                                self.cluster, bucket,
+                                scope=scope, collection=collection))
             parallel_scan_task = {key: None for key in
                                   range(self.parallel_task)}
             run_parallel_tasks = True
