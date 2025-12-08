@@ -1480,6 +1480,65 @@ class StorageBase(BaseTestCase):
         else:
             self.fail(f"Enabling Fusion failed. Error = {content}")
 
+    def disable_fusion(self, timeout=3600):
+
+        fusion_client = FusionRestAPI(self.cluster.master)
+        status, content = fusion_client.disable_fusion()
+        self.log.info(f"Disabling Fusion, Status: {status}, Content: {content}")
+        if status:
+            end_time = time.time() + timeout
+            fusion_disabled = False
+            while time.time() < end_time:
+                status, content = fusion_client.get_fusion_status()
+                self.log.info(f"Fusion Status = {content}")
+                if content['state'] == "disabled":
+                    fusion_disabled = True
+                    break
+                time.sleep(2)
+
+            if fusion_disabled:
+                self.log.info("Fusion Disabled successfully")
+            else:
+                self.fail("Disabling Fusion failed after timeout")
+        else:
+            self.fail(f"Disabling Fusion failed. Error = {content}")
+
+    def check_log_files_on_nfs(self, nfs_server, nfs_server_path):
+        """
+        Check if log files exist on NFS server.
+        Returns: (log_files_exist: bool, log_file_count: int)
+        """
+        
+        ssh = RemoteMachineShellConnection(nfs_server)
+        self.log.info(f"Checking for log files on NFS: {nfs_server_path}")
+        
+        # Find all log files in the NFS path
+        find_cmd = f"find {nfs_server_path} -name 'log-*' -type f 2>/dev/null | wc -l"
+        o, e = ssh.execute_command(find_cmd)
+        
+        log_file_count = 0
+        if o and len(o) > 0:
+            try:
+                log_file_count = int(o[0].strip())
+            except ValueError:
+                log_file_count = 0
+        
+        # Also list some sample log files for debugging
+        list_cmd = f"find {nfs_server_path} -name 'log-*' -type f 2>/dev/null | head -10"
+        list_o, list_e = ssh.execute_command(list_cmd)
+        
+        ssh.disconnect()
+        
+        log_files_exist = log_file_count > 0
+        
+        self.log.info(f"Log files found: {log_file_count}")
+        if log_files_exist and list_o:
+            self.log.info("Sample log files:")
+            for log_file in list_o[:5]:
+                self.log.info(f"  {log_file.strip()}")
+        
+        return log_files_exist, log_file_count
+
     def PrintStep(self, msg=None):
         print("\n")
         print("\t", "#"*60)
