@@ -42,7 +42,7 @@ API_START_REBALANCE = "/controller/rebalance"
 
 class RebalanceAutomation:
     def __init__(self, base_url: str, username: str, password: str, current_nodes: List[str],
-                 new_nodes: List[str], config: dict, dry_run: bool = False, replica_update: bool = False,
+                 new_nodes: List[str], config: dict, rebalanceID: str, dry_run: bool = False, replica_update: bool = False,
                  skip_file_linking: bool = False, force_sync_during_sleep: bool = False, stop_before_rebalance: bool = False, min_storage_size: int = None):
         self.base_url = base_url.rstrip('/')
         self.auth = (username, password)
@@ -50,6 +50,7 @@ class RebalanceAutomation:
         self.new_nodes = new_nodes
         self.dry_run = dry_run
         self.config = config
+        self.rebalanceID = rebalanceID
         self.replica_update = replica_update
         self.skip_file_linking = skip_file_linking
         self.force_sync_during_sleep = force_sync_during_sleep
@@ -157,7 +158,7 @@ class RebalanceAutomation:
         url = f"{self.base_url}{API_UPLOAD_VOLUMES}"
 
         # Prepare the guest volume paths
-        guest_paths = [f"/guest{i}" for i in range(1, self.config['manifest_parts'] + 1)]
+        guest_paths = [f"/guests/{self.rebalanceID}/guest{i}" for i in range(1, self.config['manifest_parts'] + 1)]
 
         # Prepare the nodes configuration
         nodes_config = {
@@ -190,7 +191,7 @@ class RebalanceAutomation:
 
         try:
             ssh.connect(node, username=self.config["ssh_username"], password=self.config["ssh_password"], timeout=30)
-            cmd = f"{self.config['accelerator_binary']} ns_1@{node}"
+            cmd = f"{self.config['accelerator_binary']} ns_1@{node} {self.rebalanceID}"
             if self.skip_file_linking:
                 cmd += " --skip-file-linking"
             print(cmd)
@@ -377,6 +378,7 @@ def main():
         validate_nodes(current_nodes, new_nodes)
         sleep_time = args.sleep_time
         reb_count = args.reb_count
+        rebalanceID = f"reb{reb_count}"
         replica_update = args.replica_update
         skip_file_linking = args.skip_file_linking
         force_sync_during_sleep = args.force_sync_during_sleep
@@ -393,6 +395,7 @@ def main():
             current_nodes=current_nodes,
             new_nodes=new_nodes,
             config=config,
+            rebalanceID=rebalanceID,
             dry_run=args.dry_run,
             replica_update=replica_update,
             skip_file_linking=skip_file_linking,

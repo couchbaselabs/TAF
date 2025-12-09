@@ -81,8 +81,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 for node in nodes_to_monitor:
                     node_id = "ns_1@{0}".format(node.ip)
                     
-                    # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
-                    find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+                    # Find guest directory for this node (subdirectory structure: node_id/reb*)
+                    find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
                     output, error = ssh.execute_command(find_cmd)
                     
                     if not output or not output[0].strip():
@@ -493,8 +493,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             node_id = f"ns_1@{node.ip}"
             ssh = RemoteMachineShellConnection(self.nfs_server)
             
-            # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
-            find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+            # Find guest directory for this node (subdirectory structure: node_id/reb*)
+            find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
             output, error = ssh.execute_command(find_cmd)
             
             if not output or not output[0].strip():
@@ -867,8 +867,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             for node in nodes_to_monitor:
                 node_id = "ns_1@{0}".format(node.ip)
                 
-                # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
-                find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+                # Find guest directory for this node (subdirectory structure: node_id/reb*)
+                find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
                 output, error = ssh.execute_command(find_cmd)
                 
                 if output and output[0].strip():
@@ -1094,8 +1094,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         for node in nodes_to_monitor:
             node_id = f"ns_1@{node.ip}"
             
-            # Find guest directory for this node (glob pattern handles _reb1, _reb2, etc.)
-            find_cmd = f"ls -d {guest_storage_base}/{node_id}_reb* 2>/dev/null | tail -1"
+            # Find guest directory for this node (subdirectory structure: node_id/reb*)
+            find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
             output_find, error_find = ssh.execute_command(find_cmd)
             
             if not output_find or not output_find[0].strip():

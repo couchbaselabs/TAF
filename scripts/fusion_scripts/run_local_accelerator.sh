@@ -8,31 +8,28 @@ GUEST_STORAGE_PATH="/mnt/nfs/share/guest_storage"
 MANIFEST_SOURCE_PATH="/mnt/nfs/share/fusion-manifests"
 BASE_URI="/mnt/nfs/share/buckets"
 
-# Validate required argument
-if [ -z "$1" ]; then
-    echo "Error: hostID argument is required"
-    echo "Usage: $0 <hostID>"
+# Validate required arguments
+if [ -z "$1" ] || [ -z "$2" ]; then
+    echo "Error: hostID and rebalanceID arguments are required"
+    echo "Usage: $0 <hostID> <rebalanceID> [--skip-file-linking]"
     exit 1
 fi
 
 HOST_ID="$1"
+REBALANCE_ID="$2"
 SKIP_FLAG=""
 
-if [ "$2" == "--skip-file-linking" ]; then
+if [ "$3" == "--skip-file-linking" ]; then
     SKIP_FLAG="-skip-file-linking"
 fi
 
-# Create base directories
-PRIVATE_PREFIX="$GUEST_STORAGE_PATH/$HOST_ID"
+# Create base directories with rebalanceID subdirectory
+PRIVATE_PREFIX="$GUEST_STORAGE_PATH/$HOST_ID/$REBALANCE_ID"
 
-# Cleanup existing guest directories and private storage
-echo "Cleaning up existing guest directories and private storage..."
-for dir in /guest*; do
-    if [ -L "$dir" ]; then
-        echo "Removing guest symlink: $dir"
-        sudo rm -f "$dir"
-    fi
-done
+# Cleanup existing directories for this rebalance
+if [ -d "/guests/${REBALANCE_ID}" ]; then
+    sudo rm -rf "/guests/${REBALANCE_ID}"
+fi
 
 if [ -d "$PRIVATE_PREFIX" ]; then
     echo "Removing private storage: $PRIVATE_PREFIX"
@@ -40,18 +37,20 @@ if [ -d "$PRIVATE_PREFIX" ]; then
 fi
 
 mkdir -p "$PRIVATE_PREFIX"
+sudo mkdir -p "/guests/${REBALANCE_ID}"
 
 # Function to create guest directory and symlink
 create_guest_directory() {
     local guest_num=$1
     local guest_dir="guest$guest_num"
     local full_guest_path="$PRIVATE_PREFIX/$guest_dir"
+    local symlink_path="/guests/${REBALANCE_ID}/${guest_dir}"
+    
     echo "Creating guest directory: $full_guest_path"
     mkdir -p "$full_guest_path"
 
-    # Create symlink in root directory
-    echo "Creating symlink: /$guest_dir -> $full_guest_path"
-    sudo ln -sfn "$full_guest_path" "/$guest_dir"
+    echo "Creating symlink: $symlink_path -> $full_guest_path"
+    sudo ln -sfn "$full_guest_path" "$symlink_path"
 }
 
 # Function to process manifest part
