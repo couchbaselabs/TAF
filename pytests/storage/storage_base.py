@@ -1457,25 +1457,38 @@ class StorageBase(BaseTestCase):
                                 enable_sync_threshold=self.enable_sync_threshold)
         self.log.info(f"Status = {status}, Result = {content}")
 
+    def monitor_fusion_enabled(self, timeout=300):
+        """
+        Monitor if Fusion reaches enabled state within timeout.
+        Returns: True if enabled, False if timeout
+        """
+        fusion_client = FusionRestAPI(self.cluster.master)
+        end_time = time.time() + timeout
+        fusion_enabled = False
+
+        while time.time() < end_time:
+            status, content = fusion_client.get_fusion_status()
+            self.log.info(f"Fusion Status = {content}")
+            if content['state'] == "enabled":
+                fusion_enabled = True
+                break
+            time.sleep(2)
+
+        if fusion_enabled:
+            self.log.info("Fusion Enabled successfully")
+        else:
+            self.log.warning(f"Fusion not enabled after {timeout} seconds")
+
+        return fusion_enabled
+
     def enable_fusion(self, buckets=None, timeout=3600):
 
         fusion_client = FusionRestAPI(self.cluster.master)
         status, content = fusion_client.enable_fusion(buckets=buckets)
         self.log.info(f"Enabling Fusion, Status: {status}, Content: {content}")
         if status:
-            end_time = time.time() + timeout
-            fusion_enabled = False
-            while time.time() < end_time:
-                status, content = fusion_client.get_fusion_status()
-                self.log.info(f"Fusion Status = {content}")
-                if content['state'] == "enabled":
-                    fusion_enabled = True
-                    break
-                time.sleep(2)
-
-            if fusion_enabled:
-                self.log.info("Fusion Enabled successfully")
-            else:
+            fusion_enabled = self.monitor_fusion_enabled(timeout=timeout)
+            if not fusion_enabled:
                 self.fail("Enabling Fusion failed after timeout")
         else:
             self.fail(f"Enabling Fusion failed. Error = {content}")

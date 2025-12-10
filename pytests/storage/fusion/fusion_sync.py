@@ -55,7 +55,6 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         super(FusionSync, self).tearDown()
 
-
     def test_fusion_sync(self):
 
         self.log.info("Fusion Sync Test Started")
@@ -859,12 +858,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.log.info("Checking if log files are deleted from NFS after disabling Fusion")
         log_files_exist_after, log_count_after = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
         self.log.info(f"Log files exist after disable: {log_files_exist_after}, Count: {log_count_after}")
-
-        # Validation: Log files should be deleted after disabling Fusion
-        if log_files_exist_after:
-            self.log.warning(f"Log files still exist after disabling Fusion. Count: {log_count_after}")
-        else:
-            self.log.info("Validation passed: Log files deleted successfully after disabling Fusion")
+        self.assertEqual(log_count_after, 0, f"Expected 0 log files after disabling Fusion, found {log_count_after}")
 
         # Re-enable Fusion
         self.log.info("Re-enabling Fusion")
@@ -1050,12 +1044,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.log.info("Checking if log files are deleted from NFS after disabling Fusion")
         log_files_exist_after, log_count_after = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
         self.log.info(f"Log files exist after disable: {log_files_exist_after}, Count: {log_count_after}")
-
-        # Validation: Log files should be deleted after disabling Fusion
-        if log_files_exist_after:
-            self.log.warning(f"Log files still exist after disabling Fusion. Count: {log_count_after}")
-        else:
-            self.log.info("Validation passed: Log files deleted successfully after disabling Fusion")
+        self.assertEqual(log_count_after, 0, f"Expected 0 log files after disabling Fusion, found {log_count_after}")
 
         # Re-enable Fusion
         self.log.info("Re-enabling Fusion")
@@ -1078,3 +1067,236 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, 100000)
+
+    def test_flush_during_fusion_enabling(self):
+        """
+        Chaos test: Flush bucket while Fusion is being enabled.
+        Validates that Fusion enabling completes successfully despite flush.
+        """
+        self.log.info("Starting initial load")
+        self.initial_load()
+
+        self.override_fusion_settings()
+        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+            fusion_sync_rate_limit=self.fusion_sync_rate_limit,
+            fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+        self.configure_fusion()
+
+        # Start Fusion enabling in background thread
+        self.log.info("Starting Fusion enable in background")
+        enable_thread = threading.Thread(target=self.enable_fusion)
+        enable_thread.start()
+
+        # Monitor for "enabling" state, then perform flush immediately
+        self.log.info("Monitoring for Fusion 'enabling' state")
+        fusion_client = FusionRestAPI(self.cluster.master)
+        end_time = time.time() + 60  # 60 seconds to reach enabling state
+        start_time = time.time()
+        fusion_enabled = False
+
+        while time.time() < end_time:
+            status, content = fusion_client.get_fusion_status()
+            self.log.info(f"Fusion Status = {content}")
+            if content['state'] == "enabling":
+                elapsed = time.time() - start_time
+                self.log.info(f"Fusion reached 'enabling' state after {elapsed:.2f} seconds")
+                fusion_enabled = True
+                break
+            time.sleep(2)
+
+        if not fusion_enabled:
+            self.fail("Fusion did not reach 'enabling' state within 60 seconds")
+
+        self.log.info("Triggering flush operation during Fusion enabling")
+        for bucket in self.cluster.buckets:
+            self.log.info(f"Flushing bucket: {bucket.name}")
+            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                                    flush_enabled=Bucket.FlushBucket.ENABLED)
+            self.bucket_util.flush_bucket(self.cluster, bucket)
+        self.log.info("Flush operation completed during Fusion enabling")
+
+        # Monitor if Fusion enabling completes despite flush (max 5 min)
+        self.log.info("Monitoring if Fusion enabling completes despite flush (timeout=300s)")
+        monitor_start = time.time()
+        fusion_enabled = self.monitor_fusion_enabled(timeout=600)
+
+        if not fusion_enabled:
+            self.fail("Fusion did not enable within 5 minutes after flush during enabling")
+
+        monitor_elapsed = time.time() - monitor_start
+        self.log.info(f"Fusion enabled successfully after {monitor_elapsed:.2f} seconds despite flush")
+
+        # Wait for enable thread to complete
+        enable_thread.join()
+
+        # Validate buckets are empty after flush
+        self.log.info("Validating buckets are empty after flush")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
+        self.log.info("Validation passed: All buckets empty after flush")
+
+        # Check log files on NFS after flush
+        self.log.info("Checking log files on NFS after flush")
+        log_files_exist, log_count = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
+        self.log.info(f"Log files on NFS after flush: exist={log_files_exist}, count={log_count}")
+        self.assertEqual(log_count, 0, f"Expected 0 log files after flush during enabling, found {log_count}")
+
+        # Load data after flush using Java doc loader with new key range
+        self.log.info("Loading data after flush using sirius java SDK (target: 20GB)")
+        post_flush_items = 5250000  # 5.25M docs × 4KB = ~20GB
+        self.reset_doc_params(doc_ops="create")
+        self.create_start = self.num_items  # Start from where initial load ended
+        self.create_end = self.num_items + post_flush_items
+        self.log.info(f"Post-flush load: create_start={self.create_start}, create_end={self.create_end}")
+        self.generate_docs(doc_ops="create")
+        self.java_doc_loader(generator=self.gen_create,
+                            doc_ops="create",
+                            process_concurrency=8,
+                            skip_default=self.skip_load_to_default_collection)
+        self.num_items = post_flush_items  # Update to reflect current bucket item count
+
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Wait for Fusion sync after loading data")
+
+        # Check log files before disabling - should exist for loaded data
+        self.log.info("Checking log files on NFS before disabling Fusion")
+        log_files_exist_before_disable, log_count_before_disable = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
+        self.log.info(f"Log files before disable: exist={log_files_exist_before_disable}, count={log_count_before_disable}")
+
+        # Disable Fusion again to test log cleanup
+        self.log.info("Disabling Fusion to verify log cleanup")
+        self.disable_fusion()
+
+        # Wait a bit and check log files should be deleted
+        self.sleep(10, "Wait after disabling Fusion")
+        self.log.info("Checking log files on NFS after disabling Fusion")
+        log_files_exist_after_disable, log_count_after_disable = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
+        self.log.info(f"Log files after disable: exist={log_files_exist_after_disable}, count={log_count_after_disable}")
+        self.assertEqual(log_count_after_disable, 0, f"Expected 0 log files after disabling Fusion, found {log_count_after_disable}")
+
+        # Re-enable Fusion
+        self.log.info("Re-enabling Fusion")
+        self.enable_fusion()
+
+        # Wait for Fusion to stabilize and sync
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Wait for Fusion sync after re-enabling")
+
+        # Run rebalance
+        self.log.info("Starting Fusion rebalance with extent migration monitoring")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1)
+        self.log.info(f"Monitoring extent migration on {len(nodes_to_monitor)} nodes")
+
+        extent_migration_threads = []
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_migration_threads.append(th)
+                th.start()
+
+        for th in extent_migration_threads:
+            th.join()
+
+        self.log.info("Rebalance and extent migration completed successfully")
+        self.log.info(f"Final validation: verifying item count={self.num_items} after rebalance")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.log.info("Test completed successfully: flush during Fusion enabling")
+
+    def test_kill_memcached_during_fusion_enabling(self):
+        """
+        Chaos test: Kill memcached process while Fusion is being enabled.
+        Validates that Fusion enabling completes successfully after memcached restart.
+        """
+        self.log.info("Starting initial load")
+        self.initial_load()
+
+        self.override_fusion_settings()
+        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+            fusion_sync_rate_limit=self.fusion_sync_rate_limit,
+            fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+        self.configure_fusion()
+
+        # Start Fusion enabling in background thread
+        self.log.info("Starting Fusion enable in background")
+        enable_thread = threading.Thread(target=self.enable_fusion)
+        enable_thread.start()
+
+        # Monitor for "enabling" state, then kill memcached immediately
+        self.log.info("Monitoring for Fusion 'enabling' state")
+        fusion_client = FusionRestAPI(self.cluster.master)
+        end_time = time.time() + 60  # 60 seconds to reach enabling state
+        start_time = time.time()
+        fusion_enabled = False
+
+        while time.time() < end_time:
+            status, content = fusion_client.get_fusion_status()
+            self.log.info(f"Fusion Status = {content}")
+            if content['state'] == "enabling":
+                elapsed = time.time() - start_time
+                self.log.info(f"Fusion reached 'enabling' state after {elapsed:.2f} seconds")
+                fusion_enabled = True
+                break
+            time.sleep(2)
+
+        if not fusion_enabled:
+            self.fail("Fusion did not reach 'enabling' state within 60 seconds")
+
+        # Kill memcached on all nodes in the cluster
+        self.log.info(f"Triggering memcached kill on all {len(self.cluster.nodes_in_cluster)} nodes during Fusion enabling")
+        for node in self.cluster.nodes_in_cluster:
+            self.log.info(f"Killing memcached on node {node.ip}")
+            shell = RemoteMachineShellConnection(node)
+            shell.kill_memcached()
+            self.log.info(f"Memcached process killed on {node.ip}")
+            shell.disconnect()
+        self.log.info("Memcached kill operation completed on all nodes during Fusion enabling")
+
+        # Monitor if Fusion enabling completes after memcached restart (max 5 min)
+        self.log.info("Monitoring if Fusion enabling completes after memcached restart (timeout=300s)")
+        monitor_start = time.time()
+        fusion_enabled = self.monitor_fusion_enabled(timeout=600)
+
+        if not fusion_enabled:
+            self.fail("Fusion did not enable within 5 minutes after killing memcached during enabling")
+
+        monitor_elapsed = time.time() - monitor_start
+        self.log.info(f"Fusion enabled successfully after {monitor_elapsed:.2f} seconds post memcached restart")
+
+        # Wait for enable thread to complete
+        enable_thread.join()
+
+        # Wait for cluster to stabilize
+        self.sleep(60, "Wait for cluster to stabilize after memcached restart")
+
+        # Validate stats
+        self.log.info(f"Validating item count: expected={self.num_items}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.log.info("Validation passed: Item count maintained after memcached restart")
+
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Wait for Fusion sync")
+
+        # Run rebalance
+        self.log.info("Starting Fusion rebalance with extent migration monitoring")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1)
+        self.log.info(f"Monitoring extent migration on {len(nodes_to_monitor)} nodes")
+
+        extent_migration_threads = []
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_migration_threads.append(th)
+                th.start()
+
+        for th in extent_migration_threads:
+            th.join()
+
+        self.log.info("Rebalance and extent migration completed successfully")
+        self.log.info(f"Final validation: verifying item count={self.num_items} after rebalance")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.log.info("Test completed successfully: kill memcached during Fusion enabling")
