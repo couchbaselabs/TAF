@@ -698,9 +698,9 @@ class SecurityTest(SecurityBase):
 
         end_time = time.time() + 320
         while time.time() < end_time:
-            cluster_status = capella_api.get_cluster_status(self.cluster_id)
-            status = json.loads(cluster_status.content.decode('utf-8'))["status"]
-            if status == "turnedOff":
+            cluster_status = capella_api.get_cluster_info(self.tenant_id, self.project_id, self.cluster_id)
+            status = json.loads(cluster_status.content.decode('utf-8'))["data"]["status"]["state"]
+            if status == "turned_off":
                 break
             self.sleep(10, "Waiting for the cluster to be in turned off state")
 
