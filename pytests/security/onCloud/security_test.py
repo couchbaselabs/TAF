@@ -85,7 +85,7 @@ class SecurityTest(SecurityBase):
 
     def run_query(self, user, password, role, query_statement):
         pod = "https://" + self.url.replace("cloud", "", 1)
-        url = "{0}/v2/databases/{1}/proxy/_p/query/query/service".format(pod, self.cluster_id)
+        url = f"{pod}/v2/databases/{self.cluster_id}/proxy/_p/query/query/service"
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, user,
                                  password)
         body = {"statement": "{0}".format(query_statement)}
@@ -97,11 +97,11 @@ class SecurityTest(SecurityBase):
                 self.log.info("Pass. No permissions")
             else:
                 self.fail("FAIL. Permission shouldn't be allowed")
-        elif 13014 == json.loads(content.decode('utf-8'))["errors"][0]["code"]:
-            self.log.info("Pass. Curl access denied")
+        elif 'success' == json.loads(content.decode('utf-8'))["status"]:
+            self.fail("FAIL. CURL access was allowed")
         else:
-            self.fail("FAIL. CURL access shouldn't be allowed")
-
+            self.fail("Pass. CURL access was not allowed")
+ 
     def find_buckets(self, name):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, self.user,
                                  self.passwd)
