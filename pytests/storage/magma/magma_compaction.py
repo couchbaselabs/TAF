@@ -7,6 +7,7 @@ from cb_tools.cbstats import Cbstats
 from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_constants.java_client import SDKConstants
+from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 
 
 class MagmaCompactionTests(MagmaBaseTest):
@@ -23,6 +24,7 @@ class MagmaCompactionTests(MagmaBaseTest):
         self.compact_after = self.input.param("compact_after", False)
         self.sdk_retry_strategy = self.input.param("sdk_retry_strategy",
                                                    SDKConstants.RetryStrategy.FAIL_FAST)
+        self.enable_fusion_during_compaction = self.input.param("enable_fusion_during_compaction", False)
     def tearDown(self):
         self.stop_crash = True
         self.stop_compaction = True
@@ -100,6 +102,14 @@ class MagmaCompactionTests(MagmaBaseTest):
         self.compaction_th = threading.Thread(target=self.compact_bucket)
 
         self.compaction_th.start()
+        if self.enable_fusion_during_compaction:
+            self.sleep(5, "Sleep to allow compaction to start")
+            fusion_client = FusionRestAPI(self.cluster.master)
+            status, content = fusion_client.get_fusion_status()
+            if content.get('state') != 'enabled':
+                self.enable_fusion()
+            else:
+                self.log.info("Fusion already enabled, skipping enable_fusion() call")
         self.crash_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)
@@ -204,6 +214,14 @@ class MagmaCompactionTests(MagmaBaseTest):
                 for bucket in self.cluster.buckets:
                     compaction_tasks.append(self.task.async_compact_bucket(self.cluster.master,
                                                bucket))
+                if self.enable_fusion_during_compaction:
+                    self.sleep(5, "Sleep to allow compaction to start")
+                    fusion_client = FusionRestAPI(self.cluster.master)
+                    status, content = fusion_client.get_fusion_status()
+                    if content.get('state') != 'enabled':
+                        self.enable_fusion()
+                    else:
+                        self.log.info("Fusion already enabled, skipping enable_fusion() call")
             shell.kill_memcached()
 
             if self.compact_after:

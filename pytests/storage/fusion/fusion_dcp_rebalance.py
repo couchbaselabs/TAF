@@ -5,6 +5,7 @@ import json
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
+from rebalance_utils.rebalance_util import RebalanceUtil
 import os
 import subprocess
 from storage.fusion.fusion_base import FusionBase
@@ -22,6 +23,7 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
         self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
         self.extent_migration_rate_limit = self.input.param("extent_migration_rate_limit", 10 * 1024 * 1024)  # 10 MB/s default
+        self.wait_for_extent_migration = self.input.param("wait_for_extent_migration", True)  # Wait for migration by default
         split_path = self.local_test_path.split("/")
         self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
         self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
@@ -73,30 +75,6 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         ssh.disconnect()   
 
     # ============ UPLOADER MANAGEMENT VALIDATION METHODS ============
-    
-    def validate_term_number(self, prev_uploader_map, new_uploader_map):
-
-        for bucket in self.cluster.buckets:
-
-            for vb_no in range(bucket.numVBuckets):
-
-                prev_uploader = prev_uploader_map[bucket.name][vb_no]['node']
-                prev_term = prev_uploader_map[bucket.name][vb_no]['term']
-
-                new_uploader = new_uploader_map[bucket.name][vb_no]['node']
-                new_term = new_uploader_map[bucket.name][vb_no]['term']
-
-                if prev_uploader != new_uploader:
-                    if new_term == prev_term + 1:
-                        self.log.info(f"Term number changed for {bucket.name}:vb_{vb_no} as expected")
-                    else:
-                        self.log.info(f"Expected term number: {prev_term+1}, Actual term number: {new_term}")
-
-                else:
-                    if prev_term == new_term:
-                        self.log.info(f"Term number not changed for {bucket.name}:vb_{vb_no} as expected")
-                    else:
-                        self.log.info(f"Expected term number: {prev_term}, Actual term number: {new_term}")
     
     def validate_stale_log_deletion(self):
         """
@@ -254,16 +232,21 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         self.cluster_util.print_cluster_stats(self.cluster)
 
         extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        if self.wait_for_extent_migration and self.extent_migration_rate_limit > 0:
+            self.log.info(f"Extent migration rate limit = {self.extent_migration_rate_limit} bytes/sec")
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                    extent_th.start()
+                    extent_migration_array.append(extent_th)
 
-        # Wait for extent migration to complete
-        for th in extent_migration_array:
-            th.join()
+            # Wait for extent migration to complete
+            for th in extent_migration_array:
+                th.join()
+            self.log.info("Extent migration monitoring completed")
+        else:
+            self.log.info(f"Skipping extent migration monitoring (wait_for_extent_migration={self.wait_for_extent_migration}, extent_migration_rate_limit={self.extent_migration_rate_limit})")
         
         self.parse_reb_plan_dict(self.rebalance_counter)
 
@@ -284,33 +267,86 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         self.rebalance_counter += 1
 
         # ========== DCP REBALANCE SECTION ==========
-        self.log.info("Starting a DCP rebalance-in operation")
+        # Get DCP rebalance type from conf (in/out/swap)
+        dcp_rebalance_type = self.input.param("dcp_rebalance_type", "in")
+        self.log.info(f"Starting a DCP rebalance-{dcp_rebalance_type} operation")
         
         # Capture uploader state before DCP rebalance
         uploader_map_before_dcp = deepcopy(self.fusion_vb_uploader_map)
 
-        # Get one available server that's not in the cluster
-        available_servers = [server for server in self.cluster.servers 
-                            if server not in self.cluster.nodes_in_cluster]
-        
-        if not available_servers:
-            self.fail("No available servers for rebalance-in operation")
-        
-        # Select one node to add to the cluster
-        node_to_add = available_servers[0]
-        
-        self.log.info(f"Rebalancing-in node: {node_to_add.ip}")
+        if dcp_rebalance_type == "in":
+            # Get one available server that's not in the cluster
+            available_servers = [server for server in self.cluster.servers 
+                                if server not in self.cluster.nodes_in_cluster]
+            
+            if not available_servers:
+                self.fail("No available servers for DCP rebalance-in operation")
+            
+            # Select one node to add to the cluster
+            node_to_add = available_servers[0]
+            self.log.info(f"DCP rebalancing-in node: {node_to_add.ip}")
 
-        operation = self.task.async_rebalance(
-            self.cluster, 
-            [node_to_add],  # ADD one node to cluster
-            [],             # nodes to remove (empty for rebalance-in)
-            services=["kv"]
-        )
+            operation = self.task.async_rebalance(
+                self.cluster, 
+                [node_to_add],  # ADD one node to cluster
+                [],             # nodes to remove (empty for rebalance-in)
+                services=["kv"]
+            )
+        
+        elif dcp_rebalance_type == "out":
+            # CRITICAL: Remove a node that underwent extent migration
+            # Select from nodes_to_monitor (nodes involved in Fusion rebalance)
+            nodes_with_migration = [node for node in nodes_to_monitor 
+                                   if node.ip != self.cluster.master.ip]
+            
+            if not nodes_with_migration:
+                self.fail("No nodes available for DCP rebalance-out (no nodes underwent extent migration)")
+            
+            node_to_remove = nodes_with_migration[0]
+            self.log.info(f"DCP rebalancing-out node that underwent extent migration: {node_to_remove.ip}")
+            self.log.info(f"Nodes that underwent extent migration: {[n.ip for n in nodes_to_monitor]}")
+
+            operation = self.task.async_rebalance(
+                self.cluster, 
+                [],                 # nodes to add (empty for rebalance-out)
+                [node_to_remove],   # REMOVE node that underwent extent migration
+                services=["kv"]
+            )
+        
+        elif dcp_rebalance_type == "swap":
+            # CRITICAL: Swap a node that underwent extent migration
+            # Get available server to add
+            available_servers = [server for server in self.cluster.servers 
+                                if server not in self.cluster.nodes_in_cluster]
+            
+            # Get node to remove from those that underwent extent migration
+            nodes_with_migration = [node for node in nodes_to_monitor 
+                                   if node.ip != self.cluster.master.ip]
+            
+            if not available_servers:
+                self.fail("No available servers for DCP swap rebalance")
+            if not nodes_with_migration:
+                self.fail("No nodes available to swap out (no nodes underwent extent migration)")
+            
+            node_to_add = available_servers[0]
+            node_to_remove = nodes_with_migration[0]
+            self.log.info(f"DCP swap rebalance: adding {node_to_add.ip}, removing {node_to_remove.ip} (node that underwent extent migration)")
+            self.log.info(f"Nodes that underwent extent migration: {[n.ip for n in nodes_to_monitor]}")
+
+            operation = self.task.async_rebalance(
+                self.cluster, 
+                [node_to_add],      # ADD new node
+                [node_to_remove],   # REMOVE node that underwent extent migration
+                services=["kv"]
+            )
+        
+        else:
+            self.fail(f"Invalid dcp_rebalance_type: {dcp_rebalance_type}. Use 'in', 'out', or 'swap'")
+        
         self.wait_for_rebalance_to_complete(operation)
         
         # ========== DCP REBALANCE VALIDATION ==========
-        self.log.info("=== Starting DCP Rebalance Validation ===")
+        self.log.info(f"=== Starting DCP Rebalance-{dcp_rebalance_type.upper()} Validation ===")
         
         # Get uploader state after DCP rebalance
         self.get_fusion_uploader_info()
@@ -319,13 +355,135 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         # Validate uploaders didn't change during DCP rebalance
         self.validate_term_number(uploader_map_before_dcp, uploader_map_after_dcp)
 
-        self.log.info("=== DCP Rebalance Validation Completed ===")
+        self.log.info(f"=== DCP Rebalance-{dcp_rebalance_type.upper()} Validation Completed ===")
         
         # Final validation
         self.log.info("=== Final Validation ===")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
-        self.log.info("DCP rebalance test completed successfully with full uploader validation")
+        self.log.info(f"DCP rebalance-{dcp_rebalance_type} test completed successfully with full uploader validation")
+
+    def test_verify_migration_blocked_during_dcp_catchup(self):
+        """
+        Verify extent migration is blocked during DCP catch-up phase.
+        Migration should start only after rebalance reaches 100%.
+        """
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+        
+        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+            fusion_migration_rate_limit=self.extent_migration_rate_limit)
+        
+        self.log.info("Starting Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(
+            output_dir=self.fusion_output_dir,
+            rebalance_count=1,
+            rebalance_sleep_time=120,
+            wait_for_rebalance_to_complete=False)
+        
+        rebalance_timestamp = {'time': None}
+        migration_timestamp = {'time': None}
+        
+        rebalance_thread = threading.Thread(
+            target=self.wait_for_rebalance_completion,
+            args=(rebalance_timestamp,))
+        
+        migration_thread = threading.Thread(
+            target=self.wait_for_migration_start,
+            args=(nodes_to_monitor, migration_timestamp, rebalance_timestamp))
+        
+        rebalance_thread.start()
+        migration_thread.start()
+        
+        rebalance_thread.join()
+        migration_thread.join()
+        
+        self.assertIsNotNone(rebalance_timestamp['time'], 
+                            "Failed to detect rebalance 100% completion")
+        self.assertIsNotNone(migration_timestamp['time'], 
+                            "Migration never started after rebalance")
+        
+        time_diff = migration_timestamp['time'] - rebalance_timestamp['time']
+        self.log.info(f"Time between rebalance 100% and migration start: {time_diff:.2f} seconds")
+        self.assertGreater(time_diff, 0, 
+                          f"Migration must start AFTER 100% completion (diff={time_diff}s)")
+        
+        self.log.info("Validation passed: Migration correctly blocked during DCP catch-up")
+        
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.log.info("Test completed successfully")
+
+    def wait_for_rebalance_completion(self, timestamp_dict, interval=5):
+        """
+        Wait for rebalance to reach 100% and capture timestamp.
+        """
+        rebalance_util = RebalanceUtil(self.cluster)
+        max_wait_time = 3600
+        start_time = time.time()
+        
+        self.log.info("Monitoring rebalance progress")
+        
+        while time.time() - start_time < max_wait_time:
+            try:
+                status, progress = rebalance_util._rebalance_status_and_progress()
+                
+                if progress is not None and progress >= 100:
+                    timestamp_dict['time'] = time.time()
+                    self.log.info(f"Rebalance reached 100% at timestamp: {timestamp_dict['time']}")
+                    return
+                
+                if status == 'none':
+                    timestamp_dict['time'] = time.time()
+                    self.log.info(f"Rebalance completed at timestamp: {timestamp_dict['time']}")
+                    return
+                    
+            except Exception as e:
+                self.log.debug(f"Error checking rebalance: {e}")
+            
+            time.sleep(interval)
+        
+        self.log.error("Rebalance did not complete within timeout")
+
+    def wait_for_migration_start(self, nodes_to_monitor, timestamp_dict, rebalance_timestamp_dict, interval=5):
+        """
+        Wait for migration bytes to become non-zero and capture timestamp.
+        Also validates migration doesn't start before rebalance completion.
+        """
+        max_wait_time = 3600
+        start_time = time.time()
+        
+        self.log.info("Monitoring migration stats")
+        
+        while time.time() - start_time < max_wait_time:
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    try:
+                        cbstats = Cbstats(node)
+                        stats = cbstats.all_stats(bucket.name)
+                        migration_completed_bytes = int(stats['ep_fusion_migration_completed_bytes'])
+                        migration_bytes = int(stats['ep_fusion_bytes_migrated'])
+                        cbstats.disconnect()
+                        
+                        if migration_completed_bytes > 0 or migration_bytes > 0:
+                            timestamp_dict['time'] = time.time()
+                            self.log.info(f"Migration started on {node.ip}:{bucket.name} "
+                                        f"at timestamp: {timestamp_dict['time']}, "
+                                        f"completed_bytes={migration_completed_bytes}, "
+                                        f"bytes_migrated={migration_bytes}")
+                            
+                            if rebalance_timestamp_dict['time'] is None:
+                                self.log.error(f"VIOLATION: Migration started BEFORE rebalance 100% completion!")
+                            
+                            return
+                    except Exception as e:
+                        self.log.debug(f"Error checking migration stats: {e}")
+            
+            time.sleep(interval)
+        
+        self.log.error("Migration did not start within timeout")
 
 
     def test_perform_dcp_and_fusion_rebalance_alternate(self):
@@ -490,3 +648,383 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
         
         self.log.info("="*80)
         self.log.info("Alternating Fusion/DCP lifecycle rebalance completed successfully with full validation")
+
+    def test_enable_fusion_during_dcp_rebalance(self):
+        self.log.info("Test: Enable Fusion during DCP rebalance")
+        
+        # Get DCP rebalance type from conf (in/out/swap)
+        dcp_rebalance_type = self.input.param("dcp_rebalance_type", "in")
+        
+        # Initial data load with Fusion disabled
+        self.log.info("Starting initial load")
+        self.initial_load()
+        self.sleep(30, "Wait after initial load")
+        initial_item_count = self.num_items
+        
+        # Prepare nodes for DCP rebalance based on type
+        nodes_in = []
+        nodes_out = []
+        
+        if dcp_rebalance_type == "in":
+            available_servers = [s for s in self.cluster.servers 
+                                if s not in self.cluster.nodes_in_cluster]
+            if not available_servers:
+                self.fail("No available servers for DCP rebalance-in")
+            nodes_in = [available_servers[0]]
+            self.log.info(f"Starting DCP rebalance-in, adding node: {nodes_in[0].ip}")
+            
+        elif dcp_rebalance_type == "out":
+            nodes_to_remove = [n for n in self.cluster.nodes_in_cluster
+                              if n.ip != self.cluster.master.ip]
+            if not nodes_to_remove:
+                self.fail("No non-master nodes for DCP rebalance-out")
+            nodes_out = [nodes_to_remove[0]]
+            self.log.info(f"Starting DCP rebalance-out, removing node: {nodes_out[0].ip}")
+            
+        elif dcp_rebalance_type == "swap":
+            available_servers = [s for s in self.cluster.servers 
+                                if s not in self.cluster.nodes_in_cluster]
+            nodes_to_remove = [n for n in self.cluster.nodes_in_cluster
+                              if n.ip != self.cluster.master.ip]
+            if not available_servers or not nodes_to_remove:
+                self.fail("No servers available for DCP swap rebalance")
+            nodes_in = [available_servers[0]]
+            nodes_out = [nodes_to_remove[0]]
+            self.log.info(f"Starting DCP swap rebalance, adding {nodes_in[0].ip}, removing {nodes_out[0].ip}")
+        else:
+            self.fail(f"Invalid dcp_rebalance_type: {dcp_rebalance_type}. Use 'in', 'out', or 'swap'")
+        
+        # Start DCP rebalance
+        rebalance_task = self.task.async_rebalance(
+            self.cluster, nodes_in, nodes_out, 
+            check_vbucket_shuffling=False,
+            retry_get_process_num=self.retry_get_process_num
+        )
+        
+        self.sleep(10, "Wait for rebalance to be in progress")
+        
+        # Enable Fusion mid-rebalance
+        self.log.info("Enabling Fusion during DCP rebalance")
+        self.configure_fusion()
+        self.enable_fusion()
+        
+        # Wait for DCP rebalance to complete
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result, 
+                       "DCP rebalance failed after enabling Fusion")
+        
+        sync_settle_time = 30 + self.fusion_upload_interval + 30
+        self.sleep(sync_settle_time, "Wait for Fusion sync to settle")
+        
+        # Validate uploader assignment
+        self.log.info("Validating Fusion uploader assignment")
+        self.get_fusion_uploader_info()
+        
+        for bucket in self.cluster.buckets:
+            undefined_count = self.fusion_uploader_dict[bucket.name].get(None, 0)
+            self.assertEqual(undefined_count, 0, 
+                           f"Found {undefined_count} vBuckets with undefined uploaders")
+            
+            total_uploaders = sum(self.fusion_uploader_dict[bucket.name].values())
+            self.assertEqual(total_uploaders, bucket.numVBuckets,
+                           f"Expected {bucket.numVBuckets} uploaders, got {total_uploaders}")
+        
+        self.log.info("All uploaders assigned properly")
+        
+        # Check log files on NFS
+        log_files_exist, log_count = self.check_log_files_on_nfs(
+            self.nfs_server, self.nfs_server_path
+        )
+        self.assertTrue(log_files_exist, "No log files found on NFS")
+        self.log.info(f"Found {log_count} log files on NFS")
+        
+        # Check Fusion sync stats
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+                
+                sync_failures = int(stats.get('ep_fusion_sync_failures', 0))
+                migration_failures = int(stats.get('ep_fusion_migration_failures', 0))
+                read_failures = int(stats.get('ep_data_read_failed', 0))
+                
+                self.assertEqual(sync_failures, 0,
+                               f"Sync failures on {node.ip}:{bucket.name}")
+                self.assertEqual(migration_failures, 0,
+                               f"Migration failures on {node.ip}:{bucket.name}")
+                self.assertEqual(read_failures, 0,
+                               f"Read failures on {node.ip}:{bucket.name}")
+                
+                cbstats.disconnect()
+        
+        self.log.info("No sync/migration/read failures")
+        
+        # Verify data consistency
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, initial_item_count)
+        
+        # DCP rebalance updates cluster.nodes_in_cluster but doesn't update fusion's spare_nodes
+        self.spare_nodes = [node for node in self.cluster.servers 
+                           if node not in self.cluster.nodes_in_cluster]
+        self.log.info(f"Refreshed spare nodes after DCP rebalance: {self.spare_nodes}")
+        
+        # Perform Fusion rebalance
+        self.log.info("Performing Fusion rebalance")
+        self.get_fusion_uploader_info()
+        uploader_map_before_fusion = deepcopy(self.fusion_vb_uploader_map)
+        
+        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+            fusion_migration_rate_limit=self.extent_migration_rate_limit
+        )
+        
+        nodes_to_monitor = self.run_rebalance(
+            output_dir=self.fusion_output_dir,
+            rebalance_count=1,
+            rebalance_sleep_time=120
+        )
+        
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(
+                    target=self.monitor_extent_migration, 
+                    args=[node, bucket]
+                )
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+        
+        for th in extent_migration_array:
+            th.join()
+        
+        # Validate uploader changes after Fusion rebalance
+        self.get_fusion_uploader_info()
+        uploader_map_after_fusion = deepcopy(self.fusion_vb_uploader_map)
+        self.validate_term_number(uploader_map_before_fusion, uploader_map_after_fusion)
+        
+        # Check final sync stats
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+                
+                sync_failures = int(stats.get('ep_fusion_sync_failures', 0))
+                migration_failures = int(stats.get('ep_fusion_migration_failures', 0))
+                read_failures = int(stats.get('ep_data_read_failed', 0))
+                
+                self.log.info(f"Node {node.ip}, Bucket {bucket.name}: "
+                            f"sync_failures={sync_failures}, "
+                            f"migration_failures={migration_failures}, "
+                            f"read_failures={read_failures}")
+                
+                self.assertEqual(sync_failures, 0)
+                self.assertEqual(migration_failures, 0)
+                self.assertEqual(read_failures, 0)
+                
+                cbstats.disconnect()
+        
+        # Final data validation
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, initial_item_count)
+        self.log.info("Enable Fusion during DCP rebalance test completed")
+
+    def test_trigger_dcp_rebalance_during_enable_fusion(self):
+        self.log.info("Test: Enable Fusion during DCP rebalance")
+
+        # Get DCP rebalance type from conf (in/out/swap)
+        dcp_rebalance_type = self.input.param("dcp_rebalance_type", "in")
+
+        # Initial data load with Fusion disabled
+        self.log.info("Starting initial load")
+        self.initial_load()
+        self.sleep(30, "Wait after initial load")
+        initial_item_count = self.num_items
+
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        # Enable Fusion in parallel while DCP rebalance is running
+        self.log.info("Enabling Fusion during DCP rebalance")
+
+        def enable_fusion_thread():
+            self.configure_fusion()
+            self.enable_fusion()
+
+        fusion_thread = threading.Thread(target=enable_fusion_thread)
+        fusion_thread.start()
+        self.log.info("Fusion enabling thread started")
+
+        # Prepare nodes for DCP rebalance based on type
+        nodes_in = []
+        nodes_out = []
+
+        if dcp_rebalance_type == "in":
+            available_servers = [s for s in self.cluster.servers
+                                 if s not in self.cluster.nodes_in_cluster]
+            if not available_servers:
+                self.fail("No available servers for DCP rebalance-in")
+            nodes_in = [available_servers[0]]
+            self.log.info(f"Starting DCP rebalance-in, adding node: {nodes_in[0].ip}")
+
+        elif dcp_rebalance_type == "out":
+            nodes_to_remove = [n for n in self.cluster.nodes_in_cluster
+                               if n.ip != self.cluster.master.ip]
+            if not nodes_to_remove:
+                self.fail("No non-master nodes for DCP rebalance-out")
+            nodes_out = [nodes_to_remove[0]]
+            self.log.info(f"Starting DCP rebalance-out, removing node: {nodes_out[0].ip}")
+
+        elif dcp_rebalance_type == "swap":
+            available_servers = [s for s in self.cluster.servers
+                                 if s not in self.cluster.nodes_in_cluster]
+            nodes_to_remove = [n for n in self.cluster.nodes_in_cluster
+                               if n.ip != self.cluster.master.ip]
+            if not available_servers or not nodes_to_remove:
+                self.fail("No servers available for DCP swap rebalance")
+            nodes_in = [available_servers[0]]
+            nodes_out = [nodes_to_remove[0]]
+            self.log.info(f"Starting DCP swap rebalance, adding {nodes_in[0].ip}, removing {nodes_out[0].ip}")
+        else:
+            self.fail(f"Invalid dcp_rebalance_type: {dcp_rebalance_type}. Use 'in', 'out', or 'swap'")
+
+        # Start DCP rebalance
+        rebalance_task = self.task.async_rebalance(
+            self.cluster, nodes_in, nodes_out,
+            check_vbucket_shuffling=False,
+            retry_get_process_num=self.retry_get_process_num
+        )
+
+        # Enable Fusion in parallel while DCP rebalance is running
+        self.log.info("Enabling Fusion during DCP rebalance")
+        def enable_fusion_thread():
+            self.configure_fusion()
+            self.enable_fusion()
+        
+        fusion_thread = threading.Thread(target=enable_fusion_thread)
+        fusion_thread.start()
+        self.log.info("Fusion enabling thread started")
+
+        # Wait for DCP rebalance to complete
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result,
+                        "DCP rebalance failed after enabling Fusion")
+
+        # Wait for Fusion enabling thread to complete
+        self.log.info("Waiting for Fusion enabling thread to complete")
+        fusion_thread.join()
+        self.log.info("Fusion enabling completed")
+
+        sync_settle_time = 30 + self.fusion_upload_interval + 30
+        self.sleep(sync_settle_time, "Wait for Fusion sync to settle")
+
+        # Validate uploader assignment
+        self.log.info("Validating Fusion uploader assignment")
+        self.get_fusion_uploader_info()
+
+        for bucket in self.cluster.buckets:
+            undefined_count = self.fusion_uploader_dict[bucket.name].get(None, 0)
+            self.assertEqual(undefined_count, 0,
+                             f"Found {undefined_count} vBuckets with undefined uploaders")
+
+            total_uploaders = sum(self.fusion_uploader_dict[bucket.name].values())
+            self.assertEqual(total_uploaders, bucket.numVBuckets,
+                             f"Expected {bucket.numVBuckets} uploaders, got {total_uploaders}")
+
+        self.log.info("All uploaders assigned properly")
+
+        # Check log files on NFS
+        log_files_exist, log_count = self.check_log_files_on_nfs(
+            self.nfs_server, self.nfs_server_path
+        )
+        self.assertTrue(log_files_exist, "No log files found on NFS")
+        self.log.info(f"Found {log_count} log files on NFS")
+
+        # Check Fusion sync stats
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+
+                sync_failures = int(stats.get('ep_fusion_sync_failures', 0))
+                migration_failures = int(stats.get('ep_fusion_migration_failures', 0))
+                read_failures = int(stats.get('ep_data_read_failed', 0))
+
+                self.assertEqual(sync_failures, 0,
+                                 f"Sync failures on {node.ip}:{bucket.name}")
+                self.assertEqual(migration_failures, 0,
+                                 f"Migration failures on {node.ip}:{bucket.name}")
+                self.assertEqual(read_failures, 0,
+                                 f"Read failures on {node.ip}:{bucket.name}")
+
+                cbstats.disconnect()
+
+        self.log.info("No sync/migration/read failures")
+
+        # Verify data consistency
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, initial_item_count)
+
+        # DCP rebalance updates cluster.nodes_in_cluster but doesn't update fusion's spare_nodes
+        self.spare_nodes = [node for node in self.cluster.servers 
+                           if node not in self.cluster.nodes_in_cluster]
+        self.log.info(f"Refreshed spare nodes after DCP rebalance: {self.spare_nodes}")
+
+        # Perform Fusion rebalance
+        self.log.info("Performing Fusion rebalance")
+        self.get_fusion_uploader_info()
+        uploader_map_before_fusion = deepcopy(self.fusion_vb_uploader_map)
+
+        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+            fusion_migration_rate_limit=self.extent_migration_rate_limit
+        )
+
+        nodes_to_monitor = self.run_rebalance(
+            output_dir=self.fusion_output_dir,
+            rebalance_count=1,
+            rebalance_sleep_time=120
+        )
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(
+                    target=self.monitor_extent_migration,
+                    args=[node, bucket]
+                )
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        # Validate uploader changes after Fusion rebalance
+        self.get_fusion_uploader_info()
+        uploader_map_after_fusion = deepcopy(self.fusion_vb_uploader_map)
+        self.validate_term_number(uploader_map_before_fusion, uploader_map_after_fusion)
+
+        # Check final sync stats
+        for node in self.cluster.nodes_in_cluster:
+            for bucket in self.cluster.buckets:
+                cbstats = Cbstats(node)
+                stats = cbstats.all_stats(bucket.name)
+
+                sync_failures = int(stats.get('ep_fusion_sync_failures', 0))
+                migration_failures = int(stats.get('ep_fusion_migration_failures', 0))
+                read_failures = int(stats.get('ep_data_read_failed', 0))
+
+                self.log.info(f"Node {node.ip}, Bucket {bucket.name}: "
+                              f"sync_failures={sync_failures}, "
+                              f"migration_failures={migration_failures}, "
+                              f"read_failures={read_failures}")
+
+                self.assertEqual(sync_failures, 0)
+                self.assertEqual(migration_failures, 0)
+                self.assertEqual(read_failures, 0)
+
+                cbstats.disconnect()
+
+        # Final data validation
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, initial_item_count)
+        self.log.info("Enable Fusion during DCP rebalance test completed")

@@ -18,63 +18,57 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_magma_rollback_basic(self):
 
-        self.log.info("Test fusion magma rollback basic started")
+        if not self.fusion_test and self.enable_fusion_during_rollback:
+            self.configure_fusion()
+            self.sleep(10, "Sleep after configuring fusion")
 
         self.test_magma_rollback_basic()
-
-        # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
     def test_fusion_magma_rollback_with_CDC(self):
 
-        self.log.info("Test fusion magma rollback with CDC started")
+        if not self.fusion_test and self.enable_fusion_during_rollback:
+            self.configure_fusion()
 
         self.test_magma_rollback_with_CDC()
-
-        # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
     def test_fusion_magma_rollback_to_same_snapshot(self):
 
-        self.log.info("Test fusion magma rollback to same snapshot started")
+        if not self.fusion_test and self.enable_fusion_during_rollback:
+            self.configure_fusion()
 
         self.test_magma_rollback_to_same_snapshot()
-
-        # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
     def test_fusion_magma_rollback_on_all_nodes(self):
 
-        self.log.info("Test fusion magma rollback on all nodes started")
+        if not self.fusion_test and self.enable_fusion_during_rollback:
+            self.configure_fusion()
 
         self.test_magma_rollback_on_all_nodes()
-
-        # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
     def test_fusion_magma_rollback_to_new_snapshot(self):
 
-        self.log.info("Test fusion magma rollback to new snapshot started")
+        if not self.fusion_test and self.enable_fusion_during_rollback:
+            self.configure_fusion()
 
         self.test_magma_rollback_to_new_snapshot()
-
-        # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
     def test_fusion_crash_during_rollback(self):
 
-        self.log.info("Test fusion crash during rollback started")
+        if not self.fusion_test and self.enable_fusion_during_rollback:
+            self.configure_fusion()
 
         self.test_crash_during_rollback()
-
-        # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()
 
     def test_fusion_rebalance_during_rollback(self):
 
-        self.log.info("Test fusion rebalance during rollback started")
+        if not self.fusion_test and self.enable_fusion_during_rollback:
+            self.configure_fusion()
 
         self.test_rebalance_during_rollback()
-
-        # Execute the complete fusion workflow after magma test
         self.execute_fusion_workflow_after_magma_test()

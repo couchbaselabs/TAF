@@ -16,7 +16,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from memcached.helper.data_helper import MemcachedClientHelper
 from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
-
+from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 
 class MagmaRollbackTests(MagmaBaseTest):
     def setUp(self):
@@ -27,6 +27,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.vbucket_check = self.input.param("vbucket_check", True)
         self.run_transactions = self.input.param("run_transactions", None)
         self.transaction_tasks = list()
+        self.enable_fusion_during_rollback = self.input.param("enable_fusion_during_rollback", False)
 
     def tearDown(self):
         super(MagmaRollbackTests, self).tearDown()
@@ -215,6 +216,15 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.sleep(10, "sleep after updating history params")
 
             shell.kill_memcached()
+            
+            if self.enable_fusion_during_rollback:
+                self.sleep(2, "Sleep before enabling Fusion during rollback")
+                fusion_client = FusionRestAPI(self.cluster.master)
+                status, content = fusion_client.get_fusion_status()
+                if content.get('state') != 'enabled':
+                    self.enable_fusion()
+                else:
+                    self.log.info("Fusion already enabled, skipping enable_fusion() call")
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 [self.cluster.master],
@@ -278,6 +288,15 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             # Kill memcached on NodeA to trigger rollback on other Nodes
             shell.kill_memcached()
+            
+            if self.enable_fusion_during_rollback:
+                self.sleep(2, "Sleep before enabling Fusion during rollback")
+                fusion_client = FusionRestAPI(self.cluster.master)
+                status, content = fusion_client.get_fusion_status()
+                if content.get('state') != 'enabled':
+                    self.enable_fusion()
+                else:
+                    self.log.info("Fusion already enabled, skipping enable_fusion() call")
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 self.cluster.buckets[0],
@@ -417,6 +436,15 @@ class MagmaRollbackTests(MagmaBaseTest):
               -- Kill Memcached on master node(Node A) and trigger rollback on replica/ nodes
             '''
             shell.kill_memcached()
+            
+            if self.enable_fusion_during_rollback:
+                self.sleep(2, "Sleep before enabling Fusion during rollback")
+                fusion_client = FusionRestAPI(self.cluster.master)
+                status, content = fusion_client.get_fusion_status()
+                if content.get('state') != 'enabled':
+                    self.enable_fusion()
+                else:
+                    self.log.info("Fusion already enabled, skipping enable_fusion() call")
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 self.cluster.buckets[0],
@@ -572,6 +600,15 @@ class MagmaRollbackTests(MagmaBaseTest):
             '''
 
             shell.kill_memcached()
+            
+            if self.enable_fusion_during_rollback:
+                self.sleep(2, "Sleep before enabling Fusion during rollback")
+                fusion_client = FusionRestAPI(self.cluster.master)
+                status, content = fusion_client.get_fusion_status()
+                if content.get('state') != 'enabled':
+                    self.enable_fusion()
+                else:
+                    self.log.info("Fusion already enabled, skipping enable_fusion() call")
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 self.cluster.buckets[0],
@@ -755,6 +792,15 @@ class MagmaRollbackTests(MagmaBaseTest):
             '''
 
             shell_conn[0].kill_memcached()
+            
+            if self.enable_fusion_during_rollback:
+                self.sleep(2, "Sleep before enabling Fusion during rollback")
+                fusion_client = FusionRestAPI(self.cluster.master)
+                status, content = fusion_client.get_fusion_status()
+                if content.get('state') != 'enabled':
+                    self.enable_fusion()
+                else:
+                    self.log.info("Fusion already enabled, skipping enable_fusion() call")
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 self.cluster.buckets[0],
@@ -1659,6 +1705,16 @@ class MagmaRollbackTests(MagmaBaseTest):
             '''
             for shell in shell_conn:
                 shell.kill_memcached()
+            
+            if self.enable_fusion_during_rollback:
+                self.sleep(2, "Sleep before enabling Fusion during rollback")
+                fusion_client = FusionRestAPI(self.cluster.master)
+                status, content = fusion_client.get_fusion_status()
+                if content.get('state') != 'enabled':
+                    self.enable_fusion()
+                else:
+                    self.log.info("Fusion already enabled, skipping enable_fusion() call")
+            
             for server in self.cluster.nodes_in_cluster:
                 if "kv" in node.services.lower():
                     self.assertTrue(self.bucket_util._wait_warmup_completed(
@@ -1949,6 +2005,16 @@ class MagmaRollbackTests(MagmaBaseTest):
             '''
             tasks_in = dict()
             shell_conn[0].kill_memcached()
+            
+            if self.enable_fusion_during_rollback:
+                self.sleep(2, "Sleep before enabling Fusion during rollback")
+                fusion_client = FusionRestAPI(self.cluster.master)
+                status, content = fusion_client.get_fusion_status()
+                if content.get('state') != 'enabled':
+                    self.enable_fusion()
+                else:
+                    self.log.info("Fusion already enabled, skipping enable_fusion() call")
+            
             self.assertTrue(self.bucket_util._wait_warmup_completed(
                 self.cluster.buckets[0], servers=[self.cluster.master],
                 wait_time=self.wait_timeout * 20))

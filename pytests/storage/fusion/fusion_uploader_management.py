@@ -261,31 +261,6 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.get_fusion_uploader_info()
 
 
-    def validate_term_number(self, prev_uploader_map, new_uploader_map):
-
-        for bucket in self.cluster.buckets:
-
-            for vb_no in range(bucket.numVBuckets):
-
-                prev_uploader = prev_uploader_map[bucket.name][vb_no]['node']
-                prev_term = prev_uploader_map[bucket.name][vb_no]['term']
-
-                new_uploader = new_uploader_map[bucket.name][vb_no]['node']
-                new_term = new_uploader_map[bucket.name][vb_no]['term']
-
-                if prev_uploader != new_uploader:
-                    if new_term == prev_term + 1:
-                        self.log.info(f"Term number changed for {bucket.name}:vb_{vb_no} as expected")
-                    else:
-                        self.log.info(f"Expected term number: {prev_term+1}, Actual term number: {new_term}")
-
-                else:
-                    if prev_term == new_term:
-                        self.log.info(f"Term number not changed for {bucket.name}:vb_{vb_no} as expected")
-                    else:
-                        self.log.info(f"Expected term number: {prev_term}, Actual term number: {new_term}")
-
-
     def validate_stale_log_deletion(self):
 
         self.log.info("Validating stale log file deletion")

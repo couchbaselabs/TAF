@@ -1088,6 +1088,8 @@ class FusionSync(MagmaBaseTest, FusionBase):
         enable_thread = threading.Thread(target=self.enable_fusion)
         enable_thread.start()
 
+        self.sleep(30)
+
         # Monitor for "enabling" state, then perform flush immediately
         self.log.info("Monitoring for Fusion 'enabling' state")
         fusion_client = FusionRestAPI(self.cluster.master)
