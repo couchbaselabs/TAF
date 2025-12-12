@@ -138,7 +138,7 @@ fi
 # Run populate ini from testrunner instead of running frm TAF due to changes in TAF to move to python3
 mkdir tr_for_install
 cd tr_for_install
-git clone https://github.com/couchbase/testrunner.git
+git clone https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbase/testrunner --depth 1
 cd testrunner
 git submodule init
 git submodule update --init --force --remote
@@ -271,8 +271,7 @@ if [ "$?" -eq 0 ]; then
   if [ "$server_type" = "CAPELLA_LOCAL" ] && [ ${skip_install} == false ]; then
 
     ############# LOCAL CAPELLA SETUP ####################
-
-    git clone https://github.com/couchbaselabs/productivitynautomation
+    git clone https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbaselabs/productivitynautomation --depth 1
 
     export ANSIBLE_CONFIG=$PWD/productivitynautomation/ansible_setup/.ansible.cfg
     export ANSIBLE_HOST_KEY_CHECKING=false
