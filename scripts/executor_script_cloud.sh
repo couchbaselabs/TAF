@@ -7,7 +7,7 @@ cleanup_dir_before_exit() {
 }
 
 setup_test_infra_repo_for_installation() {
-  git clone https://github.com/couchbaselabs/test_infra_runner --depth 1
+  git clone https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbaselabs/test_infra_runner --depth 1
   cd test_infra_runner/
   git submodule update --init --force --remote
   pyenv local $PYENV_VERSION
@@ -246,7 +246,7 @@ fi
 if [ "$?" -eq 0 ]; then
   if [ "$server_type" = "CAPELLA_LOCAL" ] && [ ${skip_install} == false ]; then
     ############# LOCAL CAPELLA SETUP ####################
-    git clone https://github.com/couchbaselabs/productivitynautomation
+    git clone https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbaselabs/productivitynautomation --depth 1
 
     export ANSIBLE_CONFIG=$PWD/productivitynautomation/ansible_setup/.ansible.cfg
     export ANSIBLE_HOST_KEY_CHECKING=false

@@ -5,7 +5,7 @@ cleanup_dir_before_exit() {
 }
 
 setup_test_infra_repo_for_installation() {
-  git clone https://github.com/couchbaselabs/test_infra_runner --depth 1
+  git clone https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbaselabs/test_infra_runner --depth 1
   cd test_infra_runner/
   git submodule update --init --force --remote
   pyenv local $PYENV_VERSION
