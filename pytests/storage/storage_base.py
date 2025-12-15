@@ -1412,10 +1412,7 @@ class StorageBase(BaseTestCase):
             for server in self.cluster.nodes_in_cluster:
                 cbstats = Cbstats(server)
                 result = cbstats.all_stats(bucket.name)
-                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
-                            f"Checkpointing Interval: {result['ep_magma_fusion_log_checkpoint_interval']}, "
-                            f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}")
-
+                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}")
 
     def change_fusion_settings(self, bucket, upload_interval=None, checkpoint_interval=None,
                                logstore_frag_threshold=None):
