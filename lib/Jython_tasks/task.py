@@ -6934,6 +6934,10 @@ class Atomicity(Task):
                             replicate_to=self.replicate_to,
                             doc_type=self.generator.doc_type)
                 elif op_type == "create":
+                    # Clear update_docs and delete_keys from previous operations
+                    # This ensures each transaction only performs the intended operation type
+                    trans_util.update_docs = []
+                    trans_util.delete_keys = []
                     if len(self.op_type) != 1:
                         trans_util.commit_trans = True
                     else:
@@ -6943,19 +6947,36 @@ class Atomicity(Task):
                         exception = self.transaction_load(
                             cluster, trans_util,
                             self.transaction_options)
+                        if exception:
+                            break
                     if not trans_util.commit_trans:
                         self.all_keys = []
                 elif op_type in ["update", "rebalance_only_update"]:
-                    for doc in self.list_docs:
-                        trans_util.update_docs = doc
-                        exception = self.transaction_load(
-                            cluster, trans_util, self.transaction_options)
+                    # Clear create_docs and delete_keys from previous operations
+                    # This ensures each transaction only performs the intended operation type
+                    trans_util.create_docs = []
+                    trans_util.delete_keys = []
+                    if len(self.list_docs) > 0:
+                        # list_docs contains lists of keys (strings), need to convert to (key, doc) tuples for update_docs
+                        key_value_dict = dict(self.key_value_list)
+                        for doc_keys in self.list_docs:
+                            # Convert list of keys to list of (key, doc) tuples
+                            doc_list = [(key, key_value_dict[key]) for key in doc_keys if key in key_value_dict]
+                            trans_util.update_docs = doc_list
+                            exception = self.transaction_load(
+                                cluster, trans_util, self.transaction_options)
+                            if exception:
+                                break
                     if self.commit:
                         self.update_keys = self.all_keys
                 elif op_type == "update_Rollback":
                     trans_util.update_docs = self.update_keys
                     cluster.transactions.run(trans_util.run_transaction)
                 elif op_type == "delete" or op_type == "rebalance_delete":
+                    # Clear create_docs and update_docs from previous operations
+                    # This ensures each transaction only performs the intended operation type
+                    trans_util.create_docs = []
+                    trans_util.update_docs = []
                     for doc in self.list_docs:
                         trans_util.delete_keys = doc
                         exception = self.transaction_load(
@@ -7030,7 +7051,7 @@ class Atomicity(Task):
                         and "time_out" not in self.op_type:
                     self.set_exception(
                         Exception("Keys missing: %s "
-                                  % (','.join(self.inserted_keys[client]))))
+                                 % (','.join(self.inserted_keys[client]))))
 
             self.set_result(True)
             self.complete_task()

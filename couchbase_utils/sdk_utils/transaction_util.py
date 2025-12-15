@@ -67,13 +67,15 @@ class TransactionLoader(object):
                 doc["mutated"] = self.update_count
             else:
                 doc["mutated"] += 1
-            context.upsert(self.collection, key, doc)
-
-            # Get the same doc back to validate if insert was success
+            # Get the document to get its CAS value for replace
+            t_doc = context.get(self.collection, key)
+            # Replace the document with updated content
+            context.replace(t_doc, doc)
+            # Get again to confirm the change is reflected within the transaction
             t_doc = context.get(self.collection, key)
             t_val = t_doc.content_as[dict]
             if t_val != doc:
-                raise TransactionOperationFailed("Read doc != Upsert doc")
+                raise TransactionOperationFailed("Read doc != Replaced doc")
 
         # Delete operation
         for key in self.delete_keys:
