@@ -71,24 +71,22 @@ class SecurityTest(SecurityBase):
 
     def run_query(self, user, password, role, query_statement):
         pod = "https://" + self.url.replace("cloud", "", 1)
-        url = "{0}/v2/databases/{1}/proxy/_p/query/query/service".format(pod, self.cluster_id)
+        url = "{}/v2/databases/{}/proxy/_p/query/query/service".format(pod, self.cluster_id)
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, user,
                                  password)
         body = {"statement": "{0}".format(query_statement)}
-        headers = capella_api.get_authorization_internal()
-        resp = capella_api._urllib_request(url, method="POST", params=json.dumps(body),
-                                           headers=headers)
+        resp = capella_api.do_internal_request(url, method="POST", params=json.dumps(body))
         status = resp.status_code
         content = resp.content
         if role != "organizationOwner":
-            if status in (412, 401):
+            if status == 412:
                 self.log.info("Pass. No permissions")
             else:
                 self.fail("FAIL. Permission shouldn't be allowed")
-        elif 13014 == json.loads(content.decode('utf-8'))["errors"][0]["code"]:
-            self.log.info("Pass. Curl access denied")
+        elif 'success' == json.loads(content.decode('utf-8'))["status"]:
+            self.fail("FAIL. CURL access was allowed")
         else:
-            self.fail("FAIL. CURL access shouldn't be allowed")
+            self.fail("Pass. CURL access was not allowed")
 
     def find_buckets(self, name):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, self.user,
@@ -689,9 +687,9 @@ class SecurityTest(SecurityBase):
 
         end_time = time.time() + 320
         while time.time() < end_time:
-            cluster_status = capella_api.get_cluster_status(self.cluster_id)
-            status = json.loads(cluster_status.content.decode('utf-8'))["status"]
-            if status == "turnedOff":
+            cluster_status = capella_api.get_cluster_info(self.tenant_id, self.project_id, self.cluster_id)
+            status = json.loads(cluster_status.content.decode('utf-8'))["data"]["status"]["state"]
+            if status == "turned_off":
                 break
             self.sleep(10, "Waiting for the cluster to be in turned off state")
 
