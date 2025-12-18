@@ -652,8 +652,7 @@ class CollectionDurabilityTests(CollectionBase):
                             self.task_manager.get_task_result(read_task)
                             for key, doc_info in read_task.success.items():
                                 if doc_info["cas"] != 0 \
-                                        and json.loads(str(doc_info["value"])
-                                                       )["mutated"] != 1:
+                                        and doc_info["value"]["mutated"] != 1:
                                     self.log_failure(
                                         "Update failed for key %s: %s"
                                         % (key, doc_info))
