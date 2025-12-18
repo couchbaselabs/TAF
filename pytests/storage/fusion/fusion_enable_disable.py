@@ -1060,3 +1060,126 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
                     shell.restart_couchbase()
 
             self.sleep(interval, "Wait before next chaos action")
+
+    def test_fusion_enable_during_storage_migration(self):
+        from BucketLib.bucket import Bucket
+
+        original_nodes = [node.ip for node in self.cluster.nodes_in_cluster]
+        self.log.info(f"Original nodes: {original_nodes}")
+
+        test_bucket = self.cluster.buckets[0]
+        self.log.info(f"Bucket: {test_bucket.name}, storage: {test_bucket.storageBackend}")
+
+        self.initial_load()
+        self.sleep(30, "Wait after initial load")
+
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"Fusion status: {content}")
+
+        self.configure_fusion()
+        status, content = FusionRestAPI(self.cluster.master).enable_fusion()
+        self.log.info(f"Enable Fusion on CouchStore - Status: {status}, Content: {content}")
+
+        self.log.info("Changing bucket storage backend to Magma")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master,
+            test_bucket,
+            storageBackend=Bucket.StorageBackend.magma)
+
+        self.sleep(10, "Wait after changing storage backend")
+
+        mixed_mode = self.check_bucket_mixed_mode(test_bucket)
+        self.log.info(f"Mixed mode: {mixed_mode}")
+
+        nodes_to_migrate = list(self.cluster.nodes_in_cluster)
+        original_node_ips = [n.ip for n in nodes_to_migrate]
+        self.log.info(f"Nodes to migrate: {original_node_ips}")
+
+        available_spare_nodes = len(self.cluster.servers) - self.nodes_init
+        if available_spare_nodes < len(original_nodes):
+            self.fail(f"Not enough spare nodes. Required: {len(original_nodes)}, Available: {available_spare_nodes}")
+
+        self.spare_nodes = [s for s in self.cluster.servers if s not in self.cluster.nodes_in_cluster]
+        if not self.spare_nodes:
+            self.fail("No spare nodes available")
+
+        for swap_count, node_to_remove in enumerate(nodes_to_migrate):
+            if node_to_remove.ip not in original_node_ips:
+                self.fail(f"ERROR: Attempting to remove non-original node {node_to_remove.ip}")
+
+            self.log.info(f"Swap rebalance {swap_count + 1}/{len(nodes_to_migrate)}: removing {node_to_remove.ip}")
+
+            current_cluster_nodes = list(self.cluster.nodes_in_cluster)
+            reordered_cluster = []
+
+            for node in current_cluster_nodes:
+                if node.ip == self.cluster.master.ip:
+                    reordered_cluster.append(node)
+                    break
+
+            for node in current_cluster_nodes:
+                if node.ip == node_to_remove.ip:
+                    reordered_cluster.append(node)
+                    break
+
+            for node in current_cluster_nodes:
+                if node.ip not in [n.ip for n in reordered_cluster]:
+                    reordered_cluster.append(node)
+
+            self.cluster.nodes_in_cluster = reordered_cluster
+
+            self.num_nodes_to_rebalance_in = 0
+            self.num_nodes_to_rebalance_out = 0
+            self.num_nodes_to_swap_rebalance = 1
+
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                  rebalance_count=swap_count + 1,
+                                                  wait_for_rebalance_to_complete=True,
+                                                  rebalance_master=False)
+
+            current_cluster_ips = [n.ip for n in self.cluster.nodes_in_cluster]
+            if node_to_remove.ip in current_cluster_ips:
+                self.fail(f"ERROR: Node {node_to_remove.ip} still in cluster after swap")
+
+            self.log.info(f"Swap {swap_count + 1} completed")
+            self.cluster_util.print_cluster_stats(self.cluster)
+
+            mixed_mode = self.check_bucket_mixed_mode(test_bucket)
+            self.log.info(f"Mixed mode after swap {swap_count + 1}: {mixed_mode}")
+
+
+        mixed_mode = self.check_bucket_mixed_mode(test_bucket)
+        self.log.info(f"Final mixed mode: {mixed_mode}")
+
+        self.log.info("Verifying first Fusion upload completes")
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Wait for first Fusion upload")
+
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
+        self.log.info(f"NFS path DU check: {o}")
+        ssh.disconnect()
+
+        self.get_fusion_uploader_info()
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+
+    def check_bucket_mixed_mode(self, bucket):
+        cbstats = Cbstats(self.cluster.master)
+        vb_details = cbstats.vbucket_details(bucket.name)
+
+        backends = set()
+        for vb_num, details in vb_details.items():
+            if 'backend_type' in details:
+                backends.add(details['backend_type'])
+            elif 'db_file_name' in details:
+                db_file = details['db_file_name']
+                if 'magma' in db_file.lower():
+                    backends.add('magma')
+                elif 'couch' in db_file.lower():
+                    backends.add('couchstore')
+
+        self.log.info(f"Bucket {bucket.name} backends: {backends}")
+        return len(backends) > 1

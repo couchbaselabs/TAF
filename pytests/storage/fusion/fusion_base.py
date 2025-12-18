@@ -546,7 +546,7 @@ class FusionBase(BaseTestCase):
     def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
                       rebalance_master=False, replica_update=False, skip_file_linking=False,
                       wait_for_rebalance_to_complete=True, force_sync_during_sleep=False, stop_before_rebalance=False,
-                      min_storage_size=None, skip_add_nodes=False):
+                      min_storage_size=None, skip_add_nodes=False, manifest_parts = 20):
 
         # Populate spare nodes list
         if rebalance_count == 1:
@@ -689,7 +689,7 @@ class FusionBase(BaseTestCase):
         source {self.venv_path}/bin/activate
         pip install --upgrade pip
         pip install paramiko requests
-        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count}
+        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count} --manifest-parts {manifest_parts}
         """
 
         if replica_update:

@@ -43,7 +43,7 @@ API_START_REBALANCE = "/controller/rebalance"
 class RebalanceAutomation:
     def __init__(self, base_url: str, username: str, password: str, current_nodes: List[str],
                  new_nodes: List[str], config: dict, rebalanceID: str, dry_run: bool = False, replica_update: bool = False,
-                 skip_file_linking: bool = False, force_sync_during_sleep: bool = False, stop_before_rebalance: bool = False, min_storage_size: int = None):
+                 skip_file_linking: bool = False, force_sync_during_sleep: bool = False, stop_before_rebalance: bool = False, min_storage_size: int = None, manifest_parts: int = 20):
         self.base_url = base_url.rstrip('/')
         self.auth = (username, password)
         self.current_nodes = current_nodes
@@ -56,6 +56,7 @@ class RebalanceAutomation:
         self.force_sync_during_sleep = force_sync_during_sleep
         self.stop_before_rebalance = stop_before_rebalance
         self.min_storage_size = min_storage_size
+        self.manifest_part = manifest_parts
 
         if os.path.exists(REBALANCE_PLAN_FILE): os.remove(REBALANCE_PLAN_FILE)
         if os.path.exists(MANIFEST_OUTPUT_DIR): shutil.rmtree(MANIFEST_OUTPUT_DIR)
@@ -129,7 +130,7 @@ class RebalanceAutomation:
         if not os.path.exists(REBALANCE_PLAN_FILE) and not self.dry_run:
             raise FileNotFoundError(f"Rebalance plan file {REBALANCE_PLAN_FILE} not found")
 
-        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.config['manifest_parts']} -min-storage-size {self.min_storage_size} -base-uri {self.config['base_uri']}"
+        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.manifest_part} -min-storage-size {self.min_storage_size} -base-uri {self.config['base_uri']}"
         self._execute_command(cmd, "Splitting rebalance manifest")
 
     def sync_manifests(self):
@@ -158,7 +159,7 @@ class RebalanceAutomation:
         url = f"{self.base_url}{API_UPLOAD_VOLUMES}"
 
         # Prepare the guest volume paths
-        guest_paths = [f"/guests/{self.rebalanceID}/guest{i}" for i in range(1, self.config['manifest_parts'] + 1)]
+        guest_paths = [f"/guests/{self.rebalanceID}/guest{i}" for i in range(1, self.manifest_part  + 1)]
 
         # Prepare the nodes configuration
         nodes_config = {
@@ -369,7 +370,7 @@ def main():
     parser.add_argument('--stop-before-rebalance', action='store_true', help='Stop execution after acceleration, before calling start rebalance API')
     parser.add_argument('--min-storage-size', type=int, default=536870912, help='Minimum storage size per split part in bytes (default: 50GB)')
     parser.add_argument('--skip-add-nodes', action='store_true', help='To skip adding nodes API')
-
+    parser.add_argument('--manifest-parts', type=int, default=20, help='Manifest parts')
 
     args = parser.parse_args()
 
@@ -387,6 +388,8 @@ def main():
         stop_before_rebalance = args.stop_before_rebalance
         min_storage_size = args.min_storage_size
         skip_add_nodes = args.skip_add_nodes
+        manifest_parts = args.manifest_parts
+
 
         global REBALANCE_PLAN_FILE
         REBALANCE_PLAN_FILE = "/root/fusion/reb_plan{}.json".format(reb_count)
@@ -404,7 +407,8 @@ def main():
             skip_file_linking=skip_file_linking,
             force_sync_during_sleep = force_sync_during_sleep,
             stop_before_rebalance = stop_before_rebalance,
-            min_storage_size = min_storage_size
+            min_storage_size = min_storage_size,
+            manifest_parts=args.manifest_parts
         )
 
         # Step 1: Add/Remove nodes
@@ -420,7 +424,7 @@ def main():
         print(f"Rebalance plan UUID: {plan_uuid}")
         print(f"prepareRebalance time taken = {reb_plan_time} seconds")
 
-        sleep_time = sleep_time + 60 - reb_plan_time
+        sleep_time = max(10, sleep_time + 60 - reb_plan_time)
         print(f"Sleeping for {sleep_time} seconds after PrepareRebalance")
         time.sleep(sleep_time)
 
@@ -431,7 +435,7 @@ def main():
 
         # Step 3: Split manifest
         start = time.time()
-        print("Splitting manifest...")
+        print("Splitting manifest into {} parts".format(manifest_parts))
         rebalancer.split_manifest()
         split_time_taken = time.time() - start
         print(f"Split manifest time taken = {split_time_taken} seconds")
