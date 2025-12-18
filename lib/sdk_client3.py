@@ -349,8 +349,10 @@ class SDKClient(object):
             else:
                 compression_enabled = "off"
             cluster_opts["compression"] = Compression(compression_enabled)
-            cluster_opts["compression_min_size"] = self.compression["minSize"]
-            cluster_opts["compression_min_ratio"] = self.compression["minRatio"]
+            if "minSize" in self.compression:
+                cluster_opts["compression_min_size"] = self.compression["minSize"]
+            if "minRatio" in self.compression:
+                cluster_opts["compression_min_ratio"] = self.compression["minRatio"]
 
         if CbServer.use_https:
             cluster_opts["enable_tls"] = True
