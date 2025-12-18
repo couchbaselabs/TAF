@@ -598,7 +598,7 @@ class SDKClient(object):
         :param collection: - Name of the collection
         :return CollectionSpec object:
         """
-        return CollectionSpec.create(collection, scope)
+        return CollectionSpec(collection, scope)
 
     def select_collection(self, scope_name, collection_name):
         """
