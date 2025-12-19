@@ -311,7 +311,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
                                                          0].ip),
                                     self.recovery_strategy)
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
         msg = "rebalance failed while recovering failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
@@ -358,8 +358,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             self.fail("Disk autofailover did not get initiated")
         self.nodes = self.cluster_util.get_otp_nodes(self.orchestrator)
         self.remove_after_failover = True
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                            ejectedNodes=[])
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
+                            eject_nodes=[])
         msg = "rebalance failed while removing failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
