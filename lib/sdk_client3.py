@@ -617,7 +617,7 @@ class SDKClient(object):
         Create a scope using the given name
         :param scope: Scope name to be created
         """
-        self.collection_manager().createScope(scope)
+        self.collection_manager().create_scope(scope)
         self.bucket.stats.increment_manifest_uid()
 
     def drop_scope(self, scope):
@@ -625,7 +625,7 @@ class SDKClient(object):
         Drop a scope using the given name
         :param scope: Scope name to be dropped
         """
-        self.collection_manager().dropScope(scope)
+        self.collection_manager().drop_scope(scope)
         self.bucket.stats.increment_manifest_uid()
 
     def create_collection(self, collection, scope=CbServer.default_scope):
@@ -638,7 +638,7 @@ class SDKClient(object):
         """
         collection_spec = SDKClient.get_collection_spec(scope,
                                                         collection)
-        self.collection_manager().createCollection(collection_spec)
+        self.collection_manager().create_collection(collection_spec)
         self.bucket.stats.increment_manifest_uid()
 
     def drop_collection(self, scope=CbServer.default_scope,
@@ -652,7 +652,7 @@ class SDKClient(object):
         """
         collection_spec = SDKClient.get_collection_spec(scope,
                                                         collection)
-        self.collection_manager().dropCollection(collection_spec)
+        self.collection_manager().drop_collection(collection_spec)
         self.bucket.stats.increment_manifest_uid()
 
     # Singular CRUD APIs
