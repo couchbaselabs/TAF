@@ -247,9 +247,9 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if count == 5:
             self.fail("Disk autofailover did not get initiated")
         for node in self.servers_to_add:
-            self.rest.add_node(user=self.orchestrator.rest_username,
-                               password=self.orchestrator.rest_password,
-                               remoteIp=node.ip)
+            self.rest.add_node(host_name=node.ip,
+                               username=self.orchestrator.rest_username,
+                               password=self.orchestrator.rest_password)
         nodes = self.cluster_util.get_otp_nodes(self.orchestrator)
         nodes_to_remove = [node.id for node in nodes if
                            node.ip in [t.ip for t in self.servers_to_remove]]
