@@ -187,12 +187,12 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
             self.rest.add_node(user=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
                                remoteIp=node.ip)
-        nodes = self.rest.node_statuses()
+        nodes = self.cluster_util.get_nodes(self.orchestrator)
         nodes_to_remove = [node.id for node in nodes if
                            node.ip in [t.ip for t in
                                        self.servers_to_remove]]
         nodes = [node.id for node in nodes]
-        started, _ = self.rest.rebalance(nodes, nodes_to_remove)
+        started, _ = self.rest.rebalance(known_nodes=nodes, eject_nodes=nodes_to_remove)
         rebalance_success = False
         if started:
             rebalance_success = self.rest.monitorRebalance()
@@ -226,12 +226,12 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.server_to_fail = self._servers_to_fail()
         self.bring_back_failed_nodes_up()
         self.sleep(30)
-        self.nodes = self.rest.node_statuses()
+        self.nodes = self.cluster_util.get_nodes(self.orchestrator)
         for node in self.server_to_fail:
             self.rest.add_back_node("ns_1@{}".format(node.ip))
             self.rest.set_recovery_type("ns_1@{}".format(node.ip),
                                         self.recovery_strategy)
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
         msg = "rebalance failed while recovering failover nodes {0}" \
               .format(self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
@@ -260,9 +260,9 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.enable_autofailover_and_validate()
         self.sleep(5)
         self._multi_node_failover()
-        self.nodes = self.rest.node_statuses()
+        self.nodes = self.cluster_util.get_nodes(self.orchestrator)
         self.remove_after_failover = True
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
         msg = "rebalance failed while removing failover nodes {0}" \
               .format(self.server_to_fail[0])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
