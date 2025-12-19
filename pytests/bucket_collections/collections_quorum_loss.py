@@ -295,7 +295,7 @@ class CollectionsQuorumLoss(CollectionBase):
             self.sleep(20, "Wait before failing over")
 
         self.log.info("Failing over nodes explicitly {0}".format(self.server_to_fail))
-        result = self.task.failover(self.nodes_in_cluster, failover_nodes=self.server_to_fail,
+        result = self.task.failover(self.cluster, failover_nodes=self.server_to_fail,
                                     graceful=False, wait_for_pending=120,
                                     allow_unsafe=True,
                                     all_at_once=True)
