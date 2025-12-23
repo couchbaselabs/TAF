@@ -1,24 +1,14 @@
 from queue import Queue
 
 from Columnar.columnar_base import ColumnarBaseTest
-
-# External Database loader related imports
-from Jython_tasks.sirius_task import CouchbaseUtil
-from sirius_client_framework.sirius_constants import SiriusCodes
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 
 class RemoteLinksDatasets(ColumnarBaseTest):
     def setUp(self):
         super(RemoteLinksDatasets, self).setUp()
         self.columnar_cluster = self.tenant.columnar_instances[0]
-
         self.remote_cluster = self.tenant.clusters[0]
-        self.couchbase_doc_loader = CouchbaseUtil(
-            task_manager=self.task_manager,
-            hostname=self.remote_cluster.master.ip,
-            username=self.remote_cluster.master.rest_username,
-            password=self.remote_cluster.master.rest_password,
-        )
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
@@ -44,29 +34,6 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
-    def load_doc_to_remote_collections(self, start, end):
-        for remote_bucket in self.remote_cluster.buckets:
-            for scope_name, scope in remote_bucket.scopes.items():
-                if scope_name != "_system" and scope != "_mobile":
-                    for collection_name, collection in (
-                            scope.collections.items()):
-                        self.log.info(
-                            f"Loading docs in {remote_bucket.name}."
-                            f"{scope_name}.{collection_name}")
-                        cb_doc_loading_task = self.couchbase_doc_loader.load_docs_in_couchbase_collection(
-                            bucket=remote_bucket.name, scope=scope_name,
-                            collection=collection_name, start=start,
-                            end=end,
-                            doc_template=SiriusCodes.Templates.PRODUCT,
-                            doc_size=self.doc_size, sdk_batch_size=1000
-                        )
-                        if not cb_doc_loading_task.result:
-                            self.fail(
-                                f"Failed to load docs in couchbase collection "
-                                f"{remote_bucket.name}.{scope_name}.{collection_name}")
-                        else:
-                            collection.num_items = (
-                                start + cb_doc_loading_task.success_count)
 
     def test_create_connect_disconnect_query_drop_remote_links_and_datasets(self):
         # creating bucket scope and collections for remote collection
@@ -86,7 +53,14 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        self.load_doc_to_remote_collections(0, self.initial_doc_count)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_remote_collections(self.remote_cluster, create_start_index=0, create_end_index=self.initial_doc_count)
 
         remote_links = self.cbas_util.get_all_link_objs("couchbase")
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
@@ -141,7 +115,14 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         del(remote_link_properties[0]["certificate"])
         self.cbas_util.alter_link_properties(self.columnar_cluster, remote_link_properties[0])
 
-        self.load_doc_to_remote_collections(0, self.initial_doc_count)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_remote_collections(self.remote_cluster, create_start_index=0, create_end_index=self.initial_doc_count)
 
         for link in remote_links:
             if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
@@ -183,7 +164,14 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        self.load_doc_to_remote_collections(0, self.initial_doc_count)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_remote_collections(self.remote_cluster, create_start_index=0, create_end_index=self.initial_doc_count)
 
         remote_links = self.cbas_util.get_all_link_objs("couchbase")
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
@@ -244,7 +232,14 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        self.load_doc_to_remote_collections(0, self.initial_doc_count)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_remote_collections(self.remote_cluster, create_start_index=0, create_end_index=self.initial_doc_count)
 
         remote_links = self.cbas_util.get_all_link_objs("couchbase")
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
@@ -281,8 +276,14 @@ class RemoteLinksDatasets(ColumnarBaseTest):
                 instance=self.columnar_cluster, wait_to_turn_on=True):
             self.fail("Failed to Turn-On the cluster")
 
-        self.load_doc_to_remote_collections(
-            self.initial_doc_count, self.initial_doc_count * 2)
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_remote_collections(self.remote_cluster, create_start_index=self.initial_doc_count, create_end_index=self.initial_doc_count * 2)
 
         self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
 

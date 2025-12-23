@@ -12,6 +12,7 @@ from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from BucketLib.BucketOperations import BucketHelper
 import json
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from sirius_client_framework.sirius_setup import SiriusSetup
 
 
 class ColumnarBaseTest(BaseTestCase):
@@ -541,8 +542,11 @@ class ColumnarBaseTest(BaseTestCase):
                                 update_start_index=None, update_end_index=None,
                                 delete_start_index=None, delete_end_index=None,
                                 expiry_start_index=None, expiry_end_index=None,
+                                username=None, password=None,
                                 wait_for_completion=True, create_percent=100,
                                        read_percent=0, update_percent=0, delete_percent=0, expiry_percent=0):
+        username = cluster.master.rest_username or "Administrator"
+        password = cluster.master.rest_password or "password"
         buckets = buckets or cluster.buckets
         thread_count = 0
         for bucket in buckets:
@@ -554,6 +558,10 @@ class ColumnarBaseTest(BaseTestCase):
         per_coll_ops = self.input.param("ops_rate", 20000)//thread_count
         tasks = list()
 
+        # Check if Sirius doc loader service is online before creating tasks
+        if not SiriusSetup.is_sirius_online(SiriusSetup.sirius_url):
+            self.fail(f"Sirius doc loader service is not online at {SiriusSetup.sirius_url}. ")
+
         for bucket in buckets:
             pattern = [create_percent, read_percent, update_percent, delete_percent, expiry_percent]
             for scope in bucket.scopes.keys():
@@ -563,7 +571,7 @@ class ColumnarBaseTest(BaseTestCase):
                         continue
                     loader = SiriusCouchbaseLoader(
                         server_ip=cluster.master.ip, server_port=cluster.master.port,
-                        username="Administrator", password="password",
+                        username=username, password=password,
                         bucket=bucket,
                         scope_name=scope, collection_name=collection,
                         key_prefix="test_docs-", key_size=20, doc_size=256,

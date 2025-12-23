@@ -13,7 +13,6 @@ if runtype == "columnar":
 else:
     from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
 
-from Jython_tasks.sirius_task import CouchbaseUtil
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from common_lib import sleep
 

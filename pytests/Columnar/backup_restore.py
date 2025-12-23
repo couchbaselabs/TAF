@@ -9,7 +9,8 @@ from datetime import datetime, timezone, timedelta
 from sirius_client_framework.sirius_constants import SiriusCodes
 from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
-from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
+from Jython_tasks.sirius_task import MongoUtil
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 
 class BackupRestore(ColumnarBaseTest):
@@ -21,12 +22,6 @@ class BackupRestore(ColumnarBaseTest):
 
         if len(self.tenant.clusters) > 0:
             self.remote_cluster = self.tenant.clusters[0]
-            self.couchbase_doc_loader = CouchbaseUtil(
-                task_manager=self.task_manager,
-                hostname=self.remote_cluster.master.ip,
-                username=self.remote_cluster.master.rest_username,
-                password=self.remote_cluster.master.rest_password,
-            )
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
@@ -127,37 +122,26 @@ class BackupRestore(ColumnarBaseTest):
 
     def load_data_to_source(self, remote_start, remote_end):
         if hasattr(self, "remote_cluster"):
-            for remote_bucket in self.remote_cluster.buckets:
-                for scope_name, scope in remote_bucket.scopes.items():
-                    if scope_name != "_system" and scope != "_mobile":
-                        for collection_name, collection in (
-                                scope.collections.items()):
-                            self.log.info(
-                                f"Loading docs in {remote_bucket.name}."
-                                f"{scope_name}.{collection_name}")
-                            cb_doc_loading_task = self.couchbase_doc_loader.load_docs_in_couchbase_collection(
-                                bucket=remote_bucket.name, scope=scope_name,
-                                collection=collection_name, start=remote_start,
-                                end=remote_end,
-                                doc_template=SiriusCodes.Templates.PRODUCT,
-                                doc_size=self.doc_size, sdk_batch_size=1000
-                            )
-                            if not cb_doc_loading_task.result:
-                                self.fail(
-                                    f"Failed to load docs in couchbase collection "
-                                    f"{remote_bucket.name}.{scope_name}.{collection_name}")
-                            else:
-                                collection.num_items = cb_doc_loading_task.success_count
+            for bucket in self.remote_cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                    self.remote_cluster.master.rest_password,
+                    bucket.name, req_clients=1)
+
+            self.log.info("Started Doc loading on remote cluster")
+            self.load_remote_collections(self.remote_cluster, create_start_index=remote_start, create_end_index=remote_end)
 
         standalone_collections = self.cbas_util.get_all_dataset_objs(
             "standalone")
-        for collection in standalone_collections:
-            if not self.cbas_util.load_doc_to_standalone_collection(
-                    self.columnar_cluster, collection.name,
-                    collection.dataverse_name, collection.database_name,
-                    self.no_of_docs, self.doc_size):
-                self.fail(f"Failed to insert docs into standalone collection "
-                          f"{collection.full_name}")
+        if standalone_collections:
+            self.log.info("Started Doc loading on standalone collections")
+            for collection in standalone_collections:
+                if not self.cbas_util.load_doc_to_standalone_collection(
+                        self.columnar_cluster, collection.name,
+                        collection.dataverse_name, collection.database_name,
+                        self.no_of_docs, self.doc_size):
+                    self.fail(f"Failed to insert docs into standalone collection "
+                              f"{collection.full_name}")
 
     def test_backup_restore(self):
         # creating bucket scope and collections for remote collection
@@ -633,6 +617,8 @@ class BackupRestore(ColumnarBaseTest):
                     ]
                 )
 
+    # Move this to different test file, as other tests are moved to use sirius_java_sdk for loading docs
+    # (If not, it will fail - Need to use couchbase_doc_loader ; launch_sirius_docker)
     def test_mini_volume_backup_restore(self):
         self.mongo_util = MongoUtil(
             task_manager=self.task_manager,

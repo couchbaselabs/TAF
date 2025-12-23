@@ -8,6 +8,7 @@ from Columnar.columnar_base import ColumnarBaseTest
 import json
 from common_lib import sleep
 import logging
+import time
 import boto3
 from botocore.exceptions import ClientError
 from global_vars import logger
@@ -36,7 +37,7 @@ class CrossAccountSetup:
         self.aws_region = self.input.param("aws_region", "us-west-1")
         self.aws_access_key_id = self.input.param("aws_access_key", None)
         self.aws_secret_access_key = self.input.param("aws_secret_key", None)
-        self.user_role_name = "columnar-regression-cross-account-auth"
+        self.user_role_name = f"columnar-regression-cross-account-auth-{str(int(time.time()))}"
         self.external_id = str(uuid.uuid4())
 
         # Store columnar API and IDs for trustauth template retrieval
@@ -217,7 +218,7 @@ class CrossAccountSetup:
 
     def create_cross_account(self):
         # upgrade dp-agent hash (temp) - remove after feature branch is merged
-        self.upgrade_dp_agent_hash("10346eef")
+        # self.upgrade_dp_agent_hash("10346eef")
 
         self.create_iam_permission_policy()
         self.create_iam_role()

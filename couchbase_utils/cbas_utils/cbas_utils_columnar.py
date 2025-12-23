@@ -6509,7 +6509,7 @@ class CbasUtil(CBOUtil):
         if cbas_spec["kafka_dataset"].get("num_of_ds_on_external_db", 0) \
                 > 0 and not self.create_standalone_collection_for_kafka_topics_from_spec(
             cluster, cbas_spec, username, password):
-            return False, "Failed at create standalone collection from spec"
+            return False, "Failed at create kafka dataset from spec"
 
         if not connect_link_before_creating_ds:
             status, error = connect_links()

@@ -85,6 +85,8 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
         """
         Delete all the analytics link and columnar instance
         """
+        self.log_setup_status(
+            self.__class__.__name__, "Started", stage="Teardown")
         if self.perform_columnar_instance_cleanup:
             for instance in self.tenant.columnar_instances:
                 self.cbas_util.cleanup_cbas(instance)
@@ -851,6 +853,10 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
         if not self.cbas_util.create_standalone_collection_for_kafka_topics_from_spec(self.columnar_cluster, self.columnar_spec):
             self.fail("Cannot create collections on link with link owners")
 
+        # cleanup cbas
+        # add privileges back
+        if not self.update_user(user, self.database_privileges, [], "instance"):
+            self.fail("Failed to update api user privileges")
         if not self.cbas_util.cleanup_cbas(self.columnar_cluster, user.username, user.password):
             self.fail("Not able to delete links and collections using owner permission")
 
