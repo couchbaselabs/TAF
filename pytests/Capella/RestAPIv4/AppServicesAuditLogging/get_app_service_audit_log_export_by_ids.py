@@ -14,7 +14,7 @@ class GetAuditLogExports(GetAppService):
         self.expected_res = {
             # Creation params.
             "start": self.get_utc_datetime(-60),
-            "end": self.get_utc_datetime(-10),
+            "end": self.get_utc_datetime(-20),
 
             # Response params.
             "data": {

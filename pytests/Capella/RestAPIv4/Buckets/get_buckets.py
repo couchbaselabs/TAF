@@ -21,6 +21,7 @@ class GetBucket(GetCluster):
             "bucketConflictResolution": "seqno",
             "durabilityLevel": "none",
             "replicas": 1,
+            "enableCrossClusterVersioning":False,
             "flush": True,
             "flushEnabled": True,
             "timeToLiveInSeconds": 0,

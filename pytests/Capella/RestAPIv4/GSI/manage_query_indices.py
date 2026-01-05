@@ -20,7 +20,7 @@ class PostIndex(GetCluster):
                 }, {
                     "definition": "build index on `travel-sample`.`_default`.`_default`(def_city, def_faa, def_icao)"
                 }, {
-                    "definition": "alter index idx on `travel-sample`._default._default with { \"action\": \"replica_count\", \"num_replica\": 2 }"
+                    "definition": "alter index idx on `travel-sample`._default`.`_default with { \"action\": \"replica_count\", \"num_replica\": 2 }"
                 }, {
                     "definition": "drop index idx on `travel-sample`._default._default"
                 }

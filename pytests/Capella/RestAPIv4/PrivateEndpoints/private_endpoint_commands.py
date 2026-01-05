@@ -269,7 +269,7 @@ class PostEndpointCommand(GetCluster):
                 testcase[key] = value
                 testcase["desc"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
-                if key == "vpcID" and (value == "" or value is None):
+                if (key == "vpcID" and (value == "" or value is None)) or ((key == "resourceGroupName" or key == "virtualNetwork") and value is None):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -287,6 +287,18 @@ class PostEndpointCommand(GetCluster):
                         "message": "Bad Request. Error: The Subnet ID provided "
                                    "is invalid.."
                     }
+                elif (key == "resourceGroupName" and isinstance(
+                    value, str)) or (key == "virtualNetwork" and isinstance(
+                    value, str)):
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 1000,
+                        "hint": "The request was malformed or invalid.",
+                        "httpStatusCode": 400,
+                        "message": "Bad Request. Error: body contains "
+                                "incorrect JSON type for field "
+                            "\"{}\".".format(key)
+                }
                 elif (
                         key == "vpcID" and not isinstance(value, str) or
                         key == "subnetIDs" and not isinstance(value, list) or

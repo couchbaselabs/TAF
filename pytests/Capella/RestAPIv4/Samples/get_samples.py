@@ -16,6 +16,7 @@ class GetSample(GetCluster):
             "name": self.input.param("sample_bucket", "travel-sample"),
             "type": "couchbase",
             "storageBackend": "couchstore",
+            "enableCrossClusterVersioning":False,
             "memoryAllocationInMb": 200,
             "bucketConflictResolution": "seqno",
             "durabilityLevel": "none",

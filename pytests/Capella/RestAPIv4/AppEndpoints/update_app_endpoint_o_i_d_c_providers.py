@@ -395,11 +395,7 @@ class PutOidcProviders(GetOidcProviders):
                                 "all required parameters are correctly "
                                 "provided.",
                         "httpStatusCode": 422,
-                        "message": "Failed to validate the OIDC configuration "
-                                   "provided. Please confirm that the provided "
-                                   "config is correct and that the discovery "
-                                   "URL, if set, returns valid OIDC JSON "
-                                   "metadata."
+                        "message": "The address provided is not valid which may be due to an invalid URL or a malformed address. Please make sure the address has a protocol and a host."
                     }
                 elif k in ["clientId"] and v in ["", None]:
                     test_data["expected_status_code"] = 422
