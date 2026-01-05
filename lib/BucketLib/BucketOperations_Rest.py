@@ -423,13 +423,14 @@ class BucketHelper(BucketRestApi):
         if bucket_params.get(Bucket.bucketType) == Bucket.Type.MEMBASE and\
                 'autoCompactionDefined' in bucket_params:
             init_params["autoCompactionDefined"] = bucket_params.get('autoCompactionDefined')
-            init_params["parallelDBAndViewCompaction"] = "false"
-            init_params["databaseFragmentationThreshold%5Bpercentage%5D"] = 50
-            init_params["viewFragmentationThreshold%5Bpercentage%5D"] = 50
+            init_params["parallel_db_and_view_compaction"] = "false"
+            init_params["databaseFragmentationThreshold"] = {"percentage": 50}
+            init_params["viewFragmentationThreshold"] = {"percentage": 50}
             init_params["indexCompactionMode"] = "circular"
             init_params["purgeInterval"] = 3
 
-        if bucket_params.get(Bucket.storageBackend) == Bucket.StorageBackend.magma:
+        if bucket_params.get(Bucket.bucketType) == Bucket.Type.MEMBASE and \
+                bucket_params.get(Bucket.storageBackend) == Bucket.StorageBackend.magma:
             if bucket_params.get("fragmentationPercentage"):
                 init_params["magmaFragmentationPercentage"] \
                     = bucket_params.get("fragmentationPercentage")
