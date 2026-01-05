@@ -3423,6 +3423,9 @@ class DocumentsValidatorTask(Task):
         self.complete_task()
         if exception:
             self.set_exception(exception)
+        else:
+            self.result = True
+        return self.result
 
     def get_tasks(self, generator):
         generators = []
