@@ -190,6 +190,18 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if self.collect_pcaps:
             self.node_utils.start_collect_pcaps(self.servers)
 
+        # Fusion param
+        self.fusion_test = self.input.param("fusion_test", False) # Decides whether or not to setup NFS for Fusion
+        self.fusion_enable = self.input.param("fusion_enable", True) # Decides whether or not to enable Fusion at the start
+        self.fusion_log_store_uri = self.input.param("fusion_log_store_uri", None)
+        self.fusion_upload_interval = self.input.param("fusion_upload_interval", 60)
+        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 78643200) # 75MB/s
+        self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
+        self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100) # 100MB
+        self.logstore_frag_threshold = self.input.param("logstore_frag_threshold", 0.5) # 50%
+        self.fusion_max_log_size = self.input.param("fusion_max_log_size", 1073741824) # 1GB
+        self.fusion_max_num_log_files = self.input.param("fusion_max_num_log_files", 100)
+
         '''
         Be careful while using this flag.
         This is only and only for stand-alone tests.
@@ -1536,6 +1548,13 @@ class ClusterSetup(OnPremBaseTest):
         if self.skip_setup_cleanup:
             self.cluster_util.print_cluster_stats(self.cluster)
             return
+
+        self.set_kv_quota = self.input.param("set_kv_quota", False)
+        if self.set_kv_quota:
+            self.kv_quota_mem = self.input.param("kv_quota_mem", None)
+            self.log.info("Setting KV Memory quota to {0} MB".format(self.kv_quota_mem))
+            ClusterRestAPI(self.cluster.master).configure_memory(
+                {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
 
         self.log_setup_status("ClusterSetup", "started", "setup")
         self.__initial_rebalance()

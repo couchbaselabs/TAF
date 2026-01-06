@@ -17,9 +17,10 @@ from pytests.bucket_collections.collections_base import CollectionBase
 from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
 from shell_util.remote_connection import RemoteMachineShellConnection
+from storage.fusion.fusion_base import FusionBase
 
 
-class AutoFailoverBaseTest(ClusterSetup):
+class AutoFailoverBaseTest(ClusterSetup, FusionBase):
     MAX_FAIL_DETECT_TIME = 120
     ORCHESTRATOR_TIMEOUT_BUFFER = 60
 
@@ -71,6 +72,11 @@ class AutoFailoverBaseTest(ClusterSetup):
             ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
+
+        if self.fusion_test:
+            self.configure_fusion()
+            self.enable_fusion()
+
         if self.spec_name is not None:
             try:
                 self.collection_setup()
@@ -186,6 +192,16 @@ class AutoFailoverBaseTest(ClusterSetup):
 
     def collection_setup(self):
         CollectionBase.deploy_buckets_from_spec_file(self)
+
+        if self.fusion_test:
+            # Override Fusion default settings
+            self.override_fusion_settings()
+            # Set Rate Limits
+            status, content = ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+                                fusion_sync_rate_limit=self.fusion_sync_rate_limit,
+                                fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+            self.log.info(f"Status = {status}, Content = {content}")
+
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, "initial_load")
         if isinstance(self.range_scan_collections, int) \

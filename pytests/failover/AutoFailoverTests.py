@@ -163,8 +163,23 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         rebalance = self.task.async_rebalance(self.cluster, [], [],
                                               retry_get_process_num=self.retry_get_process_num)
-        self.task.jython_task_manager.get_task_result(rebalance)
-        self.assertTrue(rebalance.result, "Rebalance Failed")
+        if not self.fusion_test:
+            rebalance = self.task.async_rebalance(self.cluster, [], [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=1,
+                        rebalance_sleep_time=10)
+
+        if not self.fusion_test:
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed")
+        else:
+            nodes_to_monitor = rebalance
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
+
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
                         if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
@@ -199,10 +214,20 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             # this is for collections, so load from spec
             task, cont_load_task = self.data_load_from_spec(async_load=True)
 
-        rebalance_task = self.task.async_rebalance(self.cluster,
-                                                   self.servers_to_add,
-                                                   self.servers_to_remove)
-        self.sleep(wait_before_failure_induction, "Wait for rebalance to make progress")
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, self.servers_to_add, self.servers_to_remove,
+                                                  retry_get_process_num=self.retry_get_process_num)
+            self.sleep(wait_before_failure_induction, "Wait for rebalance to make progress")
+        else:
+            nodes_to_monitor, curr_nodes_str, new_nodes_str = \
+                self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=1,
+                        rebalance_sleep_time=10,
+                        add_nodes=self.servers_to_add,
+                        remove_nodes=self.servers_to_remove,
+                        wait_for_rebalance_to_complete=False)
+
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
@@ -218,10 +243,19 @@ class AutoFailoverTests(AutoFailoverBaseTest):
                 self, cont_load_task)
 
         self.sleep(60, "Wait before starting another rebalance")
-        rebalance = self.task.async_rebalance(self.cluster, [], [],
-                                              retry_get_process_num=self.retry_get_process_num)
-        self.task.jython_task_manager.get_task_result(rebalance)
-        self.assertTrue(rebalance.result, "Rebalance Failed")
+
+        if not self.fusion_test:
+            rebalance = self.task.async_rebalance(self.cluster, [], [],
+                                        retry_get_process_num=self.retry_get_process_num)
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed")
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=10)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
                         if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes
@@ -254,14 +288,23 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         else:
             task, cont_load_task = self.data_load_from_spec(async_load=True)
 
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, self.servers_to_add, self.servers_to_remove,
-            check_vbucket_shuffling=False,
-            retry_get_process_num=self.retry_get_process_num)
-        self.task.jython_task_manager.get_task_result(rebalance_task)
-        if not rebalance_task.result:
-            self.disable_firewall()
-            self.fail("Rebalance failed. Check logs")
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, self.servers_to_add, self.servers_to_remove,
+                                                       check_vbucket_shuffling=False,
+                                                       retry_get_process_num=self.retry_get_process_num)
+            self.task.jython_task_manager.get_task_result(rebalance_task)
+            if not rebalance_task.result:
+                self.disable_firewall()
+                self.fail("Rebalance failed. Check logs")
+        else:
+            nodes_to_monitor = \
+                        self.run_rebalance(
+                                output_dir=self.fusion_output_dir,
+                                rebalance_count=1,
+                                rebalance_sleep_time=10,
+                                add_nodes=self.servers_to_add,
+                                remove_nodes=self.servers_to_remove)
+
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
@@ -275,10 +318,18 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             CollectionBase.wait_for_cont_doc_load_to_complete(
                 self, cont_load_task)
         self.sleep(60, "Wait before starting another rebalance")
-        rebalance = self.task.async_rebalance(self.cluster, [], [],
-                                              retry_get_process_num=self.retry_get_process_num)
-        self.task.jython_task_manager.get_task_result(rebalance)
-        self.assertTrue(rebalance.result, "Rebalance Failed")
+        if not self.fusion_test:
+            rebalance = self.task.async_rebalance(self.cluster, [], [],
+                                        retry_get_process_num=self.retry_get_process_num)
+            self.task.jython_task_manager.get_task_result(rebalance)
+            self.assertTrue(rebalance.result, "Rebalance Failed")
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=10)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         result_nodes = [node for node in self.cluster.servers[:self.nodes_init]
                         if node.ip != self.server_to_fail[0].ip]
         self.cluster.nodes_in_cluster = result_nodes

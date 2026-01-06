@@ -396,12 +396,7 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         self.log.info(f"Read failure dict before workload = {read_failure_dict}")
 
         # Clear page cache
-        for server in self.cluster.nodes_in_cluster:
-            ssh = RemoteMachineShellConnection(server)
-            o, e = ssh.execute_command(f"sudo sync; sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'")
-            self.log.info(f"Dropping cache on {server.ip}, O = {o}, E = {e}")
-            ssh.disconnect()
-
+        self.clear_page_cache()
         self.sleep(30, "Wait after clearing page cache")
 
         # Perform read workload

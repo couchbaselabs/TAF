@@ -646,7 +646,7 @@ class MagmaBaseTest(StorageBase):
                                 history_retention_seconds=time,
                                 history_retention_bytes=size)
 
-    def get_seqnumber_count(self, bucket=None):
+    def get_seqnumber_count(self, bucket=None, with_history=True):
         result = dict()
         for node in self.cluster.nodes_in_cluster:
             result["_".join(node.ip.split("."))] = dict()
@@ -667,7 +667,11 @@ class MagmaBaseTest(StorageBase):
                     kvstore_num = kvstore.split("-")[1].strip()
                     #dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
                     #dump += ' --kvstore {} --docs-by-seq --history | wc -l'.format(kvstore_num)
-                    dump += ' docs --index seq --kvstore {} --history | wc -l'.format(kvstore_num)
+                    dump += ' docs --index seq --kvstore {}'.format(kvstore_num)
+                    if with_history:
+                        dump += " --history | wc -l"
+                    else:
+                        dump += " | wc -l"
                     seqnumber_count = shell.execute_command(dump)[0][0].strip()
                     result["_".join(node.ip.split("."))][kvstore] = seqnumber_count
         self.log.info("seqnumber_count/kvstore {}".format(result))
@@ -721,3 +725,14 @@ class MagmaBaseTest(StorageBase):
             read_start = read_end
             read_end = min(read_end + validate_batch_size, num_docs_to_validate)
             self.sleep(30, "Wait after reading the current batch")
+
+
+    def clear_page_cache(self, nodes=None):
+
+        servers = nodes or self.cluster.nodes_in_cluster
+
+        for server in servers:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command(f"sudo sync; sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'")
+            self.log.info(f"Dropping cache on {server.ip}, O = {o}, E = {e}")
+            ssh.disconnect()

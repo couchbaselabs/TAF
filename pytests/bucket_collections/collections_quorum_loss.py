@@ -305,10 +305,17 @@ class CollectionsQuorumLoss(CollectionBase):
 
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, [], [],
-            retry_get_process_num=self.retry_get_process_num*3)
-        self.wait_for_rebalance_to_complete(rebalance_task)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=1,
+                        rebalance_sleep_time=120)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
@@ -319,10 +326,18 @@ class CollectionsQuorumLoss(CollectionBase):
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, self.server_to_fail, [],
-            retry_get_process_num=self.retry_get_process_num*3)
-        self.wait_for_rebalance_to_complete(rebalance_task)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, self.server_to_fail, [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=2,
+                        rebalance_sleep_time=120,
+                        add_nodes=self.server_to_fail)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
@@ -373,10 +388,17 @@ class CollectionsQuorumLoss(CollectionBase):
 
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, [], [],
-            retry_get_process_num=self.retry_get_process_num*3)
-        self.wait_for_rebalance_to_complete(rebalance_task)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=1,
+                        rebalance_sleep_time=120)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
@@ -387,10 +409,18 @@ class CollectionsQuorumLoss(CollectionBase):
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, self.server_to_fail, [],
-            retry_get_process_num=self.retry_get_process_num*3)
-        self.wait_for_rebalance_to_complete(rebalance_task)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, self.server_to_fail, [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=2,
+                        rebalance_sleep_time=120,
+                        add_nodes=self.server_to_fail)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
@@ -430,10 +460,17 @@ class CollectionsQuorumLoss(CollectionBase):
 
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Rebalancing the cluster")
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, [], [],
-            retry_get_process_num=self.retry_get_process_num*3)
-        self.wait_for_rebalance_to_complete(rebalance_task)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=1,
+                        rebalance_sleep_time=120)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
@@ -442,12 +479,18 @@ class CollectionsQuorumLoss(CollectionBase):
 
         self.wipe_config_on_removed_nodes(failover_nodes)
         tasks, cont_load_task = self.data_load(async_load=True)
-        self.log.info("Add back nodes which were failed and rebalanced out {0}"
-                      .format(self.server_to_fail))
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, self.server_to_fail, [],
-            retry_get_process_num=self.retry_get_process_num*3)
-        self.wait_for_rebalance_to_complete(rebalance_task)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, self.server_to_fail, [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=2,
+                        rebalance_sleep_time=120,
+                        add_nodes=self.server_to_fail)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(
             self, cont_load_task)
@@ -487,10 +530,17 @@ class CollectionsQuorumLoss(CollectionBase):
 
             tasks, cont_load_task = self.data_load(async_load=True)
             self.log.info("Rebalancing the cluster")
-            rebalance_task = self.task.async_rebalance(
-                self.cluster, [], [],
-                retry_get_process_num=self.retry_get_process_num*3)
-            self.wait_for_rebalance_to_complete(rebalance_task)
+            if not self.fusion_test:
+                rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                        retry_get_process_num=self.retry_get_process_num)
+                self.wait_for_rebalance_to_complete(rebalance_task)
+            else:
+                nodes_to_monitor = self.run_rebalance(
+                            output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=120)
+                self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+                self.monitor_active_guest_volumes()
             self.wait_for_async_data_load_to_complete(tasks)
             CollectionBase.wait_for_cont_doc_load_to_complete(
                 self, cont_load_task)
@@ -509,10 +559,18 @@ class CollectionsQuorumLoss(CollectionBase):
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, self.server_to_fail, [],
-            retry_get_process_num=self.retry_get_process_num*3)
-        self.wait_for_rebalance_to_complete(rebalance_task)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, self.server_to_fail, [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=2,
+                        rebalance_sleep_time=120,
+                        add_nodes=self.server_to_fail)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
         self.data_validation_collection()
@@ -559,8 +617,17 @@ class CollectionsQuorumLoss(CollectionBase):
         self.assertTrue(result, "Failover Failed")
 
         self.log.info("Rebalancing the cluster")
-        self.task.rebalance(self.cluster, [], [],
-                            retry_get_process_num=self.retry_get_process_num)
+        if not self.fusion_test:
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
+                                                    retry_get_process_num=self.retry_get_process_num)
+            self.wait_for_rebalance_to_complete(rebalance_task)
+        else:
+            nodes_to_monitor = self.run_rebalance(
+                        output_dir=self.fusion_output_dir,
+                        rebalance_count=1,
+                        rebalance_sleep_time=120)
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.custom_remove_failure()
 
         self.log.info("Adding back nodes which were failed and removed".

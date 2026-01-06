@@ -16,7 +16,7 @@ class FusionMagmaCompactionTests(MagmaCompactionTests, FusionBase):
 
     def test_fusion_test_crash_during_compaction(self):
 
-        if not self.fusion_test and self.enable_fusion_during_compaction:
+        if not self.fusion_enable and self.enable_fusion_during_compaction:
             self.configure_fusion()
 
         self.test_crash_during_compaction()
@@ -25,7 +25,7 @@ class FusionMagmaCompactionTests(MagmaCompactionTests, FusionBase):
 
     def test_fusion_test_rollback_during_compaction(self):
 
-        if not self.fusion_test and self.enable_fusion_during_compaction:
+        if not self.fusion_enable and self.enable_fusion_during_compaction:
             self.configure_fusion()
 
         self.test_rollback_during_compaction()

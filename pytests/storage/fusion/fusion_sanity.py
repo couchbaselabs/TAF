@@ -27,6 +27,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.rebalance_num_docs = self.input.param("rebalance_num_docs", 1000000)
         self.read_process_concurrency = self.input.param("read_process_concurrency", 8)
         self.validate_batch_size = self.input.param("validate_batch_size", 500000)
+        self.rebalance_ops_rate = self.input.param("rebalance_ops_rate", 10000)
 
         self.crash_during_test = self.input.param("crash_during_test", False)
         self.crash_interval = self.input.param("crash_interval", 120)
@@ -239,7 +240,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         num_bucket_batch_size = self.input.param("num_bucket_batch_size", 2)
         rebalance_data_load = self.input.param("rebalance_data_load", True)
         wait_before_rebalance_load_time = self.input.param("wait_before_rebalance_load_time", 100)
-        self.rebalance_ops_rate = self.input.param("rebalance_ops_rate", 10000)
         rebalance_sleep_time = self.input.param("rebalance_sleep_time", 120)
 
         for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
@@ -254,7 +254,11 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         # Perform a data workload in parallel when rebalance is taking place
         if rebalance_data_load:
-            doc_load_th = threading.Thread(target=self.run_workload_custom, args=[num_bucket_batch_size, int(wait_before_rebalance_load_time)])
+            doc_load_th = threading.Thread(target=self.run_workload_custom,
+                                           args=[num_bucket_batch_size, self.num_items,
+                                                self.num_items + self.rebalance_num_docs,
+                                                self.rebalance_ops_rate,
+                                                int(wait_before_rebalance_load_time)])
             doc_load_th.start()
 
         self.log.info("Running a Fusion rebalance")
@@ -442,6 +446,90 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             self.verify_fusion_reupload(prev_uploader_map=self.uploader_map1, new_uploader_map=self.uploader_map2)
 
 
+    def test_fusion_rebalance_scale_up_down_loop(self):
+
+        aggressive_variant = self.input.param("aggressive_variant", True)
+        num_rebalances_to_perform = self.input.param("num_rebalances_to_perform", 1000)
+        num_bucket_batch_size = self.input.param("num_bucket_batch_size", 2)
+
+        self.log.info("Running Fusion Rebalance Test Scale Up/Down in a loop")
+
+        for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
+            buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]
+            bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
+            self.log.info(f"Performing data load on {bucket_names}")
+            self.perform_workload(0, self.num_items, buckets=buckets_batch, ops_rate=10000)
+            self.sleep(10, "Wait after one batch")
+
+        sleep_time = 300 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Perform a data workload in parallel when rebalance is taking place
+        self.log.info("Performing Write Workload during rebalance")
+
+        write_load_th = threading.Thread(target=self.run_workload_custom,
+                                         args=[num_bucket_batch_size, self.num_items, self.num_items * 2, 1000, 0, "create"])
+        write_load_th.start()
+
+        read_load_th = threading.Thread(target=self.run_workload_custom,
+                                         args=[num_bucket_batch_size, 0, self.num_items, 2500, 0, "read"])
+        read_load_th.start()
+
+        self.num_rebalance_count = 1
+
+        cleanup_thread = threading.Thread(target=self.cleanup_nfs_guest_volumes_periodically)
+        cleanup_thread.start()
+
+        while num_rebalances_to_perform > 0:
+
+            if self.num_rebalance_count % 2 == 1:
+                self.num_nodes_to_rebalance_in = 3
+                self.num_nodes_to_rebalance_out = 0
+                self.num_nodes_to_swap_rebalance = 0
+            else:
+                self.num_nodes_to_rebalance_in = 0
+                self.num_nodes_to_rebalance_out = 3
+                self.num_nodes_to_swap_rebalance = 0
+
+            self.log.info(f"Running Fusion rebalance count: {self.num_rebalance_count}")
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                  rebalance_count=self.num_rebalance_count,
+                                                  skip_file_linking=True,
+                                                  rebalance_sleep_time=30)
+
+            if not aggressive_variant:
+
+                extent_migration_array = list()
+                self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+                for node in nodes_to_monitor:
+                    for bucket in self.cluster.buckets:
+                        extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                        extent_th.start()
+                        extent_migration_array.append(extent_th)
+
+                for th in extent_migration_array:
+                    th.join()
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.sleep(30, "Wait after rebalance")
+
+            num_rebalances_to_perform -= 1
+            self.num_rebalance_count += 1
+
+        write_load_th.join()
+        read_load_th.join()
+
+        self.log.info("Validating item count after rebalance")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                  self.num_items)
+
+        self.check_guest_vols = False
+        cleanup_thread.join()
+
+
     def capture_fusion_stats(self):
 
         self.fusion_read_stats = dict()
@@ -489,14 +577,16 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         return reupload_count_dict
 
 
-    def run_workload_custom(self, bucket_batch_size, sleep_before_start=0):
+    def run_workload_custom(self, bucket_batch_size, start, end, ops_rate=10000,
+                            sleep_before_start=0, doc_op="create"):
 
         self.sleep(sleep_before_start, "Sleep before running workloads during rebalance")
 
         for i in range(0, len(self.cluster.buckets), bucket_batch_size):
             buckets_batch = self.cluster.buckets[i:i+bucket_batch_size]
             bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
-            self.log.info(f"Performing data load on {bucket_names}")
-            self.perform_workload(self.num_items, self.num_items + self.rebalance_num_docs,
-                                  buckets=buckets_batch, ops_rate=self.rebalance_ops_rate)
+            self.log.info(f"Performing data load of type: {doc_op} on {bucket_names}")
+            self.perform_workload(start, end, buckets=buckets_batch,
+                                  ops_rate=ops_rate,
+                                  doc_op=doc_op)
             self.sleep(10, "Wait after one batch")

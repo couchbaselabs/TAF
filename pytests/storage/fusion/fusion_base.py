@@ -17,6 +17,7 @@ from rebalance_utils.rebalance_util import RebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 from custom_exceptions.exception import RebalanceFailedException
 from cb_constants import CbServer
+from typing import Dict, Set
 
 
 nfs_server_remove = """
@@ -45,96 +46,100 @@ class FusionBase(BaseTestCase):
     def setUp(self):
         super(FusionBase, self).setUp()
 
-        self.nfs_server_ip = self.input.param("nfs_server_ip", "172.23.219.42")
-        self.nfs_server_path = self.input.param("nfs_server_path", "/data/nfs/share/buckets")
+        if self.fusion_test:
+            self.nfs_server_ip = self.input.param("nfs_server_ip", "172.23.219.42")
+            self.nfs_server_path = self.input.param("nfs_server_path", "/data/nfs/share/buckets")
 
-        self.skip_fusion_setup = self.input.param("skip_fusion_setup", False)
+            self.skip_fusion_setup = self.input.param("skip_fusion_setup", False)
 
-        # Virtual env path for rebalance script execution on the remote node
-        self.venv_path = "/root/myenv"
+            # Virtual env path for rebalance script execution on the remote node
+            self.venv_path = "/root/myenv"
 
-        # This is where all the fusion scripts (rebalance, accelerator, config file) will be stored
-        self.fusion_scripts_dir = "/root/fusion"
+            # This is where all the fusion scripts (rebalance, accelerator, config file) will be stored
+            self.fusion_scripts_dir = "/root/fusion"
 
-        # This is where all the NFS scripts (client setup, server setup) will be stored
-        self.nfs_scripts_dir = "/root/nfs_scripts"
+            # This is where all the NFS scripts (client setup, server setup) will be stored
+            self.nfs_scripts_dir = "/root/nfs_scripts"
 
-        self.nfs_server = TestInputServer()
-        self.nfs_server.ip = self.nfs_server_ip
-        self.nfs_server.ssh_username = "root"
-        self.nfs_server.ssh_password = "couchbase"
+            self.nfs_server = TestInputServer()
+            self.nfs_server.ip = self.nfs_server_ip
+            self.nfs_server.ssh_username = "root"
+            self.nfs_server.ssh_password = "couchbase"
 
-        self.script_path = os.path.abspath(__file__)
-        self.local_test_path = os.path.dirname(self.script_path)
+            self.script_path = os.path.abspath(__file__)
+            self.local_test_path = os.path.dirname(self.script_path)
 
-        self.log.info(f"Full script path: {self.script_path}")
-        self.log.info(f"Test file directory: {self.local_test_path}")
-        split_path = self.local_test_path.split("/")
+            self.log.info(f"Full script path: {self.script_path}")
+            self.log.info(f"Test file directory: {self.local_test_path}")
+            split_path = self.local_test_path.split("/")
 
-        self.local_scripts_path = "/" + os.path.join("/".join(split_path[1:4]), "scripts", "fusion_scripts")
-        self.log.info(f"Local scripts path: {self.local_scripts_path}")
+            self.local_scripts_path = "/" + os.path.join("/".join(split_path[1:4]), "scripts", "fusion_scripts")
+            self.log.info(f"Local scripts path: {self.local_scripts_path}")
 
-        self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
-        self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
-        subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
+            self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
+            self.log.info(f"Fusion output dir = {self.fusion_output_dir}")
+            subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
 
-        ip_cmd = """ip -o -4 addr show scope global | awk '{split($4,a,"/"); print a[1]}'"""
-        result = subprocess.run(ip_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
-        self.slave_ip = result.stdout.strip()
-        self.log.info(f"Slave IP = {self.slave_ip}")
+            ip_cmd = """ip -o -4 addr show scope global | awk '{split($4,a,"/"); print a[1]}'"""
+            result = subprocess.run(ip_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
+            self.slave_ip = result.stdout.strip()
+            self.log.info(f"Slave IP = {self.slave_ip}")
 
-        self.client_share_dir = "share"
+            self.client_share_dir = "share"
 
-        if not self.skip_fusion_setup:
-            self.setup_nfs_server_new()
+            if not self.skip_fusion_setup:
+                self.setup_nfs_server_new()
 
-            th_arr1 = list()
-            th_arr2 = list()
+                th_arr1 = list()
+                th_arr2 = list()
 
-            for nfs_client in self.cluster.servers:
-                th1 = threading.Thread(target=self.setup_nfs_client_new, args=[nfs_client])
-                th2 = threading.Thread(target=self.copy_scripts_to_nodes, args=[nfs_client])
-                th1.start()
-                th2.start()
-                th_arr1.append(th1)
-                th_arr2.append(th2)
+                for nfs_client in self.cluster.servers:
+                    th1 = threading.Thread(target=self.setup_nfs_client_new, args=[nfs_client])
+                    th2 = threading.Thread(target=self.copy_scripts_to_nodes, args=[nfs_client])
+                    th1.start()
+                    th2.start()
+                    th_arr1.append(th1)
+                    th_arr2.append(th2)
 
-            for th in th_arr1:
-                th.join()
+                for th in th_arr1:
+                    th.join()
 
-            for th in th_arr2:
-                th.join()
+                for th in th_arr2:
+                    th.join()
+            else:
+                self.log.info("Skipping Fusion Set Up")
+                self.log.info("Deleting contents on log store")
+                ssh = RemoteMachineShellConnection(self.nfs_server)
+                nfs_base_path = "/".join(self.nfs_server_path.split("/")[:-1])
+                nfs_cleanup_cmd = f"rm -rf {nfs_base_path}/*"
+                self.log.info(f"Executing CMD: {nfs_cleanup_cmd}")
+                o, e = ssh.execute_command(nfs_cleanup_cmd)
+                ssh.disconnect()
+
+            self.nfs_server_path = f"/data/nfs/{self.client_share_dir}/buckets"
+            self.log.info(f"NFS Server path: {self.nfs_server_path}")
+
+            self.monitor = True
+            self.crash_loop = False
+
+            self.retry_get_process_num = self.input.param("retry_get_process_num", 300)
+
+            self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
+            self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
+            self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
+
+            self.spare_nodes = list()
+
+            # Enable diag/eval on non-local hosts for all servers
+            self.log.info("Enabling diag/eval on non-local hosts for all servers")
+            for server in self.cluster.servers:
+                shell = RemoteMachineShellConnection(server)
+                output, error = shell.enable_diag_eval_on_non_local_hosts()
+                shell.disconnect()
+            self.reb_plan_uuids = list()
+
         else:
-            self.log.info("Skipping Fusion Set Up")
-            self.log.info("Deleting contents on log store")
-            ssh = RemoteMachineShellConnection(self.nfs_server)
-            nfs_base_path = "/".join(self.nfs_server_path.split("/")[:-1])
-            nfs_cleanup_cmd = f"rm -rf {nfs_base_path}/*"
-            self.log.info(f"Executing CMD: {nfs_cleanup_cmd}")
-            o, e = ssh.execute_command(nfs_cleanup_cmd)
-            ssh.disconnect()
-
-        self.nfs_server_path = f"/data/nfs/{self.client_share_dir}/buckets"
-        self.log.info(f"NFS Server path: {self.nfs_server_path}")
-
-        self.monitor = True
-        self.crash_loop = False
-
-        self.retry_get_process_num = self.input.param("retry_get_process_num", 300)
-
-        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
-        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
-        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
-
-        self.spare_nodes = list()
-
-        # Enable diag/eval on non-local hosts for all servers
-        self.log.info("Enabling diag/eval on non-local hosts for all servers")
-        for server in self.cluster.servers:
-            shell = RemoteMachineShellConnection(server)
-            output, error = shell.enable_diag_eval_on_non_local_hosts()
-            shell.disconnect()
-        self.reb_plan_uuids = list()
+            self.log.info("Skipping Fusion SetUp")
 
     def tearDown(self):
         self.validate_fusion_health()
@@ -512,36 +517,31 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
-    def monitor_active_guest_volumes(self, nodes_to_monitor, duration=600, interval=2):
+    def monitor_active_guest_volumes(self, duration=18000, interval=5):
 
         fusion_rest = FusionRestAPI(self.cluster.master)
 
         start_time = time.time()
         end_time = start_time + duration
 
-        otp_nodes = dict()
-        for node in nodes_to_monitor:
-            otp_node = "ns_1@" + node.ip
-            otp_nodes[otp_node] = 0
-
         while time.time() < end_time:
             status, content = fusion_rest.get_active_guest_volumes()
             self.log.info(f"Active Guest Volumes: {content}")
             if status:
-                for node_id in list(otp_nodes):
-                    try:
-                        self.log.info(f"Server: {node_id}, Active Guest Volumes: {content[node_id]}")
-                        if len(content[node_id]) > 0:
-                            otp_nodes[otp_node] += 1
-                        if len(content[node_id]) == 0 and otp_nodes[otp_node] != 0:
-                            otp_nodes.pop(node_id)
-                            self.log.info(f"Extent Migration complete for {node_id}")
-                    except Exception as e:
-                        self.log.info(f"Waiting for {node_id} in active guest volumes list")
+                all_guests = []
+                for guests in content.values():
+                    all_guests.extend(guests)
 
-            if len(otp_nodes) == 0:
-                self.log.info("Extent Migration complete for all nodes")
-                break
+                if all_guests:
+                    seen_volumes = True
+                    print(f"Guests still present: {content}")
+
+                else:
+                    if seen_volumes:
+                        print("All guest volumes drained on all nodes. Exiting.")
+                        break
+                    else:
+                        print("No guest volumes yet, waiting for initial population.")
 
             time.sleep(interval)
 
@@ -549,7 +549,8 @@ class FusionBase(BaseTestCase):
     def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
                       rebalance_master=False, replica_update=False, skip_file_linking=False,
                       wait_for_rebalance_to_complete=True, force_sync_during_sleep=False, stop_before_rebalance=False,
-                      min_storage_size=None, skip_add_nodes=False, manifest_parts = 20):
+                      min_storage_size=None, skip_add_nodes=False, manifest_parts = 20,
+                      add_nodes=[], remove_nodes=[]):
 
         # Populate spare nodes list
         if rebalance_count == 1:
@@ -564,121 +565,137 @@ class FusionBase(BaseTestCase):
 
         new_master = self.cluster.master
 
-        if self.num_nodes_to_rebalance_in > 0:
-            new_node_str = current_nodes_str
+        if add_nodes or remove_nodes:
 
-            new_node_counter = 0
-            for node in self.spare_nodes:
-                new_node_str += "," + node.ip
-                new_node_counter += 1
-                if new_node_counter == self.num_nodes_to_rebalance_in:
-                    break
+            modified_old_str = ""
 
-            self.spare_nodes = self.spare_nodes[self.num_nodes_to_rebalance_in:]
+            for node in self.cluster.nodes_in_cluster:
+                if node not in remove_nodes:
+                    modified_old_str += node.ip + ","
 
-            self.log.info(f"Spare nodes: {self.spare_nodes}")
+            modified_old_str = modified_old_str[:-1]
 
-        elif self.num_nodes_to_rebalance_out > 0:
+            new_nodes_to_add = ",".join(server.ip for server in add_nodes)
 
-            if not rebalance_master:
-                nodes_to_rebalance_out = list()
-                for node in self.cluster.nodes_in_cluster:
-                    if node.ip != self.cluster.master.ip:
-                        nodes_to_rebalance_out.append(node.ip)
-                        self.spare_nodes.append(node)
-                        if len(nodes_to_rebalance_out) == self.num_nodes_to_rebalance_out:
-                            break
+            new_node_str = ",".join(s for s in (modified_old_str, new_nodes_to_add) if s)
 
-            else:
-                self.log.info(f"Cluster master = {self.cluster.master}")
-                nodes_to_rebalance_out = [self.cluster.master.ip]
-                self.spare_nodes.append(self.cluster.master)
-                tmp_server_list = [server for server in self.cluster.nodes_in_cluster
-                                   if server.ip != self.cluster.master.ip]
-                self.log.info(f"Temp Server list = {tmp_server_list}")
-                for node in tmp_server_list:
-                    if len(nodes_to_rebalance_out) == self.num_nodes_to_rebalance_out:
+        else:
+
+            if self.num_nodes_to_rebalance_in > 0:
+                new_node_str = current_nodes_str
+
+                new_node_counter = 0
+                for node in self.spare_nodes:
+                    new_node_str += "," + node.ip
+                    new_node_counter += 1
+                    if new_node_counter == self.num_nodes_to_rebalance_in:
                         break
-                    nodes_to_rebalance_out.append(node.ip)
-                    self.spare_nodes.append(node)
 
-                # Update cluster.master
-                for server in tmp_server_list:
-                    if server.ip not in nodes_to_rebalance_out:
-                        self.cluster.master = server
-                        break
-                self.log.info(f"New master = {self.cluster.master}")
+                self.spare_nodes = self.spare_nodes[self.num_nodes_to_rebalance_in:]
 
-            self.log.info(f"Nodes to rebalance out = {nodes_to_rebalance_out}")
+                self.log.info(f"Spare nodes: {self.spare_nodes}")
 
-            new_node_str = ""
-            for server in self.cluster.nodes_in_cluster:
-                if server.ip not in nodes_to_rebalance_out:
-                    new_node_str += server.ip + ","
-            new_node_str = new_node_str[:-1]
-
-            self.log.info(f"Spare nodes = {self.spare_nodes}")
-
-        elif self.num_nodes_to_swap_rebalance > 0:
-
-            self.log.info(f"Spare nodes = {self.spare_nodes}")
-            nodes_to_add = self.spare_nodes[:self.num_nodes_to_swap_rebalance]
-            self.log.info(f"Nodes to add: {nodes_to_add}")
-            self.spare_nodes = self.spare_nodes[self.num_nodes_to_swap_rebalance:]
-            self.log.info(f"Spare nodes = {self.spare_nodes}")
-
-            if self.num_nodes_to_swap_rebalance == len(self.cluster.nodes_in_cluster):
-
-                new_master = nodes_to_add[0]
-                new_node_str = ""
-                for new_node in nodes_to_add:
-                    new_node_str += new_node.ip + ","
-                new_node_str = new_node_str[:-1]
-
-            else:
+            elif self.num_nodes_to_rebalance_out > 0:
 
                 if not rebalance_master:
-                    nodes_to_swap = list()
+                    nodes_to_rebalance_out = list()
                     for node in self.cluster.nodes_in_cluster:
                         if node.ip != self.cluster.master.ip:
-                            nodes_to_swap.append(node.ip)
+                            nodes_to_rebalance_out.append(node.ip)
                             self.spare_nodes.append(node)
-                            if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                            if len(nodes_to_rebalance_out) == self.num_nodes_to_rebalance_out:
                                 break
-                    self.log.info(f"Nodes to swap = {nodes_to_swap}")
 
                 else:
                     self.log.info(f"Cluster master = {self.cluster.master}")
-                    nodes_to_swap = [self.cluster.master.ip]
+                    nodes_to_rebalance_out = [self.cluster.master.ip]
                     self.spare_nodes.append(self.cluster.master)
                     tmp_server_list = [server for server in self.cluster.nodes_in_cluster
                                     if server.ip != self.cluster.master.ip]
+                    self.log.info(f"Temp Server list = {tmp_server_list}")
                     for node in tmp_server_list:
-                        if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                        if len(nodes_to_rebalance_out) == self.num_nodes_to_rebalance_out:
                             break
-                        nodes_to_swap.append(node.ip)
+                        nodes_to_rebalance_out.append(node.ip)
                         self.spare_nodes.append(node)
-                    self.log.info(f"Nodes to swap = {nodes_to_swap}")
 
                     # Update cluster.master
                     for server in tmp_server_list:
-                        if server.ip not in nodes_to_swap:
+                        if server.ip not in nodes_to_rebalance_out:
                             self.cluster.master = server
                             break
                     self.log.info(f"New master = {self.cluster.master}")
 
+                self.log.info(f"Nodes to rebalance out = {nodes_to_rebalance_out}")
+
                 new_node_str = ""
                 for server in self.cluster.nodes_in_cluster:
-                    if server.ip not in nodes_to_swap:
+                    if server.ip not in nodes_to_rebalance_out:
                         new_node_str += server.ip + ","
                 new_node_str = new_node_str[:-1]
-                for new_node in nodes_to_add:
-                    new_node_str += "," + new_node.ip
 
                 self.log.info(f"Spare nodes = {self.spare_nodes}")
 
-        else:
-            new_node_str = current_nodes_str
+            elif self.num_nodes_to_swap_rebalance > 0:
+
+                self.log.info(f"Spare nodes = {self.spare_nodes}")
+                nodes_to_add = self.spare_nodes[:self.num_nodes_to_swap_rebalance]
+                self.log.info(f"Nodes to add: {nodes_to_add}")
+                self.spare_nodes = self.spare_nodes[self.num_nodes_to_swap_rebalance:]
+                self.log.info(f"Spare nodes = {self.spare_nodes}")
+
+                if self.num_nodes_to_swap_rebalance == len(self.cluster.nodes_in_cluster):
+
+                    new_master = nodes_to_add[0]
+                    new_node_str = ""
+                    for new_node in nodes_to_add:
+                        new_node_str += new_node.ip + ","
+                    new_node_str = new_node_str[:-1]
+
+                else:
+
+                    if not rebalance_master:
+                        nodes_to_swap = list()
+                        for node in self.cluster.nodes_in_cluster:
+                            if node.ip != self.cluster.master.ip:
+                                nodes_to_swap.append(node.ip)
+                                self.spare_nodes.append(node)
+                                if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                                    break
+                        self.log.info(f"Nodes to swap = {nodes_to_swap}")
+
+                    else:
+                        self.log.info(f"Cluster master = {self.cluster.master}")
+                        nodes_to_swap = [self.cluster.master.ip]
+                        self.spare_nodes.append(self.cluster.master)
+                        tmp_server_list = [server for server in self.cluster.nodes_in_cluster
+                                        if server.ip != self.cluster.master.ip]
+                        for node in tmp_server_list:
+                            if len(nodes_to_swap) == self.num_nodes_to_swap_rebalance:
+                                break
+                            nodes_to_swap.append(node.ip)
+                            self.spare_nodes.append(node)
+                        self.log.info(f"Nodes to swap = {nodes_to_swap}")
+
+                        # Update cluster.master
+                        for server in tmp_server_list:
+                            if server.ip not in nodes_to_swap:
+                                self.cluster.master = server
+                                break
+                        self.log.info(f"New master = {self.cluster.master}")
+
+                    new_node_str = ""
+                    for server in self.cluster.nodes_in_cluster:
+                        if server.ip not in nodes_to_swap:
+                            new_node_str += server.ip + ","
+                    new_node_str = new_node_str[:-1]
+                    for new_node in nodes_to_add:
+                        new_node_str += "," + new_node.ip
+
+                    self.log.info(f"Spare nodes = {self.spare_nodes}")
+
+            else:
+                new_node_str = current_nodes_str
 
         self.log.info(f"New nodes str = {new_node_str}")
 
@@ -1222,3 +1239,258 @@ class FusionBase(BaseTestCase):
             self.fail(f"Fusion health check failed: {failure_messages}")
 
         self.log.info("FUSION HEALTH CHECK - PASSED")
+
+    def configure_fusion(self):
+
+        fusion_client = FusionRestAPI(self.cluster.master)
+
+        self.log.info("Configuring Fusion with logStoreURI and enableSyncThresholdMB")
+
+        status, content = fusion_client.manage_fusion_settings(
+                                log_store_uri=self.fusion_log_store_uri,
+                                enable_sync_threshold=self.enable_sync_threshold)
+        self.log.info(f"Status = {status}, Result = {content}")
+
+    def monitor_fusion_state_transition(self, state="enabled", timeout=300):
+        """
+        Monitor if Fusion reaches enabled state within timeout.
+        Returns: True if enabled, False if timeout
+        """
+        fusion_client = FusionRestAPI(self.cluster.master)
+        end_time = time.time() + timeout
+        fusion_state_transition_complete = False
+
+        while time.time() < end_time:
+            status, content = fusion_client.get_fusion_status()
+            self.log.info(f"Fusion Status = {content}")
+            if content['state'] == state:
+                fusion_state_transition_complete = True
+                break
+            time.sleep(2)
+
+        if fusion_state_transition_complete:
+            self.log.info(f"Fusion {state} successfully")
+        else:
+            self.log.warning(f"Fusion not {state} after {timeout} seconds")
+
+        return fusion_state_transition_complete
+
+    def enable_fusion(self, buckets=None, timeout=3600):
+
+        fusion_client = FusionRestAPI(self.cluster.master)
+        status, content = fusion_client.enable_fusion(buckets=buckets)
+        self.log.info(f"Enabling Fusion, Status: {status}, Content: {content}")
+        if status:
+            fusion_enabled = self.monitor_fusion_state_transition(state="enabled", timeout=timeout)
+            if not fusion_enabled:
+                self.fail("Enabling Fusion failed after timeout")
+        else:
+            self.fail(f"Enabling Fusion failed. Error = {content}")
+
+    def disable_fusion(self, timeout=3600):
+
+        fusion_client = FusionRestAPI(self.cluster.master)
+        status, content = fusion_client.disable_fusion()
+        self.log.info(f"Disabling Fusion, Status: {status}, Content: {content}")
+        if status:
+            fusion_disabled = self.monitor_fusion_state_transition(state="disabled", timeout=timeout)
+            if not fusion_disabled:
+                self.fail("Disabling Fusion failed after timeout")
+        else:
+            self.fail(f"Disabling Fusion failed. Error = {content}")
+
+    def stop_fusion(self, timeout=3600):
+
+        fusion_client = FusionRestAPI(self.cluster.master)
+        status, content = fusion_client.stop_fusion()
+        self.log.info(f"Stopping Fusion, Status: {status}, Content: {content}")
+        if status:
+            fusion_stopped = self.monitor_fusion_state_transition(state="stopped", timeout=timeout)
+            if not fusion_stopped:
+                self.fail("Stopping Fusion failed after timeout")
+        else:
+            self.fail(f"Stopping Fusion failed. Error = {content}")
+
+    def override_fusion_settings(self):
+
+        # Override Fusion default settings
+        for bucket in self.cluster.buckets:
+            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
+                                        logstore_frag_threshold=self.logstore_frag_threshold,
+                                        fusion_max_log_size=self.fusion_max_log_size,
+                                        fusion_max_num_log_files=self.fusion_max_num_log_files)
+        # Restart couchbase
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command("systemctl restart couchbase-server")
+            ssh.disconnect()
+
+        self.sleep(30, "Wait after restarting Couchbase server")
+        for bucket in self.cluster.buckets:
+            warmed_up = self.bucket_util._wait_warmup_completed(bucket, wait_time=600)
+
+        for bucket in self.cluster.buckets:
+            for server in self.cluster.nodes_in_cluster:
+                cbstats = Cbstats(server)
+                result = cbstats.all_stats(bucket.name)
+                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
+                            f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}, "
+                            f"Fusion Max Log Size: {result['ep_magma_fusion_max_log_size']}, "
+                            f"Fusion Max Log Files: {result['ep_magma_fusion_max_num_log_files']}")
+
+
+    def change_fusion_settings(self, bucket, upload_interval=None,
+                               logstore_frag_threshold=None, fusion_max_log_size=None,
+                               fusion_max_num_log_files=None):
+
+        fusion_settings = ""
+        if upload_interval is not None:
+            fusion_settings += f"magma_fusion_upload_interval={upload_interval};"
+        else:
+            fusion_settings += f"magma_fusion_upload_interval={self.fusion_upload_interval};"
+
+        if logstore_frag_threshold is not None:
+            fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={logstore_frag_threshold};"
+        else:
+            fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={self.logstore_frag_threshold};"
+
+        if fusion_max_log_size is not None:
+            fusion_settings += f"magma_fusion_max_log_size={fusion_max_log_size};"
+        else:
+            fusion_settings += f"magma_fusion_max_log_size={self.fusion_max_log_size};"
+
+        if fusion_max_num_log_files is not None:
+            fusion_settings += f"magma_fusion_max_num_log_files={fusion_max_num_log_files};"
+        else:
+            fusion_settings += f"magma_fusion_max_num_log_files={self.fusion_max_num_log_files};"
+        fusion_settings = fusion_settings[:-1] # Trimming the semicolon at the end
+
+        diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{fusion_settings}"}}]).' http://localhost:8091/diag/eval"""
+        self.log.info(f"Updating Fusion settings for bucket: {bucket.name}, Diag/Eval CMD: {diag_eval_cmd}")
+
+        for server in self.cluster.nodes_in_cluster:
+            ssh = RemoteMachineShellConnection(server)
+            o, e = ssh.execute_command(diag_eval_cmd)
+            self.log.debug(f"Server: {server}, Output: {o}, Error: {e}")
+            ssh.disconnect()
+
+
+    def cleanup_nfs_guest_volumes_periodically(self, poll_interval=120, timeout=172800):
+
+        self.check_guest_vols = True
+        end_time = time.time() + timeout
+        while self.check_guest_vols and time.time() < end_time:
+            self.log.info("Checking if guest volumes can be cleaned up")
+            try:
+                active = self.fetch_active_guests()
+                actual = self.scan_remote_guests()
+                self.log.info(f"Actual: {actual}")
+                self.log.info(f"Active: {active}")
+                self.cleanup_remote(active, actual)
+
+            except Exception as e:
+                self.log.error(f"Cleanup iteration failed: {e}")
+
+            self.sleep(poll_interval)
+
+
+    def cleanup_remote(self, active, actual):
+
+        base_guest_storage_path = f"/data/nfs/{self.client_share_dir}/guest_storage"
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+
+        for node, actual_guests in actual.items():
+            active_guests = active.get(node, set())
+
+            inactive = actual_guests - active_guests
+
+            if inactive:
+                self.log.info(f"Node {node}: {len(inactive)} inactive guests found")
+
+            for rel_path in sorted(inactive):
+                full_path = f"{base_guest_storage_path}/{node}/{rel_path}"
+
+                reb, guest = rel_path.split("/", 1)
+
+                reb_num = self.parse_rebalance_number(reb)
+                if reb_num is None:
+                    self.log.info(f"Skipping unknown rebalance format: {reb}/{guest}")
+                    continue
+
+                if reb_num >= self.num_rebalance_count:
+                    self.log.info(
+                        f"Skipping {reb}/{guest} (rebalance {reb_num} >= current {self.num_rebalance_count})")
+                    continue
+
+                # Absolute safety check
+                if not full_path.startswith(base_guest_storage_path):
+                    self.log.info("Refusing to delete unsafe path: %s", full_path)
+                    continue
+
+                self.log.info("Deleting %s", full_path)
+                o, e = ssh.execute_command(f"rm -rf '{full_path}'")
+                self.log.info(f"O = {o}, E = {e}")
+
+
+    def scan_remote_guests(self):
+        """
+        Scan NFS server and return:
+        {
+        node: {"rebX/guestY", ...}
+        }
+        """
+        base_guest_storage_path = f"/data/nfs/{self.client_share_dir}/guest_storage"
+
+        # Depth strictly enforced: node/reb/guest
+        cmd = f"""
+        find {base_guest_storage_path} -mindepth 3 -maxdepth 3 -type d \
+        | awk -F/ '{{print $(NF-2) "/" $(NF-1) "/" $NF}}'
+        """
+
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+        output, error = ssh.execute_command(cmd)
+
+        actual: Dict[str, Set[str]] = {}
+
+        for line in output:
+            if not line.strip():
+                continue
+
+            node, reb, guest = line.strip().split("/", 2)
+            actual.setdefault(node, set()).add(f"{reb}/{guest}")
+
+        return actual
+
+
+    def fetch_active_guests(self):
+        """
+        Returns:
+        {
+        node: {"rebX/guestY", ...}
+        }
+        """
+        status, content = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
+        self.log.info(f"Active Guest Volumes: {content}")
+
+        if status:
+            active = {}
+            for node, paths in content.items():
+                active[node] = {
+                    "/".join(p.split("/")[-2:])  # rebX/guestY
+                    for p in paths
+                }
+
+            return active
+
+
+    def parse_rebalance_number(self, reb):
+        """
+        reb -> rebalance number
+        reb4 -> 4
+        """
+        if not reb.startswith("reb"):
+            return None
+        try:
+            return int(reb[3:])
+        except ValueError:
+            return None

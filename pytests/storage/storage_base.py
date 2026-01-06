@@ -41,17 +41,6 @@ class StorageBase(BaseTestCase):
         self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
                                                        Bucket.EvictionPolicy.FULL_EVICTION)
 
-        # Fusion params
-        self.fusion_test = self.input.param("fusion_test", False)
-        self.fusion_log_store_uri = self.input.param("fusion_log_store_uri", None)
-        self.fusion_upload_interval = self.input.param("fusion_upload_interval", 60)
-        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 78643200) # 75MB/s
-        self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
-        self.enable_sync_threshold = self.input.param("enable_sync_threshold", 100) # 100MB
-        self.logstore_frag_threshold = self.input.param("logstore_frag_threshold", 0.5) # 50%
-        self.fusion_max_log_size = self.input.param("fusion_max_log_size", 1073741824) # 1GB
-        self.fusion_max_num_log_files = self.input.param("fusion_max_num_log_files", 100)
-
         self.set_kv_quota = self.input.param("set_kv_quota", False)
         if self.set_kv_quota:
             self.kv_quota_mem = self.input.param("kv_quota_mem", None)
@@ -59,7 +48,7 @@ class StorageBase(BaseTestCase):
             self.rest.configure_memory(
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
 
-        if self.fusion_test:
+        if self.fusion_enable:
             self.configure_fusion()
             self.enable_fusion()
 
@@ -1410,141 +1399,6 @@ class StorageBase(BaseTestCase):
         _, _ = shell.execute_command(cmd, timeout=300)
         self.sleep(30, "Wait after executing pillowfight command")
         shell.disconnect()
-
-    def override_fusion_settings(self):
-
-        # Override Fusion default settings
-        for bucket in self.cluster.buckets:
-            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        logstore_frag_threshold=self.logstore_frag_threshold,
-                                        fusion_max_log_size=self.fusion_max_log_size,
-                                        fusion_max_num_log_files=self.fusion_max_num_log_files)
-        # Restart couchbase
-        for server in self.cluster.nodes_in_cluster:
-            ssh = RemoteMachineShellConnection(server)
-            o, e = ssh.execute_command("systemctl restart couchbase-server")
-            ssh.disconnect()
-
-        self.sleep(30, "Wait after restarting Couchbase server")
-        for bucket in self.cluster.buckets:
-            warmed_up = self.bucket_util._wait_warmup_completed(bucket, wait_time=600)
-            # self.assertTrue(warmed_up, f"Bucket: {bucket.name} didn't warmup in 600 seconds")
-
-        for bucket in self.cluster.buckets:
-            for server in self.cluster.nodes_in_cluster:
-                cbstats = Cbstats(server)
-                result = cbstats.all_stats(bucket.name)
-                self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
-                            f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}, "
-                            f"Fusion Max Log Size: {result['ep_magma_fusion_max_log_size']}, "
-                            f"Fusion Max Log Files: {result['ep_magma_fusion_max_num_log_files']}")
-
-
-    def change_fusion_settings(self, bucket, upload_interval=None,
-                               logstore_frag_threshold=None, fusion_max_log_size=None,
-                               fusion_max_num_log_files=None):
-
-        fusion_settings = ""
-        if upload_interval is not None:
-            fusion_settings += f"magma_fusion_upload_interval={upload_interval};"
-        else:
-            fusion_settings += f"magma_fusion_upload_interval={self.fusion_upload_interval};"
-
-        if logstore_frag_threshold is not None:
-            fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={logstore_frag_threshold};"
-        else:
-            fusion_settings += f"magma_fusion_logstore_fragmentation_threshold={self.logstore_frag_threshold};"
-
-        if fusion_max_log_size is not None:
-            fusion_settings += f"magma_fusion_max_log_size={fusion_max_log_size};"
-        else:
-            fusion_settings += f"magma_fusion_max_log_size={self.fusion_max_log_size};"
-
-        if fusion_max_num_log_files is not None:
-            fusion_settings += f"magma_fusion_max_num_log_files={fusion_max_num_log_files};"
-        else:
-            fusion_settings += f"magma_fusion_max_num_log_files={self.fusion_max_num_log_files};"
-        fusion_settings = fusion_settings[:-1] # Trimming the semicolon at the end
-
-        diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{fusion_settings}"}}]).' http://localhost:8091/diag/eval"""
-        self.log.info(f"Updating Fusion settings for bucket: {bucket.name}, Diag/Eval CMD: {diag_eval_cmd}")
-
-        for server in self.cluster.nodes_in_cluster:
-            ssh = RemoteMachineShellConnection(server)
-            o, e = ssh.execute_command(diag_eval_cmd)
-            self.log.debug(f"Server: {server}, Output: {o}, Error: {e}")
-            ssh.disconnect()
-
-    def configure_fusion(self):
-
-        fusion_client = FusionRestAPI(self.cluster.master)
-
-        self.log.info("Configuring Fusion with logStoreURI and enableSyncThresholdMB")
-
-        status, content = fusion_client.manage_fusion_settings(
-                                log_store_uri=self.fusion_log_store_uri,
-                                enable_sync_threshold=self.enable_sync_threshold)
-        self.log.info(f"Status = {status}, Result = {content}")
-
-    def monitor_fusion_state_transition(self, state="enabled", timeout=300):
-        """
-        Monitor if Fusion reaches enabled state within timeout.
-        Returns: True if enabled, False if timeout
-        """
-        fusion_client = FusionRestAPI(self.cluster.master)
-        end_time = time.time() + timeout
-        fusion_state_transition_complete = False
-
-        while time.time() < end_time:
-            status, content = fusion_client.get_fusion_status()
-            self.log.info(f"Fusion Status = {content}")
-            if content['state'] == state:
-                fusion_state_transition_complete = True
-                break
-            time.sleep(2)
-
-        if fusion_state_transition_complete:
-            self.log.info(f"Fusion {state} successfully")
-        else:
-            self.log.warning(f"Fusion not {state} after {timeout} seconds")
-
-        return fusion_state_transition_complete
-
-    def enable_fusion(self, buckets=None, timeout=3600):
-
-        fusion_client = FusionRestAPI(self.cluster.master)
-        status, content = fusion_client.enable_fusion(buckets=buckets)
-        self.log.info(f"Enabling Fusion, Status: {status}, Content: {content}")
-        if status:
-            fusion_enabled = self.monitor_fusion_state_transition(state="enabled", timeout=timeout)
-            if not fusion_enabled:
-                self.fail("Enabling Fusion failed after timeout")
-        else:
-            self.fail(f"Enabling Fusion failed. Error = {content}")
-
-    def disable_fusion(self, timeout=3600):
-
-        fusion_client = FusionRestAPI(self.cluster.master)
-        status, content = fusion_client.disable_fusion()
-        self.log.info(f"Disabling Fusion, Status: {status}, Content: {content}")
-        if status:
-            fusion_disabled = self.monitor_fusion_state_transition(state="disabled", timeout=timeout)
-            if not fusion_disabled:
-                self.fail("Disabling Fusion failed after timeout")
-        else:
-            self.fail(f"Disabling Fusion failed. Error = {content}")
-
-    def stop_fusion(self, timeout=3600):
-
-        fusion_client = FusionRestAPI(self.cluster.master)
-        status, content = fusion_client.stop_fusion()
-        self.log.info(f"Stopping Fusion, Status: {status}, Content: {content}")
-        if status:
-            fusion_stopped = self.monitor_fusion_state_transition(state="stopped", timeout=timeout)
-            if not fusion_stopped:
-                self.fail("Stopping Fusion failed after timeout")
-        else:
-            self.fail(f"Stopping Fusion failed. Error = {content}")
 
     def check_log_files_on_nfs(self, nfs_server, nfs_server_path):
         """

@@ -18,7 +18,7 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_magma_rollback_basic(self):
 
-        if not self.fusion_test and self.enable_fusion_during_rollback:
+        if not self.fusion_enable and self.enable_fusion_during_rollback:
             self.configure_fusion()
             self.sleep(10, "Sleep after configuring fusion")
 
@@ -27,7 +27,7 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_magma_rollback_with_CDC(self):
 
-        if not self.fusion_test and self.enable_fusion_during_rollback:
+        if not self.fusion_enable and self.enable_fusion_during_rollback:
             self.configure_fusion()
 
         self.test_magma_rollback_with_CDC()
@@ -35,7 +35,7 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_magma_rollback_to_same_snapshot(self):
 
-        if not self.fusion_test and self.enable_fusion_during_rollback:
+        if not self.fusion_enable and self.enable_fusion_during_rollback:
             self.configure_fusion()
 
         self.test_magma_rollback_to_same_snapshot()
@@ -43,7 +43,7 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_magma_rollback_on_all_nodes(self):
 
-        if not self.fusion_test and self.enable_fusion_during_rollback:
+        if not self.fusion_enable and self.enable_fusion_during_rollback:
             self.configure_fusion()
 
         self.test_magma_rollback_on_all_nodes()
@@ -51,7 +51,7 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_magma_rollback_to_new_snapshot(self):
 
-        if not self.fusion_test and self.enable_fusion_during_rollback:
+        if not self.fusion_enable and self.enable_fusion_during_rollback:
             self.configure_fusion()
 
         self.test_magma_rollback_to_new_snapshot()
@@ -59,7 +59,7 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_crash_during_rollback(self):
 
-        if not self.fusion_test and self.enable_fusion_during_rollback:
+        if not self.fusion_enable and self.enable_fusion_during_rollback:
             self.configure_fusion()
 
         self.test_crash_during_rollback()
@@ -67,7 +67,7 @@ class FusionMagmaRollback(MagmaRollbackTests, FusionBase):
 
     def test_fusion_rebalance_during_rollback(self):
 
-        if not self.fusion_test and self.enable_fusion_during_rollback:
+        if not self.fusion_enable and self.enable_fusion_during_rollback:
             self.configure_fusion()
 
         self.test_rebalance_during_rollback()

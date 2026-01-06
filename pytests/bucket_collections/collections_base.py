@@ -17,12 +17,13 @@ from cb_tools.cbstats import Cbstats
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
+from storage.fusion.fusion_base import FusionBase
 
 from couchbase.exceptions import InvalidIndexException, \
     QueryIndexNotFoundException
 
 
-class CollectionBase(ClusterSetup):
+class CollectionBase(ClusterSetup, FusionBase):
     def setUp(self):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
@@ -83,6 +84,10 @@ class CollectionBase(ClusterSetup):
             ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                                     num_writer_threads="disk_io_optimized",
                                     num_reader_threads="disk_io_optimized")
+            
+        if self.fusion_enable:
+            self.configure_fusion()
+            self.enable_fusion()
         try:
             self.collection_setup()
             CollectionBase.setup_collection_history_settings(self)
@@ -159,6 +164,15 @@ class CollectionBase(ClusterSetup):
 
         self.bucket_util.add_rbac_user(self.cluster.master)
         CollectionBase.deploy_buckets_from_spec_file(self)
+
+        if self.fusion_test:
+            # Override Fusion default settings
+            self.override_fusion_settings()
+            # Set Rate Limits
+            status, content = ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
+                                fusion_sync_rate_limit=self.fusion_sync_rate_limit,
+                                fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+            self.log.info(f"Status = {status}, Content = {content}")
 
         # Change magma quota only for bloom filter testing
         if self.change_magma_quota:

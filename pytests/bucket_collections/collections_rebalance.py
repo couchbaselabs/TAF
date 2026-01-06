@@ -1,3 +1,4 @@
+import threading
 import time
 
 from BucketLib.BucketOperations import BucketHelper
@@ -410,8 +411,15 @@ class CollectionsRebalance(CollectionBase):
                             self.cluster, self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
-                    operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
-                                                          retry_get_process_num=self.retry_get_process_num)
+                    if not self.fusion_test:
+                        operation = self.task.async_rebalance(self.cluster, [], remove_nodes,
+                                                              retry_get_process_num=self.retry_get_process_num)
+                    else:
+                        nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=120,
+                                    remove_nodes=remove_nodes)
                     self.execute_N1qltxn(remove_nodes[0])
                     self.execute_allowedhosts()
                     if self.compaction:
@@ -466,8 +474,16 @@ class CollectionsRebalance(CollectionBase):
                             self.cluster, self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats(self.cluster)
                     # all at once
-                    operation = self.task.async_rebalance(self.cluster, add_nodes, [],
-                                                          retry_get_process_num=self.retry_get_process_num)
+                    if not self.fusion_test:
+                        operation = self.task.async_rebalance(self.cluster, add_nodes, [],
+                                                            retry_get_process_num=self.retry_get_process_num)
+                    else:
+                        nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=120,
+                                    add_nodes=add_nodes)
+
                     self.execute_N1qltxn()
                     self.execute_allowedhosts()
                     if self.compaction:
@@ -522,9 +538,16 @@ class CollectionsRebalance(CollectionBase):
                         self.bucket_util.update_all_bucket_replicas(
                             self.cluster, self.updated_num_replicas)
                         self.bucket_util.print_bucket_stats(self.cluster)
-                    operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
-                                                          check_vbucket_shuffling=False,
-                                                          retry_get_process_num=self.retry_get_process_num)
+                    if not self.fusion_test:
+                        operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
+                                                              retry_get_process_num=self.retry_get_process_num)
+                    else:
+                        nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=120,
+                                    add_nodes=add_nodes,
+                                    remove_nodes=remove_nodes)
                     self.execute_N1qltxn(remove_nodes[0])
                     self.execute_allowedhosts()
                     if self.compaction:
@@ -581,8 +604,16 @@ class CollectionsRebalance(CollectionBase):
                     self.bucket_util.update_all_bucket_replicas(
                         self.cluster, self.updated_num_replicas)
                     self.bucket_util.print_bucket_stats(self.cluster)
-                operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
-                                                      retry_get_process_num=self.retry_get_process_num)
+                if not self.fusion_test:
+                    operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
+                                                            retry_get_process_num=self.retry_get_process_num)
+                else:
+                    nodes_to_monitor = self.run_rebalance(
+                                output_dir=self.fusion_output_dir,
+                                rebalance_count=1,
+                                rebalance_sleep_time=120,
+                                add_nodes=add_nodes,
+                                remove_nodes=remove_nodes)
                 self.execute_N1qltxn(remove_nodes[0])
                 if self.compaction:
                     self.compact_all_buckets()
@@ -629,8 +660,15 @@ class CollectionsRebalance(CollectionBase):
                     wait_for_doc_load_complete()
                     tasks = (None, None)
                     self.data_load_after_failover()
-                    operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
-                                                          retry_get_process_num=self.retry_get_process_num)
+                    if not self.fusion_test:
+                        operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
+                                                              retry_get_process_num=self.retry_get_process_num)
+                    else:
+                        nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=120,
+                                    remove_nodes=new_failover_nodes)
                     iter_count = iter_count + 1
                     known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
                     if iter_count == len(failover_list):
@@ -680,8 +718,15 @@ class CollectionsRebalance(CollectionBase):
                     tasks = (None, None)
                     self.data_load_after_failover()
                     self.cluster_util.print_cluster_stats(self.cluster)
-                    operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
-                                                          retry_get_process_num=self.retry_get_process_num)
+                    if not self.fusion_test:
+                        operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
+                                                              retry_get_process_num=self.retry_get_process_num)
+                    else:
+                        nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=120,
+                                    remove_nodes=new_failover_nodes)
                     self.execute_N1qltxn(new_failover_nodes[0])
                     iter_count = iter_count + 1
                     known_nodes = [node for node in known_nodes if node not in new_failover_nodes]
@@ -736,8 +781,14 @@ class CollectionsRebalance(CollectionBase):
                     for failover_node in new_failover_nodes:
                         self.rest.set_failover_recovery_type(otp_node='ns_1@' + failover_node.ip,
                                                              recovery_type=self.recovery_type)
-                    operation = self.task.async_rebalance(self.cluster, [], [],
-                                                          retry_get_process_num=self.retry_get_process_num)
+                    if not self.fusion_test:
+                        operation = self.task.async_rebalance(self.cluster, [], [],
+                                                              retry_get_process_num=self.retry_get_process_num)
+                    else:
+                        nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=120)
                     iter_count = iter_count + 1
                     if iter_count == len(failover_list):
                         continue
@@ -790,15 +841,24 @@ class CollectionsRebalance(CollectionBase):
                     for failover_node in new_failover_nodes:
                         self.rest.set_failover_recovery_type(otp_node='ns_1@' + failover_node.ip,
                                                              recovery_type=self.recovery_type)
-                    operation = self.task.async_rebalance(self.cluster, [], [],
-                                                          retry_get_process_num=self.retry_get_process_num)
+                    if not self.fusion_test:
+                        operation = self.task.async_rebalance(self.cluster, [], [],
+                                                              retry_get_process_num=self.retry_get_process_num)
+                    else:
+                        nodes_to_monitor = self.run_rebalance(
+                                    output_dir=self.fusion_output_dir,
+                                    rebalance_count=1,
+                                    rebalance_sleep_time=120)
                     iter_count = iter_count + 1
                     if iter_count == len(failover_list):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         else:
             self.fail("rebalance_operation is not defined")
-        return operation
+        if not self.fusion_test:
+            return operation
+        else:
+            return nodes_to_monitor
 
     def subsequent_data_load(self, async_load=False, data_load_spec=None):
         # History retention doc_loading. Returns 'None' in non-dedupe runs
@@ -823,7 +883,8 @@ class CollectionsRebalance(CollectionBase):
             mutation_num=0, async_load=async_load, batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             validate_task=(not self.skip_validations),
-            load_using=self.load_docs_using)
+            load_using=self.load_docs_using,
+            print_ops_rate=False)
         if cont_doc_load and not async_load:
             CollectionBase.remove_docs_created_for_dedupe_load(
                 self, cont_doc_load)
@@ -1163,7 +1224,13 @@ class CollectionsRebalance(CollectionBase):
             else:
                 self.sync_data_load()
         if not self.warmup:
-            self.wait_for_rebalance_to_complete(rebalance)
+            if not self.fusion_test:
+                self.wait_for_rebalance_to_complete(rebalance)
+            else:
+                nodes_to_monitor = rebalance
+                self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+                self.monitor_active_guest_volumes()
+
         if self.data_load_stage == "during" or self.data_load_stage == "before":
             if self.data_load_type == "async":
                 # for failover + before + async, wait_for_async_data_load_to_complete is already done

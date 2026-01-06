@@ -2,6 +2,7 @@ import os
 import random
 import subprocess
 import threading
+import time
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from cb_tools.cbstats import Cbstats
@@ -13,6 +14,14 @@ from storage.magma.magma_base import MagmaBaseTest
 class FusionMigration(MagmaBaseTest, FusionBase):
     def setUp(self):
         super(FusionMigration, self).setUp()
+
+        self.upsert_iterations = self.input.param("upsert_iterations", 1)
+        self.validate_docs = self.input.param("validate_docs", True)
+        self.read_ops_rate = self.input.param("read_ops_rate", 10000)
+        self.num_docs_to_validate = self.input.param("num_docs_to_validate", 1000000)
+        self.rebalance_num_docs = self.input.param("rebalance_num_docs", 1000000)
+        self.read_process_concurrency = self.input.param("read_process_concurrency", 8)
+        self.validate_batch_size = self.input.param("validate_batch_size", 500000)
 
         self.log.info("FusionMigration setUp Started")
         self.rate_limit_toggle_stop = False
@@ -35,10 +44,10 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 available_types.append("out")
             if len(self.cluster.servers) > len(self.cluster.nodes_in_cluster) and len(self.cluster.nodes_in_cluster) > 1:
                 available_types.append("swap")
-            
+
             if not available_types:
                 self.fail("No valid rebalance types available")
-            
+
             rebalance_type = random.choice(available_types)
             self.log.info(f"Randomly selected rebalance type: {rebalance_type}")
 
@@ -68,38 +77,38 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         """Toggle guest volume permissions between read-only and no-access"""
         toggle_count = 0
         guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
-        
+
         while not self.rate_limit_toggle_stop:
             allow_read = toggle_count % 2 == 0
             permission = "755" if allow_read else "000"
             action = "Allow read" if allow_read else "Block read"
-            
+
             self.log.info(f"[Rebalance {rebalance_count}] Toggle {toggle_count + 1}: {action} on guest volumes (chmod {permission})")
-            
+
             ssh = RemoteMachineShellConnection(self.nfs_server)
             try:
                 for node in nodes_to_monitor:
                     node_id = "ns_1@{0}".format(node.ip)
-                    
+
                     # Find guest directory for this node (subdirectory structure: node_id/reb*)
                     find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
                     output, error = ssh.execute_command(find_cmd)
-                    
+
                     if not output or not output[0].strip():
                         self.log.warning(f"[Rebalance {rebalance_count}] No guest directory found for {node_id}")
                         continue
-                    
+
                     node_guest_dir = output[0].strip()
                     self.log.debug(f"[Rebalance {rebalance_count}] Using guest directory: {node_guest_dir}")
-                    
+
                     chmod_cmd = "chmod -R {0} {1}".format(permission, node_guest_dir)
                     output, error = ssh.execute_command(chmod_cmd)
-                    
+
                     if error:
                         self.log.warning(f"[Rebalance {rebalance_count}] Error changing permissions on {node_guest_dir}: {error}")
             finally:
                 ssh.disconnect()
-            
+
             toggle_count += 1
             self.sleep(interval, f"[Rebalance {rebalance_count}] Wait before next permission toggle")
 
@@ -183,7 +192,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 extent_th.start()
                 extent_migration_array.append(extent_th)
 
-        active_guest_volumes_th = threading.Thread(target=self.monitor_active_guest_volumes, args=[nodes_to_monitor, 120])
+        active_guest_volumes_th = threading.Thread(target=self.monitor_active_guest_volumes)
         active_guest_volumes_th.start()
 
         for th in extent_migration_array:
@@ -483,48 +492,48 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         )
 
         self.sleep(30, "Wait after rebalance")
-        
+
         self.log.info(f"Deleting {num_volumes_to_delete} guest volumes from NFS")
-        
+
         guest_storage_base = os.path.join("/".join(self.nfs_server_path.split("/")[:-1]), "guest_storage")
-        
+
         # Delete guest volumes for each node
         for node in nodes_to_monitor:
             node_id = f"ns_1@{node.ip}"
             ssh = RemoteMachineShellConnection(self.nfs_server)
-            
+
             # Find guest directory for this node (subdirectory structure: node_id/reb*)
             find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
             output, error = ssh.execute_command(find_cmd)
-            
+
             if not output or not output[0].strip():
                 self.log.warning(f"No guest directory found for {node_id}")
                 ssh.disconnect()
                 continue
-            
+
             node_guest_dir = output[0].strip()
             self.log.info(f"Using guest directory: {node_guest_dir}")
-            
+
             # List all available guest volumes
             list_cmd = f"ls -1 {node_guest_dir} | grep '^guest' | sort"
             self.log.info(f"Listing guest volumes in {node_guest_dir}")
             output, error = ssh.execute_command(list_cmd)
-            
+
             if output:
                 available_guest_volumes = [vol.strip() for vol in output if vol.strip()]
                 self.log.info(f"Available guest volumes: {available_guest_volumes}")
-                
+
                 # Pick first N volumes to delete
                 volumes_to_delete = available_guest_volumes[:num_volumes_to_delete]
                 self.log.info(f"Selected volumes to delete: {volumes_to_delete}")
-                
+
                 for guest_vol in volumes_to_delete:
                     guest_volume_path = os.path.join(node_guest_dir, guest_vol)
                     self.log.info(f"Deleting {guest_volume_path}")
                     ssh.execute_command(f"rm -rf {guest_volume_path}")
             else:
                 self.log.warning(f"Failed to list guest volumes: {error}")
-            
+
             ssh.disconnect()
 
         self.sleep(120, "Wait after deleting to guest volumes")
@@ -720,30 +729,30 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.log.info("Checking final migration and read stats across all nodes")
         final_failures_detected = False
         final_read_failures_detected = False
-        
+
         for node in self.cluster.nodes_in_cluster:
             for bucket in self.cluster.buckets:
                 cbstats = Cbstats(node)
                 stats = cbstats.all_stats(bucket.name)
                 migration_failures = int(stats['ep_fusion_migration_failures'])
                 read_failures = int(stats['ep_data_read_failed'])
-                
+
                 self.log.info(f"Final stats - Node {node.ip}, Bucket {bucket.name}: "
                             f"Migration failures={migration_failures}, Read failures={read_failures}")
-                
+
                 if migration_failures > 0:
                     self.log.error(f"Node {node.ip}, Bucket {bucket.name}: "
                                  f"Migration failures detected: {migration_failures}")
                     final_failures_detected = True
-                
+
                 if read_failures > 0:
                     self.log.error(f"Node {node.ip}, Bucket {bucket.name}: "
                                  f"Read failures detected: {read_failures}")
                     final_read_failures_detected = True
-                
+
                 cbstats.disconnect()
-        
-        self.assertFalse(final_failures_detected, 
+
+        self.assertFalse(final_failures_detected,
                         "Migration failures detected at end of test")
         self.assertFalse(final_read_failures_detected,
                         "Read failures detected at end of test")
@@ -861,23 +870,23 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             self.log.info(f"[Rebalance {rebalance_count}] Stopping permission toggle and restoring access")
             self.rate_limit_toggle_stop = True
             self.sleep(5)
-            
+
             guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
             ssh = RemoteMachineShellConnection(self.nfs_server)
             for node in nodes_to_monitor:
                 node_id = "ns_1@{0}".format(node.ip)
-                
+
                 # Find guest directory for this node (subdirectory structure: node_id/reb*)
                 find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
                 output, error = ssh.execute_command(find_cmd)
-                
+
                 if output and output[0].strip():
                     node_guest_dir = output[0].strip()
                     ssh.execute_command("chmod -R 755 {0}".format(node_guest_dir))
                 else:
                     self.log.warning(f"No guest directory found for {node_id} during permission restore")
             ssh.disconnect()
-            
+
             self.rate_limit_toggle_stop = False
 
             if rebalance_count < num_rebalances:
@@ -893,21 +902,21 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.log.info("Checking final stats")
         final_failures_detected = False
         final_read_failures_detected = False
-        
+
         for node in self.cluster.nodes_in_cluster:
             for bucket in self.cluster.buckets:
                 cbstats = Cbstats(node)
                 stats = cbstats.all_stats(bucket.name)
                 migration_failures = int(stats['ep_fusion_migration_failures'])
                 read_failures = int(stats['ep_data_read_failed'])
-                
+
                 if migration_failures > 0:
                     final_failures_detected = True
                 if read_failures > 0:
                     final_read_failures_detected = True
-                
+
                 cbstats.disconnect()
-        
+
         self.assertFalse(final_failures_detected, "Migration failures detected")
         self.assertFalse(final_read_failures_detected, "Read failures detected")
 
@@ -971,7 +980,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             self.log.info(f"[Rebalance {rebalance_count}] Starting {num_kill_iterations} memcached kill iterations")
             for iteration in range(1, num_kill_iterations + 1):
                 self.log.info(f"[Rebalance {rebalance_count}] Iteration {iteration}/{num_kill_iterations} - Kill Type: {kill_type}")
-                
+
                 for node in nodes_to_monitor:
                     shell = RemoteMachineShellConnection(node)
                     if kill_type == "hard_kill":
@@ -1053,15 +1062,15 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 stats = cbstats.all_stats(bucket.name)
                 migration_failures = int(stats['ep_fusion_migration_failures'])
                 read_failures = int(stats['ep_data_read_failed'])
-                
+
                 self.log.info(f"Final - Node {node.ip}, Bucket {bucket.name}: "
                             f"Migration failures={migration_failures}, Read failures={read_failures}")
-                
-                self.assertEqual(migration_failures, 0, 
+
+                self.assertEqual(migration_failures, 0,
                                f"Migration failures on {node.ip}:{bucket.name}")
                 self.assertEqual(read_failures, 0,
                                f"Read failures on {node.ip}:{bucket.name}")
-                
+
                 cbstats.disconnect()
 
     def test_delete_guest_volumes_before_rebalance(self):
@@ -1087,74 +1096,74 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.log.info(f"Guest volumes after acceleration: {guest_volumes_before}")
 
         self.log.info(f"Deleting {num_volumes_to_delete} guest volumes from NFS")
-        
+
         guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
-        
+
         ssh = RemoteMachineShellConnection(self.nfs_server)
         for node in nodes_to_monitor:
             node_id = f"ns_1@{node.ip}"
-            
+
             # Find guest directory for this node (subdirectory structure: node_id/reb*)
             find_cmd = f"ls -d {guest_storage_base}/{node_id}/reb* 2>/dev/null | tail -1"
             output_find, error_find = ssh.execute_command(find_cmd)
-            
+
             if not output_find or not output_find[0].strip():
                 self.log.warning(f"No guest directory found for {node_id}")
                 continue
-            
+
             node_guest_dir = output_find[0].strip()
             self.log.info(f"Using guest directory: {node_guest_dir}")
-            
+
             # List all available guest volumes dynamically
             list_cmd = f"ls -1 {node_guest_dir} | grep '^guest' | sort"
             self.log.info(f"Listing guest volumes in {node_guest_dir}")
             output, error = ssh.execute_command(list_cmd)
-            
+
             if output:
                 available_guest_volumes = [vol.strip() for vol in output if vol.strip()]
                 self.log.info(f"Available guest volumes: {available_guest_volumes}")
-                
+
                 # Select random volumes to delete
-                volumes_to_delete = random.sample(available_guest_volumes, 
+                volumes_to_delete = random.sample(available_guest_volumes,
                                                  min(num_volumes_to_delete, len(available_guest_volumes)))
                 self.log.info(f"Selected volumes to delete: {volumes_to_delete}")
-                
+
                 for guest_vol in volumes_to_delete:
                     guest_volume_path = os.path.join(node_guest_dir, guest_vol)
                     self.log.info(f"Deleting {guest_volume_path}")
                     ssh.execute_command(f"rm -rf {guest_volume_path}")
             else:
                 self.log.warning(f"Failed to list guest volumes: {error}")
-        
+
         ssh.disconnect()
 
         self.sleep(10, "Wait after deleting guest volumes")
 
         self.log.info(f"Manually starting rebalance with plan_uuid: {plan_uuid}")
-    
+
         current_nodes = [node.ip for node in self.cluster.nodes_in_cluster]
         new_nodes = [node.replace("ns_1@", "") for node in involved_nodes]
-        
+
         all_nodes = set(current_nodes) | set(new_nodes)
         known_nodes = [f"ns_1@{node}" for node in all_nodes]
-        
+
         ejected_nodes = set(current_nodes) - set(new_nodes)
         eject_nodes = [f"ns_1@{node}" for node in ejected_nodes]
-        
+
         self
         self.log.info(f"Known nodes: {known_nodes}")
         self.log.info(f"Ejected nodes: {eject_nodes}")
-        
+
         rebalance_failed = False
         rebalance_error_msg = ""
-        
+
         try:
             status, content = ClusterRestAPI(self.cluster.master).rebalance(
                 known_nodes=known_nodes,
                 eject_nodes=eject_nodes,
                 plan_uuid=plan_uuid
             )
-            
+
             if not status:
                 rebalance_failed = True
                 rebalance_error_msg = str(content)
@@ -1162,13 +1171,13 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             else:
                 self.log.info("Rebalance API call succeeded, monitoring for failure")
                 self.sleep(30, "Wait for rebalance to detect missing guest volumes")
-                
+
                 progress_status, progress_content = ClusterRestAPI(self.cluster.master).rebalance_progress()
                 if progress_status:
                     if progress_content.get("status") == "running":
                         self.sleep(60, "Wait for rebalance to fail")
                         progress_status, progress_content = ClusterRestAPI(self.cluster.master).rebalance_progress()
-                    
+
                     if progress_content.get("status") in ["notRunning", "none"]:
                         error_msg = progress_content.get("errorMessage", "")
                         if error_msg:
@@ -1183,9 +1192,171 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             rebalance_error_msg = str(e)
             self.log.info(f"Rebalance failed with exception as expected: {e}")
 
-        self.assertTrue(rebalance_failed, 
+        self.assertTrue(rebalance_failed,
                        "Expected rebalance to fail due to missing guest volumes, but it succeeded")
-        
+
         self.log.info(f"Rebalance failure message: {rebalance_error_msg}")
-        
+
         self.cluster_util.print_cluster_stats(self.cluster)
+
+
+    def test_magma_dump_during_extent_migration(self):
+
+        pause_extent_migration = self.input.param("pause_extent_migration", False)
+        perform_reads_during_magma_dump = self.input.param("perform_reads_during_magma_dump", False)
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        # Clear page cache before running magma_dump
+        self.clear_page_cache()
+        self.sleep(30, "Wait after clearing page cache")
+
+        start_time = time.time()
+        self.get_seqnumber_count(with_history=False)
+        end_time = time.time()
+        self.log.info(f"Baseline Magma_dump time taken = {end_time - start_time} seconds")
+
+        if pause_extent_migration:
+            # Set Migration Rate Limit to 0 so that extent migration doesn't take place
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=0)
+
+        self.log.info("Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
+
+        if pause_extent_migration:
+
+            # Clear page cache
+            self.clear_page_cache()
+            self.sleep(30, "Wait after clearing page cache")
+
+            if perform_reads_during_magma_dump:
+                read_th = threading.Thread(target=self.perform_batch_reads, args=[self.num_docs_to_validate, self.validate_batch_size, False])
+                read_th.start()
+
+            self.sleep(60, "Wait before running magma_dump")
+
+            start_time = time.time()
+            self.get_seqnumber_count(with_history=False)
+            end_time = time.time()
+            self.log.info(f"Magma_dump time taken when migration is paused = {end_time - start_time} seconds")
+
+            if perform_reads_during_magma_dump:
+                read_th.join()
+
+            # Set Migration Rate Limit to the original value so that extent migration starts
+            ClusterRestAPI(self.cluster.master).\
+                manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        if not pause_extent_migration:
+
+            # Clear page cache before running magma_dump
+            self.clear_page_cache()
+            self.sleep(30, "Wait after clearing page cache")
+
+            if perform_reads_during_magma_dump:
+                read_th = threading.Thread(target=self.perform_batch_reads, args=[self.num_docs_to_validate, self.validate_batch_size, False])
+                read_th.start()
+
+            self.sleep(60, "Wait before running magma_dump")
+
+            start_time = time.time()
+            self.get_seqnumber_count(with_history=False)
+            end_time = time.time()
+            self.log.info(f"Magma_dump time taken whilst migration is going on = {end_time - start_time} seconds")
+
+            if perform_reads_during_magma_dump:
+                read_th.join()
+
+        for th in extent_migration_array:
+            th.join()
+
+
+    def test_cbcollect_during_extent_migration(self):
+
+            pause_extent_migration = self.input.param("pause_extent_migration", False)
+
+            self.log.info("Starting initial load")
+            self.initial_load()
+            sleep_time = 120 + self.fusion_upload_interval + 30
+            self.sleep(sleep_time, "Sleep after data loading")
+
+            if pause_extent_migration:
+                # Set Migration Rate Limit to 0 so that extent migration doesn't take place
+                ClusterRestAPI(self.cluster.master).\
+                    manage_global_memcached_setting(fusion_migration_rate_limit=0)
+
+            self.log.info("Running a Fusion rebalance")
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
+
+            if pause_extent_migration:
+
+                # Perform cbcollect
+                self.cbcollect_outputs = dict()
+                self.cbcollect_errors = dict()
+                cbcollect_threads = list()
+
+                for server in self.cluster.nodes_in_cluster:
+                    cb_th = threading.Thread(target=self.perform_cbcollect_on_node, args=[server])
+                    cb_th.start()
+                    cbcollect_threads.append(cb_th)
+
+                for th in cbcollect_threads:
+                    th.join()
+
+                self.log.info(f"Cbcollect errors = {self.cbcollect_errors}")
+
+                # Set Migration Rate Limit to the original value so that extent migration starts
+                ClusterRestAPI(self.cluster.master).\
+                    manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+
+            extent_migration_array = list()
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            for node in nodes_to_monitor:
+                for bucket in self.cluster.buckets:
+                    extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                    extent_th.start()
+                    extent_migration_array.append(extent_th)
+
+            if not pause_extent_migration:
+
+                # Perform cbcollect
+                self.cbcollect_outputs = dict()
+                self.cbcollect_errors = dict()
+                cbcollect_threads = list()
+
+                for server in self.cluster.nodes_in_cluster:
+                    cb_th = threading.Thread(target=self.perform_cbcollect_on_node, args=[server])
+                    cb_th.start()
+                    cbcollect_threads.append(cb_th)
+
+                for th in cbcollect_threads:
+                    th.join()
+
+                self.log.info(f"Cbcollect errors = {self.cbcollect_errors}")
+
+            for th in extent_migration_array:
+                th.join()
+
+
+    def perform_cbcollect_on_node(self, server):
+
+        ssh = RemoteMachineShellConnection(server)
+
+        self.log.info(f"Triggering cbcollect on server: {server.ip}")
+
+        o, e = ssh.execute_command(f"/opt/couchbase/bin/cbcollect_info node_{server.ip}_logs.zip")
+
+        self.cbcollect_outputs[server.ip] = o
+        self.cbcollect_errors[server.ip] = e

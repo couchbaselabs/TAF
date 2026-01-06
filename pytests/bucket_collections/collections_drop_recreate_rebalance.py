@@ -218,26 +218,57 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             operation = self.task.async_rebalance(self.cluster, self.add_nodes,
                                                   [],
                                                   retry_get_process_num=self.retry_get_process_num*3)
+            if not self.fusion_test:
+                operation = self.task.async_rebalance(self.cluster, self.add_nodes, [],
+                                                        retry_get_process_num=self.retry_get_process_num*3)
+            else:
+                nodes_to_monitor = self.run_rebalance(
+                            output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=120,
+                            add_nodes=self.add_nodes)
         elif rebalance_operation == "rebalance_out":
-            operation = self.task.async_rebalance(self.cluster, [],
-                                                  self.remove_nodes,
-                                                  retry_get_process_num=self.retry_get_process_num*3)
+            if not self.fusion_test:
+                operation = self.task.async_rebalance(self.cluster, [], self.remove_nodes,
+                                                        retry_get_process_num=self.retry_get_process_num*3)
+            else:
+                nodes_to_monitor = self.run_rebalance(
+                            output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=120,
+                            remove_nodes=self.remove_nodes)
         elif rebalance_operation == "swap_rebalance":
-            for node in self.add_nodes:
-                self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                   node.ip, self.cluster.servers[self.nodes_init].port)
-            operation = self.task.async_rebalance(self.cluster, [], self.remove_nodes,
-                                                  check_vbucket_shuffling=False,
-                                                  retry_get_process_num=self.retry_get_process_num*3)
+            if not self.fusion_test:
+                operation = self.task.async_rebalance(self.cluster, self.add_nodes, self.remove_nodes,
+                                                        retry_get_process_num=self.retry_get_process_num*3)
+            else:
+                nodes_to_monitor = self.run_rebalance(
+                            output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=120,
+                            add_nodes=self.add_nodes,
+                            remove_nodes=self.remove_nodes)
         elif rebalance_operation == "rebalance_in_out":
-            for node in self.add_nodes:
-                self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                   node.ip, self.cluster.servers[self.nodes_init].port)
-            operation = self.task.async_rebalance(self.cluster, [], self.remove_nodes,
-                                                  check_vbucket_shuffling=False,
-                                                  retry_get_process_num=self.retry_get_process_num*3)
+            if not self.fusion_test:
+                for node in self.add_nodes:
+                    self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password,
+                                    node.ip, self.cluster.servers[self.nodes_init].port)
+                operation = self.task.async_rebalance(self.cluster, [], self.remove_nodes,
+                                                    check_vbucket_shuffling=False,
+                                                    retry_get_process_num=self.retry_get_process_num*3)
+            else:
+                nodes_to_monitor = self.run_rebalance(
+                            output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=120,
+                            add_nodes=self.add_nodes,
+                            remove_nodes=self.remove_nodes)
 
-        self.wait_for_rebalance_to_complete(operation)
+        if not self.fusion_test:
+            self.wait_for_rebalance_to_complete(operation)
+        else:
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.data_load_flag = False
         if not self.N1qltxn:
             self.data_loading_thread.join()
@@ -275,13 +306,30 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             for failover_node in self.failover_nodes:
                 self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
                                             recoveryType=self.recovery_type)
-            operation = self.task.async_rebalance(self.cluster, [], [],
-                                                  retry_get_process_num=self.retry_get_process_num*3)
+            if not self.fusion_test:
+                operation = self.task.async_rebalance(self.cluster, [], [],
+                                                        retry_get_process_num=self.retry_get_process_num*3)
+            else:
+                nodes_to_monitor = self.run_rebalance(
+                            output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=120)
         else:
-            operation = self.task.async_rebalance(self.cluster, [], self.failover_nodes,
-                                                  retry_get_process_num=self.retry_get_process_num*3)
+            if not self.fusion_test:
+                operation = self.task.async_rebalance(self.cluster, [], self.failover_nodes,
+                                                        retry_get_process_num=self.retry_get_process_num*3)
+            else:
+                nodes_to_monitor = self.run_rebalance(
+                            output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=120,
+                            remove_nodes=self.failover_nodes)
 
-        self.wait_for_rebalance_to_complete(operation)
+        if not self.fusion_test:
+            self.wait_for_rebalance_to_complete(operation)
+        else:
+            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+            self.monitor_active_guest_volumes()
         self.sleep(60, "Wait after rebalance completes before stopping data load")
         self.data_load_flag = False
         if not self.N1qltxn:
