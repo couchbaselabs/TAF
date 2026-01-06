@@ -29,14 +29,19 @@ class XDCRUtils(object):
 
     def remove_all_remote_clusters(self):
         _, remote_clusters = self.xdcr_rest.get_remote_references()
-        for remote_cluster in remote_clusters:
-            cluster_name = remote_cluster["name"]
-            try:
-                if remote_cluster["deleted"] is False:
+        for remote_cluster in remote_clusters or []:
+            # Handle case where remote_cluster is a string (cluster name) instead of dict
+            if isinstance(remote_cluster, dict):
+                cluster_name = remote_cluster["name"]
+                try:
+                    if remote_cluster["deleted"] is False:
+                        self.xdcr_rest.delete_remote_reference(cluster_name)
+                except KeyError:
+                    # goxdcr cluster references will not contain "deleted" field
                     self.xdcr_rest.delete_remote_reference(cluster_name)
-            except KeyError:
-                # goxdcr cluster references will not contain "deleted" field
-                self.xdcr_rest.delete_remote_reference(cluster_name)
+            else:
+                # If it's a string, use it directly as cluster name
+                self.xdcr_rest.delete_remote_reference(remote_cluster)
 
     def remove_all_recoveries(self):
         recoveries = list()
