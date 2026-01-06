@@ -424,7 +424,7 @@ class BucketHelper(BucketRestApi):
         if bucket_params.get(Bucket.bucketType) == Bucket.Type.MEMBASE and\
                 'autoCompactionDefined' in bucket_params:
             init_params["autoCompactionDefined"] = bucket_params.get('autoCompactionDefined')
-            init_params["parallel_db_and_view_compaction"] = "false"
+            init_params["parallelDBAndViewCompaction"] = "false"
             init_params["databaseFragmentationThreshold"] = {"percentage": 50}
             init_params["viewFragmentationThreshold"] = {"percentage": 50}
             init_params["indexCompactionMode"] = "circular"
