@@ -6237,11 +6237,10 @@ class BucketUtils(ScopeUtils):
         if cluster.type == "serverless":
             rest_endpoint_node = buckets[0].servers[0]
 
-        rest = RestConnection(rest_endpoint_node)
         helper = BucketHelper(rest_endpoint_node)
         # Stats wrt Cluster nodes
         server_buckets = helper.get_buckets_json()
-        server_nodes = rest.get_nodes()
+        server_nodes = self.cluster_util.get_nodes(rest_endpoint_node)
         # Stats wrt the test
         test_values = dict()
 

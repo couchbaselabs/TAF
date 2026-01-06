@@ -243,8 +243,7 @@ class RebalanceHelper(object):
                               timeout_in_seconds=120, fn=None):
         log = logger.get("infra")
         fn = fn or RebalanceHelper.wait_for_stats
-        rest = RestConnection(master)
-        servers = rest.get_nodes()
+        servers = global_vars.cluster_util.get_nodes(master)
         verified = False
         start_time = time.time()
         for server in servers:

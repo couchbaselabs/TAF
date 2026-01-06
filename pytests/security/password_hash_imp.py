@@ -1,12 +1,14 @@
 import json
+
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 from pytests.basetestcase import ClusterSetup
 from pytests.bucket_collections.collections_base import CollectionBase
-from constants.platform_constants import os_constants
+from rebalance_utils.rebalance_util import RebalanceUtil
 from security_utils.security_utils import SecurityUtils
 from membase.api.rest_client import RestConnection
 from cb_constants import CbServer
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
-from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class PasswordHashImp(ClusterSetup):
@@ -27,7 +29,8 @@ class PasswordHashImp(ClusterSetup):
         self.x509 = x509main(host=self.cluster.master, standard=self.standard,
                              encryption_type=self.encryption_type,
                              passphrase_type=self.passphrase_type)
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        self.rebalance_util = RebalanceUtil(self.cluster_util.master)
 
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
@@ -41,22 +44,22 @@ class PasswordHashImp(ClusterSetup):
                                                 validate_docs=False)
 
     def failover_task(self):
-        rest_nodes = self.rest.get_nodes()
+        rest_nodes = self.cluster_util.get_nodes(self.cluster.master)
         self.log.info("servers to fail: {0}".format(self.servers_to_fail))
         if self.current_fo_strategy == CbServer.Failover.Type.GRACEFUL:
-            self.rest.monitorRebalance()
+            self.rebalance_util.monitor_rebalance()
             for node in self.servers_to_fail:
                 node = [t_node for t_node in rest_nodes if t_node.ip == node.ip][0]
-                status = self.rest.fail_over(node.id, graceful=True)
+                status = self.rest.perform_graceful_failover(node.id)
                 if status is False:
                     self.fail("Graceful failover failed for %s" % node)
                 self.sleep(5, "Wait for failover to start")
         elif self.current_fo_strategy == CbServer.Failover.Type.FORCEFUL:
-            self.rest.monitorRebalance()
+            self.rebalance_util.monitor_rebalance()
             for node in self.servers_to_fail:
                 node = [t_node for t_node in rest_nodes
                         if t_node.ip == node.ip][0]
-                status = self.rest.fail_over(node.id, graceful=False)
+                status = self.rest.perform_hard_failover(node.id)
                 if status is False:
                     self.fail("Hard failover failed for %s" % node)
                 self.sleep(5, "Wait for failover to start")
@@ -101,7 +104,8 @@ class PasswordHashImp(ClusterSetup):
         role = "admin"
         password = "password"
         payload = "name=" + user_name + "&roles=" + role + "&password=" + password
-        self.rest.add_set_builtin_user(user_name, payload)
+        security_apis = SecurityRestAPI(self.cluster)
+        security_apis.create_local_user(user_name, payload)
 
         # verify in isasl.pw
         self.validate_hash_algo(user_name, hash_algo_before_migration)
@@ -171,12 +175,12 @@ class PasswordHashImp(ClusterSetup):
             if failover_error:
                 self.fail(failover_error)
         self.test_password_hash_migration()
-
-        self.rest.monitorRebalance()
+        self.rebalance_util.monitor_rebalance()
 
     def test_password_hash_migration_node_down(self):
         # disable autofailover
-        status = self.rest.update_autofailover_settings(False, 60)
+        status = self.rest.update_auto_failover_settings(enabled="false",
+                                                         timeout=60)
         self.assertTrue(status, "Auto-failover disable failed")
         for server_to_fail in self.servers_to_fail:
             self.cluster_util.stop_server(self.cluster, server_to_fail)

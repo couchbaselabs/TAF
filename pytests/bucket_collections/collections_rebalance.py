@@ -958,8 +958,8 @@ class CollectionsRebalance(CollectionBase):
         Nodes are divided into groups iteratively. i.e: 1st node in Group 1,
         2nd in Group 2, 3rd in Group 1 & so on, when zone=2
         """
-        rest = RestConnection(self.servers[0])
-        nodes = rest.get_nodes(inactive_added=True)
+        nodes = self.cluster_util.get_nodes(server=self.servers[0],
+                                            inactive_added=True)
         zones = ["Group 1"]
         nodes_in_zone = {"Group 1": [node for node in nodes
                                      if node.ip == self.servers[0].ip]}

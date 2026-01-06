@@ -111,8 +111,7 @@ class ClusterOperationHelper(object):
         verification_threads = []
         log = logger.get("infra")
         queue = Queue()
-        rest = RestConnection(servers[0])
-        nodes = rest.get_nodes()
+        nodes = global_vars.cluster_util.get_nodes(servers[0])
         nodes_ip = []
         for node in nodes:
             nodes_ip.append(node.ip)
@@ -218,8 +217,7 @@ class ClusterOperationHelper(object):
 
     @staticmethod
     def flushctl_set(master, key, val, bucket='default'):
-        rest = RestConnection(master)
-        servers = rest.get_nodes()
+        servers = global_vars.cluster_util.get_nodes(master)
         for server in servers:
             if "kv" in server.services:
                 _server = {"ip": server.ip, "port": server.port,
@@ -231,8 +229,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def flushctl_set_per_node(server, key, val, bucket='default'):
         log = logger.get("infra")
-        rest = RestConnection(server)
-        node = rest.get_nodes_self()
+        node = global_vars.cluster_util.get_nodes_self(server)
         mc = MemcachedClientHelper.direct_client(server, bucket)
         log.info("Setting flush param on server {0}, {1} to {2} on {3}"
                  .format(server, key, val, bucket))
@@ -277,8 +274,7 @@ class ClusterOperationHelper(object):
     @staticmethod
     def set_expiry_pager_sleep_time(master, bucket, value=30):
         log = logger.get("infra")
-        rest = RestConnection(master)
-        servers = rest.get_nodes()
+        servers = global_vars.cluster_util.get_nodes(master)
         for server in servers:
             # Not bucket specific, so no need to pass in the bucket_name
             log.info("Connecting to memcached %s:%s"
