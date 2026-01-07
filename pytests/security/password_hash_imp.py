@@ -30,7 +30,7 @@ class PasswordHashImp(ClusterSetup):
                              encryption_type=self.encryption_type,
                              passphrase_type=self.passphrase_type)
         self.rest = ClusterRestAPI(self.cluster.master)
-        self.rebalance_util = RebalanceUtil(self.cluster_util.master)
+        self.rebalance_util = RebalanceUtil(self.cluster)
 
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
