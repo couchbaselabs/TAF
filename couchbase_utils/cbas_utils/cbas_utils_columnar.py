@@ -1840,6 +1840,7 @@ class ExternalLink_Util(RemoteLink_Util):
         <Required> type : s3
         <Required> accessKeyId : The access key of the link
         <Required> secretAccessKey : The secret key of the link
+        <Optional> sessionToken : The session token of the link
         <Required> region : The region of the link
         <Optional> serviceEndpoint : The service endpoint of the link.
         Note - please use the exact key names as provided above in link properties dict.
@@ -2888,7 +2889,8 @@ class External_Dataset_Util(Remote_Dataset_Util):
             file_format="json", redact_warning=None, header=None,
             null_string=None, include=None, exclude=None, parse_json_string=0,
             convert_decimal_to_double=0, timezone="",
-            embed_filter_values=None, timestamp_to_long=0, date_to_int=0, csv_type=None):
+            embed_filter_values=None, timestamp_to_long=0, date_to_int=0, csv_type=None,
+            table_format=None, namespace=None, table_name=None, snapshotId=None, snapshotTimestamp=None):
 
         cmd = "CREATE EXTERNAL DATASET"
 
@@ -2915,6 +2917,23 @@ class External_Dataset_Util(Remote_Dataset_Util):
             cmd += " USING \"{0}\"".format(path_on_external_container)
 
         with_parameters = dict()
+
+        if table_format == "iceberg":
+            with_parameters["table-format"] = table_format
+            if namespace:
+                with_parameters["namespace"] = namespace
+            if table_name:
+                with_parameters["tableName"] = table_name
+            if snapshotId:
+                with_parameters["snapshotId"] = snapshotId
+            if snapshotTimestamp:
+                with_parameters["snapshotTimestamp"] = snapshotTimestamp
+            if convert_decimal_to_double > 0:
+                if convert_decimal_to_double == 1:
+                    with_parameters["decimal-to-double"] = True
+                else:
+                    with_parameters["decimal-to-double"] = False
+
         if file_format == "delta":
             with_parameters["table-format"] = file_format
             if timezone:
@@ -2986,14 +3005,15 @@ class External_Dataset_Util(Remote_Dataset_Util):
             timezone="", validate_error_msg=False, username=None,
             password=None, expected_error=None, expected_error_code=None,
             timeout=300, analytics_timeout=300, embed_filter_values=None,
-            timestamp_to_long=0, date_to_int=0, csv_type=None):
+            timestamp_to_long=0, date_to_int=0, csv_type=None,
+            table_format=None, namespace=None, table_name=None, snapshotId=None, snapshotTimestamp=None):
         """
         Creates a dataset for an external resource like AWS S3 bucket /
         Azure container / GCP buckets.
         Note - No shadow dataset is created for this type of external datasets.
         :param dataset_name (str) : Name for the dataset to be created.
         :param external_container_name (str): AWS S3 bucket / Azure
-        container/ GCP bukcet name from where the data will be read
+        container/ GCP bukcet / AWS Glue Catalog name from where the data will be read
         into the dataset. S3 bucket should be in the same region as the
         link, that is used to create this dataset.
         :param dataverse_name str, Dataverse where dataset is to be created.
@@ -3054,8 +3074,9 @@ class External_Dataset_Util(Remote_Dataset_Util):
             path_on_external_container, file_format, redact_warning, header,
             null_string, include, exclude, parse_json_string,
             convert_decimal_to_double, timezone, embed_filter_values,
-            timestamp_to_long, date_to_int, csv_type)
-
+            timestamp_to_long, date_to_int, csv_type,
+            table_format, namespace, table_name, snapshotId,snapshotTimestamp)
+        print("cmd: ", cmd)
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
@@ -3288,10 +3309,20 @@ class External_Dataset_Util(Remote_Dataset_Util):
                         "api_timeout", 300),
                     analytics_timeout=cbas_spec.get(
                         "cbas_timeout", 300),
+                    embed_filter_values=dataset_obj.dataset_properties.get(
+                        "embed_filter_values"),
                     timestamp_to_long=dataset_obj.dataset_properties.get(
                         "timestamp_to_long", 0),
                     date_to_int=dataset_obj.dataset_properties.get(
-                        "date_to_int", 0)
+                        "date_to_int", 0),
+                    csv_type=dataset_obj.dataset_properties.get(
+                        "csv_type"),
+                    table_format=dataset_obj.dataset_properties.get(
+                        "table_format"),
+                    namespace=dataset_obj.dataset_properties.get(
+                        "namespace"),
+                    table_name=dataset_obj.dataset_properties.get(
+                        "table_name")
                 ))
             if results[-1]:
                 dataverse.external_datasets[
@@ -3335,7 +3366,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         try:
             hotel = Hotel(include_reviews_field=include_reviews_field)
             hotel.generate_document(document_size, country_type, include_country)
-            doc = json.loads(json.dumps(hotel.__dict__, default=lambda o: o.__dict__, ensure_ascii=False))
+            doc = hotel.to_dict()
             del hotel
 
             # Added nested fields
@@ -7383,6 +7414,128 @@ class CbasUtil(CBOUtil):
                 return False, f"UDF {udf} is not present in Metadata"
 
         return True, None
+
+    def create_catalog(self, cluster, catalog_name, catalog_type, catalog_source=None,
+                       link_name=None, warehouse_path=None, uri=None, sigv4SigningName=None,
+                       sigv4SigningRegion=None, quotaProjectId=None, with_properties=None,
+                       if_not_exists=False, validate_error_msg=False,
+                       expected_error=None, expected_error_code=None,
+                       username=None, password=None, timeout=120,
+                       analytics_timeout=120):
+        """
+        Creates an Iceberg catalog in Couchbase Analytics.
+        :param cluster: cluster object
+        :param catalog_name: str, name of the catalog to be created
+        :param catalog_type: str, type of catalog (e.g., "Iceberg")
+        :param catalog_source: str, source type (e.g., "AWS_GLUE")
+        :param link_name: str, name of the external link to use
+        :param warehouse_path: str, S3 warehouse path (e.g., "s3://bucket/data/database.db/table")
+        :param uri: str, URI of the catalog
+        :param sigv4SigningName: str, AWS account ID for signing AWS requests
+        :param sigv4SigningRegion: str, AWS region for signing AWS requests
+        :param quotaProjectId: str, GCP project ID for signing GCP requests
+        :param with_properties: dict, additional properties for the WITH clause
+        :param if_not_exists: bool, use IF NOT EXISTS flag
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param username: str
+        :param password: str
+        :param timeout: int, REST API timeout
+        :param analytics_timeout: int, analytics query timeout
+        :return: boolean
+        """
+        cmd = "CREATE CATALOG {0}".format(catalog_name)
+
+        if if_not_exists:
+            cmd += " IF NOT EXISTS"
+
+        cmd += " TYPE {0}".format(catalog_type)
+
+        if catalog_source and link_name:
+            cmd += " SOURCE {0}".format(catalog_source)
+            cmd += " AT {0}".format(link_name)
+
+        # Build WITH clause
+        with_params = dict()
+        if warehouse_path:
+            with_params["warehouse"] = warehouse_path
+        if uri:
+            with_params["uri"] = uri
+        if sigv4SigningName:
+            with_params["sigv4SigningName"] = sigv4SigningName
+        if sigv4SigningRegion:
+            with_params["sigv4SigningRegion"] = sigv4SigningRegion
+        if quotaProjectId:
+            with_params["quotaProjectId"] = quotaProjectId
+
+        if with_properties:
+            with_params.update(with_properties)
+
+        if with_params:
+            cmd += " WITH {0}".format(json.dumps(with_params))
+        elif catalog_source and link_name:
+            # Grammar requires WITH clause for SOURCE ... AT ... form
+            cmd += " WITH {}"
+
+        cmd += ";"
+
+        print("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def drop_catalog(self, cluster, catalog_name, if_exists=False,
+                     validate_error_msg=False, expected_error=None,
+                     expected_error_code=None, username=None, password=None,
+                     timeout=120, analytics_timeout=120):
+        """
+        Drops a catalog.
+        :param cluster: cluster object
+        :param catalog_name: str, name of the catalog to be dropped
+        :param if_exists: bool, use IF EXISTS flag
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param expected_error_code: str
+        :param username: str
+        :param password: str
+        :param timeout: int, REST API timeout
+        :param analytics_timeout: int, analytics query timeout
+        :return: boolean
+        """
+        cmd = "DROP CATALOG {0}".format(catalog_name)
+
+        if if_exists:
+            cmd += " IF EXISTS"
+
+        cmd += ";"
+
+        self.log.debug("Executing cmd - \n{0}\n".format(cmd))
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+
 
 
 class FlushToDiskTask(object):
