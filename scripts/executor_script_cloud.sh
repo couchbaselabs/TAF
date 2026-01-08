@@ -77,7 +77,7 @@ pyenv local $PYENV_VERSION
 python -m pip install -r requirements.txt
 
 # Export JAVA_HOME for delta_spark dependencies to work
-tem_java_home=`update-alternatives --list java | head -1 | sed  's|/bin/java||g'`
+tem_java_home=`update-alternatives --list java | grep 'java-8' | sed  's|/bin/java||g'`
 export JAVA_HOME=`echo $tem_java_home | sed  's|/jre||g'`
 export MAVEN_OPTS=""
 echo "JAVA_HOME is $JAVA_HOME"
