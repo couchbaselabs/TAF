@@ -28,6 +28,18 @@ class RebalanceBaseTest(BaseTestCase):
     def setUp(self):
         super(RebalanceBaseTest, self).setUp()
         self.rest = ClusterRestAPI(self.cluster.master)
+
+        # Verify FBR (File-Based Rebalance) setting is enabled
+        status, content = self.rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+        file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+        self.assertTrue(file_based_backfill_enabled,
+                       "fileBasedBackfillEnabled should be True by default in Couchbase 8.1")
+        self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+
         self.doc_ops = self.input.param("doc_ops", "create")
         self.bucket_size = self.input.param("bucket_size", 256)
         self.key_size = self.input.param("key_size", None)
