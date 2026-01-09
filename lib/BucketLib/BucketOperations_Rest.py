@@ -425,8 +425,8 @@ class BucketHelper(BucketRestApi):
                 'autoCompactionDefined' in bucket_params:
             init_params["autoCompactionDefined"] = bucket_params.get('autoCompactionDefined')
             init_params["parallelDBAndViewCompaction"] = "false"
-            init_params["databaseFragmentationThreshold"] = {"percentage": 50}
-            init_params["viewFragmentationThreshold"] = {"percentage": 50}
+            # init_params["databaseFragmentationThreshold"] = {"percentage": 50}
+            # init_params["viewFragmentationThreshold"] = {"percentage": 50}
             init_params["indexCompactionMode"] = "circular"
             init_params["purgeInterval"] = 3
 
