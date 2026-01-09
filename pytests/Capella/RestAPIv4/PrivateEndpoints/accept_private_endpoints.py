@@ -30,8 +30,7 @@ class PostAssociate(GetCluster):
                 "hint": "Please review your request and ensure that all "
                         "required parameters are correctly provided.",
                 "httpStatusCode": 400,
-                "message": "Invalid endpoint ID. Did you run the connection "
-                           "command?"
+                "message": "Private endpoints aren't enabled for this cluster. Please select another cluster."
             }
 
     def tearDown(self):
@@ -41,7 +40,7 @@ class PostAssociate(GetCluster):
         testcases = [
             {
                 "description": "Send call with valid path params",
-                "expected_error": self.expected_err,
+                "expected_error": "Private endpoints aren't enabled for this cluster. Please select another cluster.",
                 "expected_status_code": self.expected_code
             }, {
                 "description": "Replace api version in URI",

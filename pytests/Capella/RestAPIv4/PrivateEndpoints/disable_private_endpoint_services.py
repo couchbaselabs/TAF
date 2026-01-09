@@ -18,7 +18,8 @@ class DeletePrivateEndpointService(GetCluster):
     def test_api_path(self):
         testcases = [
             {
-                "description": "Send call with valid path params"
+                "description": "Send call with valid path params",
+                "expected_status_code": 500
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService",

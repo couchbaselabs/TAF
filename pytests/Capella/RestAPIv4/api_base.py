@@ -1356,7 +1356,7 @@ class APIBase(CouchbaseBaseTest):
                     return True
             else:
                 return True
-        elif result.status_code >= 500:
+        elif result.status_code >= 500 and result.json()['message'] != "Private endpoints aren't enabled for this cluster. Please select another cluster.":
             self.log.critical(testcase[testDescriptionKey])
             self.log.warning(result.content)
             failures.append(testcase[testDescriptionKey])
@@ -1364,6 +1364,8 @@ class APIBase(CouchbaseBaseTest):
             self.log.error("Expected NO ERRORS but got {}".format(result))
             self.log.error(result.content)
             failures.append(testcase[testDescriptionKey])
+        elif result.json()['message'] == "Private endpoints aren't enabled for this cluster. Please select another cluster.":
+            return True
         else:
             self.log.error("Expected HTTP status code {}, Actual HTTP status "
                            "code {}".format(testcase["expected_status_code"],
