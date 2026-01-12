@@ -104,7 +104,7 @@ class PasswordHashImp(ClusterSetup):
         role = "admin"
         password = "password"
         payload = "name=" + user_name + "&roles=" + role + "&password=" + password
-        security_apis = SecurityRestAPI(self.cluster)
+        security_apis = SecurityRestAPI(self.cluster.master)
         security_apis.create_local_user(user_name, payload)
 
         # verify in isasl.pw
