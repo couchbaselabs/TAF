@@ -73,13 +73,13 @@ class SecurityBase(CouchbaseBaseTest):
         self.create_different_organization_roles()
         self.create_api_keys_for_different_roles()
         self.project_id = self.input.capella.get("project_id", None)
-        if self.project_id is None:
+        if not self.project_id:
             self.create_project(self.prefix + "Project")
 
         self.cluster_id = self.input.capella.get("cluster_id", None)
-        if self.cluster_id is None:
+        if not self.cluster_id:
             self.create_cluster(self.prefix + "Cluster", self.server_version)
-        if self.cluster_id is not None:
+        if self.cluster_id:
             self.sleep(10, "Waiting for cluster to be responsive")
             self.allow_ip(self.cluster_id, self.project_id)
 
@@ -88,10 +88,10 @@ class SecurityBase(CouchbaseBaseTest):
     def tearDown(self):
         self.log.info("-------Teardown started for SecurityBase-------")
 
-        if self.input.capella.get("cluster_id") is None:
+        if not self.input.capella.get("cluster_id"):
             self.delete_cluster()
 
-        if self.input.capella.get("project_id") is None:
+        if not self.input.capella.get("project_id"):
             self.delete_project()
 
         self.delete_api_keys_for_different_roles()
