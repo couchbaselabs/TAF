@@ -171,7 +171,9 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                  elastic=False, es_server=None, es_api_key=None,
                  es_similarity=None,
                  base_vectors_file_path=None, sift_url=None,
-                 model=None, mockVector=False, dim=128, base64=False):
+                 model=None, mockVector=False, dim=128, base64=False,
+                 num_vbuckets=CbServer.total_vbuckets,
+                 target_vbuckets=None):
         """
         Gateway to start doc loading using Java SDK.
         Have common params for both storage_tests and regular test.
@@ -191,6 +193,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.bucket = bucket
         self.scope = scope_name
         self.collection = collection_name
+        self.vbuckets = num_vbuckets
 
         # SDK load parameters
         self.exp = exp
@@ -210,7 +213,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.ops = ops
         self.gtm = False
         self.iterations = iterations
-        self.target_vbuckets = None
+        self.target_vbuckets = target_vbuckets
         self.vbuckets = CbServer.total_vbuckets
 
         # Key / Doc properties
@@ -288,7 +291,6 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             self.doc_size = generator.doc_size
             self.key_size = generator.key_size
             self.key_prefix = generator.name
-            self.vbuckets = 1024
 
             if hasattr(generator, "vbuckets"):
                 self.vbuckets = generator.vbuckets
