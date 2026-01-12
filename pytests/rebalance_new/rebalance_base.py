@@ -40,6 +40,12 @@ class RebalanceBaseTest(BaseTestCase):
                        "fileBasedBackfillEnabled should be True by default in Couchbase 8.1")
         self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
 
+        # Check if FBR should be disabled for DCP fallback testing
+        disable_file_based_rebalance = self.input.param("disable_file_based_rebalance", False)
+        if disable_file_based_rebalance:
+            self.cluster_util.set_file_based_rebalance(
+                self.cluster.master, enabled=False)
+
         self.doc_ops = self.input.param("doc_ops", "create")
         self.bucket_size = self.input.param("bucket_size", 256)
         self.key_size = self.input.param("key_size", None)
@@ -272,6 +278,10 @@ class RebalanceBaseTest(BaseTestCase):
                                             num_writer_threads="default",
                                             num_reader_threads="default",
                                             num_storage_threads="default")
+
+        # Always restore FBR to default (True)
+        self.cluster_util.set_file_based_rebalance(
+            self.cluster.master, enabled=True)
 
         super(RebalanceBaseTest, self).tearDown()
 

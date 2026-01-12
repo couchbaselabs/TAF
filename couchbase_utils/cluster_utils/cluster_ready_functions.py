@@ -605,6 +605,25 @@ class ClusterUtils:
             rebalance_moves_per_node=rebalanceMovesPerNode)
         self.log.info(f"Update rebalance settings: {status}::{content}")
 
+    def set_file_based_rebalance(self, cluster_node, enabled=True):
+        """
+        Set file-based rebalance (FBR) setting on the cluster.
+
+        :param cluster_node: The cluster node to configure (master/orchestrator)
+        :param enabled: True to enable FBR (default), False to disable (DCP fallback)
+        :return: tuple (status, content) from the API call
+        """
+        rest = ClusterRestAPI(cluster_node)
+        setting_value = 'true' if enabled else 'false'
+
+        self.log.info(f"Setting fileBasedBackfillEnabled to {setting_value}")
+        status, content = rest.set_internal_settings('fileBasedBackfillEnabled', setting_value)
+
+        if not status:
+            self.log.error(f"Failed to set fileBasedBackfillEnabled to {setting_value}: {content}")
+
+        return status, content
+
     def set_node_capacity(self, cluster_node,
                           data_node_capacity=25000,
                           index_node_capacity=1000000,
