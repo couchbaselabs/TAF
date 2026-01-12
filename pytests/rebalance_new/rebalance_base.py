@@ -41,8 +41,7 @@ class RebalanceBaseTest(BaseTestCase):
         self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
 
         # Check if FBR should be disabled for DCP fallback testing
-        disable_file_based_rebalance = self.input.param("disable_file_based_rebalance", False)
-        if disable_file_based_rebalance:
+        if self.disable_file_based_rebalance:
             self.cluster_util.set_file_based_rebalance(
                 self.cluster.master, enabled=False)
 
@@ -278,10 +277,6 @@ class RebalanceBaseTest(BaseTestCase):
                                             num_writer_threads="default",
                                             num_reader_threads="default",
                                             num_storage_threads="default")
-
-        # Always restore FBR to default (True)
-        self.cluster_util.set_file_based_rebalance(
-            self.cluster.master, enabled=True)
 
         super(RebalanceBaseTest, self).tearDown()
 

@@ -26,6 +26,24 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
 
     def setUp(self):
         super(AutoFailoverBaseTest, self).setUp()
+        self.rest = ClusterRestAPI(self.orchestrator)
+
+        # Verify FBR (File-Based Rebalance) setting is enabled
+        status, content = self.rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+        file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+        self.assertTrue(file_based_backfill_enabled,
+                       "fileBasedBackfillEnabled should be True by default in Couchbase 8.1")
+        self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+
+        # Check if FBR should be disabled for DCP fallback testing
+        if self.disable_file_based_rebalance:
+            self.cluster_util.set_file_based_rebalance(
+                self.orchestrator, enabled=False)
+
         self.spec_name = self.input.param("bucket_spec", None)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.skip_collections_during_data_load = self.input.param(
@@ -38,7 +56,6 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
             ["com.couchbase.client.core.error.CouchbaseException: "
              "The range scan internal partition UUID could not be found on the server"])
         self.range_scan_collections = self.input.param("range_scan_collections", None)
-        self.rest = ClusterRestAPI(self.orchestrator)
         self.server_index_to_fail = self.input.param("server_index_to_fail",
                                                      None)
         self.key_size = self.input.param("key_size", None)

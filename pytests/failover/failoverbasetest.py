@@ -2,6 +2,7 @@
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
@@ -18,6 +19,24 @@ class FailoverBaseTest(BaseTestCase):
         self._cleanup_nodes = list()
         self._failed_nodes = list()
         super(FailoverBaseTest, self).setUp()
+        self.rest = ClusterRestAPI(self.cluster.master)
+
+        # Verify FBR (File-Based Rebalance) setting is enabled
+        status, content = self.rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+        file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+        self.assertTrue(file_based_backfill_enabled,
+                       "fileBasedBackfillEnabled should be True by default in Couchbase 8.1")
+        self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+
+        # Check if FBR should be disabled for DCP fallback testing
+        if self.disable_file_based_rebalance:
+            self.cluster_util.set_file_based_rebalance(
+                self.cluster.master, enabled=False)
+
         default_map_func = "function (doc) {\n  emit(doc._id, doc);\n}"
         self.default_view_name = "default_view"
         self.default_view = View(self.default_view_name, default_map_func,

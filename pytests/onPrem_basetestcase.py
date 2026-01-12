@@ -84,6 +84,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.input.param("network_delay_between_nodes", None)
         self.network_delay_for_sdk = \
             self.input.param("network_delay_for_sdk", None)
+        self.disable_file_based_rebalance = \
+            self.input.param("disable_file_based_rebalance", False)
         # End of cluster info parameters
 
         self.bucket_replica_index = self.input.param("bucket_replica_index",
@@ -871,6 +873,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
         elif sys_event_validation_failure:
             self.log.critical("System event log validation failed: %s"
                               % sys_event_validation_failure)
+
+        # Always restore FBR to default (True) for all clusters
+        for _, cluster in self.cb_clusters.items():
+            self.cluster_util.set_file_based_rebalance(
+                cluster.master, enabled=True)
 
         self.shutdown_task_manager()
 
