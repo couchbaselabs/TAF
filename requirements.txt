@@ -21,3 +21,4 @@ azure-core
 beautifultable
 faker
 elasticsearch
+azure-storage-blob
