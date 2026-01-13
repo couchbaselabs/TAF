@@ -18,6 +18,9 @@ from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 
+from couchbase.exceptions import InvalidIndexException, \
+    QueryIndexNotFoundException
+
 
 class CollectionBase(ClusterSetup):
     def setUp(self):
@@ -264,7 +267,8 @@ class CollectionBase(ClusterSetup):
                             '{{ "defer_build": true, "num_replica": 1 }};' \
                         .format(bucket.name, scope.name, col.name)
                     test_obj.log.debug("Creating index {}".format(query))
-                    sdk_client.cluster.query(query)
+                    res = sdk_client.cluster.query(query)
+                    for _ in res.rows(): pass
 
             test_obj.log.info("Building deferred indexes")
             index_names = list()
@@ -276,7 +280,8 @@ class CollectionBase(ClusterSetup):
                             "(`{0}_{1}_{2}_index`) USING GSI" \
                         .format(bucket.name, scope.name, col.name)
                     try:
-                        sdk_client.cluster.query(query)
+                        res = sdk_client.cluster.query(query)
+                        for _ in res.rows(): pass
                     except Exception as e:
                         if "Build Already In Progress" in str(e):
                             pass
@@ -297,7 +302,8 @@ class CollectionBase(ClusterSetup):
                     if state == "online":
                         test_obj.log.debug("Index {} online".format(i_name))
                         break
-                    test_obj.sleep(30)
+                    test_obj.sleep(10)
+                    retry -= 1
                 else:
                     test_obj.fail("{} - creation timed out".format(i_name))
 
@@ -392,9 +398,10 @@ class CollectionBase(ClusterSetup):
                                 "on `{0}`.`{1}`.`{2}` USING GSI" \
                             .format(bucket.name, scope.name, col.name)
                         try:
-                            sdk_client.cluster.query(query)
-                        except (IndexFailureException,
-                                IndexNotFoundException) as e:
+                            res = sdk_client.cluster.query(query)
+                            for _ in res: pass
+                        except (QueryIndexNotFoundException,
+                                InvalidIndexException) as e:
                             test_obj.log.warning(e)
             CollectionBase.create_indexes_for_all_collections(test_obj,
                                                               sdk_client)
