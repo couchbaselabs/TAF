@@ -22,3 +22,5 @@ beautifultable
 faker
 elasticsearch
 azure-storage-blob
+cryptography==46.0.3
+PyJWT==2.10.1
