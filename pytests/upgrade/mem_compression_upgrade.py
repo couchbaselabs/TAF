@@ -144,8 +144,7 @@ class MemCompressionUpgradeTests(UpgradeBase):
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                     self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.log.info("Changing master")
             try:
@@ -249,8 +248,7 @@ class MemCompressionUpgradeTests(UpgradeBase):
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                     self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.log.info("Changing master")
             try:

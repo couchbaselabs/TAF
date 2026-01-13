@@ -183,8 +183,7 @@ class KVUpgradeTests(UpgradeBase):
         # Performing upgrade
         if upgrade_cluster == "source":
             self.log.info("Upgrading node: {}".format(self.cluster.master.ip))
-            self.upgrade_function[self.upgrade_type](self.cluster.master,
-                                                     self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](self.cluster.master)
         elif upgrade_cluster == "remote":
             self.log.info("Upgrading node: {}".format(in_node.ip))
             self.upgrade_helper.new_install_version_on_all_nodes(

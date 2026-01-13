@@ -668,10 +668,9 @@ class UpgradeTests(UpgradeBase):
                             % node_to_upgrade.ip)
                 if self.upgrade_type == "offline":
                     self.upgrade_function[self.upgrade_type](
-                        node_to_upgrade, self.upgrade_version, True)
+                        node_to_upgrade, True)
                 else:
-                    self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                            self.upgrade_version)
+                    self.upgrade_function[self.upgrade_type](node_to_upgrade)
                 self.cluster_util.print_cluster_stats(self.cluster)
                 num_nodes_to_be_upgraded -= 1
                 if cbas_cc_node_upgrade_sequence == "last" and num_nodes_to_be_upgraded > 1:

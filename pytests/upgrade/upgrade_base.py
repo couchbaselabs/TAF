@@ -605,8 +605,7 @@ class UpgradeBase(BaseTestCase):
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-    def online_swap(self, node_to_upgrade, version,
-                    install_on_spare_node=True):
+    def online_swap(self, node_to_upgrade, install_on_spare_node=True):
         rebalance_fail = None
         vb_details = dict()
         vb_verification = dict()
@@ -629,7 +628,7 @@ class UpgradeBase(BaseTestCase):
                              "download_build", "uninstall", "install"]
             # Install target version on spare node
             self.upgrade_helper.new_install_version_on_all_nodes(
-                nodes=[self.spare_node], version=version,
+                nodes=[self.spare_node], version=self.upgrade_version,
                 cluster_profile=self.cluster_profile,
                 install_tasks=install_tasks)
             self.sleep(60, "Wait after installation on the spare node")
@@ -723,7 +722,7 @@ class UpgradeBase(BaseTestCase):
         # Update spare_node to rebalanced-out node
         self.spare_node = node_to_upgrade
 
-    def online_rebalance_out_in(self, node_to_upgrade, version,
+    def online_rebalance_out_in(self, node_to_upgrade,
                                 install_on_spare_node=True):
         """
         cluster --OUT--> Node with previous version
@@ -754,7 +753,7 @@ class UpgradeBase(BaseTestCase):
         # Install target version on spare node
         if install_on_spare_node:
             self.upgrade_helper.new_install_version_on_all_nodes(
-                nodes=[self.spare_node], version=version,
+                nodes=[self.spare_node], version=self.upgrade_version,
                 cluster_profile=self.cluster_profile)
 
         # Rebalance-in spare node into the cluster
@@ -786,7 +785,7 @@ class UpgradeBase(BaseTestCase):
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-    def online_rebalance_in_out(self, node_to_upgrade, version,
+    def online_rebalance_in_out(self, node_to_upgrade,
                                 install_on_spare_node=True):
         """
         cluster <--IN-- Node with latest_build
@@ -801,7 +800,7 @@ class UpgradeBase(BaseTestCase):
         if install_on_spare_node:
             # Install target version on spare node
             self.upgrade_helper.new_install_version_on_all_nodes(
-                nodes=[self.spare_node], version=version,
+                nodes=[self.spare_node], version=self.upgrade_version,
                 cluster_profile=self.cluster_profile)
 
         # Rebalance-in spare node into the cluster
@@ -911,7 +910,7 @@ class UpgradeBase(BaseTestCase):
     def failover_full_recovery(self, node_to_upgrade, graceful=True):
         self.failover_recovery(node_to_upgrade, "full", graceful)
 
-    def offline(self, node_to_upgrade, version, rebalance_required=True):
+    def offline(self, node_to_upgrade, rebalance_required=True):
         rest = ClusterRestAPI(node_to_upgrade)
         self.log.info("Stopping couchbase server on node %s" % node_to_upgrade.ip)
         shell = RemoteMachineShellConnection(node_to_upgrade)
@@ -922,7 +921,7 @@ class UpgradeBase(BaseTestCase):
                          "download_build", "install"]
         # Install target version on the node
         self.upgrade_helper.new_install_version_on_all_nodes(
-            nodes=[node_to_upgrade], version=version,
+            nodes=[node_to_upgrade], version=self.upgrade_version,
             cluster_profile=self.cluster_profile,
             install_tasks=install_tasks)
         self.sleep(30, "Wait after installation on the node")

@@ -36,13 +36,13 @@ class LuksUpgrade(UpgradeBase):
         self.log.info("Upgrading cluster nodes to target version")
         nodes_to_upgrade = self.cluster.servers[:self.nodes_init]
         total_nodes_to_upgrade = self.nodes_init
+        self.upgrade_version = self.upgrade_version[0]
         for index, node_to_upgrade in enumerate(nodes_to_upgrade):
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
             self.spare_node = self.cluster.servers[index+self.nodes_init]
             self.upgrade_function[self.upgrade_type](
                 self.cluster.servers[index],
-                self.upgrade_version[0],
                 install_on_spare_node=False)
             self.cluster_util.print_cluster_stats(self.cluster)
 

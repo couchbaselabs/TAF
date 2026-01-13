@@ -290,10 +290,9 @@ class UpgradeTests(UpgradeBase):
                     self.upgrade_function[self.upgrade_type](node_to_upgrade)
                 elif self.upgrade_type == "full_offline":
                     self.upgrade_function[self.upgrade_type](
-                        self.cluster.nodes_in_cluster, self.upgrade_version)
+                        self.cluster.nodes_in_cluster)
                 else:
-                    self.upgrade_function[self.upgrade_type](
-                        node_to_upgrade, self.upgrade_version)
+                    self.upgrade_function[self.upgrade_type](node_to_upgrade)
 
                 # Upgrade of node
                 self.cluster_util.print_cluster_stats(self.cluster)
@@ -620,10 +619,9 @@ class UpgradeTests(UpgradeBase):
                 try:
                     if self.upgrade_type == "full_offline":
                         self.upgrade_function[self.upgrade_type](
-                            self.cluster.nodes_in_cluster, self.upgrade_version)
+                            self.cluster.nodes_in_cluster)
                     else:
-                        self.upgrade_function[self.upgrade_type](
-                            node_to_upgrade, self.upgrade_version)
+                        self.upgrade_function[self.upgrade_type](node_to_upgrade)
                 except Exception as e:
                     # Has to happen only for the 1st node else it is a failure
                     if itr != 0:
@@ -716,8 +714,7 @@ class UpgradeTests(UpgradeBase):
                 self.buckets_to_load = self.cluster.buckets
                 self.loading_large_documents(large_docs_start_num)
 
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                    self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
             itr += 1
             self.PrintStep("Upgrade of node {0} done".format(itr))
             self.cluster_util.print_cluster_stats(self.cluster)
@@ -813,8 +810,7 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Selected node for upgrade : {0}".format(node_to_upgrade.ip))
             upgraded_nodes.append(self.spare_node)
 
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                    self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
 
@@ -840,16 +836,17 @@ class UpgradeTests(UpgradeBase):
 
             count += 1
 
+        self.upgrade_version = self.upgrade_chain[0]
+
         self.PrintStep("Starting the downgrade of nodes to {0}"
-                       .format(self.upgrade_chain[0]))
+                       .format(self.upgrade_version))
 
         self.log.info("Nodes in {0} : {1}".format(self.upgrade_version,
                                                   upgraded_nodes))
         for node_to_downgrade in upgraded_nodes:
             self.log.info(f"Selected node for downgrade : {node_to_downgrade}")
 
-            self.upgrade_function[self.upgrade_type](node_to_downgrade,
-                                                     self.upgrade_chain[0])
+            self.upgrade_function[self.upgrade_type](node_to_downgrade)
 
             self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
@@ -931,8 +928,7 @@ class UpgradeTests(UpgradeBase):
                                      "failover_full_recovery"]:
                 self.upgrade_function[self.upgrade_type](node_to_upgrade)
             else:
-                self.upgrade_function[self.upgrade_type](
-                    node_to_upgrade, self.upgrade_version)
+                self.upgrade_function[self.upgrade_type](node_to_upgrade)
             if upgrade_data_load:
                 pillowfight_thread.join()
 
@@ -955,8 +951,7 @@ class UpgradeTests(UpgradeBase):
             while node_to_upgrade is not None:
                 self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
 
-                self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                        self.upgrade_version)
+                self.upgrade_function[self.upgrade_type](node_to_upgrade)
                 itr += 1
                 self.PrintStep("Upgrade of node {0} done".format(itr))
                 self.cluster_util.print_cluster_stats(self.cluster)
@@ -1015,8 +1010,7 @@ class UpgradeTests(UpgradeBase):
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                     self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
             try:
                 self.cluster.update_master_using_diag_eval(
                     self.cluster.servers[0])
@@ -1180,8 +1174,7 @@ class UpgradeTests(UpgradeBase):
                 update_task = Thread(target=run_transaction_updates)
                 update_task.start()
 
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                     self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
             try:
                 self.cluster.update_master_using_diag_eval(
                     self.cluster.servers[0])
@@ -1267,8 +1260,7 @@ class UpgradeTests(UpgradeBase):
 
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                     self.upgrade_version)
+            self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
 
             try:
