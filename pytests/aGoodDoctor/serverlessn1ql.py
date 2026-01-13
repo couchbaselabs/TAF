@@ -129,7 +129,7 @@ def execute_via_sdk(client, statement, readonly=False,
     output["requestID"] = result.metaData().requestId()
 
     try:
-        output["results"] = result.rowsAsObject()
+        output["results"] = list(result)
     except:
         output["results"] = None
 

@@ -2365,7 +2365,7 @@ class basic_ops(ClusterSetup):
             "CREATE INDEX `c1` ON `{}`.`_default`.`c1`(body) USING GSI"
             .format(bucket.name), timeout=300)
         query = "SELECT state FROM system:indexes WHERE name='c1'"
-        state = client.cluster.query(query).rowsAsObject()[0].get("state")
+        state = list(client.cluster.query(query))[0].get("state")
         client.close()
         if state != "online":
             self.fail("Create index timed out")

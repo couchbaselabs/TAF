@@ -173,8 +173,8 @@ class basic_ops(ClusterSetup):
             index = 0
             state = None
             while index < 30:
-                state = client.cluster.query(query) \
-                    .rowsAsObject()[0].get("state")
+                result = client.cluster.query(query)
+                state = list(result)[0].get("state")
                 if state == "online":
                     break
                 self.sleep(1)

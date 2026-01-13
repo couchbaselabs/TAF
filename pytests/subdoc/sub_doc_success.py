@@ -1009,10 +1009,10 @@ class BasicOps(DurabilityTestsBase):
                              % (index_name, bucket.name))
         self.sleep(2, "Wait for primary index to be created")
         while not index_created and index_retry != 0:
-            state = client.cluster \
+            result = client.cluster \
                 .query("SELECT state FROM system:indexes "
-                       "WHERE name='%s'" % index_name) \
-                .rowsAsObject()[0].get("state")
+                       "WHERE name='%s'" % index_name)
+            state = list(result)[0].get("state")
             if state == "online":
                 index_created = True
             else:

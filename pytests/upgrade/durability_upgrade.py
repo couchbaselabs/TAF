@@ -246,7 +246,7 @@ class UpgradeTests(UpgradeBase):
                         self.cluster, None,
                         servers=[self.cluster.index_nodes[0]])
                     query = 'SELECT name FROM system:indexes;'
-                    result = sdk_client.cluster.query(query).rowsAsObject()
+                    result = sdk_client.cluster.query(query)
                     for idx in result:
                         self.indexes.add(idx.get("name"))
                     sdk_client.close()
@@ -2329,7 +2329,7 @@ class UpgradeTests(UpgradeBase):
         sdk_client = SDKClient(self.cluster, None,
                                servers=[self.cluster.index_nodes[0]])
         query = 'SELECT name FROM system:indexes;'
-        result = sdk_client.cluster.query(query).rowsAsObject()
+        result = sdk_client.cluster.query(query)
         idx_count = 0
         for idx in result:
             idx_count += 1
