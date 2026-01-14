@@ -393,12 +393,11 @@ class CBASBucketOperations(CBASBaseTest):
             first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
             profession = ['doctor', 'lawyer']
 
-            template_obj = JsonObject.create()
-            template_obj.put("number", 0)
-            template_obj.put("first_name", "")
-            template_obj.put("profession", "")
-            template_obj.put("mutated", 0)
-            template_obj.put("mutation_type", "ADD")
+            template_obj = {"number": 0,
+                           "first_name": "",
+                           "profession": "",
+                           "mutated": 0,
+                           "mutation_type": "ADD"}
             doc_gen = DocumentGenerator(
                 "test_docs", template_obj, start=0, end=1000,
                 randomize=False, first_name=first, profession=profession,
@@ -568,12 +567,11 @@ class CBASEphemeralBucketOperations(CBASBucketOperations):
         first = ['james', 'sharon', 'dave', 'bill', 'mike', 'steve']
         profession = ['doctor', 'lawyer']
 
-        template_obj = JsonObject.create()
-        template_obj.put("number", 0)
-        template_obj.put("first_name", "")
-        template_obj.put("profession", "")
-        template_obj.put("mutated", 0)
-        template_obj.put("mutation_type", "ADD")
+        template_obj = {"number": 0,
+                       "first_name": "",
+                       "profession": "",
+                       "mutated": 0,
+                       "mutation_type": "ADD"}
 
         while True:
             self.log.info("Add documents to bucket")

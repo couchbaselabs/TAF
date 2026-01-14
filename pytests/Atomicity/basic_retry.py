@@ -34,10 +34,9 @@ class basic_ops(ClusterSetup):
         age = range(5)
         name = ['james', 'sharon']
         body = [''.rjust(self.doc_size - 10, 'a')]
-        template = JsonObject.create()
-        template.put("age", age)
-        template.put("first_name", name)
-        template.put("body", body)
+        template = {"age": None,
+                    "first_name": None,
+                    "body": None}
         generator = DocumentGenerator(self.key, template,
                                       start=start,
                                       end=end,
@@ -45,7 +44,7 @@ class basic_ops(ClusterSetup):
                                       doc_size=self.doc_size,
                                       doc_type=self.doc_type,
                                       randomize=True,
-                                      age=age, first_name=name)
+                                      age=age, first_name=name, body=body)
         return generator
 
     def set_exception(self, exception):
@@ -91,7 +90,7 @@ class basic_ops(ClusterSetup):
         for i in range(start, self.num_items):
             key = "test_docs-" + str(i)
             if op_type == "create":
-                doc = Tuples.of(key, self.content)
+                doc = (key, self.content)
                 self.keys.append(key)
                 self.docs.append(doc)
             else:
