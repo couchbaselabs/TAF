@@ -264,7 +264,7 @@ class OutOfOrderReturns(ClusterSetup):
     def trans_doc_gen(self, start, end, op_type):
         docs = list()
         value = {'mutated': 0}
-        content = self.client.translate_to_json_object(value)
+        content = value
         for i in range(start, end):
             key = "%s-%s" % (self.key, i)
             if op_type == DocLoading.Bucket.DocOps.CREATE:

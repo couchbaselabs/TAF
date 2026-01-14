@@ -28,7 +28,7 @@ class basic_ops(ClusterSetup):
 
         # create load
         self.value = {'value': 'value1'}
-        self.content = self.client.translate_to_json_object(self.value)
+        self.content = self.value
 
         self.docs = []
         self.keys = []
@@ -79,7 +79,7 @@ class basic_ops(ClusterSetup):
                     self.transaction_commit, self.operation, self.keys[-1],
                     self.always_fail)
                 self.value = {'mutated': 1, 'value': 'value1'}
-                self.content = self.client.translate_to_json_object(self.value)
+                self.content = self.value
             else:
                 exception = Transaction().MockRunTransaction(
                     self.client.cluster, self.transaction_config,
@@ -101,8 +101,7 @@ class basic_ops(ClusterSetup):
                     or self.transaction_commit is False \
                     or self.verify is False:
                 if result['status']:
-                    actual_val = self.client.translate_to_json_object(
-                        result['value'])
+                    actual_val = result['value']
                     self.log.info("Actual value for key %s is %s"
                                   % (key, actual_val))
                     msg = \
@@ -110,8 +109,7 @@ class basic_ops(ClusterSetup):
                         % key
                     self.set_exception(msg)
             else:
-                actual_val = self.client.translate_to_json_object(
-                    result['value'])
+                actual_val = result['value']
                 if self.content != actual_val:
                     self.log.info("Key %s Actual: %s, Expected: %s"
                                   % (key, actual_val, self.content))

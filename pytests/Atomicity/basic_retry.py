@@ -86,7 +86,7 @@ class basic_ops(ClusterSetup):
                 op_type="create"):
         self.docs = []
         self.keys = []
-        self.content = self.client.translate_to_json_object(value)
+        self.content = value
         for i in range(start, self.num_items):
             key = "test_docs-" + str(i)
             if op_type == "create":
@@ -100,7 +100,7 @@ class basic_ops(ClusterSetup):
         for i in range(num_items):
             key = "test_docs-" + str(i)
             result = client.read(key)
-            actual_val = self.client.translate_to_json_object(result['value'])
+            actual_val = result['value']
             self.assertEquals(self.content, actual_val)
 
     def test_MultiThreadTxnLoad(self):
@@ -167,7 +167,7 @@ class basic_ops(ClusterSetup):
 
         else:
             self.value = {'mutated': 1, 'value': 'value1'}
-            self.content = self.client.translate_to_json_object(self.value)
+            self.content = self.value
 
             self.verify_doc(self.num_items/2, self.client)
 
