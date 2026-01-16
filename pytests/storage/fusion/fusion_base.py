@@ -136,6 +136,9 @@ class FusionBase(BaseTestCase):
             shell.disconnect()
         self.reb_plan_uuids = list()
 
+    def tearDown(self):
+        self.validate_fusion_health()
+        super(FusionBase, self).tearDown()
 
     def setup_nfs_server(self):
 
@@ -1174,3 +1177,48 @@ class FusionBase(BaseTestCase):
             ssh.disconnect()
             self.log.info(f"Log store Bucket DU = {bucket_du}")
             time.sleep(5)
+
+    def validate_fusion_health(self):
+        self.log.info("FUSION HEALTH CHECK - START")
+        failure_messages = list()
+
+        self.log.info("Validating item count across all buckets")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+        self.log.info("Validating data by reading back documents")
+        docs_to_validate = min(self.num_items, 1000000)
+        self.perform_batch_reads(num_docs_to_validate=docs_to_validate,
+                                 batch_size=500000, validate_docs=True)
+
+        self.log.info("Checking for migration/sync/read failures on all nodes")
+        for node in self.cluster.servers:
+            cbstats = Cbstats(node)
+            for bucket in self.cluster.buckets:
+                try:
+                    stats = cbstats.all_stats(bucket.name)
+                    sync_failures = int(stats.get('ep_fusion_sync_failures', 0))
+                    migration_failures = int(stats.get('ep_fusion_migration_failures', 0))
+                    read_failures = int(stats.get('ep_data_read_failed', 0))
+
+                    if sync_failures or migration_failures or read_failures:
+                        self.log.error(f"Node {node.ip}, Bucket {bucket.name}: "
+                                       f"sync={sync_failures}, migration={migration_failures}, "
+                                       f"read={read_failures}")
+                        failure_messages.append(f"{node.ip}:{bucket.name} - "
+                                                f"sync={sync_failures}, migration={migration_failures}, "
+                                                f"read={read_failures}")
+                except Exception as e:
+                    self.log.warning(f"Error getting stats from {node.ip}:{bucket.name} - {e}")
+            cbstats.disconnect()
+
+        self.log.info("Checking log files exist on NFS")
+        log_files_exist, log_count = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
+        if not log_files_exist:
+            failure_messages.append("No log files found on NFS")
+
+        if failure_messages:
+            self.log.error("FUSION HEALTH CHECK - FAILED")
+            self.fail(f"Fusion health check failed: {failure_messages}")
+
+        self.log.info("FUSION HEALTH CHECK - PASSED")
