@@ -4,6 +4,7 @@ from BucketLib.BucketOperations import BucketHelper
 from cb_constants import CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
+from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 
@@ -965,12 +966,13 @@ class CollectionsRebalance(CollectionBase):
                                      if node.ip == self.servers[0].ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
+        server_group_rest = ServerGroupsAPI(self.servers[0])
         if int(self.num_zone) > 1:
             for i in range(1, int(self.num_zone)):
                 a = "Group "
                 zones.append(a + str(i + 1))
-                if not rest.is_zone_exist(zones[i]):
-                    rest.add_zone(zones[i])
+                if not self.cluster_util.is_zone_exists(self.servers[0], zones[i]):
+                    server_group_rest.create_server_group(zones[i])
                 nodes_in_zone[zones[i]] = list()
             # Divide the nodes between zones.
             nodes_in_cluster = \
@@ -985,8 +987,9 @@ class CollectionsRebalance(CollectionBase):
             # Shuffle the nodesS
             for i in range(1, self.num_zone):
                 node_in_zone = list(set(nodes_in_zone[zones[i]]) -
-                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))
-                rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
+                                    set([node for node in
+                                         self.cluster_util.get_nodes_in_zone(self.servers[0], zones[i])]))
+                self.cluster_util.shuffle_nodes_in_zones(self.servers[0], node_in_zone, zones[0], zones[i])
         # Start rebalance and monitor it.
         self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
@@ -1023,7 +1026,7 @@ class CollectionsRebalance(CollectionBase):
             self.data_validation_collection()
 
     def check_balanced_attribute(self, balanced=True):
-        content = self.rest.cluster_status()
+        status, content = self.rest.cluster_details()
         try:
             if content['balanced'] != balanced:
                 raise Exception("actual balanced attribute {0} but expected {1}".
