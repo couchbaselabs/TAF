@@ -15,14 +15,6 @@ class FusionMigration(MagmaBaseTest, FusionBase):
     def setUp(self):
         super(FusionMigration, self).setUp()
 
-        self.upsert_iterations = self.input.param("upsert_iterations", 1)
-        self.validate_docs = self.input.param("validate_docs", True)
-        self.read_ops_rate = self.input.param("read_ops_rate", 10000)
-        self.num_docs_to_validate = self.input.param("num_docs_to_validate", 1000000)
-        self.rebalance_num_docs = self.input.param("rebalance_num_docs", 1000000)
-        self.read_process_concurrency = self.input.param("read_process_concurrency", 8)
-        self.validate_batch_size = self.input.param("validate_batch_size", 500000)
-
         self.log.info("FusionMigration setUp Started")
         self.rate_limit_toggle_stop = False
 
@@ -137,6 +129,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
     def test_crud_during_extent_migration(self):
 
+        crud_type = self.input.param("crud_type", "read")
+
         self.log.info("Starting initial load")
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
@@ -149,8 +143,22 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
 
-        # Perform reads when no extent migration has taken place yet
-        self.perform_batch_reads()
+        self.log.info("Perform CRUD when no extent migration has taken place yet")
+        mutate = 0
+        if crud_type == "read":
+            start = 0
+            end = self.num_items
+        elif crud_type == "update":
+            start = 0
+            end = self.num_items
+            mutate = 1
+        elif crud_type == "create":
+            start = self.num_items
+            end = self.num_items * 2
+        elif crud_type == "delete":
+            start = self.num_items // 2
+            end = self.num_items
+        self.perform_workload(start, end, crud_type, ops_rate=20000, mutate=mutate)
 
         # Update Migration Rate Limit so that extent migration process starts
         ClusterRestAPI(self.cluster.master).\
@@ -171,7 +179,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
         self.log.info("Performing a read workload post extent migration")
-        self.perform_batch_reads()
+        self.perform_workload(0, self.num_items, "read", ops_rate=20000)
 
 
     def test_monitor_active_guest_volumes(self):
@@ -1299,6 +1307,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
             self.log.info("Running a Fusion rebalance")
             nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
+
+            self.sleep(30, "Wait before starting cb-collect")
 
             if pause_extent_migration:
 

@@ -20,15 +20,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         self.log.info("FusionSanity setUp")
 
-        self.upsert_iterations = self.input.param("upsert_iterations", 1)
-        self.validate_docs = self.input.param("validate_docs", True)
-        self.read_ops_rate = self.input.param("read_ops_rate", 10000)
-        self.num_docs_to_validate = self.input.param("num_docs_to_validate", 1000000)
-        self.rebalance_num_docs = self.input.param("rebalance_num_docs", 1000000)
-        self.read_process_concurrency = self.input.param("read_process_concurrency", 8)
-        self.validate_batch_size = self.input.param("validate_batch_size", 500000)
-        self.rebalance_ops_rate = self.input.param("rebalance_ops_rate", 10000)
-
         self.crash_during_test = self.input.param("crash_during_test", False)
         self.crash_interval = self.input.param("crash_interval", 120)
         self.monitor_log_store = self.input.param("monitor_log_store", True)
@@ -50,6 +41,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
     def test_fusion_data_lifecycle(self):
 
         aggressive_variant = self.input.param("aggressive_variant", False)
+        self.validate_reupload = self.input.param("validate_reupload", False)
 
         self.log.info("Running Fusion Data Lifecycle Test")
 
@@ -95,6 +87,11 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                                                         self.num_items + self.rebalance_num_docs,
                                                         wait=False, ops_rate=10000)
 
+            if self.validate_reupload:
+                # Get Uploader info before rebalance
+                self.get_fusion_uploader_info()
+                self.uploader_map1 = deepcopy(self.fusion_vb_uploader_map)
+
             self.log.info("Running a Fusion rebalance")
             nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                                   rebalance_count=num_rebalance_count)
@@ -134,6 +131,18 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 self.perform_batch_reads()
                 self.capture_fusion_stats()
 
+            if self.validate_reupload:
+                # Get Uploader info after rebalance
+                self.get_fusion_uploader_info()
+                self.uploader_map2 = deepcopy(self.fusion_vb_uploader_map)
+
+                # Perform a data load post rebalance
+                self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), ops_rate=20000)
+                sleep_time = 120 + (2 * self.fusion_upload_interval) + 60
+                self.sleep(sleep_time, "Sleep after data loading")
+
+                self.verify_fusion_reupload(prev_uploader_map=self.uploader_map1, new_uploader_map=self.uploader_map2)
+
             num_rebalances_to_perform -= 1
             num_rebalance_count += 1
 
@@ -147,18 +156,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             if len(self.cluster.nodes_in_cluster) == len(self.cluster.servers):
                 self.num_nodes_to_rebalance_out = 1
                 self.num_nodes_to_rebalance_in = 0
-                aggressive_variant = False
-
-                # Wait until all active guest volumes are done migrating
-                # This is important because rebalance-out cannot be performed during migration
-                timeout = 7200
-                time_end = time.time() + timeout
-                while True and time.time() < time_end:
-                    status, guest_volumes = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
-                    self.log.info(f"Guest Volumes: {guest_volumes}")
-                    if all(len(v) == 0 for v in guest_volumes.values()):
-                        break
-                    self.sleep(60)
 
         self.monitor = False
         self.crash_loop = False
@@ -176,12 +173,14 @@ class FusionSanity(MagmaBaseTest, FusionBase):
     def test_fusion_rebalance(self):
 
         self.validate_reupload = self.input.param("validate_reupload", False)
+        self.validate_cache_transfer = self.input.param("validate_cache_transfer", False)
 
         self.log.info("Running Fusion Rebalance Test")
 
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 60
         self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         if self.validate_reupload:
             # Get Uploader info before rebalance
@@ -214,6 +213,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         self.log.info("Validating item count after rebalance")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -233,6 +233,31 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
             self.verify_fusion_reupload(prev_uploader_map=self.uploader_map1, new_uploader_map=self.uploader_map2)
 
+        if self.validate_cache_transfer:
+            # Fetch ep_bg_fetched before read workload
+            bg_fetched_before = dict()
+            for node in self.cluster.nodes_in_cluster:
+                bg_fetched_before[node.ip] = dict()
+                cbstats_obj = Cbstats(node)
+                for bucket in self.cluster.buckets:
+                    result = cbstats_obj.all_stats(bucket.name)
+                    bg_fetched_before[node.ip][bucket.name] = result['ep_bg_fetched']
+            self.log.info(f"Bg fetches before read workload = {bg_fetched_before}")
+
+            # Run a read workload
+            self.log.info("Running a read workload after rebalance completion")
+            self.perform_workload(0, self.num_items, doc_op="read", ops_rate=self.read_ops_rate)
+            self.sleep(60, "Wait after read workload completion")
+
+            bg_fetched_after = dict()
+            for node in self.cluster.nodes_in_cluster:
+                bg_fetched_after[node.ip] = dict()
+                cbstats_obj = Cbstats(node)
+                for bucket in self.cluster.buckets:
+                    result = cbstats_obj.all_stats(bucket.name)
+                    bg_fetched_after[node.ip][bucket.name] = result['ep_bg_fetched']
+            self.log.info(f"Bg fetches after read workload = {bg_fetched_after}")
+
 
     def test_fusion_rebalance_at_scale(self):
 
@@ -241,6 +266,8 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         rebalance_data_load = self.input.param("rebalance_data_load", True)
         wait_before_rebalance_load_time = self.input.param("wait_before_rebalance_load_time", 100)
         rebalance_sleep_time = self.input.param("rebalance_sleep_time", 120)
+        num_upsert_iterations = self.input.param("num_upsert_iterations", 1)
+        upsert_data_pct = self.input.param("upsert_data_pct", 0.75) # 75%
 
         for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
             buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]
@@ -250,7 +277,21 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             self.sleep(10, "Wait after one batch")
 
         sleep_time = 300 + self.fusion_upload_interval + 60
-        self.sleep(sleep_time, "Sleep after data loading")
+        self.sleep(sleep_time, "Sleep after initial workload")
+
+        mutate = 1
+        for i in range(num_upsert_iterations):
+            for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
+                buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]
+                bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
+                self.log.info(f"Performing data load on {bucket_names}")
+                self.perform_workload(0, self.num_items * upsert_data_pct, buckets=buckets_batch,
+                                      ops_rate=10000, doc_op="update", mutate=mutate)
+                self.sleep(10, "Wait after one batch")
+
+            sleep_time = 300 + self.fusion_upload_interval + 60
+            self.sleep(sleep_time, "Sleep after upsert workload")
+            mutate += 1
 
         # Perform a data workload in parallel when rebalance is taking place
         if rebalance_data_load:
@@ -530,6 +571,70 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         cleanup_thread.join()
 
 
+    def test_fusion_continuous_get_stats(self):
+
+        self.log.info("Running Fusion Test With getStats() call in a loop")
+
+        doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="create", wait=False)
+
+        self.get_stats_loop = True
+
+        # Perform getStats() call in parallel during Fusion Sync
+        stats_th_array = list()
+        for bucket in self.cluster.buckets:
+            stats_th = threading.Thread(target=self.get_stats_in_a_loop, args=[bucket])
+            stats_th_array.append(stats_th)
+            stats_th.start()
+
+        for task in doc_loading_tasks:
+            self.doc_loading_tm.get_task_result(task)
+
+        self.get_stats_loop = False
+        for th in stats_th_array:
+            th.join()
+
+
+    def test_fusion_accelerator_cli_retry_logic(self):
+
+        self.log.info("Running Fusion Rebalance Test With Server Groups")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Dynamically remove and re-introduce read permissions
+        perm_th = threading.Thread(target=self.remove_reintroduce_read_permissions)
+        perm_th.start()
+
+        # Perform a Fusion Rebalance
+        self.log.info("Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              skip_file_linking=True)
+
+        self.change_permissions = False
+        perm_th.join()
+
+        # Perform read workload during migration
+        doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="read", wait=False)
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
+        for node in nodes_to_monitor:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        for task in doc_loading_tasks:
+            self.doc_loading_tm.get_task_result(task)
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+
     def capture_fusion_stats(self):
 
         self.fusion_read_stats = dict()
@@ -590,3 +695,50 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                                   ops_rate=ops_rate,
                                   doc_op=doc_op)
             self.sleep(10, "Wait after one batch")
+
+
+    def get_stats_in_a_loop(self, bucket, timeout=18000):
+
+        end_time = time.time() + timeout
+
+        counter = 1
+
+        while self.get_stats_loop and time.time() < end_time:
+
+            result = self.get_fusion_kvstore_stats(bucket)
+            self.log.info(f"getStats loop count: {counter}, Bucket: {bucket.name}, Fusion Stats: {result[self.cluster.master.ip]['rw_0:magma']['FusionFSStats']['LogStoreDataSize']}")
+
+            time.sleep(0.5)
+            counter += 1
+
+
+    def remove_reintroduce_read_permissions(self, timeout=14400, max_count=14400):
+
+        count = 1
+        end_time = time.time() + timeout
+
+        ssh = RemoteMachineShellConnection(self.cluster.master)
+
+        self.change_permissions = True
+
+        self.sleep(60, "Wait before changing permissions")
+
+        while time.time() < end_time and self.change_permissions and count <= max_count:
+
+            if count % 2 == 0:
+                # Re-introduce permissions
+                msg = "Re-introducing read permissions on the log store"
+                cmd = f"find /mnt/nfs/share/buckets/kv -type f -name 'log-*' -exec chmod a+r {{}} +"
+                # cmd = f"chown -R couchbase:couchbase /mnt/nfs/share/buckets/kv"
+
+            else:
+                # Remove permissions
+                msg = "Removing read permissions from the log store"
+                cmd = f"find /mnt/nfs/share/buckets/kv -type f -name 'log-*' -exec chmod a-r {{}} +"
+                # cmd = f"chown -R root:root /mnt/nfs/share/buckets/kv"
+
+            o, e = ssh.execute_command(cmd)
+            self.log.info(f"{msg}, O = {o}, E = {e}")
+
+            count += 1
+            time.sleep(5)

@@ -45,7 +45,7 @@ create_guest_directory() {
     local guest_dir="guest$guest_num"
     local full_guest_path="$PRIVATE_PREFIX/$guest_dir"
     local symlink_path="/guests/${REBALANCE_ID}/${guest_dir}"
-    
+
     echo "Creating guest directory: $full_guest_path"
     mkdir -p "$full_guest_path"
 

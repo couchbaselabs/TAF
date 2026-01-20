@@ -108,6 +108,12 @@ class StorageBase(BaseTestCase):
             self.log.info(f"Output = {o}, Error = {e}")
             shell.disconnect()
 
+        self.rebalance_moves_per_node = self.input.param("rebalance_moves_per_node", 4)
+        self.log.info(f"Setting rebalance moves per node to {self.rebalance_moves_per_node}")
+        self.cluster_util.set_rebalance_moves_per_nodes(
+            self.cluster.master,
+            rebalanceMovesPerNode=self.rebalance_moves_per_node)
+
         # Create Buckets
         if self.standard_buckets == 1:
             self.bucket_util.create_default_bucket(
@@ -159,6 +165,10 @@ class StorageBase(BaseTestCase):
             for bucket in self.cluster.buckets:
                 bucket_rest.edit_bucket(bucket.name, {"storageQuotaPercentage": 10})
             self.sleep(30, "Sleep while magma storage quota setting is taking effect")
+
+        if self.bucket_num_vb is None or self.bucket_num_vb == "None":
+            for bucket in self.cluster.buckets:
+                bucket.numVBuckets = self.vbuckets
 
         self.buckets = self.cluster.buckets
         # Setting reader and writer threads
@@ -838,7 +848,7 @@ class StorageBase(BaseTestCase):
 
     def java_doc_loader(self, buckets=None, scopes=None, collections=None, generator=None, doc_ops=None,
                         wait=True, process_concurrency=2, skip_default=False, exp_ttl=None,
-                        validate_docs=False, ops_rate=None, monitor_ops=True):
+                        validate_docs=False, ops_rate=None, monitor_ops=True, mutate=0):
 
         doc_loading_tasks = list()
         ops_rate = ops_rate if ops_rate is not None else self.ops_rate
@@ -911,7 +921,8 @@ class StorageBase(BaseTestCase):
                             exp=exp_time,
                             process_concurrency=process_concurrency,
                             validate_docs=validate_docs,
-                            ops=ops_rate)
+                            ops=ops_rate,
+                            mutate=mutate)
                     _task.create_doc_load_task()
                     self.doc_loading_tm.add_new_task(_task)
                     doc_loading_tasks.append(_task)

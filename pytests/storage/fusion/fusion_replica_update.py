@@ -80,6 +80,127 @@ class FusionReplicaUpdate(MagmaBaseTest, FusionBase):
         self.validate_active_replica_item_count()
 
 
+    def test_fusion_replica_update_case1(self):
+
+        self.new_replica_count = self.input.param("new_replica_count", 1)
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Get Uploader Map before replica update
+        self.get_fusion_uploader_info()
+
+        # Update replicas from N to N + 1
+        for bucket in self.cluster.buckets:
+            self.log.info(f"Updating replica count to {self.new_replica_count} for {bucket.name}")
+            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                                    replica_number=self.new_replica_count)
+
+        # Run a Fusion Rebalance to generate an extra replica copy
+        self.log.info(f"Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              replica_update=True)
+        self.sleep(10, "Wait after rebalance")
+
+        # Get Uploader Map after replica update
+        self.get_fusion_uploader_info()
+
+        # Do a Swap Rebalance of all nodes
+        self.num_nodes_to_rebalance_in = 0
+        self.num_nodes_to_rebalance_out = 0
+        self.num_nodes_to_swap_rebalance = len(self.cluster.nodes_in_cluster)
+
+        # Run a Fusion Rebalance which swaps all nodes
+        self.log.info(f"Running a Fusion rebalance")
+        nodes_to_monitor2 = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=2)
+        self.sleep(10, "Wait after rebalance")
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}, {nodes_to_monitor2}")
+        for node in nodes_to_monitor + nodes_to_monitor2:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+
+    def test_fusion_replica_update_case2(self):
+
+        self.log.info("Starting initial load")
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Get Initial Uploader Map
+        self.get_fusion_uploader_info()
+
+        # Do a Swap Rebalance of all nodes
+        self.num_nodes_to_rebalance_in = 0
+        self.num_nodes_to_rebalance_out = 0
+        self.num_nodes_to_swap_rebalance = len(self.cluster.nodes_in_cluster)
+
+        # Run a Fusion Rebalance which swaps all nodes
+        self.log.info(f"Running a Fusion rebalance")
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1)
+        self.sleep(10, "Wait after rebalance")
+
+        # Get Uploader Map before replica update
+        self.get_fusion_uploader_info()
+
+        # Disable replicas
+        for bucket in self.cluster.buckets:
+            self.log.info(f"Disabling replicas for {bucket.name}")
+            self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                                    replica_number=0)
+
+        # Start DCP rebalance
+        rebalance_task = self.task.async_rebalance(
+            self.cluster, [], [],
+            check_vbucket_shuffling=False)
+        self.sleep(10, "Wait for rebalance to be in progress")
+
+        # Wait for DCP rebalance to complete
+        self.task.jython_task_manager.get_task_result(rebalance_task)
+        self.assertTrue(rebalance_task.result,
+                       "DCP rebalance failed after disabling replicas")
+
+        # Get Uploader Map after replica update
+        self.get_fusion_uploader_info()
+
+        # Do a swap rebalance of all nodes
+        self.log.info(f"Running a Fusion rebalance")
+        nodes_to_monitor2 = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                               rebalance_count=2)
+        self.sleep(10, "Wait after rebalance")
+
+        extent_migration_array = list()
+        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}, {nodes_to_monitor2}")
+        for node in nodes_to_monitor + nodes_to_monitor2:
+            for bucket in self.cluster.buckets:
+                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
+                extent_th.start()
+                extent_migration_array.append(extent_th)
+
+        for th in extent_migration_array:
+            th.join()
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+
     def validate_active_replica_item_count(self):
 
         results = {}

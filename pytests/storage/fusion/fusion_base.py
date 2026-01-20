@@ -128,6 +128,15 @@ class FusionBase(BaseTestCase):
             self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
             self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
 
+            self.upsert_iterations = self.input.param("upsert_iterations", 1)
+            self.validate_docs = self.input.param("validate_docs", True)
+            self.read_ops_rate = self.input.param("read_ops_rate", 10000)
+            self.num_docs_to_validate = self.input.param("num_docs_to_validate", 1000000)
+            self.rebalance_num_docs = self.input.param("rebalance_num_docs", 1000000)
+            self.read_process_concurrency = self.input.param("read_process_concurrency", 8)
+            self.validate_batch_size = self.input.param("validate_batch_size", 500000)
+            self.rebalance_ops_rate = self.input.param("rebalance_ops_rate", 10000)
+
             self.spare_nodes = list()
 
             # Enable diag/eval on non-local hosts for all servers
@@ -334,10 +343,10 @@ class FusionBase(BaseTestCase):
     def get_kvstore_directories(self, bucket):
 
         kvstore_dirs = list()
-        bucket_uuid = self.get_bucket_uuid(bucket)
+        bucket_uuid = self.get_bucket_uuid(bucket.name)
         self.log.info(f"Bucket UUID: {bucket_uuid}")
 
-        for kvstore in range(128):
+        for kvstore in range(int(bucket.numVBuckets)):
             kvstore_path = f"{self.nfs_server_path}/kv/{bucket_uuid}/kvstore-{kvstore}"
             kvstore_dirs.append(kvstore_path)
 
@@ -653,6 +662,9 @@ class FusionBase(BaseTestCase):
                         new_node_str += new_node.ip + ","
                     new_node_str = new_node_str[:-1]
 
+                    self.spare_nodes = self.cluster.nodes_in_cluster
+                    self.log.info(f"Spare nodes = {self.spare_nodes}")
+
                 else:
 
                     if not rebalance_master:
@@ -728,7 +740,7 @@ class FusionBase(BaseTestCase):
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
-        o, e = ssh.execute_command(commands, timeout=1800)
+        o, e = ssh.execute_command(commands, timeout=18000)
         self.log.info(f"Output = {o[-50:]}, Error = {e}")
 
         plan_uuid = None
@@ -850,6 +862,7 @@ class FusionBase(BaseTestCase):
         for node in self.cluster.servers:
             shell_dict[node] = RemoteMachineShellConnection(node)
 
+        self.crash_loop = True
         while self.crash_loop:
             for node, shell in shell_dict.items():
                 self.log.info(f"Killing memcached on {node.ip}")
@@ -1117,7 +1130,7 @@ class FusionBase(BaseTestCase):
                 return node
 
 
-    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None):
+    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None, mutate=0):
 
         ops_rate = ops_rate if ops_rate is not None else 20000
 
@@ -1132,12 +1145,17 @@ class FusionBase(BaseTestCase):
         elif doc_op == "read":
             self.read_start = start
             self.read_end = end
+        elif doc_op == "delete":
+            self.delete_start = start
+            self.delete_end = end
+            self.num_items -= (self.delete_end - self.delete_start)
 
         doc_loading_tasks, _ = self.java_doc_loader(wait=False,
                                                     skip_default=self.skip_load_to_default_collection,
                                                     ops_rate=ops_rate, doc_ops=doc_op,
                                                     monitor_ops=False,
-                                                    buckets=buckets)
+                                                    buckets=buckets,
+                                                    mutate=mutate)
         if wait:
             for task in doc_loading_tasks:
                 self.doc_loading_tm.get_task_result(task)
@@ -1245,10 +1263,15 @@ class FusionBase(BaseTestCase):
 
         fusion_client = FusionRestAPI(self.cluster.master)
 
-        self.log.info("Configuring Fusion with logStoreURI and enableSyncThresholdMB")
+        fusion_log_store_uri = self.fusion_log_store_uri
+        if self.fusion_region is not None:
+            fusion_log_store_uri = self.fusion_log_store_uri + f"?region={self.fusion_region}"
+
+        self.log.info(f"Configuring Fusion with logStoreURI: {fusion_log_store_uri} " \
+                      f"and enableSyncThresholdMB: {self.enable_sync_threshold}")
 
         status, content = fusion_client.manage_fusion_settings(
-                                log_store_uri=self.fusion_log_store_uri,
+                                log_store_uri=fusion_log_store_uri,
                                 enable_sync_threshold=self.enable_sync_threshold)
         self.log.info(f"Status = {status}, Result = {content}")
 
@@ -1495,3 +1518,32 @@ class FusionBase(BaseTestCase):
             return int(reb[3:])
         except ValueError:
             return None
+
+
+    def get_fusion_kvstore_stats(self, bucket, servers=None):
+
+        result = dict()
+        if servers is None:
+            servers = self.cluster.nodes_in_cluster
+        if type(servers) is not list:
+            servers = [servers]
+
+        try:
+            for server in servers:
+                result[server.ip] = dict()
+                shell = RemoteMachineShellConnection(server)
+                output = shell.execute_command(
+                    "lscpu | grep 'CPU(s)' | head -1 | awk '{print $2}'"
+                    )[0][0].split('\n')[0]
+                self.log.debug(f"{server.ip} - core(s): {output}")
+                for i in range(min(int(output), 64)):
+                    grep_field = "rw_{}:magma".format(i)
+                    _res = self.get_magma_stats(
+                        bucket, [server], field_to_grep=grep_field)
+                    result[server.ip][grep_field] = dict()
+                    result[server.ip][grep_field]["FusionFSStats"] = _res[server.ip][grep_field]["FusionFSStats"]
+
+                return result
+
+        except Exception as e:
+            self.log.info(f"Exception during cbstats: {e}")

@@ -21,7 +21,6 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         self.enable_memcached_kill = self.input.param("enable_memcached_kill", True)
         self.kill_after_seconds = self.input.param("kill_after_seconds", 30)
         self.num_rebalances = self.input.param("num_rebalances", 3)
-        self.read_ops_rate = self.input.param("read_ops_rate", 10000)
         self.rebalance_type = self.input.param("rebalance_type", "in")
         self.rate_limit_toggle_stop = False
         self.log.info(f"[SETUP] monitor_interval={self.monitor_interval}s, "

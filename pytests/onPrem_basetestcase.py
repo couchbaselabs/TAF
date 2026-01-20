@@ -202,6 +202,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.fusion_test = self.input.param("fusion_test", False) # Decides whether or not to setup NFS for Fusion
         self.fusion_enable = self.input.param("fusion_enable", True) # Decides whether or not to enable Fusion at the start
         self.fusion_log_store_uri = self.input.param("fusion_log_store_uri", None)
+        self.fusion_region = self.input.param("fusion_region", None)
         self.fusion_upload_interval = self.input.param("fusion_upload_interval", 60)
         self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 78643200) # 75MB/s
         self.fusion_migration_rate_limit = self.input.param("fusion_migration_rate_limit", 52428800) # 50MB/s
