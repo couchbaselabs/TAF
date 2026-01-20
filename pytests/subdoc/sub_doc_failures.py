@@ -521,7 +521,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         vb_info["failure_stat"] = dict()
         vb_info["create_stat"] = dict()
         nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
-        gen_load = doc_generator(self.key, 0, self.num_items)
+        gen_load = doc_generator(self.key, 0, self.num_items,
+                                 key_size=self.key_size)
         gen_subdoc_load = sub_doc_generator(self.key, 0, self.num_items,
                                             key_size=self.key_size)
         subdoc_reader_gen = sub_doc_generator(self.key, 0, self.num_items,
