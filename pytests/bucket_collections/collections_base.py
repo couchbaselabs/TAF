@@ -84,8 +84,8 @@ class CollectionBase(ClusterSetup, FusionBase):
             ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                                     num_writer_threads="disk_io_optimized",
                                     num_reader_threads="disk_io_optimized")
-            
-        if self.fusion_enable:
+
+        if self.fusion_test and self.fusion_enable:
             self.configure_fusion()
             self.enable_fusion()
         try:

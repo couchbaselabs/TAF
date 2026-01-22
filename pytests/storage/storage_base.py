@@ -48,7 +48,7 @@ class StorageBase(BaseTestCase):
             self.rest.configure_memory(
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
 
-        if self.fusion_enable:
+        if self.fusion_test and self.fusion_enable:
             self.configure_fusion()
             self.enable_fusion()
 

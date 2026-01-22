@@ -73,7 +73,7 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
 
-        if self.fusion_test:
+        if self.fusion_test and self.fusion_test:
             self.configure_fusion()
             self.enable_fusion()
 
