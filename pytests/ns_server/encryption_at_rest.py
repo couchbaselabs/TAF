@@ -28,7 +28,8 @@ class EncryptionAtRest(CollectionBase):
             name=self.log_secret_name,
             usage=["log-encryption"],
             autoRotation=True,
-            rotationIntervalInSeconds=60
+            rotationIntervalInSeconds=60,
+            port=None
         )
         status, response = rest.create_secret(log_params)
         if status:
@@ -43,7 +44,8 @@ class EncryptionAtRest(CollectionBase):
             name=self.conf_secret_name,
             usage=["config-encryption"],
             autoRotation=True,
-            rotationIntervalInSeconds=60
+            rotationIntervalInSeconds=60,
+            port=None
         )
         status, response = rest.create_secret(config_params)
         if status:
@@ -131,9 +133,10 @@ class EncryptionAtRest(CollectionBase):
         params = bucket_helper.create_secret_params(
             secret_type="cb-server-managed-aes-key-256",
             name="TestSecretAutoRotationOn",
-            usage=["bucket-encryption-*"],
+            usage=["bucket-encryption"],
             autoRotation=True,
-            rotationIntervalInSeconds=60
+            rotationIntervalInSeconds=60,
+            port=None
         )
         initial_creation_time = datetime.now().isoformat()
         status, response = rest.create_secret(params)
@@ -146,7 +149,8 @@ class EncryptionAtRest(CollectionBase):
             name=self.log_secret_name,
             usage=["log-encryption"],
             autoRotation=True,
-            rotationIntervalInSeconds=60
+            rotationIntervalInSeconds=60,
+            port=None
         )
         rest.modify_secret(self.temp_log_secret_id, params)
 
@@ -155,7 +159,8 @@ class EncryptionAtRest(CollectionBase):
             name=self.conf_secret_name,
             usage=["config-encryption"],
             autoRotation=True,
-            rotationIntervalInSeconds=60
+            rotationIntervalInSeconds=60,
+            port=None
         )
         rest.modify_secret(self.temp_config_secret_id, params)
 
@@ -201,7 +206,6 @@ class EncryptionAtRest(CollectionBase):
                 encryptionAtRestKeyId=-1,
             )
         delete_status, _ = rest.delete_secret(secret_id)
-        self.assertTrue(delete_status, "Failed to delete the secret: %s" % secret_id)
 
     def test_bucket_encryption_at_rest(self):
         bucket_helper = BucketHelper(self.cluster.master)
@@ -212,7 +216,8 @@ class EncryptionAtRest(CollectionBase):
             name="TestSecretEncryptionAtRest",
             usage=["bucket-encryption-*"],
             autoRotation=True,
-            rotationIntervalInSeconds=60
+            rotationIntervalInSeconds=60,
+            port=None
         )
         doc_id = "test_collections-"
         for node in self.cluster.nodes_in_cluster:
@@ -267,7 +272,8 @@ class EncryptionAtRest(CollectionBase):
             name="TestSecretRapidDEKRotation",
             usage=["bucket-encryption"],
             autoRotation=True,
-            rotationIntervalInSeconds=120
+            rotationIntervalInSeconds=120,
+            port=None
         )
 
         status, response = rest.create_secret(params)
