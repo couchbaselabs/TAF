@@ -18,12 +18,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.skip_validations = self.input.param("skip_validations", True)
         self.data_load_spec = self.input.param("data_load_spec",
                                                "volume_test_load")
-        self.failover_ephemeral_no_replicas = self.input.param("failover_ephemeral_no_replicas", False)
         if self.failover_ephemeral_no_replicas:
             shell = RemoteMachineShellConnection(self.cluster.master)
             shell.enable_diag_eval_on_non_local_hosts()
             shell.disconnect()
-            self.rest.update_failover_ephemeral_no_replicas()
 
         if self.spec_name is None:
             if self.atomicity:

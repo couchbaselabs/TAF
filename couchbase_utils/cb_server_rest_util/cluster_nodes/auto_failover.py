@@ -42,8 +42,14 @@ class AutoFailoverAPI(CBRestConnection):
             params["failoverPreserveDurabilityMajority"] = \
                 failover_preserve_durability
         if allow_ephemeral_failover_with_no_replicas is not None:
-            params["allowFailoverEphemeralNoReplicas"] = \
-                allow_ephemeral_failover_with_no_replicas
+            raw = allow_ephemeral_failover_with_no_replicas
+            if isinstance(raw, bool):
+                normalized = "true" if raw else "false"
+            elif isinstance(raw, str):
+                normalized = raw.strip().lower()
+            else:
+                normalized = raw
+            params["allowFailoverEphemeralNoReplicas"] = normalized
         status, content, _ = self.request(api, self.POST, params=params)
         return status, content
 

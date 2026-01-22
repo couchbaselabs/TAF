@@ -69,6 +69,8 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
                                                     True)
         self.include_range_scan = self.input.param("include_range_scan",
                                                    True)
+        self.failover_ephemeral_no_replicas = self.input.param("failover_ephemeral_no_replicas", False)
+
         self.bucket_num_vb = self.input.param("bucket_num_vb", 128)
         if self.server_index_to_fail is None:
             self.server_to_fail = self._servers_to_fail()
@@ -371,8 +373,8 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
         :return: True If the setting was set with the timeout, else return
         False
         """
-        status, _ = self.rest.update_auto_failover_settings(
-            'true', self.timeout, max_count=self.max_count)
+        status, st = self.rest.update_auto_failover_settings(
+            'true', self.timeout, max_count=self.max_count, allow_ephemeral_failover_with_no_replicas=self.failover_ephemeral_no_replicas)
         return status
 
     def enable_autoreprovision(self):
