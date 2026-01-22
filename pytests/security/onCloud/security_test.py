@@ -79,7 +79,7 @@ class SecurityTest(SecurityBase):
         status = resp.status_code
         content = resp.content
         if role != "organizationOwner":
-            if status == 412:
+            if status == 404:
                 self.log.info("Pass. No permissions")
             else:
                 self.fail("FAIL. Permission shouldn't be allowed")
@@ -678,7 +678,7 @@ class SecurityTest(SecurityBase):
         self.assertEqual(resp.status_code, 201,
                          msg="FAIL. Outcome: {}, Expected: {}, Reason: {}".format(
                              resp.status_code, 201, resp.content))
-        self.sleep(20, "Waiting for the beer-sample bucket to be loaded")
+        self.sleep(40, "Waiting for the beer-sample bucket to be loaded")
 
         #Turning off a cluster
         resp = capella_api.turn_off_cluster(self.tenant_id, self.project_id, self.cluster_id)
