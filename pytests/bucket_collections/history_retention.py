@@ -18,6 +18,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
+from sdk_client3 import SDKClient
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -527,7 +528,7 @@ class DocHistoryRetention(ClusterSetup):
                 if not is_history_valid:
                     for t_key in ["historyRetentionSeconds",
                                   "historyRetentionBytes"]:
-                        if '"%s":"%s"' % (t_key, exp_err) not in str(e):
+                        if "'%s': '%s'" % (t_key, exp_err) not in str(e):
                             self.fail("Enabled CDC for non-magma bucket")
 
             if is_history_valid:
@@ -557,15 +558,15 @@ class DocHistoryRetention(ClusterSetup):
             if is_history_valid:
                 # Couchbase bucket + Magma storage case
                 expected_time_output = [
-                    'setting param: history_retention_seconds %s\n'
+                    'setting param: history_retention_seconds %s'
                     % bucket_dedup_retention_seconds,
-                    "set history_retention_seconds to %s\n"
+                    "set history_retention_seconds to %s"
                     % bucket_dedup_retention_seconds]
 
                 expected_bytes_output = [
-                    "setting param: history_retention_bytes %s\n"
+                    "setting param: history_retention_bytes %s"
                     % bucket_dedup_retention_bytes,
-                    "set history_retention_bytes to %s\n"
+                    "set history_retention_bytes to %s"
                     % bucket_dedup_retention_bytes]
                 self.assertEqual(byte_result, expected_bytes_output,
                                  "Unexpected byte output: %s" % byte_result)
@@ -576,13 +577,13 @@ class DocHistoryRetention(ClusterSetup):
                 err_line = \
                     'Error: EINVAL : Invalid packet : {"error":' \
                     '{"context":"Cannot sethistory_retention_%s : ' \
-                    'requirements not met"}}\n'
+                    'requirements not met"}}'
                 expected_bytes_err = [
-                    'setting param: history_retention_bytes %s\n'
+                    'setting param: history_retention_bytes %s'
                     % bucket_dedup_retention_bytes,
                     err_line % "bytes"]
                 expected_time_err = [
-                    'setting param: history_retention_seconds %s\n'
+                    'setting param: history_retention_seconds %s'
                     % bucket_dedup_retention_seconds,
                     err_line % "seconds"]
                 self.assertEqual(byte_result, expected_bytes_err,
@@ -594,10 +595,13 @@ class DocHistoryRetention(ClusterSetup):
         col = choice(self.bucket_util.get_active_collections(
             bucket, CbServer.default_scope, only_names=True))
         self.log.info("_default::{0} Loading 1 doc per vb".format(col))
-        client = self.cluster.sdk_client_pool.get_client_for_bucket(
-            bucket, collection=col)
+        if self.cluster.sdk_client_pool:
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                bucket, collection=col)
+        else:
+            client = SDKClient(self.cluster, bucket, collection=col)
         keys = list()
-        for vb_num in range(0, bucket.bucket_num_vb):
+        for vb_num in range(0, int(self.bucket_num_vb)):
             key, val = doc_generator("test_doc", 0, 1,
                                      target_vbucket=[vb_num]).next()
             keys.append(key)
@@ -610,7 +614,10 @@ class DocHistoryRetention(ClusterSetup):
                 self.bucket_util.get_vb_details_for_bucket(bucket, kv_nodes)
         for key in keys:
             client.crud(DocLoading.Bucket.DocOps.DELETE, key)
-        self.cluster.sdk_client_pool.release_client(client)
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.release_client(client)
+        else:
+            client.close()
         if not is_history_valid:
             return
 
