@@ -1175,7 +1175,7 @@ class SDKClient(object):
             persist_to=persist_to, replicate_to=replicate_to,
             durability=durability,
             preserve_expiry=preserve_expiry,
-            # store_semantics=store_semantics,
+            store_semantics=store_semantics,
             # sdk_retry_strategy=sdk_retry_strategy,
             access_deleted=access_deleted,
             create_as_deleted=create_as_deleted)
@@ -1237,7 +1237,7 @@ class SDKClient(object):
             persist_to=persist_to, replicate_to=replicate_to,
             durability=durability,
             preserve_expiry=preserve_expiry,
-            # store_semantics=store_semantics,
+            store_semantics=store_semantics,
             # sdk_retry_strategy=sdk_retry_strategy,
             access_deleted=access_deleted,
             create_as_deleted=create_as_deleted)
@@ -1328,7 +1328,7 @@ class SDKClient(object):
             persist_to=persist_to, replicate_to=replicate_to,
             durability=durability,
             preserve_expiry=preserve_expiry,
-            # store_semantics=store_semantics,
+            store_semantics=store_semantics,
             # sdk_retry_strategy=sdk_retry_strategy,
             access_deleted=access_deleted,
             create_as_deleted=create_as_deleted)
