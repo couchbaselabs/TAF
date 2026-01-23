@@ -2,6 +2,7 @@ import json
 import urllib
 import re
 import base64
+import httplib2
 
 from cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
@@ -154,9 +155,15 @@ class StatsHelper(RestConnection):
 
     def post_range_api_metrics(self, bucket_name):
         params = self._get_ui_params(bucket_name)
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
+        authorization = base64.b64encode(
+            ('%s:%s' % (self.username, self.password)).encode("utf-8")
+        ).decode("ascii")
         api = self.base_url + '/pools/default/stats/range/'
-        headers = {'Content-Type': 'text/plain', 'Authorization': 'Basic %s' % authorization}
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Basic %s' % authorization
+        }
         # We are using it because there are lot of code in _http_request which works only when output is json
         # In this case response in list, apart from that there is few more checks like we do for redaction
         # that doesnt work when the body is list
@@ -375,27 +382,77 @@ class StatsHelper(RestConnection):
 
                 if metric_name.startswith("audit"):
                     value = matched.group(3)
-                    if map[metric_name]:
-                        raise Exception("Duplicate stats of type audit {0}".format(metric_name))
-                    map[metric_name] = value
+                    labels_list = matched.group(2).strip()
+                    # Many audit metrics are emitted with labels (e.g. category).
+                    # Track duplicates by full label-set.
+                    if labels_list:
+                        if not isinstance(map[metric_name], dict):
+                            map[metric_name] = {"": map[metric_name]}
+                        if labels_list in map[metric_name]:
+                            raise Exception(
+                                "Duplicate stats of type audit {0}{{{1}}}->{2}"
+                                .format(metric_name, labels_list, value)
+                            )
+                        map[metric_name][labels_list] = value
+                    else:
+                        if map[metric_name]:
+                            raise Exception("Duplicate stats of type audit {0}".format(metric_name))
+                        map[metric_name] = value
                 elif metric_name.startswith("sysproc"):
                     value = matched.group(3)
-                    labels_list = matched.group(2)
-                    labels_name_values_list = labels_list.split(",")
-                    for labels_name_values in labels_name_values_list:
-                        labels_name_value = labels_name_values.split("=")
-                        if labels_name_value[0] == "proc":
-                            process_name = labels_name_value[1]
-                            if process_name in map[metric_name]:
-                                raise Exception("Duplicate stats of type sysproc {0}->{1}->{2}".
-                                                format(metric_name, process_name, value))
-                            map[metric_name][process_name] = value
-                            break
+                    labels_list = matched.group(2).strip()
+                    # sysproc_* metrics often have multiple series per process
+                    # (e.g. mode=sys/user). Track per proc + (mode if present),
+                    # otherwise fall back to full label-set.
+                    labels_dict = {}
+                    for kv in labels_list.split(","):
+                        parts = kv.split("=", 1)
+                        if len(parts) == 2:
+                            labels_dict[parts[0]] = parts[1]
+
+                    process_name = labels_dict.get("proc")
+                    if not process_name:
+                        # Unexpected: sysproc metric without proc label
+                        if labels_list in map[metric_name]:
+                            raise Exception(
+                                "Duplicate stats of type sysproc {0}{{{1}}}->{2}"
+                                .format(metric_name, labels_list, value)
+                            )
+                        map[metric_name][labels_list] = value
+                    else:
+                        mode = labels_dict.get("mode")
+                        subkey = mode if mode else labels_list
+                        existing = map[metric_name].get(process_name)
+                        if existing is None:
+                            map[metric_name][process_name] = {subkey: value}
+                        else:
+                            if not isinstance(existing, dict):
+                                map[metric_name][process_name] = {"": existing}
+                                existing = map[metric_name][process_name]
+                            if subkey in existing:
+                                raise Exception(
+                                    "Duplicate stats of type sysproc {0}->{1}->{2}->{3}"
+                                    .format(metric_name, process_name, subkey, value)
+                                )
+                            existing[subkey] = value
                 elif metric_name.startswith("sys"):
                     value = matched.group(3)
-                    if map[metric_name]:
-                        raise Exception("Duplicate stats of type sys {0}".format(metric_name))
-                    map[metric_name] = value
+                    labels_list = matched.group(2).strip()
+                    # sys_* metrics frequently have multiple labeled series
+                    # (e.g. cpu/mode/cgroup). Track duplicates by full label-set.
+                    if labels_list:
+                        if not isinstance(map[metric_name], dict):
+                            map[metric_name] = {"": map[metric_name]}
+                        if labels_list in map[metric_name]:
+                            raise Exception(
+                                "Duplicate stats of type sys {0}{{{1}}}->{2}"
+                                .format(metric_name, labels_list, value)
+                            )
+                        map[metric_name][labels_list] = value
+                    else:
+                        if map[metric_name]:
+                            raise Exception("Duplicate stats of type sys {0}".format(metric_name))
+                        map[metric_name] = value
                 elif metric_name.startswith("couch"):
                     value = matched.group(3)
                     labels_list = matched.group(2)
@@ -411,9 +468,22 @@ class StatsHelper(RestConnection):
                             break
                 elif metric_name.startswith("cm"):
                     value = matched.group(3)
-                    if map[metric_name]:
-                        raise Exception("Duplicate stats of type cm {0}".format(metric_name))
-                    map[metric_name] = value
+                    labels_list = matched.group(2).strip()
+                    # cm_* metrics are usually unlabeled, but keep same behavior
+                    # while allowing labeled variants.
+                    if labels_list:
+                        if not isinstance(map[metric_name], dict):
+                            map[metric_name] = {"": map[metric_name]}
+                        if labels_list in map[metric_name]:
+                            raise Exception(
+                                "Duplicate stats of type cm {0}{{{1}}}->{2}"
+                                .format(metric_name, labels_list, value)
+                            )
+                        map[metric_name][labels_list] = value
+                    else:
+                        if map[metric_name]:
+                            raise Exception("Duplicate stats of type cm {0}".format(metric_name))
+                        map[metric_name] = value
                 else:
                     raise Exception("Found some other metric type {0}".format(line))
         if len(map) == 0:
@@ -447,17 +517,58 @@ class StatsHelper(RestConnection):
 
         log = logger.get("test")
         log.info("Validating metrics")
-        lines_seen = set()
-        for line in content:
-            if not line.startswith("#"):
-                if line not in lines_seen:
-                    lines_seen.add(line)
-                else:
-                    raise Exception(
-                        "Duplicate metrics entry {0}".format(line))
-                if not check_prefixes(line):
-                    raise Exception(
-                        "Invalid prefix for metric {0}".format(line))
+        # Validate duplicates at the "series" level (metric name + labels).
+        # Allow exact duplicate samples for the same series (same value + same ts),
+        # but fail if the same series is emitted with different value/ts.
+        #
+        # Example lines:
+        #   cm_rest_request_leaves_total{} 54874
+        #   sys_cpu_cgroup_seconds_total{mode="user",category="system"} 1.23e+04
+        sample_re = re.compile(
+            r'^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)'
+            r'(?P<labels>\{[^}]*\})?\s+'
+            r'(?P<value>('
+            r'[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][-+]?[0-9]+)?'  # numbers
+            r'|NaN'                                                # NaN (case-insensitive)
+            r'|[-+]?Inf'                                           # +/-Inf (case-insensitive)
+            r'))'
+            r'(?:\s+(?P<ts>[0-9]+))?\s*$'
+        , re.IGNORECASE)
+        seen_series = {}
+        for idx, line in enumerate(content):
+            if not line or line.startswith("#"):
+                continue
+
+            m = sample_re.match(line)
+            if not m:
+                raise Exception(
+                    "Invalid metric line format (idx={0}) {1}".format(idx, line))
+
+            name = m.group("name")
+            labels = m.group("labels") or ""
+            value = m.group("value")
+            ts = m.group("ts") or ""
+
+            if not check_prefixes(name):
+                raise Exception(
+                    "Invalid prefix for metric (idx={0}) {1}".format(idx, line))
+
+            series_key = name + labels
+            prev = seen_series.get(series_key)
+            if prev is None:
+                seen_series[series_key] = (value, ts, idx, line)
+                continue
+
+            prev_value, prev_ts, prev_idx, prev_line = prev
+            if prev_value == value and prev_ts == ts:
+                # Exact duplicate sample for same series: ignore.
+                continue
+
+            raise Exception(
+                "Duplicate series with different sample "
+                "(series={0}, first_idx={1}, dup_idx={2}) first={3} dup={4}"
+                .format(series_key, prev_idx, idx, prev_line, line)
+            )
         if len(content) == 0:
             log.error("No metrics are present to validate")
 
