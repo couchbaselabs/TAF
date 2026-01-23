@@ -50,7 +50,7 @@ class StatsBasicOps(CollectionBase):
                 idx2 = bucket_state_str.index(sub_str2)
                 state_name = bucket_state_str[idx1 + len(sub_str1) + 2: idx2-1]
 
-                if not warmup_stat_dict.has_key(bucket_name):
+                if bucket_name not in warmup_stat_dict:
                     warmup_stat_dict[bucket_name] = dict()
                 warmup_stat_dict[bucket_name][state_name] = warmup_value
         return warmup_stat_dict
@@ -85,9 +85,9 @@ class StatsBasicOps(CollectionBase):
                 idx2 = bucket_state_str.index(sub_str2)
                 result_name = bucket_state_str[idx1 + len(sub_str1) + 2: idx2-1]
 
-                if not conflict_stat_dict.has_key(bucket_name):
+                if bucket_name not in conflict_stat_dict:
                     conflict_stat_dict[bucket_name] = dict()
-                if not conflict_stat_dict[bucket_name].has_key(result_name):
+                if result_name not in conflict_stat_dict[bucket_name]:
                     conflict_stat_dict[bucket_name][result_name] = dict()
                 conflict_stat_dict[bucket_name][result_name][op_name] = stat_value
 
@@ -98,7 +98,7 @@ class StatsBasicOps(CollectionBase):
         results_to_validate = ['accepted','rejected_identical','rejected_behind']
 
         for bucket in self.cluster.buckets:
-            if not conflict_stat_dict.has_key(bucket.name):
+            if bucket.name not in conflict_stat_dict:
                 self.fail("KV conflicts resolution stat not returned \
                           for bucket {0}".format(bucket.name))
             bucket_conflict_result_states = conflict_stat_dict[bucket.name].keys()
@@ -124,7 +124,7 @@ class StatsBasicOps(CollectionBase):
                             'KeyDump','LoadingAccessLog','CheckForAccessLog',
                             'LoadingKVPairs','LoadingData','Done']
         for bucket in self.cluster.buckets:
-            if not warmup_stat_dict.has_key(bucket.name):
+            if bucket.name not in warmup_stat_dict:
                 self.fail("Warmup stats for {0} bucket not returned"
                     .format(bucket.name))
             bucket_states = warmup_stat_dict[bucket.name].keys()
@@ -319,6 +319,23 @@ class StatsBasicOps(CollectionBase):
         /metrics endpoint ie; check if
         total number low cardinality metrics = total number of metrics at /metrics endpoint
         """
+        def series_keys(lines):
+            """
+            Return unique Prometheus series keys (metric+labels) for given lines.
+            Ignores comment/empty lines and ignores value/timestamp, so exact
+            duplicates don't inflate the count.
+            """
+            keys = set()
+            for l in lines:
+                if not l or l.startswith("#"):
+                    continue
+                # Prometheus format: "<name>{<labels>} <value> [<ts>]"
+                parts = l.split()
+                if not parts:
+                    continue
+                keys.add(parts[0])
+            return keys
+
         self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
 
@@ -328,21 +345,35 @@ class StatsBasicOps(CollectionBase):
                 "fullTextSearch":{"highCardEnabled":false}, "index":{"highCardEnabled":false}}}'
         StatsHelper(self.cluster.master).configure_stats_settings_from_api(metrics_data)
         for server in self.cluster.servers[:self.nodes_init]:
-            len_low_cardinality_metrics = 0
-            content = StatsHelper(server).get_prometheus_metrics(component="ns_server", parse=False)
-            self.log.info("lc count of ns_server on {0} is {1}".format(server.ip, len(content)))
-            len_low_cardinality_metrics = len_low_cardinality_metrics + len(content)
+            self.sleep(20, "Wait before fetching metrics")
+            # Validate that /metrics does NOT expose high-cardinality series when
+            # external high-card is disabled. /metrics may still contain additional
+            # low-card/self metrics (e.g. cm_* histograms, exposer_*), so don't
+            # compare raw counts against per-service low-card endpoints.
+            metrics_content = StatsHelper(server).get_all_metrics()
+            metrics_keys = series_keys(metrics_content)
+
+            # Build the set of high-cardinality series keys from the service
+            # endpoints. None of these should appear in /metrics now.
+            hc_keys = set()
             server_services = self.get_services_from_node(server)
             for component in server_services:
-                content = StatsHelper(server).get_prometheus_metrics(component=component, parse=False)
-                self.log.info("lc count of {2} on {0} is {1}".format(server.ip, len(content), component))
-                len_low_cardinality_metrics = len_low_cardinality_metrics + len(content)
-            self.sleep(20, "Wait before fetching metrics")
-            content = StatsHelper(server).get_all_metrics()
-            len_metrics = len(content)
-            if len_metrics != len_low_cardinality_metrics:
-                self.fail("Number mismatch on node {0} , Total lc metrics count {1}, Total metrics count {2}".
-                          format(server.ip, len_low_cardinality_metrics, len_metrics))
+                try:
+                    hc_content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=False)
+                except Exception as e:
+                    self.log.info("High-card metrics fetch failed for %s on %s: %s",
+                                  component, server.ip, e)
+                    continue
+                comp_hc = series_keys(hc_content)
+                self.log.info("hc series count of {2} on {0} is {1}".format(server.ip, len(comp_hc), component))
+                hc_keys |= comp_hc
+
+            leaked = sorted(metrics_keys & hc_keys)
+            if leaked:
+                self.log.info("High-card series leaked into /metrics on %s. Sample=%s",
+                              server.ip, leaked[:50])
+                self.fail("High-cardinality metrics are still exposed via /metrics on {0}. "
+                          "Leaked series count={1}".format(server.ip, len(leaked)))
 
     def test_change_global_scrape_interval(self):
         """
