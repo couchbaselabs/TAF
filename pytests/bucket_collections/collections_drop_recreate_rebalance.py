@@ -16,6 +16,11 @@ from table_view import TableView
 class CollectionsDropRecreateRebalance(CollectionBase):
     def setUp(self):
         super(CollectionsDropRecreateRebalance, self).setUp()
+        self.rest = ClusterRestAPI(self.cluster.master)
+
+        # Verify FBR (File-Based Rebalance) setting and configure if needed
+        self.verify_and_configure_fbr()
+
         self.known_nodes = self.cluster.servers[:self.nodes_init]
         self.nodes_failover = self.input.param("nodes_failover", 1)
         self.nodes_swap = self.input.param("nodes_swap", 0)

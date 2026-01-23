@@ -25,6 +25,10 @@ class CollectionsRebalance(CollectionBase):
         self.bucket_util._expiry_pager(self.cluster)
         self.bucket = self.cluster.buckets[0]
         self.rest = ClusterRestAPI(self.cluster.master)
+
+        # Verify FBR (File-Based Rebalance) setting and configure if needed
+        self.verify_and_configure_fbr()
+
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
         self.data_load_stage = self.input.param("data_load_stage", "before")
         self.data_load_type = self.input.param("data_load_type", "async")

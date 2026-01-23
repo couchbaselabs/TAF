@@ -98,6 +98,34 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.bucket_util.get_supported_durability_levels()
         self.log_setup_status("CollectionBase", "complete")
 
+    def verify_and_configure_fbr(self, cluster_node=None):
+        """
+        Verify FBR (File-Based Rebalance) is enabled by default and optionally disable it
+        for DCP fallback testing.
+
+        Args:
+            cluster_node: Node to check/configure FBR on. Defaults to self.cluster.master
+        """
+        if cluster_node is None:
+            cluster_node = self.cluster.master
+        rest = ClusterRestAPI(cluster_node)
+
+        # Verify FBR (File-Based Rebalance) setting is enabled
+        status, content = rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+        file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+        self.assertTrue(file_based_backfill_enabled,
+                       "fileBasedBackfillEnabled should be True by default in Couchbase 8.1")
+        self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+
+        # Check if FBR should be disabled for DCP fallback testing
+        if self.disable_file_based_rebalance:
+            self.cluster_util.set_file_based_rebalance(
+                cluster_node, enabled=False)
+
     def tearDown(self):
         if self.range_scan_task is not None:
             self.range_scan_task.stop_task = True
