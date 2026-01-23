@@ -142,7 +142,8 @@ class FusionBase(BaseTestCase):
             self.log.info("Skipping Fusion SetUp")
 
     def tearDown(self):
-        self.validate_fusion_health()
+        if self.fusion_test:
+            self.validate_fusion_health()
         super(FusionBase, self).tearDown()
 
     def setup_nfs_server(self):
