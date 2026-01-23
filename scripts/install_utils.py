@@ -666,24 +666,29 @@ def _copy_to_nodes(src_path, dest_path):
 
 
 def __get_build_url(node, build_binary):
+    # Extract major.minor version (e.g., "7.6" from "7.6.10-8010")
+    version_base = params["version"].split('-')[0]
+    major_minor = '.'.join(version_base.split('.')[:2])
+    build_num = params["version"].split('-')[1]
+
     if params["enable_ipv6"]:
         ipv6_url = "{0}{1}/{2}/{3}".format(
             testconstants.CB_FQDN_REPO,
-            testconstants.CB_VERSION_NAME[(params["version"]).split('-')[0][:-2]],
-            params["version"].split('-')[1],
+            testconstants.CB_VERSION_NAME[major_minor],
+            build_num,
             build_binary)
         if node.shell.is_url_live(ipv6_url, exit_if_not_live=False):
             return ipv6_url
     else:
         latestbuilds_url = "{0}{1}/{2}/{3}".format(
             testconstants.CB_REPO,
-            testconstants.CB_VERSION_NAME[(params["version"]).split('-')[0][:-2]],
-            params["version"].split('-')[1],
+            testconstants.CB_VERSION_NAME[major_minor],
+            build_num,
             build_binary)
         release_url = "{0}{1}/{2}/{3}".format(
             testconstants.CB_RELEASE_REPO,
-            testconstants.CB_VERSION_NAME[(params["version"]).split('-')[0][:-2]],
-            params["version"].split('-')[1],
+            testconstants.CB_VERSION_NAME[major_minor],
+            build_num,
             build_binary)
         if node.shell.is_url_live(latestbuilds_url, exit_if_not_live=False):
             return latestbuilds_url

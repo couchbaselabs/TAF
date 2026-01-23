@@ -273,15 +273,16 @@ class Installer(object):
                                    "4.0.0", "4.0.1", "4.1.0", "4.1.1",
                                    "4.1.2", "4.5.0"]
             build_repo = MV_LATESTBUILD_REPO
+            # Extract major.minor version (e.g., "7.6" from "7.6.10")
+            major_minor = '.'.join(version.split('.')[:2])
             if toy != "":
                 build_repo = CB_REPO
             elif "server-analytics" in names:
                 build_repo = CB_REPO.replace("couchbase-server",
                                              "server-analytics") + \
-                             CB_VERSION_NAME[version[:3]] + "/"
-            elif version[:3] in CB_VERSION_NAME:
-                build_repo = CB_REPO + CB_VERSION_NAME[
-                    version[:3]] + "/"
+                             CB_VERSION_NAME[major_minor] + "/"
+            elif major_minor in CB_VERSION_NAME:
+                build_repo = CB_REPO + CB_VERSION_NAME[major_minor] + "/"
             else:
                 sys.exit("version is not support yet")
             if 'enable_ipv6' in params and params['enable_ipv6']:
