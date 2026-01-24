@@ -292,7 +292,8 @@ class UpgradeTests(UpgradeBase):
                     self.upgrade_function[self.upgrade_type](
                         self.cluster.nodes_in_cluster)
                 else:
-                    self.upgrade_function[self.upgrade_type](node_to_upgrade)
+                    self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                              self.upgrade_version)
 
                 # Upgrade of node
                 self.cluster_util.print_cluster_stats(self.cluster)
