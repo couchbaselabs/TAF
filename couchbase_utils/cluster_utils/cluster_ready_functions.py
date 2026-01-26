@@ -616,6 +616,18 @@ class ClusterUtils:
         rest = ClusterRestAPI(cluster_node)
         setting_value = 'true' if enabled else 'false'
 
+        # First check if the setting is available (only supported in 8.1+)
+        get_status, get_content = rest.set_internal_settings()
+        if not get_status or not isinstance(get_content, dict):
+            self.log.warning(f"Could not retrieve internal settings to check fileBasedBackfillEnabled support: {get_content}")
+            return False, get_content
+
+        # Check if the setting exists in the response
+        if 'fileBasedBackfillEnabled' not in get_content:
+            self.log.warning(f"fileBasedBackfillEnabled setting is not available in this cluster version. "
+                           f"Skipping setting update. (Setting is only available in Couchbase 8.1+)")
+            return True, {"message": "Setting not available in this version"}
+
         self.log.info(f"Setting fileBasedBackfillEnabled to {setting_value}")
         status, content = rest.set_internal_settings('fileBasedBackfillEnabled', setting_value)
 
