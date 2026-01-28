@@ -40,7 +40,7 @@ class CbServerUpgrade(object):
             repo=build_repo,
             distribution_version=info.distribution_version.lower())
 
-        if re.match(r'[1-9].[0-9].[0-9]-[0-9]+$', version):
+        if re.match(r'[1-9].[0-9].[0-9]{1,2}-[0-9]+$', version):
             version = version + "-rel"
         appropriate_build = BuildQuery(). \
             find_build(builds,
