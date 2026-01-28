@@ -331,8 +331,13 @@ class ClusterUtils:
         else:
             self.log.critical(f"Getting 'unknown pool': {pools_default_res}")
             return highest_version, highest_build, highest_version_nodes
-        retry, max_retry = 0, 5
+        retry, max_retry = 0, 3
         while retry < max_retry:
+            # Reset state on each retry to avoid stale data
+            highest_major = 0
+            highest_minor = 0
+            highest_major_minor_str = ""
+            highest_version_nodes = list()
             got_unknown_version = False
             for node in pools_default_res["nodes"]:
                 if node["version"] == "unknown":
@@ -340,15 +345,42 @@ class ClusterUtils:
                     break
                 version, build, *rel_type = node["version"].split("-")
                 node_ipaddr = node["hostname"].split(":")[0]
-                if version > highest_version or \
-                    (version == highest_version and build > highest_build):
-                    highest_version_nodes = [node_ipaddr]
+                # Extract major.minor (e.g., 7.6 from "7.6.2")
+                version_parts = version.split(".")
+                major = int(version_parts[0])
+                if len(version_parts) >= 2:
+                    minor = int(version_parts[1])
+                    major_minor_str = f"{version_parts[0]}.{version_parts[1]}"
+                else:
+                    minor = 0
+                    major_minor_str = version_parts[0]
+
+                # Track highest version for return value
+                if version > highest_version or (
+                        version == highest_version and build > highest_build):
                     highest_version = version
                     highest_build = build
-                elif highest_version == version and highest_build == build:
-                    highest_version_nodes.append(node_ipaddr)
+
+                # MB-63648: When only the build number (third component) differs between versions
+                # (e.g., 7.6.2 vs 7.6.3 where major.minor are same), the cluster might retain the
+                # old orchestrator even if a node with a higher build number exists.
+                # To account for this ns_server behavior, include ALL nodes with the same
+                # major.minor version as the highest, regardless of build number.
+                # Compare major.minor as integers to properly handle versions like 7.10 vs 7.9
+                if major > highest_major or (
+                        major == highest_major and minor > highest_minor):
+                    # Found a higher major.minor - reinitialize list with this node
+                    highest_major = major
+                    highest_minor = minor
+                    highest_major_minor_str = major_minor_str
+                    highest_version_nodes = [node_ipaddr]
+                elif major == highest_major and minor == highest_minor:
+                    # Same major.minor - append to list
+                    if node_ipaddr not in highest_version_nodes:
+                        highest_version_nodes.append(node_ipaddr)
             if got_unknown_version:
-                sleep(2)
+                retry += 1
+                sleep(5)
                 _, pools_default_res = rest_conn.cluster_details()
                 continue
             # Exit the retry loop if things are okay
@@ -356,9 +388,13 @@ class ClusterUtils:
         else:
             self.log.critical(f"Getting version=unknown: {pools_default_res}")
             return highest_version, highest_build, highest_version_nodes
-        self.log.debug("Highest version : {} Highest build : {}".format(highest_version,highest_build))
-        self.log.debug("Highest version node : {}".format(highest_version_nodes))
+
+        self.log.debug(f"Highest version: {highest_version}")
+        self.log.debug(f"Highest major.minor : {highest_major_minor_str} \
+            (MB-63648: including all nodes with this major.minor)")
+        self.log.debug(f"Highest version nodes : {highest_version_nodes}")
         highest_version_nodes = [node for node in cluster.nodes_in_cluster if node.ip in highest_version_nodes]
+
         return highest_version, highest_build, highest_version_nodes
 
     def set_network_delay_between_nodes(self,
