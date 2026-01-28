@@ -26,6 +26,7 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
 
     def setUp(self):
         super(AutoFailoverBaseTest, self).setUp()
+        self._get_params()
         self.rest = ClusterRestAPI(self.orchestrator)
 
         # Verify FBR (File-Based Rebalance) setting is enabled
@@ -48,7 +49,7 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.skip_collections_during_data_load = self.input.param(
             "skip_col_dict", None)
-        self._get_params()
+        
         self.range_scan_timeout = self.input.param("range_scan_timeout",
                                                    None)
         self.expect_range_scan_exceptions = self.input.param(
