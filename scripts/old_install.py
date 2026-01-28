@@ -288,15 +288,16 @@ class Installer(object):
                 build_repo = build_repo.replace(CB_DOWNLOAD_SERVER,
                                                 CB_DOWNLOAD_SERVER_FQDN)
             for name in names:
-                if version[:5] in releases_version:
+                version_prefix = version[:version.find("-")] if "-" in version else version
+                if version_prefix in releases_version:
                     build = BuildQuery().find_membase_release_build(
                         deliverable_type=info.deliverable_type,
                         os_architecture=info.architecture_type,
                         build_version=version,
                         product='membase-server-enterprise')
-                elif len(version) > 6 and version[6:].replace("-rel",
-                                                              "") == \
-                        CB_RELEASE_BUILDS[version[:5]]:
+                elif "-" in version and version_prefix in CB_RELEASE_BUILDS \
+                        and version[version.find("-")+1:].replace("-rel", "") == \
+                        CB_RELEASE_BUILDS[version_prefix]:
                     build = BuildQuery().find_couchbase_release_build(
                         deliverable_type=info.deliverable_type,
                         os_architecture=info.architecture_type,
@@ -341,7 +342,7 @@ class Installer(object):
                             """ since url in S3 insert version into 
                             it, we need to put version
                                 in like ..latestbuilds/3.0.0/... """
-                            cb_version = version[:5]
+                            cb_version = version[:version.find("-")] if "-" in version else version
                             build.url = build.url.replace(
                                 "http://builds.hq.northscale.net/latestbuilds",
                                 "http://packages.northscale.com/latestbuilds/{0}"
@@ -576,7 +577,7 @@ class CouchbaseServerInstaller(Installer):
                         kv_quota = int(
                             rest.get_nodes_self().mcdMemoryReserved)
                     info = rest.get_nodes_self()
-                    cb_version = info.version[:5]
+                    cb_version = info.version[:info.version.find("-")] if "-" in info.version else info.version
                     kv_quota = int(info.mcdMemoryReserved * 2 / 3)
                     """ for fts, we need to grep quota from ns_server
                                 but need to make it works even RAM of 
@@ -1361,8 +1362,10 @@ def main():
         correct_build_format = False
         if "version" in input.test_params:
             build_version = input.test_params["version"]
-            build_pattern = re.compile("\d\d?\.\d\.\d-\d{3,4}$")
-            if input.test_params["version"][:5] in CB_RELEASE_BUILDS.keys() \
+            build_pattern = re.compile(r"\d\d?\.\d\.\d{1,2}-\d{3,4}$")
+            v = input.test_params["version"]
+            version_prefix = v[:v.find("-")] if "-" in v else v
+            if version_prefix in CB_RELEASE_BUILDS.keys() \
                     and bool(build_pattern.match(build_version)):
                 correct_build_format = True
         use_direct_url = False
@@ -1378,7 +1381,7 @@ def main():
                      "         Or \n"
                      "         There is No build %s in build repo\n"
                      "========"
-                     % (build_version[:5],
+                     % (build_version[:build_version.find("-")] if "-" in build_version else build_version,
                         build_version.split("-")[
                             1] if "-" in build_version else "Need "
                                                             "build "
