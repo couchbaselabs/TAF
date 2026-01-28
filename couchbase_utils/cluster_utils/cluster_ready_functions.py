@@ -443,18 +443,49 @@ class ClusterUtils:
                 continue
             else:
                 break
+        highest_major = 0
+        highest_minor = 0
+        highest_major_minor_str = ""
         for node in pools_default_res["nodes"]:
             version, build, type = node["version"].split("-")
             node_ipaddr = node["hostname"].split(":")[0]
+            
+            # Track highest version for return value
             if version > highest_version or \
                 (version == highest_version and build > highest_build):
-                highest_version_nodes = [node_ipaddr]
                 highest_version = version
                 highest_build = build
-            elif highest_version == version and highest_build == build:
-                highest_version_nodes.append(node_ipaddr)
-        self.log.debug("Highest version : {} Highest build : {}".format(highest_version,highest_build))
-        self.log.debug("Highest version node : {}".format(highest_version_nodes))
+            
+            # Extract major.minor (e.g., 7.6 from "7.6.2")
+            version_parts = version.split(".")
+            major = int(version_parts[0])
+            if len(version_parts) >= 2:
+                minor = int(version_parts[1])
+                major_minor_str = "{}.{}".format(version_parts[0], version_parts[1])
+            else:
+                minor = 0
+                major_minor_str = version_parts[0]
+            
+            # MB-63648: When only the build number (third component) differs between versions
+            # (e.g., 7.6.2 vs 7.6.3 where major.minor are same), the cluster might retain the
+            # old orchestrator even if a node with a higher build number exists.
+            # To account for this ns_server behavior, include ALL nodes with the same
+            # major.minor version as the highest, regardless of build number.
+            # Compare major.minor as integers to properly handle versions like 7.10 vs 7.9
+            if major > highest_major or (major == highest_major and minor > highest_minor):
+                # Found a higher major.minor - reinitialize list with this node
+                highest_major = major
+                highest_minor = minor
+                highest_major_minor_str = major_minor_str
+                highest_version_nodes = [node_ipaddr]
+            elif major == highest_major and minor == highest_minor:
+                # Same major.minor - append to list
+                if node_ipaddr not in highest_version_nodes:
+                    highest_version_nodes.append(node_ipaddr)
+        
+        self.log.debug("Highest version : {} Highest build : {}".format(highest_version, highest_build))
+        self.log.debug("Highest major.minor : {} (MB-63648: including all nodes with this major.minor)".format(highest_major_minor_str))
+        self.log.debug("Highest version nodes : {}".format(highest_version_nodes))
         highest_version_nodes = [node for node in cluster.nodes_in_cluster if node.ip in highest_version_nodes]
         return highest_version, highest_build, highest_version_nodes
 
@@ -501,10 +532,10 @@ class ClusterUtils:
         def parse_timestamp(timestamp):
             time_format = "%Y-%m-%dT%H:%M:%S.%f"
             result = datetime.strptime(timestamp[:23], time_format)
-            if timestamp[23]=='+':
+            if timestamp[23] == '+':
                 result -= timedelta(hours=int(timestamp[24:26]),
                                     minutes=int(timestamp[27:29]))
-            elif timestamp[23]=='-':
+            elif timestamp[23] == '-':
                 result += timedelta(hours=int(timestamp[24:26]),
                                     minutes=int(timestamp[27:29]))
             return result
