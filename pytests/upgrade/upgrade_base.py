@@ -623,7 +623,7 @@ class UpgradeBase(BaseTestCase):
                                       vb_verification[vb_type]))
 
         # Update master node
-        # self.cluster.master = self.spare_node
+        self.cluster.master = self.spare_node
 
         # Update spare_node to rebalanced-out node
         self.spare_node = node_to_upgrade
