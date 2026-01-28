@@ -42,7 +42,7 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
         # Check if FBR should be disabled for DCP fallback testing
         if self.disable_file_based_rebalance:
             self.cluster_util.set_file_based_rebalance(
-                self.orchestrator, enabled=False)
+                self.cluster.master, enabled=False)
 
         self.spec_name = self.input.param("bucket_spec", None)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
