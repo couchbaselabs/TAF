@@ -83,8 +83,11 @@ class SecurityTest(SecurityBase):
                 self.log.info("Pass. No permissions")
             else:
                 self.fail("FAIL. Permission shouldn't be allowed")
-        elif 'success' == json.loads(content.decode('utf-8'))["status"]:
-            self.fail("FAIL. CURL access was allowed")
+        elif role == "organizationOwner":
+            if status == 400 and json.loads(content)['message'] == "Queries using the CURL() function are not allowed":
+                self.log.info("Pass. CURL access was not allowed")
+            else:
+                self.fail("FAIL. CURL access allowed")
         else:
             self.fail("Pass. CURL access was not allowed")
 
@@ -590,6 +593,9 @@ class SecurityTest(SecurityBase):
             self.log.info("List all backups")
             resp = capella_api.list_all_bucket_backups(self.tenant_id, self.project_id,
                                                        self.cluster_id, bucket_id)
+            print("resp: ", resp)
+            print("resp.status_code: ", resp.status_code)
+            print("resp.content: ", resp.content)
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
                                  resp.status_code // 100,
@@ -1146,7 +1152,6 @@ class SecurityTest(SecurityBase):
                 self.assertEqual(403, delete_endpoint_resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected:{}'
                                  .format(delete_endpoint_resp.status_code, 403))
-
     def test_cluster_deletion_protection_api(self):
         # Auth test
         url = "{}/v2/organizations/{}/projects/{}/clusters/{}". \
@@ -1349,4 +1354,5 @@ class SecurityTest(SecurityBase):
                                                     self.cluster_id, sgw_id)
         if resp.status_code != 409:
             self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
+
 
