@@ -10,15 +10,14 @@ import mc_bin_client
 import crc32
 import socket
 import ctypes
+from threading import Thread
 
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from global_vars import logger
-from membase.api.rest_client import RestConnection
 import memcacheConstants
 from memcached.helper.data_helper import MemcachedClientHelper, \
                                          VBucketAwareMemcached
 from mc_bin_client import MemcachedClient
-from threading import Thread
-import queue
 from collections import defaultdict
 from BucketLib.BucketOperations import BucketHelper
 
@@ -31,8 +30,7 @@ class MemcachedHelper:
         end_time = start_time + timeout_in_seconds
         ready_vbuckets = {}
         log = logger.get("infra")
-        rest = RestConnection(node)
-#         servers = rest.get_nodes()
+        rest = ClusterRestAPI(node)
         bucket_conn = BucketHelper(node)
         bucket_conn.vbucket_map_ready(bucket, 60)
         vbucket_count = len(bucket_conn.get_vbuckets(bucket))
