@@ -2,7 +2,6 @@ import json
 import urllib
 import re
 import base64
-import httplib2
 
 from cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
