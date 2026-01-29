@@ -391,6 +391,11 @@ class UpgradeTests(UpgradeBase):
             self.cluster_features = \
                 self.upgrade_helper.get_supported_features(self.cluster.version)
 
+            # Verify and configure FBR when version reaches 8.1+
+            upgrade_version_float = float(upgrade_version[:3])
+            if upgrade_version_float >= 8.1:
+                self.verify_and_configure_fbr()
+
         # Printing cluster stats after the upgrade of the whole cluster
         self.cluster_util.print_cluster_stats(self.cluster)
         self.PrintStep(f"Upgrade of the whole cluster to "

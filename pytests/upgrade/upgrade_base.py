@@ -1273,3 +1273,27 @@ class UpgradeBase(BaseTestCase):
         print("\t", "#")
         print("\t", "#"*60)
         print("\n")
+
+    def verify_and_configure_fbr(self):
+        """
+        Verify and configure FBR (File-Based Rebalance).
+        Assumes version >= 8.1 (caller should check version before calling).
+        """
+        status, content = self.rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+
+        if 'fileBasedBackfillEnabled' in content:
+            file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+            self.assertTrue(file_based_backfill_enabled,
+                           "fileBasedBackfillEnabled should be True by default in Couchbase 8.1+")
+            self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+
+            if self.disable_file_based_rebalance:
+                self.cluster_util.set_file_based_rebalance(
+                    self.cluster.master, enabled=False)
+        else:
+            self.log.info("FBR not available in this version, skipping verification")
+
