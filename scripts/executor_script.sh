@@ -241,7 +241,7 @@ else
   touch $WORKSPACE/testexec.$$.ini
   docker run --rm \
     -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini:Z \
-    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
+    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z  \
     testrunner:install python3 scripts/populateIni.py $skip_mem_info \
     -s ${servers} $internal_servers_param \
     -d ${addPoolServerId} \
