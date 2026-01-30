@@ -286,7 +286,7 @@ else
       echo "Starting server installation"
       set -x
       docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
+        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z \
         testrunner:install python3 scripts/new_install.py \
         -i testexec.$$.ini \
         -p $new_install_params
