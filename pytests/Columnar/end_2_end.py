@@ -33,6 +33,7 @@ Assumption for test -
 """
 
 import copy
+import os
 import random
 import time
 
@@ -277,8 +278,8 @@ class GoldfishE2E(GoldFishBaseTest):
             for aws_region in self.source_s3_regions.split("|"):
                 external_link_properties.append({
                     "type": "s3", "region": aws_region,
-                    "accessKeyId": self.input.param("aws_access_key"),
-                    "secretAccessKey": self.input.param("aws_secret_key")
+                    "accessKeyId": os.getenv("AWS_ACCESS_KEY_ID", None),
+                    "secretAccessKey": os.getenv("AWS_SECRET_ACCESS_KEY", None)
                 })
         cbas_spec["external_link"]["properties"] = external_link_properties
 

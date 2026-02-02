@@ -2,7 +2,6 @@
 Created on 17-Oct-2023
 @author: Umang Agrawal
 """
-
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CbasUtil
@@ -67,7 +66,6 @@ class ColumnarBaseTest(BaseTestCase):
 
         self.perform_gf_instance_cleanup = self.input.param(
             "perform_gf_instance_cleanup", True)
-
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 

@@ -1,4 +1,4 @@
-import unittest
+import os
 
 from cb_basetest import CouchbaseBaseTest
 from sirius_client_framework.external_storage_config import AwsS3
@@ -16,10 +16,12 @@ class SiriusTest(CouchbaseBaseTest):
         self.mongo_password = self.input.param("mongo_password", "password")
         self.mongo_connection_string = self.input.param("mongo_url", "mongodb://127.0.0.1:27017")
         self.couchbase_username = self.input.param("couchbase_user", "Admin")
-        self.couchbase_password = self.input.param("couchbase_password", "password")
-        self.couchbase_connection_string = self.input.param("couchbase_url", "couchbases://127.0.0.1:8091")
-        self.aws_access_key_id = self.input.param("aws_access_key_id", "<KEY>")
-        self.aws_secret_access_key = self.input.param("aws_secret_access_key", "<KEY>")
+        self.couchbase_password = \
+            self.input.param("couchbase_password", "password")
+        self.couchbase_connection_string = \
+            self.input.param("couchbase_url", "couchbases://127.0.0.1:8091")
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
         self.aws_region = self.input.param("aws_region", "us-west-1")
         self.cassandra_username = self.input.param("cassandra_user", "Administrator")
         self.cassandra_password = self.input.param("cassandra_password", "password")
@@ -88,8 +90,6 @@ class SiriusTest(CouchbaseBaseTest):
         )
         self.task_manager.add_new_task(task_upsert)
         self.task_manager.get_task_result(task_upsert)
-        
-        
 
     def insert_couchbase_doc(self):
         database_information = CouchbaseLoader(
@@ -140,8 +140,6 @@ class SiriusTest(CouchbaseBaseTest):
         )
         self.task_manager.add_new_task(task_upsert)
         self.task_manager.get_task_result(task_upsert)
-        
-        
 
     def create_mongo_collection(self):
         database_information = MongoLoader(
@@ -368,4 +366,3 @@ class SiriusTest(CouchbaseBaseTest):
         self.create_dynamo_table()
         self.log.debug("insert load : dynamo")
         self.insert_dynamo_doc()
-

@@ -2,6 +2,7 @@
 Created on 22-April-2024
 """
 import json
+import os
 import time
 
 from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
@@ -32,9 +33,9 @@ class CopyToKV(ColumnarOnPremBase):
             self.analytics_cluster.master.rest_password
         )
 
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
 
         self.no_of_docs = self.input.param("no_of_docs", 10000)
         self.doc_size = self.input.param("doc_size", 1024)

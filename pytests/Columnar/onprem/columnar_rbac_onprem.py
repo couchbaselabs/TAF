@@ -61,9 +61,9 @@ class ColumnarRBAC(CBASBaseTest):
         self.aws_region = "us-west-1"
         self.s3_source_bucket = "columnar-sanity-test-data-mohsin"
         self.sink_s3_bucket_name = None
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
 
 
     def generate_random_password(self, length=12):

@@ -522,10 +522,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.log.info("Initializing cluster : {0}".format(cluster_name))
         # This check is to set up compute storage separation for
         # analytics in serverless mode
-        self.aws_access_key = self.input.param("aws_access_key", None)
-        self.aws_secret_key = self.input.param("aws_secret_key", None)
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
         self.aws_bucket_region = self.input.param("aws_bucket_region", None)
-        self.aws_session_token = self.input.param("aws_session_token", "")
         self.aws_bucket_created = False
         if (self.analytics_compute_storage_separation and
                 CbServer.cluster_profile == "columnar"):

@@ -3,6 +3,7 @@ Created on 25-OCTOBER-2023
 
 @author: umang.agrawal
 """
+import os
 import random
 
 from Columnar.columnar_base import ColumnarBaseTest
@@ -17,9 +18,9 @@ class S3LinksDatasets(ColumnarBaseTest):
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.tenant.columnar_instances[0]
 
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
 
         # For sanity tests we are hard coding the bucket from which the data
         # will be read. This will ensure stable and consistent test runs.

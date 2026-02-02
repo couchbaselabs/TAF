@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import string
 from Columnar.columnar_base import ColumnarBaseTest
@@ -20,9 +21,9 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.remote_cluster = self.cluster
         if self.num_clusters > 0:
             self.remote_cluster = self.tenant.clusters[0]
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
         self.doc_loader_url = self.input.param("sirius_url", None)
         self.doc_loader_port = self.input.param("sirius_port", None)
         self.no_of_docs = self.input.param("no_of_docs", 1000)

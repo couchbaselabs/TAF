@@ -26,9 +26,9 @@ class CopyToS3(ColumnarBaseTest):
     def setUp(self):
         super(CopyToS3, self).setUp()
         self.cluster = self.tenant.columnar_instances[0]
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
         self.doc_loader_url = self.input.param("doc_loader_url", None)
         self.doc_loader_port = self.input.param("doc_loader_port", None)
 
