@@ -3,6 +3,7 @@ Created on 30-Oct-2025
 
 @author: himanshu.jain@couchbase.com
 """
+import os
 
 from Columnar.columnar_base import ColumnarBaseTest
 import json
@@ -35,8 +36,8 @@ class CrossAccountSetup:
 
         self.s3_bucket = s3_bucket
         self.aws_region = self.input.param("aws_region", "us-west-1")
-        self.aws_access_key_id = self.input.param("aws_access_key", None)
-        self.aws_secret_access_key = self.input.param("aws_secret_key", None)
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
         self.user_role_name = f"columnar-regression-cross-account-auth-{str(int(time.time()))}"
         self.external_id = str(uuid.uuid4())
 

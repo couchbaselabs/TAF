@@ -3,9 +3,11 @@ Created on 12-Dec-2025
 
 @author: himanshu.jain@couchbase.com
 """
-
+import os
 import random
 import time
+from queue import Queue
+
 from concurrent.futures import ThreadPoolExecutor
 from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
 from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
@@ -16,7 +18,6 @@ from membase.api.rest_client import RestConnection
 from awsLib.s3_data_helper import perform_S3_operation
 from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
-from queue import Queue
 
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
 
@@ -49,9 +50,9 @@ class AsyncRestApi(ColumnarBaseTest):
 
         # Setup AWS credentials for tests that use S3/external links
         if not hasattr(self, 'aws_access_key') or not self.aws_access_key:
-            self.aws_access_key = self.input.param("aws_access_key", "")
+            self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
         if not hasattr(self, 'aws_secret_key') or not self.aws_secret_key:
-            self.aws_secret_key = self.input.param("aws_secret_key", "")
+            self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
         if not hasattr(self, 'aws_region') or not self.aws_region:
             self.aws_region = self.input.param("aws_region", "")
 

@@ -1,3 +1,5 @@
+import os
+
 from cb_basetest import CouchbaseBaseTest
 from sirius_client_framework.external_storage_config import AwsS3
 from sirius_client_framework.multiple_database_config import \
@@ -24,9 +26,8 @@ class SiriusTest(CouchbaseBaseTest):
             self.input.param("couchbase_password", "password")
         self.couchbase_connection_string = \
             self.input.param("couchbase_url", "couchbases://127.0.0.1:8091")
-        self.aws_access_key_id = self.input.param("aws_access_key_id", "<KEY>")
-        self.aws_secret_access_key = \
-            self.input.param("aws_secret_access_key", "<KEY>")
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
         self.aws_region = self.input.param("aws_region", "us-west-1")
         self.cassandra_username = \
             self.input.param("cassandra_user", "Administrator")
@@ -100,7 +101,7 @@ class SiriusTest(CouchbaseBaseTest):
         )
         self.task_manager.add_new_task(task_upsert)
         self.task_manager.get_task_result(task_upsert)
-        
+
     def insert_couchbase_doc(self):
         database_information = CouchbaseLoader(
             username=self.couchbase_username,
@@ -150,7 +151,7 @@ class SiriusTest(CouchbaseBaseTest):
         )
         self.task_manager.add_new_task(task_upsert)
         self.task_manager.get_task_result(task_upsert)
-        
+
     def create_mongo_collection(self):
         database_information = MongoLoader(
             username=self.mongo_username,

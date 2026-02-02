@@ -72,9 +72,9 @@ class ColumnarBaseTest(BaseTestCase):
             )
 
         # AWS credentials and other info
-        self.aws_access_key = self.input.param("aws_access_key", "")
-        self.aws_secret_key = self.input.param("aws_secret_key", "")
-        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
         self.aws_region = self.input.param("aws_region", "us-west-1")
         self.aws_endpoint = self.input.param("aws_endpoint", "")
 
