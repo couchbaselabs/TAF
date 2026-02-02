@@ -1285,11 +1285,11 @@ class UpgradeBase(BaseTestCase):
         if not isinstance(content, dict):
             self.fail(f"Expected dict from internalSettings, got {type(content)}")
 
-        if 'fileBasedBackfillEnabled' in content:
-            file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+        if 'dataServiceFileBasedRebalanceEnabled' in content:
+            file_based_backfill_enabled = content.get('dataServiceFileBasedRebalanceEnabled', False)
             self.assertTrue(file_based_backfill_enabled,
-                           "fileBasedBackfillEnabled should be True by default in Couchbase 8.1+")
-            self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+                           "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.1+")
+            self.log.info("FBR (dataServiceFileBasedRebalanceEnabled) is enabled as expected")
 
             if self.disable_file_based_rebalance:
                 self.cluster_util.set_file_based_rebalance(

@@ -35,10 +35,10 @@ class RebalanceBaseTest(BaseTestCase):
             self.fail(f"Failed to get internalSettings: {content}")
         if not isinstance(content, dict):
             self.fail(f"Expected dict from internalSettings, got {type(content)}")
-        file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+        file_based_backfill_enabled = content.get('dataServiceFileBasedRebalanceEnabled', False)
         self.assertTrue(file_based_backfill_enabled,
-                       "fileBasedBackfillEnabled should be True by default in Couchbase 8.1")
-        self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+                       "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.1")
+        self.log.info("FBR (dataServiceFileBasedRebalanceEnabled) is enabled as expected")
 
         # Check if FBR should be disabled for DCP fallback testing
         if self.disable_file_based_rebalance:
