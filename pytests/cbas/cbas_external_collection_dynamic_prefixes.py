@@ -1,4 +1,5 @@
 import json
+import os
 import random
 
 from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
@@ -24,9 +25,9 @@ class CBASExternalCollectionsDynamicPrefixes(CBASBaseTest):
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.cb_clusters.values()[0]
 
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
 
         self.paths_on_external_container = self.input.param("paths_on_external_container")
         self.file_format = self.input.param("file_format")

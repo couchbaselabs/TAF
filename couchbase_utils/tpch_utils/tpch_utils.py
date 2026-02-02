@@ -57,9 +57,9 @@ class TPCHUtil(object):
     """
     def load_tpch_data_into_KV_buckets(self, cluster):
         # Load data into tpch buckets
-        aws_access_key = self.basetest_obj.input.param("aws_access_key")
-        aws_secret_key = self.basetest_obj.input.param("aws_secret_key")
-        aws_session_token = self.basetest_obj.input.param("aws_session_token", "")
+        aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+        aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
 
         data_folder_path = os.path.dirname(__file__)
         dest_folder_path = "/tmp"

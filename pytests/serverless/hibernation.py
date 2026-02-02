@@ -1,3 +1,5 @@
+import os
+
 from couchbase_utils.cbas_utils.cbas_utils import CBASRebalanceUtil, CbasUtil
 from pytests.bucket_collections.collections_base import CollectionBase
 from pytests.serverless.serverless_onprem_basetest import \
@@ -34,9 +36,8 @@ class Hibernation(ServerlessOnPremBaseTest):
         self.spec_name = self.input.param("bucket_spec", None)
         self.run_pause_resume_first = self.input.param("run_pause_resume_first",
                                                        False)
-        self.aws_access_key_id = self.input.param("aws_access_key_id", None)
-        self.aws_secret_access_key = self.input.param("aws_secret_access_key",
-                                                      None)
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
 
         if not self.aws_access_key_id:
             self.log.info("Getting credentials from json file")
