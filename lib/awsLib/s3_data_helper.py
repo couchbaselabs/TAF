@@ -18,8 +18,10 @@ def perform_S3_operation(**kwargs):
     """
     aws_util_file_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "S3.py"))
-    arguements = ["python3", aws_util_file_path, kwargs.get("aws_access_key"),
-                  kwargs.get("aws_secret_key"), kwargs.get("aws_session_token", "")]
+    arguements = ["python3", aws_util_file_path,
+                  kwargs.get("aws_access_key") or "",
+                  kwargs.get("aws_secret_key") or "",
+                  kwargs.get("aws_session_token") or ""]
 
     if kwargs.get("get_regions", False):
         arguements.append("--get_regions")
