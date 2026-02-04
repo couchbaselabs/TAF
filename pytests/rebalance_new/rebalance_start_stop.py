@@ -100,6 +100,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         _ = set(self.servs_init + self.servs_in) - set(self.servs_out)
         # the latest iteration will be with i=5, for this case rebalance should be completed,
         # that also is verified and tracked
+        # Start with FBR disabled (DCP mode) for first iteration
+        fbr_enabled = False
+        self.cluster_util.set_file_based_rebalance(
+            self.cluster.master, enabled=fbr_enabled)
+
         for i in range(1, 6):
             if i == 1:
                 rebalance = self.task.async_rebalance(
@@ -123,6 +128,11 @@ class RebalanceStartStopTests(RebalanceBaseTest):
                 self.assertTrue(
                     reb_util.stop_rebalance(wait_timeout=self.wait_timeout/3),
                     msg="Unable to stop rebalance")
+
+                # Toggle FBR before retry
+                fbr_enabled = not fbr_enabled
+                self.cluster_util.set_file_based_rebalance(
+                    self.cluster.master, enabled=fbr_enabled)
             self.task_manager.get_task_result(rebalance)
             if self.cluster_util.is_cluster_rebalanced(rest):
                 self.validate_docs()

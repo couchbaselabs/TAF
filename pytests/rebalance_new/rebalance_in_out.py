@@ -289,6 +289,11 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.gen_update = self.get_doc_generator(0, self.num_items)
 
         for i in reversed(range(self.num_servers)[self.num_servers//2:]):
+            # Toggle FBR for each iteration (alternate between DCP and FBR)
+            fbr_enabled = (i % 2 == 0)
+            self.cluster_util.set_file_based_rebalance(
+                self.cluster.master, enabled=fbr_enabled)
+
             # CRUDs while rebalance is running in parallel
             tasks_info = self.loadgen_docs(retry_exceptions=rebalance_base.retry_exceptions)
             self.add_remove_servers_and_rebalance([], self.cluster.servers[i:self.num_servers])
@@ -304,6 +309,11 @@ class RebalanceInOutTests(RebalanceBaseTest):
                     "Doc ops failed for task: {}".format(task.thread_name))
             tasks_info = self.loadgen_docs(
                 retry_exceptions=rebalance_base.retry_exceptions)
+
+            # Toggle FBR for the next rebalance
+            fbr_enabled = not fbr_enabled
+            self.cluster_util.set_file_based_rebalance(
+                self.cluster.master, enabled=fbr_enabled)
 
             self.add_remove_servers_and_rebalance(
                 self.cluster.servers[i:self.num_servers], [])
