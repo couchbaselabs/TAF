@@ -1,3 +1,4 @@
+import json
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.xdcr.xdcr_api import XdcrRestAPI
 
@@ -54,3 +55,19 @@ class XDCRUtils(object):
             status, content = self.xdcr_rest.stop_recovery(uri)
             if status is False:
                 raise Exception(f"Failed to stop recovery using uri: {uri}")
+
+    def get_xdcr_queue_size(self, bucket_name):
+        """
+        Get the current XDCR replication queue size (replication_changes_left)
+        :param bucket_name: Bucket name to check
+        :return: Number of changes left to replicate (integer)
+        """
+        status, content = self.xdcr_rest.get_xdcr_stats(bucket_name)
+        if status:
+            # content is already parsed as dict by CBRestConnection.request()
+            if isinstance(content, str):
+                stats = json.loads(content)
+            else:
+                stats = content
+            return stats['op']['samples']['replication_changes_left'][-1]
+        return None
