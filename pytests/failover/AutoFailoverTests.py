@@ -43,11 +43,6 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
     def tearDown(self):
         self.log.info("Printing bucket stats before teardown")
-        if self.failover_ephemeral_no_replicas:
-            shell = RemoteMachineShellConnection(self.cluster.master)
-            shell.enable_diag_eval_on_non_local_hosts()
-            shell.disconnect()
-            self.rest.update_failover_ephemeral_no_replicas(value="false")
         self.bucket_util.print_bucket_stats(self.cluster)
         super(AutoFailoverTests, self).tearDown()
 
