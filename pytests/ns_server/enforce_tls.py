@@ -1,5 +1,6 @@
 from BucketLib.bucket import TravelSample
 from cb_constants import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from pytests.bucket_collections.collections_base import CollectionBase
@@ -168,9 +169,16 @@ class EnforceTls(CollectionBase):
     def test_check_tls_after_restarting_nodes(self):
         """
         1. Enforce tls on the cluster
-        2. Restart couchabse server on all nodes
-        3. Validate the tls setting has persisted after restart
+        2. If FBR is enabled, note it for persistence check after restart
+        3. Restart couchabse server on all nodes
+        4. Validate the tls setting has persisted after restart
+        5. If FBR was enabled, validate FBR config has persisted after restart
         """
+        rest = ClusterRestAPI(self.cluster.master)
+        status, content = rest.set_internal_settings()
+        check_fbr = (status and "dataServiceFileBasedRebalanceEnabled" in content
+                     and content.get("dataServiceFileBasedRebalanceEnabled", False))
+
         self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
         self.log.info("Restarting servers on nodes {0}".
                       format(self.cluster.servers[:self.nodes_init]))
@@ -183,6 +191,13 @@ class EnforceTls(CollectionBase):
             level = self.get_encryption_level_on_node(node=node)
             if level != "strict":
                 self.fail("Node {0} expected strict actual {1}".format(node, level))
+
+        if check_fbr:
+            status, content = rest.set_internal_settings()
+            self.assertTrue(status, "Failed to get internalSettings after restart")
+            self.assertTrue(
+                content.get("dataServiceFileBasedRebalanceEnabled", False),
+                "FBR config did not persist after cluster restart")
 
     def test_enforce_tls_by_invalid_user(self):
         """
