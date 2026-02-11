@@ -131,8 +131,8 @@ class CbServer(object):
     max_collection_name_len = 251
 
     # Count excluding the default scope/collection
-    max_scopes = 1200
-    max_collections = 1200
+    max_scopes = 10000
+    max_collections = 10000
 
     # TTL limit
     max_ttl_seconds = 2147483647

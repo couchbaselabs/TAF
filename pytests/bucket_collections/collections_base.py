@@ -18,6 +18,7 @@ from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.fusion.fusion_base import FusionBase
+from pytests.bucket_collections.collection_scope_number_manager import CollectionScopeNumberManager
 
 from couchbase.exceptions import InvalidIndexException, \
     QueryIndexNotFoundException
@@ -640,6 +641,17 @@ class CollectionBase(ClusterSetup, FusionBase):
         # Process params to over_ride values if required
         CollectionBase.over_ride_bucket_template_params(
             test_obj, test_obj.bucket_storage, buckets_spec)
+
+        buckets_spec =  CollectionScopeNumberManager(
+            spec=buckets_spec,
+            update_object={
+
+                "max_possible_collection": CbServer.max_collections,
+                "collection_factor": getattr(test_obj, "collection_factor", None),
+                "collection_scale": getattr(test_obj, "collection_scale", None),
+
+            }
+        ).update_bucket_spec()
 
         if hasattr(test_obj, "bucket_num_vb") and test_obj.bucket_num_vb is not None \
                 and buckets_spec.get(Bucket.storageBackend, Bucket.StorageBackend.magma) == Bucket.StorageBackend.magma:

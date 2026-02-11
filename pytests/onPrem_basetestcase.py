@@ -73,6 +73,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.input.param("cbas_quota_percent", None)
         self.eventing_mem_quota_percent = \
             self.input.param("eventing_quota_percent", None)
+
+        # Collection - Scope scale settings
+        self.collection_factor =  self.input.param("collection_factor", 0.1)
+        self.collection_scale = self.input.param("collection_scale", None)
+
         # Azure Blob params
         self.az_blob = self.input.param("az_blob", False)
 
