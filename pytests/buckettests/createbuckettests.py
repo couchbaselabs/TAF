@@ -5,6 +5,7 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
@@ -22,6 +23,23 @@ class CreateBucketTests(ClusterSetup):
 
     def tearDown(self):
         super(CreateBucketTests, self).tearDown()
+
+    def test_invalid_file_based_rebalance_config(self):
+        """Invalid FBR config value should be rejected and not persist."""
+        rest = ClusterRestAPI(self.cluster.master)
+        status, content = rest.set_internal_settings()
+        self.assertTrue(status, "Could not get internalSettings: %s" % content)
+        self.assertIsInstance(content, dict, "Expected dict from internalSettings")
+        self.assertIn('dataServiceFileBasedRebalanceEnabled', content,
+                      "dataServiceFileBasedRebalanceEnabled not available (expect 8.1+)")
+        original_value = content.get('dataServiceFileBasedRebalanceEnabled')
+        set_status, set_content = rest.set_internal_settings(
+            'dataServiceFileBasedRebalanceEnabled', 'invalid_value')
+        self.assertFalse(set_status, "Invalid FBR value should be rejected: %s" % set_content)
+        status2, content2 = rest.set_internal_settings()
+        self.assertTrue(status2 and isinstance(content2, dict), "Could not read back internalSettings")
+        self.assertEqual(content2.get('dataServiceFileBasedRebalanceEnabled'), original_value,
+                         "Value should not have been updated after invalid set")
 
     def test_two_replica(self):
         name = 'default'
