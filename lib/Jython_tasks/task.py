@@ -7680,7 +7680,7 @@ class NodeInitializeTask(Task):
         while self.total_memory <= 0 and time.time() < timeout:
             _, info = rest.node_details()
             mcd_mem_reserved = int(info["mcdMemoryReserved"])
-            self.total_memory = int(mcd_mem_reserved - 100)
+            self.total_memory = int(mcd_mem_reserved)
         self.log.critical("mcdMemoryReserved reported in nodes/self is: %s"
                           % mcd_mem_reserved)
         if self.quota_percent:
