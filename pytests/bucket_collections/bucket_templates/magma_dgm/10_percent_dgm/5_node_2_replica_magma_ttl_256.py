@@ -33,7 +33,7 @@ spec = {
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 1000,
             Bucket.storageBackend: Bucket.StorageBackend.couchstore,
-            Bucket.ramQuotaMB: 2000,
+            Bucket.ramQuotaMB: 1500,
             Bucket.maxTTL: 1100,
         },
         "bucket2": {
