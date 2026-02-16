@@ -24,6 +24,8 @@ class CollectionsNetworkSplit(CollectionBase):
         self.allow_unsafe = self.input.param("allow_unsafe", False)
 
         self.known_nodes = self.cluster.servers[:self.nodes_init]
+        # Verify FBR (File-Based Rebalance) setting and configure if needed
+        self.verify_and_configure_fbr()
 
     def tearDown(self):
         # We are not bringing in new nodes, so init nodes should be enough to
