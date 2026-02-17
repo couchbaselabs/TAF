@@ -195,8 +195,17 @@ else
 fi
 
 # Passing aws_access_key and aws_secret_key for analytics test cases
-if [ "$component" = "analytics" ]; then
-	parameters="${parameters},aws_access_key=${aws_access_key},aws_secret_key=${aws_secret_key}"
+if [[ "$component" = "analytics" || "$component" = "columnar" ]]; then
+  read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
+    $(aws sts assume-role \
+      --role-arn arn:aws:iam::516524556673:role/analytics \
+      --role-session-name session \
+      --duration-seconds 43200 \
+      --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+      --output text)
+
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  parameters="${parameters}"
 fi
 
 status=0

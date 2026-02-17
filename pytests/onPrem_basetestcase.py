@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -653,6 +654,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             services_mem_quota_percent[CbServer.Services.CBAS] = 80
             services_mem_quota_percent[CbServer.Services.KV] = 10
             self.columnar_s3_obj = S3(self.columnar_aws_access_key, self.columnar_aws_secret_key,
+                             session_token=self.columnar_aws_session_token,
                              region=self.columnar_aws_region,
                              endpoint_url=self.columnar_aws_endpoint)
             if not self.az_blob:
@@ -692,6 +694,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             status = self.configure_compute_storage_separation_for_analytics(
                 server=cluster.master, aws_access_key=self.columnar_aws_access_key,
                 aws_secret_key=self.columnar_aws_secret_key,
+                aws_session_token=self.columnar_aws_session_token,
                 aws_bucket_name=self.columnar_aws_bucket_name,
                 aws_bucket_region=self.columnar_aws_region)
             if not status:
@@ -1501,33 +1504,77 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.set_ports_for_server(server, "non_ssl")
         super(OnPremBaseTest, self).handle_setup_exception(exception_obj)
 
+    def _configure_aws_credentials_on_host(
+            self, server, aws_access_key, aws_secret_key, aws_session_token=None,
+            aws_region=None):
+        """
+        Create /home/couchbase/.aws with config and credentials files for the
+        default profile (per Couchbase Enterprise Analytics docs).
+        - config: [default] and optional region.
+        - credentials: aws_access_key_id, aws_secret_access_key, optional session_token.
+        """
+        aws_dir = "/home/couchbase/.aws"
+        config_path = aws_dir + "/config"
+        creds_path = aws_dir + "/credentials"
+
+        config_lines = ["[default]"]
+        if aws_region:
+            config_lines.append("region = {}".format(aws_region))
+        config_content = "\n".join(config_lines) + "\n"
+        config_b64 = base64.b64encode(config_content.encode("utf-8")).decode("ascii")
+
+        creds_lines = [
+            "[default]",
+            "aws_access_key_id = {}".format(aws_access_key),
+            "aws_secret_access_key = {}".format(aws_secret_key),
+        ]
+        if aws_session_token:
+            creds_lines.append("aws_session_token = {}".format(aws_session_token))
+        creds_content = "\n".join(creds_lines) + "\n"
+        creds_b64 = base64.b64encode(creds_content.encode("utf-8")).decode("ascii")
+
+        shell = RemoteMachineShellConnection(server)
+        try:
+            shell.execute_command("mkdir -p {}".format(aws_dir))
+            shell.execute_command(
+                "echo '{}' | base64 -d > {}".format(config_b64, config_path))
+            shell.execute_command(
+                "echo '{}' | base64 -d > {}".format(creds_b64, creds_path))
+            shell.execute_command(
+                "chown -R couchbase:couchbase {}".format(aws_dir))
+            shell.execute_command("chmod 600 {}".format(config_path))
+            shell.execute_command("chmod 600 {}".format(creds_path))
+            self.log.info(
+                "Configured AWS default profile at {} and {} on {}".format(
+                    config_path, creds_path, server.ip))
+        except Exception as e:
+            self.log.error("Failed to configure AWS credentials on host: {}".format(e))
+            return False
+        finally:
+            shell.disconnect()
+        return True
+
     def configure_compute_storage_separation_for_analytics(
             self, server, aws_access_key, aws_secret_key, aws_bucket_name,
-            aws_bucket_region):
+            aws_bucket_region, aws_session_token=None):
         """
-        Method to add aws bucket to analytics for compute storage separation
+        Method to add aws bucket to analytics for compute storage separation.
+        Configures /home/couchbase/.aws/credentials on the host (per Couchbase
+        Enterprise Analytics docs) then updates analytics blob storage settings.
         :param server:
         :param aws_access_key:
         :param aws_secret_key:
         :param aws_bucket_name:
         :param aws_bucket_region:
+        :param aws_session_token: optional; for temporary credentials (e.g. STS).
         :return:
         """
+        if not self._configure_aws_credentials_on_host(
+                server, aws_access_key, aws_secret_key, aws_session_token,
+                aws_region=aws_bucket_region):
+            return False
+
         rest = AnalyticsRestAPI(server)
-        self.log.info(f"Setting aws access key id: {aws_access_key}")
-        status, content = rest.set_blob_storage_access_key_id(
-            access_key_id=aws_access_key)
-        if not status:
-            self.log.error(f"Failed to set aws access key id: {status} {str(content)}")
-            return False
-
-        self.log.info(f"Setting aws secret access key: {aws_secret_key}")
-        status, content = rest.set_blob_storage_secret_access_key(
-            secret_access_key=aws_secret_key)
-        if not status:
-            self.log.error(f"Failed to set aws secret access key: {status} {str(content)}")
-            return False
-
         self.log.info("Adding aws bucket config to analytics")
         if self.az_blob:
             blob_storage_scheme = "azblob"
