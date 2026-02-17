@@ -13,6 +13,7 @@ class GetClusterSchedule(GetCluster):
     def setUp(self, nomenclature="Clusters_Schedule_Get"):
         GetCluster.setUp(self, nomenclature)
         self.expected_result = {
+            "activationStatus":"active",
             "timezone": "Pacific/Midway",
             "days": [
                 {
