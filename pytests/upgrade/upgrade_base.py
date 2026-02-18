@@ -475,7 +475,7 @@ class UpgradeBase(BaseTestCase):
 
         if selection_criteria:
             if CbServer.Services.CBAS in selection_criteria:
-                for node in self.cluster_util.get_nodes(self.cluster.master):
+                for node in self.cluster_util.get_nodes(self.cluster.master, inactive_added=True):
                     _, node_info = ClusterRestAPI(node).node_details()
                     if (self.upgrade_version not in node_info["version"]
                             or "community" in node_info["version"]) \
@@ -508,7 +508,7 @@ class UpgradeBase(BaseTestCase):
                     cluster_node = self.cluster.master
 
             if cluster_node is None:
-                for node in self.cluster_util.get_nodes(self.cluster.master):
+                for node in self.cluster_util.get_nodes(self.cluster.master, inactive_added=True):
                     _, node_info = ClusterRestAPI(node).node_details()
                     if (self.upgrade_version not in node_info["version"]
                             or "community" in node_info["version"]) \
@@ -535,7 +535,7 @@ class UpgradeBase(BaseTestCase):
         :param target_node: Node going to be upgraded
         :return: OtpNode object of the target_node
         """
-        nodes = self.cluster_util.get_nodes(rest_node)
+        nodes = self.cluster_util.get_nodes(rest_node, inactive_added=True)
         for node in nodes:
             if node.ip == target_node.ip:
                 return node
@@ -548,7 +548,7 @@ class UpgradeBase(BaseTestCase):
         :return: RestConnection object of node
         """
         target_node = None
-        for node in self.cluster_util.get_nodes(self.cluster.master):
+        for node in self.cluster_util.get_nodes(self.cluster.master, inactive_added=True):
             if node.ip != node_to_upgrade.ip:
                 target_node = node
                 break
@@ -809,7 +809,7 @@ class UpgradeBase(BaseTestCase):
                       self.creds.rest_password,
                       services=services_on_target_node)
         otp_nodes = [node.id for node in \
-                     self.cluster_util.get_nodes(rest_node)]
+                     self.cluster_util.get_nodes(rest_node, inactive_added=True)]
 
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
@@ -832,7 +832,7 @@ class UpgradeBase(BaseTestCase):
         rest_node, rest = self.__get_rest_node(self.spare_node)
         eject_otp_node = self.__get_otp_node(rest_node, node_to_upgrade)
         otp_nodes = [node.id for node in
-                     self.cluster_util.get_nodes(rest_node)]
+                     self.cluster_util.get_nodes(rest_node, inactive_added=True)]
         rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
 
         self.perform_collection_ops_load(self.collection_spec)
@@ -863,7 +863,7 @@ class UpgradeBase(BaseTestCase):
         rest_node, rest = self.__get_rest_node(node_to_upgrade)
         eject_otp_node = self.__get_otp_node(rest_node, node_to_upgrade)
         otp_nodes = [node.id for node in \
-                     self.cluster_util.get_nodes(rest_node)]
+                     self.cluster_util.get_nodes(rest_node, inactive_added=True)]
         rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
         if not rebalance_passed:
@@ -889,7 +889,7 @@ class UpgradeBase(BaseTestCase):
                       password=self.creds.rest_password,
                       services=services_on_target_node)
         otp_nodes = [node.id for node in \
-                     self.cluster_util.get_nodes(rest_node)]
+                     self.cluster_util.get_nodes(rest_node, inactive_added=True)]
 
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
