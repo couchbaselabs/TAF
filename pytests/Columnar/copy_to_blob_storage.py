@@ -1377,6 +1377,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         external_link_obj = \
             self.cbas_util.create_external_link_obj(self.columnar_cluster, accessKeyId=self.aws_access_key,
                                                     secretAccessKey=self.aws_secret_key,
+                                                    sessionToken=self.aws_session_token,
                                                     serviceEndpoint=self.aws_endpoint,
                                                     regions=[self.aws_region])[0]
         if not self.cbas_util.create_external_link(self.columnar_cluster, external_link_obj.properties):

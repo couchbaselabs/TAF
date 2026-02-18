@@ -198,7 +198,7 @@ fi
 if [[ "$component" = "analytics" || "$component" = "columnar" ]]; then
   read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \
     $(aws sts assume-role \
-      --role-arn arn:aws:iam::516524556673:role/analytics \
+      --role-arn arn:aws:iam::516524556673:role/jenkins-qe-analytics \
       --role-session-name session \
       --duration-seconds 43200 \
       --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \

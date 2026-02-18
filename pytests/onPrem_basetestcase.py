@@ -393,6 +393,33 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     pass
 
         self.log_setup_status("OnPremBaseTest", "started")
+
+        # Analytics (EA) parameters
+        self.runtype = self.input.param("runtype", "default")
+        self.storage_provider = self.input.param("storage_provider", "aws")
+        self.aws_endpoint = None
+        self.aws_session_token = None
+
+        if self.runtype == "onprem-columnar":
+            if self.storage_provider == "aws":
+                self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+                self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+                self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
+                self.aws_region = self.input.param("aws_region", None) or "us-west-1"
+
+                for server in self.servers:
+                    if server.type == "analytics":
+                        if not self._configure_aws_credentials_on_host(
+                                server, self.aws_access_key, self.aws_secret_key, self.aws_session_token,
+                                aws_region=self.aws_region):
+                            self.log.error("Failed to configure AWS credentials on EA Analytics node")
+
+            elif self.storage_provider == "netapp":
+                self.aws_access_key = os.getenv("NETAPP_ACCESS_KEY_ID", None)
+                self.aws_secret_key = os.getenv("NETAPP_SECRET_ACCESS_KEY", None)
+                self.aws_endpoint = "http://172.23.105.108:10444"
+                self.aws_region = self.input.param("aws_region", "us-east-1")
+
         self.nebula = self.input.param("nebula", False)
         self.nebula_details = dict()
         self.docker_containers = list()
@@ -626,19 +653,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.log.info("Initializing cluster : {0}".format(cluster_name))
         # This check is to set up compute storage separation for
         # analytics in serverless mode
-        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
-        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
-        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
-        self.aws_region = self.input.param("aws_region", None) or "us-west-1"
         self.aws_bucket_created = False
-        self.aws_endpoint = self.input.param("aws_endpoint", None)
 
         self.columnar_aws_access_key = self.input.param("columnar_aws_access_key",
                                                         self.aws_access_key)
         self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key",
                                                         self.aws_secret_key)
 
-        if self.az_blob:
+        if self.az_blob and not self.columnar_aws_secret_key.endswith("=="):
             self.columnar_aws_secret_key = self.columnar_aws_secret_key + "=="
             self.aws_secret_key = self.aws_secret_key + "=="
         self.columnar_aws_region = self.input.param("columnar_aws_region",
@@ -694,7 +716,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
             status = self.configure_compute_storage_separation_for_analytics(
                 server=cluster.master, aws_access_key=self.columnar_aws_access_key,
                 aws_secret_key=self.columnar_aws_secret_key,
-                aws_session_token=self.columnar_aws_session_token,
                 aws_bucket_name=self.columnar_aws_bucket_name,
                 aws_bucket_region=self.columnar_aws_region)
             if not status:
@@ -887,6 +908,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.cluster_util.set_file_based_rebalance(
                 cluster.master, enabled=True)
 
+        if self.runtype == "onprem-columnar" and self.storage_provider == "aws":
+            for server in self.servers:
+                if server.type == "analytics":
+                    if not self._remove_aws_credentials_from_host(server):
+                        self.log.error("Failed to remove AWS credentials on EA Analytics node")
+
         self.shutdown_task_manager()
 
     def tearDownEverything(self, reset_cluster_env_vars=True):
@@ -926,7 +953,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.bucket_util.delete_all_buckets(cluster)
                     self.cluster_util.reset_env_variables(cluster)
 
-                if self.input.param("runtype", "default") == "onprem-columnar":
+                if self.runtype == "onprem-columnar":
                     # Doing this only for Enterprise Analytics edition
                     # to avoid unwanted cleanup for default server runs
                     self.log.info("Delete all buckets and rebalance out "
@@ -1504,6 +1531,22 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.set_ports_for_server(server, "non_ssl")
         super(OnPremBaseTest, self).handle_setup_exception(exception_obj)
 
+    def _remove_aws_credentials_from_host(self, server):
+        """
+        Remove /home/couchbase/.aws directory to clean up any AWS credentials
+        from the host.
+        """
+        shell = RemoteMachineShellConnection(server)
+        try:
+            shell.execute_command("rm -rf /home/couchbase/.aws")
+            self.log.info(f"Removed AWS credentials from {server.ip}")
+        except Exception as e:
+            self.log.error(f"Failed to remove AWS credentials from host: {e}")
+            return False
+        finally:
+            shell.disconnect()
+        return True
+
     def _configure_aws_credentials_on_host(
             self, server, aws_access_key, aws_secret_key, aws_session_token=None,
             aws_region=None):
@@ -1556,7 +1599,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
     def configure_compute_storage_separation_for_analytics(
             self, server, aws_access_key, aws_secret_key, aws_bucket_name,
-            aws_bucket_region, aws_session_token=None):
+            aws_bucket_region):
         """
         Method to add aws bucket to analytics for compute storage separation.
         Configures /home/couchbase/.aws/credentials on the host (per Couchbase
@@ -1569,12 +1612,23 @@ class OnPremBaseTest(CouchbaseBaseTest):
         :param aws_session_token: optional; for temporary credentials (e.g. STS).
         :return:
         """
-        if not self._configure_aws_credentials_on_host(
-                server, aws_access_key, aws_secret_key, aws_session_token,
-                aws_region=aws_bucket_region):
-            return False
-
         rest = AnalyticsRestAPI(server)
+
+        if self.storage_provider != "aws":
+            self.log.info(f"Setting aws access key id: {aws_access_key}")
+            status, content = rest.set_blob_storage_access_key_id(
+                access_key_id=aws_access_key)
+            if not status:
+                self.log.error(f"Failed to set aws access key id: {status} {str(content)}")
+                return False
+
+            self.log.info(f"Setting aws secret access key: {aws_secret_key}")
+            status, content = rest.set_blob_storage_secret_access_key(
+                secret_access_key=aws_secret_key)
+            if not status:
+                self.log.error(f"Failed to set aws secret access key: {status} {str(content)}")
+                return False
+
         self.log.info("Adding aws bucket config to analytics")
         if self.az_blob:
             blob_storage_scheme = "azblob"

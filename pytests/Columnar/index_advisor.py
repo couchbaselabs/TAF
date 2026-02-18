@@ -153,7 +153,7 @@ class IndexAdvisor(ColumnarBaseTest):
         for dataset in datasets:
             query = f"select count(*) from {dataset.full_name} where price = 1000"
             self.advisor(self.columnar_cluster, dataset.full_name, query,
-                         skip_analyze=True, validate_error=True, error_code=24284)
+                         skip_analyze=True, validate_error=True, error_code=24291)
             self.log.info("No analyze no advise validation passed")
 
     def test_disable_cbo(self):

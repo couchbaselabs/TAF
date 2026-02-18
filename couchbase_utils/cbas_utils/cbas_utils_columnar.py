@@ -1894,7 +1894,7 @@ class ExternalLink_Util(RemoteLink_Util):
         return all(results)
 
     def create_external_link_obj(
-            self, cluster, accessKeyId=None, secretAccessKey=None, regions=[],
+            self, cluster, accessKeyId=None, secretAccessKey=None, sessionToken=None, regions=[],
             serviceEndpoint=None, link_type="s3", no_of_objs=1, name_length=30,
             fixed_length=False, link_perm=False):
         """
@@ -1911,6 +1911,7 @@ class ExternalLink_Util(RemoteLink_Util):
                         fixed_length=fixed_length),
                     properties={"type": "s3", "accessKeyId": accessKeyId,
                                 "secretAccessKey": secretAccessKey,
+                                "sessionToken": sessionToken,
                                 "region": random.choice(regions),
                                 "serviceEndpoint": serviceEndpoint})
             elif link_type.lower() == "azureblob":

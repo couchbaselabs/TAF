@@ -1605,6 +1605,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                     self.cbas_util.create_external_link_obj(self.columnar_cluster,
                                                                       accessKeyId=self.aws_access_key,
                                                                       secretAccessKey=self.aws_secret_key,
+                                                                      sessionToken=self.aws_session_token,
                                                                       regions=[self.aws_region])
                     external_links = self.cbas_util.get_all_link_objs("s3")
                     s3_link_obj = None
@@ -1663,6 +1664,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                         self.columnar_cluster,
                         accessKeyId=self.aws_access_key,
                         secretAccessKey=self.aws_secret_key,
+                        sessionToken=self.aws_session_token,
                         regions=[self.aws_region])
                     external_links = self.cbas_util.get_all_link_objs("s3")
                     s3_link_obj = None
