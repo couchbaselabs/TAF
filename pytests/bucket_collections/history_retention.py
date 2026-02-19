@@ -69,7 +69,7 @@ class DocHistoryRetention(ClusterSetup):
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for bucket in self.cluster.buckets:
             exp_bytes_per_vb = \
-                bucket.historyRetentionBytes / self.cluster.vbuckets
+                bucket.historyRetentionBytes / bucket.numVBuckets
             result = self.bucket_util.validate_disk_info_detail_history_stats(
                 bucket, kv_nodes, exp_bytes_per_vb)
             self.assertTrue(result, "Disk_info validation failed")
@@ -601,7 +601,7 @@ class DocHistoryRetention(ClusterSetup):
         else:
             client = SDKClient(self.cluster, bucket, collection=col)
         keys = list()
-        for vb_num in range(0, int(self.bucket_num_vb)):
+        for vb_num in range(bucket.numVBuckets):
             key, val = doc_generator("test_doc", 0, 1,
                                      target_vbucket=[vb_num]).next()
             keys.append(key)
@@ -1281,7 +1281,7 @@ class DocHistoryRetention(ClusterSetup):
         target_vbs = list()
         doc_ttl = self.input.param("doc_ttl", 0)
         max_disk_size_per_vb = \
-            self.bucket_dedup_retention_bytes / self.cluster.vbuckets
+            self.bucket_dedup_retention_bytes / self.cluster.buckets[0].numVBuckets
         num_compactions = self.input.param("num_compactions", 0)
         num_cols_to_drop = self.input.param("num_collections_to_drop", 0)
         new_replica = self.input.param("new_replica", None)
