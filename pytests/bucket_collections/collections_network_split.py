@@ -326,7 +326,7 @@ class CollectionsNetworkSplit(CollectionBase):
         self.pick_nodes_and_network_split()
         self.sleep(60, "wait for network split to finish")
 
-        result = self.task.failover(self.known_nodes, failover_nodes=self.nodes_failover,
+        result = self.task.failover(self.cluster, failover_nodes=self.nodes_failover,
                                     graceful=False, allow_unsafe=self.allow_unsafe)
         self.assertTrue(result, "Hard Failover failed")
         self.wait_for_async_data_load_to_complete(task)
@@ -379,7 +379,9 @@ class CollectionsNetworkSplit(CollectionBase):
         self.log.info("First half nodes {0}".format(first_half_nodes.servers))
         self.log.info("Second half nodes {0}".format(second_half_nodes.servers))
         self.log.info("Failing over nodes: {0}".format(self.nodes_failover))
-        result = self.task.failover(otp_nodes.servers,
+        # FailoverTask expects a cluster object with nodes_in_cluster
+        otp_nodes.nodes_in_cluster = list(otp_nodes.servers)
+        result = self.task.failover(otp_nodes,
                                     failover_nodes=self.nodes_failover,
                                     graceful=False, allow_unsafe=self.allow_unsafe,
                                     all_at_once=True)
