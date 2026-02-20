@@ -7,6 +7,8 @@ features = {
     "7.1": ["magma", "system_event_logs"],
     "7.2": ["cdc"],
     "8.0": ["durability_impossible_fallback"],
+    "8.1": ["file_based_rebalance", "10K_collections",
+            "fusion", "rate_limiting", "jwt_auth", "pitr"]
 }
 
 upgrade_chains = {
