@@ -26,15 +26,12 @@ class TransactionLoader(object):
         self.trans_query = None
 
     @staticmethod
-    def get_transaction_options(durability=None, kv_timeout=None,
+    def get_transaction_options(durability=None,
                                 expiration_time=None, scan_consistency=None,
                                 metadata_scope=None,
                                 metadata_collection=None):
         if durability is not None:
             durability = SDKOptions.get_durability_level(durability)
-        if kv_timeout is not None:
-            kv_timeout = SDKOptions.get_duration(kv_timeout,
-                                                 time_unit="seconds")
         if expiration_time is not None:
             expiration_time = SDKOptions.get_duration(expiration_time,
                                                       time_unit="seconds")
@@ -45,8 +42,7 @@ class TransactionLoader(object):
                                              metadata_collection)
         return TransactionOptions(
             durability=durability,
-            kv_timeout=kv_timeout,
-            expiration_time=expiration_time,
+            timeout=expiration_time,
             scan_consistency=scan_consistency,
             metadata_collection=metadata_collection)
 
