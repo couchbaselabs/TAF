@@ -270,6 +270,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         # Flags for validation
         self.validate_docs = validate_docs
         self.validate_deleted_docs = validate_deleted_docs
+        self.completed = False
 
         self.op_type = op_type
         self.generator = generator
@@ -474,10 +475,12 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         return self._make_task_request(self.task_ids, "submit_task", 10)[0]
 
     def end_task(self):
+        self.completed = True
         # Graceful way of stopping a task
         return self._make_task_request(self.task_ids, "stop_task", 10)
 
     def cancel_task(self):
+        self.completed = True
         return self._make_task_request(self.task_ids, "cancel_task", 10)
 
     def get_task_result(self):
@@ -497,6 +500,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         if not self.suppress_error_table:
             self._print_error_table(self.bucket, self.scope, self.collection,
                                    self.fail)
+        self.completed = True
         return ok
 
     @staticmethod
