@@ -18,7 +18,7 @@ class CBASCapellaSanity(CBASBaseTest):
         super(CBASCapellaSanity, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
         self.run_concurrent_query = self.input.param("run_query", False)
         self.parallel_load_percent = int(self.input.param(
             "parallel_load_percent", 0))

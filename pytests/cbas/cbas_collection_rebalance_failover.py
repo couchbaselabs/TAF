@@ -16,7 +16,7 @@ class CBASRebalance(CBASBaseTest):
                               stage=self.setUp.__name__)
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
         self.cluster.exclude_nodes = list()
 
         self.data_load_stage = self.input.param("data_load_stage", "during")

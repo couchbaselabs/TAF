@@ -169,7 +169,7 @@ class RestfulDAPITest(BaseTestCase):
                 response = self.rest_dapi.get_doc(key, "_default", "_default")
                 self.assertTrue(response.status_code == 200,
                                 "Get failed for with key {} for database {}".format(key, bucket.name))
-                val = json.loads(response.content).values()[0]
+                val = list(json.loads(response.content).values())[0]
                 self.assertTrue(val == document, "Value mismatch")
 
             # GET for non existing document
@@ -211,7 +211,7 @@ class RestfulDAPITest(BaseTestCase):
                 response = self.rest_dapi.get_doc(key, "_default", "_default")
                 self.assertTrue(response.status_code == 200,
                                 "Get failed for with key {} for database {}".format(key, bucket.name))
-                val = json.loads(response.content).values()[0]
+                val = list(json.loads(response.content).values())[0]
                 self.assertTrue(val == document, "Value mismatch")
             # Upsert Doc
             self.randomize_value = (not self.randomize_value)
@@ -239,7 +239,7 @@ class RestfulDAPITest(BaseTestCase):
                 response = self.rest_dapi.get_doc(key, "_default", "_default")
                 self.assertTrue(response.status_code == 200,
                                 "Get failed for with key {} for database {}".format(key, bucket.name))
-                val = json.loads(response.content).values()[0]
+                val = list(json.loads(response.content).values())[0]
                 self.assertTrue(val == document, "Value mismatch")
 
             # upsert a non existing document

@@ -33,7 +33,7 @@ class CBASStandaloneExternalLink(CBASBaseTest):
                               stage=self.setUp.__name__)
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
 
         self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
         self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)

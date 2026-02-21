@@ -24,7 +24,7 @@ class BackupRestoreTest(CBASBaseTest):
         self.ds_per_collection = self.input.param("ds_per_collection", 1)
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
 
         self.synonyms_per_ds = int(self.input.param("synonyms_per_ds", 1))
         self.overlap_path = self.input.param("overlap_path", False)

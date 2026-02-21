@@ -22,7 +22,7 @@ class CBASHighAvailability(CBASBaseTest):
         super(CBASHighAvailability, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
 
         self.security_util = SecurityUtils(self.log)
         self.rebalance_util = CBASRebalanceUtil(

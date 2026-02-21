@@ -19,7 +19,7 @@ class CBASUDF(CBASBaseTest):
         super(CBASUDF, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)

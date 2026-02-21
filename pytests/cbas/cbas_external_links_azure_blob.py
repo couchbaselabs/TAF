@@ -56,7 +56,7 @@ class CBASExternalAzureLinks(CBASBaseTest):
         self.azure_containers = {}
         self.azure_containers_list = []
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
         self.rbac_util = RbacUtils(self.cluster.master)
         self.rest = RestConnection(self.cluster.master)
 

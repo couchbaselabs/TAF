@@ -32,7 +32,7 @@ class CBASCBO(CBASBaseTest):
         super(CBASCBO, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.cb_clusters.values()[0]
+        self.cluster = list(self.cb_clusters.values())[0]
         self.create_index = self.input.param('create_index', False)
 
         self.log_setup_status(self.__class__.__name__, "Finished",
