@@ -3456,6 +3456,9 @@ class BucketUtils(ScopeUtils):
                                history_retention_collection_default=None,
                                history_retention_bytes=None,
                                history_retention_seconds=None,
+                               continuous_backup_enabled=None,
+                               continuous_backup_location=None,
+                               continuous_backup_interval=None,
                                magma_key_tree_data_block_size=None,
                                magma_seq_tree_data_block_size=None,
                                durability_impossible_fallback=None,
@@ -3472,6 +3475,9 @@ class BucketUtils(ScopeUtils):
             history_retention_collection_default=history_retention_collection_default,
             history_retention_seconds=history_retention_seconds,
             history_retention_bytes=history_retention_bytes,
+            continuous_backup_enabled=continuous_backup_enabled,
+            continuous_backup_location=continuous_backup_location,
+            continuous_backup_interval=continuous_backup_interval,
             magma_key_tree_data_block_size=magma_key_tree_data_block_size,
             magma_seq_tree_data_block_size=magma_seq_tree_data_block_size,
             storageBackend=storageBackend,
@@ -3491,6 +3497,20 @@ class BucketUtils(ScopeUtils):
                            % (bucket.name, replicas))
             self.update_bucket_property(cluster.master, bucket,
                                         replica_number=replicas)
+
+    def get_continuous_backup_params(self, cluster, bucket_name):
+        """
+        Get continuous backup parameters for a bucket.
+        Returns a dictionary with continuous backup config:
+        - continuousBackupEnabled: boolean
+        - continuousBackupLocation: string
+        - continuousBackupInterval: integer (minutes)
+        - historyRetentionSeconds: integer
+        - historyRetentionCollectionDefault: boolean
+        - historyRetentionBytes: integer
+        """
+        return BucketHelper(cluster.master).get_continuous_backup_params(
+            bucket_name)
 
     def is_warmup_complete(self, buckets, retry_count=5):
         while retry_count != 0:

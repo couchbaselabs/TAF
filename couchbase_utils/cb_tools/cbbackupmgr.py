@@ -208,3 +208,26 @@ class CbBackupMgr(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         return output, error
 
+    def generate_docs(self, num_docs, bucket_name, size, cluster_host=None):
+        """
+        Execute cbbackupmgr generate command to create documents in a bucket
+
+        :param num_docs int: Number of documents to generate
+        :param bucket_name str: Name of the bucket to generate documents in
+        :param size int: Size of each document in bytes
+        :param cluster_host str: The hostname of one of the nodes in the cluster
+        """
+        if cluster_host is None:
+            if CbServer.use_https:
+                cluster_host = f"https://{self.shellConn.server.ip}:{self.port}"
+            else:
+                cluster_host = f"http://{self.shellConn.server.ip}:{self.port}"
+
+        cmd = "%s generate -b %s -n %d -c %s -u %s -p %s -s %d" % (
+            self.cbstatCmd, bucket_name, num_docs, cluster_host,
+            self.username, self.password, size)
+
+        cmd += self.cli_flags
+
+        output, error = self._execute_cmd(cmd)
+        return output, error

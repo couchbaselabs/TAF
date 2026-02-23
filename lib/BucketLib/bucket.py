@@ -158,6 +158,9 @@ class Bucket(object):
     historyRetentionCollectionDefault = "historyRetentionCollectionDefault"
     historyRetentionSeconds = "historyRetentionSeconds"
     historyRetentionBytes = "historyRetentionBytes"
+    continuousBackupEnabled = "continuousBackupEnabled"
+    continuousBackupLocation = "continuousBackupLocation"
+    continuousBackupInterval = "continuousBackupInterval"
     magmaKeyTreeDataBlockSize = "magmaKeyTreeDataBlockSize"
     magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
     durabilityImpossibleFallback = "durabilityImpossibleFallback"
@@ -270,6 +273,12 @@ class Bucket(object):
             Bucket.historyRetentionBytes, 0)
         self.historyRetentionSeconds = new_params.get(
             Bucket.historyRetentionSeconds, 0)
+        self.continuousBackupEnabled = new_params.get(
+            Bucket.continuousBackupEnabled, False)
+        self.continuousBackupLocation = new_params.get(
+            Bucket.continuousBackupLocation, None)
+        self.continuousBackupInterval = new_params.get(
+            Bucket.continuousBackupInterval, None)
         self.magmaKeyTreeDataBlockSize = new_params.get(
             Bucket.magmaKeyTreeDataBlockSize, 4096)
         self.magmaSeqTreeDataBlockSize = new_params.get(

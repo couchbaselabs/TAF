@@ -530,6 +530,9 @@ class BucketHelper(BucketRestApi):
                             history_retention_collection_default=None,
                             history_retention_bytes=None,
                             history_retention_seconds=None,
+                            continuous_backup_enabled=None,
+                            continuous_backup_location=None,
+                            continuous_backup_interval=None,
                             magma_key_tree_data_block_size=None,
                             magma_seq_tree_data_block_size=None,
                             durability_impossible_fallback=None,
@@ -571,6 +574,15 @@ class BucketHelper(BucketRestApi):
         if history_retention_seconds is not None:
             params_dict[Bucket.historyRetentionSeconds] \
                 = history_retention_seconds
+        if continuous_backup_enabled is not None:
+            params_dict[Bucket.continuousBackupEnabled] \
+                = str(continuous_backup_enabled).lower()
+        if continuous_backup_location is not None:
+            params_dict[Bucket.continuousBackupLocation] \
+                = continuous_backup_location
+        if continuous_backup_interval is not None:
+            params_dict[Bucket.continuousBackupInterval] \
+                = continuous_backup_interval
         if magma_key_tree_data_block_size is not None:
             params_dict[Bucket.magmaKeyTreeDataBlockSize] \
                 = magma_key_tree_data_block_size
@@ -604,6 +616,30 @@ class BucketHelper(BucketRestApi):
         self.log.debug("Bucket %s updated" % bucket.name)
         bucket.__dict__.update(params_dict)
         return status
+
+    def get_continuous_backup_params(self, bucket_name):
+        """
+        Get continuous backup parameters for a bucket.
+        Returns a dictionary with continuous backup config:
+        - continuousBackupEnabled: boolean
+        - continuousBackupLocation: string
+        - continuousBackupInterval: integer (minutes)
+        - historyRetentionSeconds: integer
+        - historyRetentionCollectionDefault: boolean
+        - historyRetentionBytes: integer
+        """
+        bucket_info = self.get_buckets_json(bucket_name)
+        continuous_backup_params = {
+            "continuousBackupEnabled": bucket_info.get(Bucket.continuousBackupEnabled),
+            "continuousBackupLocation": bucket_info.get(Bucket.continuousBackupLocation),
+            "continuousBackupInterval": bucket_info.get(Bucket.continuousBackupInterval),
+            "historyRetentionSeconds": bucket_info.get(Bucket.historyRetentionSeconds),
+            "historyRetentionCollectionDefault": bucket_info.get(Bucket.historyRetentionCollectionDefault),
+            "historyRetentionBytes": bucket_info.get(Bucket.historyRetentionBytes)
+        }
+        self.log.info("Continuous backup params for bucket %s: %s"
+                      % (bucket_name, continuous_backup_params))
+        return continuous_backup_params
 
     def set_collection_history(self, bucket_name, scope, collection,
                                history="false"):
