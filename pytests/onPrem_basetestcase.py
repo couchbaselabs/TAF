@@ -393,20 +393,18 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     pass
 
         self.log_setup_status("OnPremBaseTest", "started")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
+        self.aws_region = self.input.param("aws_region", "us-west-1")
 
-        # Analytics (EA) parameters
+        # Start: Analytics (EA) parameters
         self.runtype = self.input.param("runtype", "default")
         self.storage_provider = self.input.param("storage_provider", "aws")
-        self.aws_endpoint = None
-        self.aws_session_token = None
+        self.aws_endpoint = self.input.param("aws_endpoint", None)
 
         if self.runtype == "onprem-columnar":
             if self.storage_provider == "aws":
-                self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
-                self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
-                self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
-                self.aws_region = self.input.param("aws_region", None) or "us-west-1"
-
                 for server in self.servers:
                     if server.type == "analytics":
                         if not self._configure_aws_credentials_on_host(
@@ -417,8 +415,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
             elif self.storage_provider == "netapp":
                 self.aws_access_key = os.getenv("NETAPP_ACCESS_KEY_ID", None)
                 self.aws_secret_key = os.getenv("NETAPP_SECRET_ACCESS_KEY", None)
+                self.aws_session_token = None
                 self.aws_endpoint = "http://172.23.105.108:10444"
                 self.aws_region = self.input.param("aws_region", "us-east-1")
+        # End: Analytics (EA) parameters
 
         self.nebula = self.input.param("nebula", False)
         self.nebula_details = dict()
