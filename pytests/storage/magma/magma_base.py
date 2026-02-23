@@ -20,6 +20,26 @@ class MagmaBaseTest(StorageBase):
     def setUp(self):
         super(MagmaBaseTest, self).setUp()
 
+        # Verify FBR (File-Based Rebalance) setting is enabled by default
+        self.rest = ClusterRestAPI(self.cluster.master)
+        status, content = self.rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+        file_based_backfill_enabled = content.get('fileBasedBackfillEnabled', False)
+        self.assertTrue(
+            file_based_backfill_enabled,
+            "fileBasedBackfillEnabled should be True by default in Couchbase 8.1"
+        )
+        self.log.info("FBR (fileBasedBackfillEnabled) is enabled as expected")
+
+        # Check if FBR should be disabled for DCP fallback testing
+        if getattr(self, "disable_file_based_rebalance", False):
+            self.cluster_util.set_file_based_rebalance(
+                self.cluster.master, enabled=False
+            )
+
         # Update Magma/Storage Properties
         props = "magma"
         update_bucket_props = False
