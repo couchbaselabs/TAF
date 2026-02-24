@@ -1,6 +1,7 @@
 import math
 
 from cb_constants.CBServer import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.tuq_helper import N1QLHelper
 from membase.api.rest_client import RestConnection
@@ -18,6 +19,25 @@ class GuardrailsBase(StorageBase):
         self.autoCompactionDefined = str(self.input.param("autoCompactionDefined", "false")).lower()
         self.test_query_mutations = self.input.param("test_query_mutations", True)
         self.test_read_traffic = self.input.param("test_read_traffic", True)
+
+        # Verify FBR (File-Based Rebalance) setting is enabled
+        self.rest = ClusterRestAPI(self.cluster.master)
+        status, content = self.rest.set_internal_settings()
+        if not status:
+            self.fail(f"Failed to get internalSettings: {content}")
+        if not isinstance(content, dict):
+            self.fail(f"Expected dict from internalSettings, got {type(content)}")
+        file_based_backfill_enabled = content.get('dataServiceFileBasedRebalanceEnabled', False)
+        self.assertTrue(file_based_backfill_enabled,
+                       "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.1")
+        self.log.info("FBR (dataServiceFileBasedRebalanceEnabled) is enabled as expected")
+
+        # Check if FBR should be disabled for DCP fallback testing
+        self.disable_file_based_rebalance = self.input.param("disable_file_based_rebalance", False)
+        if self.disable_file_based_rebalance:
+            self.cluster_util.set_file_based_rebalance(
+                self.cluster.master, enabled=False
+            )
 
         self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster,
                                                        self.cluster.nodes_in_cluster)
