@@ -528,6 +528,21 @@ class volume(CollectionBase):
             services.append(self.services_for_rebalance_in.replace(":", ","))
             services = services * nodes_in
 
+        disable_fbr = (
+            self.iterations > 1 and
+            (self.iterations % 2) == 0
+        )
+
+        self.cluster_util.set_file_based_rebalance(
+            self.cluster.master,
+            enabled=not disable_fbr
+        )
+
+        self.log.info(
+            f"Iteration {self.iterations}: "
+            f"File-Based Rebalance enabled = {not disable_fbr}"
+        )
+
         rebalance_task = self.task.async_rebalance(
             self.cluster, servs_in, servs_out,
             check_vbucket_shuffling=self.vbucket_check,
