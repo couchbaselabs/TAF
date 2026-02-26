@@ -334,6 +334,7 @@ class PostEndpointCommand(GetCluster):
         for testcase in testcases:
             payload = {key: testcase[key] for key in self.expected_res.keys()}
             self.log.info(testcase['desc'])
+            self.log.info("Payload: {}".format(payload))
             result = (self.capellaAPI.cluster_ops_apis
                       .post_private_endpoint_command(
                         self.organisation_id, self.project_id, self.cluster_id,

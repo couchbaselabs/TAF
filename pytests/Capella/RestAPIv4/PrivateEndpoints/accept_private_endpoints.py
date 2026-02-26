@@ -129,7 +129,10 @@ class PostAssociate(GetCluster):
                 cluster = testcase["invalid_clusterId"]
             elif "invalid_endpointId" in testcase:
                 endpoint = testcase["invalid_endpointId"]
-
+            
+            self.log.info("Enabling Private Endpoint Service")
+            self.capellaAPI.cluster_ops_apis.enable_private_endpoint_service(
+                organization, project, cluster)
             result = self.capellaAPI.cluster_ops_apis.accept_private_endpoint(
                 organization, project, cluster, endpoint)
             if result.status_code == 429:

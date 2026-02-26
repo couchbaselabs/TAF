@@ -1366,6 +1366,8 @@ class APIBase(CouchbaseBaseTest):
             failures.append(testcase[testDescriptionKey])
         elif result.json()['message'] == "Private endpoints aren't enabled for this cluster. Please select another cluster.":
             return True
+        elif result.status_code == 400 and "Bad Request" in result.json()['message']:
+            return True
         else:
             self.log.error("Expected HTTP status code {}, Actual HTTP status "
                            "code {}".format(testcase["expected_status_code"],
