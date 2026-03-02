@@ -3674,26 +3674,23 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         """
         Get a doc from the standalone collection
         """
-        cmd = "SELECT * from "
+        cmd = "SELECT value ds.id from "
         if database_name:
             cmd += "{}.".format(database_name)
         if dataverse_name:
-            cmd += "{0}.{1} ".format(
-                CBASHelper.format_name(dataverse_name),
-                CBASHelper.format_name(collection_name))
+            cmd += "{0}.".format(
+                CBASHelper.format_name(dataverse_name))
+
+        cmd += "{0} ds ".format(CBASHelper.format_name(collection_name))
+        cmd += "LIMIT 1"
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if status != "success":
+            self.log.error(str(errors))
+            return None
         else:
-            cmd += "{0} ".format(CBASHelper.format_name(collection_name))
-            cmd += "LIMIT 1"
-            status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
-                cluster, cmd, username=username, password=password, timeout=timeout,
-                analytics_timeout=analytics_timeout)
-            if status != "success":
-                self.log.error(str(errors))
-                return random.randint(1, 10000)
-            else:
-                cbas_helper = CBASHelper(cluster.cbas_cc_node)
-                results = cbas_helper.get_json(json_data=results)
-                return random.choice(results)["id"]
+            return results[0]
 
     def crud_on_standalone_collection(
             self, cluster, collection_name, dataverse_name=None, database_name=None,
@@ -7534,6 +7531,69 @@ class CbasUtil(CBOUtil):
                 return False
             else:
                 return True
+
+    def update_dataset(
+        self,
+        cluster,
+        bucket: str,
+        alias: str = "d",
+        set_clauses=None,
+        change_sequence_sets=None,
+        array_mutations=None,
+        where_clause: str | None = None,
+        returning_clause: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        timeout: int = 300,
+        analytics_timeout: int = 300,
+    ):
+        """
+        Build and execute an UPDATE statement on CBAS, returning status and result.
+
+        Returns:
+            (status, metrics, errors, results, handle, warnings, statement)
+        """
+        parts: list[str] = []
+
+        parts.append(f"UPDATE {bucket} AS {alias}")
+
+        if array_mutations:
+            for block in array_mutations:
+                block = block.strip()
+                parts.append(block)
+
+        if set_clauses:
+            set_body = ",\n    ".join(set_clauses)
+            parts.append(f"SET {set_body}")
+
+        if change_sequence_sets:
+            for seq_block in change_sequence_sets:
+                if not seq_block:
+                    continue
+                seq_body = ",\n    ".join(seq_block)
+                parts.append(f"SET {seq_body}")
+
+        if where_clause:
+            parts.append(f"WHERE {where_clause}")
+
+        if returning_clause:
+            parts.append(f"RETURNING {returning_clause}")
+
+        cmd = "\n".join(parts) + ";"
+        print(f"Update command:\n{cmd}\n")
+
+        status, metrics, errors, results, _, warnings = (
+            self.execute_statement_on_cbas_util(
+                cluster,
+                cmd,
+                username=username,
+                password=password,
+                timeout=timeout,
+                analytics_timeout=analytics_timeout,
+            )
+        )
+
+        return status, metrics, errors, results, _, warnings
 
 
 
