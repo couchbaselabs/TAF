@@ -5,6 +5,8 @@ from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from BucketLib.bucket import Bucket
 from cb_tools.cb_cli import CbCli
+from cb_tools.cbstats import Cbstats
+from cb_tools.cbepctl import Cbepctl
 from BucketLib.BucketOperations import BucketHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -23,6 +25,8 @@ class BucketParamTest(ClusterSetup):
         self.new_ram_quota = self.input.param("new_ram_quota", None)
         self.update_history_retention_collection_default = self.input.param(
             "update_history_retention_collection_default", None)
+        self.persistent_metadata_purge_age = self.input.param(
+            "persistent_metadata_purge_age", None)
         self.src_bucket = self.bucket_util.get_all_buckets(self.cluster)
 
         # Reset active_resident_threshold to avoid further data load as DGM
@@ -586,6 +590,45 @@ class BucketParamTest(ClusterSetup):
                 max_ttl=50,
                 bucket_durability='none')
 
+    def set_persistent_metadata_purge_age_values(self, test_values=None):
+        """Set persistent_metadata_purge_age to various valid values
+        and verify bucket functionality"""
+
+        if test_values is None:
+            test_values = [
+                (7 * 24 * 60 * 60, "7 days (1 week)"),
+                (60 * 24 * 60 * 60, "60 days (old max)"),
+                (365 * 24 * 60 * 60, "365 days (1 year)"),
+                (730 * 24 * 60 * 60, "730 days (new max - 2 years)"),
+            ]
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbepctl_obj = Cbepctl(shell, username=self.cluster.master.rest_username,
+                             password=self.cluster.master.rest_password)
+
+        for value, description in test_values:
+            self.log.info(f"Testing persistent_metadata_purge_age={value} "
+                         f"seconds ({description})")
+            cbepctl_obj.set(self.def_bucket.name, "flush_param",
+                           "persistent_metadata_purge_age", str(value))
+            self.log.info(f"Set persistent_metadata_purge_age to {value} "
+                         f"seconds ({description}) via CLI (cbepctl)")
+
+            # Verify the value was set
+            cbstats_obj = Cbstats(self.cluster.master)
+            stats = cbstats_obj.all_stats(self.def_bucket.name)
+            actual_value = int(stats.get("ep_persistent_metadata_purge_age", 0))
+            cbstats_obj.disconnect()
+            self.assertEqual(actual_value, value,
+                           f"ep_persistent_metadata_purge_age mismatch for "
+                            f"{description}: expected {value},"
+                             f"got {actual_value}")
+            self.log.info(f"Verified {description}: "
+                         f"ep_persistent_metadata_purge_age={actual_value} "
+                         f"seconds")
+
+        shell.disconnect()
+
     def test_replica_update(self):
         if self.atomicity:
             replica_count = 3
@@ -603,6 +646,12 @@ class BucketParamTest(ClusterSetup):
 
         self.is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
             self.bucket_durability_level, self.durability_level)
+
+        # Test persistent_metadata_purge_age if configured
+        if self.persistent_metadata_purge_age:
+            self.log.info("Testing persistent_metadata_purge_age values")
+            self.set_persistent_metadata_purge_age_values()
+
         # Replica increment tests
         doc_count, start_doc_for_insert = self.generic_replica_update(
             doc_count,
