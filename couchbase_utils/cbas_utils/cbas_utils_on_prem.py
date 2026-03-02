@@ -1161,7 +1161,7 @@ class Link_Util(Dataverse_Util):
             self, cluster, link_type, dataverse=None, link_cardinality=1,
             hostname=None, username=None, password=None, encryption=None,
             certificate=None, clientCertificate=None, clientKey=None,
-            accessKeyId=None, secretAccessKey=None, regions=[],
+            accessKeyId=None, secretAccessKey=None, sessionToken=None, regions=[],
             serviceEndpoint=None, no_of_objs=1, name_length=30,
             fixed_length=False, link_perm=False):
         """
@@ -1190,6 +1190,7 @@ class Link_Util(Dataverse_Util):
                     dataverse_name=dataverse.name,
                     properties={"type": "s3", "accessKeyId": accessKeyId,
                                 "secretAccessKey": secretAccessKey,
+                                "sessionToken": sessionToken,
                                 "region": random.choice(regions),
                                 "serviceEndpoint": serviceEndpoint})
             elif link_type.lower() == "azureblob":

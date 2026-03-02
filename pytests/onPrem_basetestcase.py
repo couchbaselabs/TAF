@@ -451,7 +451,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.aws_access_key = os.getenv("NETAPP_ACCESS_KEY_ID", None)
                 self.aws_secret_key = os.getenv("NETAPP_SECRET_ACCESS_KEY", None)
                 self.aws_session_token = None
-                self.aws_endpoint = "http://172.23.105.108:10444"
+                self.aws_endpoint = self.input.param("aws_endpoint", "http://172.23.105.108:10444")
+                self.aws_region = self.input.param("aws_region", "us-east-1")
+
+            elif self.storage_provider == "azure":
+                self.aws_access_key = os.getenv("AZURE_BLOB_ACCESS_KEY_ID", None)
+                self.aws_secret_key = os.getenv("AZURE_BLOB_SECRET_ACCESS_KEY", None)
+                self.aws_session_token = None
+                self.aws_endpoint = self.input.param("aws_endpoint", "https://testeaazureblob.blob.core.windows.net")
                 self.aws_region = self.input.param("aws_region", "us-east-1")
         # End: Analytics (EA) parameters
 

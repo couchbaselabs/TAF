@@ -20,6 +20,7 @@ from cb_constants.ClusterRun import ClusterRun
 from awsLib.S3 import S3
 from custom_exceptions.exception import RebalanceFailedException
 import time
+import os
 
 
 class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
@@ -33,6 +34,7 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
     EA_BASE_URL_PATH = "builds/latestbuilds/enterprise-analytics"
     EA_VERSION_MAP = {
         "2.1": "phoenix",  # Map version to build path
+        "2.2": "lumina"
     }
 
     # Enterprise Analytics service and paths
@@ -416,16 +418,13 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             self.log.debug(
                 "Configuring compute storage for node {}...".format(node.ip))
             # Create new bucket for upgrade process
-            aws_access_key = getattr(self, 'columnar_aws_access_key', None) or getattr(
-                self, 'aws_access_key', None)
-            aws_secret_key = getattr(self, 'columnar_aws_secret_key', None) or getattr(
-                self, 'aws_secret_key', None)
-            aws_bucket_region = getattr(self, 'columnar_aws_region', None) or getattr(
-                self, 'aws_region', 'us-west-1')
-            aws_endpoint = getattr(self, 'columnar_aws_endpoint', None) or getattr(
-                self, 'aws_endpoint', None)
+            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID", None)
+            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+            aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
+            aws_bucket_region = self.input.param("aws_region", "us-east-1")
+            aws_endpoint = self.input.param("aws_endpoint", None)
 
-            if not aws_access_key or not aws_secret_key:
+            if not aws_access_key or not aws_secret_key or not aws_session_token:
                 self.log.error(
                     "Missing compute storage configuration parameters")
                 self.fail(
@@ -433,6 +432,7 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
 
             # Create new S3 bucket for upgrade
             columnar_s3_obj = S3(aws_access_key, aws_secret_key,
+                                 aws_session_token,
                                  region=aws_bucket_region,
                                  endpoint_url=aws_endpoint)
 

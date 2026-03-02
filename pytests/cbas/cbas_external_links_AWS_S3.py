@@ -142,6 +142,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.cbas_util.create_external_link_obj(
             self.cluster, link_type="s3", link_cardinality=self.link_cardinality,
             accessKeyId=self.aws_access_key, secretAccessKey=self.aws_secret_key,
+            sessionToken=self.aws_session_token,
             regions=link_regions, no_of_objs=self.input.param("no_of_links", 1))
 
         if create_links:

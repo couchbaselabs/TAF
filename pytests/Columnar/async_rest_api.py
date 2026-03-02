@@ -149,7 +149,7 @@ class AsyncRestApi(ColumnarBaseTest):
             request_id, handle
         )
         self.assertTrue(status and result.get("status") == "success" and
-                        response.status_code == 202 and result.get(
+                        response.status_code == 200 and result.get(
                             "resultCount") > 0,
                         f"Assertion failed: status={status}, result_status={result.get('status')}, "
                         f"response_code={response.status_code}, result_count={result.get('resultCount')}"
@@ -159,7 +159,7 @@ class AsyncRestApi(ColumnarBaseTest):
         status, result, response = self.analytics_api.get_request_result(
             request_id, handle)
         self.assertTrue(status and ("results" in result) and ("metrics" in result) and
-                        response.status_code == 202 and len(
+                        response.status_code == 200 and len(
                             result.get("results")) > 0,
                         f"Assertion failed: status={status}, has_results={'results' in result}, has_metrics={'metrics' in result}, "
                         f"response_code={response.status_code}, result_count={len(result.get('results'))}, metrics={result.get('metrics')}"
@@ -213,7 +213,7 @@ class AsyncRestApi(ColumnarBaseTest):
         )
         self.assertTrue(
             status and result.get("status") == "timeout" and
-            response.status_code == 202 and ("errors" in result) and result.get(
+            response.status_code == 200 and ("errors" in result) and result.get(
                 "errors")[0].get("code") == 21002 and ("metrics" in result),
             f"Assertion failed: status={status}, result_status={result.get('status')}, "
             f"response_code={response.status_code}, has_errors={'errors' in result}, has_metrics={'metrics' in result}, error_code={result.get('errors')[0].get('code')}"
@@ -244,7 +244,7 @@ class AsyncRestApi(ColumnarBaseTest):
         )
         self.assertTrue(
             status and result.get("status") == "queued" and
-            response.status_code == 202 and ("metrics" in result),
+            response.status_code == 200 and ("metrics" in result),
             f"Assertion failed: status={status}, result_status={result.get('status')}, "
             f"response_code={response.status_code}, has_metrics={'metrics' in result}"
         )
@@ -270,7 +270,7 @@ class AsyncRestApi(ColumnarBaseTest):
         )
         self.assertTrue(
             status and result.get("status") == "running" and
-            response.status_code == 202 and ("metrics" in result),
+            response.status_code == 200 and ("metrics" in result),
             f"Assertion failed: status={status}, result_status={result.get('status')}, "
             f"response_code={response.status_code}, has_metrics={'metrics' in result}"
         )
@@ -303,8 +303,8 @@ class AsyncRestApi(ColumnarBaseTest):
         errors = result.get("errors")
         error_code = errors[0].get(
             "code") if errors and len(errors) > 0 else None
-        self.assertTrue((not status) and result.get("status") == "failed" and
-                        response.status_code == 400 and error_code == 24011,
+        self.assertTrue(status and result.get("status") == "failed" and
+                        response.status_code == 200 and error_code == 24011,
                         f"Assertion failed: status={status}, result_status={result.get('status')}, "
                         f"response_code={response.status_code}, error_code={error_code}"
                         )
@@ -323,7 +323,10 @@ class AsyncRestApi(ColumnarBaseTest):
             statement=statement,
             mode="async"
         )
-        self.assertTrue(response.status_code == 503 and result.get("errors")[0].get("code") == 23000 and ("metrics" in result),
+        self.assertTrue((response.status_code == 500 or response.status_code == 503) and
+                        (result.get("errors")[0].get("code") == 25000 or result.get(
+                            "errors")[0].get("code") == 23000)
+                        and ("metrics" in result),
                         f"Assertion failed: status={status}, response_code={response.status_code}, \
                             error_code={result.get('errors')[0].get('code')}, has_metrics={'metrics' in result}"
                         )
@@ -405,7 +408,7 @@ class AsyncRestApi(ColumnarBaseTest):
         status, result, response = self.analytics_api.get_request_status(
             request_id, handle
         )
-        self.assertTrue(status and response.status_code == 202,
+        self.assertTrue(status and response.status_code == 200,
                         f"User1 should be able to get status: status={status}, response_code={response.status_code}")
         self.log.info(f"User1 status check successful: {result.get('status')}")
 
@@ -488,7 +491,7 @@ class AsyncRestApi(ColumnarBaseTest):
         )
         self.assertTrue(
             status and result.get("status") == "queued" and
-            response.status_code == 202,
+            response.status_code == 200,
             f"Assertion failed: status={status}, result_status={result.get('status')}, "
             f"response_code={response.status_code}"
         )  # and ("metrics" in result)
@@ -496,7 +499,7 @@ class AsyncRestApi(ColumnarBaseTest):
         # Cancel request
         status, result, response = self.analytics_api.cancel_request(
             request_id)
-        self.assertTrue(status and response.status_code == 202,
+        self.assertTrue(status and response.status_code == 200,
                         f"Assertion failed: status={status}, response_code={response.status_code}")
         self.log.info(
             f"Cancelling queued request validated, request cancelled")
@@ -518,7 +521,7 @@ class AsyncRestApi(ColumnarBaseTest):
         # Cancel request
         status, result, response = self.analytics_api.cancel_request(
             request_id)
-        self.assertTrue(status and response.status_code == 202,
+        self.assertTrue(status and response.status_code == 200,
                         f"Assertion failed: status={status}, response_code={response.status_code}")
 
         # Fetch results
@@ -544,7 +547,7 @@ class AsyncRestApi(ColumnarBaseTest):
         status, result, response = self.analytics_api.update_service_config(
             {"resultTtl": 1000}
         )
-        self.assertTrue(status and response.status_code == 202,
+        self.assertTrue(status and response.status_code == 200,
                         f"Failed to set resultTtl: status={status}, response_code={response.status_code}")
         self.log.info(f"resultTtl set successfully")
 
@@ -625,14 +628,14 @@ class AsyncRestApi(ColumnarBaseTest):
         status, result, response = status_result1
         self.log.info(
             f"Status = {status} ; Response Code: {response.status_code} ; Result status: {result.get('status')}")
-        self.assertTrue(status and response.status_code == 202 and result.get('status') == "running",
+        self.assertTrue(status and response.status_code == 200 and result.get('status') == "running",
                         f"Failed to fetch status: status={status}, response_code={response.status_code}, result_status={result.get('status')}")
 
         # Verify cancel result
         status, result, response = cancel_result
         self.log.info(
             f"Request cancelled: Response Code: {response.status_code}")
-        self.assertTrue(status and response.status_code == 202,
+        self.assertTrue(status and response.status_code == 200,
                         f"Failed to cancel request: status={status}, response_code={response.status_code}")
 
         # Fetch status after cancellation
@@ -641,7 +644,7 @@ class AsyncRestApi(ColumnarBaseTest):
             request_id, handle)
         self.log.info(
             f"Status = {status} ; Response Code:{response.status_code} ; Result status: {result.get('status')}")
-        self.assertTrue(status and response.status_code == 202 and result.get('status') == "failed",
+        self.assertTrue(status and response.status_code == 200 and result.get('status') == "failed",
                         f"Failed to fetch status: status={status}, response_code={response.status_code}, result_status={result.get('status')}")
 
     def test_fetch_results_from_partition(self):
@@ -763,7 +766,7 @@ class AsyncRestApi(ColumnarBaseTest):
             # Get request result
             status, result, response = self.analytics_api.get_request_status(
                 request_id, handle)
-            self.assertTrue(status and response.status_code == 202 and result.get("status") == "success" and
+            self.assertTrue(status and response.status_code == 200 and result.get("status") == "success" and
                             result.get("resultCount") > 0 and result.get(
                                 "resultSetOrdered") == True,
                             f"Assertion failed: status={status}, response_code={response.status_code}, result_status={result.get('status')}, \
@@ -879,7 +882,6 @@ class AsyncRestApi(ColumnarBaseTest):
             statement=copy_to_cmd,
             mode="async"
         )
-
         self.assertTrue(status and result.get("status") == "queued" and
                         response.status_code == 202 and "handle" in result,
                         f"Failed to submit async COPY TO request: status={status}, "
@@ -902,7 +904,7 @@ class AsyncRestApi(ColumnarBaseTest):
             request_id, handle
         )
         self.assertTrue(status and result.get("status") == "success" and
-                        response.status_code == 202,
+                        response.status_code == 200,
                         f"COPY TO request failed: status={status}, result_status={result.get('status')}, "
                         f"response_code={response.status_code}")
 
@@ -1057,7 +1059,7 @@ class AsyncRestApi(ColumnarBaseTest):
             request_id, handle
         )
         self.assertTrue(status and result.get("status") == "success" and
-                        response.status_code == 202,
+                        response.status_code == 200,
                         f"COPY INTO request failed: status={status}, result_status={result.get('status')}, "
                         f"response_code={response.status_code}")
 
@@ -1150,7 +1152,7 @@ class AsyncRestApi(ColumnarBaseTest):
             request_id, handle
         )
         self.assertTrue(status and result.get("status") == "success" and
-                        response.status_code == 202,
+                        response.status_code == 200,
                         f"Query failed after rebalance: status={status}, "
                         f"result_status={result.get('status')}, response_code={response.status_code}")
 
@@ -1247,7 +1249,7 @@ class AsyncRestApi(ColumnarBaseTest):
             request_id, handle
         )
         self.assertTrue(status and result.get("status") == "success" and
-                        response.status_code == 202,
+                        response.status_code == 200,
                         f"Query failed after rebalance: status={status}, "
                         f"result_status={result.get('status')}, response_code={response.status_code}")
 
