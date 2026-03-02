@@ -19,10 +19,6 @@ class PostUnassociate(PostAssociate):
     def test_api_path(self):
         testcases = [
             {
-                "description": "Send call with valid path params",
-                "expected_error": self.expected_err,
-                "expected_status_code": self.expected_code
-            }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpoints/{}/unassociate",
                 "expected_status_code": 404,

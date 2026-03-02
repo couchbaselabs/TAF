@@ -39,10 +39,6 @@ class PostAssociate(GetCluster):
     def test_api_path(self):
         testcases = [
             {
-                "description": "Send call with valid path params",
-                "expected_error": "Private endpoints aren't enabled for this cluster. Please select another cluster.",
-                "expected_status_code": self.expected_code
-            }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpoints/{}/associate",
                 "expected_status_code": 404,

@@ -272,13 +272,22 @@ class PostEndpointCommand(GetCluster):
                     .format(key, value, type(value))
                 if (key == "vpcID" and (value == "" or value is None)) or ((key == "resourceGroupName" or key == "virtualNetwork") and value is None):
                     testcase["expected_status_code"] = 400
-                    testcase["expected_error"] = {
-                        "code": 1000,
-                        "hint": "The request was malformed or invalid.",
-                        "httpStatusCode": 400,
-                        "message": "Bad Request. Error: The VPC ID provided "
+                    if key == "virtualNetwork" and value is None:
+                        testcase["expected_error"] = {
+                            "code": 1000,
+                            "hint": "The request was malformed or invalid.",
+                            "httpStatusCode": 400,
+                            "message": "Bad Request. Error: The Subnet ID provided "
                                    "is invalid.."
-                    }
+                        }
+                    else:
+                        testcase["expected_error"] = {
+                            "code": 1000,
+                            "hint": "The request was malformed or invalid.",
+                            "httpStatusCode": 400,
+                            "message": "Bad Request. Error: The VPC ID provided "
+                                    "is invalid.."
+                        }
                 elif key == "subnetIDs" and value is None :
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
@@ -292,14 +301,24 @@ class PostEndpointCommand(GetCluster):
                     value, str)) or (key == "virtualNetwork" and isinstance(
                     value, str)):
                     testcase["expected_status_code"] = 400
-                    testcase["expected_error"] = {
-                        "code": 1000,
-                        "hint": "The request was malformed or invalid.",
-                        "httpStatusCode": 400,
-                        "message": "Bad Request. Error: body contains "
-                                "incorrect JSON type for field "
-                            "\"{}\".".format(key)
-                }
+                    if value == "":
+                        testcase["expected_error"] = {
+                            "code": 1000,
+                            "hint": "The request was malformed or invalid.",
+                            "httpStatusCode": 400,
+                            "message": "Bad Request. Error: The VPC ID provided "
+                                   "is invalid.."
+                        }
+                    else:
+                        testcase["expected_error"] = {
+                            "code": 1000,
+                            "hint": "The request was malformed or invalid.",
+                            "httpStatusCode": 400,
+                            "message": "Bad Request. Error: body contains "
+                                    "incorrect JSON type for field "
+                                "\"{}\".".format(key)
+                        }
+
                 elif (
                         key == "vpcID" and not isinstance(value, str) or
                         key == "subnetIDs" and not isinstance(value, list) or
@@ -332,6 +351,12 @@ class PostEndpointCommand(GetCluster):
                 testcases.append(testcase)
         failures = list()
         for testcase in testcases:
+            result = self.capellaAPI.cluster_ops_apis.enable_private_endpoint_service(
+                self.organization, self.project, self.cluster)
+            if result.status_code == 429:
+                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                result = self.capellaAPI.cluster_ops_apis.enable_private_endpoint_service(
+                    self.organization, self.project, self.cluster)
             payload = {key: testcase[key] for key in self.expected_res.keys()}
             self.log.info(testcase['desc'])
             self.log.info("Payload: {}".format(payload))

@@ -62,7 +62,7 @@ class GetNetworkPeers(GetCluster):
                 "state": "complete"
             }
         }
-
+        print("config of cluster", config)
         if self.capella["clusters"]["vpc_id"]:
             self.peer_id = self.capella["clusters"]["vpc_id"]
         else:
