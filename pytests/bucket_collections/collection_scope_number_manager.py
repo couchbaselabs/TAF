@@ -66,10 +66,34 @@ class CollectionScopeNumberManager:
 
         return collection_multiplier, scope_multiplier
 
+    def get_number_of_spec_to_be_updated(self) -> int:
+        count = 0
+        if (self._spec.get(MetaConstants.NUM_SCOPES_PER_BUCKET, None)
+                and self._spec.get(MetaConstants.NUM_COLLECTIONS_PER_SCOPE, None)):
+            if self.calculate_multiplying_factor(
+                    self._spec[MetaConstants.NUM_SCOPES_PER_BUCKET],
+                    self._spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE],
+            ) is not None:
+                count += 1
+
+        if "buckets" in self._spec:
+            for bucket in self._spec["buckets"]:
+                bucket_spec = self._spec["buckets"][bucket]
+                if (bucket_spec.get(MetaConstants.NUM_SCOPES_PER_BUCKET, None) and
+                        bucket_spec.get(MetaConstants.NUM_COLLECTIONS_PER_SCOPE, None)):
+                    if self.calculate_multiplying_factor(
+                            self._spec[MetaConstants.NUM_SCOPES_PER_BUCKET],
+                            self._spec[MetaConstants.NUM_COLLECTIONS_PER_SCOPE],
+                    ) is not None:
+                        count += 1
+        return count
+
     def update_bucket_spec(self) -> Any:
 
         if self.update_spec is False:
             return self._spec
+        count = self.get_number_of_spec_to_be_updated()
+        self.current_max_collections = self.current_max_collections // count if count else self.current_max_collections
 
         if (self._spec.get(MetaConstants.NUM_SCOPES_PER_BUCKET, None)
                 and self._spec.get(MetaConstants.NUM_COLLECTIONS_PER_SCOPE, None)):
