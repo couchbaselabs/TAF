@@ -160,54 +160,50 @@ class Cbstats(CbCmdBase):
         if len(error) != 0:
             raise Exception("\n".join(error))
 
-        manifest_uid_pattern = "[ \t]*manifest_uid:[ \t]+([0-9]+)"
+        output_str = str(output)
+        manifest_uid_pattern = re.compile(r"[ \t]*manifest_uid:[ \t]+([0-9]+)")
 
-        scope_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):scope_name:" \
-                             "[ \t]+([a-zA-Z_0-9%-]+)"
-        col_name_pattern = "[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:" \
-                           "[ \t]+([a-zA-Z_0-9%-]+)"
-        collection_stat_pattern = \
-            "[ \t]*%s:%s:([0-9A-Za-z_]+):[ \t]+([a-z0-9]+)"
+        scope_name_pattern = re.compile(
+            r"[ \t]*([0-9xa-f]+):([0-9xa-f]+):scope_name:[ \t]+([a-zA-Z_0-9%-]+)")
 
-        manifest_uid_pattern = re.compile(manifest_uid_pattern)
-        scope_name_pattern = re.compile(scope_name_pattern)
-        col_name_pattern = re.compile(col_name_pattern)
+        col_name_pattern = re.compile(
+            r"[ \t]*([0-9xa-f]+):([0-9xa-f]+):name:[ \t]+([a-zA-Z_0-9%-]+)")
+
+        collection_stat_pattern = re.compile(
+            r"[ \t]*([0-9xa-f]+):([0-9xa-f]+):([0-9A-Za-z_]+):[ \t]+([a-z0-9]+)")
 
         # Populate generic manifest stats
-        manifest_uid = manifest_uid_pattern.findall(str(output))[0]
+        manifest_uid = manifest_uid_pattern.findall(output_str)[0]
         collection_data["count"] = 0
         collection_data["manifest_uid"] = int(manifest_uid)
 
         # Fetch all available collection names
-        scope_names = scope_name_pattern.findall(str(output))
-        collection_names = col_name_pattern.findall(str(output))
+        scope_names = scope_name_pattern.findall(output_str)
+        collection_names = col_name_pattern.findall(output_str)
+        scope_id_mapping = {
+            scope_id: scope_name
+            for scope_id, _, scope_name in scope_names
+        }
 
-        for scope_name_match in scope_names:
-            scope_id_mapping[scope_name_match[0]] = scope_name_match[2]
+        all_stats = collection_stat_pattern.findall(output_str)
+        stats_grouped = {}
+        for s_id, c_id, stat_name, value in all_stats:
+            stats_grouped.setdefault((s_id, c_id), []).append((stat_name, value))
 
         # Populate collection specific data
-        for c_name_match in collection_names:
-            s_id = c_name_match[0]
-            c_id = c_name_match[1]
-
+        for s_id, c_id, c_name in collection_names:
             scope_name = scope_id_mapping[s_id]
-            c_name = c_name_match[2]
-
             if scope_name not in collection_data:
-                collection_data[scope_name] = dict()
+                collection_data[scope_name] = {}
 
-            curr_col_stats_pattern = collection_stat_pattern % (s_id, c_id)
-            curr_col_stats_pattern = re.compile(curr_col_stats_pattern)
-            pattern_match = curr_col_stats_pattern.findall(str(output))
-
-            collection_data[scope_name][c_name] = dict()
+            collection_data[scope_name][c_name] = {}
             collection_data[scope_name][c_name]["id"] = c_id
-            for match in pattern_match:
+            for stat_name, value in stats_grouped.get((s_id, c_id), []):
                 try:
-                    collection_data[scope_name][c_name][match[0]] \
-                        = int(match[1])
+                    collection_data[scope_name][c_name][stat_name] = int(value)
                 except ValueError:
-                    collection_data[scope_name][c_name][match[0]] = match[1]
+                    collection_data[scope_name][c_name][stat_name] = value
+
             collection_data["count"] += 1
 
         return collection_data
