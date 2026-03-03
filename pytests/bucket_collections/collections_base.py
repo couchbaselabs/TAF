@@ -838,6 +838,8 @@ class CollectionBase(ClusterSetup, FusionBase):
             elif key == "load_collections_exponentially":
                 bucket_spec[MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY] \
                     = test_obj.load_collections_exponentially
+            elif key == "create_collections_using_manifest_import":
+                bucket_spec[MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT] = str(val).lower() == 'true'
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):
