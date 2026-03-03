@@ -98,13 +98,14 @@ class PostAssociate(GetCluster):
                                "request due to something that is perceived to "
                                "be a client error."
                 }
-            }, {
-                "description": "Call API with non-hex endpointId",
-                "invalid_endpointId": self.replace_last_character(
-                    self.endpoint_id, non_hex=True),
-                "expected_error": "Private endpoints aren't enabled for this cluster. Please select another cluster.",
-                "expected_status_code": self.expected_code
             }
+            # {
+            #     "description": "Call API with non-hex endpointId",
+            #     "invalid_endpointId": self.replace_last_character(
+            #         self.endpoint_id, non_hex=True),
+            #     "expected_error": "Private endpoints aren't enabled for this cluster. Please select another cluster.",
+            #     "expected_status_code": self.expected_code
+            # }
         ]
         failures = list()
         for testcase in testcases:

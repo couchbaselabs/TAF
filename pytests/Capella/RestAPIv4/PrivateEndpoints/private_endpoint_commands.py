@@ -351,12 +351,6 @@ class PostEndpointCommand(GetCluster):
                 testcases.append(testcase)
         failures = list()
         for testcase in testcases:
-            result = self.capellaAPI.cluster_ops_apis.enable_private_endpoint_service(
-                self.organization, self.project, self.cluster)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.enable_private_endpoint_service(
-                    self.organization, self.project, self.cluster)
             payload = {key: testcase[key] for key in self.expected_res.keys()}
             self.log.info(testcase['desc'])
             self.log.info("Payload: {}".format(payload))
