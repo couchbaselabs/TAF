@@ -190,7 +190,9 @@ class SettingsAndConnectionsAPI(CBRestConnection):
     def manage_global_memcached_setting(self, max_connections=None,
                                         system_connections=None, num_writer_threads=None,
                                         num_reader_threads=None, num_storage_threads=None,
-                                        fusion_sync_rate_limit=None, fusion_migration_rate_limit=None):
+                                        fusion_sync_rate_limit=None, fusion_migration_rate_limit=None,
+                                        fusion_max_pending_upload_bytes=None,
+                                        fusion_max_pending_upload_bytes_lwm_percentage=None):
         """
         POST / GET /pools/default/settings/memcached/global
         https://docs.couchbase.com/server/current/rest-api/rest-manage-cluster-connections.html
@@ -219,6 +221,10 @@ class SettingsAndConnectionsAPI(CBRestConnection):
             params["fusion_sync_rate_limit"] = fusion_sync_rate_limit
         if fusion_migration_rate_limit is not None:
             params["fusion_migration_rate_limit"] = fusion_migration_rate_limit
+        if fusion_max_pending_upload_bytes is not None:
+            params["fusion_max_pending_upload_bytes"] = fusion_max_pending_upload_bytes
+        if fusion_max_pending_upload_bytes_lwm_percentage is not None:
+            params["fusion_max_pending_upload_bytes_lwm_percentage"] = fusion_max_pending_upload_bytes_lwm_percentage
         if params:
             # POST method
             status, _, response = self.request(api, CBRestConnection.POST,

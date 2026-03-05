@@ -3,6 +3,7 @@ from collections import deque
 from copy import deepcopy
 import json
 import os
+import random
 import subprocess
 import threading
 import time
@@ -777,7 +778,7 @@ class FusionBase(BaseTestCase):
             self.start_time = time.time()
             self.sleep(10, "Wait before checking rebalance progress")
             try:
-                rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance(progress_count=500)
+                rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance(progress_count=10000)
                 if not rebalance_result:
                     fusion_rebalance_result = False
             except Exception as ex:
@@ -1130,7 +1131,7 @@ class FusionBase(BaseTestCase):
                 return node
 
 
-    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None, mutate=0):
+    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None, mutate=0, target_vbs=None):
 
         ops_rate = ops_rate if ops_rate is not None else 20000
 
@@ -1155,7 +1156,8 @@ class FusionBase(BaseTestCase):
                                                     ops_rate=ops_rate, doc_ops=doc_op,
                                                     monitor_ops=False,
                                                     buckets=buckets,
-                                                    mutate=mutate)
+                                                    mutate=mutate,
+                                                    target_vbs=target_vbs)
         if wait:
             for task in doc_loading_tasks:
                 self.doc_loading_tm.get_task_result(task)
@@ -1342,7 +1344,8 @@ class FusionBase(BaseTestCase):
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
                                         logstore_frag_threshold=self.logstore_frag_threshold,
                                         fusion_max_log_size=self.fusion_max_log_size,
-                                        fusion_max_num_log_files=self.fusion_max_num_log_files)
+                                        fusion_max_num_log_files=self.fusion_max_num_log_files,
+                                        fusion_max_upload_interval=self.fusion_max_upload_interval)
         # Restart couchbase
         for server in self.cluster.nodes_in_cluster:
             ssh = RemoteMachineShellConnection(server)
@@ -1360,12 +1363,14 @@ class FusionBase(BaseTestCase):
                 self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, Upload Interval: {result['ep_magma_fusion_upload_interval']}, "
                             f"Log Store Frag threshold: {result['ep_magma_fusion_logstore_fragmentation_threshold']}, "
                             f"Fusion Max Log Size: {result['ep_magma_fusion_max_log_size']}, "
-                            f"Fusion Max Log Files: {result['ep_magma_fusion_max_num_log_files']}")
+                            f"Fusion Max Log Files: {result['ep_magma_fusion_max_num_log_files']}, "
+                            f"Fusion Max Upload Interval: {result['ep_magma_fusion_max_upload_interval']}")
 
 
     def change_fusion_settings(self, bucket, upload_interval=None,
                                logstore_frag_threshold=None, fusion_max_log_size=None,
-                               fusion_max_num_log_files=None):
+                               fusion_max_num_log_files=None,
+                               fusion_max_upload_interval=None):
 
         fusion_settings = ""
         if upload_interval is not None:
@@ -1387,6 +1392,11 @@ class FusionBase(BaseTestCase):
             fusion_settings += f"magma_fusion_max_num_log_files={fusion_max_num_log_files};"
         else:
             fusion_settings += f"magma_fusion_max_num_log_files={self.fusion_max_num_log_files};"
+
+        if fusion_max_upload_interval is not None:
+            fusion_settings += f"magma_fusion_max_upload_interval={fusion_max_upload_interval};"
+        else:
+            fusion_settings += f"magma_fusion_max_upload_interval={self.fusion_max_upload_interval};"
         fusion_settings = fusion_settings[:-1] # Trimming the semicolon at the end
 
         diag_eval_cmd = f"""curl -i -u Administrator:password --data 'ns_bucket:update_bucket_props("{bucket.name}",[{{extra_config_string, "backend=magma;{fusion_settings}"}}]).' http://localhost:8091/diag/eval"""
@@ -1547,3 +1557,274 @@ class FusionBase(BaseTestCase):
 
         except Exception as e:
             self.log.info(f"Exception during cbstats: {e}")
+
+
+    def crash_during_sync(self, interval=None, timeout=None):
+
+        self.stop_crash = False
+        end_time = time.time() + timeout if timeout else None
+
+        while not self.stop_crash and (end_time is None or time.time() < end_time):
+
+            for server in self.cluster.nodes_in_cluster:
+
+                self.log.info(f"Killing memcached on {server.ip}")
+                shell = RemoteMachineShellConnection(server)
+                shell.kill_memcached()
+
+            if not interval:
+                sleep_time = random.randint(int(self.fusion_upload_interval) - 30, int(self.fusion_upload_interval) + 30)
+            else:
+                sleep_time = interval
+            self.sleep(sleep_time, f"Waiting for {sleep_time} sec to kill memcached on all nodes")
+
+
+    def block_nfs_traffic(self):
+
+        for server in self.cluster.servers:
+
+            shell = RemoteMachineShellConnection(server)
+            incoming_traffic_cmd = f"sudo iptables -A INPUT  -p tcp -s {self.nfs_server_ip} --sport 2049 -j DROP"
+            outgoing_traffic_cmd = f"sudo iptables -A OUTPUT -p tcp -d {self.nfs_server_ip} --dport 2049 -j DROP"
+
+            self.log.info(f"Blocking NFS network traffic on {server.ip}")
+            o1, e1 = shell.execute_command(incoming_traffic_cmd)
+            o2, e2 = shell.execute_command(outgoing_traffic_cmd)
+            self.log.info(f"Errors: {e1}, {e2}")
+
+            shell.disconnect()
+
+
+    def restore_nfs_traffic(self):
+
+        for server in self.cluster.servers:
+
+            shell = RemoteMachineShellConnection(server)
+            incoming_traffic_cmd = f"sudo iptables -D INPUT  -p tcp -s {self.nfs_server_ip} --sport 2049 -j DROP"
+            outgoing_traffic_cmd = f"sudo iptables -D OUTPUT -p tcp -d {self.nfs_server_ip} --dport 2049 -j DROP"
+
+            self.log.info(f"Restoring NFS network traffic on {server.ip}")
+            o1, e1 = shell.execute_command(incoming_traffic_cmd)
+            o2, e2 = shell.execute_command(outgoing_traffic_cmd)
+            self.log.info(f"Errors: {e1}, {e2}")
+
+            shell.disconnect()
+
+
+    def throttle_nfs_traffic(self, rate_limit=None, latency_ms=None, loss_percent=None):
+
+        for server in self.cluster.servers:
+
+            self.log.info(f"Throttling NFS traffic on {server.ip}")
+
+            shell = RemoteMachineShellConnection(server)
+
+            interface_cmd = f"ip route get {self.nfs_server_ip} | grep -oP 'dev \K\S+'"
+            o, e = shell.execute_command(interface_cmd)
+            interface = o[0].strip()
+
+            commands_to_run = list()
+
+            if rate_limit:
+                cmd1 = f"sudo tc qdisc add dev {interface} root handle 1: htb default 12"
+                cmd2 = f"sudo tc class add dev {interface} parent 1: classid 1:1 htb rate {rate_limit} ceil {rate_limit}"
+                commands_to_run.append(cmd1)
+                commands_to_run.append(cmd2)
+                parent_class = "1:1"
+            else:
+                cmd1 = f"sudo tc qdisc add dev {interface} root handle 1: prio"
+                commands_to_run.append(cmd1)
+                parent_class = "1:1"
+
+            netem_args = []
+            if latency_ms:
+                netem_args.append(f"delay {latency_ms}ms")
+            if loss_percent:
+                netem_args.append(f"loss {loss_percent}%")
+
+            if netem_args:
+                netem_cmd = (
+                    f"sudo tc qdisc add dev {interface} parent {parent_class} "
+                    f"handle 10: netem {' '.join(netem_args)}"
+                )
+                commands_to_run.append(netem_cmd)
+
+            filter_cmd = (
+                f"sudo tc filter add dev {interface} protocol ip parent 1:0 prio 1 "
+                f"u32 match ip dst {self.nfs_server_ip} flowid {parent_class}"
+            )
+            commands_to_run.append(filter_cmd)
+
+            filter_cmd2 = (
+                f"sudo tc filter add dev {interface} protocol ip parent 1:0 prio 1 "
+                f"u32 match ip src {self.nfs_server_ip} flowid {parent_class}"
+            )
+            commands_to_run.append(filter_cmd2)
+
+            for cmd in commands_to_run:
+                self.log.info(f"Server: {server.ip}, Executing CMD: {cmd}")
+                shell.execute_command(cmd)
+
+            shell.disconnect()
+
+
+    def remove_nfs_throttling(self):
+
+        for server in self.cluster.servers:
+
+            self.log.info(f"Removing NFS throttling on {server.ip}")
+
+            shell = RemoteMachineShellConnection(server)
+
+            interface_cmd = f"ip route get {self.nfs_server_ip} | grep -oP 'dev \K\S+'"
+            o, e = shell.execute_command(interface_cmd)
+            interface = o[0].strip()
+
+            cmd = f"sudo tc qdisc del dev {interface} root"
+
+            self.log.info(f"Executing CMD: {cmd}")
+            shell.execute_command(cmd)
+
+            shell.disconnect()
+
+
+    def monitor_fusion_du(self, bucket, validate=False, time_interval=15):
+
+        self.log.info("Monitoring Log Store Disk Usage")
+
+        bucket_uuid = self.get_bucket_uuid(bucket.name)
+        self.log.info(f"Bucket UUID: {bucket_uuid}")
+        fusion_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
+
+        du_cmd = f"du -sb {fusion_bucket_path}"
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+
+        if validate:
+            # Fetch the initial log store DU after creates, which will be used to compare and validate
+            o, e = ssh.execute_command(du_cmd)
+            current_du = int(o[0].split("\t")[0])
+            self.log.info(f"Log Store Size of {bucket.name} after initial creates = {current_du}")
+            self.max_allowed_log_store_du = (1 + self.logstore_frag_threshold + 0.25) * current_du
+            self.log.info(f"Log Store DU should be always under {self.max_allowed_log_store_du} bytes")
+
+        du_violations = 0
+        total_checks = 0
+        max_du_observed = 0
+
+        while self.monitor_stats:
+            o, e = ssh.execute_command(du_cmd)
+            current_du = int(o[0].split("\t")[0])
+            self.log.info(f"Current Log Store DU for {bucket.name} = {current_du}")
+
+            if validate and current_du > self.max_allowed_log_store_du:
+                du_violations += 1
+                max_du_observed = max(max_du_observed, current_du)
+
+            total_checks += 1
+            time.sleep(time_interval)
+
+        ssh.disconnect()
+
+        if validate:
+            self.log.info(f"Total DU violations: ({du_violations} / {total_checks}) checks")
+            self.log.info(f"Max DU Observed = {max_du_observed}")
+
+
+    def monitor_log_store_stats(self, bucket, time_interval=15):
+
+        self.log.info("Monitoring log store stats")
+
+        cbstats_obj_dict = dict()
+        for server in self.cluster.nodes_in_cluster:
+            cbstats_obj_dict[server] = Cbstats(server)
+
+        self.monitor_stats = True
+        while self.monitor_stats:
+            server_stat_dict = dict()
+            for server in self.cluster.nodes_in_cluster:
+                server_stat_dict[server.ip] = dict()
+                try:
+                    cbstats_obj = cbstats_obj_dict[server]
+                    result = cbstats_obj.all_stats(bucket.name)
+                    log_store_size = result["ep_fusion_log_store_data_size"]
+                    garbage_size = result["ep_fusion_log_store_garbage_size"]
+                    pending_size = result["ep_fusion_log_store_pending_delete_size"]
+                    frag_perc = int(garbage_size) / int(log_store_size)
+
+                    server_stat_dict[server.ip]["log_store_size"] = int(log_store_size)
+                    server_stat_dict[server.ip]["garbage_size"] = int(garbage_size)
+                    server_stat_dict[server.ip]["frag_perc"] = float(frag_perc)
+                    server_stat_dict[server.ip]["pending_size"] = int(pending_size)
+
+                except Exception as e:
+                    self.log.info(f"Cbstats failed: {e}")
+                    cbstats_obj_dict = dict()
+                    for server in self.cluster.nodes_in_cluster:
+                        cbstats_obj_dict[server] = Cbstats(server)
+                    break
+
+            self.log.info(f"Log Store Stats = {server_stat_dict}")
+
+            time.sleep(time_interval)
+
+
+    def get_fusion_sync_stats_continuously(self, timeout=172800, interval=None):
+
+        self.monitor_sync_stats = True
+        end_time = time.time() + timeout
+        interval = interval if interval is not None else self.fusion_upload_interval
+
+        self.log.info("Monitoring Fusion Sync Stats")
+
+        while self.monitor_sync_stats and time.time() < end_time:
+
+            try:
+                self.get_fusion_sync_stats()
+
+            except Exception as e:
+                self.log.info(f"Exception while fetching sync stats: {e}")
+
+            self.sleep(interval, "Wait until next interval to fetch sync stats")
+
+        self.log.info("Done monitoring Fusion Sync Stats")
+
+
+    def get_fusion_sync_stats(self):
+
+        sync_bucket_stats = ["ep_fusion_bytes_synced", "ep_fusion_sync_attempts", "ep_fusion_syncs"]
+        sync_stats_per_bucket = dict()
+        node_sync_stats = dict()
+
+        for bucket in self.cluster.buckets:
+            sync_stats_per_bucket[bucket.name] = dict()
+            for stat in sync_bucket_stats:
+                sync_stats_per_bucket[bucket.name][stat] = 0
+
+        total_syncs_across_cluster = 0
+
+        for server in self.cluster.nodes_in_cluster:
+            cbstats = Cbstats(server)
+            node_sync_stats[server.ip] = dict()
+            for bucket in self.cluster.buckets:
+                result = cbstats.all_stats(bucket.name)
+
+                ep_fusion_bytes_synced = int(result.get("ep_fusion_bytes_synced", 0))
+                ep_fusion_sync_attempts = int(result.get("ep_fusion_sync_attempts", 0))
+                ep_fusion_syncs = int(result.get("ep_fusion_syncs", 0))
+                fusion_pending_upload_bytes = int(result.get("fusion_pending_upload_bytes", 0))
+
+                sync_stats_per_bucket[bucket.name]["ep_fusion_bytes_synced"] += ep_fusion_bytes_synced
+                sync_stats_per_bucket[bucket.name]["ep_fusion_sync_attempts"] += ep_fusion_sync_attempts
+                sync_stats_per_bucket[bucket.name]["ep_fusion_syncs"] += ep_fusion_syncs
+
+                node_sync_stats[server.ip]["fusion_pending_upload_bytes"] = fusion_pending_upload_bytes
+
+                total_syncs_across_cluster += ep_fusion_syncs
+
+        self.log.info(f"Total Syncs across cluster so far: {total_syncs_across_cluster}")
+        self.log.info(f"Bucket Sync Stats: {sync_stats_per_bucket}")
+        self.log.info(f"Node Sync Stats: {node_sync_stats}")
+
+        return sync_stats_per_bucket, node_sync_stats, total_syncs_across_cluster
+
+

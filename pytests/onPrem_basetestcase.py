@@ -225,6 +225,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.logstore_frag_threshold = self.input.param("logstore_frag_threshold", 0.5) # 50%
         self.fusion_max_log_size = self.input.param("fusion_max_log_size", 1073741824) # 1GB
         self.fusion_max_num_log_files = self.input.param("fusion_max_num_log_files", 100)
+        self.fusion_max_upload_interval = self.input.param("fusion_max_upload_interval", 64800) # 18 hours
+        self.fusion_max_pending_upload_bytes = self.input.param("fusion_max_pending_upload_bytes", 0)
+        self.fusion_max_pending_upload_bytes_lwm_percentage = \
+            self.input.param("fusion_max_pending_upload_bytes_lwm_percentage", 100)
 
         '''
         Be careful while using this flag.

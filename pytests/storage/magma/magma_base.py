@@ -138,7 +138,9 @@ class MagmaBaseTest(StorageBase):
             # Set Rate Limits
             status, content = ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
                                 fusion_sync_rate_limit=self.fusion_sync_rate_limit,
-                                fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+                                fusion_migration_rate_limit=self.fusion_migration_rate_limit,
+                                fusion_max_pending_upload_bytes=self.fusion_max_pending_upload_bytes,
+                                fusion_max_pending_upload_bytes_lwm_percentage=self.fusion_max_pending_upload_bytes_lwm_percentage)
             self.log.info(f"Status = {status}, Content = {content}")
 
         self.log.info("==========Finished magma base setup========")

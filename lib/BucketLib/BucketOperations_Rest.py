@@ -427,7 +427,7 @@ class BucketHelper(BucketRestApi):
             # init_params["databaseFragmentationThreshold"] = {"percentage": 50}
             # init_params["viewFragmentationThreshold"] = {"percentage": 50}
             init_params["indexCompactionMode"] = "circular"
-            init_params["purgeInterval"] = 3
+            init_params["purgeInterval"] = bucket_params.get('purge_interval', 3)
 
         if bucket_params.get(Bucket.bucketType) == Bucket.Type.MEMBASE and \
                 bucket_params.get(Bucket.storageBackend) == Bucket.StorageBackend.magma:

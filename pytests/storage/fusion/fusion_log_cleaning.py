@@ -18,84 +18,6 @@ class FusionLogCleaning(FusionSync, FusionBase):
     def tearDown(self):
         super(FusionLogCleaning, self).tearDown()
 
-    def monitor_fusion_du(self, bucket, validate=False, time_interval=15):
-
-        self.log.info("Monitoring Log Store Disk Usage")
-
-        bucket_uuid = self.get_bucket_uuid(bucket.name)
-        self.log.info(f"Bucket UUID: {bucket_uuid}")
-        fusion_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
-
-        du_cmd = f"du -sb {fusion_bucket_path}"
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-
-        if validate:
-            # Fetch the initial log store DU after creates, which will be used to compare and validate
-            o, e = ssh.execute_command(du_cmd)
-            current_du = int(o[0].split("\t")[0])
-            self.log.info(f"Log Store Size of {bucket.name} after initial creates = {current_du}")
-            self.max_allowed_log_store_du = (1 + self.logstore_frag_threshold + 0.25) * current_du
-            self.log.info(f"Log Store DU should be always under {self.max_allowed_log_store_du} bytes")
-
-        du_violations = 0
-        total_checks = 0
-        max_du_observed = 0
-
-        while self.monitor_stats:
-            o, e = ssh.execute_command(du_cmd)
-            current_du = int(o[0].split("\t")[0])
-            self.log.info(f"Current Log Store DU for {bucket.name} = {current_du}")
-
-            if validate and current_du > self.max_allowed_log_store_du:
-                du_violations += 1
-                max_du_observed = max(max_du_observed, current_du)
-
-            total_checks += 1
-            time.sleep(time_interval)
-
-        ssh.disconnect()
-
-        if validate:
-            self.log.info(f"Total DU violations: ({du_violations} / {total_checks}) checks")
-            self.log.info(f"Max DU Observed = {max_du_observed}")
-
-    def monitor_log_store_stats(self, bucket, time_interval=15):
-
-        self.log.info("Monitoring log store stats")
-
-        cbstats_obj_dict = dict()
-        for server in self.cluster.nodes_in_cluster:
-            cbstats_obj_dict[server] = Cbstats(server)
-
-        self.monitor_stats = True
-        while self.monitor_stats:
-            server_stat_dict = dict()
-            for server in self.cluster.nodes_in_cluster:
-                server_stat_dict[server.ip] = dict()
-                try:
-                    cbstats_obj = cbstats_obj_dict[server]
-                    result = cbstats_obj.all_stats(bucket.name)
-                    log_store_size = result["ep_fusion_log_store_data_size"]
-                    garbage_size = result["ep_fusion_log_store_garbage_size"]
-                    pending_size = result["ep_fusion_log_store_pending_delete_size"]
-                    frag_perc = int(garbage_size) / int(log_store_size)
-
-                    server_stat_dict[server.ip]["log_store_size"] = int(log_store_size)
-                    server_stat_dict[server.ip]["garbage_size"] = int(garbage_size)
-                    server_stat_dict[server.ip]["frag_perc"] = float(frag_perc)
-                    server_stat_dict[server.ip]["pending_size"] = int(pending_size)
-
-                except Exception as e:
-                    self.log.info(f"Cbstats failed: {e}")
-                    cbstats_obj_dict = dict()
-                    for server in self.cluster.nodes_in_cluster:
-                        cbstats_obj_dict[server] = Cbstats(server)
-                    break
-
-            self.log.info(f"Log Store Stats = {server_stat_dict}")
-
-            time.sleep(time_interval)
-
 
     def test_monitor_fusion_disk_usage(self):
 
@@ -103,9 +25,13 @@ class FusionLogCleaning(FusionSync, FusionBase):
 
         self.log.info("Monitor Fusion Log Store Disk Usage Test Started")
 
+        # Start Monitoring Fusion Sync Stats
+        self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously)
+        self.sync_stats_th.start()
+
         self.log.info("Starting initial load")
         self.initial_load()
-        sleep_time = 120 + self.fusion_upload_interval + 20
+        sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
 
         monitor_du_threads = list()
@@ -121,10 +47,12 @@ class FusionLogCleaning(FusionSync, FusionBase):
         self.perform_multiple_updates(upsert_iterations=self.upsert_iterations)
 
         self.monitor_stats = False
+        self.monitor_sync_stats = True
         for th in monitor_du_threads:
             th.join()
         for th in monitor_cbstats_threads:
             th.join()
+        self.sync_stats_th.join()
 
 
     def test_log_cleaning_during_rebalance(self):
@@ -257,6 +185,8 @@ class FusionLogCleaning(FusionSync, FusionBase):
         self.sleep(wait_time_before_start, "Wait before starting update workload")
 
         num_upsert_iterations = upsert_iterations if upsert_iterations is not None else self.upsert_iterations
+
+        mutate = 1
         while num_upsert_iterations > 0:
             self.doc_ops = "update"
             self.reset_doc_params()
@@ -264,8 +194,9 @@ class FusionLogCleaning(FusionSync, FusionBase):
             self.update_end = self.num_items
             self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
             self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}")
-            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, ops_rate=self.upload_ops_rate, monitor_ops=False)
+            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, ops_rate=self.upload_ops_rate, monitor_ops=False, mutate=mutate)
             num_upsert_iterations -= 1
+            mutate += 1
             self.sleep(30, "Wait after update workload")
 
 

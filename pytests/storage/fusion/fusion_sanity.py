@@ -25,6 +25,12 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.monitor_log_store = self.input.param("monitor_log_store", True)
 
         self.rebalance_master = self.input.param("rebalance_master", False)
+        self.validate_sync_manager = self.input.param("validate_sync_manager", False)
+
+        # Monitoring threads
+        self.monitor = True
+        self.crash_loop = True
+        self.monitor_sync_stats = True
 
         self.kvstore_stats = dict()
         for bucket in self.cluster.buckets:
@@ -37,6 +43,18 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         super(FusionSanity, self).tearDown()
 
+        self.log.info("Stopping all monitoring threads")
+        self.monitor = False
+        self.crash_loop = False
+        self.monitor_sync_stats = False
+        if self.crash_during_test:
+            self.crash_th.join()
+        if self.monitor_log_store:
+            for th in self.monitor_threads:
+                th.join()
+        if self.validate_sync_manager:
+            self.sync_stats_th.join()
+
 
     def test_fusion_data_lifecycle(self):
 
@@ -46,11 +64,15 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.log.info("Running Fusion Data Lifecycle Test")
 
         if self.monitor_log_store:
-            monitor_threads = self.start_monitor_dir()
+            self.monitor_threads = self.start_monitor_dir()
 
         if self.crash_during_test:
-            crash_th = threading.Thread(target=self.kill_memcached_on_nodes, args=[self.crash_interval])
-            crash_th.start()
+            self.crash_th = threading.Thread(target=self.kill_memcached_on_nodes, args=[self.crash_interval])
+            self.crash_th.start()
+
+        if self.validate_sync_manager:
+            self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously)
+            self.sync_stats_th.start()
 
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
@@ -157,14 +179,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 self.num_nodes_to_rebalance_out = 1
                 self.num_nodes_to_rebalance_in = 0
 
-        self.monitor = False
-        self.crash_loop = False
-        if self.crash_during_test:
-            crash_th.join()
-        if self.monitor_log_store:
-            for th in monitor_threads:
-                th.join()
-
         stat_file_path = os.path.join(self.fusion_output_dir, "kvstore_stats.json")
         with open(stat_file_path, "w") as f:
             json.dump(self.kvstore_stats, f, indent=4)
@@ -268,12 +282,17 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         rebalance_sleep_time = self.input.param("rebalance_sleep_time", 120)
         num_upsert_iterations = self.input.param("num_upsert_iterations", 1)
         upsert_data_pct = self.input.param("upsert_data_pct", 0.75) # 75%
+        data_load_ops_rate = self.input.param("data_load_ops_rate", 10000)
+
+        if self.validate_sync_manager:
+            self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously)
+            self.sync_stats_th.start()
 
         for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
             buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]
             bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
             self.log.info(f"Performing data load on {bucket_names}")
-            self.perform_workload(0, self.num_items, buckets=buckets_batch, ops_rate=10000)
+            self.perform_workload(0, self.num_items, buckets=buckets_batch, ops_rate=data_load_ops_rate)
             self.sleep(10, "Wait after one batch")
 
         sleep_time = 300 + self.fusion_upload_interval + 60
@@ -286,7 +305,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
                 self.log.info(f"Performing data load on {bucket_names}")
                 self.perform_workload(0, self.num_items * upsert_data_pct, buckets=buckets_batch,
-                                      ops_rate=10000, doc_op="update", mutate=mutate)
+                                      ops_rate=data_load_ops_rate, doc_op="update", mutate=mutate)
                 self.sleep(10, "Wait after one batch")
 
             sleep_time = 300 + self.fusion_upload_interval + 60
@@ -494,6 +513,10 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         num_bucket_batch_size = self.input.param("num_bucket_batch_size", 2)
 
         self.log.info("Running Fusion Rebalance Test Scale Up/Down in a loop")
+
+        if self.validate_sync_manager:
+            self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously)
+            self.sync_stats_th.start()
 
         for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
             buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]

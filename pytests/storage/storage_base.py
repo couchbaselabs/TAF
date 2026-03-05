@@ -40,6 +40,8 @@ class StorageBase(BaseTestCase):
                                                Bucket.StorageBackend.magma)
         self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
                                                        Bucket.EvictionPolicy.FULL_EVICTION)
+        self.purge_interval = self.input.param("purge_interval", 3)
+        self.maxTTL = self.input.param("maxTTL", 0)
 
         self.set_kv_quota = self.input.param("set_kv_quota", False)
         if self.set_kv_quota:
@@ -121,9 +123,11 @@ class StorageBase(BaseTestCase):
                 bucket_type=self.bucket_type,
                 ram_quota=self.bucket_ram_quota,
                 replica=self.num_replicas,
+                maxTTL=self.maxTTL,
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy,
                 autoCompactionDefined=self.autoCompactionDefined,
+                purge_interval=self.purge_interval,
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled,
                 magma_key_tree_data_block_size=self.magma_key_tree_data_block_size,
@@ -140,6 +144,7 @@ class StorageBase(BaseTestCase):
             buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
                 self.num_replicas,
+                maxttl=self.maxTTL,
                 bucket_count=self.standard_buckets,
                 bucket_type=self.bucket_type,
                 storage={"couchstore": self.standard_buckets - self.magma_buckets,
@@ -147,6 +152,7 @@ class StorageBase(BaseTestCase):
                 eviction_policy=self.bucket_eviction_policy,
                 bucket_name=self.bucket_name,
                 ram_quota=self.bucket_ram_quota,
+                purge_interval=self.purge_interval,
                 fragmentation_percentage=self.fragmentation,
                 flush_enabled=self.flush_enabled,
                 weight=self.bucket_weight, width=self.bucket_width,
@@ -848,7 +854,7 @@ class StorageBase(BaseTestCase):
 
     def java_doc_loader(self, buckets=None, scopes=None, collections=None, generator=None, doc_ops=None,
                         wait=True, process_concurrency=2, skip_default=False, exp_ttl=None,
-                        validate_docs=False, ops_rate=None, monitor_ops=True, mutate=0):
+                        validate_docs=False, ops_rate=None, monitor_ops=True, mutate=0, target_vbs=None):
 
         doc_loading_tasks = list()
         ops_rate = ops_rate if ops_rate is not None else self.ops_rate
@@ -922,7 +928,8 @@ class StorageBase(BaseTestCase):
                             process_concurrency=process_concurrency,
                             validate_docs=validate_docs,
                             ops=ops_rate,
-                            mutate=mutate)
+                            mutate=mutate,
+                            target_vbuckets=target_vbs)
                     _task.create_doc_load_task()
                     self.doc_loading_tm.add_new_task(_task)
                     doc_loading_tasks.append(_task)
