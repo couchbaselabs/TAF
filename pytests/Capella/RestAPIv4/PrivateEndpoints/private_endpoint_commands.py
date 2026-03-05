@@ -301,7 +301,15 @@ class PostEndpointCommand(GetCluster):
                     value, str)) or (key == "virtualNetwork" and isinstance(
                     value, str)):
                     testcase["expected_status_code"] = 400
-                    if value == "":
+                    if key == "virtualNetwork" and (value == "" or value is None):
+                        testcase["expected_error"] = {
+                            "code": 1000,
+                            "hint": "The request was malformed or invalid.",
+                            "httpStatusCode": 400,
+                            "message": "Bad Request. Error: The Subnet ID provided "
+                                   "is invalid.."
+                        }
+                    elif value == "":
                         testcase["expected_error"] = {
                             "code": 1000,
                             "hint": "The request was malformed or invalid.",
