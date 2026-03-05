@@ -12,12 +12,11 @@ import unittest
 from os.path import splitext
 from pprint import pprint
 
-from sirius_client_framework.sirius_setup import SiriusSetup
-
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
             "connections", "constants", "py_constants"] + sys.path
 
+from sirius_client_framework.sirius_setup import SiriusSetup
 from shell_util.shell_conn import ShellConnection
 from TestInput import TestInputParser, TestInputSingleton
 from framework_lib.framework import HelperLib, Parameters
