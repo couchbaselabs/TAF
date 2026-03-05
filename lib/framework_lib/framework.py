@@ -461,7 +461,8 @@ class HelperLib(object):
 
     @staticmethod
     def launch_sirius_client(taf_path, urls,
-                             process_type="standalone_Java_loader"):
+                             process_type="standalone_Java_loader",
+                             unique_name="sirius_loader"):
         """
         urls is expected to be in the format,
             172.23.10.1:4000;172.23.10.2:4000;...
@@ -471,7 +472,8 @@ class HelperLib(object):
         """
         port = (urls.split(";")[0]).split(':')[-1]
         if process_type == "standalone_Java_loader":
-            SiriusSetup.start_java_loader(taf_path, port=port)
+            SiriusSetup.start_java_loader(taf_path, unique_name=unique_name,
+                                          port=port)
         elif process_type == "standalone_GoLang_loader":
             SiriusSetup.start_golang_loader(taf_path, port=port)
         elif process_type == "docker_Golang_loader":

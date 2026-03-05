@@ -18,12 +18,14 @@ class SiriusSetup(object):
         return SiriusSetup.__running_process
 
     @staticmethod
-    def is_sirius_online(url):
+    def is_sirius_online(url ,expected_name="java_loader"):
         for i in range(5):
             try:
                 response = requests.get(url=url + "/check-online")
                 if response.status_code == 200:
-                    return True
+                    response_json = response.json()
+                    if response_json.get("name") == expected_name:
+                        return True
             except Exception as e:
                 print(str(e))
                 sleep(5)
@@ -31,7 +33,7 @@ class SiriusSetup(object):
 
 
     @staticmethod
-    def start_java_loader(taf_path, port=8080):
+    def start_java_loader(taf_path, unique_name="java_loader", port=8080):
         doc_loader_path = f"{taf_path}/DocLoader"
         """
         print("Building Loader")
@@ -48,7 +50,8 @@ class SiriusSetup(object):
         cmd = ["java", "-cp",
                f"{doc_loader_path}/target/magmadocloader/magmadocloader.jar",
                "RestServer.RestApplication",
-               f"--server.port={port}"]
+               f"--server.port={port}",
+               f"--server.name={unique_name}"]
         SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 
 

@@ -2,6 +2,7 @@
 import logging
 import logging.config
 import os
+import random
 import re
 import sys
 import threading
@@ -10,6 +11,8 @@ import unittest
 
 from os.path import splitext
 from pprint import pprint
+
+from sirius_client_framework.sirius_setup import SiriusSetup
 
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
@@ -96,8 +99,22 @@ def main():
         os.makedirs(root_log_dir)
 
     if options.launch_java_doc_loader:
-        HelperLib.launch_sirius_client(taf_path, options.sirius_url,
-                                       process_type="standalone_Java_loader")
+        u_name = f"java_loader_{random.randint(100000, 999999)}"
+        max_retry = 5
+        for i in range(max_retry):
+            HelperLib.launch_sirius_client(taf_path, options.sirius_url,
+                                           process_type="standalone_Java_loader")
+            if SiriusSetup.is_sirius_online(options.sirius_url,
+                                            expected_name=u_name):
+                break
+            else:
+                url_parts = options.sirius_url.split(":")
+                base_url = ":".join(url_parts[:-1])
+                new_port = int(url_parts[-1]) + 1
+                options.sirius_url = f"{base_url}:{new_port}"
+        else:
+            raise Exception("Failed to launch Sirius")
+
     elif options.launch_sirius_process:
         HelperLib.launch_sirius_client(taf_path, options.sirius_url,
                                        process_type="standalone_GoLang_loader")
