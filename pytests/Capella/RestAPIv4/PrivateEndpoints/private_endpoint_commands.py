@@ -272,7 +272,7 @@ class PostEndpointCommand(GetCluster):
                     .format(key, value, type(value))
                 if (key == "vpcID" and (value == "" or value is None)) or ((key == "resourceGroupName" or key == "virtualNetwork") and value is None):
                     testcase["expected_status_code"] = 400
-                    if key == "virtualNetwork" and value is None:
+                    if key == "virtualNetwork" and (value == "" or value is None):
                         testcase["expected_error"] = {
                             "code": 1000,
                             "hint": "The request was malformed or invalid.",
