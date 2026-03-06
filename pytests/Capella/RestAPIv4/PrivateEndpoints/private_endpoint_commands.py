@@ -13,7 +13,7 @@ class PostEndpointCommand(GetCluster):
     def setUp(self, nomenclature="PrivateEndpointCommands_POST"):
         GetCluster.setUp(self, nomenclature)
         self.expected_res = {
-            "vpcID": self.input.param("vpcId", "mockValue"),
+            "vpcNetworkID": self.input.param("vpcId", "mockValue"),
             "subnetIDs": ["mockValue"],
         }
         if (self.input.param("cluster_template", "AWS_r5_xlarge") ==
