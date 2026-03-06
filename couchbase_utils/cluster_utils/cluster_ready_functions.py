@@ -2538,20 +2538,6 @@ class ClusterUtils:
             curr_revision, group_json)
         return status
 
-    def print_UI_logs(self, rest, last_n=10, contains_text=None):
-        _, logs = rest.ui_logs()
-        logs = logs['list']
-        logs.reverse()
-        result = list()
-        for i in range(min(last_n, len(logs))):
-            result.append(logs[i])
-            if contains_text is not None and contains_text in logs[i]["text"]:
-                break
-
-        self.log.info("Latest logs from UI")
-        for ui_log in result:
-            self.log.error(ui_log)
-
     def get_rebalance_status_and_progress(self, cluster, task_status_id=None):
         """
         Returns a 2-tuple capturing the rebalance status and progress, as follows:
@@ -2593,7 +2579,7 @@ class ClusterUtils:
                 if "errorMessage" in json_parsed:
                     msg = '{0} - rebalance failed'.format(json_parsed)
                     self.log.error(msg)
-                    self.print_UI_logs(cluster_rest)
+                    self.print_UI_logs(cluster.master)
                     raise RebalanceFailedException(msg)
                 elif rebalance_status == "running":
                     if task_status_id is not None \
@@ -2616,7 +2602,7 @@ class ClusterUtils:
                     _, json_parsed = get_reb_task()
                     if "errorMessage" in json_parsed:
                         msg = '{0} - rebalance failed'.format(json_parsed)
-                        self.print_UI_logs(cluster_rest)
+                        self.print_UI_logs(cluster.master)
                         raise RebalanceFailedException(msg)
                     avg_percentage = 100
         else:
