@@ -270,7 +270,7 @@ class PostEndpointCommand(GetCluster):
                 testcase[key] = value
                 testcase["desc"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
-                if (key == "vpcID" and (value == "" or value is None)) or ((key == "resourceGroupName" or key == "virtualNetwork") and value is None):
+                if (key == "vpcNetworkID" and (value == "" or value is None)) or ((key == "resourceGroupName" or key == "virtualNetwork") and value is None):
                     testcase["expected_status_code"] = 400
                     if key == "virtualNetwork" and (value == "" or value is None):
                         testcase["expected_error"] = {
@@ -328,7 +328,7 @@ class PostEndpointCommand(GetCluster):
                         }
 
                 elif (
-                        key == "vpcID" and not isinstance(value, str) or
+                        key == "vpcNetworkID" and not isinstance(value, str) or
                         key == "subnetIDs" and not isinstance(value, list) or
                         key == "resourceGroupName" and not isinstance(
                         value, str) or key == "virtualNetwork" and not
