@@ -101,8 +101,10 @@ def main():
         u_name = f"java_loader_{random.randint(100000, 999999)}"
         max_retry = 5
         for i in range(max_retry):
-            HelperLib.launch_sirius_client(taf_path, options.sirius_url,
-                                           process_type="standalone_Java_loader")
+            HelperLib.launch_sirius_client(
+                taf_path, options.sirius_url,
+                process_type="standalone_Java_loader",
+                unique_name=u_name)
             if SiriusSetup.is_sirius_online(options.sirius_url,
                                             expected_name=u_name):
                 break
