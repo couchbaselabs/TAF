@@ -182,7 +182,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.encryption_at_rest_dek_lifetime = self.input.param(
             "encryption_at_rest_dek_lifetime", CbServer.encryption_at_rest_dek_lifetime_interval)
 
-        # Continous backup params
+        # Continuous backup params
         self.cont_bkp_test = self.input.param("cont_bkp_test", None) # ["None","single_node","NFS"]
         expected_cont_bkp_test_values = [None, "single_node", "NFS"]
         if self.cont_bkp_test not in expected_cont_bkp_test_values:
@@ -193,6 +193,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Will be overriden in collection base if NFS is being used as the continuous backup location for the test
         self.continuous_backup_location = self.input.param(
             "continuous_backup_location", "/tmp/continuous_backup")
+        self.backup_archive_dir = self.input.param("archive_dir", "/tmp/backups")
+        self.backup_repo_name = self.input.param("repo_name", "test_repo")
 
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)

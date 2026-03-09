@@ -6,6 +6,8 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_tools.cbbackupmgr import CbBackupMgr
+from cb_tools.cbcontbk import CbContBk
 from cb_tools.cbepctl import Cbepctl
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
@@ -137,6 +139,15 @@ class CollectionBase(ClusterSetup, FusionBase):
                     else:
                         self.log.info("Set permissions on continuous backup folder")
 
+                self.backup_mgr = CbBackupMgr(shell,
+                                              username=self.cluster.master.rest_username,
+                                              password=self.cluster.master.rest_password,
+                                              log=self.log)
+                self.cont_bk_mgr = CbContBk(shell,
+                                            username=self.cluster.master.rest_username,
+                                            password=self.cluster.master.rest_password,
+                                            log=self.log)
+
         try:
             self.collection_setup()
             CollectionBase.setup_collection_history_settings(self)
@@ -218,14 +229,22 @@ class CollectionBase(ClusterSetup, FusionBase):
 
         # Clean up continuous backup folder
         if self.cont_bkp_test == "NFS":
+            shell = RemoteMachineShellConnection(self.cluster.master)
             try:
                 self.log.info("Removing continuous backup folder: %s" % self.continuous_backup_location)
-                output, error = self.shell.execute_command(f"rm -rf {self.continuous_backup_location}")
+                output, error = shell.execute_command(f"rm -rf {self.continuous_backup_location}")
                 if error:
                     self.log.warning("Error removing continuous backup folder: %s" % error)
             except Exception as e:
                 self.log.warning("Exception during cleanup: %s" % str(e))
 
+            # Clean up backup folders
+            try:
+                if hasattr(self, 'repo_name') and self.repo_name:
+                    self.log.info("Removing backup repository")
+                    shell.execute_command(f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}")
+            except Exception as e:
+                self.log.warning(f"Exception during cleanup: {e}")
 
         super(CollectionBase, self).tearDown()
 
@@ -276,6 +295,28 @@ class CollectionBase(ClusterSetup, FusionBase):
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
                                                 validate_docs)
+
+        if self.continuous_backup_enabled:
+            for bucket in self.cluster.buckets:
+                if bucket.bucketType != Bucket.Type.EPHEMERAL and \
+                        bucket.storageBackend == Bucket.StorageBackend.magma:
+                    self.bucket_util.update_bucket_property(self.cluster.master,
+                                                            bucket,
+                                                            continuous_backup_interval=self.continuous_backup_interval,
+                                                            continuous_backup_location=self.continuous_backup_location,
+                                                            continuous_backup_enabled="true")
+                self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
+
+            self.sleep(self.continuous_backup_interval * 60,
+                           f"Waiting for {self.continuous_backup_interval} "
+                           "minutes after enabling continuous backup")
+            self.log.info("Creating backup repository")
+            self.backup_mgr.create_repo(self.backup_archive_dir,
+                                            self.backup_repo_name)
+            self.log.info("Performing initial backup")
+            self.backup_mgr.backup(self.backup_archive_dir,
+                                       self.backup_repo_name)
+
         if isinstance(self.range_scan_collections, int) \
                 and self.range_scan_collections > 0:
             CollectionBase.range_scan_load_setup(self)
@@ -751,31 +792,6 @@ class CollectionBase(ClusterSetup, FusionBase):
                         test_obj.log.info(
                             "Encryption at rest kept disabled  for ephemeral "
                             "bucket: %s" % bucket)
-
-        if test_obj.continuous_backup_enabled and \
-                buckets_spec.get(Bucket.bucketType, Bucket.Type.MEMBASE) \
-                != Bucket.Type.EPHEMERAL and \
-                buckets_spec.get(Bucket.storageBackend, Bucket.StorageBackend.magma) ==\
-                    Bucket.StorageBackend.magma:
-
-                    buckets_spec[Bucket.continuousBackupEnabled] = True
-                    buckets_spec[Bucket.continuousBackupLocation] = test_obj.continuous_backup_location
-                    buckets_spec[Bucket.continuousBackupInterval] = test_obj.continuous_backup_interval
-
-                    if "buckets" in buckets_spec:
-                        for bucket in buckets_spec["buckets"]:
-                            if buckets_spec["buckets"][bucket].get(Bucket.bucketType,
-                                                                Bucket.Type.MEMBASE) != \
-                                    Bucket.Type.EPHEMERAL and \
-                                        buckets_spec["buckets"][bucket].get(Bucket.storageBackend, Bucket.StorageBackend.magma) == \
-                                            Bucket.StorageBackend.magma:
-
-                                buckets_spec["buckets"][bucket][Bucket.continuousBackupEnabled] = True
-                                buckets_spec["buckets"][bucket][Bucket.continuousBackupLocation] = test_obj.continuous_backup_location
-                                buckets_spec["buckets"][bucket][Bucket.continuousBackupInterval] = test_obj.continuous_backup_interval
-                                test_obj.log.info(
-                                    "Continuous backup enabled for bucket: %s" % bucket)
-
 
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)

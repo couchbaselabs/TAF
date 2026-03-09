@@ -1,7 +1,6 @@
-from cb_tools.cbbackupmgr import CbBackupMgr
+import time
 from pytests.bucket_collections.collections_base import CollectionBase
 from shell_util.remote_connection import RemoteMachineShellConnection
-
 
 """
 NFS setup requirements:
@@ -14,35 +13,30 @@ NFS setup requirements:
 class ContinuousBackupBase(CollectionBase):
     def setUp(self):
         super(ContinuousBackupBase, self).setUp()
-        self.key = "test_backup_docs"
-        self.num_docs = self.input.param("num_docs", 100000)
-
-        self.shell = RemoteMachineShellConnection(self.cluster.master)
 
         self.bucket = self.cluster.buckets[0]
         self.bucket_name = self.bucket.name
+        self.shell = RemoteMachineShellConnection(self.cluster.master)
 
-        self.bucket_util.add_rbac_user(self.cluster.master)
-
-        # Create backup manager instance
-        self.backup_mgr = CbBackupMgr(self.shell,
-                                      username=self.cluster.master.rest_username,
-                                      password=self.cluster.master.rest_password)
 
     def tearDown(self):
-        # Delete the continuous backup bucket if exists
+
+        # Delete the shell connection if exists
         try:
-            buckets = self.bucket_util.get_all_buckets(self.cluster)
-            for bucket in buckets:
-                if bucket.name == self.bucket_name:
-                    self.log.info("Deleting bucket: %s" % bucket.name)
-                    self.bucket_util.delete_bucket(self.cluster, bucket)
-                    self.log.info("Bucket %s deleted successfully" % bucket.name)
-                    break
-        except Exception as e:
-            self.fail("Exception during bucket deletion: %s" % str(e))
-        finally:
-            self.backup_mgr.disconnect()
             self.shell.disconnect()
+        except Exception as e:
+            self.log.error("Exception during removing shell: %s" % str(e))
 
         super(ContinuousBackupBase, self).tearDown()
+
+    def _verify_doc_count(self, expected_count, timeout=300):
+        self.log.info(f"Verifying document count. Expected: {expected_count}")
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            actual_items = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+            if actual_items == expected_count:
+                self.log.info(f"Document count verified: {actual_items}")
+                return
+            self.log.info(f"Current doc counts. Actual: {actual_items}, Expected: {expected_count}. Retrying in 10s...")
+            self.sleep(10)
+        self.fail(f"Document count mismatch. Expected: {expected_count}, Actual: {actual_items}")

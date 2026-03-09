@@ -1,10 +1,11 @@
 from cb_tools.cb_tools_base import CbCmdBase
 from cb_constants import CbServer
+import logging
 
 
 class CbBackupMgr(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
-                 password="password", no_ssl_verify=None):
+                 password="password", no_ssl_verify=None, log=None):
         CbCmdBase.__init__(self, shell_conn, "cbbackupmgr",
                            username=username, password=password)
         if no_ssl_verify is None:
@@ -12,11 +13,15 @@ class CbBackupMgr(CbCmdBase):
         self.cli_flags = ""
         if no_ssl_verify:
             self.cli_flags += " --no-ssl-verify"
+        if log:
+            self.log = log
+        else:
+            self.log = logging.getLogger("test")
 
     """
     Method to backup a Couchbase cluster using cbbackupmgr backup command
-    
-    :param archive_dir str: The location of the backup archive directory. 
+
+    :param archive_dir str: The location of the backup archive directory.
                             When backing up directly to S3, prefix with s3://${BUCKET_NAME}/
     :param repo_name str: The name of the backup repository to backup data into
     :param cluster_host str: The hostname of one of the nodes in the cluster to back up
@@ -25,11 +30,12 @@ class CbBackupMgr(CbCmdBase):
     :param threads int: Number of concurrent clients to use when taking a backup
     :param no_progress_bar bool: If True, suppress progress bar output
     :param full_backup bool: If True, perform a full backup instead of incremental
-    :param value_compression str: Compression policy for backed up values. 
+    :param value_compression str: Compression policy for backed up values.
                                   Options: "unchanged", "uncompressed", "compressed" (default: "compressed")
     :param skip_last_compaction bool: If True, skip the last compaction checkpoint
     :param consistency_check int: Consistency check window in seconds (Enterprise Edition feature)
     """
+
     def backup(self, archive_dir, repo_name, cluster_host=None,
                resume=False, purge=False, threads=None,
                no_progress_bar=False, full_backup=False,
@@ -73,47 +79,51 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --consistency-check %d" % consistency_check
 
         cmd += self.cli_flags
-
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
+        self.log.info(f"Command output: {output}")
         return output, error
 
     """
     Method to create a backup repository using cbbackupmgr config command
-    
+
     :param archive_dir str: The location of the backup archive directory
     :param repo_name str: The name of the backup repository to create
     """
+
     def create_repo(self, archive_dir, repo_name):
         """
         Execute cbbackupmgr config command to create a repository
         """
         cmd = "%s config --archive %s --repo %s" % (
             self.cbstatCmd, archive_dir, repo_name)
-
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
+        self.log.info(f"Command output: {output}")
         return output, error
 
     """
     Method to list backups in a repository using cbbackupmgr list command
-    
+
     :param archive_dir str: The location of the backup archive directory
     :param repo_name str: The name of the backup repository
     """
+
     def list_backups(self, archive_dir, repo_name):
         """
         Execute cbbackupmgr list command to list backups
         """
         cmd = "%s list --archive %s --repo %s" % (
             self.cbstatCmd, archive_dir, repo_name)
-
         cmd += self.cli_flags
-
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
+        self.log.info(f"Command output: {output}")
         return output, error
 
     """
     Method to restore a backup to a Couchbase cluster using cbbackupmgr restore command
-    
+
     :param archive_dir str: The location of the backup archive directory
     :param repo_name str: The name of the backup repository to restore from
     :param cluster_host str: The hostname of one of the nodes in the cluster to restore to
@@ -131,6 +141,7 @@ class CbBackupMgr(CbCmdBase):
     :param filter_keys str: Optional filter for keys to restore
     :param filter_values str: Optional filter for values to restore
     """
+
     def restore(self, archive_dir, repo_name, cluster_host=None,
                 backup_id=None, no_progress_bar=False, threads=None,
                 auto_create_buckets=False,
@@ -184,17 +195,19 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --filter-values %s" % filter_values
 
         cmd += self.cli_flags
-
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
+        self.log.info(f"Command output: {output}")
         return output, error
 
     """
     Method to remove a backup repository using cbbackupmgr remove command
-    
+
     :param archive_dir str: The location of the backup archive directory
     :param repo_name str: The name of the backup repository to remove
     :param backup_range str: Optional backup range to remove (e.g., "1-5" or "1,3,5")
     """
+
     def remove(self, archive_dir, repo_name, backup_range=None):
         """
         Execute cbbackupmgr remove command to remove a repository or specific backups
@@ -205,7 +218,9 @@ class CbBackupMgr(CbCmdBase):
         if backup_range:
             cmd += " --backups %s" % backup_range
         
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
+        self.log.info(f"Command output: {output}")
         return output, error
 
     def generate_docs(self, num_docs, bucket_name, size, cluster_host=None):
@@ -228,6 +243,7 @@ class CbBackupMgr(CbCmdBase):
             self.username, self.password, size)
 
         cmd += self.cli_flags
-
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
+        self.log.info(f"Command output: {output}")
         return output, error
