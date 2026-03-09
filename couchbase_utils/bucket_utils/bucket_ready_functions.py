@@ -1190,7 +1190,8 @@ class DocLoaderUtils(object):
                                process_concurrency=1,
                                print_ops_rate=True,
                                load_using="default_loader",
-                               ops_rate=None):
+                               ops_rate=None,
+                               use_bulk_APIs=False):
         """
         :param task_manager: TaskManager object used for task management
         :param cluster: Cluster object to fetch master node
@@ -1209,7 +1210,8 @@ class DocLoaderUtils(object):
         """
         op_details = BucketUtils.perform_tasks_from_spec(cluster,
                                                          buckets,
-                                                         input_spec)
+                                                         input_spec,
+                                                         use_bulk_APIs)
         crud_spec = DocLoaderUtils.create_doc_gens_for_spec(buckets,
                                                             input_spec,
                                                             mutation_num,
@@ -1690,6 +1692,23 @@ class CollectionUtils(DocLoaderUtils):
         CollectionUtils.create_collection_object(bucket,
                                                  scope_name,
                                                  collection_spec)
+
+    @staticmethod
+    def bulk_drop_collections(manifest, bucket, cluster, collections_to_mark):
+        status, content = (
+            BucketHelper(cluster).import_collection_using_manifest(bucket.name,
+                                                                   str(manifest).replace("'", '"')))
+        if status is False:
+            CollectionUtils.log.error("Bulk collection drop failed for bucket '%s': %s"
+                                      % (bucket.name, content))
+            raise Exception("bulk_drop_collections failed")
+        bucket.stats.increment_manifest_uid()
+        for scope_name, collection_name in collections_to_mark:
+            CollectionUtils.mark_collection_as_dropped(
+                bucket,
+                scope_name,
+                collection_name
+            )
 
     @staticmethod
     def drop_collection(node, bucket, scope_name=CbServer.default_scope,
@@ -6413,7 +6432,16 @@ class BucketUtils(ScopeUtils):
                                 scope_name=scope.name)
 
     @staticmethod
-    def perform_tasks_from_spec(cluster, buckets, input_spec):
+    def remove_collection_from_manifest(manifest, scope_name, collection_name):
+        for scope in manifest["scopes"]:
+            if scope["name"] == scope_name:
+                scope["collections"] = [
+                    c for c in scope["collections"]
+                    if c["name"] != collection_name
+                ]
+
+    @staticmethod
+    def perform_tasks_from_spec(cluster, buckets, input_spec, use_bulk_APIs=False):
         """
         Perform Create/Drop/Flush of scopes and collections as specified
         in the input json spec template.
@@ -6424,6 +6452,8 @@ class BucketUtils(ScopeUtils):
                         (To create REST connections for bucket operations)
         :param buckets: List of bucket objects considered for bucket ops
         :param input_spec: CRUD spec (JSON format)
+        :param use_bulk_APIs: Boolean value to decide whether to use bulk APIs
+                        for scope/collection/deletion or not. Default value is 'False'.
         :return ops_details: Dict describing the actions taken during the
                              execution using input_spec
         """
@@ -6595,6 +6625,9 @@ class BucketUtils(ScopeUtils):
                     with requests.Session() as session:
                         for bucket_name, b_data in ops_spec.items():
                             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
+                            collections_to_mark = []
+                            status, content = BucketHelper(cluster.master).get_bucket_manifest(bucket_name)
+                            manifest  = BucketUtils.get_bucket_manifest_json(content)
                             for scope_name, scope_data in b_data["scopes"].items():
                                 for collection_name in \
                                         list(scope_data["collections"].keys()):
@@ -6603,9 +6636,27 @@ class BucketUtils(ScopeUtils):
                                             cluster.master, bucket,
                                             scope_name, collection_name)
                                     elif operation_type == "drop":
-                                        futures.append(executor.submit(CollectionUtils.drop_collection, cluster.master,
-                                                                       bucket, scope_name, collection_name,
-                                                                       session=session))
+                                        if use_bulk_APIs:
+                                            BucketUtils.remove_collection_from_manifest(
+                                                manifest,
+                                                scope_name,
+                                                collection_name
+                                            )
+                                            collections_to_mark.append((scope_name, collection_name))
+                                        else:
+                                            futures.append(
+                                                executor.submit(
+                                                    CollectionUtils.drop_collection,
+                                                    cluster.master,
+                                                    bucket,
+                                                    scope_name,
+                                                    collection_name,
+                                                    session=session
+                                                )
+                                            )
+                            if use_bulk_APIs:
+                                CollectionUtils.bulk_drop_collections(
+                                    manifest,bucket,cluster.master, collections_to_mark)
                     for future in concurrent.futures.as_completed(futures):
                         if future.exception() is not None:
                             raise future.exception()
@@ -6792,6 +6843,21 @@ class BucketUtils(ScopeUtils):
             get_stats_for_metric(metric_name, label_values=label_values)
         item_count = content["data"][0]["values"][-1][-1]
         return int(item_count)
+
+    @staticmethod
+    def get_bucket_manifest_json(content):
+        manifest = {
+            "scopes": [
+                {
+                    "name": s["name"],
+                    "collections": [
+                        {"name": c["name"]} for c in s.get("collections", [])
+                    ]
+                }
+                for s in content.get("scopes", [])
+            ]
+        }
+        return manifest
 
     def get_stat_from_metrics(self, bucket):
         num_throttled, ru, wu = 0, 0, 0

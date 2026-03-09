@@ -92,6 +92,16 @@ class ScopeAndCollectionsAPI(CBRestConnection):
                                           headers=header)
         return status, content
 
+    def get_bucket_manifest(self, bucket_name):
+        """
+        GET /pools/default/buckets/<bucket_name>/scopes
+        Returns the manifest for the given bucket.
+        """
+        bucket_name = quote(bucket_name)
+        api = self.base_url + f"/pools/default/buckets/{bucket_name}/scopes"
+        status, content, _ = self.request(api, self.GET)
+        return status, content
+
     def wait_for_collections_warmup(self, bucket_name, uid, session=None):
         """
         POST /pools/default/buckets/<bucket_name>/scopes/@ensureManifest/<uid>
