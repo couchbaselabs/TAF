@@ -3,17 +3,18 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class NfsUtil(object):
-    def __init__(self):
+    def __init__(self, nfs_server_node):
         self.log = logger.get("test")
+        self.nfs_server_node = nfs_server_node
 
-    def validate_nfs_server(self, nfs_server_node):
+    def validate_nfs_server(self):
         """
         Validates that the given node is a properly configured NFS server.
         Checks: NFS packages installed, NFS service running, /data exported,
         /data directory exists with correct permissions, and exportfs active.
         Returns True if all checks pass, raises Exception otherwise.
         """
-        shell = RemoteMachineShellConnection(nfs_server_node)
+        shell = RemoteMachineShellConnection(self.nfs_server_node)
         try:
             checks = {
                 "nfs_package_installed": {
@@ -74,16 +75,16 @@ class NfsUtil(object):
             if failed:
                 raise Exception(
                     "NFS server validation failed on %s. "
-                    "Failed checks: %s" % (nfs_server_node.ip,
+                    "Failed checks: %s" % (self.nfs_server_node.ip,
                                            ", ".join(failed)))
 
             self.log.info("All NFS server checks passed for %s"
-                          % nfs_server_node.ip)
+                          % self.nfs_server_node.ip)
             return True
         finally:
             shell.disconnect()
 
-    def validate_nfs_client(self, client_node, nfs_server_node,
+    def validate_nfs_client(self, client_node,
                             mount_point="/mnt/nfs_data"):
         """
         Validates that the given client node is a properly configured NFS
@@ -107,13 +108,13 @@ class NfsUtil(object):
                 },
                 "nfs_server_reachable": {
                     "cmd": "ping -c 1 -W 3 %s >/dev/null 2>&1 && echo 'OK' || echo 'FAIL'"
-                           % nfs_server_node.ip,
+                           % self.nfs_server_node.ip,
                     "error": "NFS server %s is not reachable from client"
-                             % nfs_server_node.ip
+                             % self.nfs_server_node.ip
                 },
                 "showmount_server": {
                     "cmd": "showmount -e %s 2>/dev/null | grep -q '/data' && echo 'OK' || echo 'FAIL'"
-                           % nfs_server_node.ip,
+                           % self.nfs_server_node.ip,
                     "error": "/data not listed in NFS server exports (showmount)"
                 },
                 "mount_point_exists": {
@@ -124,9 +125,9 @@ class NfsUtil(object):
                 "nfs_mounted": {
                     "cmd": "mount | grep -q '%s:/data.*%s' && echo 'OK' || "
                            "(mount | grep -q '%s.*nfs' && echo 'OK' || echo 'FAIL')"
-                           % (nfs_server_node.ip, mount_point, mount_point),
+                           % (self.nfs_server_node.ip, mount_point, mount_point),
                     "error": "%s:/data is not mounted at %s"
-                             % (nfs_server_node.ip, mount_point)
+                             % (self.nfs_server_node.ip, mount_point)
                 },
                 "mount_type_nfs": {
                     "cmd": "df -T %s 2>/dev/null | grep -qE 'nfs|nfs4' && echo 'OK' || echo 'FAIL'"
@@ -146,10 +147,10 @@ class NfsUtil(object):
                 },
                 "fstab_entry": {
                     "cmd": "grep -q '%s:/data' /etc/fstab && echo 'OK' || echo 'FAIL'"
-                           % nfs_server_node.ip,
+                           % self.nfs_server_node.ip,
                     "error": "No fstab entry for %s:/data "
                              "(mount not persistent across reboots)"
-                             % nfs_server_node.ip
+                             % self.nfs_server_node.ip
                 },
                 "nfs_statd_running": {
                     "cmd": "systemctl is-active nfs-client.target 2>/dev/null || "
@@ -180,12 +181,12 @@ class NfsUtil(object):
 
             self.log.info("All NFS client checks passed for %s "
                           "(connected to server %s)"
-                          % (client_node.ip, nfs_server_node.ip))
+                          % (client_node.ip, self.nfs_server_node.ip))
             return True
         finally:
             shell.disconnect()
 
-    def setup_nfs_client(self, client_node, nfs_server_ip="172.23.104.203",
+    def setup_nfs_client(self, client_node,
                          nfs_share="/data", mount_point="/mnt/nfs_data"):
         """
         Sets up NFS client on the given node. Installs nfs-common, verifies
@@ -204,31 +205,31 @@ class NfsUtil(object):
             if error:
                 self.log.warning("nfs-common install warnings: %s" % error)
 
-            self.log.info("Verifying NFS exports from %s" % nfs_server_ip)
+            self.log.info("Verifying NFS exports from %s" % self.nfs_server_node.ip)
             output, error = shell.execute_command(
-                "showmount -e %s" % nfs_server_ip)
+                "showmount -e %s" % self.nfs_server_node.ip)
             if error:
                 raise Exception("Cannot reach NFS server %s: %s"
-                                % (nfs_server_ip, error))
+                                % (self.nfs_server_node.ip, error))
             self.log.info("NFS exports: %s" % output)
 
             self.log.info("Creating mount point %s" % mount_point)
             shell.execute_command("mkdir -p %s" % mount_point)
 
             self.log.info("Mounting %s:%s to %s"
-                          % (nfs_server_ip, nfs_share, mount_point))
+                          % (self.nfs_server_node.ip, nfs_share, mount_point))
             output, error = shell.execute_command(
-                "mount %s:%s %s" % (nfs_server_ip, nfs_share, mount_point))
+                "mount %s:%s %s" % (self.nfs_server_node.ip, nfs_share, mount_point))
             if error:
                 raise Exception("Failed to mount %s:%s on %s: %s"
-                                % (nfs_server_ip, nfs_share,
+                                % (self.nfs_server_node.ip, nfs_share,
                                    client_node.ip, error))
 
             fstab_entry = ("%s:%s  %s  nfs  defaults,_netdev  0  0"
-                           % (nfs_server_ip, nfs_share, mount_point))
+                           % (self.nfs_server_node.ip, nfs_share, mount_point))
             output, _ = shell.execute_command(
                 "grep -qF '%s:%s' /etc/fstab && echo 'EXISTS' "
-                "|| echo 'MISSING'" % (nfs_server_ip, nfs_share))
+                "|| echo 'MISSING'" % (self.nfs_server_node.ip, nfs_share))
             if output and output[0].strip() == "MISSING":
                 self.log.info("Adding fstab entry for persistence")
                 shell.execute_command(
