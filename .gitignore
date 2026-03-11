@@ -10,4 +10,5 @@
 build
 /bin/
 **/.vscode
+**/.factory
 __pycache__
