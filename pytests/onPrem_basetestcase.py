@@ -181,6 +181,19 @@ class OnPremBaseTest(CouchbaseBaseTest):
             "rotationIntervalInSeconds", 2592000)
         self.encryption_at_rest_dek_lifetime = self.input.param(
             "encryption_at_rest_dek_lifetime", CbServer.encryption_at_rest_dek_lifetime_interval)
+
+        # Continous backup params
+        self.cont_bkp_test = self.input.param("cont_bkp_test", None) # ["None","single_node","NFS"]
+        expected_cont_bkp_test_values = [None, "single_node", "NFS"]
+        if self.cont_bkp_test not in expected_cont_bkp_test_values:
+            self.fail(f"Invalid value for cont_bkp_test. Expected: {expected_cont_bkp_test_values}. Got: {self.cont_bkp_test}")
+        self.continuous_backup_enabled = self.input.param("continuous_backup_enabled", False)
+        self.continuous_backup_interval = self.input.param("continuous_backup_interval", 5)
+        # Location where continuous backup files will be stored. This can be local path or NFS mount depending on the test configuration
+        # Will be overriden in collection base if NFS is being used as the continuous backup location for the test
+        self.continuous_backup_location = self.input.param(
+            "continuous_backup_location", "/tmp/continuous_backup")
+
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)

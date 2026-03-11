@@ -1,5 +1,6 @@
 from math import ceil
 from random import sample
+import uuid
 
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
@@ -14,6 +15,9 @@ from BucketLib.bucket import Bucket
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_tools.cbstats import Cbstats
+from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
+from lib.testconstants import PITR_NFS_SERVER
+from platform_utils.ssh_util.install_util.test_input import TestInputServer
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -30,6 +34,7 @@ class CollectionBase(ClusterSetup, FusionBase):
         self.log_setup_status("CollectionBase", "started")
 
         self.key = 'test_collection'
+
         self.skip_collections_during_data_load = self.input.param("skip_col_dict", None)
         self.simulate_error = self.input.param("simulate_error", None)
         self.doc_ops = self.input.param("doc_ops", None)
@@ -89,6 +94,49 @@ class CollectionBase(ClusterSetup, FusionBase):
         if self.fusion_test and self.fusion_enable:
             self.configure_fusion()
             self.enable_fusion()
+
+        if self.cont_bkp_test == "NFS":
+                """
+                    NFS setup requirements:
+                    - Server: /data directory exported with appropriate permissions
+                    - Client: Mount NFS export at /mnt/nfs_data
+                    - Validation: Ensure server export and client mount are working
+                    - Cleanup: Unique subdirectory created under mount point and removed after test
+                """
+                self.nfs_server = TestInputServer()
+                self.nfs_server.ip = PITR_NFS_SERVER
+                self.nfs_server.ssh_username = "root"
+                self.nfs_server.ssh_password = "couchbase"
+
+                self.nfs_util = NfsUtil(self.nfs_server)
+
+                self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
+                self.nfs_util.validate_nfs_server()
+
+                for node in self.servers:
+                    self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
+                    try:
+                        self.nfs_util.validate_nfs_client(node)
+                    except Exception as e:
+                        self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
+                        self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
+                        self.nfs_util.validate_nfs_client(node)
+
+                shell = RemoteMachineShellConnection(self.cluster.master)
+                # Create continuous backup folder on NFS server
+                self.continuous_backup_location = f"/mnt/nfs_data/test_{uuid.uuid4()}"
+                output, error = shell.execute_command(f"mkdir -p {self.continuous_backup_location}")
+                if error:
+                    self.fail("Error creating continuous backup folder: %s" % error)
+                else:
+                    self.log.info("Created continuous backup folder: %s" % self.continuous_backup_location)
+                    # Set permissions for couchbase user
+                    output, error = shell.execute_command(f"chmod 777 {self.continuous_backup_location}")
+                    if error:
+                        self.fail("Error setting permissions on continuous backup folder: %s" % error)
+                    else:
+                        self.log.info("Set permissions on continuous backup folder")
+
         try:
             self.collection_setup()
             CollectionBase.setup_collection_history_settings(self)
@@ -167,6 +215,18 @@ class CollectionBase(ClusterSetup, FusionBase):
                                         num_writer_threads="default",
                                         num_reader_threads="default",
                                         num_storage_threads="default")
+
+        # Clean up continuous backup folder
+        if self.cont_bkp_test == "NFS":
+            try:
+                self.log.info("Removing continuous backup folder: %s" % self.continuous_backup_location)
+                output, error = self.shell.execute_command(f"rm -rf {self.continuous_backup_location}")
+                if error:
+                    self.log.warning("Error removing continuous backup folder: %s" % error)
+            except Exception as e:
+                self.log.warning("Exception during cleanup: %s" % str(e))
+
+
         super(CollectionBase, self).tearDown()
 
     def collection_setup(self):
@@ -691,6 +751,31 @@ class CollectionBase(ClusterSetup, FusionBase):
                         test_obj.log.info(
                             "Encryption at rest kept disabled  for ephemeral "
                             "bucket: %s" % bucket)
+
+        if test_obj.continuous_backup_enabled and \
+                buckets_spec.get(Bucket.bucketType, Bucket.Type.MEMBASE) \
+                != Bucket.Type.EPHEMERAL and \
+                buckets_spec.get(Bucket.storageBackend, Bucket.StorageBackend.magma) ==\
+                    Bucket.StorageBackend.magma:
+
+                    buckets_spec[Bucket.continuousBackupEnabled] = True
+                    buckets_spec[Bucket.continuousBackupLocation] = test_obj.continuous_backup_location
+                    buckets_spec[Bucket.continuousBackupInterval] = test_obj.continuous_backup_interval
+
+                    if "buckets" in buckets_spec:
+                        for bucket in buckets_spec["buckets"]:
+                            if buckets_spec["buckets"][bucket].get(Bucket.bucketType,
+                                                                Bucket.Type.MEMBASE) != \
+                                    Bucket.Type.EPHEMERAL and \
+                                        buckets_spec["buckets"][bucket].get(Bucket.storageBackend, Bucket.StorageBackend.magma) == \
+                                            Bucket.StorageBackend.magma:
+
+                                buckets_spec["buckets"][bucket][Bucket.continuousBackupEnabled] = True
+                                buckets_spec["buckets"][bucket][Bucket.continuousBackupLocation] = test_obj.continuous_backup_location
+                                buckets_spec["buckets"][bucket][Bucket.continuousBackupInterval] = test_obj.continuous_backup_interval
+                                test_obj.log.info(
+                                    "Continuous backup enabled for bucket: %s" % bucket)
+
 
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
