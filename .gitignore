@@ -12,3 +12,4 @@ build
 /bin/
 **/.jython_cache
 **/.vscode
+**/.factory
