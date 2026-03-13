@@ -293,8 +293,9 @@ class CollectionBase(ClusterSetup, FusionBase):
 
         CollectionBase.enable_dcp_oso_backfill(self)
         CollectionBase.create_clients_for_sdk_pool(self)
-        CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
-                                                validate_docs)
+        if self.input.param("initial_load", True):
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
+                                                    validate_docs)
 
         if self.continuous_backup_enabled:
             for bucket in self.cluster.buckets:
@@ -310,12 +311,13 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.sleep(self.continuous_backup_interval * 60,
                            f"Waiting for {self.continuous_backup_interval} "
                            "minutes after enabling continuous backup")
-            self.log.info("Creating backup repository")
-            self.backup_mgr.create_repo(self.backup_archive_dir,
-                                            self.backup_repo_name)
-            self.log.info("Performing initial backup")
-            self.backup_mgr.backup(self.backup_archive_dir,
-                                       self.backup_repo_name)
+            if  self.input.param("initial_load", True):
+                self.log.info("Creating backup repository")
+                self.backup_mgr.create_repo(self.backup_archive_dir,
+                                                self.backup_repo_name)
+                self.log.info("Performing initial backup")
+                self.backup_mgr.backup(self.backup_archive_dir,
+                                           self.backup_repo_name)
 
         if isinstance(self.range_scan_collections, int) \
                 and self.range_scan_collections > 0:
@@ -726,6 +728,7 @@ class CollectionBase(ClusterSetup, FusionBase):
             load_spec, mutation_num=0, async_load=False,
             batch_size=500, process_concurrency=1, validate_task=True)
         test_obj.assertTrue(cont_doc_load.result, "Hist retention load failed")
+        return cont_doc_load
 
     @staticmethod
     def deploy_buckets_from_spec_file(test_obj):
