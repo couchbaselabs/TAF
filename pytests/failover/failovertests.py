@@ -428,15 +428,17 @@ class FailoverTests(FailoverBaseTest):
             self.assertTrue(rebalance)
 
         if rebalance_type == "out":
-            rebalance= self.task.rebalance(self.cluster,
-                                           [],
-                                           [self.servers[self.nodes_init - 1]])
+            # Use the first chosen node for out rebalance instead of hardcoded index
+            rebalance = self.task.rebalance(self.cluster,
+                                            [],
+                                            [chosen[0]])
             self.assertTrue(rebalance)
 
         if rebalance_type == "swap":
+            # Use the first chosen node for swap rebalance instead of hardcoded index
             rebalance = self.task.rebalance(self.cluster,
                                             [self.servers[self.nodes_init]],
-                                            [self.servers[self.nodes_init-1]])
+                                            [chosen[0]])
             self.assertTrue(rebalance)
 
         if not self.atomicity:
