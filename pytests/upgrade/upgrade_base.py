@@ -16,6 +16,7 @@ from membase.api.rest_client import RestConnection
 from rebalance_utils.rebalance_util import RebalanceUtil
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
 from sdk_client3 import SDKClient
+from bucket_utils.bucket_ready_functions import CollectionUtils, BucketUtils
 from bucket_collections.collections_base import CollectionBase
 from BucketLib.bucket import Bucket
 import testconstants
@@ -348,6 +349,26 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+
+    def attempt_10k_collection_creation(self, scopes=5, collections=1000):
+        bucket_selected = self.cluster.buckets[0]
+        bucket_helper = BucketHelper(self.cluster.master)
+        status, content = bucket_helper.get_bucket_manifest(bucket_selected.name)
+        manifest = BucketUtils.get_bucket_manifest_json(content)
+        try:
+            updated_manifest = CollectionUtils.merge_collection_manifests(
+                CollectionUtils.create_collection_scope_manifest(scopes, collections), manifest)
+            status, content = bucket_helper.import_collection_using_manifest(
+                bucket_selected.name, str(updated_manifest).replace("'", '"'))
+            print("status: {}, content: {}".format(status, content))
+            return status
+        except Exception as e:
+            print(f"Exception occurred: {e}")
+            raise
+        finally:
+            restore_status, restore_content = bucket_helper.import_collection_using_manifest(
+                bucket_selected.name, str(manifest).replace("'", '"'))
+            self.log.info("Restoring original manifest for bucket {0}".format(bucket_selected.name))
 
     def validate_encryption_operations(self, expected_to_fail=True):
         """Validate encryption key creation and assignment."""
@@ -1296,4 +1317,3 @@ class UpgradeBase(BaseTestCase):
                     self.cluster.master, enabled=False)
         else:
             self.log.info("FBR not available in this version, skipping verification")
-

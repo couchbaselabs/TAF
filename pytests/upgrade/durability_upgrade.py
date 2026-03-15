@@ -240,6 +240,7 @@ class UpgradeTests(UpgradeBase):
             # Each node in the cluster is upgraded iteratively
             while node_to_upgrade is not None:
                 self.validate_encryption_operations(expected_to_fail=True)
+                self.assertFalse(self.attempt_10k_collection_creation())
                 if self.include_indexing_query:
                     self.indexes = set()
                     sdk_client = SDKClient(
@@ -404,6 +405,7 @@ class UpgradeTests(UpgradeBase):
         self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         self.servers = self.cluster_util.get_kv_nodes(self.cluster)
         self.validate_encryption_operations(expected_to_fail=False)
+        self.assertTrue(self.attempt_10k_collection_creation())
 
         if self.test_guardrail_migration or self.test_guardrail_upgrade:
             self.rr_guardrail_limits = {"couchstore": 10, "magma": 1}
