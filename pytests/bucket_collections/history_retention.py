@@ -27,6 +27,7 @@ class DocHistoryRetention(ClusterSetup):
         super(DocHistoryRetention, self).setUp()
         self.shells = dict()
         self.spec_name = self.input.param("bucket_spec", None)
+        self.key_size = self.input.param("key_size", None)
         self.data_spec_name = self.input.param("data_spec_name",
                                                "initial_load")
 
