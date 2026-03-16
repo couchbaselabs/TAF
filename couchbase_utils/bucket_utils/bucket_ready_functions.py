@@ -1633,6 +1633,100 @@ class CollectionUtils(DocLoaderUtils):
         return status
 
     @staticmethod
+    def merge_collection_manifests(original_manifest, new_manifest):
+        """
+        Merge two manifests safely.
+
+        Args:
+            original_manifest: existing manifest (from cluster)
+            new_manifest: newly generated manifest
+
+        Returns:
+            dict: merged manifest
+        """
+
+        merged = {"scopes": []}
+
+        scope_map = {}
+
+        for scope in original_manifest.get("scopes", []):
+            scope_map[scope["name"]] = {
+                "name": scope["name"],
+                "collections": {c["name"] for c in scope.get("collections", [])}
+            }
+
+        for scope in new_manifest.get("scopes", []):
+
+            scope_name = scope["name"]
+
+            if scope_name not in scope_map:
+                scope_map[scope_name] = {
+                    "name": scope_name,
+                    "collections": set()
+                }
+
+            for col in scope.get("collections", []):
+                scope_map[scope_name]["collections"].add(col["name"])
+
+        for scope_name, scope_data in scope_map.items():
+            merged["scopes"].append({
+                "name": scope_name,
+                "collections": [{"name": c} for c in sorted(scope_data["collections"])]
+            })
+
+        return merged
+
+    @staticmethod
+    def create_collection_scope_manifest(scopes,
+                                         collections_per_scope,
+                                         scope_prefix="manifest_scope_",
+                                         collection_prefix="manifest_collection_"):
+        """
+        Creates manifest JSON for bulk scope/collection creation.
+
+        Args:
+            scopes: number of scopes to create
+            collections_per_scope: collections per scope
+            scope_prefix: prefix for generated scopes
+            collection_prefix: prefix for generated collections
+
+        Returns:
+            dict: manifest JSON
+        """
+
+        json_content = {"scopes": []}
+
+        for i in range(scopes):
+            scope = {
+                "name": f"{scope_prefix}{i}",
+                "collections": []
+            }
+
+            for j in range(collections_per_scope):
+                scope["collections"].append({
+                    "name": f"{collection_prefix}{i}_{j}"
+                })
+
+            json_content["scopes"].append(scope)
+
+        return json_content
+
+    @staticmethod
+    def convert_raw_bucket_collection_data_to_manifest(data):
+        manifest = {
+            "scopes": [
+                {
+                    "name": s["name"],
+                    "collections": [
+                        {"name": c["name"]} for c in s.get("collections", [])
+                    ]
+                }
+                for s in data.get("scopes", [])
+            ]
+        }
+        return manifest
+
+    @staticmethod
     def mark_collection_as_dropped(bucket, scope_name, collection_name):
         """
         Function to mark the collection as dropped
