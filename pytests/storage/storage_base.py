@@ -43,6 +43,11 @@ class StorageBase(BaseTestCase):
         self.purge_interval = self.input.param("purge_interval", 3)
         self.maxTTL = self.input.param("maxTTL", 0)
 
+        self.fusion_s3_test = self.input.param("fusion_s3_test", False)
+        self.aws_profile = self.input.param("aws_profile", "default")
+        if self.fusion_s3_test:
+            self.insert_aws_env_vars()
+
         self.set_kv_quota = self.input.param("set_kv_quota", False)
         if self.set_kv_quota:
             self.kv_quota_mem = self.input.param("kv_quota_mem", None)
@@ -50,6 +55,7 @@ class StorageBase(BaseTestCase):
             self.rest.configure_memory(
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
 
+        # Enabling Fusion
         if self.fusion_test and self.fusion_enable:
             self.configure_fusion()
             self.enable_fusion()
@@ -1453,6 +1459,45 @@ class StorageBase(BaseTestCase):
                 self.log.info(f"  {log_file.strip()}")
 
         return log_files_exist, log_file_count
+
+
+    def insert_aws_env_vars(self):
+
+        check_cmd = "grep 'export AWS_PROFILE=' /opt/couchbase/bin/couchbase-server"
+
+        cmd = fr"""sed -i '/export[[:space:]]\+ERL_LIBS/a\
+            export AWS_PROFILE={self.aws_profile}\n\
+            export AWS_SDK_LOAD_CONFIG=1\n\
+            export AWS_DEFAULT_REGION={self.fusion_region}\n\
+            export AWS_ACCESS_KEY_ID={self.aws_access_key}\n\
+            export AWS_SECRET_ACCESS_KEY={self.aws_secret_key}
+            ' /opt/couchbase/bin/couchbase-server"""
+
+        for server in self.cluster.servers:
+
+            shell = RemoteMachineShellConnection(server)
+
+            self.log.info(f"Checking AWS env vars on {server.ip}")
+            o, e = shell.execute_command(check_cmd)
+            self.log.info(f"O = {o}, E = {e}")
+
+            if any("AWS_PROFILE" in line for line in o) or any("AWS_PROFILE" in line for line in e):
+                self.log.info(f"AWS env vars already present on {server.ip}, skipping")
+                shell.disconnect()
+                continue
+
+            self.log.debug(f"Executing CMD on {server.ip}: {cmd}")
+            o, e = shell.execute_command(cmd)
+            self.log.info(f"O = {e}, E = {e}")
+
+            self.log.debug(f"Restarting couchbase server on {server.ip}")
+            o, e = shell.restart_couchbase()
+            self.log.info(f"O = {o}, E = {e}")
+
+            shell.disconnect()
+
+        self.sleep(60, "Sleep after inserting AWS env vars")
+
 
     def PrintStep(self, msg=None):
         print("\n")

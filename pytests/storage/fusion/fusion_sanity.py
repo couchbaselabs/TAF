@@ -22,7 +22,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         self.crash_during_test = self.input.param("crash_during_test", False)
         self.crash_interval = self.input.param("crash_interval", 120)
-        self.monitor_log_store = self.input.param("monitor_log_store", True)
+        self.monitor_log_store = self.input.param("monitor_log_store", False)
 
         self.rebalance_master = self.input.param("rebalance_master", False)
         self.validate_sync_manager = self.input.param("validate_sync_manager", False)
@@ -277,6 +277,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         self.log.info("Running Fusion Rebalance Test")
         num_bucket_batch_size = self.input.param("num_bucket_batch_size", 2)
+        item_batch_size = self.input.param("item_batch_size", self.num_items)
         rebalance_data_load = self.input.param("rebalance_data_load", True)
         wait_before_rebalance_load_time = self.input.param("wait_before_rebalance_load_time", 100)
         rebalance_sleep_time = self.input.param("rebalance_sleep_time", 120)
@@ -285,31 +286,42 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         data_load_ops_rate = self.input.param("data_load_ops_rate", 10000)
 
         if self.validate_sync_manager:
-            self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously)
+            self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously, args=[172800, 60, True])
             self.sync_stats_th.start()
+
+        self.sleep(600, "Wait before starting data load")
+        total_num_items = self.num_items
 
         for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
             buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]
             bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
-            self.log.info(f"Performing data load on {bucket_names}")
-            self.perform_workload(0, self.num_items, buckets=buckets_batch, ops_rate=data_load_ops_rate)
-            self.sleep(10, "Wait after one batch")
+            for item_start in range(0, total_num_items, item_batch_size):
+                items_in_batch = min(item_batch_size, total_num_items - item_start)
+                self.log.info(f"Loading items {item_start} to {item_start + items_in_batch} on {bucket_names}")
+                self.perform_workload(item_start, item_start + items_in_batch, buckets=buckets_batch, ops_rate=data_load_ops_rate)
+                self.sleep(10, "Wait after item batch")
 
         sleep_time = 300 + self.fusion_upload_interval + 60
         self.sleep(sleep_time, "Sleep after initial workload")
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         mutate = 1
+        total_upsert_items = int(self.num_items * upsert_data_pct)
+        upsert_item_batch_size = self.input.param("upsert_item_batch_size", total_upsert_items)
         for i in range(num_upsert_iterations):
-            for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
-                buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]
+            for j in range(0, len(self.cluster.buckets), num_bucket_batch_size):
+                buckets_batch = self.cluster.buckets[j:j+num_bucket_batch_size]
                 bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
-                self.log.info(f"Performing data load on {bucket_names}")
-                self.perform_workload(0, self.num_items * upsert_data_pct, buckets=buckets_batch,
-                                      ops_rate=data_load_ops_rate, doc_op="update", mutate=mutate)
-                self.sleep(10, "Wait after one batch")
+                for item_start in range(0, total_upsert_items, upsert_item_batch_size):
+                    items_in_batch = min(upsert_item_batch_size, total_upsert_items - item_start)
+                    self.log.info(f"Upserting items {item_start} to {item_start + items_in_batch} on {bucket_names}")
+                    self.perform_workload(item_start, item_start + items_in_batch, buckets=buckets_batch,
+                                          ops_rate=data_load_ops_rate, doc_op="update", mutate=mutate)
+                    self.sleep(10, "Wait after item batch")
 
             sleep_time = 300 + self.fusion_upload_interval + 60
             self.sleep(sleep_time, "Sleep after upsert workload")
+            self.bucket_util.print_bucket_stats(self.cluster)
             mutate += 1
 
         # Perform a data workload in parallel when rebalance is taking place
@@ -327,9 +339,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                                               rebalance_master=self.rebalance_master,
                                               rebalance_sleep_time=rebalance_sleep_time)
 
-        if rebalance_data_load:
-            doc_load_th.join()
-
         extent_migration_array = list()
         self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
         for node in nodes_to_monitor:
@@ -337,6 +346,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
                 extent_th.start()
                 extent_migration_array.append(extent_th)
+
+        if rebalance_data_load:
+            doc_load_th.join()
 
         for th in extent_migration_array:
             th.join()

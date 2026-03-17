@@ -60,6 +60,9 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
     def test_fusion_enable_midway(self):
 
+        workload_during_enabling = self.input.param("workload_during_enabling", False)
+        workload_ops_during_enabling = self.input.param("workload_ops_during_enabling", 10000)
+
         self.enable_bucket_count = self.input.param("enable_bucket_count", None)
         if self.enable_bucket_count is not None:
             self.fusion_enabled_buckets = self.cluster.buckets[:int(self.enable_bucket_count)]
@@ -103,6 +106,14 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             chaos_th = threading.Thread(target=self.perform_chaos_actions, args=[self.chaos_action])
             chaos_th.start()
 
+        if workload_during_enabling:
+            # Load data during enabling at a high ops rate
+            self.log.info("Performing data load while Fusion is being enabled")
+            create_th = threading.Thread(target=self.perform_workload, args=[self.num_items, self.num_items * 2, "create", True, None, workload_ops_during_enabling])
+            create_th.start()
+            self.sleep(30, "Sleep after data loading")
+            self.bucket_util.print_bucket_stats(self.cluster)
+
         enable_fusion_th.join()
 
         if self.chaos_action is not None:
@@ -115,11 +126,12 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         # Get Uploader Map after enabling Fusion
         self.get_fusion_uploader_info(buckets=self.fusion_enabled_buckets)
 
-        # Load more data after Fusion is enabled
-        self.log.info("Performing data load after Fusion is enabled")
-        self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
-        sleep_time = 120 + self.fusion_upload_interval + 30
-        self.sleep(sleep_time, "Sleep after subsequent data loading")
+        if not workload_during_enabling:
+            # Load more data after Fusion is enabled
+            self.log.info("Performing data load after Fusion is enabled")
+            self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
+            sleep_time = 120 + self.fusion_upload_interval + 30
+            self.sleep(sleep_time, "Sleep after subsequent data loading")
 
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")
@@ -136,6 +148,9 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         for th in extent_migration_array:
             th.join()
+
+        if workload_during_enabling:
+            create_th.join()
 
         # Get Uploader Map after Fusion Rebalance
         self.get_fusion_uploader_info(buckets=self.fusion_enabled_buckets)

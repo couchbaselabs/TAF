@@ -9,9 +9,9 @@ MANIFEST_SOURCE_PATH="/mnt/nfs/share/fusion-manifests"
 BASE_URI="/mnt/nfs/share/buckets"
 
 # Validate required arguments
-if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Error: hostID and rebalanceID arguments are required"
-    echo "Usage: $0 <hostID> <rebalanceID> [--skip-file-linking]"
+if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+    echo "Error: hostID, rebalanceID and LogStore arguments are required"
+    echo "Usage: $0 <hostID> <rebalanceID> [--skip-file-linking] [--guest-storage-dest-path <path>]"
     exit 1
 fi
 
@@ -19,9 +19,33 @@ HOST_ID="$1"
 REBALANCE_ID="$2"
 SKIP_FLAG=""
 
-if [ "$3" == "--skip-file-linking" ]; then
+if [ "$3" == "nfs" ]; then
+    BASE_URI="/mnt/nfs/share/buckets"
+else
+    BASE_URI="s3://cb-fusion-test/buckets"
     SKIP_FLAG="-skip-file-linking"
 fi
+echo "Base Uri: $BASE_URI"
+
+# Parse remaining arguments
+shift 3
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-file-linking)
+            SKIP_FLAG="-skip-file-linking"
+            shift
+            ;;
+        --guest-storage-dest-path)
+            GUEST_STORAGE_PATH="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+echo "Guest Storage path: $GUEST_STORAGE_PATH"
 
 # Create base directories with rebalanceID subdirectory
 PRIVATE_PREFIX="$GUEST_STORAGE_PATH/$HOST_ID/$REBALANCE_ID"

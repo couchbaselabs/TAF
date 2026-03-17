@@ -194,6 +194,10 @@ else
     parameters="${parameters},upgrade_version=${version_number}"
 fi
 
+if [ "${component}" = "fusion" ]; then
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+fi
+
 # Passing aws_access_key and aws_secret_key for analytics test cases
 if [[ "$component" = "analytics" || "$component" = "columnar" ]]; then
   read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN <<< \

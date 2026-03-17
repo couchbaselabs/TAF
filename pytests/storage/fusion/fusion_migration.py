@@ -184,6 +184,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
     def test_monitor_active_guest_volumes(self):
 
+        active_guest_vol_interval = self.input.param("active_guest_vol_interval", 5)
+
         self.log.info("Starting initial load")
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
@@ -200,7 +202,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 extent_th.start()
                 extent_migration_array.append(extent_th)
 
-        active_guest_volumes_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        active_guest_volumes_th = threading.Thread(target=self.monitor_active_guest_volumes, args=[18000, active_guest_vol_interval])
         active_guest_volumes_th.start()
 
         for th in extent_migration_array:

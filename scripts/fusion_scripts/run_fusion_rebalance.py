@@ -43,7 +43,10 @@ API_START_REBALANCE = "/controller/rebalance"
 class RebalanceAutomation:
     def __init__(self, base_url: str, username: str, password: str, current_nodes: List[str],
                  new_nodes: List[str], config: dict, rebalanceID: str, dry_run: bool = False, replica_update: bool = False,
-                 skip_file_linking: bool = False, force_sync_during_sleep: bool = False, stop_before_rebalance: bool = False, min_storage_size: int = None, manifest_parts: int = 20):
+                 skip_file_linking: bool = False, force_sync_during_sleep: bool = False, stop_before_rebalance: bool = False,
+                 min_storage_size: int = None, manifest_parts: int = 20, log_store: str = "nfs",
+                 guest_storage_dest_path: str = None):
+
         self.base_url = base_url.rstrip('/')
         self.auth = (username, password)
         self.current_nodes = current_nodes
@@ -57,6 +60,8 @@ class RebalanceAutomation:
         self.stop_before_rebalance = stop_before_rebalance
         self.min_storage_size = min_storage_size
         self.manifest_part = manifest_parts
+        self.log_store = log_store
+        self.guest_storage_dest_path = guest_storage_dest_path
 
         if os.path.exists(REBALANCE_PLAN_FILE): os.remove(REBALANCE_PLAN_FILE)
         if os.path.exists(MANIFEST_OUTPUT_DIR): shutil.rmtree(MANIFEST_OUTPUT_DIR)
@@ -130,7 +135,11 @@ class RebalanceAutomation:
         if not os.path.exists(REBALANCE_PLAN_FILE) and not self.dry_run:
             raise FileNotFoundError(f"Rebalance plan file {REBALANCE_PLAN_FILE} not found")
 
-        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.manifest_part} -min-storage-size {self.min_storage_size} -base-uri {self.config['base_uri']}"
+        cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.manifest_part} -min-storage-size {self.min_storage_size}"
+        if self.log_store == "nfs":
+            cmd += f" -base-uri {self.config['base_uri']}"
+        elif self.log_store == "s3":
+            cmd += f" -base-uri s3://cb-fusion-test/buckets"
         self._execute_command(cmd, "Splitting rebalance manifest")
 
     def sync_manifests(self):
@@ -192,9 +201,11 @@ class RebalanceAutomation:
 
         try:
             ssh.connect(node, username=self.config["ssh_username"], password=self.config["ssh_password"], timeout=30)
-            cmd = f"{self.config['accelerator_binary']} ns_1@{node} {self.rebalanceID}"
+            cmd = f"{self.config['accelerator_binary']} ns_1@{node} {self.rebalanceID} {self.log_store}"
             if self.skip_file_linking:
                 cmd += " --skip-file-linking"
+            if self.guest_storage_dest_path:
+                cmd += f" --guest-storage-dest-path {self.guest_storage_dest_path}"
             print(cmd)
 
             # Start command
@@ -371,6 +382,9 @@ def main():
     parser.add_argument('--min-storage-size', type=int, default=536870912, help='Minimum storage size per split part in bytes (default: 50GB)')
     parser.add_argument('--skip-add-nodes', action='store_true', help='To skip adding nodes API')
     parser.add_argument('--manifest-parts', type=int, default=20, help='Manifest parts')
+    parser.add_argument('--log-store', default='nfs', help='Fusion Log Store')
+    parser.add_argument('--s3-end-to-end', action='store_true', help='End to End S3 test')
+    parser.add_argument('--guest-storage-dest-path', default=None, help='Override GUEST_STORAGE_PATH in run_local_accelerator.sh')
 
     args = parser.parse_args()
 
@@ -389,6 +403,8 @@ def main():
         min_storage_size = args.min_storage_size
         skip_add_nodes = args.skip_add_nodes
         manifest_parts = args.manifest_parts
+        log_store = args.log_store
+        guest_storage_dest_path = args.guest_storage_dest_path
 
 
         global REBALANCE_PLAN_FILE
@@ -408,7 +424,9 @@ def main():
             force_sync_during_sleep = force_sync_during_sleep,
             stop_before_rebalance = stop_before_rebalance,
             min_storage_size = min_storage_size,
-            manifest_parts=args.manifest_parts
+            manifest_parts=args.manifest_parts,
+            log_store=log_store,
+            guest_storage_dest_path=guest_storage_dest_path
         )
 
         # Step 1: Add/Remove nodes

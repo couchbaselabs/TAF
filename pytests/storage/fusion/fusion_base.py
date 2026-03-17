@@ -1,6 +1,7 @@
 import ast
 from collections import deque
 from copy import deepcopy
+import datetime
 import json
 import os
 import random
@@ -564,7 +565,8 @@ class FusionBase(BaseTestCase):
                       rebalance_master=False, replica_update=False, skip_file_linking=False,
                       wait_for_rebalance_to_complete=True, force_sync_during_sleep=False, stop_before_rebalance=False,
                       min_storage_size=None, skip_add_nodes=False, manifest_parts = 20,
-                      add_nodes=[], remove_nodes=[]):
+                      add_nodes=[], remove_nodes=[], log_store="nfs",
+                      guest_storage_dest_path=None):
 
         # Populate spare nodes list
         if rebalance_count == 1:
@@ -726,7 +728,7 @@ class FusionBase(BaseTestCase):
         source {self.venv_path}/bin/activate
         pip install --upgrade pip
         pip install paramiko requests
-        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count} --manifest-parts {manifest_parts}
+        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count} --manifest-parts {manifest_parts} --log-store {log_store}
         """
 
         if replica_update:
@@ -741,6 +743,8 @@ class FusionBase(BaseTestCase):
             commands = commands.rstrip() + f" --min-storage-size {min_storage_size}"
         if skip_add_nodes:
             commands = commands.rstrip() + " --skip-add-nodes"
+        if guest_storage_dest_path is not None:
+            commands = commands.rstrip() + f" --guest-storage-dest-path {guest_storage_dest_path}"
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
@@ -1253,10 +1257,11 @@ class FusionBase(BaseTestCase):
                     self.log.warning(f"Error getting stats from {node.ip}:{bucket.name} - {e}")
             cbstats.disconnect()
 
-        self.log.info("Checking log files exist on NFS")
-        log_files_exist, log_count = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
-        if not log_files_exist:
-            failure_messages.append("No log files found on NFS")
+        if not self.fusion_s3_test:
+            self.log.info("Checking log files exist on NFS")
+            log_files_exist, log_count = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
+            if not log_files_exist:
+                failure_messages.append("No log files found on NFS")
 
         if failure_messages:
             self.log.error("FUSION HEALTH CHECK - FAILED")
@@ -1304,7 +1309,7 @@ class FusionBase(BaseTestCase):
 
         return fusion_state_transition_complete
 
-    def enable_fusion(self, buckets=None, timeout=3600):
+    def enable_fusion(self, buckets=None, timeout=18000):
 
         fusion_client = FusionRestAPI(self.cluster.master)
         status, content = fusion_client.enable_fusion(buckets=buckets)
@@ -1625,6 +1630,7 @@ class FusionBase(BaseTestCase):
             interface_cmd = f"ip route get {self.nfs_server_ip} | grep -oP 'dev \K\S+'"
             o, e = shell.execute_command(interface_cmd)
             interface = o[0].strip()
+            self.log.info(f"Server: {server.ip}, Interface: {interface}")
 
             commands_to_run = list()
 
@@ -1741,6 +1747,9 @@ class FusionBase(BaseTestCase):
         for server in self.cluster.nodes_in_cluster:
             cbstats_obj_dict[server] = Cbstats(server)
 
+        self.total_frag_checks = 0
+        self.frag_threshold_violations = list()
+
         self.monitor_stats = True
         while self.monitor_stats:
             server_stat_dict = dict()
@@ -1759,6 +1768,10 @@ class FusionBase(BaseTestCase):
                     server_stat_dict[server.ip]["frag_perc"] = float(frag_perc)
                     server_stat_dict[server.ip]["pending_size"] = int(pending_size)
 
+                    if frag_perc > self.logstore_frag_threshold:
+                        self.log.warning(f"LOGSTORE FRAG PERC OVER THRESHOLD, {server.ip}:{bucket.name}, {frag_perc} > {self.logstore_frag_threshold}")
+                        self.frag_threshold_violations.append([frag_perc, server.ip, bucket.name])
+
                 except Exception as e:
                     self.log.info(f"Cbstats failed: {e}")
                     cbstats_obj_dict = dict()
@@ -1766,12 +1779,16 @@ class FusionBase(BaseTestCase):
                         cbstats_obj_dict[server] = Cbstats(server)
                     break
 
+                self.total_frag_checks += 1
+
             self.log.info(f"Log Store Stats = {server_stat_dict}")
+            self.log.info(f"Log Store Frag Threshold violations: {len(self.frag_threshold_violations)} / {self.total_frag_checks}")
+            self.log.info(f"Log Store Frag Threshold violation values: {self.frag_threshold_violations}")
 
             time.sleep(time_interval)
 
 
-    def get_fusion_sync_stats_continuously(self, timeout=172800, interval=None):
+    def get_fusion_sync_stats_continuously(self, timeout=172800, interval=None, flag_violations=False):
 
         self.monitor_sync_stats = True
         end_time = time.time() + timeout
@@ -1779,20 +1796,32 @@ class FusionBase(BaseTestCase):
 
         self.log.info("Monitoring Fusion Sync Stats")
 
+        self.total_checks = 0
+        self.pending_bytes_violations = list()
+        self.snapshot_pending_bytes_violations = list()
+
         while self.monitor_sync_stats and time.time() < end_time:
 
             try:
-                self.get_fusion_sync_stats()
+                self.get_fusion_sync_stats(flag_violations=flag_violations)
+                self.get_fusion_status_stats(validate=flag_violations)
 
             except Exception as e:
                 self.log.info(f"Exception while fetching sync stats: {e}")
+
+            self.total_checks += 1
 
             self.sleep(interval, "Wait until next interval to fetch sync stats")
 
         self.log.info("Done monitoring Fusion Sync Stats")
 
+        if flag_violations:
+            self.log.info(f"Pending bytes violations: {len(self.pending_bytes_violations)} / {self.total_checks}")
+            self.log.info(f"Pending bytes over threshold values: {self.pending_bytes_violations}")
+            self.log.info(f"/fusion/status snapshot_pending_bytes over threshold values: {self.snapshot_pending_bytes_violations}")
 
-    def get_fusion_sync_stats(self):
+
+    def get_fusion_sync_stats(self, flag_violations=False):
 
         sync_bucket_stats = ["ep_fusion_bytes_synced", "ep_fusion_sync_attempts", "ep_fusion_syncs"]
         sync_stats_per_bucket = dict()
@@ -1824,6 +1853,10 @@ class FusionBase(BaseTestCase):
 
                 total_syncs_across_cluster += ep_fusion_syncs
 
+            if flag_violations and node_sync_stats[server.ip]["fusion_pending_upload_bytes"] > self.fusion_max_pending_upload_bytes:
+                self.log.warning(f"fusion_pending_upload_bytes OVER THRESHOLD: {node_sync_stats[server.ip]['fusion_pending_upload_bytes']} > {self.fusion_max_pending_upload_bytes}")
+                self.pending_bytes_violations.append([server.ip, node_sync_stats[server.ip]["fusion_pending_upload_bytes"]])
+
         self.log.info(f"Total Syncs across cluster so far: {total_syncs_across_cluster}")
         self.log.info(f"Bucket Sync Stats: {sync_stats_per_bucket}")
         self.log.info(f"Node Sync Stats: {node_sync_stats}")
@@ -1831,3 +1864,23 @@ class FusionBase(BaseTestCase):
         return sync_stats_per_bucket, node_sync_stats, total_syncs_across_cluster
 
 
+    def get_fusion_status_stats(self, validate=False):
+
+        status_stat_dict = dict()
+
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        if status:
+            for node in content["nodes"]:
+                total_pending_bytes = 0
+                for bucket in content["nodes"][node]["buckets"]:
+                    total_pending_bytes += content["nodes"][node]["buckets"][bucket]["snapshotPendingBytes"]
+                status_stat_dict[node] = {"snapshot_pending_bytes": total_pending_bytes}
+
+                if validate and total_pending_bytes > self.fusion_max_pending_upload_bytes:
+                    self.log.warning(f"snapshot_pending_bytes OVER THRESHOLD: {total_pending_bytes} > {self.fusion_max_pending_upload_bytes} for node {node}")
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.snapshot_pending_bytes_violations.append([node, total_pending_bytes, timestamp])
+
+        self.log.info(f"/fusion/status stats = {status_stat_dict}")
+
+        return status_stat_dict
