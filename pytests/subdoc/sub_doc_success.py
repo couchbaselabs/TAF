@@ -1,4 +1,7 @@
+import json
+
 from cb_constants import DocLoading
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator,\
@@ -1054,8 +1057,193 @@ class BasicOps(DurabilityTestsBase):
         result = client.crud("subdoc_read", key, "name", cas=0)
         success_dict, fail_dict = result
         self.assertIn(key, success_dict, "Subdoc lookup should succeed")
-        self.assertEqual(success_dict[key]["value"]["name"], "test_document", 
+        self.assertEqual(success_dict[key]["value"]["name"], "test_document",
                         "Subdoc lookup should return correct value")
         self.log.info("Subdoc lookup with CAS=0 succeeded - server has MB-66015 fix")
 
         client.close()
+
+    def test_subdoc_multi_max_paths(self):
+        """
+        MB-63734: Test for SUBDOC_MULTI_MAX_PATHS configuration feature
+
+        Test flow:
+        1. Create a test doc
+        2. Loop over: num_path as num_paths_to_test list
+           a. Test with `curr_value` number of xattr paths (Should always succeed since we start with valid numbers)
+           b. Now insert the subdocs exceeding the curr_value and try with the same length as num_path
+           c. Increase the value from the loop variable
+           d. Retry the same num_path which failed at step#2 of the loop
+           e. Continue
+        3. After the loop, bring back the SUBDOC_MULTI_MAX_PATHS to 'original_limit'
+        4. Make sure the values are failing exceeding the limit
+        5. Make sure the value succeeds with exactly the same 'original_limit' length
+        6. Delete the bucket and recreate
+        7. Create the same doc and make sure the default limit is still valid
+        """
+        def validate_sdk_context_err(t_value, t_json):
+            self.assertTrue(
+                f"Request must contain at most {t_value} paths" in str(t_json),
+                "Mismatch in SDK error string")
+
+        bucket = self.cluster.buckets[0]
+        rest = ClusterRestAPI(self.cluster.master)
+        client = SDKClient(self.cluster, bucket)
+
+        # Test parameters
+        original_limit = 16
+        curr_value = original_limit
+        num_paths_to_test = [17, 20, 25, 40]
+        test_key = "multi_paths_test_doc"
+        doc = {"base": "value"}
+
+        self.log.info("Testing SUBDOC_MULTI_MAX_PATHS feature")
+
+        # 1. Create a test document
+        self.log.info("Step 1: Creating test document")
+        res = client.crud(DocLoading.Bucket.DocOps.CREATE, test_key, doc,
+                          durability=self.durability_level)
+        self.assertTrue(res["status"], "Failed to create test document")
+
+        # 2. Loop over num_paths_to_test
+        for num_paths in num_paths_to_test:
+            self.log.info(f"=== Testing with {num_paths} paths ===")
+
+            # 2a. Test with curr_value (should succeed)
+            self.log.info(f"2a. Testing with curr_value={curr_value} paths (should succeed)")
+            xattrs_valid_dict = {test_key: [("valid_%d" % i, "value_%d" % i) for i in range(curr_value)]}
+            success_dict, fail_dict = client.sub_doc_upsert_multi(
+                xattrs_valid_dict, xattr=True,
+                durability=self.durability_level)
+            self.assertEqual(len(fail_dict), 0, f"Insert with {curr_value} paths should succeed")
+            self.log.info(f"Successfully inserted {curr_value} xattrs")
+
+            # 2b. Try with num_paths (exceeds curr_value, should fail)
+            self.log.info(f"2b. Testing with {num_paths} paths (exceeds curr_value={curr_value}, should fail)")
+            xattrs_exceed_dict = {test_key: [("xattr_%d" % i, "xattr_value_%d" % i) for i in range(num_paths)]}
+            success_dict, fail_dict = client.sub_doc_upsert_multi(
+                xattrs_exceed_dict, xattr=True,
+                durability=self.durability_level)
+            self.assertEqual(len(success_dict), 0,
+                             f"Mutation succeeded with {num_paths} path length")
+            validate_sdk_context_err(curr_value, fail_dict)
+
+            # 2c. Increase the limit
+            self.log.info(f"2c. Increasing SUBDOC_MULTI_MAX_PATHS to {num_paths}")
+            status, content = rest.manage_global_memcached_setting(
+                subdoc_multi_max_paths=num_paths)
+            self.assertTrue(status, f"Failed to update limit: {content}")
+            self.sleep(15, "Wait for new limits to get reflected in memcached")
+            curr_value = num_paths
+
+            # Verify setting by reading it back
+            _, content = rest.manage_global_memcached_setting()
+            self.assertTrue("subdoc_multi_max_paths" in content,
+                            msg="subdoc_multi_max_paths not found in settings")
+            self.assertEqual(content['subdoc_multi_max_paths'], num_paths,
+                             msg="subdoc_multi_max_paths value mismatch")
+
+            # 2d. Retry with same num_paths (should now succeed)
+            self.log.info(f"2d. Retrying with {num_paths} paths (should succeed after limit increase)")
+            success_dict, fail_dict = client.sub_doc_upsert_multi(
+                xattrs_exceed_dict, xattr=True,
+                durability=self.durability_level)
+            self.assertEqual(len(fail_dict), 0, f"Insert with {num_paths} paths should succeed after limit increase")
+            self.log.info(f"Successfully inserted {num_paths} xattrs")
+
+            # Verify inserted xattrs
+            xattrs_to_read_dict = {test_key: [("xattr_%d" % i, "") for i in range(num_paths)]}
+            success_dict, fail_dict = client.sub_doc_read_multi(xattrs_to_read_dict, xattr=True)
+            self.assertEqual(len(fail_dict), 0, f"Read of {num_paths} xattrs should succeed")
+
+            for xattr_name, expected_val in xattrs_exceed_dict[test_key]:
+                actual_val = success_dict[test_key]["value"][xattr_name]
+                self.assertEqual(actual_val, expected_val,
+                               f"Value mismatch for '{xattr_name}'")
+            self.log.info(f"All {num_paths} xattrs verified successfully")
+            self.log.info(f"=== Completed iteration for {num_paths} paths ===")
+
+        # 3. Bring back SUBDOC_MULTI_MAX_PATHS to original limit (reset to {original_limit})
+        self.log.info(f"Step 3: Resetting SUBDOC_MULTI_MAX_PATHS to {original_limit}")
+        status, content = rest.manage_global_memcached_setting(
+            subdoc_multi_max_paths=original_limit)
+        self.assertTrue(status, f"Failed to reset limit: {content}")
+        self.log.info(f"Successfully reset limit to {original_limit}")
+        self.sleep(
+            15, "Wait for new limits to get reflected in memcached")
+
+        # 4. Verify operations fail when exceeding limit
+        self.log.info(f"Step 4: Verifying operations fail with {original_limit+1} paths "
+                      f"(exceeds limit of {original_limit})")
+        xattrs_exceed_default_dict = {
+            test_key: [("exceed_%d" % i, "val_%d" % i) for i in range(original_limit+1)]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            xattrs_exceed_default_dict, xattr=True,
+            durability=self.durability_level)
+        self.assertEqual(len(success_dict), 0,
+                         f"Mutation succeeded with {original_limit+1} path length")
+        validate_sdk_context_err(original_limit, fail_dict)
+
+        # 5. Verify operations succeed with exactly {original_limit} paths
+        self.log.info(f"Step 5: Verifying operations succeed with exactly {original_limit} paths")
+        xattrs_exact_dict = {test_key: [("exact_%d" % i, "val_%d" % i) for i in range(original_limit)]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            xattrs_exact_dict, xattr=True,
+            durability=self.durability_level)
+        self.assertEqual(len(fail_dict), 0, f"Insert with {original_limit} paths should succeed")
+        self.log.info(f"Successfully inserted exactly {original_limit} xattrs")
+
+        # Close the existing SDKClient before we delete the bucket
+        client.close()
+
+        # 6. Delete and recreate the bucket
+        self.log.info("Step 6: Deleting and recreating the bucket")
+        self.bucket_util.delete_all_buckets(self.cluster)
+        self.create_bucket(self.cluster)
+
+        # Reset the new bucket object for testing
+        bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+
+        # 7. Create same doc and verify default limit is still valid
+        self.log.info("Step 7: Creating document in new bucket and verifying default limit")
+        client = SDKClient(self.cluster, bucket)
+        res = client.crud(DocLoading.Bucket.DocOps.CREATE, test_key, doc,
+                          durability=self.durability_level)
+        self.assertTrue(res["status"], "Failed to create test document in new bucket")
+
+        # Verify default limit with {original_limit} paths (should succeed)
+        self.log.info(f"Verifying default limit with {original_limit} paths in new bucket")
+        xattrs_default_dict = {test_key: [("default_%d" % i, "val_%d" % i) for i in range(original_limit)]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            xattrs_default_dict, xattr=True,
+            durability=self.durability_level)
+        self.assertEqual(len(fail_dict), 0,
+                         f"Insert with {original_limit} paths should succeed in new bucket")
+        self.log.info(f"Successfully inserted {original_limit} xattrs in new bucket - default limit verified")
+
+        # Verify exceeding default limit still fails
+        self.log.info("Verifying exceeding default limit fails in new bucket")
+        xattrs_exceed_new_dict = {test_key: [("new_exceed_%d" % i, "val_%d" % i) for i in range(original_limit+1)]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            xattrs_exceed_new_dict, xattr=True,
+            durability=self.durability_level)
+        self.assertEqual(len(success_dict), 0,
+                         f"Mutation succeeded with {original_limit+1} path length")
+        validate_sdk_context_err(original_limit, fail_dict)
+
+        # Close SDK client connection
+        client.close()
+
+        # Test for invalid values for the setting
+        invalid_value = [-1, 0, 15, "a", "test"]
+        for curr_value in invalid_value:
+            self.log.info(f"Testing for multi-max-path value {curr_value}")
+            status, content = rest.manage_global_memcached_setting(
+                subdoc_multi_max_paths=curr_value)
+            self.assertFalse(
+                status, f"Able to set subdoc_multi_max_paths={curr_value}")
+            content = json.loads(content)
+            exp_err = "too_small" if type(curr_value) is int else "invalid"
+            self.assertTrue(content["subdoc_multi_max_paths"] == exp_err,
+                            msg="Error message mismatch")
+        self.log.info("=== SUBDOC_MULTI_MAX_PATHS feature test completed successfully ===")
