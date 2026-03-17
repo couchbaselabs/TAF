@@ -34,6 +34,7 @@ from sdk_client3 import SDKClientPool
 from docker_utils.DockerSDK import DockerClient
 from awsLib.S3 import S3
 from azureLib.Azure import Azure
+from gcs import GCS
 
 
 class OnPremBaseTest(CouchbaseBaseTest):
@@ -78,9 +79,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Collection - Scope scale settings
         self.collection_factor =  self.input.param("collection_factor", 0.1)
         self.collection_scale = self.input.param("collection_scale", None)
-
-        # Azure Blob params
-        self.az_blob = self.input.param("az_blob", False)
 
         # CBAS setting
         self.jre_path = self.input.param("jre_path", None)
@@ -460,6 +458,21 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.aws_session_token = None
                 self.aws_endpoint = self.input.param("aws_endpoint", "https://testeaazureblob.blob.core.windows.net")
                 self.aws_region = self.input.param("aws_region", "us-east-1")
+
+            elif self.storage_provider == "gs":
+                self.log.info("Fetching certificate file path from the env: gcp_access_file")
+                self.gcs_certificate = os.getenv('gcp_access_file')
+                self.aws_region = "us-east1"
+                with open(self.gcs_certificate, 'r') as file:
+                    # Load JSON data from file
+                    self.gcs_credentials_data = json.load(file)
+
+                for server in self.servers:
+                    if server.type == "analytics":
+                        if not self._configure_gs_credentials_on_host(
+                                server, self.gcs_credentials_data):
+                            self.log.error("Failed to configure AWS credentials on EA Analytics node")
+
         # End: Analytics (EA) parameters
 
         self.nebula = self.input.param("nebula", False)
@@ -702,7 +715,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.columnar_aws_secret_key = self.input.param("columnar_aws_secret_key",
                                                         self.aws_secret_key)
 
-        if self.az_blob and not self.columnar_aws_secret_key.endswith("=="):
+        if self.storage_provider == "azure" and not self.columnar_aws_secret_key.endswith("=="):
             self.columnar_aws_secret_key = self.columnar_aws_secret_key + "=="
             self.aws_secret_key = self.aws_secret_key + "=="
         self.columnar_aws_region = self.input.param("columnar_aws_region",
@@ -721,7 +734,36 @@ class OnPremBaseTest(CouchbaseBaseTest):
                              session_token=self.columnar_aws_session_token,
                              region=self.columnar_aws_region,
                              endpoint_url=self.columnar_aws_endpoint)
-            if not self.az_blob:
+            self.columnar_azure_bucket_created = False
+            self.columnar_gs_bucket_created = False
+
+            if self.storage_provider == "azure":
+                self.azure_client = Azure(
+                    account_name=self.columnar_aws_access_key,
+                    account_key=self.columnar_aws_secret_key)
+                self.log.info("Account Name {0}".format(self.columnar_aws_access_key))
+                self.log.info("Account key {0}".format(self.columnar_aws_secret_key))
+                self.columnar_azure_bucket_name = "columnar-build-sanity-" + str(int(
+                    time.time()))
+
+                if self.azure_client.create_container(self.columnar_azure_bucket_name):
+                    self.columnar_azure_bucket_created = True
+                    self.columnar_aws_bucket_name = self.columnar_azure_bucket_name
+                else:
+                    self.fail("Creating Azure container - {0}. Failed.".format(
+                        self.columnar_azure_bucket_name))
+            elif self.storage_provider == "gs":
+                self.columnar_gs_bucket_name = "columnar-build-sanity-" + str(int(
+                    time.time()))
+                self.gcs_client = GCS(self.gcs_credentials_data)
+                self.log.info("Creating GCS bucket {}".format(self.columnar_gs_bucket_name))
+                if self.gcs_client.create_bucket(self.columnar_gs_bucket_name):
+                    self.columnar_gs_bucket_created = True
+                    self.columnar_aws_bucket_name = self.columnar_gs_bucket_name
+                else:
+                    self.fail("Creating GCS bucket - {0}. Failed.".format(
+                        self.columnar_gs_bucket_name))
+            else:
                 for i in range(5):
                     try:
                         self.columnar_aws_bucket_name = "columnar-build-sanity-" + str(int(
@@ -738,23 +780,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         self.log.error(str(e))
                 if not self.columnar_aws_bucket_created:
                     self.fail("Unable to create S3 bucket.")
-            else:
-                self.azure_client = Azure(
-                    account_name=self.columnar_aws_access_key,
-                    account_key=self.columnar_aws_secret_key)
-                self.log.info("Account Name {0}".format(self.columnar_aws_access_key))
-                self.log.info("Account key {0}".format(self.columnar_aws_secret_key))
-                self.columnar_azure_bucket_name = "columnar-build-sanity-" + str(int(
-                    time.time()))
 
-                if self.azure_client.create_container(self.columnar_azure_bucket_name):
-                    self.columnar_azure_bucket_created = True
-                    self.columnar_aws_bucket_name = self.columnar_azure_bucket_name
-                else:
-                    self.fail("Creating Azure container - {0}. Failed.".format(
-                        self.columnar_azure_bucket_name))
-
-            self.log.info("Adding aws bucket credentials to analytics")
+            self.log.info("Setup compute storage separation for analytics")
             status = self.configure_compute_storage_separation_for_analytics(
                 server=cluster.master, aws_access_key=self.columnar_aws_access_key,
                 aws_secret_key=self.columnar_aws_secret_key,
@@ -1020,6 +1047,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.columnar_azure_bucket_name))
             if not self.azure_client.delete_container(self.columnar_azure_bucket_name):
                 self.log.error("Azure container {} failed to delete.".format(self.columnar_azure_bucket_name))
+        elif self.analytics_compute_storage_separation and getattr(self, "columnar_gs_bucket_created", False):
+            self.log.info("Deleting GCS bucket - {}".format(
+                self.columnar_gs_bucket_name))
+            if not self.gcs_client.delete_bucket(self.columnar_gs_bucket_name):
+                self.log.error("GCS bucket {} failed to delete.".format(
+                    self.columnar_gs_bucket_name))
 
         # Deleting all backups from test runs in the backup location
         for server in self.servers:
@@ -1579,6 +1612,31 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.set_ports_for_server(server, "non_ssl")
         super(OnPremBaseTest, self).handle_setup_exception(exception_obj)
 
+    def _configure_gs_credentials_on_host(self, server, gcs_credentials):
+        """
+        Create /home/couchbase/.config/gcloud/application_default_credentials.json
+        with the given GCP credentials.
+        """
+        gcp_dir = "/home/couchbase/.config/gcloud"
+        creds_path = gcp_dir + "/application_default_credentials.json"
+
+        creds_content = json.dumps(gcs_credentials) + "\n"
+        creds_b64 = base64.b64encode(creds_content.encode("utf-8")).decode("ascii")
+
+        shell = RemoteMachineShellConnection(server)
+        try:
+            shell.execute_command("mkdir -p {}".format(gcp_dir))
+            shell.execute_command("echo '{}' | base64 -d > {}".format(creds_b64, creds_path))
+            shell.execute_command("chown -R couchbase:couchbase /home/couchbase/.config")
+            shell.execute_command("chmod 600 {}".format(creds_path))
+            self.log.info("Configured GCP credentials at {} on {}".format(creds_path, server.ip))
+            return True
+        except Exception as e:
+            self.log.error("Failed to configure GCP credentials on host: {}".format(e))
+            return False
+        finally:
+            shell.disconnect()
+
     def _remove_aws_credentials_from_host(self, server):
         """
         Remove /home/couchbase/.aws directory to clean up any AWS credentials
@@ -1662,7 +1720,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         """
         rest = AnalyticsRestAPI(server)
 
-        if self.storage_provider != "aws":
+        # Netapp, OCI, Azure
+        if self.storage_provider in ["netapp", "oci", "azure"]:
             self.log.info(f"Setting aws access key id: {aws_access_key}")
             status, content = rest.set_blob_storage_access_key_id(
                 access_key_id=aws_access_key)
@@ -1677,9 +1736,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.log.error(f"Failed to set aws secret access key: {status} {str(content)}")
                 return False
 
-        self.log.info("Adding aws bucket config to analytics")
-        if self.az_blob:
+        if self.storage_provider == "azure":
             blob_storage_scheme = "azblob"
+        elif self.storage_provider == "gs":
+            blob_storage_scheme = "gs"
         else:
             blob_storage_scheme = "s3"
         status, content = rest.update_analytics_settings(

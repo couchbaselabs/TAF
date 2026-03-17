@@ -7,6 +7,8 @@ from cbas.cbas_base_EA import CBASBaseTest
 from couchbase_utils.cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
+import os
+import json
 
 class ColumnarOnPremBase(CBASBaseTest):
 
@@ -169,6 +171,20 @@ class ColumnarOnPremBase(CBASBaseTest):
                     "accountKey": self.aws_secret_key,
                     "endpoint": self.aws_endpoint
                 }]
+            elif self.input.param("external_link_source", "s3") == "gcs":
+                try:
+                    # gcs_certificate variable should be set in jenkins to use here
+                    self.log.info("Fetching certificate file path from the env: gcp_access_file")
+                    gcs_certificate = os.getenv('gcp_access_file')
+                    with open(gcs_certificate, 'r') as file:
+                        # Load JSON data from file
+                        data = json.load(file)
+                    columnar_spec["external_link"]["properties"] = [{
+                        "type": "gcs",
+                        "jsonCredentials": data
+                    }]
+                except Exception as err:
+                    raise err
             else:
                 columnar_spec["external_link"]["properties"] = [{
                     "type": "s3",

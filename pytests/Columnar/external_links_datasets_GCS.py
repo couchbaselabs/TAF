@@ -5,8 +5,13 @@ Created on 11-November-2024
 """
 import random
 from queue import Queue
+from TestInput import TestInputSingleton
 
-from Columnar.columnar_base import ColumnarBaseTest
+runtype = TestInputSingleton.input.param("runtype", "default").lower()
+if runtype == "columnar":
+    from Columnar.columnar_base import ColumnarBaseTest
+else:
+    from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase as ColumnarBaseTest
 
 
 class GCSLinksDatasets(ColumnarBaseTest):
@@ -19,7 +24,10 @@ class GCSLinksDatasets(ColumnarBaseTest):
         super(GCSLinksDatasets, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.columnar_cluster = self.tenant.columnar_instances[0]
+        if runtype == "columnar":
+            self.columnar_cluster = self.tenant.columnar_instances[0]
+        else:
+            self.columnar_cluster = self.cluster
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
