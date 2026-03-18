@@ -169,6 +169,9 @@ class Bucket(object):
     encryptionAtRestKeyId = "encryptionAtRestKeyId"
     encryptionAtRestDekRotationInterval = "encryptionAtRestDekRotationInterval"
     encryptionAtRestDekLifetime = "encryptionAtRestDekLifetime"
+    throttleReserved = "throttleReserved"
+    throttleHardLimit = "throttleHardLimit"
+    throttleEnabled = "throttleEnabled"
 
     # Tracks the last bucket/scope/collection counter created in the cluster
     bucket_counter = Counter()
@@ -295,6 +298,9 @@ class Bucket(object):
             Bucket.encryptionAtRestDekRotationInterval, 2592000)
         self.encryptionAtRestDekLifetime = new_params.get(
             Bucket.encryptionAtRestDekLifetime, 31536000)
+        self.throttleReserved = 18446744073709551615
+        self.throttleHardLimit = 18446744073709551615
+        self.throttleEnabled = False
         self.encryptionAtRestInfo = {
             'dataStatus': new_params.get('dataStatus', 'unencrypted'),
             'dekNumber': new_params.get('dekNumber', 0),

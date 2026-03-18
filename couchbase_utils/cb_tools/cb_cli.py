@@ -192,6 +192,10 @@ class CbCli(CbCmdBase):
                 option = "--history-retention-seconds"
             elif key == Bucket.rank:
                 option = "--rank"
+            elif key == Bucket.throttleReserved:
+                option = "--reserved"
+            elif key == Bucket.throttleHardLimit:
+                option = "--hard-limit"
 
             if option:
                 cmd += " %s %s " % (option, value)
@@ -239,6 +243,10 @@ class CbCli(CbCmdBase):
                 cmd += " --rank " + str(value)
             elif key == Bucket.compressionMode:
                 cmd += " --compression-mode " + str(value)
+            elif key == Bucket.throttleReserved:
+                cmd += " --reserved " + str(value)
+            elif key == Bucket.throttleHardLimit:
+                cmd += " --hard-limit " + str(value)
 
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
