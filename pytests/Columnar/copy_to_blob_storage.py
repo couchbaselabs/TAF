@@ -151,10 +151,6 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 "externalId": self.cross_account_setup.external_id
             }]
 
-        if self.input.param("primary_key", None) is not None:
-            self.columnar_spec["standalone_dataset"]["primary_key"] = json.loads(self.input.param("primary_key"))
-        else:
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         # create entities on columnar cluster based on spec file
         result, msg = self.cbas_util.create_cbas_infra_from_spec(

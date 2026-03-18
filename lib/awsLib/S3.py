@@ -192,6 +192,16 @@ class S3(AWSBase):
             # Create a bucket resource object
             bucket_resource = self.s3_resource.Bucket(bucket_name)
 
+            # Checking if using OCI as endpoint, as batch delete is not supported in S3-compatible storage like OCI.
+            is_oci = self.endpoint_url and '.oraclecloud.com' in self.endpoint_url
+
+            if is_oci:
+                # Using individual deletes for oci
+                for obj_version in bucket_resource.object_versions.all():
+                    obj_version.delete()
+                is_bucket_empty = self.wait_until_bucket_empty(bucket_name)
+                return is_bucket_empty
+
             # Empty the bucket before deleting it.
             # If versioning is enabled delete all versions of all the objects,
             # otherwise delete all the objects.

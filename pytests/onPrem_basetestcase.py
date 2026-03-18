@@ -432,6 +432,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                 aws_region=self.aws_region):
                             self.log.error("Failed to configure AWS credentials on EA Analytics node")
 
+            elif self.storage_provider == "oci":
+                self.aws_access_key = os.getenv("OCI_ACCESS_KEY_ID", None)
+                self.aws_secret_key = os.getenv("OCI_SECRET_ACCESS_KEY", None)
+                self.aws_session_token = None
+                self.aws_endpoint = self.aws_endpoint = "https://iduq5swp7nui.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+                self.aws_region = self.input.param("aws_region", "us-ashburn-1")
+
             elif self.storage_provider == "netapp":
                 self.aws_access_key = os.getenv("NETAPP_ACCESS_KEY_ID", None)
                 self.aws_secret_key = os.getenv("NETAPP_SECRET_ACCESS_KEY", None)
