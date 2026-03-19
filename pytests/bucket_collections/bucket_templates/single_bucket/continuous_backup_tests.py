@@ -14,7 +14,7 @@ spec = {
 
     # Bucket Settings
     Bucket.bucketType: Bucket.Type.MEMBASE,
-    Bucket.ramQuotaMB: 256,
+    Bucket.ramQuotaMB: 100,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
     Bucket.replicaIndex: 1,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,

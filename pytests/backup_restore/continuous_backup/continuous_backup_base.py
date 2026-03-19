@@ -29,14 +29,16 @@ class ContinuousBackupBase(CollectionBase):
 
         super(ContinuousBackupBase, self).tearDown()
 
-    def _verify_doc_count(self, expected_count, timeout=300):
-        self.log.info(f"Verifying document count. Expected: {expected_count}")
+    def _verify_doc_count(self, expected_count, bucket_name=None, timeout=300):
+        if bucket_name is None:
+            bucket_name = self.bucket.name
+        self.log.info(f"Verifying document count for bucket '{bucket_name}'. Expected: {expected_count}")
         end_time = time.time() + timeout
         while time.time() < end_time:
-            actual_items = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+            actual_items = self.bucket_util.get_buckets_item_count(self.cluster, bucket_name)
             if actual_items == expected_count:
-                self.log.info(f"Document count verified: {actual_items}")
+                self.log.info(f"Document count for bucket '{bucket_name}' verified: {actual_items}")
                 return
-            self.log.info(f"Current doc counts. Actual: {actual_items}, Expected: {expected_count}. Retrying in 10s...")
+            self.log.info(f"Current doc counts for bucket '{bucket_name}'. Actual: {actual_items}, Expected: {expected_count}. Retrying in 10s...")
             self.sleep(10)
-        self.fail(f"Document count mismatch. Expected: {expected_count}, Actual: {actual_items}")
+        self.fail(f"Document count mismatch for bucket '{bucket_name}'. Expected: {expected_count}, Actual: {actual_items}")

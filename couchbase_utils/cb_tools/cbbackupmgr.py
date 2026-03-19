@@ -131,7 +131,7 @@ class CbBackupMgr(CbCmdBase):
     :param no_progress_bar bool: If True, suppress progress bar output
     :param threads int: Number of concurrent clients to use when restoring
     :param auto_create_buckets bool: If True, automatically create buckets during restore
-    :param map_data bool: If True, map data during restore
+    :param map_data str: Optional mapping for data (e.g., "source_bucket=target_bucket")
     :param map_indexes bool: If True, map indexes during restore
     :param map_views bool: If True, map views during restore
     :param map_gsi_indexes bool: If True, map GSI indexes during restore
@@ -144,8 +144,8 @@ class CbBackupMgr(CbCmdBase):
 
     def restore(self, archive_dir, repo_name, cluster_host=None,
                 backup_id=None, no_progress_bar=False, threads=None,
-                auto_create_buckets=False,
-                map_data=True, map_indexes=True, map_views=True,
+                auto_create_buckets=False, map_data=None,
+                map_indexes=True, map_views=True,
                 map_gsi_indexes=True, map_ft_indexes=True,
                 map_analytics=True, map_eventing=True,
                 filter_keys=None, filter_values=None):
@@ -174,8 +174,9 @@ class CbBackupMgr(CbCmdBase):
         if auto_create_buckets:
             cmd += " --auto-create-buckets"
 
-        if not map_data:
-            cmd += " --disable-data"
+        if map_data:
+            cmd += " --map-data %s" % map_data
+
         if not map_indexes:
             cmd += " --disable-indexes"
         if not map_views:
@@ -243,6 +244,23 @@ class CbBackupMgr(CbCmdBase):
             self.username, self.password, size)
 
         cmd += self.cli_flags
+        self.log.info(f"Executing command: {cmd}")
+        output, error = self._execute_cmd(cmd)
+        self.log.info(f"Command output: {output}")
+        return output, error
+
+    def merge(self, archive_dir, repo_name, start, end):
+        """
+        Execute cbbackupmgr merge command to merge a range of backups.
+
+        :param archive_dir str: The location of the backup archive directory.
+        :param repo_name str: The name of the backup repository.
+        :param start: The start of the merge range (either an integer backup number or a timestamp string).
+        :param end: The end of the merge range (either an integer backup number or a timestamp string).
+        """
+        cmd = "%s merge --archive %s --repo %s --start %s --end %s" % (
+            self.cbstatCmd, archive_dir, repo_name, start, end)
+
         self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
         self.log.info(f"Command output: {output}")

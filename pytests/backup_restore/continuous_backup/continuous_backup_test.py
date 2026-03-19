@@ -1,5 +1,5 @@
 import importlib
-from random import sample
+import random
 
 from backup_restore.continuous_backup.continuous_backup_base import ContinuousBackupBase
 from collections_helper.collections_spec_constants import MetaConstants
@@ -46,14 +46,17 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         return doc_loading_task
 
-    def _perform_continuous_restore(self, timestamp=None):
+    def _perform_continuous_restore(self, timestamp=None, restore_to_new_bucket=False):
         self.log.info(f"Performing continuous backup restore with timestamp: {timestamp}")
         for scope_name, scope in self.bucket.scopes.items():
             if scope_name.startswith("_system"):
                 continue
             for collection_name, collection in scope.collections.items():
                 include_data = f"{self.bucket.name}.{scope_name}.{collection_name}"
-                map_data = f"{self.bucket.name}.{scope_name}.{collection_name}={self.bucket.name}.{scope_name}.{collection_name}"
+                if restore_to_new_bucket:
+                    map_data = f"{self.bucket.name}.{scope_name}.{collection_name}={self.restore_bucket_name}.{scope_name}.{collection_name}"
+                else:
+                    map_data = f"{self.bucket.name}.{scope_name}.{collection_name}={self.bucket.name}.{scope_name}.{collection_name}"
                 self.cont_bk_mgr.restore(
                     self.backup_archive_dir, self.backup_repo_name,
                     location=self.continuous_backup_location,
@@ -64,12 +67,25 @@ class ContinuousBackupTest(ContinuousBackupBase):
                 )
         self.log.info("Continuous backup restore completed")
 
+    def _restore_entire_bucket(self, timestamp, target_bucket_name):
+        self.log.info(f"Restoring entire bucket to {target_bucket_name} at timestamp {timestamp}")
+        self.cont_bk_mgr.restore(
+            self.backup_archive_dir, self.backup_repo_name,
+            location=self.continuous_backup_location,
+            temp_dir="/tmp",
+            timestamp=timestamp,
+            include_data=self.bucket.name,
+            map_data=f"{self.bucket.name}={target_bucket_name}"
+        )
+        self.log.info("Entire bucket restore completed")
+
     def _create_backup_intervals(self, num_intervals=5):
         timestamps = []
         item_counts = []
         for i in range(num_intervals):
             self.log.info(f"Loading data for interval {i+1}")
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
             self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
             timestamp = self.cont_bk_mgr.get_cluster_timestamp()
@@ -84,7 +100,34 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util.create_bucket(self.cluster, self.bucket)
         self.log.info("Restoring from backup")
         self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(expected_item_count)
+
+    def _create_and_restore_to_new_bucket(self, expected_item_count):
+        self.restore_bucket_name = "restore_bucket"
+        self.log.info("Creating new bucket for restore: %s" % self.restore_bucket_name)
+        ram_quota = self.input.param("bucket_size", 100)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               bucket_name=self.restore_bucket_name,
+                                               bucket_type=self.bucket_type,
+                                               ram_quota=ram_quota,
+                                               replica=self.num_replicas,
+                                               storage=self.bucket_storage)
+        self.log.info("Restoring from backup to new bucket")
+        self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                map_data=f"{self.bucket.name}={self.restore_bucket_name}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(expected_item_count, bucket_name=self.restore_bucket_name)
+
+    def _create_restore_bucket(self, restore_bucket_name):
+        self.log.info("Creating new bucket for restore: %s" % restore_bucket_name)
+        ram_quota = self.input.param("bucket_size", 100)
+        self.bucket_util.create_default_bucket(self.cluster,
+                                               bucket_name=restore_bucket_name,
+                                               bucket_type=self.bucket_type,
+                                               ram_quota=ram_quota,
+                                               replica=self.num_replicas,
+                                               storage=self.bucket_storage)
 
     def _verify_continuous_backup_params(self):
         self.log.info("Getting continuous backup params from bucket: %s" % self.bucket.name)
@@ -133,6 +176,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._verify_continuous_backup_params()
 
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
@@ -155,12 +200,15 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(f"Timestamp after second load: {timestamp}")
         
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
         self._reset_bucket_and_restore_from_backup(self._get_total_docs())
         self._perform_continuous_restore(timestamp)
-        self._verify_doc_count(self._get_total_docs(2))
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(item_count)
         self.log.info("Test completed successfully")
 
     def test_pitr_timestamp_after_second_cont_backup(self):
@@ -173,15 +221,18 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
 
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
+        item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         timestamp = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"Timestamp after third load: {timestamp}")
-        
+
         self._reset_bucket_and_restore_from_backup(self._get_total_docs())
         self._perform_continuous_restore(timestamp)
-        self._verify_doc_count(self._get_total_docs(3))
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(item_count)
         self.log.info("Test completed successfully")
 
     def test_pitr_five_sequential_restores(self):
@@ -196,6 +247,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         for i, timestamp in enumerate(timestamps):
             self._perform_continuous_restore(timestamp)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             self._verify_doc_count(item_counts[i])
 
         self.log.info("Test completed successfully")
@@ -211,7 +263,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self._reset_bucket_and_restore_from_backup(self._get_total_docs())
 
-        restore_order = sample(range(num_intervals), num_intervals)
+        restore_order = random.sample(range(num_intervals), num_intervals)
         self.log.info(f"Restore order: {restore_order}")
         max_restored_interval = -1
         for i in restore_order:
@@ -220,9 +272,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
                 max_restored_interval = i
             self._perform_continuous_restore(timestamp)
             self.log.info(f"Max restored interval is {max_restored_interval + 1}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             self._verify_doc_count(item_counts[max_restored_interval])
 
         self.log.info("Final doc count check after all restores")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(item_counts[4])
         self.log.info("Test completed successfully")
 
@@ -234,6 +288,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # 1. Load initial data and take a backup
         doc_loading_task = self._load_data_and_get_task(self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         initial_item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info("Creating backup repository")
         self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
@@ -269,6 +324,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # 1. Load initial data and take a backup
         self._load_data_and_get_task(self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         initial_item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info("Creating backup repository")
         self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
@@ -293,3 +349,265 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info("Verifying document content is restored to post-mutation state")
         self.validate_cruds_from_collection_mutation(doc_loading_task)
         self.log.info("Test completed successfully")
+
+    def test_pitr_restore_to_new_bucket_with_multiple_timestamps_1(self):
+        """
+        Takes 3 continuous backups, then restores to a new bucket from timestamps
+        between the 1st and 2nd backups, and between the 2nd and 3rd backups.
+        """
+        self._verify_continuous_backup_params()
+        self.restore_bucket_name = "restore_bucket_1"
+        self._create_restore_bucket(self.restore_bucket_name)
+
+        timestamps, item_counts = self._create_backup_intervals(num_intervals=3)
+
+        # Restore between 1st and 2nd backup
+        self._restore_entire_bucket(timestamps[0], self.restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(item_counts[0], bucket_name=self.restore_bucket_name)
+
+        # Restore between 2nd and 3rd backup
+        self._restore_entire_bucket(timestamps[1], self.restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(item_counts[1], bucket_name=self.restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_restore_to_new_bucket_with_multiple_timestamps_2(self):
+        """
+        Takes 3 continuous backups, then restores to a new bucket from timestamps
+        between the 2nd and 3rd backups, and after the 3rd backup.
+        """
+        self._verify_continuous_backup_params()
+        self.restore_bucket_name = "restore_bucket_2"
+        self._create_restore_bucket(self.restore_bucket_name)
+
+        timestamps, item_counts = self._create_backup_intervals(num_intervals=3)
+
+        # Restore between 2nd and 3rd backup
+        self._restore_entire_bucket(timestamps[1], self.restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(item_counts[1], bucket_name=self.restore_bucket_name)
+
+        # Restore after 3rd backup
+        self._restore_entire_bucket(timestamps[2], self.restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(item_counts[2], bucket_name=self.restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_with_incremental_merge_with_numbers(self):
+        """
+        Tests PITR with traditional incremental backups and merges happening in the background.
+        """
+        timestamps = []
+        item_counts = []
+
+        restore_bucket_name = "restore_bucket"
+        self._create_restore_bucket(restore_bucket_name)
+
+        # 1. First incremental backup and timestamp
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.sleep(self.continuous_backup_interval * 60)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+        timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+
+        # 2. Second incremental backup and timestamp
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.sleep(self.continuous_backup_interval * 60)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+        timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+
+        # 3. Merge the first two backups
+        self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=2)
+
+        # 4. Restore and verify using timestamps
+        for i, (ts, count) in enumerate(zip(timestamps, item_counts)):
+            self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                     location=self.continuous_backup_location,
+                                     temp_dir="/tmp", # Added temp_dir
+                                     timestamp=ts,
+                                     map_data=f"{self.bucket.name}={restore_bucket_name}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count, bucket_name=restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_with_merge_specific_range(self):
+        """
+        Tests PITR with a specific range merge happening in the background.
+        """
+        # 1. Create a chain of 5 backups and capture timestamps
+        # Initial state before loop
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        item_counts = [self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)]
+        timestamps = []
+        for i in range(5):
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            if i<4:
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+            self.sleep(self.continuous_backup_interval * 60)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+            timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+
+        # 2. Merge backups 3 and 4
+        self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=3, end=4)
+
+        restore_bucket_name = "restore_bucket"
+        self._create_restore_bucket(restore_bucket_name)
+
+        # 3. Verify restores from all valid PITR points
+        for i, (ts, count) in enumerate(zip(timestamps, item_counts[1:])):
+            self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                     location=self.continuous_backup_location,
+                                     temp_dir="/tmp", # Added temp_dir
+                                     timestamp=ts,
+                                     map_data=f"{self.bucket.name}={restore_bucket_name}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count, bucket_name=restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_with_sequential_merges(self):
+        """
+        Tests PITR with multiple, non-overlapping merges on the same repository.
+        """
+        # 1. Create 6 backups and capture timestamps
+        item_counts = []
+        timestamps = []
+        for i in range(7):
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            if i<6:
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0))
+            self.sleep(self.continuous_backup_interval * 60)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+            timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+
+        # 2. Merge backups 1-3
+        self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=3)
+
+        # 3. Merge backups 4-6
+        # When we merged 1-3, backup #1 is now the merged backup representing state 1-3. 
+        # The remaining backups (#4, #5, #6) are now shifted in the sequence to #2, #3, #4.
+        # So we merge indices 2-4 instead of 4-6
+        self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=2, end=4)
+
+        restore_bucket_name = "restore_bucket"
+        self._create_restore_bucket(restore_bucket_name)
+
+        # 4. Verify restores from various timestamps
+        for i in [2, 5]:  # Restore from after 3rd and 6th backups
+            ts = timestamps[i]
+            count = item_counts[i]
+            self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                     location=self.continuous_backup_location,
+                                     temp_dir="/tmp", # Added temp_dir
+                                     timestamp=ts,
+                                     map_data=f"{self.bucket.name}={restore_bucket_name}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count, bucket_name=restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_with_merge_containing_full_backup(self):
+        """
+        Tests PITR with merging a range that contains a full backup in the middle.
+        """
+        # 1. Create backups with a full backup in the middle and capture timestamps
+        item_counts = []
+        timestamps = []
+        for i in range(5):
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            if i<4:
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0 or i == 2))
+            self.sleep(self.continuous_backup_interval * 60)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+            timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+
+        # 2. Merge the entire range
+        self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=4)
+
+        # 3. Verify restore from the final timestamp
+        ts = timestamps[3]
+        count = item_counts[3]
+        restore_bucket_name = "restore_bucket_full_merge"
+        self._create_restore_bucket(restore_bucket_name)
+        self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                 location=self.continuous_backup_location,
+                                 temp_dir="/tmp", # Added temp_dir
+                                 timestamp=ts,
+                                 map_data=f"{self.bucket.name}={restore_bucket_name}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count, bucket_name=restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_sequential_restore_after_merge(self):
+        """
+        Verifies sequential PITR restores after a merge operation.
+        """
+        item_counts, timestamps = [], []
+        for i in range(4):
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            if i<3:
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0))
+            self.sleep(self.continuous_backup_interval * 60)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+            timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+
+        self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=2)
+
+        restore_bucket_name = "restore_bucket"
+        self._create_restore_bucket(restore_bucket_name)
+
+        for i, (ts, count) in enumerate(zip(timestamps, item_counts)):
+            self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                     location=self.continuous_backup_location,
+                                     temp_dir="/tmp", # Added temp_dir
+                                     timestamp=ts,
+                                     map_data=f"{self.bucket.name}={restore_bucket_name}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count, bucket_name=restore_bucket_name)
+
+    def test_pitr_haphazard_restore_after_merge(self):
+        """
+        Verifies haphazard PITR restores after a merge operation.
+        """
+        item_counts, timestamps = [], []
+        for i in range(4):
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            if i<3:
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0))
+            self.sleep(self.continuous_backup_interval * 60)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+            timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+
+        self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=2)
+
+        restore_bucket_name = "restore_bucket"
+        self._create_restore_bucket(restore_bucket_name)
+
+        restore_order = list(range(len(timestamps)))
+        random.shuffle(restore_order)
+        self.log.info(f"Restore order: {restore_order}")
+        max_restored_interval = -1
+        for i in restore_order:
+            ts = timestamps[i]
+            if i > max_restored_interval:
+                max_restored_interval = i
+            self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                     location=self.continuous_backup_location,
+                                     temp_dir="/tmp", # Added temp_dir
+                                     timestamp=ts,
+                                     map_data=f"{self.bucket.name}={restore_bucket_name}")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self._verify_doc_count(item_counts[max_restored_interval], bucket_name=restore_bucket_name)
