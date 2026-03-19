@@ -195,6 +195,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             "continuous_backup_location", "/tmp/continuous_backup")
         self.backup_archive_dir = self.input.param("archive_dir", "/tmp/backups")
         self.backup_repo_name = self.input.param("repo_name", "test_repo")
+        # Deleting any residual backups from previous test runs in the backup location before starting the test
+        for server in self.servers:
+            shell = RemoteMachineShellConnection(server)
+            shell.execute_command(f"rm -rf {self.continuous_backup_location}/*")
+            shell.execute_command(f"rm -rf {self.backup_archive_dir}/*")
+            shell.disconnect()
 
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
@@ -1005,6 +1011,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.columnar_azure_bucket_name))
             if not self.azure_client.delete_container(self.columnar_azure_bucket_name):
                 self.log.error("Azure container {} failed to delete.".format(self.columnar_azure_bucket_name))
+
+        # Deleting all backups from test runs in the backup location
+        for server in self.servers:
+            shell = RemoteMachineShellConnection(server)
+            shell.execute_command(f"rm -rf {self.continuous_backup_location}/*")
+            shell.execute_command(f"rm -rf {self.backup_archive_dir}/*")
+            shell.disconnect()
 
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
