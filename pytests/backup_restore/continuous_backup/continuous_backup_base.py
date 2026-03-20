@@ -8,6 +8,7 @@ NFS setup requirements:
 - Client: Mount NFS export at /mnt/nfs_data
 - Validation: Ensure server export and client mount are working
 - Cleanup: Unique subdirectory created under mount point and removed after test
+Scipts to setup NFS Server : https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
 """
 
 class ContinuousBackupBase(CollectionBase):

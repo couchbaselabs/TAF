@@ -104,6 +104,7 @@ class CollectionBase(ClusterSetup, FusionBase):
                     - Client: Mount NFS export at /mnt/nfs_data
                     - Validation: Ensure server export and client mount are working
                     - Cleanup: Unique subdirectory created under mount point and removed after test
+                    Scipts to setup NFS Server : https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
                 """
                 self.nfs_server = TestInputServer()
                 self.nfs_server.ip = PITR_NFS_SERVER
