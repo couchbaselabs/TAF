@@ -86,9 +86,9 @@ class StorageBase(BaseTestCase):
         self.dcp_services = self.input.param("dcp_services", None)
         self.dcp_servers = []
         if self.dcp_services:
-            server = self.rest.node_details()
+            _, server = self.rest.node_details()
             self.rest.configure_memory(
-                {CbServer.Settings.INDEX_MEM_QUOTA: int(server.mcdMemoryReserved - 100)})
+                {CbServer.Settings.INDEX_MEM_QUOTA: int(server["mcdMemoryReserved"] - 100)})
             self.dcp_services = [service.replace(":", ",") for service in self.dcp_services.split("-")]
             self.services.extend(self.dcp_services)
             self.dcp_servers = self.cluster.servers[self.nodes_init:
@@ -232,7 +232,7 @@ class StorageBase(BaseTestCase):
                                                                               bucket, scope_name,
                                                                               collection_name,
                                                                               "true")
-        self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
+        self.collections = list(self.buckets[0].scopes[CbServer.default_scope].collections.keys())
         self.log.info("Collections list == {}".format(self.collections))
 
         if self.dcp_services and self.num_collections == 1:
@@ -245,6 +245,7 @@ class StorageBase(BaseTestCase):
             self.cluster.query_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="n1ql",
                                                                                      get_all_nodes=True)
             self.query_client = RestConnection(self.cluster.query_nodes[0])
+            self.query_client.set_indexer_storage_mode()
             self.log.info("Query is: %s" % self.initial_idx_q)
             result = self.query_client.query_tool(self.initial_idx_q)
             self.assertTrue(result["status"] == "success", "Index query failed!")

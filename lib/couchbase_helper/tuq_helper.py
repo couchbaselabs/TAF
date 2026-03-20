@@ -271,7 +271,7 @@ class N1QLHelper:
                 else:
                     err = result["errors"][0]
             if "INDEX" in query:
-                self.log.info("Index creation failed")
+                self.log.error("Index creation failed. Error: %s" % err)
                 result = None
             elif N1qlException.CasMismatchException \
                 in str(err) \
