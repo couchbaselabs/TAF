@@ -4,6 +4,17 @@
 TAF is the primary test automation framework for Couchbase Server and Capella.
 It validates KV, NS Server, Magma storage, Fusion storage, Columnar analytics, and cross-component functionality across on-premise, dedicated, and serverless environments.
 
+---
+
+## Environment Requirements
+
+- Python 3.10+ (recommended 3.10.14)
+- Couchbase Server cluster (or Capella access)
+- SSH access to cluster nodes (for on-premise)
+- Git submodules initialized
+
+---
+
 ## Quick Commands
 
 ### Setup
@@ -59,6 +70,8 @@ java -cp ./target/magmadocloader/magmadocloader.jar RestServer.RestApplication -
 python testrunner.py -c conf/sanity.conf -i node.ini -p load_docs_using=sirius_java_sdk
 ```
 
+---
+
 ## Repository Layout
 
 ### Core Entry Points
@@ -105,6 +118,8 @@ The `runtype` parameter determines test environment:
 - `cb_constants/CBServer.py` – Server version mappings
 - `cb_constants/system_event_log.py` – Event log schemas
 
+---
+
 ## Development Patterns
 
 ### Adding Tests
@@ -135,6 +150,8 @@ from couchbase_utils(cb_server_rest_util) import *  # REST API calls
 from couchbase_utils(bucket_utils) import *  # Bucket helpers
 ```
 
+---
+
 ## Validation Requirements
 
 Before completion, ensure:
@@ -143,6 +160,8 @@ Before completion, ensure:
 3. Proper cleanup in tearDown methods
 4. Runtype parameter is respected
 5. Test failures analyzed with root cause explanation
+
+---
 
 ## Hard Constraints
 
@@ -154,16 +173,16 @@ Before completion, ensure:
 - Never hard-code cloud identities or API keys
 - Test failures must include detailed analysis
 
+---
+
 ## Supporting Documentation
+### Framework Documentation
 - [Repo Inventory](docs/agent-context/repo-inventory.md) – Detailed component breakdown
 - [Build Test Matrix](docs/agent-context/build-test-matrix.md) – Execution commands by component
 - [Domain Glossary](docs/agent-context/domain-glossary.md) – Couchbase and TAF terminology
 - [Troubleshooting Guide](docs/agent-context/troubleshooting.md) – Common issues and solutions
 - [Test-Agent Skill](agents/test-agent.md) – Test writing guidance and constraints
 
-## Environment Requirements
-
-- Python 3.10+ (recommended 3.10.14)
-- Couchbase Server cluster (or Capella access)
-- SSH access to cluster nodes (for on-premise)
-- Git submodules initialized
+### Component specific Documentation
+- If asked about **KV** or **data-service**: refer to docs/agent-context/data-service/AGENTS.md
+- If asked about **NS Server** or **Cluster-manager**: refer to docs/agent-context/ns-server/AGENTS.md
