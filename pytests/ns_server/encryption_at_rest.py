@@ -7,6 +7,7 @@ from pytests.bucket_collections.collections_base import CollectionBase
 from BucketLib.BucketOperations import BucketHelper
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
+from cluster_utils.encryption_util import EncryptionUtil
 
 
 class EncryptionAtRest(CollectionBase):
@@ -124,6 +125,36 @@ class EncryptionAtRest(CollectionBase):
                                                          timeout=1200)
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
+
+    def test_validate_gcp_kms_encryption(self):
+        params = EncryptionUtil.create_gcp_kms_params(
+            name="TestSecretGCPKMS",
+            keyResourceId = self.gcp_resource_path ,
+            credentialsFile = self.client_certs_path+ self.gcp_kms_json_file
+        )
+        rest = RestConnection(self.cluster.master)
+        status, response = rest.create_gcp_kms_secret(params)
+        secret_id = False
+        if status:
+            response_dict = json.loads(response)
+            secret_id = response_dict.get('id')
+        self.assertTrue(secret_id,"gcp KMS KEK creation failed")
+        valid_params = {
+            "log.encryptionMethod": "encryptionKey",
+            "config.encryptionMethod": "encryptionKey",
+            "log.encryptionKeyId": secret_id,
+            "config.encryptionKeyId": secret_id
+        }
+        status, response = rest.configure_encryption_at_rest(valid_params)
+        self.assertTrue(status, "Secret creation have failed with GCP KMS parameters")
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            bucket_helper.change_bucket_props(
+                bucket,
+                encryptionAtRestKeyId=secret_id,
+                encryptionAtRestDekRotationInterval=3,
+                encryptionAtRestDekLifetime=2
+            )
 
     def test_bucket_encryption_auto_rotation(self):
         bucket_helper = BucketHelper(self.cluster.master)

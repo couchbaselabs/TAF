@@ -2533,6 +2533,16 @@ class RestConnection(newRC):
         status, json_parsed, _ = self._http_request(api, method='POST', params=url_encoded_params, headers=headers)
         return status, json_parsed
 
+    def create_gcp_kms_secret(self,params):
+        """
+        POST :: /settings/encryptionKeys
+        """
+        api = self.baseUrl + '/settings/encryptionKeys'
+        headers = self._create_headers()
+        json_params = json.dumps(params)
+        status, json_parsed, _ = self._http_request(api, method='POST', params=json_params, headers=headers)
+        return status, json_parsed
+
     def trigger_data_reencryption(self, bucket):
         """
         POST :: /controller/dropEncryptionAtRestKeys/bucket/<bucket>

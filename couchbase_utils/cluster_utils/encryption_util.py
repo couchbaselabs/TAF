@@ -20,6 +20,41 @@ class EncryptionUtil:
         return prefix + suffix
 
     @staticmethod
+    def create_gcp_kms_params(name="GcpKmsKey",
+                              keyResourceId=None,
+                              credentialsFile=None,
+                              usage=None):
+        """
+        Helper to create params for GCP KMS symmetric key secret creation.
+        :param name: Name of the secret
+        :param keyResourceId: GCP KMS key resource ID
+        :param credentialsFile: Path to GCP credentials file
+        :param usage: List of usages (default: all supported)
+        :return: dict suitable for POST /settings/encryptionKeys
+        """
+        if usage is None:
+            usage = [
+                "KEK-encryption",
+                "bucket-encryption",
+                "config-encryption",
+                "log-encryption",
+                "audit-encryption"
+            ]
+        if not keyResourceId or not credentialsFile:
+            raise ValueError("keyResourceId and credentialsFile are required for GCP KMS secret")
+        data = {
+            "keyResourceId": keyResourceId,
+            "credentialsFile": credentialsFile
+        }
+        params = {
+            "name": name,
+            "type": "gcpkms-symmetric-key",
+            "usage": usage,
+            "data": data
+        }
+        return params
+
+    @staticmethod
     def create_secret_params(secret_type="cb-server-managed-aes-key-256",
                              name="Default secret", usage=None,
                              autoRotation=True, rotationIntervalInDays=60,

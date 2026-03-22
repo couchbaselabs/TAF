@@ -131,6 +131,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.KMIP_cert_file_name = self.input.param(
             "KMIP_cert_file_name", "client_cert_with_appid2.pem")
         self.client_certs_path = "/etc/couchbase/certs/"
+        self.gcp_resource_path = kmip_config["certs"]["gcp_resource_path"]
         self.create_KMIP_secret= self.input.param(
             "create_KMIP_secret", False)
         self.KMIP_for_log_encryption = self.input.param(
@@ -145,6 +146,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             "enable_encryption_at_rest", False)
         self.encryption_at_rest_id = self.input.param(
             "encryption_at_rest_id", None)
+        self.gcp_kms_json_file = self.input.param("gcp_kms_json_file","gcp-kms-creds.json")
         self.KMIP_id = self.input.param("KMIP_id", None)
         self.enable_config_encryption_at_rest = self.input.param(
             "enable_config_encryption_at_rest", False)
@@ -1045,7 +1047,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Open ssh_connections for command execution
         for server in cluster.servers:
             ssh_sessions[server.ip] = RemoteMachineShellConnection(server)
-
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
             if self.create_KMIP_secret:
