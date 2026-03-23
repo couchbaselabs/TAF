@@ -1,5 +1,6 @@
 import copy
 import random
+import shlex
 
 from cb_constants import CbServer
 from couchbase_utils.cb_tools.cb_cli import CbCli
@@ -97,13 +98,14 @@ class N2nEncryptionX509(CollectionBase):
             "and removing inbox folder")
         tmp_path = "/tmp/abcd.pem"
         for servers in self.cluster.servers:
-            cli_command = "ssl-manage"
-            remote_client = RemoteMachineShellConnection(servers)
-            options = "--regenerate-cert={0}".format(tmp_path)
-            output, error = remote_client.execute_couchbase_cli(
-                cli_command=cli_command, options=options,
-                cluster_host=servers.ip, user="Administrator",
-                password="password")
+            shell_conn = RemoteMachineShellConnection(servers)
+            cb_cli = CbCli(shell_conn, no_ssl_verify=True)
+            cb_cli._execute_cmd(
+                "{0} ssl-manage -c {1}:8091 -u {2} -p {3} --regenerate-cert={4}"
+                .format(shlex.quote(cb_cli.cbstatCmd), shlex.quote(servers.ip),
+                        shlex.quote(cb_cli.username), shlex.quote(cb_cli.password),
+                        shlex.quote(tmp_path)))
+            shell_conn.disconnect()
             x509main(servers)._delete_inbox_folder()
 
     def set_n2n_encryption_level_on_nodes(self, nodes, level="control"):
@@ -194,7 +196,8 @@ class N2nEncryptionX509(CollectionBase):
                     CbServer.use_https = False
                 for server in self.cluster.servers:
                     self.set_ports_for_server(server, "non_ssl")
-                self.upload_x509_certs(servers=add_nodes)
+                cert_setup_nodes = list(dict.fromkeys(self.nodes_in_cluster + add_nodes))
+                self.upload_x509_certs(servers=cert_setup_nodes)
             if level in ["strict", "control", "all"]:
                 self.set_n2n_encryption_level_on_nodes(nodes=[self.cluster.master],
                                                        level=level)

@@ -305,6 +305,18 @@ class RestConnection(object):
                     raise ServerUnavailableException(ip=self.ip)
             sleep(3, log_type="infra")
 
+    def handle_bytes_param(self, params):
+        """Convert ``params`` to a str suitable for :meth:`_http_request` body.
+
+        ``_http_request`` (httplib2 path) expects a str body; call this when the
+        testcase or helper has bytes (e.g. UTF-8 encoded form or JSON).
+        """
+        if params is None:
+            return ''
+        if isinstance(params, bytes):
+            return params.decode('utf-8', errors='replace')
+        return params
+
     def _http_request(self, api, method='GET', params='', headers=None,
                       timeout=60):
         if not headers:
@@ -350,6 +362,9 @@ class RestConnection(object):
                     self.log.debug(message)
                     self.log.debug(''.join(traceback.format_stack()))
                     return False, content, response
+            except TypeError as e:
+                self.log.error("Type error in _http_request for {0}: {1}".format(api, e))
+                raise
             except socket.error as e:
                 self.log.error("Socket error while connecting to {0}. "
                                "Error {1}".format(api, e))

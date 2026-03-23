@@ -5,7 +5,6 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 log = logging.getLogger("x509")
 from membase.api.rest_client import RestConnection
-import http.client as httplib2
 import base64
 import requests
 import urllib
@@ -13,6 +12,8 @@ import random
 import os
 import copy
 import subprocess
+import time
+import socket
 
 
 class ServerInfo():
@@ -233,9 +234,10 @@ class x509main:
     def _reload_node_certificate(self,host):
         rest = RestConnection(host)
         api = rest.baseUrl + "node/controller/reloadCertificate"
-        http = httplib2.Http()
-        status, content = http.request(api, 'POST', headers=self._create_rest_headers('Administrator','password'))
-        #status, content, header = rest._http_request(api, 'POST')
+        time.sleep(3)
+        status, content, _ = rest._http_request(
+            api, 'POST', headers=self._create_rest_headers('Administrator', 'password'))
+        time.sleep(4)
         return status, content
 
     #Get the install path for different operating system
@@ -279,7 +281,8 @@ class x509main:
         shell.copy_file_local_to_remote(src_path,dest_path)
 
     def _create_rest_headers(self,username="Administrator",password="password"):
-        authorization = base64.encodestring('%s:%s' % (username,password))
+        authorization = base64.b64encode(
+            '{}:{}'.format(username, password).encode()).decode()
         return {'Content-Type': 'application/json',
             'Authorization': 'Basic %s' % authorization,
             'Accept': '*/*'}
@@ -287,7 +290,6 @@ class x509main:
     #Function that will upload file via rest
     def _rest_upload_file(self,URL,file_path_name,username=None,password=None,curl=False,data_json=None):
         data  =  open(file_path_name, 'rb').read()
-        http = httplib2.Http()
         status = None
         content = None
         if curl:
@@ -295,18 +297,45 @@ class x509main:
             log.info("Running command : {0}".format(cmd))
             content = subprocess.check_output(cmd, shell=True)
             return status, content
-        status, content = http.request(URL, 'POST', headers=self._create_rest_headers(username,password),body=data)
+        rest = RestConnection(self.host)
+        status, content, _ = rest._http_request(
+            URL,
+            'POST',
+            params=rest.handle_bytes_param(data),
+            headers=self._create_rest_headers(username, password))
         log.info (" Status from rest file upload command is {0}".format(status))
         log.info (" Content from rest file upload command is {0}".format(content))
         return status, content
 
     #Upload Cluster or root cert
-    def _upload_cluster_ca_certificate(self,username,password):
+    def _upload_cluster_ca_certificate(self, username, password):
         rest = RestConnection(self.host)
-        url = "controller/uploadClusterCA"
-        api = rest.baseUrl + url
-        self._rest_upload_file(api,x509main.CACERTFILEPATH + "/" + x509main.CACERTFILE,"Administrator",'password')
+        shell = RemoteMachineShellConnection(self.host)
 
+        ca_dir = self.install_path + x509main.CHAINFILEPATH + "/CA"
+        shell.execute_command("mkdir -p " + ca_dir)
+
+        dest_pem = ca_dir + "/root_ca.pem"
+        src_crt = x509main.CACERTFILEPATH + "/" + x509main.CACERTFILE
+
+        shell.copy_file_local_to_remote(src_crt, dest_pem)
+        shell.disconnect()
+
+        time.sleep(2)
+
+        status, content = rest.load_trusted_CAs()
+        if not status:
+            raise Exception("Failed to load trusted CAs on {0}. Error: {1}".format(self.host.ip, content))
+
+        time.sleep(3)
+
+        for _ in range(5):
+            trusted_status, trusted_content = rest.get_trusted_CAs()
+            if trusted_status and "My Company Root CA" in str(trusted_content):
+                return
+            time.sleep(1)
+
+        raise Exception("Trusted CA verification failed on {0}. 'My Company Root CA' not found in trustedCAs".format(self.host.ip))
     #Upload security setting for client cert
     def _upload_cluster_ca_settings(self,username,password,data=None):
         temp = self.host
