@@ -75,9 +75,11 @@ class TransactionLoader(object):
 
         # Delete operation
         for key in self.delete_keys:
-            context.remove(key)
+            # Get the document first to obtain TransactionGetResult
+            t_doc = context.get(self.collection, key)
+            context.remove(t_doc)
             try:
-                context.get(key)
+                context.get(self.collection, key)
             except DocumentNotFoundException:
                 pass
             except CouchbaseException as e:

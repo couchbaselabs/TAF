@@ -7,6 +7,7 @@ import threading
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator
 from sdk_client3 import SDKClient, TransactionConfig
+from sdk_utils.transaction_util import TransactionLoader
 
 
 class basic_ops(ClusterSetup):
@@ -29,6 +30,28 @@ class basic_ops(ClusterSetup):
     def tearDown(self):
         self.client.close()
         super(basic_ops, self).tearDown()
+
+    def run_transaction(self, cluster, collection_list, create_docs, update_docs, delete_keys,
+                        commit, sync, update_count, tnx_options, binary_transactions):
+        # Convert update_docs to (key, doc) tuples if strings are passed
+        if update_docs and isinstance(update_docs[0], str):
+            content = getattr(self, 'content', {'value': 'value1'})
+            update_docs = [(key, content.copy()) for key in update_docs]
+
+        try:
+            trans_util = TransactionLoader(
+                collection_list[0],
+                create_docs=create_docs,
+                update_docs=update_docs,
+                delete_keys=delete_keys,
+                commit_transaction=commit,
+                update_count=update_count,
+                transaction_options=tnx_options,
+                is_binary_transaction=binary_transactions)
+            cluster.transactions.run(trans_util.run_transaction, tnx_options)
+            return None
+        except Exception as error:
+            return error
 
     def get_doc_generator(self, start, end):
         age = range(5)
@@ -63,18 +86,22 @@ class basic_ops(ClusterSetup):
         if client is None:
             client = self.client
         if op_type == "create":
-            exception = Transaction().RunTransaction(
+            exception = self.run_transaction(
                 client.cluster, [client.collection], doc, [], [],
                 txn_commit, sync, update_count, tnx_options,
                 self.binary_transactions)
         elif op_type == "update":
             self.log.info("updating all the keys through threads")
-            exception = Transaction().RunTransaction(
+            # Convert keys to (key, doc) tuples if needed
+            if doc and isinstance(doc[0], str):
+                content = getattr(self, 'content', {'value': 'value1'})
+                doc = [(key, content.copy()) for key in doc]
+            exception = self.run_transaction(
                 client.cluster, [client.collection], [], doc, [],
                 txn_commit, sync, update_count, tnx_options,
                 self.binary_transactions)
         elif op_type == "delete":
-            exception = Transaction().RunTransaction(
+            exception = self.run_transaction(
                 client.cluster, [client.collection],
                 [], [], doc,
                 txn_commit, sync, update_count, tnx_options,
@@ -118,7 +145,7 @@ class basic_ops(ClusterSetup):
         threads = []
 
         # create the docs
-        exception = Transaction().RunTransaction(
+        exception = self.run_transaction(
             self.client.cluster, [self.client.collection], self.docs, [], [],
             self.transaction_commit, True, self.update_count,
             self.transaction_options, self.binary_transactions)
@@ -132,8 +159,8 @@ class basic_ops(ClusterSetup):
                       self.transaction_commit, self.update_count)))
             threads.append(threading.Thread(
                 target=self.__thread_to_transaction,
-                args=(self.transaction_options, "update", self.keys, 10,
-                      self.update_count)))
+                args=(self.transaction_options, "update", self.keys,
+                      self.transaction_commit, self.update_count)))
 
         else:
             update_docs = self.__chunks(self.keys[:self.num_items//2],
@@ -238,7 +265,7 @@ class basic_ops(ClusterSetup):
         self.log.info("get all the keys in the cluster")
         keys = ["test_docs-0"]*2
 
-        exception = Transaction().RunTransaction(
+        exception = self.run_transaction(
             self.client.cluster, [self.client.collection], [], keys, [],
             self.transaction_commit, False, 0, self.transaction_options,
             self.binary_transactions)
@@ -263,7 +290,7 @@ class basic_ops(ClusterSetup):
             self.client1 = SDKClient(self.cluster, self.def_bucket[0])
             self.sleep(self.transaction_timeout+60,
                        "Wait for transaction cleanup to complete")
-            exception = Transaction().RunTransaction(
+            exception = self.run_transaction(
                 self.client.cluster,
                 [self.client1.collection], self.docs, [], [],
                 self.transaction_commit, self.sync, self.update_count,
@@ -319,7 +346,7 @@ class basic_ops(ClusterSetup):
 
         self.log.info("going to start the load")
         for doc in docs:
-            exception = Transaction().RunTransaction(
+            exception = self.run_transaction(
                 self.client1.cluster, [self.client1.collection], doc, [], [],
                 self.transaction_commit, self.sync, self.update_count,
                 self.transaction_options, self.binary_transactions)
