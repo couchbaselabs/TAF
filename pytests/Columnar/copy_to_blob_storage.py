@@ -20,6 +20,7 @@ from gcs import GCS
 from awsLib.s3_data_helper import perform_S3_operation
 from Columnar.mini_volume_code_template import MiniVolume
 from sirius_client_framework.sirius_constants import SiriusCodes
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from couchbase_utils.kafka_util.confluent_utils import ConfluentUtils
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
 from Jython_tasks.sirius_task import MongoUtil, CouchbaseUtil
@@ -49,7 +50,6 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
     def setUp(self):
         super(CopyToBlobStorage, self).setUp()
-        self.remote_cluster = None
         if runtype == "columnar":
             self.columnar_cluster = self.tenant.columnar_instances[0]
             if len(self.tenant.clusters) > 0:
@@ -160,6 +160,59 @@ class CopyToBlobStorage(ColumnarBaseTest):
         if not result:
             self.fail(str(msg))
 
+    def setup_remote_collection(self):
+        self.log.info(f"Starting remote collection setup for runtype: {runtype}")
+        self.log.info(f"Remote cluster: {self.remote_cluster.master.ip if self.remote_cluster else 'None'}")
+        self.log.info(f"Columnar cluster: {self.columnar_cluster.master.ip if self.columnar_cluster else 'None'}")
+        self.log.info(f"Initial doc count: {self.no_of_docs}")
+
+        if runtype == "columnar":
+            self.create_bucket_scopes_collections_in_capella_cluster(
+                self.tenant, self.remote_cluster)
+        else:
+            self.collectionSetUp(cluster=self.remote_cluster, load_data=False)
+
+        self.columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec(
+                self.columnar_spec_name),
+            remote_cluster=self.remote_cluster,
+            external_collection_file_formats=[self.input.param("file_format", "json")])
+
+        # create remote link and remote collection in columnar
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False,
+            remote_clusters=[self.remote_cluster])
+        if not result:
+            self.fail(msg)
+
+        for bucket in self.remote_cluster.buckets:
+            SiriusCouchbaseLoader.create_clients_in_pool(
+                self.remote_cluster.master, self.remote_cluster.master.rest_username,
+                self.remote_cluster.master.rest_password,
+                bucket.name, req_clients=1)
+
+        self.log.info("Started Doc loading on remote cluster")
+        self.load_remote_collections(self.remote_cluster, template="Hotel",
+                                    create_start_index=0, create_end_index=self.no_of_docs)
+
+        remote_links = self.cbas_util.get_all_link_objs("couchbase")
+        remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
+
+        for link in remote_links:
+            if not self.cbas_util.connect_link(self.columnar_cluster, link.full_name):
+                self.fail("Failed to connect link")
+
+        self.cbas_util.refresh_remote_dataset_item_count(self.bucket_util)
+
+        for dataset in remote_datasets:
+            if not self.cbas_util.wait_for_ingestion_complete(
+                    self.columnar_cluster, dataset.full_name,
+                    dataset.num_of_items):
+                self.fail("Doc count mismatch.")
+
+        self.log.info(f"{self.no_of_docs} docs loaded into remote cluster")
+
     def delete_blob_bucket(self):
         """
          Delete blob storage bucket created for copying files
@@ -244,8 +297,9 @@ class CopyToBlobStorage(ColumnarBaseTest):
                 self.fail("Error while deleting cbas entities")
 
         if hasattr(self, "remote_cluster") and self.remote_cluster:
-            self.delete_all_buckets_from_capella_cluster(
-                self.tenant, self.remote_cluster)
+            if runtype == "columnar":
+                self.delete_all_buckets_from_capella_cluster(
+                    self.tenant, self.remote_cluster)
 
         if self.sink_blob_bucket_name:
                 self.delete_blob_bucket()
@@ -359,20 +413,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("The document count does not match in dataset and blob storage")
 
     def test_create_copyTo_from_remote_collection_query_drop_standalone_collection(self):
-        self.create_bucket_scopes_collections_in_capella_cluster(
-            self.tenant, self.remote_cluster,
-            self.input.param("num_buckets", 1))
-        # create columnar entities to operate on
-        self.base_setup()
-        remote_bucket = self.remote_cluster.buckets[0]
-        self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, "_default", remote_bucket.name,
-                                                               "_default", "couchbases://" + self.remote_cluster.srv,
-                                                               0, self.no_of_docs, doc_size=self.doc_size,
-                                                               username=self.remote_cluster.username,
-                                                               password=self.remote_cluster.password,
-                                                               template="hotel")
+        self.setup_remote_collection()
         datasets = self.cbas_util.get_all_dataset_objs("remote")
-        self.cbas_util.wait_for_data_ingestion_in_the_collections(self.columnar_cluster)
         blob_storage_link = self.cbas_util.get_all_link_objs(self.link_type)[0]
         jobs = Queue()
         results = []
@@ -463,19 +505,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
             self.fail("The document count does not match in external source and blob storage")
 
     def test_create_copyTo_from_multiple_collection_query_drop_standalone_collection(self):
-
-        self.create_bucket_scopes_collections_in_capella_cluster(
-            self.tenant, self.remote_cluster,
-            self.input.param("num_buckets", 1))
-        # create columnar entities to operate on
-        self.base_setup()
-        remote_bucket = self.remote_cluster.buckets[0]
-        self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, "_default", remote_bucket.name,
-                                                               "_default", "couchbases://" + self.remote_cluster.srv,
-                                                               0, self.no_of_docs, doc_size=self.doc_size,
-                                                               username=self.remote_cluster.username,
-                                                               password=self.remote_cluster.password,
-                                                               template="hotel")
+        self.setup_remote_collection()
         remote_dataset = self.cbas_util.get_all_dataset_objs("remote")
         external_dataset = self.cbas_util.get_all_dataset_objs("external")
         standalone_dataset = self.cbas_util.get_all_dataset_objs("standalone")
@@ -716,8 +746,9 @@ class CopyToBlobStorage(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             for obj in objects_in_blob_storage:
-                if not obj.endswith('.gzip'):
-                    self.fail("Not all files are gzip")
+                expected_suffix = ".gzip.parquet" if self.columnar_spec["file_format"] == "parquet" else ".gzip"
+                if not obj.endswith(expected_suffix):
+                    self.fail(f"Not all files are {expected_suffix}")
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
             status, metrics, errors, result, _, _ \
                 = self.cbas_util.execute_statement_on_cbas_util(self.columnar_cluster, statement)
@@ -1531,7 +1562,7 @@ class CopyToBlobStorage(ColumnarBaseTest):
         dynamic_statement = "select count(*) from {0} where copy_dataset = \"{1}\" and country = \"{2}\""
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
-            statement = "select country, count(city) as cnt from {0} group by country;".format(datasets[i].full_name)
+            statement = "select country, count(distinct city) as cnt from {0} group by country;".format(datasets[i].full_name)
             status, metrics, errors, result, _, _ \
                 = self.cbas_util.execute_statement_on_cbas_util(self.columnar_cluster,
                                                                 statement)
@@ -1564,6 +1595,8 @@ class CopyToBlobStorage(ColumnarBaseTest):
 
         if not all(results):
             self.fail("Verification failed for multiple partition")
+        if not all(result):
+            self.fail("Count Failed for multiple partition")
 
     def test_create_copyTo_from_collection_where_partition_already_exist_in_blob_storage(self):
         self.base_setup()
@@ -1754,30 +1787,6 @@ class CopyToBlobStorage(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy to statement copied the wrong results")
 
-    def remote_cluster_setup(self):
-        for key in self.cb_clusters:
-            self.remote_cluster = self.cb_clusters[key]
-            break
-        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
-                                                                               self.tenant.project_id,
-                                                                               self.remote_cluster.id, "0.0.0.0/0")
-        if resp.status_code == 201 or resp.status_code == 422:
-            self.log.info("Added allowed IP 0.0.0.0/0")
-        else:
-            self.fail("Failed to add allowed IP")
-        remote_cluster_certificate_request = (
-            self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant.id, self.tenant.project_id,
-                                                                     self.remote_cluster.id))
-        if remote_cluster_certificate_request.status_code == 200:
-            self.remote_cluster_certificate = (remote_cluster_certificate_request.json()["certificate"])
-        else:
-            self.fail("Failed to get cluster certificate")
-
-        # creating bucket scope and collections for remote collection
-        no_of_remote_buckets = self.input.param("no_of_remote_bucket", 1)
-        self.create_bucket_scopes_collections_in_capella_cluster(
-            self.tenant, self.remote_cluster, no_of_remote_buckets,
-            bucket_ram_quota=1024)
 
     def test_mini_volume_copy_to_blob_storage(self):
         self.copy_to_s3_job = Queue()

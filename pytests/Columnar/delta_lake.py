@@ -41,7 +41,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
                 credentials = json.load(file)
                 self.blob_object = GCS(credentials)
         else:
-            self.blob_object = S3(self.aws_access_key, self.aws_secret_key,
+            self.blob_object = S3(self.aws_access_key, self.aws_secret_key, self.aws_session_token,
                                   region=self.aws_region)
 
         # Create delta lake util object and initialise spark session which
@@ -50,7 +50,9 @@ class DeltaLakeDatasets(ColumnarBaseTest):
             self.delta_lake_util = DeltaLakeUtils("gcs",{"gcs_service_account_path": gcs_certificate})
         elif self.link_type == "s3":
             self.delta_lake_util = DeltaLakeUtils("s3", {"aws_access_key": self.aws_access_key,
-                                                         "aws_secret_key":self.aws_secret_key})
+                                                         "aws_secret_key":self.aws_secret_key,
+                                                         "aws_session_token":self.aws_session_token,
+                                                         "region":self.aws_region})
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)

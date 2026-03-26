@@ -38,6 +38,7 @@ class CrossAccountSetup:
         self.aws_region = self.input.param("aws_region", "us-west-1")
         self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", None)
         self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = os.getenv("AWS_SESSION_TOKEN", None)
         self.user_role_name = f"columnar-regression-cross-account-auth-{str(int(time.time()))}"
         self.external_id = str(uuid.uuid4())
 
@@ -52,12 +53,14 @@ class CrossAccountSetup:
             "iam",
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_access_key,
+            aws_session_token=self.aws_session_token,
             region_name="us-east-1"
         )
         self.sts = boto3.client(
             "sts",
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_access_key,
+            aws_session_token=self.aws_session_token,
             region_name="us-east-1"
         )
 

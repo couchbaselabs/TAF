@@ -141,6 +141,14 @@ class IndexOnlyQueryPlan(ColumnarBaseTest):
                 return
             self.fail("Index is not used / Or used more than once")
 
+    def validate_join_plan(self, query, indexList):
+        status, metrics, errors, results, _, warnings = self.cbas_util.execute_statement_on_cbas_util(
+            self.columnar_cluster, f"explain {query}")
+        if status != "success" or len(results) == 0:
+            self.fail(f"Failed to run the query: {query}")
+        plan_str = json.dumps(results) if results else ""
+        return (any(index in plan_str for index in indexList)) and (plan_str.count("data-scan") == 0)
+
     def test_single_field_string_equality_query_plan(self):
         self.setup_remote_collection()
 
@@ -315,19 +323,29 @@ class IndexOnlyQueryPlan(ColumnarBaseTest):
         self.log.info(f"Number of datasets: {len(datasets)}")
 
         for dataset in datasets:
+            # analyze collection
+            if not self.cbas_util.create_sample_for_analytics_collections(self.columnar_cluster, dataset.full_name, sample_size="high", analytics=False):
+                self.fail("Error while creating sample")
+
             # Simple self-join query that uses index-only plan
             # Join on country field and select only indexed fields
             queries = [f"SELECT d1.country, d2.city FROM {dataset.full_name} d1 JOIN {dataset.full_name} d2 ON d1.country = d2.country WHERE d1.country = 'Morocco';",
                        f"SELECT d1.country, d2.city FROM {dataset.full_name} d1 JOIN {dataset.full_name} d2 ON d1.country = d2.country WHERE d1.country = 'Morocco' and d2.city='Trompport';"]
-            indexName = "idx_country_city"
 
             # create index on country and city
-            if not self.cbas_util.create_cbas_index(self.columnar_cluster, indexName, ["country", "city"], dataset.full_name):
-                self.fail(f"Failed to create index: {indexName}")
+            if not self.cbas_util.create_cbas_index(self.columnar_cluster, "idx_country_city", ["country", "city"], dataset.full_name):
+                self.fail(f"Failed to create index: idx_country_city")
+            if not self.cbas_util.create_cbas_index(self.columnar_cluster, "idx_country", ["country"], dataset.full_name):
+                self.fail(f"Failed to create index: idx_country")
+            if not self.cbas_util.create_cbas_index(self.columnar_cluster, "idx_city", ["city"], dataset.full_name):
+                self.fail(f"Failed to create index: idx_city")
 
             # validate plan
             for query in queries:
-                self.validate_index_only_query_plan(query, indexName)
+                if self.validate_join_plan(query, ["idx_country_city", "idx_country", "idx_city"]):
+                    self.log.info(f"Query validated: {query}")
+                else:
+                    self.fail(f"Index only plan failed for query: {query}")
 
     def test_fallback_primary_index_query_plan(self):
         self.setup_remote_collection()
