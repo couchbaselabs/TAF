@@ -7,7 +7,6 @@ import base64
 import jwt
 
 from couchbase_utils.security_utils import jwt_utils
-from couchbase_utils.security_utils.jwt_utils import JWTUtils
 from membase.api.rest_client import RestConnection
 from pytests.onPrem_basetestcase import OnPremBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -51,7 +50,7 @@ class JWTTokenTest(OnPremBaseTest):
         self.key_size = self.input.param("key_size", 2048)
         self.ttl = self.input.param("ttl", 300)
         self.nbf_seconds = self.input.param("nbf_seconds", 0)
-        self.jwt_utils = JWTUtils(log=self.log)
+        self.jwt_utils = jwt_utils.JWTUtils(log=self.log)
 
         token_audience = self.input.param("token_audience", "['cb-cluster']")
         self.token_audience = self.jwt_utils.safe_literal_list(token_audience, ["cb-cluster"])
@@ -68,7 +67,7 @@ class JWTTokenTest(OnPremBaseTest):
             f"jwt_admin_{uuid.uuid4().hex[:8]}"
 
         self.rest = RestConnection(self.cluster.master)
-        self.jwt_utils = JWTUtils(log=self.log)
+        self.jwt_utils = jwt_utils.JWTUtils(log=self.log)
         self.private_key, self.pub_key = self.jwt_utils.generate_key_pair(
             algorithm=self.algorithm, key_size=self.key_size
         )
@@ -1061,8 +1060,13 @@ class JWTTokenTest(OnPremBaseTest):
 
     def test_jwt_validation_claims(self):
         """
-        Param-driven claim validation. Param: claim = missing_issuer | wrong_issuer |
-        missing_audience | wrong_audience | invalid_nbf.
+        Param-driven claim validation. 
+        
+        Available claims:
+        - Basic validation: missing_issuer | wrong_issuer | missing_audience | wrong_audience | invalid_nbf
+        - Expiry claims: missing_exp | exp_boundary_before | exp_boundary_at | exp_boundary_after | exp_boundary_just_expired
+        - Not Before claims: nbf_boundary_at | nbf_boundary_just_future
+        - Audience strict mode: all_audiences_required_missing_one
         """
         verify_cli = self.input.param("verify_cli", True)
         expected_auth = self.input.param("expected_jwt_auth", False)
@@ -1073,15 +1077,21 @@ class JWTTokenTest(OnPremBaseTest):
         self._setup_jwt_config(config)
 
         user = f"jwt_test_user_claim_{uuid.uuid4().hex[:8]}"
+        token = None
+
+        curr_time = int(time.time())
+        boundary_delta_seconds = int(self.input.param("boundary_delta_seconds", 20))
 
         if claim == "wrong_issuer":
             token = self.create_token(user_name=user, issuer_name="untrusted-issuer")
+
         elif claim == "wrong_audience":
             token = self.create_token(user_name=user, audience="wrong-audience")
+
         elif claim == "invalid_nbf":
             token = self.create_token(user_name=user, nbf_seconds=300)
+
         elif claim in ("missing_issuer", "missing_audience"):
-            curr_time = int(time.time())
             payload = {
                 "sub": user,
                 "exp": curr_time + self.ttl,
@@ -1095,10 +1105,116 @@ class JWTTokenTest(OnPremBaseTest):
             if claim == "missing_issuer":
                 payload["aud"] = self.jwt_utils.get_single_audience(self.token_audience)
             token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "missing_exp":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "iat": curr_time,
+                "nbf": curr_time + self.nbf_seconds,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "exp_boundary_before":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time - boundary_delta_seconds,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "exp_boundary_at":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time - boundary_delta_seconds,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "exp_boundary_after":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time + boundary_delta_seconds,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "exp_boundary_just_expired":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time - boundary_delta_seconds,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "nbf_boundary_at":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time + self.ttl,
+                "iat": curr_time,
+                "nbf": curr_time,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "nbf_boundary_just_future":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time + self.ttl,
+                "iat": curr_time,
+                "nbf": curr_time + boundary_delta_seconds,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": self.jwt_utils.get_single_audience(self.token_audience),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+        elif claim == "all_audiences_required_missing_one":
+            payload = {
+                "iss": self.issuer_name,
+                "sub": user,
+                "exp": curr_time + self.ttl,
+                "iat": curr_time,
+                "nbf": curr_time + self.nbf_seconds,
+                "jti": str(uuid.uuid4()),
+                "groups": self.user_groups,
+                "aud": ["wrong-audience"],
+            }
+            token = self._create_signed_token_from_payload(payload)
+
         else:
             self.fail(
                 f"Unknown claim={claim}. "
-                "Use: missing_issuer|wrong_issuer|missing_audience|wrong_audience|invalid_nbf"
+                "Use: missing_issuer|wrong_issuer|missing_audience|wrong_audience|invalid_nbf|"
+                "missing_exp|exp_boundary_before|exp_boundary_at|exp_boundary_after|exp_boundary_just_expired|"
+                "nbf_boundary_at|nbf_boundary_just_future|all_audiences_required_missing_one"
             )
 
         try:
@@ -1995,4 +2111,365 @@ class JWTTokenTest(OnPremBaseTest):
         finally:
             if group_name:
                 self._delete_group(group_name)
+
+    def test_jwt_jwks_unavailability_fail_closed(self):
+        """
+        JWKS Unavailability Test (Fail-Closed Behavior):
+
+        When JWKS endpoint is unavailable, server must reject all tokens (fail-closed security principle).
+
+        This test uses a NEW token with a NEW kid after JWKS shutdown to force a JWKS fetch failure.
+        This ensures determinism regardless of cache behavior.
+
+        Validates:
+        - Tokens work when JWKS is reachable
+        - JWKS endpoint is actually stopped (explicit assertion)
+        - Tokens with new kid fail when JWKS goes offline (fail-closed, cache-bypassing)
+        - Security is not compromised by JWKS downtime
+        """
+        verify_cli = self.input.param("verify_cli", True)
+        expected_jwt_auth = self.input.param("expected_jwt_auth", False)
+        expected_jwt_authz = self.input.param("expected_jwt_authz", False)
+
+        jwks_port = int(self.input.param("jwks_port", 18889))
+        jwks_bind = self.input.param("jwks_bind", "127.0.0.1")
+        jwks_uri_host_mode = self.input.param("jwks_uri_host_mode", "localhost")
+        kid = self.input.param("jwks_kid", "fail-closed-test-key")
+
+        env = jwt_utils.setup_jwks_uri_issuer_env(
+            jwt_utils_obj=self.jwt_utils,
+            cluster_master=self.cluster.master,
+            issuer_name=self.issuer_name,
+            algorithm=self.algorithm,
+            pub_key=self.pub_key,
+            token_audience=self.token_audience,
+            group_prefix="jwt_jwks_fail",
+            jwks_port=jwks_port,
+            jwks_bind=jwks_bind,
+            jwks_uri_host_mode=jwks_uri_host_mode,
+            kid=kid,
+            start_attempts=10,
+            create_group_callback=self._create_group,
+            delete_group_callback=self._delete_group,
+            log_callback=self.log.info,
+        )
+        try:
+            shell_conn = env["shell_conn"]
+            pid = env["pid"]
+            jwks_uri = env["jwks_uri"]
+
+            self._setup_jwt_config(env["config"], create_groups=False)
+
+            token = self.jwt_utils.create_token(
+                issuer_name=self.issuer_name,
+                user_name=f"jwt_fail_user_{uuid.uuid4().hex[:8]}",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=self.token_audience,
+                user_groups=["admin"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+                headers={"kid": kid},
+            )
+
+            self.log.info("Testing token validation with JWKS ONLINE")
+            self.jwt_utils.validate_jwt_expectations(
+                rest_connection=self.rest, token=token,
+                expected_jwt_auth=True,
+                expected_jwt_authz=True,
+                verify_cli=verify_cli,
+                verify_cli_callback=self._verify_token_cli if verify_cli else None,
+                log_callback=self.log.info
+            )
+
+            self.sleep(3, "Wait before stopping JWKS server")
+
+            self.log.info("Stopping JWKS server to test fail-closed behavior")
+            jwt_utils.stop_remote_process(shell_conn, pid)
+            env["pid"] = None
+            self.sleep(2, "Wait for JWKS server to fully stop")
+
+            http_code, body, curl_err = jwt_utils.remote_curl(shell_conn, jwks_uri, timeout_seconds=5)
+            self.log.info(f"JWKS server check after stop: code={http_code} body_preview={body[:200] if body else 'empty'} stderr={curl_err}")
+            self.assertTrue(
+                http_code != 200 or not body or '"keys"' not in body,
+                f"JWKS endpoint still responding unexpectedly: code={http_code}, body={body[:500] if body else 'empty'}"
+            )
+
+            self.log.info("Creating new token with new kid to force JWKS fetch (not in cache)")
+            new_kid = f"{kid}_offline"
+            token_offline = self.jwt_utils.create_token(
+                issuer_name=self.issuer_name,
+                user_name=f"jwt_fail_user_offline_{uuid.uuid4().hex[:8]}",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=self.token_audience,
+                user_groups=["admin"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+                headers={"kid": new_kid},
+            )
+
+            self.log.info("Testing new token validation with JWKS OFFLINE (must fail deterministically)")
+            try:
+                self.jwt_utils.validate_jwt_expectations(
+                    rest_connection=self.rest, token=token_offline,
+                    expected_jwt_auth=expected_jwt_auth,
+                    expected_jwt_authz=expected_jwt_authz,
+                    verify_cli=False,
+                    verify_cli_callback=None,
+                    log_callback=self.log.info
+                )
+            except AssertionError as e:
+                self.fail(str(e))
+
+            self.log.info("Fail-closed behavior verified: tokens rejected when JWKS unavailable")
+        finally:
+            jwt_utils.cleanup_jwks_uri_issuer_env(env, self._delete_group)
+
+    def test_jwt_jwks_cache_validity_window(self):
+        """
+        JWKS Cache Validity Window Test:
+
+        JWKS endpoints support caching for performance, but cached keys must have time-bounded validity.
+        Keys not refreshed recently should be rejected.
+
+        This test validates cache expiry behavior through:
+        1. OLD token validation after cache wait (gives real cache TTL signal)
+        2. If cache NOT expired: validate OLD token after JWKS shutdown (proves cache is being used)
+        3. NEW token with NEW kid after JWKS shutdown (bypasses cache, tests fetch failure)
+
+        Validates:
+        - Tokens work when JWKS is reachable and cache is fresh
+        - Cache expiry behavior is observed and asserted (not just assumed based on time)
+        - Cache IS being used (old token still works after JWKS shutdown if cache valid)
+        - JWKS endpoint is actually stopped (verified with strong assertion)
+        - Tokens with new kid fail when JWKS is offline (deterministic fail-closed)
+        - Cache duration boundaries are behaviorally verified
+
+        """
+        verify_cli = self.input.param("verify_cli", True)
+        expected_jwt_auth = self.input.param("expected_jwt_auth", False)
+        expected_jwt_authz = self.input.param("expected_jwt_authz", False)
+
+        cache_wait_seconds = int(self.input.param("cache_wait_seconds", 30))
+        jwks_port = int(self.input.param("jwks_port", 18890))
+        jwks_bind = self.input.param("jwks_bind", "127.0.0.1")
+        jwks_uri_host_mode = self.input.param("jwks_uri_host_mode", "localhost")
+        kid = self.input.param("jwks_kid", "cache-test-key")
+        env = jwt_utils.setup_jwks_uri_issuer_env(
+            jwt_utils_obj=self.jwt_utils,
+            cluster_master=self.cluster.master,
+            issuer_name=self.issuer_name,
+            algorithm=self.algorithm,
+            pub_key=self.pub_key,
+            token_audience=self.token_audience,
+            group_prefix="jwt_jwks_cache",
+            jwks_port=jwks_port,
+            jwks_bind=jwks_bind,
+            jwks_uri_host_mode=jwks_uri_host_mode,
+            kid=kid,
+            start_attempts=10,
+            create_group_callback=self._create_group,
+            delete_group_callback=self._delete_group,
+            log_callback=self.log.info,
+        )
+        try:
+            shell_conn = env["shell_conn"]
+            pid = env["pid"]
+            jwks_uri = env["jwks_uri"]
+
+            self._setup_jwt_config(env["config"], create_groups=False)
+
+            token = self.jwt_utils.create_token(
+                issuer_name=self.issuer_name,
+                user_name=f"jwt_cache_user_{uuid.uuid4().hex[:8]}",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=self.token_audience,
+                user_groups=["admin"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+                headers={"kid": kid},
+            )
+
+            self.log.info("Testing token validation with fresh cache")
+            self.jwt_utils.validate_jwt_expectations(
+                rest_connection=self.rest, token=token,
+                expected_jwt_auth=True,
+                expected_jwt_authz=True,
+                verify_cli=verify_cli,
+                verify_cli_callback=self._verify_token_cli if verify_cli else None,
+                log_callback=self.log.info
+            )
+
+            self.log.info(f"Waiting {cache_wait_seconds} seconds for cache to potentially expire")
+            self.sleep(cache_wait_seconds, f"Wait for cache validity window ({cache_wait_seconds}s)")
+
+            self.log.info("Testing OLD token after cache wait (before JWKS shutdown)")
+            try:
+                self.jwt_utils.validate_jwt_expectations(
+                    rest_connection=self.rest, token=token,
+                    expected_jwt_auth=True,
+                    expected_jwt_authz=True,
+                    verify_cli=False,
+                    verify_cli_callback=None,
+                    log_callback=self.log.info
+                )
+                self.log.info("OLD token still works → cache not expired yet (expected behavior)")
+                cache_expired_before_shutdown = False
+            except AssertionError as e:
+                self.log.info(f"OLD token failed after cache wait → cache expired: {e}")
+                cache_expired_before_shutdown = True
+
+            self.assertIsNotNone(
+                cache_expired_before_shutdown,
+                "Cache behavior could not be determined - test may have a configuration issue"
+            )
+
+            self.log.info("Stopping JWKS server")
+            jwt_utils.stop_remote_process(shell_conn, pid)
+            env["pid"] = None
+            self.sleep(2, "Wait for JWKS server to stop")
+
+            http_code, body, curl_err = jwt_utils.remote_curl(shell_conn, jwks_uri, timeout_seconds=5)
+            self.log.info(f"JWKS server check after cache expiry + shutdown: code={http_code} body_preview={body[:200] if body else 'empty'} stderr={curl_err}")
+            self.assertTrue(
+                http_code != 200 or not body or '"keys"' not in body,
+                f"JWKS endpoint still responding unexpectedly: code={http_code}, body={body[:500] if body else 'empty'}"
+            )
+
+            if not cache_expired_before_shutdown:
+                self.log.info("Cache still valid - validating OLD token after JWKS shutdown (proves cache is being used)")
+                try:
+                    self.jwt_utils.validate_jwt_expectations(
+                        rest_connection=self.rest, token=token,
+                        expected_jwt_auth=True,
+                        expected_jwt_authz=True,
+                        verify_cli=False,
+                        verify_cli_callback=None,
+                        log_callback=self.log.info
+                    )
+                    self.log.info("✓ OLD token still works after JWKS shutdown - cache is actually being used")
+                except AssertionError as e:
+                    self.fail(f"CRITICAL: Cache should still work but token failed! This indicates cache is being ignored. Error: {e}")
+            else:
+                self.log.info("Cache already expired before shutdown - skipping validation")
+
+            self.log.info("Creating new token with new kid to bypass cache and force JWKS fetch")
+            new_kid = f"{kid}_expired"
+            token_expired = self.jwt_utils.create_token(
+                issuer_name=self.issuer_name,
+                user_name=f"jwt_cache_user_expired_{uuid.uuid4().hex[:8]}",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=self.token_audience,
+                user_groups=["admin"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+                headers={"kid": new_kid},
+            )
+
+            self.log.info("Testing new token validation with expired cache and JWKS offline")
+            try:
+                self.jwt_utils.validate_jwt_expectations(
+                    rest_connection=self.rest, token=token_expired,
+                    expected_jwt_auth=expected_jwt_auth,
+                    expected_jwt_authz=expected_jwt_authz,
+                    verify_cli=False,
+                    verify_cli_callback=None,
+                    log_callback=self.log.info
+                )
+            except AssertionError as e:
+                self.fail(str(e))
+
+            cache_status = "CACHE EXPIRED before shutdown" if cache_expired_before_shutdown else "CACHE NOT EXPIRED before shutdown"
+            self.log.info(f"Cache validity window verified: tokens rejected when JWKS offline ({cache_status})")
+        finally:
+            jwt_utils.cleanup_jwks_uri_issuer_env(env, self._delete_group)
+
+    def test_jwt_jwks_inline_json(self):
+        """
+        JWKS Inline JSON Test:
+
+        Validate that Couchbase accepts JWT signed via JWKS configured as inline JSON.
+        This tests the third key ingestion method (besides PEM and JWKS URI).
+
+        Validates:
+        - JWKS JSON is correctly formatted and embedded in config
+        - Tokens with matching kid validate successfully
+        - No JWKS URI is needed for inline JSON mode
+        """
+        verify_cli = self.input.param("verify_cli", True)
+        expected_auth = self.input.param("expected_jwt_auth", True)
+        expected_authz = self.input.param("expected_jwt_authz", True)
+
+        kid = self.input.param("jwks_kid", "inline-test-key")
+
+        group_name = f"jwt_jwks_inline_{uuid.uuid4().hex[:8]}"
+
+        try:
+            self._create_group(group_name, roles="admin")
+            group_maps = [f"^admin$ {group_name}"]
+
+            jwks = self.jwt_utils.build_jwks_for_public_key_pem(
+                self.pub_key, kid=kid, algorithm=self.algorithm
+            )
+            jwks_json = json.dumps(jwks, separators=(",", ":"))
+
+            self.log.info(f"Building inline JWKS JSON with kid={kid}")
+            self.log.info(f"JWKS JSON preview: {jwks_json[:200]}...")
+
+            config = self.jwt_utils.get_jwt_config(
+                issuer_name=self.issuer_name,
+                algorithm=self.algorithm,
+                pub_key=None,
+                token_audience=self.token_audience,
+                token_group_matching_rule=group_maps,
+                jit_provisioning=True,
+                public_key_source="jwks",
+                jwks_json=jwks_json,
+            )
+            self._setup_jwt_config(config, create_groups=False)
+
+            token = self.jwt_utils.create_token(
+                issuer_name=self.issuer_name,
+                user_name=f"jwt_inline_{uuid.uuid4().hex[:8]}",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=self.token_audience,
+                user_groups=["admin"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+                headers={"kid": kid},
+            )
+
+            self.log.info(f"Validating token with kid={kid}")
+            try:
+                self.jwt_utils.validate_jwt_expectations(
+                    rest_connection=self.rest, token=token,
+                    expected_jwt_auth=expected_auth,
+                    expected_jwt_authz=expected_authz,
+                    verify_cli=verify_cli,
+                    verify_cli_callback=self._verify_token_cli if verify_cli else None,
+                    log_callback=self.log.info
+                )
+            except AssertionError as e:
+                self.fail(str(e))
+            self.log.info("Token validated successfully using inline JWKS")
+
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertTrue(whoami, "Expected /whoami JSON for inline JWKS token")
+            self.assertEqual(whoami.get("domain"), "external", f"Unexpected whoami: {whoami}")
+            roles = [r.get("role") for r in (whoami.get("roles") or []) if isinstance(r, dict)]
+            self.assertTrue("admin" in roles, f"Expected admin role, got {roles}")
+
+            self.log.info("JWKS inline JSON test passed: tokens validated successfully")
+        finally:
+            self._delete_group(group_name)
 

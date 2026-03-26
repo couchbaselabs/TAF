@@ -4,8 +4,10 @@ import ast
 import jwt
 import json
 import base64
+import urllib.parse
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from cb_server_rest_util.security.jwt import JWTAPI
 
@@ -73,8 +75,18 @@ class JWTUtils:
             self.log.info("Key pair generated successfully.")
         return private_key_pem.decode(), public_key_pem.decode()
 
-    def get_jwt_config(self, issuer_name, algorithm, pub_key, token_audience, 
-                       token_group_matching_rule, jit_provisioning=True):
+    def get_jwt_config(
+        self,
+        issuer_name,
+        algorithm,
+        pub_key,
+        token_audience,
+        token_group_matching_rule,
+        jit_provisioning=True,
+        public_key_source="pem",
+        jwks_uri=None,
+        jwks_json=None,
+    ):
         """Get JWT configuration with configurable JIT provisioning
         Args:
             issuer_name: Name of the JWT issuer
@@ -93,6 +105,9 @@ class JWTUtils:
             audiences=token_audience,
             group_maps=token_group_matching_rule,
             jit_provisioning=jit_provisioning,
+            public_key_source=public_key_source,
+            jwks_uri=jwks_uri,
+            jwks_json=jwks_json,
         )
         return self.get_jwt_config_from_issuers([issuer])
 
@@ -126,7 +141,6 @@ class JWTUtils:
                 )
             )
         return self.get_jwt_config_from_issuers(issuers)
-
 
     def setup_multi_issuer_env(
         self,
@@ -236,6 +250,7 @@ class JWTUtils:
         ttl=300,
         nbf_seconds=0,
         normalize_audience=False,
+        headers=None,
     ):
         """Create a JWT token with the specified parameters
         Args:
@@ -270,9 +285,12 @@ class JWTUtils:
         if self.log:
             self.log.info(f"Creating JWT token with payload: {json.dumps(payload, indent=2)}")
         
-        jwt_token = jwt.encode(payload=payload,
-                               algorithm=algorithm,
-                               key=private_key)
+        jwt_token = jwt.encode(
+            payload=payload,
+            algorithm=algorithm,
+            key=private_key,
+            headers=headers,
+        )
         return jwt_token
 
 
@@ -365,6 +383,23 @@ class JWTUtils:
         """
         results = {}
 
+        def _format_results_snapshot():
+            def _short(val, limit=500):
+                if val is None:
+                    return None
+                text = str(val)
+                return text if len(text) <= limit else text[:limit] + "...<truncated>"
+
+            authz_rest = results.get("authz_rest", {})
+            authz_cli = results.get("authz_cli", {})
+            whoami = results.get("auth_whoami_rest", {})
+            return (
+                "Debug snapshot: "
+                f"authz_rest(status={authz_rest.get('status')}, ok={authz_rest.get('ok')}, content={_short(authz_rest.get('content'))}), "
+                f"authz_cli(status={authz_cli.get('status')}, ok={authz_cli.get('ok')}, out={_short(authz_cli.get('out'))}), "
+                f"whoami_rest(status={whoami.get('status')}, ok={whoami.get('ok')}, content={_short(whoami.get('content'))})"
+            )
+
         if expected_jwt_authz is not None:
             if authz_endpoint is None:
                 authz_endpoint = ENDPOINT_POOLS_BUCKETS
@@ -397,11 +432,13 @@ class JWTUtils:
             if expected_jwt_authz:
                 if not rest_success:
                     raise AssertionError(
-                        f"JWT authz REST expected success but failed. status={rest_status} content={rest_content}"
+                        f"JWT authz REST expected success but failed. status={rest_status} content={rest_content}. "
+                        f"{_format_results_snapshot()}"
                     )
                 if verify_cli and not cli_ok:
                     raise AssertionError(
-                        f"JWT authz CLI expected success but failed. status={cli_status} out={cli_out}"
+                        f"JWT authz CLI expected success but failed. status={cli_status} out={cli_out}. "
+                        f"{_format_results_snapshot()}"
                     )
             else:
                 rest_failed = not rest_success
@@ -409,7 +446,7 @@ class JWTUtils:
                 if not (rest_failed and cli_failed):
                     raise AssertionError(
                         "JWT authz expected failure but at least one path succeeded. "
-                        f"rest_status={rest_status} cli_ok={cli_ok}"
+                        f"rest_status={rest_status} cli_ok={cli_ok}. {_format_results_snapshot()}"
                     )
 
         if expected_jwt_auth is not None:
@@ -426,12 +463,14 @@ class JWTUtils:
             if expected_jwt_auth:
                 if not who_success:
                     raise AssertionError(
-                        f"JWT whoami expected success but failed. status={who_status} content={who_content}"
+                        f"JWT whoami expected success but failed. status={who_status} content={who_content}. "
+                        f"{_format_results_snapshot()}"
                     )
             else:
                 if who_success:
                     raise AssertionError(
-                        f"JWT whoami expected failure but succeeded. status={who_status} content={who_content}"
+                        f"JWT whoami expected failure but succeeded. status={who_status} content={who_content}. "
+                        f"{_format_results_snapshot()}"
                     )
 
         return results
@@ -1103,23 +1142,25 @@ class JWTUtils:
     def _build_jwt_issuer_entry(
         name,
         algorithm,
-        pub_key,
         audiences,
         group_maps,
+        pub_key=None,
         jit_provisioning=True,
         sub_claim="sub",
         aud_claim="aud",
         groups_claim="groups",
         audience_handling="any",
+        public_key_source="pem",
+        jwks_uri=None,
+        jwks_json=None,
     ):
         """
         Build a single issuer entry for the JWT config payload.
         """
-        return {
+        issuer = {
             "name": name,
             "signingAlgorithm": algorithm,
-            "publicKeySource": "pem",
-            "publicKey": pub_key,
+            "publicKeySource": public_key_source,
             "jitProvisioning": jit_provisioning,
             "subClaim": sub_claim,
             "audClaim": aud_claim,
@@ -1128,6 +1169,91 @@ class JWTUtils:
             "groupsClaim": groups_claim,
             "groupsMaps": group_maps,
         }
+
+        if public_key_source == "jwks_uri":
+            if not jwks_uri:
+                raise ValueError("jwks_uri is required when public_key_source='jwks_uri'")
+            issuer["jwksUri"] = jwks_uri
+        elif public_key_source in ("jwks_inline", "jwks"):
+            if not jwks_json:
+                raise ValueError("jwks_json is required when public_key_source is 'jwks'/'jwks_inline'")
+            if isinstance(jwks_json, str):
+                try:
+                    issuer["jwks"] = json.loads(jwks_json)
+                except Exception:
+                    issuer["jwks"] = jwks_json
+            else:
+                issuer["jwks"] = jwks_json
+            issuer["publicKeySource"] = "jwks"
+        else:
+            if not pub_key:
+                raise ValueError("pub_key is required when public_key_source='pem'")
+            issuer["publicKey"] = pub_key
+
+        return issuer
+
+    @staticmethod
+    def _b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+
+    def build_ec_jwk_from_public_key_pem(self, public_key_pem: str, *, kid: str, algorithm: str):
+        """
+        Build an EC JWK entry from a PEM public key for ES* algorithms.
+
+        Returns: dict representing one JWK (not wrapped in {"keys": [...]})
+        """
+        alg = (algorithm or "").upper()
+        if alg not in ("ES256", "ES384", "ES512"):
+            raise ValueError(f"Unsupported algorithm for EC JWK: {algorithm}")
+
+        pub = load_pem_public_key(public_key_pem.encode("utf-8"))
+        if not isinstance(pub, ec.EllipticCurvePublicKey):
+            raise ValueError("Provided public key is not an EC public key")
+
+        curve_name = pub.curve.name
+        crv_map = {
+            "secp256r1": "P-256",
+            "secp384r1": "P-384",
+            "secp521r1": "P-521",
+        }
+        if curve_name not in crv_map:
+            raise ValueError(f"Unsupported EC curve for JWKS: {curve_name}")
+
+        nums = pub.public_numbers()
+        x_int, y_int = nums.x, nums.y
+        field_size_bytes = (pub.curve.key_size + 7) // 8
+        x = self._b64url(x_int.to_bytes(field_size_bytes, "big"))
+        y = self._b64url(y_int.to_bytes(field_size_bytes, "big"))
+
+        return {
+            "kty": "EC",
+            "crv": crv_map[curve_name],
+            "x": x,
+            "y": y,
+            "use": "sig",
+            "alg": alg,
+            "kid": kid,
+        }
+
+    def build_jwks_for_public_key_pem(self, public_key_pem: str, *, kid: str, algorithm: str):
+        """
+        Build a JWKS document for the given public key.
+        """
+        alg = (algorithm or "").upper()
+        if alg.startswith("ES"):
+            jwk = self.build_ec_jwk_from_public_key_pem(public_key_pem, kid=kid, algorithm=alg)
+            return {"keys": [jwk]}
+        raise ValueError(f"JWKS building currently supports only ES* algorithms. Got {algorithm}")
+
+    @staticmethod
+    def build_jwks_uri(jwks_host: str, jwks_port: int, jwks_path: str = "/jwks.json"):
+        """
+        Build a http(s) URL string for a JWKS URI.
+        """
+        if not jwks_path.startswith("/"):
+            jwks_path = "/" + jwks_path
+        netloc = f"{jwks_host}:{int(jwks_port)}"
+        return urllib.parse.urlunparse(("http", netloc, jwks_path, "", "", ""))
 
     @staticmethod
     def get_jwt_config_from_issuers(issuers):
@@ -1298,3 +1424,226 @@ class JWTUtils:
         """Assert that status code indicates unauthorized (401 or 403)."""
         if status_code is not None:
             assert int(status_code) in (401, 403), message
+
+
+# Remote JWKS helpers (used by JWT tests)
+def remote_write_file_b64(shell_conn, remote_path: str, content: str):
+    """
+    Write a UTF-8 string to a remote path using base64 (SSH-safe).
+    """
+    b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+    cmd = (
+        "python3 -c \"import base64,os; "
+        f"os.makedirs(os.path.dirname('{remote_path}'), exist_ok=True); "
+        f"open('{remote_path}','wb').write(base64.b64decode('{b64}'))\""
+    )
+    return shell_conn.execute_command(cmd)
+
+
+def remote_curl(shell_conn, url: str, *, timeout_seconds: int = 5):
+    """
+    Run curl on remote node and return (http_code, body, stderr_text).
+    """
+    cmd = (
+        "sh -c "
+        f"\"rm -f /tmp/taf_jwks_curl_body.txt; "
+        f"curl -sS -m {int(timeout_seconds)} -o /tmp/taf_jwks_curl_body.txt "
+        f"-w '%{{http_code}}' '{url}'\""
+    )
+    out, err = shell_conn.execute_command(cmd)
+    http_code = out[0].strip() if out else ""
+    body_out, body_err = shell_conn.execute_command(
+        "sh -c \"cat /tmp/taf_jwks_curl_body.txt 2>/dev/null || true\""
+    )
+    body = "\n".join(body_out).strip()
+    stderr_text = "\n".join((err or []) + (body_err or [])).strip()
+    return http_code, body, stderr_text
+
+
+def assert_remote_port_listening(shell_conn, port: int):
+    """
+    Return diagnostic string if port is listening, else empty string.
+    """
+    ps_check_cmd = (
+        f"sh -c \"lsof -nP -iTCP:{int(port)} -sTCP:LISTEN || "
+        f"netstat -an 2>/dev/null | grep '\\\\.{int(port)} ' || true\""
+    )
+    out, err = shell_conn.execute_command(ps_check_cmd)
+    return "\n".join((out or []) + (err or [])).strip()
+
+
+def stop_remote_process(shell_conn, pid: str | None):
+    if not pid:
+        return
+    shell_conn.execute_command(f"sh -c \"kill {pid} >/dev/null 2>&1 || true\"")
+
+
+def start_remote_http_server(
+    shell_conn,
+    *,
+    port: int,
+    directory: str,
+    bind: str,
+    log_path="/tmp/taf_jwks_httpserver.log",
+):
+    """
+    Start python http.server on remote node and return (pid, listen_diag_text, start_cmd).
+    """
+    bind_arg = f"--bind {bind}" if bind else ""
+    cmd = (
+        "sh -c "
+        f"\"cd '{directory}' && "
+        f"nohup python3 -m http.server {int(port)} {bind_arg} "
+        f"> {log_path} 2>&1 & "
+        "pid=$!; sleep 1; "
+        f"(lsof -nP -iTCP:{int(port)} -sTCP:LISTEN || netstat -an 2>/dev/null | grep '\\\\.{int(port)} ' || true); "
+        "echo PID:$pid\""
+    )
+    out, err = shell_conn.execute_command(cmd)
+    out_text = "\n".join((out or []) + (err or [])).strip()
+    pid = None
+    for line in (out_text.splitlines() if out_text else []):
+        if line.startswith("PID:"):
+            pid = line.split("PID:", 1)[1].strip() or None
+            break
+    listen_diag = assert_remote_port_listening(shell_conn, port)
+    return pid, listen_diag, cmd
+
+
+def setup_jwks_uri_issuer_env(
+    *,
+    jwt_utils_obj,
+    cluster_master,
+    issuer_name: str,
+    algorithm: str,
+    pub_key: str,
+    token_audience,
+    kid: str,
+    jwks_port: int,
+    jwks_bind: str,
+    jwks_uri_host_mode: str,
+    group_prefix: str,
+    create_group_callback,
+    delete_group_callback=None,
+    log_callback=None,
+    start_attempts: int = 10,
+):
+    """
+    Shared setup for JWKS-URI based tests.
+    Returns env dict with shell_conn/pid/tmp_dir/group_name/group_maps/jwks_uri/config.
+    """
+    from shell_util.remote_connection import RemoteMachineShellConnection
+    import uuid
+    import json
+
+    group_name = f"{group_prefix}_{uuid.uuid4().hex[:8]}"
+    tmp_dir = f"/tmp/taf_jwks_{uuid.uuid4().hex[:8]}"
+    pid = None
+
+    shell_conn = RemoteMachineShellConnection(cluster_master)
+    shell_conn.execute_command("sh -c \"pkill -f 'http.server' >/dev/null 2>&1 || true\"")
+
+    create_group_callback(group_name, roles="admin")
+    group_maps = [f"^admin$ {group_name}"]
+
+    jwks = jwt_utils_obj.build_jwks_for_public_key_pem(pub_key, kid=kid, algorithm=algorithm)
+    jwks_json = json.dumps(jwks, separators=(",", ":"))
+    remote_write_file_b64(shell_conn, f"{tmp_dir}/jwks.json", jwks_json)
+
+    if jwks_uri_host_mode == "node_ip":
+        jwks_host = getattr(cluster_master, "ip", None) or getattr(cluster_master, "hostname", None)
+    else:
+        jwks_host = "127.0.0.1"
+
+    chosen_port = None
+    jwks_uri = None
+    last_code, last_body = None, None
+
+    for attempt in range(1, max(1, int(start_attempts)) + 1):
+        candidate_port = int(jwks_port) + (attempt - 1)
+        pid, _listen_diag, start_cmd = start_remote_http_server(
+            shell_conn, port=candidate_port, directory=tmp_dir, bind=jwks_bind
+        )
+        if log_callback:
+            log_callback(f"Starting remote JWKS server: {start_cmd}")
+
+        jwks_uri = jwt_utils_obj.build_jwks_uri(
+            jwks_host=jwks_host, jwks_port=candidate_port, jwks_path="/jwks.json"
+        )
+        if log_callback:
+            log_callback(f"Using JWKS URI (attempt {attempt}): {jwks_uri}")
+
+        http_code, body, _curl_err = remote_curl(shell_conn, jwks_uri, timeout_seconds=5)
+        last_code, last_body = http_code, body
+        if str(http_code) == "200" and body and "\"keys\"" in body:
+            chosen_port = candidate_port
+            break
+
+        stop_remote_process(shell_conn, pid)
+        pid = None
+
+    if chosen_port is None:
+        try:
+            shell_conn.execute_command(f"sh -c \"rm -rf '{tmp_dir}' || true\"")
+        except Exception:
+            pass
+        shell_conn.disconnect()
+        if delete_group_callback:
+            try:
+                delete_group_callback(group_name)
+            except Exception:
+                pass
+        raise AssertionError(
+            "JWKS server never started correctly.\n"
+            f"Last HTTP code={last_code}\n"
+            f"Last body={last_body}\n"
+            "Likely port conflict or server start failure."
+        )
+
+    config = jwt_utils_obj.get_jwt_config(
+        issuer_name=issuer_name,
+        algorithm=algorithm,
+        pub_key=None,
+        token_audience=token_audience,
+        token_group_matching_rule=group_maps,
+        jit_provisioning=True,
+        public_key_source="jwks_uri",
+        jwks_uri=jwks_uri,
+    )
+
+    return {
+        "shell_conn": shell_conn,
+        "pid": pid,
+        "tmp_dir": tmp_dir,
+        "group_name": group_name,
+        "group_maps": group_maps,
+        "jwks_uri": jwks_uri,
+        "config": config,
+    }
+
+
+def cleanup_jwks_uri_issuer_env(env: dict | None, delete_group_callback):
+    if not env:
+        return
+    shell_conn = env.get("shell_conn")
+    pid = env.get("pid")
+    tmp_dir = env.get("tmp_dir")
+    group_name = env.get("group_name")
+
+    try:
+        if shell_conn:
+            stop_remote_process(shell_conn, pid)
+            if tmp_dir:
+                shell_conn.execute_command(f"sh -c \"rm -rf '{tmp_dir}' || true\"")
+    except Exception:
+        pass
+    try:
+        if group_name:
+            delete_group_callback(group_name)
+    except Exception:
+        pass
+    try:
+        if shell_conn:
+            shell_conn.disconnect()
+    except Exception:
+        pass
