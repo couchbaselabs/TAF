@@ -79,9 +79,14 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --consistency-check %d" % consistency_check
 
         cmd += self.cli_flags
-        self.log.info(f"Executing command: {cmd}")
+        self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+            
         return output, error
 
     """
@@ -97,9 +102,15 @@ class CbBackupMgr(CbCmdBase):
         """
         cmd = "%s config --archive %s --repo %s" % (
             self.cbstatCmd, archive_dir, repo_name)
-        self.log.info(f"Executing command: {cmd}")
+            
+        self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+            
         return output, error
 
     """
@@ -116,9 +127,15 @@ class CbBackupMgr(CbCmdBase):
         cmd = "%s list --archive %s --repo %s" % (
             self.cbstatCmd, archive_dir, repo_name)
         cmd += self.cli_flags
-        self.log.info(f"Executing command: {cmd}")
+        
+        self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+            
         return output, error
 
     """
@@ -196,9 +213,15 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --filter-values %s" % filter_values
 
         cmd += self.cli_flags
-        self.log.info(f"Executing command: {cmd}")
+        
+        self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+            
         return output, error
 
     """
@@ -219,9 +242,14 @@ class CbBackupMgr(CbCmdBase):
         if backup_range:
             cmd += " --backups %s" % backup_range
         
-        self.log.info(f"Executing command: {cmd}")
+        self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+            
         return output, error
 
     def generate_docs(self, num_docs, bucket_name, size, cluster_host=None):
@@ -244,9 +272,15 @@ class CbBackupMgr(CbCmdBase):
             self.username, self.password, size)
 
         cmd += self.cli_flags
-        self.log.info(f"Executing command: {cmd}")
+        
+        self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+            
         return output, error
 
     def merge(self, archive_dir, repo_name, start, end):
@@ -261,7 +295,12 @@ class CbBackupMgr(CbCmdBase):
         cmd = "%s merge --archive %s --repo %s --start %s --end %s" % (
             self.cbstatCmd, archive_dir, repo_name, start, end)
 
-        self.log.info(f"Executing command: {cmd}")
+        self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+
         return output, error

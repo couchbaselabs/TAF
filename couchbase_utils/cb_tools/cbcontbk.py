@@ -19,10 +19,17 @@ class CbContBk(CbCmdBase):
         Gets the current UTC timestamp from the cluster host.
         """
         cmd = "date -u +'%Y-%m-%dT%H:%M:%SZ'"
+        
+        self.log.debug(f"Executing command: {cmd}")
+            
         output, error = self._execute_cmd(cmd)
+        
         if error:
             self.log.error(f"Failed to get cluster timestamp: {error}")
             return None
+            
+        self.log.debug(f"Command output: {output}")
+            
         return output[0].strip()
 
     def restore(self, archive_path, repo_name,
@@ -59,11 +66,16 @@ class CbContBk(CbCmdBase):
             cmd += f" --map-data {map_data}"
 
         cmd += self.cli_flags
-        self.log.info(f"Executing command: {cmd}")
+        
+        self.log.debug(f"Executing command: {cmd}")
+            
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
-        if not output:
-            self.log.info(f"Continuous backup restore failed with:{error}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Continuous backup restore failed with: {error}")
+            
         return output, error
 
     def collect_logs(self, location, temp_dir):
@@ -76,7 +88,14 @@ class CbContBk(CbCmdBase):
                f"-d {temp_dir}")
 
         cmd += self.cli_flags
-        self.log.info(f"Executing command: {cmd}")
+        
+        self.log.debug(f"Executing command: {cmd}")
+            
         output, error = self._execute_cmd(cmd)
-        self.log.info(f"Command output: {output}")
+        
+        self.log.debug(f"Command output: {output}")
+            
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+
         return output, error
