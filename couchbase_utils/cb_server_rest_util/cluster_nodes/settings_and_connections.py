@@ -193,7 +193,11 @@ class SettingsAndConnectionsAPI(CBRestConnection):
                                         fusion_sync_rate_limit=None, fusion_migration_rate_limit=None,
                                         fusion_max_pending_upload_bytes=None,
                                         fusion_max_pending_upload_bytes_lwm_percentage=None,
-                                        subdoc_multi_max_paths=None):
+                                        subdoc_multi_max_paths=None,
+                                        throttle_enabled=None,
+                                        read_unit_size=None,
+                                        write_unit_size=None,
+                                        node_capacity=None):
         """
         POST / GET /pools/default/settings/memcached/global
         https://docs.couchbase.com/server/current/rest-api/rest-manage-cluster-connections.html
@@ -228,6 +232,15 @@ class SettingsAndConnectionsAPI(CBRestConnection):
             params["fusion_max_pending_upload_bytes_lwm_percentage"] = fusion_max_pending_upload_bytes_lwm_percentage
         if subdoc_multi_max_paths is not None:
             params["subdoc_multi_max_paths"] = subdoc_multi_max_paths
+        # Data-server rate-limiting feature params
+        if throttle_enabled is not None:
+            params["throttle_enabled"] = throttle_enabled
+        if read_unit_size is not None:
+            params["read_unit_size"] = read_unit_size
+        if write_unit_size is not None:
+            params["write_unit_size"] = write_unit_size
+        if node_capacity is not None:
+            params["node_capacity"] = node_capacity
         if params:
             # POST method
             status, _, response = self.request(api, CBRestConnection.POST,

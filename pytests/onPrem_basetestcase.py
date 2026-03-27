@@ -204,11 +204,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
-        # User defined throttling limit used in serverless config
-        self.kv_throttling_limit = \
-            self.input.param("kv_throttling_limit", 999999)
-        self.kv_storage_limit = \
-            self.input.param("kv_storage_limit", 100000)
 
         # To enable analytics compute storage separation
         self.analytics_compute_storage_separation = False
@@ -549,6 +544,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.initialize_cluster(
                         cluster_name, cluster, services=services,
                         services_mem_quota_percent=mem_quota_percent)
+
+                # Enable KV-rate limiting
+                if self.data_service_rate_limiting:
+                    status, content= ClusterRestAPI(cluster.master) \
+                        .manage_global_memcached_setting(throttle_enabled=True)
+                    self.assertTrue(status,
+                                    msg=f"Failed to set throttling: {content}")
 
                 if self.nebula and CbServer.cluster_profile == "serverless":
                     try:
@@ -1827,6 +1829,12 @@ class ClusterSetup(OnPremBaseTest):
                 self.fail("Initial rebalance failed")
 
         if CbServer.cluster_profile == "serverless":
+            # User defined throttling limit used in serverless config
+            self.kv_throttling_limit = \
+                self.input.param("kv_throttling_limit", 999999)
+            self.kv_storage_limit = \
+                self.input.param("kv_storage_limit", 100000)
+
             # Workaround to hitting throttling on serverless config
             rest = ClusterRestAPI(self.cluster.master)
             rest.set_internal_settings("dataThrottleLimit",
@@ -1872,8 +1880,6 @@ class ClusterSetup(OnPremBaseTest):
             create_bucket_params["vbuckets"] = self.bucket_num_vb
 
         # Rate limiting feature values
-        if self.bucket_throttle_enabled is not None:
-            create_bucket_params["throttle_enabled"] = self.bucket_throttle_enabled
         if self.bucket_throttle_reserved is not None:
             create_bucket_params["throttle_reserved"] = self.bucket_throttle_reserved
         if self.bucket_throttle_hard_limit is not None:

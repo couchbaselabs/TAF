@@ -37,6 +37,8 @@ class CouchbaseBaseTest(unittest.TestCase):
 
         # Cluster level params
         self.cb_clusters = OrderedDict()
+        self.data_service_rate_limiting = \
+            self.input.param("data_service_rate_limiting", False)
         # End of cluster params
 
         # Bucket specific params
@@ -103,8 +105,6 @@ class CouchbaseBaseTest(unittest.TestCase):
             # Couchstore bucket + Eviction Policy not set explicitly
             if self.bucket_eviction_policy is None:
                 self.bucket_eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
-        self.bucket_throttle_enabled = \
-            self.input.param("bucket_throttle_enabled", None)
         self.bucket_throttle_hard_limit = \
             self.input.param("bucket_throttle_hard_limit", None)
         self.bucket_throttle_reserved = \
