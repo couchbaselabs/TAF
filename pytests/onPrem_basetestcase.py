@@ -92,8 +92,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.input.param("disable_file_based_rebalance", False)
         # End of cluster info parameters
 
-        self.bucket_replica_index = self.input.param("bucket_replica_index",
-                                                     1)
+        self.bucket_replica_index = self.input.param("bucket_replica_index", 1)
         self.bucket_num_vb = self.input.param("bucket_num_vb", None)
         # End of bucket parameters
 
@@ -1871,6 +1870,14 @@ class ClusterSetup(OnPremBaseTest):
 
         if self.bucket_num_vb is not None:
             create_bucket_params["vbuckets"] = self.bucket_num_vb
+
+        # Rate limiting feature values
+        if self.bucket_throttle_enabled is not None:
+            create_bucket_params["throttle_enabled"] = self.bucket_throttle_enabled
+        if self.bucket_throttle_reserved is not None:
+            create_bucket_params["throttle_reserved"] = self.bucket_throttle_reserved
+        if self.bucket_throttle_hard_limit is not None:
+            create_bucket_params["throttle_hard_limit"] = self.bucket_throttle_hard_limit
 
         # This is needed because server will throw the error saying,
         # "Support for variable number of vbuckets is not enabled"

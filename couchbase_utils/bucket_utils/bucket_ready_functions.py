@@ -2665,7 +2665,10 @@ class BucketUtils(ScopeUtils):
             enable_encryption_at_rest=False,
             encryption_at_rest_key_id=None,
             encryption_at_rest_dek_rotation_interval=None,
-            encryption_at_rest_dek_lifetime=None):
+            encryption_at_rest_dek_lifetime=None,
+            throttle_enabled=None,
+            throttle_hard_limit=None,
+            throttle_reserved=None):
 
         node_info = global_vars.cluster_util.get_nodes_self(cluster.master)
         if ram_quota:
@@ -2712,6 +2715,13 @@ class BucketUtils(ScopeUtils):
 
         if fusion_log_store_uri is not None:
             bucket_obj.fusionLogstoreURI = fusion_log_store_uri
+
+        if throttle_enabled is not None:
+            bucket_obj.throttleEnabled = throttle_enabled
+        if throttle_hard_limit is not None:
+            bucket_obj.throttleHardLimit = throttle_hard_limit
+        if throttle_reserved is not None:
+            bucket_obj.throttleReserved = throttle_reserved
 
         if vbuckets is not None and storage == Bucket.StorageBackend.magma:
             bucket_obj.numVBuckets = vbuckets
@@ -3575,7 +3585,10 @@ class BucketUtils(ScopeUtils):
                                magma_key_tree_data_block_size=None,
                                magma_seq_tree_data_block_size=None,
                                durability_impossible_fallback=None,
-                               warmup_behavior=None):
+                               warmup_behavior=None,
+                               throttle_enabled=None,
+                               throttle_hard_limit=None,
+                               throttle_reserved=None):
         return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
@@ -3595,7 +3608,10 @@ class BucketUtils(ScopeUtils):
             magma_seq_tree_data_block_size=magma_seq_tree_data_block_size,
             storageBackend=storageBackend,
             durability_impossible_fallback=durability_impossible_fallback,
-            warmup_behavior=warmup_behavior)
+            warmup_behavior=warmup_behavior,
+            throttle_enabled=throttle_enabled,
+            throttle_hard_limit=throttle_hard_limit,
+            throttle_reserved=throttle_reserved)
 
     def update_all_bucket_maxTTL(self, cluster, maxttl=0):
         for bucket in cluster.buckets:

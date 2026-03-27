@@ -400,7 +400,10 @@ class BucketHelper(BucketRestApi):
                 bucket_params.get(Bucket.warmupBehavior),
             Bucket.encryptionAtRestKeyId: bucket_params.get(Bucket.encryptionAtRestKeyId),
             Bucket.encryptionAtRestDekRotationInterval: bucket_params.get(Bucket.encryptionAtRestDekRotationInterval),
-            Bucket.encryptionAtRestDekLifetime: bucket_params.get(Bucket.encryptionAtRestDekLifetime)}
+            Bucket.encryptionAtRestDekLifetime: bucket_params.get(Bucket.encryptionAtRestDekLifetime),
+            Bucket.throttleReserved: bucket_params.get(Bucket.throttleReserved, None),
+            Bucket.throttleHardLimit: bucket_params.get(Bucket.throttleHardLimit, None),
+            Bucket.throttleEnabled: bucket_params.get(Bucket.throttleEnabled, False)}
 
         # Set Bucket's width/weight param only if serverless is enabled
         if bucket_params.get('serverless'):
@@ -539,7 +542,10 @@ class BucketHelper(BucketRestApi):
                             encryptionAtRestKeyId=None,
                             encryptionAtRestDekLifetime=None,
                             encryptionAtRestDekRotationInterval=None,
-                            warmup_behavior=None):
+                            warmup_behavior=None,
+                            throttle_enabled=None,
+                            throttle_hard_limit=None,
+                            throttle_reserved=None):
         params_dict = {}
         if ramQuotaMB:
             params_dict["ramQuotaMB"] = ramQuotaMB
@@ -603,6 +609,12 @@ class BucketHelper(BucketRestApi):
             params_dict[Bucket.encryptionAtRestDekRotationInterval] = encryptionAtRestDekRotationInterval
         if encryptionAtRestDekLifetime is not None:
             params_dict[Bucket.encryptionAtRestDekLifetime] = encryptionAtRestDekLifetime
+        if throttle_enabled is not None:
+            params_dict[Bucket.throttleEnabled] = throttle_enabled
+        if throttle_hard_limit is not None:
+            params_dict[Bucket.throttleHardLimit] = throttle_hard_limit
+        if throttle_reserved is not None:
+            params_dict[Bucket.throttleReserved] = throttle_reserved
 
         self.log.info("Updating bucket properties for {}".format(bucket.name))
         status, content = self.edit_bucket(bucket.name, params_dict)

@@ -103,6 +103,12 @@ class CouchbaseBaseTest(unittest.TestCase):
             # Couchstore bucket + Eviction Policy not set explicitly
             if self.bucket_eviction_policy is None:
                 self.bucket_eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
+        self.bucket_throttle_enabled = \
+            self.input.param("bucket_throttle_enabled", None)
+        self.bucket_throttle_hard_limit = \
+            self.input.param("bucket_throttle_hard_limit", None)
+        self.bucket_throttle_reserved = \
+            self.input.param("bucket_throttle_reserved", None)
         # End of bucket params
 
         # Doc specific params

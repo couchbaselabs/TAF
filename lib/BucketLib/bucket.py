@@ -298,9 +298,12 @@ class Bucket(object):
             Bucket.encryptionAtRestDekRotationInterval, 2592000)
         self.encryptionAtRestDekLifetime = new_params.get(
             Bucket.encryptionAtRestDekLifetime, 31536000)
-        self.throttleReserved = 18446744073709551615
-        self.throttleHardLimit = 18446744073709551615
-        self.throttleEnabled = False
+        self.throttleReserved = new_params.get(
+            Bucket.throttleReserved, 18446744073709551615)
+        self.throttleHardLimit = new_params.get(
+            Bucket.throttleHardLimit, 18446744073709551615)
+        self.throttleEnabled = new_params.get(
+            Bucket.throttleEnabled, False)
         self.encryptionAtRestInfo = {
             'dataStatus': new_params.get('dataStatus', 'unencrypted'),
             'dekNumber': new_params.get('dekNumber', 0),
