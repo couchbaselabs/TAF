@@ -136,9 +136,9 @@ class basic_ops(ClusterSetup):
                       self.update_count)))
 
         else:
-            update_docs = self.__chunks(self.keys[:self.num_items/2],
+            update_docs = self.__chunks(self.keys[:self.num_items//2],
                                         self.num_txn)
-            delete_docs = self.__chunks(self.keys[self.num_items/2:],
+            delete_docs = self.__chunks(self.keys[self.num_items//2:],
                                         self.num_txn)
 
             for keys in update_docs:
@@ -169,9 +169,9 @@ class basic_ops(ClusterSetup):
             self.value = {'mutated': 1, 'value': 'value1'}
             self.content = self.value
 
-            self.verify_doc(self.num_items/2, self.client)
+            self.verify_doc(self.num_items//2, self.client)
 
-            for key in self.keys[self.num_items/2:]:
+            for key in self.keys[self.num_items//2:]:
                 result = self.client.read(key)
                 self.assertEquals(result['status'], False)
 
@@ -300,7 +300,7 @@ class basic_ops(ClusterSetup):
         self.doc_gen(self.num_items)
         threads = []
 
-        docs = list(self.__chunks(self.docs, len(self.docs)/self.num_txn))
+        docs = list(self.__chunks(self.docs, len(self.docs)//self.num_txn))
 
         for doc in docs:
             threads.append(threading.Thread(
