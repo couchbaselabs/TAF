@@ -133,7 +133,7 @@ class EncryptionAtRest(CollectionBase):
             credentialsFile = self.client_certs_path+ self.gcp_kms_json_file
         )
         rest = RestConnection(self.cluster.master)
-        status, response = rest.create_gcp_kms_secret(params)
+        status, response = rest.create_kms_secret(params)
         secret_id = False
         if status:
             response_dict = json.loads(response)
@@ -147,6 +147,34 @@ class EncryptionAtRest(CollectionBase):
         }
         status, response = rest.configure_encryption_at_rest(valid_params)
         self.assertTrue(status, "Secret creation have failed with GCP KMS parameters")
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            bucket_helper.change_bucket_props(
+                bucket,
+                encryptionAtRestKeyId=secret_id,
+                encryptionAtRestDekRotationInterval=3,
+                encryptionAtRestDekLifetime=2
+            )
+
+    def test_validate_azure_kms_encryption(self):
+        params = EncryptionUtil.create_azure_kms_params(
+            keyURL=self.azure_key_path,
+        )
+        rest = RestConnection(self.cluster.master)
+        status, response = rest.create_kms_secret(params)
+        secret_id = False
+        if status:
+            response_dict = json.loads(response)
+            secret_id = response_dict.get('id')
+        self.assertTrue(secret_id,"azure KMS KEK creation failed")
+        valid_params = {
+            "log.encryptionMethod": "encryptionKey",
+            "config.encryptionMethod": "encryptionKey",
+            "log.encryptionKeyId": secret_id,
+            "config.encryptionKeyId": secret_id
+        }
+        status, response = rest.configure_encryption_at_rest(valid_params)
+        self.assertTrue(status, "Secret creation have failed with azure KMS parameters")
         bucket_helper = BucketHelper(self.cluster.master)
         for bucket in self.cluster.buckets:
             bucket_helper.change_bucket_props(

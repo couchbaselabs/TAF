@@ -3,6 +3,7 @@
   "host_name": "amer.smartkey.io",
   "certs": {
     "path": "/etc/pykmip/certs/",
-    "gcp_resource_path": "projects/couchbase-qe/locations/us-central1/keyRings/cb-kms-testing-ring/cryptoKeys/cb-master-key"
+    "gcp_resource_path": "projects/couchbase-qe/locations/us-central1/keyRings/cb-kms-testing-ring/cryptoKeys/cb-master-key",
+    "azure_key_path": "https://cb-kms-test.vault.azure.net/keys/cb-encryption-key"
   }
 }

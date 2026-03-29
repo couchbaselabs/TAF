@@ -2533,7 +2533,7 @@ class RestConnection(newRC):
         status, json_parsed, _ = self._http_request(api, method='POST', params=url_encoded_params, headers=headers)
         return status, json_parsed
 
-    def create_gcp_kms_secret(self,params):
+    def create_kms_secret(self,params):
         """
         POST :: /settings/encryptionKeys
         """

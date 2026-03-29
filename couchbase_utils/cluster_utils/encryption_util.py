@@ -55,6 +55,47 @@ class EncryptionUtil:
         return params
 
     @staticmethod
+    def create_azure_kms_params(name="AzureKmsKey",
+                                keyURL=None,
+                                encryptionAlgorithm="RSAOAEP256",
+                                credentialsChain="defaultCredentialsChain",
+                                reqTimeoutMs=5000,
+                                usage=None):
+        """
+        Helper to create params for Azure KMS key secret creation.
+        :param name: Name of the secret
+        :param keyURL: Azure Key Vault key URL
+        :param encryptionAlgorithm: Algorithm to use (default: RSAOAEP256)
+        :param credentialsChain: Credentials chain (default: defaultCredentialsChain)
+        :param reqTimeoutMs: Request timeout in ms (default: 5000)
+        :param usage: List of usages (default: all supported)
+        :return: dict suitable for POST /settings/encryptionKeys
+        """
+        if usage is None:
+            usage = [
+                "KEK-encryption",
+                "bucket-encryption",
+                "config-encryption",
+                "log-encryption",
+                "audit-encryption"
+            ]
+        if not keyURL:
+            raise ValueError("keyURL is required for Azure KMS secret")
+        data = {
+            "keyURL": keyURL,
+            "encryptionAlgorithm": encryptionAlgorithm,
+            "credentialsChain": credentialsChain,
+            "reqTimeoutMs": reqTimeoutMs
+        }
+        params = {
+            "name": name,
+            "type": "azurekms-key",
+            "usage": usage,
+            "data": data
+        }
+        return params
+
+    @staticmethod
     def create_secret_params(secret_type="cb-server-managed-aes-key-256",
                              name="Default secret", usage=None,
                              autoRotation=True, rotationIntervalInDays=60,

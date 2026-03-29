@@ -144,6 +144,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.encryption_at_rest_id = self.input.param(
             "encryption_at_rest_id", None)
         self.gcp_kms_json_file = self.input.param("gcp_kms_json_file","gcp-kms-creds.json")
+        self.azure_key_path = kmip_config["certs"]["azure_key_path"]
         self.KMIP_id = self.input.param("KMIP_id", None)
         self.enable_config_encryption_at_rest = self.input.param(
             "enable_config_encryption_at_rest", False)
