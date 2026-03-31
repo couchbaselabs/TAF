@@ -6263,7 +6263,9 @@ class BucketUtils(ScopeUtils):
             cmd = 'ns_bucket:update_bucket_props(' \
                   '"%s", [{extra_config_string, "%s=%s"}]).' \
                   % (bucket.name, command, value)
-            rest.diag_eval(cmd)
+            status, content = rest.diag_eval(cmd)
+            if not status or "error" in str(content).lower():
+                raise Exception(f"diag_eval failed for {bucket.name}: {content}")
 
         # Restart Memcached in all cluster nodes to reflect the settings
         for server in self.cluster_util.get_kv_nodes(cluster):
