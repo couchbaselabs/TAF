@@ -111,7 +111,7 @@ class CbServerUpgrade(object):
         install_server_threads = \
                 [NodeInstaller(self.log, node_helper, self.install_tasks)
                                 for node_helper in node_helpers]
-        okay = start_and_wait_for_threads(install_server_threads, 300)
+        okay = start_and_wait_for_threads(install_server_threads, 900)
         if not okay:
             self.log.error("Install tasks failed")
         else:

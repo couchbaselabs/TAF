@@ -240,10 +240,12 @@ class UpgradeBase(BaseTestCase):
             if self.services_init and len(self.services_init) > index:
                 node_service = self.services_init[index + 1].split(',')
                 node_service = ",".join(node_service)
-            ClusterRestAPI(self.cluster.master).add_node(
+            status, content = ClusterRestAPI(self.cluster.master).add_node(
                 server.ip, username=server.rest_username,
                 password=server.rest_password,
                 services=node_service)
+            self.assertTrue(status,
+                            f"Add node {server.ip} failed: {content}")
 
         self.task.rebalance(self.cluster, [], [])
         self.cluster.nodes_in_cluster.extend(
@@ -412,8 +414,8 @@ class UpgradeBase(BaseTestCase):
             self.log.info(
                 "Attempting to assign encryption key %s to bucket %s",
                 secret_id, bucket.name)
-            status = bucket_helper.change_bucket_props(bucket,
-                                                       encryptionAtRestKeyId=secret_id)
+            status = bucket_helper.change_bucket_props(
+                bucket, encryptionAtRestKeyId=secret_id)
             self.log.info("Encryption key assignment status=%s", status)
 
             if expected_to_fail:
@@ -496,7 +498,8 @@ class UpgradeBase(BaseTestCase):
 
         if selection_criteria:
             if CbServer.Services.CBAS in selection_criteria:
-                for node in self.cluster_util.get_nodes(self.cluster.master, inactive_added=True):
+                for node in self.cluster_util.get_nodes(self.cluster.master,
+                                                        inactive_added=True):
                     _, node_info = ClusterRestAPI(node).node_details()
                     if (self.upgrade_version not in node_info["version"]
                             or "community" in node_info["version"]) \
@@ -529,7 +532,8 @@ class UpgradeBase(BaseTestCase):
                     cluster_node = self.cluster.master
 
             if cluster_node is None:
-                for node in self.cluster_util.get_nodes(self.cluster.master, inactive_added=True):
+                for node in self.cluster_util.get_nodes(self.cluster.master,
+                                                        inactive_added=True):
                     _, node_info = ClusterRestAPI(node).node_details()
                     if (self.upgrade_version not in node_info["version"]
                             or "community" in node_info["version"]) \
@@ -569,7 +573,8 @@ class UpgradeBase(BaseTestCase):
         :return: RestConnection object of node
         """
         target_node = None
-        for node in self.cluster_util.get_nodes(self.cluster.master, inactive_added=True):
+        for node in self.cluster_util.get_nodes(self.cluster.master,
+                                                inactive_added=True):
             if node.ip != node_to_upgrade.ip:
                 target_node = node
                 break
@@ -599,11 +604,13 @@ class UpgradeBase(BaseTestCase):
         install_tasks = ["populate_build_url", "check_url_status",
                          "download_build", "install"]
         # Install target version on spare node
+        profile = self.cluster_profile if self.cluster_profile else "default"
         self.upgrade_helper.new_install_version_on_all_nodes(
             nodes=[node_to_upgrade], version=self.upgrade_version,
-            cluster_profile=self.cluster_profile,
+            cluster_profile=profile,
             install_tasks=install_tasks)
-        self.sleep(30, "Wait after installation on the spare node")
+        self.cluster_util.wait_for_ns_servers_or_assert([node_to_upgrade],
+                                                        wait_time=120)
 
         rest.set_failover_recovery_type(otp_node.id, recovery_type)
         self.sleep(5, "Wait after setting failover recovery type")
@@ -613,9 +620,12 @@ class UpgradeBase(BaseTestCase):
             delta_recovery_buckets = [bucket.name
                                       for bucket in self.cluster.buckets]
 
-        known_nodes=[node.id for node in self.cluster_util.get_nodes(rest_node, inactive_added=True)]
-        _, _ = rest.rebalance(known_nodes=known_nodes,
-                            delta_recovery_buckets=delta_recovery_buckets)
+        known_nodes=[node.id for node in self.cluster_util.get_nodes(
+            rest_node, inactive_added=True)]
+        status, content = rest.rebalance(
+            known_nodes=known_nodes,
+            delta_recovery_buckets=delta_recovery_buckets)
+        self.assertTrue(status, f"Rebalance call failed: {content}")
 
         self.perform_collection_ops_load(self.collection_spec)
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
@@ -648,11 +658,13 @@ class UpgradeBase(BaseTestCase):
             install_tasks = ["populate_build_url", "check_url_status",
                              "download_build", "uninstall", "install"]
             # Install target version on spare node
+            profile = self.cluster_profile or "default"
             self.upgrade_helper.new_install_version_on_all_nodes(
                 nodes=[self.spare_node], version=self.upgrade_version,
-                cluster_profile=self.cluster_profile,
+                cluster_profile=profile,
                 install_tasks=install_tasks)
-            self.sleep(60, "Wait after installation on the spare node")
+            self.cluster_util.wait_for_ns_servers_or_assert([self.spare_node],
+                                                            wait_time=120)
 
             # Initialize paths on the spare node
             status, content = ClusterRestAPI(self.spare_node).initialize_node(
@@ -685,8 +697,7 @@ class UpgradeBase(BaseTestCase):
             to_remove=[node_to_upgrade],
             check_vbucket_shuffling=False,
             services=[",".join(services_on_target_node)],
-            retry_get_process_num=self.retry_get_process_num
-        )
+            retry_get_process_num=self.retry_get_process_num)
         self.sleep(10)
 
         if self.upgrade_with_data_load:
@@ -760,7 +771,9 @@ class UpgradeBase(BaseTestCase):
         eject_otp_node = self.__get_otp_node(rest_node, node_to_upgrade)
         otp_nodes = [node.id for node in \
                      self.cluster_util.get_nodes(rest_node)]
-        rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
+        status, content = rest.rebalance(known_nodes=otp_nodes,
+                                         eject_nodes=[eject_otp_node.id])
+        self.assertTrue(status, f"Rebalance call failed: {content}")
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-out failed during upgrade of %s"
@@ -773,22 +786,28 @@ class UpgradeBase(BaseTestCase):
 
         # Install target version on spare node
         if install_on_spare_node:
+            profile = self.cluster_profile or "default"
             self.upgrade_helper.new_install_version_on_all_nodes(
                 nodes=[self.spare_node], version=self.upgrade_version,
-                cluster_profile=self.cluster_profile)
+                cluster_profile=profile)
+            self.cluster_util.wait_for_ns_servers_or_assert([self.spare_node],
+                                                            wait_time=120)
 
         # Rebalance-in spare node into the cluster
-        rest.add_node(self.spare_node.ip,
+        status, content = rest.add_node(self.spare_node.ip,
                       self.creds.rest_username,
                       self.creds.rest_password,
                       services=services_on_target_node)
+        self.assertTrue(status,
+                        f"Add node {self.spare_node.ip} failed: {content}")
         otp_nodes = [node.id for node in \
                      self.cluster_util.get_nodes(rest_node)]
 
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-        rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+        status, content = rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+        self.assertTrue(status, f"Rebalance call failed: {content}")
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-in failed during upgrade of {0}"
@@ -820,22 +839,29 @@ class UpgradeBase(BaseTestCase):
 
         if install_on_spare_node:
             # Install target version on spare node
+            profile = self.cluster_profile or "default"
             self.upgrade_helper.new_install_version_on_all_nodes(
                 nodes=[self.spare_node], version=self.upgrade_version,
-                cluster_profile=self.cluster_profile)
+                cluster_profile=profile)
+            self.cluster_util.wait_for_ns_servers_or_assert([self.spare_node],
+                                                            wait_time=120)
 
         # Rebalance-in spare node into the cluster
-        rest.add_node(self.spare_node.ip,
-                      self.creds.rest_username,
-                      self.creds.rest_password,
-                      services=services_on_target_node)
-        otp_nodes = [node.id for node in \
-                     self.cluster_util.get_nodes(rest_node, inactive_added=True)]
+        status, content = rest.add_node(self.spare_node.ip,
+                                        self.creds.rest_username,
+                                        self.creds.rest_password,
+                                        services=services_on_target_node)
+        self.assertTrue(status,
+                        f"Add node {self.spare_node.ip} failed: {content}")
+        otp_nodes = [node.id for node in self.cluster_util.get_nodes(
+            rest_node, inactive_added=True)]
 
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-        rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+        status, content = rest.rebalance(known_nodes=otp_nodes,
+                                         eject_nodes=[])
+        self.assertTrue(status, f"Rebalance call failed: {content}")
 
         self.perform_collection_ops_load(self.collection_spec)
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
@@ -854,7 +880,8 @@ class UpgradeBase(BaseTestCase):
         eject_otp_node = self.__get_otp_node(rest_node, node_to_upgrade)
         otp_nodes = [node.id for node in
                      self.cluster_util.get_nodes(rest_node, inactive_added=True)]
-        rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
+        status, content = rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
+        self.assertTrue(status, f"Rebalance call failed: {content}")
 
         self.perform_collection_ops_load(self.collection_spec)
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
@@ -885,7 +912,8 @@ class UpgradeBase(BaseTestCase):
         eject_otp_node = self.__get_otp_node(rest_node, node_to_upgrade)
         otp_nodes = [node.id for node in \
                      self.cluster_util.get_nodes(rest_node, inactive_added=True)]
-        rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
+        status, content = rest.rebalance(known_nodes=otp_nodes, eject_nodes=[eject_otp_node.id])
+        self.assertTrue(status, f"Rebalance call failed: {content}")
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-out failed during upgrade of {0}"
@@ -905,17 +933,20 @@ class UpgradeBase(BaseTestCase):
             return
 
         # Rebalance-in the target_node again
-        rest.add_node(node_to_upgrade.ip,
+        status, content = rest.add_node(node_to_upgrade.ip,
                       username=self.creds.rest_username,
                       password=self.creds.rest_password,
                       services=services_on_target_node)
+        self.assertTrue(status,
+                        f"Add node {node_to_upgrade.ip} failed: {content}")
         otp_nodes = [node.id for node in \
                      self.cluster_util.get_nodes(rest_node, inactive_added=True)]
 
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-        rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+        status, content = rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+        self.assertTrue(status, f"Rebalance call failed: {content}")
         rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-in failed during upgrade of {0}"
@@ -941,11 +972,13 @@ class UpgradeBase(BaseTestCase):
         install_tasks = ["populate_build_url", "check_url_status",
                          "download_build", "install"]
         # Install target version on the node
+        profile = self.cluster_profile if self.cluster_profile else "default"
         self.upgrade_helper.new_install_version_on_all_nodes(
             nodes=[node_to_upgrade], version=self.upgrade_version,
-            cluster_profile=self.cluster_profile,
+            cluster_profile=profile,
             install_tasks=install_tasks)
-        self.sleep(30, "Wait after installation on the node")
+        self.cluster_util.wait_for_ns_servers_or_assert([node_to_upgrade],
+                                                        wait_time=120)
 
         self.log.info("Wait for ns_server to accept connections")
         if not self.cluster_util.is_ns_server_running(node_to_upgrade,
@@ -959,7 +992,8 @@ class UpgradeBase(BaseTestCase):
             if rebalance_required:
                 otp_nodes = [node.id for node in \
                              self.cluster_util.get_nodes(node_to_upgrade)]
-                rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+                rebalance_status, content = rest.rebalance(known_nodes=otp_nodes, eject_nodes=[])
+                self.assertTrue(rebalance_status, f"Rebalance call failed: {content}")
                 rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
                 if not rebalance_passed:
                     self.log_failure(
@@ -980,11 +1014,13 @@ class UpgradeBase(BaseTestCase):
         install_tasks = ["populate_build_url", "check_url_status",
                          "download_build", "install"]
         # Install target version on all the nodes
+        profile = self.cluster_profile or "default"
         self.upgrade_helper.new_install_version_on_all_nodes(
             nodes=nodes_to_upgrade, version=self.upgrade_version,
-            cluster_profile=self.cluster_profile,
+            cluster_profile=profile,
             install_tasks=install_tasks)
-        self.sleep(30, "Wait after installation on all nodes")
+        self.cluster_util.wait_for_ns_servers_or_assert(nodes_to_upgrade,
+                                                        wait_time=120)
 
         for node in nodes_to_upgrade:
             self.log.info("Wait for ns_server to accept connections")
@@ -1002,8 +1038,9 @@ class UpgradeBase(BaseTestCase):
             self.log.info("Cluster not balanced. Rebalance starting...")
             otp_nodes = [node.id for node in
                          self.cluster_util.get_nodes(self.cluster.master)]
-            rebalance_task, _ = rest.rebalance(known_nodes=otp_nodes,
-                                               eject_nodes=[])
+            rebalance_task, content = rest.rebalance(known_nodes=otp_nodes,
+                                                     eject_nodes=[])
+            self.assertTrue(rebalance_task, f"Rebalance call failed: {content}")
             self.log.info("Rebalance successful") if rebalance_task \
                 else self.log.info("Rebalance failed")
 
