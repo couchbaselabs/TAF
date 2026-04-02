@@ -100,12 +100,13 @@ class ConfluentKafka(ColumnarBaseTest):
                     self.kafka_topic_prefix + "_non_cdc",
                     self.confluent_cluster_obj.cluster_access_key))
         else:
-            try:
-                self.confluent_util.confluent_apis.delete_api_key(
-                    self.confluent_cluster_obj.cluster_access_key)
-            except Exception as err:
-                self.log.error(str(err))
             confluent_cleanup_for_non_cdc = True
+
+        try:
+            self.confluent_util.confluent_apis.delete_api_key(
+                self.confluent_cluster_obj.cluster_access_key)
+        except Exception as err:
+            self.log.error(str(err))
 
         mongo_collections_deleted = True
         for mongo_coll, _ in self.mongo_collections.items():

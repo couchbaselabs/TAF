@@ -3,6 +3,7 @@ import random
 import string
 from datetime import datetime
 from faker import Faker
+import uuid
 
 
 # Initialize pools of unique values (100 each)
@@ -73,8 +74,14 @@ class Hotel:
         self.price = self.faker.random_int(min=1000, max=10000)
         self.avg_rating = random.uniform(0, 1)
         self.free_breakfast = random.choice([True, False])
-        self.name = random.choice(_name_pool)
-        self.email = random.choice(_email_pool)
+        base_name = random.choice(_name_pool)
+        base_email = random.choice(_email_pool)
+        unique_suffix = uuid.uuid4().hex
+
+        self.name = f"{base_name}-{unique_suffix}"
+
+        local_part, domain_part = base_email.split("@", 1)
+        self.email = f"{local_part}+{unique_suffix}@{domain_part}"
         self.mutated = 0.0
         self.padding = ""
         self.public_likes = self.build_public_likes(random.randint(0, 10))

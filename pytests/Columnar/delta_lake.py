@@ -8,6 +8,9 @@ import concurrent.futures
 import json
 import os
 import time
+import shutil
+import tempfile
+from pathlib import Path
 
 from awsLib.S3 import S3
 from Columnar.columnar_base import ColumnarBaseTest
@@ -20,8 +23,34 @@ gcs_certificate = os.getenv('gcp_access_file')
 
 class DeltaLakeDatasets(ColumnarBaseTest):
 
+    def use_custom_spark_cache(self, clean=False):
+        self.base_dir = Path(os.getenv("HOME", tempfile.gettempdir())) / "taf-spark-cache"
+        ivy_dir = self.base_dir / ".ivy2"
+        ivy_cache_dir = ivy_dir / "cache"
+
+        if clean:
+            shutil.rmtree(self.base_dir, ignore_errors=True)
+
+        for path in (ivy_cache_dir, ivy_dir / "jars", self.base_dir / ".m2" / "repository"):
+            path.mkdir(parents=True, exist_ok=True)
+
+        os.environ.update({
+            "HOME": str(self.base_dir),
+            "IVY_HOME": str(ivy_dir),
+            "SPARK_SUBMIT_OPTS": (
+                f"-Duser.home={self.base_dir} "
+                f"-Divy.home={ivy_dir} "
+                f"-Divy.cache.dir={ivy_cache_dir}"
+            ),
+            "PYSPARK_SUBMIT_ARGS": f"--conf spark.jars.ivy={ivy_dir} pyspark-shell",
+        })
+
+        self.log.info(f"Using custom Spark cache directory: {self.base_dir}")
+
+
     def setUp(self):
         super(DeltaLakeDatasets, self).setUp()
+        self.use_custom_spark_cache(clean=True)
         self.link_type = self.input.param("external_link_source", "s3")
 
         # Since all the test cases are being run on 1 cluster only
@@ -64,6 +93,7 @@ class DeltaLakeDatasets(ColumnarBaseTest):
             self.blob_object.delete_bucket(bucket)
 
         super(DeltaLakeDatasets, self).tearDown()
+        shutil.rmtree(self.base_dir)
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage="Teardown")
 

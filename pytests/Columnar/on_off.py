@@ -148,7 +148,7 @@ class OnOff(ColumnarBaseTest):
         # Initializing AWS_MSK util and AWS_MSK cluster object.
         self.msk_util = MSKUtils(
             access_key=self.aws_access_key, secret_key=self.aws_secret_key,
-            region=self.input.param("msk_region", "us-east-1"))
+            session_token=self.aws_session_token, region=self.input.param("msk_region", "us-east-1"))
         self.msk_cluster_obj = self.msk_util.generate_msk_cluster_object(
             msk_cluster_name=self.input.param("msk_cluster_name"),
             topic_prefix=self.msk_kafka_topic_prefix,

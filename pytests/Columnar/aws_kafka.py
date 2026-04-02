@@ -4,8 +4,6 @@ from Columnar.columnar_base import ColumnarBaseTest
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
 from couchbase_utils.kafka_util.msk_utils import MSKUtils
 
-from Jython_tasks.sirius_task import MongoUtil
-
 
 class AWSKafka(ColumnarBaseTest):
     def setUp(self):
@@ -15,20 +13,12 @@ class AWSKafka(ColumnarBaseTest):
         if not self.columnar_spec_name:
             self.columnar_spec_name = "full_template"
 
-        # Initialize sirius doc loader utils
-        self.mongo_util = MongoUtil(
-            task_manager=self.task_manager,
-            hostname=self.input.param("mongo_hostname"),
-            username=self.input.param("mongo_username"),
-            password=self.input.param("mongo_password")
-        )
-
         # Initializing AWS_MSK util and AWS_MSK cluster object.
         # Initialize variables for Kafka
         self.kafka_topic_prefix = f"aws_msk_regression_{int(time.time())}"
         self.msk_util = MSKUtils(
             access_key=self.aws_access_key, secret_key=self.aws_secret_key,
-            region=self.input.param("msk_region", "us-east-1"))
+            session_token=self.aws_session_token, region=self.input.param("msk_region", "us-east-1"))
         self.msk_cluster_obj = self.msk_util.generate_msk_cluster_object(
             msk_cluster_name=self.input.param("msk_cluster_name"),
             topic_prefix=self.kafka_topic_prefix,
@@ -77,6 +67,10 @@ class AWSKafka(ColumnarBaseTest):
 
         delete_msk_dlq_topic = self.msk_util.kafka_cluster_util.delete_topic_by_topic_prefix(
             self.kafka_topic_prefix)
+        if not delete_msk_dlq_topic:
+            self.log.warning(
+                f"Unable to delete AWS Kafka topic with prefix "
+                f"{self.kafka_topic_prefix}")
 
         """msk_cleanup_for_cdc = self.msk_util.cleanup_kafka_resources(
             self.kafka_connect_hostname_cdc_msk, [self.cdc_connector_name],
@@ -118,8 +112,7 @@ class AWSKafka(ColumnarBaseTest):
 
         if use_schema_registry:
             schema_registry_details = [self.msk_util.generate_aws_kafka_schema_registry_detail(
-                self.aws_region, self.aws_access_key, self.aws_secret_key)]
-
+                self.aws_region, self.aws_access_key, self.aws_secret_key, session_token=self.aws_session_token)]
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
                 self.columnar_spec_name),

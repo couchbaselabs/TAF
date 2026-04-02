@@ -52,6 +52,7 @@ class DeltaLakeUtils:
             self.create_spark_session_s3(
                 aws_access_key=credentials.get("aws_access_key"),
                 aws_secret_key=credentials.get("aws_secret_key"),
+                aws_session_token=credentials.get("aws_session_token"),
             )
         elif self.storage_type == "gcs":
             self.create_spark_session_gcs(
@@ -77,7 +78,7 @@ class DeltaLakeUtils:
         else:
             raise ValueError("Invalid storage type. Use 's3' for AWS S3 or 'gcs' for Google Cloud Storage.")
 
-    def create_spark_session_s3(self, aws_access_key, aws_secret_key):
+    def create_spark_session_s3(self, aws_access_key, aws_secret_key, aws_session_token=None):
         """
         Create an Apache Spark session configured for AWS S3.
         """
@@ -89,6 +90,7 @@ class DeltaLakeUtils:
             .set("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
             .set("spark.hadoop.fs.s3a.access.key", aws_access_key)
             .set("spark.hadoop.fs.s3a.secret.key", aws_secret_key)
+            .set("spark.hadoop.fs.s3a.session.token", aws_session_token if aws_session_token else "")
             .set("spark.sql.shuffle.partitions", str(self.sql_partitions))
             .set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
             .setMaster(f"local[{self.cores_to_use}]")

@@ -818,7 +818,7 @@ class CopyToKv(ColumnarBaseTest):
 
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.columnar_cluster, "source_definition": statement, "dest_bucket": collection,
-                       "link_name": remote_link.full_name, "function": "concat(c.a.name,c.b.name)",
+                       "link_name": remote_link.full_name, "function": "concat(to_string(c.a.name),'::',to_string(c.b.name))",
                        "timeout": 100000, "analytics_timeout": 100000}))
 
         time.sleep(60)

@@ -31,30 +31,18 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
 
         self.link_type = self.input.param("external_link_source", "s3")
 
-        if self.link_type == "s3" or self.link_type == "azureblob":
-            self.files_to_use_in_include = {
-                "json": [["*/file_1.json"], 7800000],
-                "csv": [["*/file_2.csv"], 7800000],
-                "tsv": [["*/file_3.tsv"], 7800000],
-                "parquet": [["*/file_5.parquet"], 7800000],
-                "avro": [["*/file_4.avro"], 7800000]
-            }
-        else:
-            self.files_to_use_in_include = {
-                "json": [["*/file_1.json"], 120000],
-                "csv": [["*/file_2.csv"], 120000],
-                "tsv": [["*/file_3.tsv"], 120000],
-                "parquet": [["*/file_5.parquet"], 120000],
-                "avro": [["*/file_4.avro"], 120000]
-            }
-        if self.link_type == "s3" or self.link_type == "azureblob":
-            self.doc_count_per_format = {
-                "json": 7920000, "parquet": 7920000,
-                "csv": 7920000, "tsv": 7920000, "avro": 7920000}
-        else:
-            self.doc_count_per_format = {
-                "json": 240000, "parquet": 120000,
-                "csv": 240000, "tsv": 240000, "avro": 240000}
+        self.files_to_use_in_include = {
+            "json": [["*/file_1.json"], 120000],
+            "csv": [["*/file_2.csv"], 120000],
+            "tsv": [["*/file_3.tsv"], 120000],
+            "parquet": [["*/file_5.parquet"], 120000],
+            "avro": [["*/file_4.avro"], 120000]
+        }
+
+        self.doc_count_per_format = {
+            "json": 120000, "parquet": 120000,
+            "csv": 120000, "tsv": 120000, "avro": 120000
+        }
 
         # Setup cross account auth
         if runtype == "columnar" and self.input.param("auth_type", "none") == "cross_account":
@@ -126,7 +114,7 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
             columnar_spec=self.cbas_util.get_columnar_spec(
                 self.columnar_spec_name),
             external_collection_file_formats=[file_format],
-            path_on_external_container="level_1_folder_1")
+            path_on_external_container="level_1_folder_1/level_2_folder_1/level_3_folder_1")
 
         if file_format == "parquet":
             self.columnar_spec["standalone_dataset"]["primary_key"] = [
@@ -176,14 +164,9 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy into command failure")
 
-        if self.link_type == "s3" or self.link_type == "azureblob":
-            doc_count = {
-                "json": 1560000, "csv": 1560000, "tsv": 1560000, "parquet": 1560000
-            }
-        else:
-            doc_count = {
-                "json": 120000, "csv": 120000, "tsv": 120000, "parquet": 120000
-            }
+        doc_count = {
+            "json": 120000, "csv": 120000, "tsv": 120000, "parquet": 120000
+        }
 
         jobs = Queue()
         results = []
@@ -221,7 +204,8 @@ class CopyIntoStandaloneCollectionFromBlobStorage(ColumnarBaseTest):
         self.columnar_spec = self.populate_columnar_infra_spec(
             columnar_spec=self.cbas_util.get_columnar_spec(
                 self.columnar_spec_name),
-            external_collection_file_formats=[file_format])
+            external_collection_file_formats=[file_format],
+            path_on_external_container="level_1_folder_1/level_2_folder_1/level_3_folder_1")
 
         if file_format == "parquet":
             self.columnar_spec["standalone_dataset"]["primary_key"] = [

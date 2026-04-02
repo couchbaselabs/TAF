@@ -3513,21 +3513,41 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                     else:
                         retry_count += 1
             return
+        load_success = True
         executor = ThreadPoolExecutor(max_workers=max_concurrent_batches)
         with executor:
-            step = no_of_docs // max_concurrent_batches
+            step = max(1, no_of_docs // max_concurrent_batches)
+            futures = []
             for i in range(max_concurrent_batches):
+                start_index = i * step
+                if start_index >= no_of_docs:
+                    break
+
+                end_index = no_of_docs if i == max_concurrent_batches - 1 else min((i + 1) * step, no_of_docs)
+
                 if upsert:
-                    executor.submit(generate_docs_and_upsert, i * step, (i + 1) * step, batch_size)
+                    futures.append(
+                        executor.submit(generate_docs_and_upsert, start_index, end_index, batch_size)
+                    )
                 else:
-                    executor.submit(generate_docs_and_insert, i * step, (i + 1) * step, batch_size)
-            executor.shutdown(wait=True)
+                    futures.append(
+                        executor.submit(generate_docs_and_insert, start_index, end_index, batch_size)
+                    )
+
+            for future in futures:
+                try:
+                    result = future.result()
+                    if result is False:
+                        load_success = False
+                except Exception as err:
+                    self.log.error(str(err))
+                    load_success = False
 
         end = time.time()
         time_spent = end - start
         self.log.info("Took {} seconds to insert {} docs".format(
             time_spent, no_of_docs))
-        return True
+        return load_success
 
     def generate_insert_into_cmd(self, document, collection_name, database_name=None,
                                  dataverse_name=None):
