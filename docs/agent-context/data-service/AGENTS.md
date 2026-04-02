@@ -72,3 +72,6 @@ sdk.upsert(key, value); sdk.read_multi(keys); sdk.remove(key)
 - DGM Stress: doc_size * num_items >> ram_quota.
 - Rollback: Force process crash during persistence to validate seqno rollback.
 - Warmup Validation: Restart memcached and monitor wait_for_warmup before CRUD.
+
+## VOLUME TESTING
+For data-service/KV engine volume testing (on-premise and cloud-based stress scenarios), refer to [volume_test.md](volume_test.md).
