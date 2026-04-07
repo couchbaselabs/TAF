@@ -16,6 +16,7 @@ from sdk_exceptions import SDKException
 import threading
 
 from shell_util.remote_connection import RemoteMachineShellConnection
+from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
 
 
 class CrashTest(CollectionBase):
@@ -125,6 +126,19 @@ class CrashTest(CollectionBase):
                         CbServer.default_scope].collections[
                         CbServer.default_collection].num_items)
         self.bucket = self.cluster.buckets[0]
+        if self.continuous_backup_enabled:
+            self.bucket_util.update_bucket_property(
+                self.cluster.master, self.bucket,
+                history_retention_seconds=self.input.param("history_retention_seconds", 86400),
+                history_retention_collection_default="true")
+
+            self.shell = RemoteMachineShellConnection(self.cluster.master)
+            self.cont_backup_util = ContinuousBackupUtil(
+                self.shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log)
+
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
                 cluster=self.cluster,
@@ -147,6 +161,12 @@ class CrashTest(CollectionBase):
         self.log.info("==========Finished CrashTest setup========")
 
     def tearDown(self):
+        # Cleanup shell connection if continuous backup was enabled
+        if self.continuous_backup_enabled:
+            try:
+                self.shell.disconnect()
+            except Exception as e:
+                self.log.warning(f"Error disconnecting shell: {e}")
         super(CrashTest, self).tearDown()
 
     def getTargetNode(self):
@@ -310,6 +330,15 @@ class CrashTest(CollectionBase):
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
         self.validate_test_failure()
+        # Verify backup and restore after test completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after test")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
 
     def test_create_remove_collection_with_node_crash(self):
         """

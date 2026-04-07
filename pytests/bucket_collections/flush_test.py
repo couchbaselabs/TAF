@@ -4,6 +4,8 @@ from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
+from shell_util.remote_connection import RemoteMachineShellConnection
+from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
 
 
 class FlushTests(CollectionBase):
@@ -11,7 +13,22 @@ class FlushTests(CollectionBase):
         super(FlushTests, self).setUp()
         self.bucket = self.cluster.buckets[0]
 
+        # Initialize ContinuousBackupUtil if continuous backup is enabled
+        if self.continuous_backup_enabled:
+            self.shell = RemoteMachineShellConnection(self.cluster.master)
+            self.cont_backup_util = ContinuousBackupUtil(
+                self.shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log)
+
     def tearDown(self):
+        # Cleanup shell connection if continuous backup was enabled
+        if self.continuous_backup_enabled:
+            try:
+                self.shell.disconnect()
+            except Exception as e:
+                self.log.warning(f"Error disconnecting shell: {e}")
         super(FlushTests, self).tearDown()
 
     @staticmethod
@@ -161,6 +178,15 @@ class FlushTests(CollectionBase):
             doc_ttl, durability_level = \
                 self.__get_random_doc_ttl_and_durability_level()
             self.run_collection_mutatation(doc_ttl, durability_level)
+        # Verify backup and restore after test completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after test")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
 
     def test_flush_bucket_during_mutations(self):
         """
@@ -273,6 +299,16 @@ class FlushTests(CollectionBase):
         for node in kv_nodes:
             # Disconnect the connections
             node_dict[node]["cbstat"].disconnect()
+        # Verify backup and restore after test completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after test")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
+
         # Fails test case in case of any detected failure
         self.validate_test_failure()
 

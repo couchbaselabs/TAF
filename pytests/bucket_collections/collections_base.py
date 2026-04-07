@@ -302,17 +302,45 @@ class CollectionBase(ClusterSetup, FusionBase):
             for bucket in self.cluster.buckets:
                 if bucket.bucketType != Bucket.Type.EPHEMERAL and \
                         bucket.storageBackend == Bucket.StorageBackend.magma:
-                    self.bucket_util.update_bucket_property(self.cluster.master,
-                                                            bucket,
-                                                            continuous_backup_interval=self.continuous_backup_interval,
-                                                            continuous_backup_location=self.continuous_backup_location,
-                                                            continuous_backup_enabled="true")
-                self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
+                    current_ret_seconds = bucket.historyRetentionSeconds or 0
+                    current_ret_bytes = bucket.historyRetentionBytes or 0
+                    if current_ret_seconds == 0 and current_ret_bytes == 0:
+                        # Not set — apply defaults so continuous backup has history to work with
+                        history_retention_seconds = self.input.param(
+                            "history_retention_seconds", 86400)
+                        history_retention_bytes = self.input.param(
+                            "history_retention_bytes", 0)
+                        self.bucket_util.update_bucket_property(
+                            self.cluster.master, bucket,
+                            history_retention_seconds=history_retention_seconds,
+                            history_retention_bytes=history_retention_bytes,
+                            continuous_backup_interval=self.continuous_backup_interval,
+                            continuous_backup_location=self.continuous_backup_location,
+                            continuous_backup_enabled="true")
+                        self.log.info("Continuous backup enabled for bucket %s "
+                                      "(history_retention_seconds=%s, history_retention_bytes=%s)"
+                                      % (bucket.name, history_retention_seconds,
+                                         history_retention_bytes))
+                    else:
+                        # Already set — preserve existing retention to allow tests that
+                        # exercise expiry within the test window
+                        self.log.info("Bucket %s already has history retention set "
+                                      "(seconds=%s, bytes=%s); not overriding"
+                                      % (bucket.name, current_ret_seconds, current_ret_bytes))
+                        self.bucket_util.update_bucket_property(
+                            self.cluster.master, bucket,
+                            continuous_backup_interval=self.continuous_backup_interval,
+                            continuous_backup_location=self.continuous_backup_location,
+                            continuous_backup_enabled="true")
+                        self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
 
             self.sleep(self.continuous_backup_interval * 60,
                            f"Waiting for {self.continuous_backup_interval} "
                            "minutes after enabling continuous backup")
             if  self.input.param("initial_load", True):
+                self.log.info("Reconnecting shell before backup operations")
+                self.backup_mgr.shellConn = RemoteMachineShellConnection(
+                    self.cluster.master)
                 self.log.info("Creating backup repository")
                 self.backup_mgr.create_repo(self.backup_archive_dir,
                                                 self.backup_repo_name)

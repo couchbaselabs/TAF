@@ -11,6 +11,7 @@ from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 from bucket_utils.bucket_ready_functions import BucketUtils
 from shell_util.remote_connection import RemoteMachineShellConnection
+from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
 
 
 class CollectionsNetworkSplit(CollectionBase):
@@ -27,6 +28,15 @@ class CollectionsNetworkSplit(CollectionBase):
         # Verify FBR (File-Based Rebalance) setting and configure if needed
         self.verify_and_configure_fbr()
 
+        # Initialize ContinuousBackupUtil if continuous backup is enabled
+        if self.continuous_backup_enabled:
+            self.shell = RemoteMachineShellConnection(self.cluster.master)
+            self.cont_backup_util = ContinuousBackupUtil(
+                self.shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log)
+
     def tearDown(self):
         # We are not bringing in new nodes, so init nodes should be enough to
         # remove iprules
@@ -38,6 +48,12 @@ class CollectionsNetworkSplit(CollectionBase):
             shell.execute_command(command2)
             shell.disconnect()
         self.sleep(10)
+        # Cleanup shell connection if continuous backup was enabled
+        if self.continuous_backup_enabled:
+            try:
+                self.shell.disconnect()
+            except Exception as e:
+                self.log.warning(f"Error disconnecting shell: {e}")
         if self.allow_unsafe:
             self.wipe_config_on_removed_nodes(self.nodes_failover)
         super(CollectionsNetworkSplit, self).tearDown()
@@ -357,6 +373,15 @@ class CollectionsNetworkSplit(CollectionBase):
             # self.data_validation_collection()
         if self.allow_unsafe:
             self.wipe_config_on_removed_nodes(self.nodes_failover)
+        # Verify backup and restore after test completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after test")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
 
     def test_quorum_loss_with_network_split(self):
         """
@@ -396,3 +421,12 @@ class CollectionsNetworkSplit(CollectionBase):
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
         self.remove_network_split()
+        # Verify backup and restore after test completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after test")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)

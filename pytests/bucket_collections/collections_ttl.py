@@ -5,6 +5,8 @@ from cb_constants import CbServer, DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
+from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
 
 
 class CollectionsTTL(CollectionBase):
@@ -15,6 +17,24 @@ class CollectionsTTL(CollectionBase):
         self.bucket_util._expiry_pager(self.cluster)
         self.remaining_docs = self.input.param("remaining_docs", 0)
         self.update_max_ttl = self.input.param("update_max_ttl", False)
+
+        # Initialize ContinuousBackupUtil if continuous backup is enabled
+        if self.continuous_backup_enabled:
+            self.shell = RemoteMachineShellConnection(self.cluster.master)
+            self.cont_backup_util = ContinuousBackupUtil(
+                self.shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log)
+
+    def tearDown(self):
+        # Cleanup shell connection if continuous backup was enabled
+        if self.continuous_backup_enabled:
+            try:
+                self.shell.disconnect()
+            except Exception as e:
+                self.log.warning(f"Error disconnecting shell: {e}")
+        super(CollectionsTTL, self).tearDown()
 
     def test_collections_ttl(self):
         wait_time = 200
@@ -35,6 +55,15 @@ class CollectionsTTL(CollectionBase):
         val_status, items = self.wait_time_validation_of_docs_ttl(wait_time, num_docs=self.remaining_docs)
         if not val_status:
             self.fail("collections_ttl is not working as expected. Num docs : {0}".format(items))
+        # Verify backup and restore after test completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after test")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
 
     def test_collections_ttl_with_doc_expiry_set(self):
         wait_time = 125

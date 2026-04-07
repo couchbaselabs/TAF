@@ -9,6 +9,7 @@ from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.tuq_helper import N1QLHelper
 from shell_util.remote_connection import RemoteMachineShellConnection
+from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
 
 from table_view import TableView
 
@@ -59,6 +60,15 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.stmts = self.n1ql_helper.get_stmt(self.bucket_col)
             self.stmts = self.n1ql_helper.create_full_stmts(self.stmts)
 
+        # Initialize ContinuousBackupUtil if continuous backup is enabled
+        if self.continuous_backup_enabled:
+            self.shell = RemoteMachineShellConnection(self.cluster.master)
+            self.cont_backup_util = ContinuousBackupUtil(
+                self.shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log)
+
     def tearDown(self):
         self.cluster_util.set_rebalance_moves_per_nodes(
             self.cluster.master, rebalanceMovesPerNode=4)
@@ -67,6 +77,12 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.data_load_flag = False
             self.data_loading_thread.join()
             self.data_loading_thread = None
+        # Cleanup shell connection if continuous backup was enabled
+        if self.continuous_backup_enabled:
+            try:
+                self.shell.disconnect()
+            except Exception as e:
+                self.log.warning(f"Error disconnecting shell: {e}")
         if self.N1qltxn:
             super(CollectionBase, self).tearDown()
         else:
@@ -283,6 +299,16 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.log.error("Caught exception from data load thread")
             self.fail(self.data_load_exception)
 
+        # Verify backup and restore after rebalance completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after rebalance")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
+
     def load_collections_with_failover(self, rebalance_operation):
         self.pick_nodes_for_failover(rebalance_operation)
         cont_load_task = None
@@ -344,6 +370,16 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         if self.data_load_exception:
             self.log.error("Caught exception from data load thread")
             self.fail(self.data_load_exception)
+
+        # Verify backup and restore after failover/rebalance completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after failover/rebalance")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")

@@ -13,6 +13,7 @@ from couchbase_helper.tuq_helper import N1QLHelper
 from pytests.N1qlTransaction.N1qlBase import N1qlBase
 
 from StatsLib.StatsOperations import StatsHelper
+from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
 
 from sdk_exceptions import SDKException
 from FtsLib.FtsOperations import FtsHelper
@@ -95,6 +96,15 @@ class CollectionsRebalance(CollectionBase):
         self.remaining_docs = self.input.param("remaining_docs", 0)
         self.cluster.nodes_in_cluster = self.cluster.servers[:self.nodes_init]
 
+        # Initialize ContinuousBackupUtil if continuous backup is enabled
+        if self.continuous_backup_enabled:
+            self.shell = RemoteMachineShellConnection(self.cluster.master)
+            self.cont_backup_util = ContinuousBackupUtil(
+                self.shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log)
+
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
         if self.scrape_interval and CbServer.cluster_profile != "serverless":
@@ -104,6 +114,12 @@ class CollectionsRebalance(CollectionBase):
             self.cluster_util.set_rebalance_moves_per_nodes(
                 self.cluster.master,
                 rebalanceMovesPerNode=4)
+        # Cleanup shell connection if continuous backup was enabled
+        if self.continuous_backup_enabled:
+            try:
+                self.shell.disconnect()
+            except Exception as e:
+                self.log.warning(f"Error disconnecting shell: {e}")
         super(CollectionsRebalance, self).tearDown()
 
     def setup_N1ql_txn(self):
@@ -1245,6 +1261,15 @@ class CollectionsRebalance(CollectionBase):
                     CollectionBase.wait_for_cont_doc_load_to_complete(
                         self, tasks[1])
             self.data_validation_collection()
+        # Verify backup and restore after rebalance completes
+        if self.continuous_backup_enabled:
+            self.log.info("Verifying backup and restore after rebalance")
+            self.cont_backup_util.verify_backup_and_restore(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                backup_archive_dir=self.backup_archive_dir,
+                backup_repo_name=self.backup_repo_name,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval)
         if self.num_zone > 1:
             self.check_balanced_attribute()
             if self.add_zone > 0:
