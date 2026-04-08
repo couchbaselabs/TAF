@@ -19,11 +19,8 @@ from cluster_utils.cluster_ready_functions import CBCluster
 from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 from shell_util.remote_connection import RemoteMachineShellConnection
 from .workloads import Hotel, default, nimbus, hotel_vector, siftBigANN
-import struct
-from index_utils.plasma_stats_util import PlasmaStatsUtil
 from gsiLib.gsiHelper import GsiHelper
 from .hostedEventing import DoctorEventing
-import pprint
 try:
     from .fts import DoctorFTS, FTSQueryLoad
 except:
@@ -36,8 +33,6 @@ from .xdcr import DoctorXDCR
 
 
 class Murphy(BaseTestCase, OPD):
-
-
     def setUp(self):
         BaseTestCase.setUp(self)
 
@@ -268,14 +263,16 @@ class Murphy(BaseTestCase, OPD):
                                                  )})
 
             nodes = len(self.cluster.nodes_in_cluster)
-            self.task.rebalance(self.cluster,
-                                self.servers[nodes:nodes+self.index_nodes], [],
-                                services=["index,n1ql"]*self.index_nodes,
-                                validate_bucket_ranking=False)
+            reb_result = self.task.rebalance(
+                self.cluster,
+                self.servers[nodes:nodes+self.index_nodes], [],
+                services=["index,n1ql"]*self.index_nodes,
+                validate_bucket_ranking=False)
+            self.assertTrue(reb_result, "Rebalance failed")
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.index_nodes]
 
-        if self.index_nodes > 0:
+        if self.cluster.index_nodes:
             self.enableShardAffinity = self.input.param("enableShardAffinity", True)
             _ = self.rest.set_indexer_params(redistributeIndexes='true', enableShardAffinity='true',
                                              indexerThreads=72,
@@ -340,6 +337,7 @@ class Murphy(BaseTestCase, OPD):
         self.stop_rebalance = self.input.param("pause_rebalance", False)
         self.log_query_failures = True
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
+        self.log_setup_status("Hospital.Murphy", "complete", "setup")
 
     def tearDown(self):
         for task in self.loader_tasks:
