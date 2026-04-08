@@ -41,7 +41,7 @@ class GetNetworkPeers(GetCluster):
                 "projectId": str(self.input.param("gcpProjectId", None)),
                 "serviceAccount": str(self.input.param("gcpServiceAccount",
                                                        None)),
-                "cidr": str(self.input.param("vpcCidr", "10.1.0.0/24"))
+                "cidr": str(self.input.param("vpcCidr", "10.40.0.0/23"))
             }
             vpc_config["GCPConfig"] = config
 
