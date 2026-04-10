@@ -12,7 +12,6 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from aGoodDoctor.bkrs import DoctorBKRS
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
-# from bkrs import DoctorBKRS
 from py_constants.cb_constants.CBServer import CbServer
 from .cbas import CBASQueryLoad
 from .cbas import DoctorCBAS
@@ -208,7 +207,7 @@ class Murphy(BaseTestCase, OPD):
         #                     if scope == CbServer.system_scope:
         #                         continue
         #                     if collection == "_default" and scope == "_default":
-        #                         continue 
+        #                         continue
         #                     self.esClient.deleteESIndex(collection.lower())
         #                     self.esClient.createESIndex(collection.lower())
         if self.xdcr_remote_nodes > 0:
@@ -539,7 +538,7 @@ class Murphy(BaseTestCase, OPD):
 
         if self.rollback:
             self.trigger_rollback()
-        
+
         if self.val_type == "siftBigANN":
             self.mutations = True
             self.mutation_th = threading.Thread(target=self.sift_mutations)
@@ -973,7 +972,7 @@ class Murphy(BaseTestCase, OPD):
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
-    
+
                 ###################################################################
                 '''
                 Existing:
@@ -1152,7 +1151,7 @@ class Murphy(BaseTestCase, OPD):
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
                         std=std)
-        
+
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
                 if extra_node_gone > 0:
@@ -1459,20 +1458,20 @@ class Murphy(BaseTestCase, OPD):
             # self.sleep(300)
             for service in self.rebl_services:
                 self.PrintStep("Step 5: Rebalance in of {} node with Loading of docs".format(service))
-    
+
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=0,
                                                 services=[service]*self.rebl_nodes)
-    
+
                 if self.stop_rebalance:
                     rebalance_task = self.pause_rebalance()
                 else:
                     rebalance_task = self.abort_rebalance(rebalance_task, "kill_indexer", self.cluster.index_nodes)
-    
+
                 if rebalance_task is not None:
                     self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats(self.cluster)
-    
+
                 ###################################################################
                 '''
                 Existing:
@@ -1504,7 +1503,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
-    
+
                 ###################################################################
                 '''
                 Existing:
@@ -1520,7 +1519,7 @@ class Murphy(BaseTestCase, OPD):
                 Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
                 Nodes In Cluster = 4
                 '''
-    
+
                 self.PrintStep("Step 9: Rebalance In_Out of {} nodes with Loading of docs".format(service))
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes+1, nodes_out=self.rebl_nodes,
                                                 services=[service]*(self.rebl_nodes+1))
@@ -1534,7 +1533,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
-    
+
                 ###################################################################
                 '''
                 Existing:
@@ -1550,9 +1549,9 @@ class Murphy(BaseTestCase, OPD):
                 Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
                 Nodes In Cluster = 4
                 '''
-    
+
                 self.PrintStep("Step 10: Swap Rebalance of {} Nodes with Loading of docs".format(service))
-    
+
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes, nodes_out=self.rebl_nodes,
                                                 services=[service]*(self.rebl_nodes))
                 if self.stop_rebalance:
@@ -1565,7 +1564,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
-    
+
                 ###################################################################
                 '''
                 Existing:
@@ -1588,7 +1587,7 @@ class Murphy(BaseTestCase, OPD):
                 nodes = [node for node in failover_nodes if node.ip != self.cluster.master.ip]
                 self.rest = RestConnection(self.cluster.master)
                 self.chosen = random.sample(nodes, self.num_replicas)
-    
+
                 # Mark Node for failover
                 self.success_failed_over = True
                 for node in self.chosen:
@@ -1600,7 +1599,7 @@ class Murphy(BaseTestCase, OPD):
                     self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                     self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
                 self.sleep(600, "Waiting for data to go in after failover.")
-    
+
                 self.nodes = self.rest.node_statuses()
                 self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                     ejectedNodes=[node.id for node in self.chosen])
@@ -1642,7 +1641,7 @@ class Murphy(BaseTestCase, OPD):
                 nodes = [node for node in failover_nodes if node.ip != self.cluster.master.ip]
                 self.rest = RestConnection(self.cluster.master)
                 self.chosen = random.sample(nodes, self.num_replicas)
-    
+
                 # Mark Node for failover
                 self.success_failed_over = True
                 for node in self.chosen:
@@ -1655,7 +1654,7 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
                 self.sleep(600, "Waiting for data to go in after failover.")
                 self.rest.monitorRebalance(progress_count=50000)
-    
+
                 # Mark Node for full recovery
                 if self.success_failed_over:
                     for node in self.chosen:
@@ -1666,7 +1665,7 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster, [], [],
                     retry_get_process_num=3000,
                     validate_bucket_ranking=False)
-    
+
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
@@ -1692,7 +1691,7 @@ class Murphy(BaseTestCase, OPD):
                 nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
                 self.rest = RestConnection(self.cluster.master)
                 self.chosen = random.sample(nodes, self.num_replicas)
-    
+
                 # Mark Node for failover
                 self.success_failed_over = True
                 for node in self.chosen:
@@ -1705,13 +1704,13 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
                 self.sleep(600, "Waiting for data to go in after failover.")
                 self.rest.monitorRebalance(progress_count=50000)
-    
+
                 # Mark Node for delta recovery
                 if self.success_failed_over:
                     for node in self.chosen:
                         self.rest.set_recovery_type(otpNode=node.id,
                                                     recoveryType="delta")
-    
+
                 self.sleep(60, "Waiting for delta recovery to finish and settle down cluster.")
                 rebalance_task = self.task.async_rebalance(
                     self.cluster, [], [],
@@ -1722,7 +1721,7 @@ class Murphy(BaseTestCase, OPD):
 
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
-    
+
                 ###################################################################
                 '''
                 Existing:
@@ -1738,7 +1737,7 @@ class Murphy(BaseTestCase, OPD):
                 Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
                 Nodes In Cluster = 3
                 '''
-    
+
                 self.loop += 1
         self.mutations = False
         self.mutation_th.join()

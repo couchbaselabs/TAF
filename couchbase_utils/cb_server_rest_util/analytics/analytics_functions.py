@@ -10,7 +10,10 @@ class AnalyticsFunctionsAPI(CBRestConnection):
         super(AnalyticsFunctionsAPI, self).__init__()
 
     def execute_statement_on_cbas(self, statement, mode=None, pretty=True,
-                                  timeout=70, client_context_id=None):
+                                  timeout=70, client_context_id=None,
+                                  analytics_timeout=120, time_out_unit="s",
+                                  scan_consistency=None, scan_wait=None,
+                                  max_warning=25):
         """
         POST /analytics/service
         https://docs.couchbase.com/server/current/analytics-rest-service/index.html
@@ -22,6 +25,12 @@ class AnalyticsFunctionsAPI(CBRestConnection):
 
         if mode is not None:
             params['mode'] = mode
+        if scan_consistency is not None:
+            params['scan_consistency'] = scan_consistency
+        if scan_wait is not None:
+            params['scan_wait'] = scan_wait
+        params["timeout"] = f"{analytics_timeout}{time_out_unit}"
+        params["max_warning"] = max_warning
 
         status, content, _ = self.request(api, self.POST,
                                           headers=headers,

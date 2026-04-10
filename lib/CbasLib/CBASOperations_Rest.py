@@ -8,11 +8,11 @@ import json
 import urllib
 import requests
 
-from connections.Rest_Connection import RestConnection
+from cb_server_rest_util.analytics.analytics_api import AnalyticsRestAPI
 from py_constants import CbServer
 
 
-class CBASHelper(RestConnection):
+class CBASHelper(AnalyticsRestAPI):
     def __init__(self, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
 
@@ -20,63 +20,11 @@ class CBASHelper(RestConnection):
         if CbServer.use_https:
             self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
 
-
     def createConn(self, bucket, username, password):
         pass
 
     def closeConn(self):
         pass
-
-    def execute_statement_on_cbas(self, statement, mode, pretty=True,
-                                  timeout=70, client_context_id=None,
-                                  username=None, password=None,
-                                  analytics_timeout=120, time_out_unit="s",
-                                  scan_consistency=None, scan_wait=None,
-                                  max_warning=25):
-        if not username:
-            username = self.username
-        if not password:
-            password = self.password
-        api = self.cbas_base_url + "/analytics/service"
-        headers = self._create_capi_headers(username, password)
-
-        params = {'statement': statement, 'pretty': pretty,
-                  'max-warnings': max_warning,
-                  'client_context_id': client_context_id,
-                  'timeout': str(analytics_timeout) + time_out_unit}
-
-        if mode is not None:
-            params['mode'] = mode
-
-        if scan_consistency is not None:
-            params['scan_consistency'] = scan_consistency
-
-        if scan_wait is not None:
-            params['scan_wait'] = scan_wait
-        params = json.dumps(params)
-        status, content, response = self._http_request(
-            api, 'POST', headers=headers, params=params, timeout=timeout)
-        if hasattr(response, "status"):
-            status_code = response.status
-        elif hasattr(response, "status_code"):
-            status_code = response.status_code
-
-        if status:
-            return content
-        elif status_code == 503:
-            self.log.info("Request Rejected")
-            raise Exception("Request Rejected")
-        elif status_code in [500, 400, 401, 403, 409]:
-            json_content = json.loads(content)
-            msg = json_content['errors'][0]['msg']
-            if "Job requirement" in  msg and "exceeds capacity" in msg:
-                raise Exception("Capacity cannot meet job requirement")
-            else:
-                return content
-        else:
-            self.log.error("/analytics/service status:{0}, content:{1}"
-                           .format(status, content))
-            raise Exception("Analytics Service API failed")
 
     def execute_parameter_statement_on_cbas(self, statement, mode, pretty=True,
                                             timeout=70, client_context_id=None,
@@ -182,8 +130,6 @@ class CBASHelper(RestConnection):
                    verbose = True, encoded_plan=None, servers=None):
         key = 'prepared' if is_prepared else 'statement'
         headers = None
-        content=""
-        prepared = json.dumps(query)
         if is_prepared:
             if named_prepare and encoded_plan:
                 http = httplib2.Http()
@@ -201,7 +147,6 @@ class CBASHelper(RestConnection):
                 return eval(content)
 
             elif named_prepare and not encoded_plan:
-                params = 'prepared=' + urllib.quote(prepared, '~()')
                 params = 'prepared="%s"'% named_prepare
             else:
                 prepared = json.dumps(query)
@@ -445,10 +390,6 @@ class CBASHelper(RestConnection):
                 path format is bucket.scope.collection for cluster level and \
                 scope.collection for bucket level
         """
-        if not username:
-            username = self.username
-        if not password:
-            password = self.password
         api = self.cbas_base_url
         if level.lower() == "cluster":
             api += "/api/v1/backup"
