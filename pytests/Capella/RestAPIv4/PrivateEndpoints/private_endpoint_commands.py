@@ -16,8 +16,8 @@ class PostEndpointCommand(GetCluster):
             "vpcNetworkID": self.input.param("vpcId", "mockValue"),
             "subnetIDs": ["mockValue"],
         }
-        if (self.input.param("cluster_template", "AWS_r5_xlarge") ==
-                "Azure_E4s_v5"):
+        if (self.input.param("cluster_template", "AWS_r5_xlarge") in
+                ["Azure_E4s_v5", "AWS_r5_xlarge"]):
             self.expected_res = {
                 "resourceGroupName": "test-rg",
                 "virtualNetwork": "vnet-1/subnet-1"
