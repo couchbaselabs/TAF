@@ -147,12 +147,8 @@ class MemCompressionUpgradeTests(UpgradeBase):
             self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.log.info("Changing master")
-            try:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[0])
-            except Exception:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[self.nodes_init - 1])
+            self.cluster.update_master_using_diag_eval(
+                self.cluster.nodes_in_cluster[0])
             node_to_upgrade = self.fetch_node_to_upgrade()
 
         self.cluster.index_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="index",
@@ -251,12 +247,8 @@ class MemCompressionUpgradeTests(UpgradeBase):
             self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.log.info("Changing master")
-            try:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[0])
-            except Exception:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[self.nodes_init - 1])
+            self.cluster.update_master_using_diag_eval(
+                self.cluster.nodes_in_cluster[0])
             node_to_upgrade = self.fetch_node_to_upgrade()
 
         self.cluster.index_nodes = self.cluster_util.get_nodes_from_services_map(self.cluster, service_type="index",

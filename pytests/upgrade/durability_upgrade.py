@@ -65,8 +65,8 @@ class UpgradeTests(UpgradeBase):
 
     def __trigger_cbcollect(self, log_path):
         self.log.info("Triggering cb_collect_info")
-        rest = RestConnection(self.cluster.master)
-        nodes = rest.get_nodes()
+        rest = ClusterRestAPI(self.cluster.master)
+        nodes = self.cluster_util.get_nodes(self.cluster.master)
         status = self.cluster_util.trigger_cb_collect_on_cluster(rest, nodes)
 
         if status is True:
@@ -1019,12 +1019,8 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
             self.upgrade_function[self.upgrade_type](node_to_upgrade)
-            try:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[0])
-            except Exception:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[self.nodes_init-1])
+            self.cluster.update_master_using_diag_eval(
+                self.cluster.nodes_in_cluster[0])
 
             create_gen = doc_generator(self.key, self.num_items,
                                        self.num_items+create_batch_size)
@@ -1183,12 +1179,8 @@ class UpgradeTests(UpgradeBase):
                 update_task.start()
 
             self.upgrade_function[self.upgrade_type](node_to_upgrade)
-            try:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[0])
-            except Exception:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[self.nodes_init-1])
+            self.cluster.update_master_using_diag_eval(
+                self.cluster.nodes_in_cluster[0])
 
             if self.upgrade_with_data_load:
                 stop_thread = True
@@ -1259,36 +1251,35 @@ class UpgradeTests(UpgradeBase):
             batch_size=10,
             timeout_secs=30))
 
-        node_to_upgrade = self.fetch_node_to_upgrade()
-        while node_to_upgrade is not None:
-            # Cbcollect with mixed mode cluster
-            status = self.__trigger_cbcollect(log_path)
-            if status is False:
-                break
-
-            self.log.info("Selected node for upgrade: %s"
-                          % node_to_upgrade.ip)
-            self.upgrade_function[self.upgrade_type](node_to_upgrade)
-            self.cluster_util.print_cluster_stats(self.cluster)
-
-            try:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[0])
-            except Exception:
-                self.cluster.update_master_using_diag_eval(
-                    self.cluster.servers[self.nodes_init-1])
-
-            # TODO: Do some validations here
-            try:
-                self.get_all_metrics(self.parse, self.metric_name)
-            except Exception:
-                pass
-
+        for upgrade_version in self.upgrade_chain:
+            self.initial_version = self.upgrade_version
+            self.upgrade_version = upgrade_version
             node_to_upgrade = self.fetch_node_to_upgrade()
+            while node_to_upgrade is not None:
+                # Cbcollect with mixed mode cluster
+                status = self.__trigger_cbcollect(log_path)
+                if status is False:
+                    break
 
-            # Halt further upgrade if test has failed during current upgrade
-            if self.test_failure is True:
-                break
+                self.log.info("Selected node for upgrade: %s"
+                              % node_to_upgrade.ip)
+                self.upgrade_function[self.upgrade_type](node_to_upgrade)
+                self.cluster_util.print_cluster_stats(self.cluster)
+
+                self.cluster.update_master_using_diag_eval(
+                    self.cluster.nodes_in_cluster[0])
+
+                # TODO: Do some validations here
+                try:
+                    self.get_all_metrics(self.parse, self.metric_name)
+                except Exception:
+                    pass
+
+                node_to_upgrade = self.fetch_node_to_upgrade()
+
+                # Halt further upgrade if test has failed during current upgrade
+                if self.test_failure is True:
+                    break
 
         # Metrics should work in fully upgraded cluster
         self.get_all_metrics(self.parse, self.metric_name)
