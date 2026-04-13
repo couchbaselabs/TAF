@@ -1,0 +1,71 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [master, master_jython, trinity]
+  pull_request:
+    branches: [master, master_jython, trinity]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install linters
+        run: |
+          pip install ruff vulture jscpd
+
+      - name: Run Ruff linter
+        run: |
+          ruff check --output-format=github .
+
+      - name: Run Ruff formatter check
+        run: |
+          ruff format --check .
+
+  dead-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install vulture
+        run: pip install vulture
+
+      - name: Run dead code detection
+        run: |
+          vulture --min-confidence 80 \
+            --exclude "DocLoader/,sirius/,lib/capellaAPI/,build/,dist/" \
+            . .vulture_whitelist.py || true
+          # Report but don't fail - dead code detection is informational
+
+  duplicate-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js (for jscpd)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install jscpd
+        run: npm install -g jscpd
+
+      - name: Run duplicate code detection
+        run: |
+          jscpd --min-lines 20 --min-tokens 50 \
+            --ignore "DocLoader/**,sirius/**,lib/capellaAPI/**,build/**,dist/**" \
+            --reporters console \
+            . || true
+          # Report but don't fail - duplicate detection is informational

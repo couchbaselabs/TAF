@@ -31,6 +31,20 @@ repos:
       - id: isort
         args: ["--profile", "black"]
 
+  # Dead code detection
+  - repo: https://github.com/jendrikseipp/vulture
+    rev: v2.11
+    hooks:
+      - id: vulture
+        args: [--min-confidence, "80", --exclude, "DocLoader/,sirius/,lib/capellaAPI/,build/,dist/"]
+
+  # Duplicate code detection
+  - repo: https://github.com/juscilan/jscpd-pre-commit
+    rev: v1.0.0
+    hooks:
+      - id: jscpd
+        args: [--min-lines, "20", --min-tokens, "50", --reporters, "console"]
+
   # AGENTS.md validation
   - repo: local
     hooks:

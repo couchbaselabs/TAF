@@ -1,0 +1,21 @@
+{
+  "threshold": 0,
+  "reporters": ["html", "console", "json"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/.idea/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/__pycache__/**",
+    "**/*.min.js",
+    "**/*.pyc",
+    "**/DocLoader/**",
+    "**/sirius/**",
+    "**/lib/capellaAPI/**"
+  ],
+  "min-lines": 20,
+  "min-tokens": 50,
+  "format": "python",
+  "output": "./reports/jscpd"
+}
