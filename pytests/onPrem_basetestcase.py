@@ -27,6 +27,8 @@ from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
 from cluster_utils.encryption_util import EncryptionUtil
+from couchbase_helper.log_utils import check_logs_for_timestamp, \
+    check_error_patterns
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -1279,72 +1281,15 @@ class OnPremBaseTest(CouchbaseBaseTest):
             Note: This method works only if slave's time(timezone) matches
                   that of VM's. Else it won't be possible to compare timestamps
             """
-            # eg: 2021-07-12T04:03:45
-            timestamp_regex = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
-            
-            # Scan backwards from end to find the latest timestamp efficiently
-            # Log files are chronological, so last timestamp found = latest
-            for line in reversed(grep_output_list):
-                match_obj = timestamp_regex.search(line)
-                if match_obj:
-                    timestamp_str = match_obj.group()
-                    try:
-                        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
-                        self.log.info("Comparing timestamps: Log's latest timestamp: %s, "
-                                      "Test's start timestamp is %s"
-                                      % (timestamp, self.start_timestamp))
-                        if timestamp > self.start_timestamp:
-                            return True
-                        else:
-                            self.log.info("Latest timestamp is before test start. "
-                                          "Ignoring logs from previous runs.")
-                            return False
-                    except ValueError:
-                        continue
-            
-            # No timestamp found in any line
-            self.log.critical("No timestamps found in grep output. "
-                              "First line: %s" % grep_output_list[0][:200] if grep_output_list else "Empty")
-            # Don't flag as error if we can't determine timestamp - return False
-            return False
-
-        def parse_time_based_pattern(line, pattern, time_threshold):
-            """
-            Parse log line for time-based patterns like 'Slow operation' or 'Slow runtime'
-            Returns True if the pattern is found and the time exceeds threshold
-            """
-            if pattern in line:
-                # Extract time value from the line
-                time_regex = re.compile(r"(\d+(?:\.\d+)?)\s*(?:ms|s|seconds?)")
-                time_match = time_regex.search(line)
-                if time_match:
-                    time_value = float(time_match.group(1))
-                    # Convert to seconds if in milliseconds
-                    if "ms" in line:
-                        time_value = time_value / 1000
-                    return time_value > time_threshold
-            return False
-
-        def check_error_patterns(grep_output, pattern):
-            """
-            Check if grep output matches the error pattern.
-            Returns tuple of (bool, int) where:
-            - bool indicates if pattern was found
-            - int is the index where pattern was found, or -1 if not found
-            """
-            if isinstance(pattern, dict):
-                # Handle time-based pattern
-                if 'string' in pattern and 'time_to_consider_in_seconds' in pattern:
-                    for i, line in enumerate(grep_output):
-                        if parse_time_based_pattern(
-                                line, pattern['string'],
-                                pattern['time_to_consider_in_seconds']):
-                            return True, i
+            result = check_logs_for_timestamp(grep_output_list, self.start_timestamp)
+            if result:
+                self.log.info("Found logs with timestamp after test start")
             else:
-                index = find_index_of(grep_output, pattern)
-                if index != -1:
-                    return True, index
-            return False, -1
+                self.log.info("No logs found after test start (or no timestamps found)")
+            return result
+
+        # check_error_patterns is imported from couchbase_helper.log_utils
+        # for better testability
 
         for idx, server in enumerate(servers):
             self.log.info(f"{server.ip} - Parsing logs for error/critical "
