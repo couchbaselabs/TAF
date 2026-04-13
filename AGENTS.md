@@ -122,6 +122,21 @@ The `runtype` parameter determines test environment:
 
 ## Development Patterns
 
+### Naming Conventions
+TAF follows PEP8 naming conventions enforced by ruff:
+
+- **Functions/Methods**: `snake_case` (e.g., `test_document_crud`, `create_bucket`)
+- **Variables**: `snake_case` (e.g., `bucket_name`, `doc_count`)
+- **Constants**: `UPPER_SNAKE_CASE` (e.g., `MAX_RETRIES`, `DEFAULT_TIMEOUT`)
+- **Classes**: `PascalCase` (e.g., `OnPremBaseTest`, `BucketUtils`)
+- **Module names**: `snake_case` (e.g., `bucket_utils.py`, `cluster_ready_functions.py`)
+- **Private members**: `_leading_underscore` (e.g., `_internal_method`)
+- **Test methods**: `test_` prefix with `snake_case` (e.g., `test_rebalance_after_failover`)
+
+**Exceptions for Unittest compatibility:**
+- `setUp`, `tearDown`, `setUpClass`, `tearDownClass` are allowed
+- MixedCase variables in existing code are tolerated but new code should use snake_case
+
 ### Adding Tests
 1. Tests must live in `pytests/` directory
 2. Inherit from appropriate base class based on component

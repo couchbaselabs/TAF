@@ -30,13 +30,20 @@ select = [
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "SIM", # flake8-simplify
+    "N",   # pep8-naming conventions
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
     "B008",  # do not perform function calls in argument defaults
     "SIM102", # use a single if statement
     "SIM114", # combine if branches
+    "N806",   # variable name should be lowercase (allow mixedCase for compatibility)
+    "N803",   # argument name should be lowercase (allow mixedCase for compatibility)
 ]
+
+[tool.ruff.lint.pep8-naming]
+# Allow Pytest-style fixtures and UnitTest compatibility
+extend-ignore-names = ["setUp", "tearDown", "setUpClass", "tearDownClass"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["lib", "pytests", "couchbase_utils", "platform_utils", "constants"]
