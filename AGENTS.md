@@ -27,6 +27,40 @@ git submodule update --init --force --remote
 python -m pip install -r requirements.txt
 ```
 
+### Development Setup
+For contributors and developers working on TAF codebase:
+
+```bash
+# Install development dependencies (linting, type checking, hooks)
+python -m pip install -r requirements-dev.txt
+
+# Install pre-commit hooks (one-time setup after clone)
+pre-commit install
+
+# Optional: Install npm tools for additional checks
+npm install -g jscpd  # Duplicate code detection
+```
+
+**Pre-commit hooks run automatically on commit:**
+- Unit tests (blocks commit on failure)
+- Ruff linter (auto-fixes issues)
+- Ruff formatter (checks formatting)
+- Mypy type checker (informational)
+- Large file detection (1MB limit)
+- Merge conflict detection
+- AGENTS.md validation
+
+**Manual checks:**
+```bash
+# Run all hooks manually
+pre-commit run --all-files
+
+# Run specific hook
+pre-commit run ruff --all-files
+pre-commit run mypy --all-files
+pre-commit run unit-test --all-files
+```
+
 ### Test Execution
 ```bash
 # Run from test suite configuration
