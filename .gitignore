@@ -1,14 +1,58 @@
+# OS files
 .DS_Store
+Thumbs.db
+
+# Environment files (contains secrets)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Python
 **.class
 **.pyc
+*.pyo
+__pycache__/
+*.egg-info/
+dist/
+*.egg
+.Python
+*.manifest
+*.spec
+
+# Logs
 *.log
+**/logs
+
+# IDE
 *.iml
 *.settings
 **/.idea
-**/logs
-**/settings
+**/.vscode
+.project
+.pydevproject
+.settings/
+
+# Build
 build
 /bin/
-**/.vscode
+**/settings
+
+# Factory/AI tools
 **/.factory
-__pycache__
+
+# Jython cache
+.jython_cache/
+
+# Test artifacts
+.pytest_cache/
+.test-results/
+htmlcov/
+.coverage
+.tox/
+
+# Secrets and credentials
+secrets/
+*.pem
+*.key
+credentials.json
