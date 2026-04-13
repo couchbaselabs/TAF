@@ -987,6 +987,23 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     if not self._remove_aws_credentials_from_host(server):
                         self.log.error("Failed to remove AWS credentials on EA Analytics node")
 
+        # Clean NFS shared dir contents after each fusion test.
+        # This gives the next test in the conf file a clean empty directory.
+        if getattr(self, 'fusion_test', False) and getattr(self, 'skip_fusion_setup', False):
+            try:
+                nfs_server = getattr(self, 'nfs_server', None)
+                nfs_server_path = getattr(self, 'nfs_server_path', None)
+                if nfs_server and nfs_server_path:
+                    nfs_base_path = "/".join(nfs_server_path.split("/")[:-1])
+                    nfs_cleanup_cmd = f"rm -rf {nfs_base_path}/*"
+                    self.log.info(f"Cleaning NFS shared dir after test: {nfs_cleanup_cmd}")
+                    ssh = RemoteMachineShellConnection(nfs_server)
+                    ssh.execute_command(nfs_cleanup_cmd)
+                    ssh.disconnect()
+                    self.log.info(f"NFS shared dir cleaned: {nfs_base_path}")
+            except Exception as e:
+                self.log.warning(f"Failed to clean NFS shared dir in tearDown: {e}")
+
         self.shutdown_task_manager()
 
     def tearDownEverything(self, reset_cluster_env_vars=True):

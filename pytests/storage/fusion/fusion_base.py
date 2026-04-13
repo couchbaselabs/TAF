@@ -86,7 +86,8 @@ class FusionBase(BaseTestCase):
             self.slave_ip = result.stdout.strip()
             self.log.info(f"Slave IP = {self.slave_ip}")
 
-            self.client_share_dir = "share"
+            self.client_share_dir = self.input.param("client_share_dir", "share")
+            self.nfs_server_path = f"/data/nfs/{self.client_share_dir}/buckets"
 
             if not self.skip_fusion_setup:
                 self.setup_nfs_server_new()
@@ -107,6 +108,9 @@ class FusionBase(BaseTestCase):
 
                 for th in th_arr2:
                     th.join()
+
+                self.nfs_server_path = f"/data/nfs/{self.client_share_dir}/buckets"
+
             else:
                 self.log.info("Skipping Fusion Set Up")
                 self.log.info("Deleting contents on log store")
@@ -117,7 +121,6 @@ class FusionBase(BaseTestCase):
                 o, e = ssh.execute_command(nfs_cleanup_cmd)
                 ssh.disconnect()
 
-            self.nfs_server_path = f"/data/nfs/{self.client_share_dir}/buckets"
             self.log.info(f"NFS Server path: {self.nfs_server_path}")
 
             self.monitor = True

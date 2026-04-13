@@ -289,6 +289,25 @@ if [ $status -eq 0 ]; then
   fi
   cd ..
 
+  # ---- NFS client pre-cleanup (handles stale mounts from aborted jobs) ----
+  # Server-side old share pruning is handled by setup_server_new.sh (MAX_SHARES).
+  if [ "${component}" = "fusion" ]; then
+    python scripts/fusion_scripts/nfs_setup.py cleanup_clients \
+        --ini "$WORKSPACE/testexec.$$.ini"
+  fi
+
+  # ---- NFS setup for fusion tests (runs once before all tests in confFile) ----
+  CLIENT_SHARE_DIR=""
+  NFS_FUSION_SERVER_IP=""
+  if [ "${component}" = "fusion" ]; then
+    NFS_FUSION_SERVER_IP=$(echo "$parameters" | grep -oP 'nfs_server_ip=\K[^,]*')
+    NFS_FUSION_SERVER_IP=${NFS_FUSION_SERVER_IP:-172.23.219.42}
+    NFS_SETUP_OUTPUT=$(python scripts/fusion_scripts/nfs_setup.py setup --ini "$WORKSPACE/testexec.$$.ini" --nfs-server-ip "$NFS_FUSION_SERVER_IP" --local-scripts-path "scripts/fusion_scripts")
+    echo "$NFS_SETUP_OUTPUT"
+    CLIENT_SHARE_DIR=$(echo "$NFS_SETUP_OUTPUT" | grep "^CLIENT_SHARE_DIR=" | cut -d'=' -f2)
+    parameters="${parameters},skip_fusion_setup=True,client_share_dir=${CLIENT_SHARE_DIR}"
+  fi
+
   # Find free port on this machine to use for this run
   starting_ports=(49152 49162 49172 49182 49192 49202 49212 49222 49232)
   num_scripts_running=$(ps -ef | grep '/tmp/jenkins' | grep -v 'grep ' | wc -l)
@@ -301,6 +320,15 @@ if [ $status -eq 0 ]; then
     echo "Launching java/magma doc loader to load documents."
     python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_java_doc_loader --sirius_url http://localhost:$sirius_port ${rerun_params}
   fi
+  set +x
+
+  # ---- NFS teardown for fusion tests (runs once after all tests complete) ----
+  if [ "${component}" = "fusion" ] && [ -n "${CLIENT_SHARE_DIR}" ]; then
+    CLUSTER_SERVER_IPS=$(grep -oP '^ip:\K.+' "$WORKSPACE/testexec.$$.ini" | paste -sd',' -)
+    python scripts/fusion_scripts/nfs_setup.py teardown --nfs-server-ip "$NFS_FUSION_SERVER_IP" --cluster-ips "$CLUSTER_SERVER_IPS" --client-share-dir "$CLIENT_SHARE_DIR"
+  fi
+
+  set -x
   awk -F' ' 'BEGIN {failures = 0; total_tests = 0} /<testsuite/ {match($0, /failures="([0-9]+)"/, failures_match); match($0, /tests="([0-9]+)"/, tests_match); if (failures_match[1] > 0) {failures += failures_match[1];} total_tests += tests_match[1]} END {print "Aggregate Failures: " failures ", Aggregate Total Tests: " total_tests;}' $WORKSPACE/logs/*/*.xml
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
   status=$?
