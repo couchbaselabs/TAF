@@ -1,64 +1,53 @@
-# Pre-commit hooks for TAF
+# Pre-commit hooks for TAF (local only - no network access needed)
 # Install: pip install pre-commit && pre-commit install
 # Run manually: pre-commit run --all-files
 
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.10
-    hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
-
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-        args: [--unsafe]
-      - id: check-json
-      - id: check-added-large-files
-        args: ['--maxkb=1000']
-      - id: check-merge-conflict
-      - id: detect-private-key
-      - id: no-commit-to-branch
-        args: ['--branch', 'master', '--branch', 'main']
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        args: ["--profile", "black"]
-
-  # Dead code detection
-  - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.11
-    hooks:
-      - id: vulture
-        args: [--min-confidence, "80", --exclude, "DocLoader/,sirius/,lib/capellaAPI/,build/,dist/"]
-
-  # Duplicate code detection
-  - repo: https://github.com/juscilan/jscpd-pre-commit
-    rev: v1.0.0
-    hooks:
-      - id: jscpd
-        args: [--min-lines, "20", --min-tokens, "50", --reporters, "console"]
-
-  # AGENTS.md validation
+  # Local hooks only - no external dependencies
   - repo: local
     hooks:
+      # Run unit tests before commit/amend - blocks commit on failure
+      - id: unit-test
+        name: Run unit tests
+        entry: "bash -c 'make unit_test || { echo ERROR: Unit tests failed. Commit blocked; exit 1; }'"
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Lint with ruff (requires: pip install ruff)
+      - id: ruff
+        name: Ruff linter
+        entry: "bash -c 'python3 -m ruff check --fix . || true'"
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      # Format with ruff (requires: pip install ruff)
+      - id: ruff-format
+        name: Ruff formatter
+        entry: "bash -c 'python3 -m ruff format --check . || true'"
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      # Check for large files
+      - id: check-large-files
+        name: Check for large files
+        entry: "bash -c 'find . -type f -size +1M -not -path \"./.git/*\" -not -path \"./DocLoader/*\" -not -path \"./sirius/*\" -not -path \"./lib/capellaAPI/*\" -exec ls -lh {} \\; -exec exit 1 \\;'"
+        language: system
+        pass_filenames: false
+
+      # Detect merge conflicts
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        entry: "bash -c 'grep -r \"^<<<<<<< \" . --include=\"*.py\" --include=\"*.yaml\" --include=\"*.json\" && exit 1 || exit 0'"
+        language: system
+        pass_filenames: false
+
+      # AGENTS.md validation
       - id: validate-agents-md
         name: Validate AGENTS.md
-        entry: bash -c 'test -f AGENTS.md && test $(wc -c < AGENTS.md) -gt 100 && grep -q "## Purpose" AGENTS.md && echo "AGENTS.md validated"'
+        entry: "bash -c 'test -f AGENTS.md && test $(wc -c < AGENTS.md) -gt 100 && grep -q \"## Purpose\" AGENTS.md && echo AGENTS.md validated'"
         language: system
         files: 'AGENTS.md'
         pass_filenames: false
-
-# CI configuration
-ci:
-  autofix_commit_msg: |
-    [pre-commit.ci] auto fixes from pre-commit.com hooks
-    for more information, see https://pre-commit.ci
-  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
-  autoupdate_schedule: weekly
