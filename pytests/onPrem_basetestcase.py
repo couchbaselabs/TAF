@@ -20,6 +20,7 @@ from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
 from couchbase_utils.security_utils.security_utils import SecurityUtils
+from couchbase_helper.log_utils import check_logs_for_timestamp
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -768,34 +769,29 @@ class OnPremBaseTest(CouchbaseBaseTest):
             Note: This method works only if slave's time(timezone) matches
                   that of VM's. Else it won't be possible to compare timestamps
             """
-            # eg: 2021-07-12T04:03:45
-            timestamp_regex = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
-            
-            # Scan backwards from end to find the latest timestamp efficiently
-            # Log files are chronological, so last timestamp found = latest
-            for line in reversed(grep_output_list):
-                match_obj = timestamp_regex.search(line)
-                if match_obj:
-                    timestamp_str = match_obj.group()
-                    try:
-                        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
-                        self.log.info("Comparing timestamps: Log's latest timestamp: %s, "
-                                      "Test's start timestamp is %s"
-                                      % (timestamp, self.start_timestamp))
-                        if timestamp > self.start_timestamp:
-                            return True
-                        else:
-                            self.log.info("Latest timestamp is before test start. "
-                                          "Ignoring logs from previous runs.")
-                            return False
-                    except ValueError:
-                        continue
-            
-            # No timestamp found in any line
-            self.log.critical("No timestamps found in grep output. "
-                              "First line: %s" % grep_output_list[0][:200] if grep_output_list else "Empty")
-            # Don't flag as error if we can't determine timestamp - return False
-            return False
+            result = check_logs_for_timestamp(grep_output_list, self.start_timestamp)
+            if result:
+                self.log.info("Found logs with timestamp after test start")
+                return True
+            else:
+                # No timestamp found in any line or timestamp is before test start
+                # Check if this is a known log entry type that might not have timestamps
+                # but shouldn't cause test failures
+                # https://jira.issues.couchbase.com/browse/MB-68370
+                non_critical_patterns = [
+                    "monitorserviceforportchanges"
+                ]
+                last_line = grep_output_list[-1] if grep_output_list else ""
+                is_non_critical = any(pattern in last_line.lower() for pattern in non_critical_patterns)
+                if is_non_critical:
+                    self.log.warning("Found log entry without timestamp (treating as non-critical): %s" % last_line)
+                    return False  # Don't fail the test for known non-critical log entries
+
+                self.log.info("No logs found after test start (or no timestamps found)")
+                return False
+
+        # parse_time_based_pattern and check_error_patterns are now imported from
+        # couchbase_helper.log_utils for better testability
 
         for idx, server in enumerate(servers):
             shell = RemoteMachineShellConnection(server)
