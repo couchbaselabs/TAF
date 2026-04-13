@@ -1,0 +1,62 @@
+# Dependabot configuration for TAF
+# Automatically creates PRs for dependency updates
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "ashwin.govindarajalu@couchbase.com"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    # Group minor and patch updates to reduce PR noise
+    groups:
+      minor-patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+        group-name: "python-deps-minor-patch"
+    # Ignore specific packages that need manual updates
+    ignore:
+      # Couchbase SDK - requires compatibility testing
+      - dependency-name: "couchbase"
+        update-types: ["version-update:semver-major"]
+      # PySpark - breaking changes common
+      - dependency-name: "pyspark"
+        update-types: ["version-update:semver-major"]
+      # Delta-spark - tied to PySpark version
+      - dependency-name: "delta-spark"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions-updates:
+        patterns:
+          - "*"
+        group-name: "github-actions"
