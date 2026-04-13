@@ -1,0 +1,17 @@
+# Development dependencies for TAF
+# Install: pip install -r requirements-dev.txt
+
+# Pre-commit hooks framework
+pre-commit>=3.0.0
+
+# Linting and formatting
+ruff>=0.1.0
+
+# Type checking
+mypy>=1.0.0
+
+# Dead code detection
+vulture>=2.0.0
+
+# Note: jscpd (duplicate code detection) is installed via npm:
+# npm install -g jscpd
