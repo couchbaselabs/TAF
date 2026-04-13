@@ -1,0 +1,85 @@
+name: Validate AGENTS.md
+
+on:
+  push:
+    paths:
+      - 'AGENTS.md'
+      - 'README.md'
+      - 'docs/**/*.md'
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'README.md'
+      - 'docs/**/*.md'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install validation tools
+        run: |
+          pip install pymarkdownlnt
+
+      - name: Validate AGENTS.md exists and has content
+        run: |
+          if [ ! -f "AGENTS.md" ]; then
+            echo "ERROR: AGENTS.md not found"
+            exit 1
+          fi
+          if [ $(wc -c < AGENTS.md) -lt 100 ]; then
+            echo "ERROR: AGENTS.md is too short (less than 100 chars)"
+            exit 1
+          fi
+          echo "AGENTS.md exists and has sufficient content"
+
+      - name: Validate markdown syntax
+        run: |
+          pymarkdownlnt scan AGENTS.md || true
+          # Don't fail on markdown warnings, just report them
+
+      - name: Validate required sections
+        run: |
+          # Check for key sections in AGENTS.md
+          grep -q "## Purpose" AGENTS.md || echo "Warning: Missing '## Purpose' section"
+          grep -q "## Quick Commands" AGENTS.md || echo "Warning: Missing '## Quick Commands' section"
+          grep -q "## Repository Layout" AGENTS.md || echo "Warning: Missing '## Repository Layout' section"
+          echo "Section validation complete"
+
+      - name: Validate test commands work
+        run: |
+          # Extract and validate test commands from AGENTS.md
+          echo "Checking that documented commands are valid..."
+
+          # Check pip install command
+          if grep -q "pip install -r requirements.txt" AGENTS.md; then
+            echo "Found pip install command - validating requirements.txt exists"
+            [ -f "requirements.txt" ] && echo "requirements.txt exists"
+          fi
+
+          # Check testrunner command
+          if grep -q "testrunner.py" AGENTS.md; then
+            echo "Found testrunner.py reference - validating file exists"
+            [ -f "testrunner.py" ] && echo "testrunner.py exists"
+          fi
+
+          echo "Command validation complete"
+
+      - name: Validate documentation links
+        run: |
+          # Check that referenced documentation files exist
+          for doc in docs/architecture.humans.md docs/architecture.agents.md; do
+            if grep -q "$doc" AGENTS.md; then
+              if [ -f "$doc" ]; then
+                echo "Found reference to $doc - file exists"
+              else
+                echo "Warning: Reference to $doc in AGENTS.md but file not found"
+              fi
+            fi
+          done

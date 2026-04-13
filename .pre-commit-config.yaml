@@ -31,6 +31,16 @@ repos:
       - id: isort
         args: ["--profile", "black"]
 
+  # AGENTS.md validation
+  - repo: local
+    hooks:
+      - id: validate-agents-md
+        name: Validate AGENTS.md
+        entry: bash -c 'test -f AGENTS.md && test $(wc -c < AGENTS.md) -gt 100 && grep -q "## Purpose" AGENTS.md && echo "AGENTS.md validated"'
+        language: system
+        files: 'AGENTS.md'
+        pass_filenames: false
+
 # CI configuration
 ci:
   autofix_commit_msg: |
