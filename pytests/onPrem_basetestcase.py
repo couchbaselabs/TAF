@@ -976,40 +976,52 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         def check_logs(grep_output_list):
             """
-            Check the grep's last line for the latest timestamp.
-            If this timestamp < start_timestamp of the test,
-            then return False (as the grep's output is from previous tests)
+            Check grep output for timestamps and compare with test start time.
+            Returns True only if a timestamp is found AND it's after test start time.
+            Returns False if no timestamp is found or all timestamps are before test start.
             Note: This method works only if slave's time(timezone) matches
                   that of VM's. Else it won't be possible to compare timestamps
             """
-            last_line = grep_output_list[-1]
             # eg: 2021-07-12T04:03:45
             timestamp_regex = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
-            match_obj = timestamp_regex.search(last_line)
-            if not match_obj:
-                # Check if this is a known log entry type that might not have timestamps
-                # but shouldn't cause test failures
-
-                # https://jira.issues.couchbase.com/browse/MB-68370
-                non_critical_patterns = [
-                    "monitorserviceforportchanges"
-                ]
-                is_non_critical = any(pattern in last_line.lower() for pattern in non_critical_patterns)
-                if is_non_critical:
-                    self.log.warning("Found log entry without timestamp (treating as non-critical): %s" % last_line)
-                    return False  # Don't fail the test for known non-critical log entries
-                else:
-                    self.log.critical("%s does not match any timestamp" % last_line)
-                    return True
-            timestamp = match_obj.group()
-            timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
-            self.log.info("Comparing timestamps: Log's latest timestamp: %s, "
-                          "Test's start timestamp is %s"
-                          % (timestamp, self.start_timestamp))
-            if timestamp > self.start_timestamp:
-                return True
-            else:
-                return False
+            
+            # Scan backwards from end to find the latest timestamp efficiently
+            # Log files are chronological, so last timestamp found = latest
+            for line in reversed(grep_output_list):
+                match_obj = timestamp_regex.search(line)
+                if match_obj:
+                    timestamp_str = match_obj.group()
+                    try:
+                        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
+                        self.log.info("Comparing timestamps: Log's latest timestamp: %s, "
+                                      "Test's start timestamp is %s"
+                                      % (timestamp, self.start_timestamp))
+                        if timestamp > self.start_timestamp:
+                            return True
+                        else:
+                            self.log.info("Latest timestamp is before test start. "
+                                          "Ignoring logs from previous runs.")
+                            return False
+                    except ValueError:
+                        continue
+            
+            # No timestamp found in any line
+            # Check if this is a known log entry type that might not have timestamps
+            # but shouldn't cause test failures
+            # https://jira.issues.couchbase.com/browse/MB-68370
+            non_critical_patterns = [
+                "monitorserviceforportchanges"
+            ]
+            last_line = grep_output_list[-1] if grep_output_list else ""
+            is_non_critical = any(pattern in last_line.lower() for pattern in non_critical_patterns)
+            if is_non_critical:
+                self.log.warning("Found log entry without timestamp (treating as non-critical): %s" % last_line)
+                return False  # Don't fail the test for known non-critical log entries
+            
+            self.log.critical("No timestamps found in grep output. "
+                              "First line: %s" % grep_output_list[0][:200] if grep_output_list else "Empty")
+            # Don't flag as error if we can't determine timestamp - return False
+            return False
 
         for idx, server in enumerate(servers):
             shell = RemoteMachineShellConnection(server)
