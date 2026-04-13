@@ -52,3 +52,32 @@ known-first-party = ["lib", "pytests", "couchbase_utils", "platform_utils", "con
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
+
+# Type checking configuration (gradual typing for existing codebase)
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# Allow existing non-typed code to pass
+allow_untyped_defs = true
+allow_incomplete_defs = true
+allow_untyped_calls = true
+allow_untyped_decorators = true
+ignore_missing_imports = true
+
+# Don't enforce strict checks on existing code
+strict_optional = false
+check_untyped_defs = false
+
+# Exclude submodules and generated code
+exclude = [
+    "DocLoader",
+    "sirius",
+    "lib/capellaAPI",
+    "build",
+    "dist",
+    "__pycache__",
+]

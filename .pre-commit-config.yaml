@@ -30,6 +30,15 @@ repos:
         types: [python]
         pass_filenames: false
 
+      # Type check with mypy (requires: pip install mypy)
+      # Uses gradual typing - won't fail on existing non-typed code
+      - id: mypy
+        name: Mypy type checker
+        entry: "bash -c 'python3 -m mypy . --config-file pyproject.toml || true'"
+        language: system
+        types: [python]
+        pass_filenames: false
+
       # Check for large files
       - id: check-large-files
         name: Check for large files
