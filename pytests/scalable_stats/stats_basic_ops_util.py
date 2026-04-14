@@ -1,0 +1,91 @@
+import re
+import time
+import yaml
+import os
+
+from StatsLib.StatsOperations import StatsHelper
+
+
+class MetricSeriesHelper(object):
+    def __init__(self, metric_name, labels=None):
+        self.metric_name = metric_name
+        self.labels = labels or {}
+        label_predicate = "".join(
+            [r'(?=[^}}]*\b{0}="{1}")'.format(re.escape(k), re.escape(v))
+             for k, v in self.labels.items()]
+        )
+        self._metric_pattern = re.compile(
+            r'^' + re.escape(self.metric_name) +
+            r'(?:\{' + label_predicate + r'[^}]*\})?\s+([0-9]+(?:\.[0-9]+)?)(?:\s+[0-9]+)?\s*$'
+        )
+
+    def get_value(self, metrics_lines):
+        for line in metrics_lines:
+            if not line or line.startswith("#"):
+                continue
+            m = self._metric_pattern.match(line.strip())
+            if m:
+                return float(m.group(1))
+        return 0.0
+
+    def get_matching_lines(self, metrics_lines, limit=10):
+        def line_matches(line):
+            if self.metric_name not in line:
+                return False
+            for k, v in self.labels.items():
+                if '{0}="{1}"'.format(k, v) not in line:
+                    return False
+            return True
+
+        return [l for l in metrics_lines if line_matches(l)][:limit]
+
+
+class StatsBasicOpsUtil(object):
+    def __init__(self, log):
+        self.log = log
+
+    def load_metrics_config(self, test_input):
+        config_path = test_input.param(
+            "metrics_config_file",
+            "conf/scalable_stats/metrics_info.yml")
+        if not os.path.exists(config_path):
+            fallback_path = "conf/scalable_stats/metrics_info.yml"
+            if os.path.exists(fallback_path):
+                self.log.warning("Config file %s not found, falling back to %s",
+                                 config_path, fallback_path)
+                config_path = fallback_path
+        with open(config_path, "r") as fp:
+            cfg = yaml.safe_load(fp) or {}
+        return cfg
+
+    @staticmethod
+    def fetch_metrics(server):
+        return StatsHelper(server).get_all_metrics()
+
+    def log_metric_snapshot(self, lines, metric_helper, stage):
+        matched = metric_helper.get_matching_lines(lines)
+        value = metric_helper.get_value(lines)
+        self.log.info("[%s] %s parsed_value=%s labels=%s",
+                      stage, metric_helper.metric_name, value, metric_helper.labels)
+        if matched:
+            self.log.info("[%s] matching metric line(s): %s", stage, matched[:10])
+        else:
+            self.log.info("[%s] no matching metric line found for labels=%s",
+                          stage, metric_helper.labels)
+        return value
+
+    def wait_for_metric_increment(self, get_current_value_fn, metric_helper, expected_floor, sleep_fn,
+                                  timeout_sec=120, poll_interval_sec=5, wait_reason=None):
+        end = time.time() + timeout_sec
+        last_seen = None
+        target = float(expected_floor) + 1.0
+        while time.time() < end:
+            val = get_current_value_fn()
+            last_seen = val
+            if val >= target:
+                return val
+            sleep_fn(poll_interval_sec, wait_reason or "Waiting for metric increment")
+        raise AssertionError("Timed out waiting for {0}{{type=\"{1}\"}} to reach >= {2}. "
+                             "ExpectedFloor={3} LastSeen={4}"
+                             .format(metric_helper.metric_name, metric_helper.labels,
+                                     target, expected_floor, last_seen))

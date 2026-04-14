@@ -1,16 +1,21 @@
 from BucketLib.bucket import TravelSample, BeerSample
 from StatsLib.StatsOperations import StatsHelper
 from bucket_collections.collections_base import CollectionBase
+from scalable_stats.stats_basic_ops_util import StatsBasicOpsUtil, MetricSeriesHelper
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from membase.api.rest_client import RestConnection
 import json
+import time
 import yaml
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class StatsBasicOps(CollectionBase):
     def setUp(self):
         super(StatsBasicOps, self).setUp()
         self.rest = RestConnection(self.cluster.master)
+        self.stats_basic_ops_util = StatsBasicOpsUtil(self.log)
 
     def tearDown(self):
         self.log.info("Reverting settings to default")
@@ -470,3 +475,110 @@ class StatsBasicOps(CollectionBase):
                 self.log.info("calling high cardinality metrics on {0} with component {1}".format(server.ip, component))
                 content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=False)
                 StatsHelper(server)._validate_metrics(content)
+
+    def recover_failed_over_node(self, target_server, recovery_type="delta"):
+        otp_node = "ns_1@{0}".format(target_server.ip)
+        self.rest.add_back_node(otp_node)
+        self.rest.set_recovery_type(otpNode=otp_node, recoveryType=recovery_type)
+        ok = self.cluster_util.rebalance(
+            self.cluster,
+            wait_for_completion=True,
+            ejected_nodes=[],
+            validate_bucket_ranking=False
+        )
+        if not ok:
+            self.fail("Rebalance failed during node recovery")
+
+    def wait_for_failover_or_assert(self, expected_failover_count, timeout):
+        time_start = time.time()
+        time_max_end = time_start + timeout
+        actual_failover_count = 0
+        while time.time() < time_max_end:
+            actual_failover_count = len(self.cluster_util.get_nodes(
+                self.cluster.master, active=False, inactive_failed=True))
+            if actual_failover_count == expected_failover_count:
+                break
+            self.sleep(20)
+        time_end = time.time()
+        self.assertTrue(actual_failover_count == expected_failover_count,
+                        "{0} nodes failed over, expected : {1}"
+                        .format(actual_failover_count, expected_failover_count))
+        self.log.info("{0} nodes failed over as expected in {1} seconds"
+                      .format(actual_failover_count, time_end - time_start))
+
+    def test_cm_alerts_triggered_total_auto_failover_counter(self):
+        """
+        Validate `cm_alerts_triggered_total` counter increments for type=auto_failover_node
+        across repeated auto-failover alert activations and updates synchronously.
+        """
+        cfg = self.stats_basic_ops_util.load_metrics_config(self.input)
+        metrics_cfg = cfg.get("metrics", {})
+        metric_name = self.input.param("metric_name", "cm_alerts_triggered_total")
+        metric_cfg = metrics_cfg.get(metric_name, {})
+        metric_labels = self.input.param("metric_labels", metric_cfg.get("labels", {}))
+        af_timeout = self.input.param("auto_failover_timeout", 30)
+        metric_timeout = self.input.param("metric_timeout", 120)
+        trigger_count = int(self.input.param("trigger_count", 2))
+        metric_helper = MetricSeriesHelper(metric_name=metric_name, labels=metric_labels)
+
+        master = self.cluster.master
+        target = self.cluster.servers[1]
+        shell = RemoteMachineShellConnection(target)
+        rest_api = ClusterRestAPI(master)
+
+        baseline_lines = self.stats_basic_ops_util.fetch_metrics(master)
+        baseline = self.stats_basic_ops_util.log_metric_snapshot(
+            baseline_lines, metric_helper, stage="baseline_before_trigger")
+        self.log.info("Baseline %s=%s labels=%s" % (metric_name, baseline, metric_labels))
+
+        try:
+            status, content = rest_api.reset_auto_failover_count()
+            if not status:
+                self.fail("Failed to reset auto-failover count: %s" % content)
+            status, content = rest_api.update_auto_failover_settings("true", af_timeout, max_count=10)
+            if not status:
+                self.fail("Failed to enable auto-failover: %s" % content)
+
+            current = baseline
+            for i in range(1, trigger_count + 1):
+                shell.stop_couchbase()
+                self.wait_for_failover_or_assert(expected_failover_count=1, timeout=240)
+
+                def get_current_value():
+                    self.log.info("Fetching metrics from %s", master.ip)
+                    lines = self.stats_basic_ops_util.fetch_metrics(master)
+                    return metric_helper.get_value(lines)
+
+                current = self.stats_basic_ops_util.wait_for_metric_increment(
+                    get_current_value_fn=get_current_value,
+                    metric_helper=metric_helper,
+                    expected_floor=current,
+                    sleep_fn=self.sleep,
+                    timeout_sec=metric_timeout,
+                    wait_reason="Waiting for {0} increment".format(metric_name))
+                snapshot_lines = self.stats_basic_ops_util.fetch_metrics(master)
+                self.stats_basic_ops_util.log_metric_snapshot(
+                    snapshot_lines, metric_helper, stage="after_trigger_{0}".format(i))
+                self.log.info("After trigger#%s %s=%s labels=%s",
+                              i, metric_name, current, metric_labels)
+
+                if i < trigger_count:
+                    shell.start_couchbase()
+                    self.sleep(10, "Waiting for couchbase-server to come up before add-back")
+                    self.recover_failed_over_node(target_server=target, recovery_type="delta")
+
+            self.assertTrue(current >= (baseline + trigger_count),
+                            "Expected {0} to increment by at least {1}. "
+                            "Baseline={2} Current={3}"
+                            .format(metric_name, trigger_count, baseline, current))
+
+        finally:
+            try:
+                shell.start_couchbase()
+            except Exception as e:
+                self.log.warning("Failed to start couchbase on target during cleanup: %s" % e)
+            shell.disconnect()
+            try:
+                rest_api.update_auto_failover_settings("false")
+            except Exception as e:
+                self.log.warning("Failed to disable auto-failover during cleanup: %s" % e)
