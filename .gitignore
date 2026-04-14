@@ -56,3 +56,8 @@ secrets/
 *.pem
 *.key
 credentials.json
+
+# Node.js (for jscpd and other npm tools)
+node_modules/
+package-lock.json
+package.json
