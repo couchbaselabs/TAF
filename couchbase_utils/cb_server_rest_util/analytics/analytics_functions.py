@@ -11,6 +11,7 @@ class AnalyticsFunctionsAPI(CBRestConnection):
 
     def execute_statement_on_cbas(self, statement, mode=None, pretty=True,
                                   timeout=70, client_context_id=None,
+                                  username=None, password=None,
                                   analytics_timeout=120, time_out_unit="s",
                                   scan_consistency=None, scan_wait=None,
                                   max_warning=25):

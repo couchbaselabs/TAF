@@ -146,6 +146,22 @@ class ConfluentCloudAPIs(object):
                 "Following errors occurred while listing api keys - "
                 "{0}".format(self.parse_error(response)))
 
+    def is_api_key_valid(self, api_key_id):
+        """
+        Method checks whether the API key is valid or not.
+        """
+        url = self.api_key_endpoint + "/{0}".format(api_key_id)
+        response = self.api_request.api_get(
+            url, headers=self.generate_auth_header())
+        if response.status_code == 200:
+            return True
+        elif response.status_code in [403, 404]:
+            return False
+        else:
+            raise Exception(
+                "Following errors occurred while validating api key {0} - "
+                "{1}".format(api_key_id, self.parse_error(response)))
+
     def get_api_key_info(self, api_key_id):
         """
         Method gets info for a api key id

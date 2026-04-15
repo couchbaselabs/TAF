@@ -1,4 +1,5 @@
 import time
+import gc
 
 from Columnar.columnar_base import ColumnarBaseTest
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
@@ -62,7 +63,9 @@ class ConfluentKafka(ColumnarBaseTest):
             "confluent": {
                 "MONGODB": [],
                 "POSTGRESQL": [],
-                "MYSQLDB": []
+                "MYSQLDB": [],
+                "SQLSERVER": [],
+                "ORACLE": []
             }
         }
 
@@ -103,10 +106,17 @@ class ConfluentKafka(ColumnarBaseTest):
             confluent_cleanup_for_non_cdc = True
 
         try:
-            self.confluent_util.confluent_apis.delete_api_key(
-                self.confluent_cluster_obj.cluster_access_key)
+            if self.confluent_util.is_api_key_valid(
+                    self.confluent_cluster_obj.cluster_access_key):
+                self.confluent_util.confluent_apis.delete_api_key(
+                    self.confluent_cluster_obj.cluster_access_key)
         except Exception as err:
             self.log.error(str(err))
+
+        if self.confluent_util.kafka_cluster_util:
+            self.confluent_util.kafka_cluster_util.client = None
+            self.confluent_util.kafka_cluster_util = None
+            gc.collect()
 
         mongo_collections_deleted = True
         for mongo_coll, _ in self.mongo_collections.items():
@@ -258,6 +268,28 @@ class ConfluentKafka(ColumnarBaseTest):
                     "num_items": 1000000
                 }
             )
+        elif source_db == "SQLSERVER":
+            self.kafka_topics["confluent"]["SQLSERVER"].append(
+                {
+                    "topic_name": "sqlserver.sales.dbo.transactions",
+                    "key_serialization_type": "json",
+                    "value_serialization_type": "json",
+                    "cdc_enabled": True,
+                    "source_connector": "DEBEZIUM",
+                    "num_items": 1000000
+                }
+            )
+        elif source_db == "ORACLE":
+            self.kafka_topics["confluent"]["ORACLE"].append(
+                {
+                    "topic_name": "oracle.ADMIN.ORDERS",
+                    "key_serialization_type": "json",
+                    "value_serialization_type": "json",
+                    "cdc_enabled": True,
+                    "source_connector": "DEBEZIUM",
+                    "num_items": 1000000
+                }
+            )
 
         confluent_kafka_cluster_details = [
             self.confluent_util.generate_confluent_kafka_cluster_detail(
@@ -284,6 +316,9 @@ class ConfluentKafka(ColumnarBaseTest):
         if source_db == "MONGODB":
             self.columnar_spec["kafka_dataset"]["primary_key"] = [
                 {"_id": "string"}]
+        elif source_db == "ORACLE":
+            self.columnar_spec["kafka_dataset"]["primary_key"] = [
+                {"ID": "INT"}]
         else:
             self.columnar_spec["kafka_dataset"]["primary_key"] = [
                 {"id": "INT"}]

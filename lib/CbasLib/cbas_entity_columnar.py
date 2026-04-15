@@ -311,7 +311,9 @@ class Standalone_Dataset(Dataset):
 
             if self.data_source in ["s3", "azure", "gcs", "azureblob"]:
                 self.dataset_properties = dataset_properties
-            elif self.data_source.upper() in ["MONGODB", "MYSQLDB", "POSTGRESQL", "DYNAMODB"]:
+            elif self.data_source.upper() in [
+                    "MONGODB", "MYSQLDB", "POSTGRESQL",
+                    "DYNAMODB", "SQLSERVER", "ORACLE"]:
                 self.kafka_topic_name = kafka_topic_name
                 self.cdc_enabled = cdc_enabled
                 self.key_serialization_type = key_serialization_type.upper()

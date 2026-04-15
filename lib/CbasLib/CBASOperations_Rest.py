@@ -61,50 +61,23 @@ class CBASHelper(AnalyticsRestAPI):
                                   analytics_timeout=120, time_out_unit="s",
                                   scan_consistency=None, scan_wait=None,
                                   max_warning=25):
-        if not username:
-            username = self.username
-        if not password:
-            password = self.password
-        api = self.cbas_base_url + "/analytics/service"
-        headers = self._create_capi_headers(username, password)
+        original_auth = (self.username, self.password)
+        self.username = username or self.username
+        self.password = password or self.password
 
-        params = {'statement': statement, 'pretty': pretty,
-                  'max-warnings': max_warning,
-                  'client_context_id': client_context_id,
-                  'timeout': str(analytics_timeout) + time_out_unit}
-
-        if mode is not None:
-            params['mode'] = mode
-
-        if scan_consistency is not None:
-            params['scan_consistency'] = scan_consistency
-
-        if scan_wait is not None:
-            params['scan_wait'] = scan_wait
-        params = json.dumps(params)
-        status, content, response = self._http_request(
-            api, 'POST', headers=headers, params=params, timeout=timeout)
-        if hasattr(response, "status"):
-            status_code = response.status
-        elif hasattr(response, "status_code"):
-            status_code = response.status_code
-
-        if status:
+        try:
+            status, content = super(CBASHelper, self).execute_statement_on_cbas(
+                statement=statement, mode=mode, pretty=pretty,
+                timeout=timeout, client_context_id=client_context_id,
+                analytics_timeout=analytics_timeout,
+                time_out_unit=time_out_unit,
+                scan_consistency=scan_consistency,
+                scan_wait=scan_wait, max_warning=max_warning)
+            if not status:
+                raise Exception(content)
             return content
-        elif status_code == 503:
-            self.log.info("Request Rejected")
-            raise Exception("Request Rejected")
-        elif status_code in [500, 400, 401, 403, 409]:
-            json_content = json.loads(content)
-            msg = json_content['errors'][0]['msg']
-            if "Job requirement" in msg and "exceeds capacity" in msg:
-                raise Exception("Capacity cannot meet job requirement")
-            else:
-                return content
-        else:
-            self.log.error("/analytics/service status:{0}, content:{1}"
-                           .format(status, content))
-            raise Exception("Analytics Service API failed")
+        finally:
+            self.username, self.password = original_auth
 
     def execute_parameter_statement_on_cbas(self, statement, mode, pretty=True,
                                             timeout=70, client_context_id=None,
