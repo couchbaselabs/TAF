@@ -44,7 +44,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         super(OnPremBaseTest, self).setUp()
 
         # Framework specific parameters (Extension from cb_basetest)
-        self.skip_cluster_reset = self.input.param("skip_cluster_reset", False)
+        self.skip_cluster_reset = self.input.param("skip_cluster_reset", True)
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
         # End of framework parameters
 
