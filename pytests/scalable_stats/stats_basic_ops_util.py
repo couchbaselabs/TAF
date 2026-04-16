@@ -4,6 +4,7 @@ import yaml
 import os
 
 from StatsLib.StatsOperations import StatsHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MetricSeriesHelper(object):
@@ -104,3 +105,29 @@ class StatsBasicOpsUtil(object):
                              "ExpectedFloor={3} LastSeen={4}"
                              .format(metric_helper.metric_name, metric_helper.labels,
                                      target, expected_floor, last_seen))
+
+    @staticmethod
+    def block_traffic_between_nodes(node1, node2):
+        """Block bidirectional network traffic between two nodes using iptables"""
+        shell = RemoteMachineShellConnection(node1)
+        shell.execute_command("iptables -A INPUT -s {0} -j DROP".format(node2.ip))
+        shell.execute_command("iptables -A OUTPUT -d {0} -j DROP".format(node2.ip))
+        shell.disconnect()
+
+    @staticmethod
+    def restore_network_connectivity(node1, node2):
+        """Restore network connectivity between two nodes by removing iptables rules"""
+        shell = RemoteMachineShellConnection(node1)
+        shell.execute_command("iptables -D INPUT -s {0} -j DROP || true".format(node2.ip))
+        shell.execute_command("iptables -D OUTPUT -d {0} -j DROP || true".format(node2.ip))
+        shell.disconnect()
+
+    def remove_all_network_partitions(self, nodes):
+        """Remove all iptables rules from specified nodes (cleanup)"""
+        for node in nodes:
+            try:
+                shell = RemoteMachineShellConnection(node)
+                shell.execute_command("/sbin/iptables -F")
+                shell.disconnect()
+            except Exception as e:
+                self.log.warning("Failed to clear rules on {0}: {1}".format(node.ip, e))

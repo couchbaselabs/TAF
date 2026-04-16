@@ -2,6 +2,10 @@ metrics:
   cm_alerts_triggered_total:
     labels:
       type: auto_failover_node
+  cm_node_unreachable_total:
+    labels:
+      node: default
+      reason: net_tick_timeout
 validation:
   allowed_prefixes:
     - audit

@@ -641,3 +641,108 @@ class StatsBasicOps(CollectionBase):
                 rest_api.update_auto_failover_settings("false")
             except Exception as e:
                 self.log.warning("Failed to disable auto-failover during cleanup: %s" % e)
+
+    def test_cm_node_unreachable_total_net_tick_timeout(self):
+        """
+        Validate `cm_node_unreachable_total` counter increments for reason=net_tick_timeout
+        with asymmetric detection: baseline shows reason=unknown, after partition shows
+        reason=net_tick_timeout (incrementing), and unaffected nodes show no change.
+
+        Expected metric transitions:
+        - Baseline: cm_node_unreachable_total{node="ns_1@node2_ip",reason="unknown"} 0
+        - After partition: cm_node_unreachable_total{node="ns_1@node2_ip",reason="net_tick_timeout"} N+1
+        - Node3 unaffected: no increment observed
+        """
+
+        metric_name = self.input.param("metric_name", "cm_node_unreachable_total")
+        detection_timeout = self.input.param("detection_timeout", 60)
+        partition_hold_sec = int(self.input.param("partition_hold_sec", 45))
+        cycle_count = int(self.input.param("cycle_count", 2))
+
+        node1 = self.cluster.master
+        node2 = self.cluster.servers[1]
+        node3 = self.cluster.servers[2]
+
+        otp_node2 = "ns_1@{0}".format(node2.ip)
+
+        helpers_net_tick = {
+            "node1_node2": MetricSeriesHelper(metric_name, {"node": otp_node2, "reason": "net_tick_timeout"}),
+            "node3_node2": MetricSeriesHelper(metric_name, {"node": otp_node2, "reason": "net_tick_timeout"})
+        }
+
+        baseline_node1_metrics = self.stats_basic_ops_util.fetch_metrics(node1)
+        baseline_node1_net_tick_val = helpers_net_tick["node1_node2"].get_value(baseline_node1_metrics)
+
+        self.log.info("Baseline node1: net_tick=%s for node %s",
+                      baseline_node1_net_tick_val, otp_node2)
+
+        baseline_node3_metrics = self.stats_basic_ops_util.fetch_metrics(node3)
+        baseline_node3_val = helpers_net_tick["node3_node2"].get_value(baseline_node3_metrics)
+        self.log.info("Check node3: net_tick=%s for node %s (should be 0)",
+                      baseline_node3_val, otp_node2)
+
+        self.assertTrue(
+            baseline_node1_net_tick_val == 0,
+            "Precondition failed: node1 should have 0 net_tick_timeout before partition. Got=%s"
+            % baseline_node1_net_tick_val)
+        self.assertTrue(baseline_node3_val == 0,
+                        "Precondition failed: node3 should have 0 net_tick_timeout before test")
+
+        current_counter = baseline_node1_net_tick_val
+
+        try:
+            for cycle in range(1, cycle_count + 1):
+                self.log.info("Cycle %s/%s: Stabilizing cluster before partition", cycle, cycle_count)
+                self.sleep(20, "Wait for cluster to stabilize UP→DOWN transition")
+
+                self.log.info("Cycle %s: Ensuring no stale iptables rules between node %s and node %s",
+                              cycle, node1.ip, node2.ip)
+                StatsBasicOpsUtil.restore_network_connectivity(node1, node2)
+                self.log.info("Cycle %s: Breaking connectivity between node %s and node %s",
+                              cycle, node1.ip, node2.ip)
+                StatsBasicOpsUtil.block_traffic_between_nodes(node1, node2)
+                self.sleep(partition_hold_sec,
+                           "Holding partition between {0} and {1} for net_tick_timeout detection"
+                           .format(node1.ip, node2.ip))
+
+                self.log.info("Waiting for net_tick_timeout detection (timeout=%s)", detection_timeout)
+                start_time = time.time()
+                while time.time() - start_time < detection_timeout:
+                    node1_metrics = self.stats_basic_ops_util.fetch_metrics(node1)
+                    new_val = helpers_net_tick["node1_node2"].get_value(node1_metrics)
+                    if new_val > current_counter:
+                        delta = new_val - current_counter
+                        current_counter = new_val
+                        self.log.info(
+                            "Cycle %s: net_tick_timeout increment detected for %s: %s -> %s (delta=%s)",
+                            cycle, otp_node2, current_counter - delta, current_counter, delta)
+                        expected_counter = baseline_node1_net_tick_val + cycle
+                        self.assertTrue(
+                            current_counter >= expected_counter,
+                            "Cycle %s expected %s>=%s for node %s, got %s"
+                            % (cycle, metric_name, expected_counter, otp_node2, current_counter))
+                        break
+                    self.sleep(5, "Polling for metric increment")
+                else:
+                    observed_val = helpers_net_tick["node1_node2"].get_value(
+                        self.stats_basic_ops_util.fetch_metrics(node1))
+                    self.fail("Timeout waiting for net_tick_timeout increment. "
+                              "Expected > %s, got %s (baseline=%s)"
+                              % (current_counter, observed_val, baseline_node1_net_tick_val))
+
+                node3_metrics = self.stats_basic_ops_util.fetch_metrics(node3)
+                node3_net_tick_val = helpers_net_tick["node3_node2"].get_value(node3_metrics)
+                self.assertTrue(node3_net_tick_val == baseline_node3_val,
+                                "Node3 should not detect unreachable nodes. "
+                                "Expected=%s Actual=%s" % (baseline_node3_val, node3_net_tick_val))
+
+                self.log.info("Cycle %s: Restoring connectivity between node %s and node %s",
+                              cycle, node1.ip, node2.ip)
+                StatsBasicOpsUtil.restore_network_connectivity(node1, node2)
+                self.sleep(20, "Wait for network recovery")
+
+            self.log.info("Success: Completed %s cycles. Counter=%s. Node3 unaffected.", cycle_count, current_counter)
+
+        finally:
+            self.log.info("Cleaning up all network partitions")
+            self.stats_basic_ops_util.remove_all_network_partitions(self.cluster.servers[:self.nodes_init])
