@@ -115,16 +115,10 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
 
     def test_crud_during_extent_migration(self):
@@ -164,16 +158,10 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         ClusterRestAPI(self.cluster.master).\
                 manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         # Deleting guest volumes after extent migration
         self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
@@ -194,19 +182,9 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
         active_guest_volumes_th = threading.Thread(target=self.monitor_active_guest_volumes, args=[18000, active_guest_vol_interval])
         active_guest_volumes_th.start()
 
-        for th in extent_migration_array:
-            th.join()
         active_guest_volumes_th.join()
 
 
@@ -231,13 +209,9 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.cluster_util.print_cluster_stats(self.cluster)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
 
         self.sleep(10, "Wait before performing rebalance-in during migration")
         nodes_to_monitor2 = list()
@@ -268,19 +242,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         ClusterRestAPI(self.cluster.master).\
                 manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        extent_migration_array2 = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor2}")
-        for node in nodes_to_monitor2:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array2.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
-
-        for th in extent_migration_array2:
-            th.join()
+        guest_volume_th.join()
 
 
     def test_rebalance_out_during_migration(self):
@@ -327,16 +289,10 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         ClusterRestAPI(self.cluster.master).\
             manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
     def test_swap_rebalance_during_extent_migration(self):
 
@@ -359,13 +315,9 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.cluster_util.print_cluster_stats(self.cluster)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
 
         self.sleep(10, "Wait before performing swap rebalance during migration")
         if self.swap_rebalance_method == "dcp":
@@ -395,19 +347,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         ClusterRestAPI(self.cluster.master).\
             manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        extent_migration_array2 = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor2}")
-        for node in nodes_to_monitor2:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array2.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
-
-        for th in extent_migration_array2:
-            th.join()
+        guest_volume_th.join()
 
 
     def test_rebalances_post_extent_migration(self):
@@ -423,16 +363,10 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.cluster_util.print_cluster_stats(self.cluster)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
@@ -463,16 +397,10 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
             self.cluster_util.print_cluster_stats(self.cluster)
 
-            extent_migration_array = list()
-            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-            for node in nodes_to_monitor:
-                for bucket in self.cluster.buckets:
-                    extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                    extent_th.start()
-                    extent_migration_array.append(extent_th)
-
-            for th in extent_migration_array:
-                th.join()
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
+            guest_volume_th.join()
 
             self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
@@ -1261,13 +1189,9 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             ClusterRestAPI(self.cluster.master).\
                 manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
 
         if not pause_extent_migration:
 
@@ -1289,8 +1213,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             if perform_reads_during_magma_dump:
                 read_th.join()
 
-        for th in extent_migration_array:
-            th.join()
+        guest_volume_th.join()
 
 
     def test_cbcollect_during_extent_migration(self):
@@ -1333,13 +1256,9 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 ClusterRestAPI(self.cluster.master).\
                     manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-            extent_migration_array = list()
-            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-            for node in nodes_to_monitor:
-                for bucket in self.cluster.buckets:
-                    extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                    extent_th.start()
-                    extent_migration_array.append(extent_th)
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
 
             if not pause_extent_migration:
 
@@ -1358,8 +1277,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
                 self.log.info(f"Cbcollect errors = {self.cbcollect_errors}")
 
-            for th in extent_migration_array:
-                th.join()
+            guest_volume_th.join()
 
 
     def perform_cbcollect_on_node(self, server):

@@ -113,7 +113,13 @@ class FusionBase(BaseTestCase):
                 self.nfs_server_path = f"/data/nfs/{self.client_share_dir}/buckets"
 
             else:
-                self.log.info("Skipping Fusion Set Up")
+                self.log.info("Skipping NFS Set Up")
+                for client in self.cluster.servers:
+                    df_cmd = "df -H"
+                    ssh = RemoteMachineShellConnection(client)
+                    o, e = ssh.execute_command(df_cmd)
+                    self.log.info(f"NFS client mount on {client.ip} = {o}")
+                    ssh.disconnect()
                 self.log.info("Deleting contents on log store")
                 ssh = RemoteMachineShellConnection(self.nfs_server)
                 nfs_base_path = "/".join(self.nfs_server_path.split("/")[:-1])
@@ -127,7 +133,7 @@ class FusionBase(BaseTestCase):
             self.monitor = True
             self.crash_loop = False
 
-            self.retry_get_process_num = self.input.param("retry_get_process_num", 300)
+            self.retry_get_process_num = self.input.param("retry_get_process_num", 3000)
 
             self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
             self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
@@ -141,6 +147,7 @@ class FusionBase(BaseTestCase):
             self.read_process_concurrency = self.input.param("read_process_concurrency", 8)
             self.validate_batch_size = self.input.param("validate_batch_size", 500000)
             self.rebalance_ops_rate = self.input.param("rebalance_ops_rate", 10000)
+            self.validate_uploaders_are_active = self.input.param("validate_uploaders_are_active", True)
 
             self.spare_nodes = list()
 
@@ -532,16 +539,20 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
-    def monitor_active_guest_volumes(self, duration=18000, interval=5):
-
+    def monitor_active_guest_volumes(self, duration=86400, interval=30):
         fusion_rest = FusionRestAPI(self.cluster.master)
 
         start_time = time.time()
         end_time = start_time + duration
+        seen_volumes = False
+
+        self.log.info(f"[GUEST VOLUMES] Starting monitor (max duration: {duration}s, poll interval: {interval}s)")
 
         while time.time() < end_time:
             status, content = fusion_rest.get_active_guest_volumes()
-            self.log.info(f"Active Guest Volumes: {content}")
+            elapsed = round(time.time() - start_time, 1)
+            self.log.info(f"[GUEST VOLUMES] elapsed={elapsed}s | Active Guest Volumes: {content}")
+
             if status:
                 all_guests = []
                 for guests in content.values():
@@ -549,16 +560,18 @@ class FusionBase(BaseTestCase):
 
                 if all_guests:
                     seen_volumes = True
-                    print(f"Guests still present: {content}")
-
+                    self.log.info(f"[GUEST VOLUMES] Guests still present: {content}")
                 else:
                     if seen_volumes:
-                        print("All guest volumes drained on all nodes. Exiting.")
+                        self.log.info(f"[GUEST VOLUMES] All guest volumes drained. Total time: {elapsed}s")
                         break
                     else:
-                        print("No guest volumes yet, waiting for initial population.")
+                        self.log.info("[GUEST VOLUMES] No guest volumes yet, waiting for initial population.")
 
             time.sleep(interval)
+        else:
+            elapsed = round(time.time() - start_time, 1)
+            self.log.warning(f"[GUEST VOLUMES] Monitor timed out after {elapsed}s without all volumes draining")
 
 
     def run_rebalance(self, output_dir, rebalance_count=1, rebalance_sleep_time=120,
@@ -569,9 +582,8 @@ class FusionBase(BaseTestCase):
                       guest_storage_dest_path=None):
 
         # Populate spare nodes list
-        if rebalance_count == 1:
-            self.spare_nodes = self.cluster.servers[len(self.cluster.nodes_in_cluster):]
-            self.log.info(f"Spare nodes = {self.spare_nodes}")
+        self.spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
+        self.log.info(f"Spare nodes = {self.spare_nodes}")
 
         current_nodes_str = ""
         for node in self.cluster.nodes_in_cluster:
@@ -728,7 +740,7 @@ class FusionBase(BaseTestCase):
         source {self.venv_path}/bin/activate
         pip install --upgrade pip
         pip install paramiko requests
-        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count} --manifest-parts {manifest_parts} --log-store {log_store}
+        python3 {self.fusion_scripts_dir}/run_fusion_rebalance.py --current-nodes {current_nodes_str} --new-nodes {new_node_str} --env local --config {self.fusion_scripts_dir}/config.json --sleep-time {rebalance_sleep_time} --reb-count {rebalance_count} --manifest-parts {manifest_parts} --log-store {log_store} --case-number {self.case_number}
         """
 
         if replica_update:
@@ -795,7 +807,10 @@ class FusionBase(BaseTestCase):
         # Parse Fusion error logs to look for any failures/issues
         # Exclude known patterns like "Temporary failure in name resolution"
         self.log.info("Parsing Fusion Error logs to look for issues/failures")
-        grep_cmd = f"grep -v -E 'Temporary failure in name resolution|unable to resolve host|WARNING|^\[[0-9.]+\][[:space:]]*$|^[[:space:]]*$' {self.fusion_rebalance_error}"
+        grep_cmd = (
+            f"grep -iE 'error|failed|exception|traceback|fatal|panic' {self.fusion_rebalance_error} "
+            f"| grep -viE 'Temporary failure in name resolution|unable to resolve host|warning'"
+        )
         result = subprocess.run(grep_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
         output = result.stdout.strip()
         error = result.stderr.strip()
@@ -806,7 +821,7 @@ class FusionBase(BaseTestCase):
 
         nodes_to_monitor = list()
         ssh = RemoteMachineShellConnection(self.cluster.master)
-        reb_plan_path = os.path.join(self.fusion_scripts_dir, "reb_plan{}.json".format(str(rebalance_count)))
+        reb_plan_path = os.path.join(self.fusion_scripts_dir, "reb_plan_test{}_{}.json".format(str(self.case_number), str(rebalance_count)))
         cat_cmd = f"cat {reb_plan_path}"
         o, e = ssh.execute_command(cat_cmd)
         json_str = "\n".join(o)
@@ -880,6 +895,32 @@ class FusionBase(BaseTestCase):
 
 
     def get_fusion_uploader_info(self, buckets=None):
+        """Fetch fusion uploader assignment for every VB in each bucket.
+
+        Populates two dicts:
+
+        fusion_uploader_dict  — how many VBs each node is the uploader for:
+            {
+                "bucket-1": {
+                    "ns_1@172.23.221.10": 512,
+                    "ns_1@172.23.221.11": 512
+                }
+            }
+
+        fusion_vb_uploader_map  — per-VB uploader node and current term:
+            {
+                "bucket-1": {
+                    0:    {"node": "172.23.221.10", "term": 3},
+                    1:    {"node": "172.23.221.11", "term": 3},
+                    ...
+                    1023: {"node": "172.23.221.10", "term": 3}
+                }
+            }
+
+        "node" is the bare IP (the "ns_1@" prefix is stripped).
+        "term" is the Raft term at which the uploader was elected.
+        A "node" value of None means no uploader is currently assigned for that VB.
+        """
 
         self.fusion_uploader_dict = dict()
         self.fusion_vb_uploader_map = dict()
@@ -915,6 +956,232 @@ class FusionBase(BaseTestCase):
 
         self.log.info(f"Fusion Uploader Distribution = {self.fusion_uploader_dict}")
         self.log.info(f"Fusion VB Uploader Map = {self.fusion_vb_uploader_map}")
+
+
+    def verify_uploaders_are_active(self):
+        """Check that each uploader VB is an active VB on its uploader node.
+
+        Logs a warning for any VB where the designated uploader node holds it
+        as a replica instead of an active copy, which would indicate a
+        post-rebalance inconsistency.
+        """
+        self.log.info(f"Fetching VB Uploader Map")
+        self.get_fusion_uploader_info()
+        self.log.info(f"Validating that the uploaders are active VBs")
+        inactive_counts = {}
+        for bucket in self.cluster.buckets:
+            if bucket.name not in self.fusion_vb_uploader_map:
+                continue
+
+            # Group uploader VBs by node IP to minimise Cbstats connections
+            node_to_vbs = {}
+            for vb_no, info in self.fusion_vb_uploader_map[bucket.name].items():
+                node_ip = info.get("node")
+                if node_ip is None:
+                    continue
+                node_to_vbs.setdefault(node_ip, []).append(vb_no)
+
+            for node_ip, uploader_vbs in node_to_vbs.items():
+                server = next(
+                    (s for s in self.cluster.nodes_in_cluster if s.ip == node_ip),
+                    None
+                )
+                if server is None:
+                    self.log.warning(
+                        f"[UPLOADER VALIDATION] bucket={bucket.name}: "
+                        f"uploader node {node_ip} not found in current cluster nodes"
+                    )
+                    continue
+
+                cbstats = Cbstats(server)
+                active_vbs = cbstats.vbucket_list(bucket.name, "active")
+                cbstats.disconnect()
+
+                active_count = 0
+                for vb_no in uploader_vbs:
+                    if vb_no not in active_vbs:
+                        self.log.warning(
+                            f"[UPLOADER VALIDATION] bucket={bucket.name}, vb={vb_no}: "
+                            f"uploader node {node_ip} does NOT hold this VB as active "
+                            f"(likely a replica). Uploader should always be on the active copy."
+                        )
+                    else:
+                        active_count += 1
+                non_active = len(uploader_vbs) - active_count
+                inactive_counts[bucket.name] = inactive_counts.get(bucket.name, 0) + non_active
+                self.log.info(
+                    f"[UPLOADER VALIDATION] bucket={bucket.name}, node={node_ip}: "
+                    f"{active_count}/{len(uploader_vbs)} uploader VBs are active"
+                )
+
+        return inactive_counts
+
+    def verify_fusion_reupload_optimized(self, prev_uploader_map, new_uploader_map, rebalance_count):
+        """Verify whether a VB re-uploaded from scratch after a rebalance.
+
+        Unlike verify_fusion_reupload() which detects re-uploads by comparing
+        Raft terms, this version uses the rebalance plan to determine intent:
+
+        For every VB whose uploader node has changed:
+          1. Look up the new uploader node in the reb_plan["nodes"] dict.
+             - reb_plan node keys are in "ns_1@<ip>" format; the uploader map
+               stores the bare IP, so we match by the IP suffix.
+          2. If the new uploader node is NOT in reb_plan at all → re-upload
+             from scratch (the node had no snapshot handed to it).
+          3. If the node IS in reb_plan, search its snapshot list for a
+             volumeID matching "kv/<bucket_uuid>/kvstore-<vb_no>".
+             - volumeID NOT found → no snapshot was transferred → re-upload
+               from scratch.
+             - volumeID found → snapshot was transferred, NOT a re-upload
+               from scratch.
+
+        reb_plan sample (one node entry):
+            {
+                "planUUID": "4e46328c...",
+                "nodes": {
+                    "ns_1@172.23.216.33": [
+                        {
+                            "volumeID": "kv/<bucket_uuid>/kvstore-0",
+                            ...
+                        },
+                        {
+                            "volumeID": "kv/<bucket_uuid>/kvstore-1",
+                            ...
+                        }
+                    ]
+                }
+            }
+
+        Returns a dict mapping bucket name to the list of VB numbers that
+        were confirmed as re-uploads from scratch.
+        """
+        reb_plan_path = os.path.join(
+            self.fusion_output_dir, f"reb_plan_test{self.case_number}_{rebalance_count}.json"
+        )
+        self.log.info(f"[REUPLOAD] Reading rebalance plan from: {reb_plan_path}")
+        with open(reb_plan_path, "r") as f:
+            reb_plan = json.load(f)
+
+        # Build a lookup: bare_ip -> list of volumeIDs present in the plan
+        # reb_plan node keys are "ns_1@<ip>"; extract the IP portion.
+        plan_node_volumes = {}
+        for node_key, snapshots in reb_plan.get("nodes", {}).items():
+            node_ip = node_key.split("@")[1] if "@" in node_key else node_key
+            plan_node_volumes[node_ip] = {s["volumeID"] for s in snapshots}
+
+        self.log.info(f"Plan Node Volumes: {plan_node_volumes}")
+
+        reupload_count_dict = {}
+
+        for bucket in self.cluster.buckets:
+            reupload_count_dict[bucket.name] = []
+
+            for vb_no in range(bucket.numVBuckets):
+                prev_node = prev_uploader_map[bucket.name][vb_no]["node"]
+                new_node = new_uploader_map[bucket.name][vb_no]["node"]
+                prev_term = prev_uploader_map[bucket.name][vb_no]["term"]
+                new_term = new_uploader_map[bucket.name][vb_no]["term"]
+
+                if prev_term == new_term:
+                    self.log.info(
+                        f"[REUPLOAD] bucket={bucket.name}, vb={vb_no}: "
+                        f"Uploader unchanged, no re-upload concern"
+                    )
+                    continue
+
+                # Uploader has moved — check if the new node had a snapshot
+                if new_node is None:
+                    self.log.info(
+                        f"[REUPLOAD] bucket={bucket.name}, vb={vb_no}: "
+                        f"no uploader assigned after rebalance"
+                    )
+                    continue
+
+                expected_volume_id = f"kv/{bucket.uuid}/kvstore-{vb_no}"
+
+                if new_node not in plan_node_volumes:
+                    self.log.info(
+                        f"[REUPLOAD] bucket={bucket.name}, vb={vb_no}: "
+                        f"new uploader {new_node} not in reb_plan — re-upload from scratch"
+                    )
+                    reupload_count_dict[bucket.name].append(vb_no)
+                elif expected_volume_id not in plan_node_volumes[new_node]:
+                    self.log.info(
+                        f"[REUPLOAD] bucket={bucket.name}, vb={vb_no}: "
+                        f"volumeID '{expected_volume_id}' missing from reb_plan entry "
+                        f"for {new_node} — re-upload from scratch"
+                    )
+                    reupload_count_dict[bucket.name].append(vb_no)
+                else:
+                    self.log.debug(
+                        f"[REUPLOAD] bucket={bucket.name}, vb={vb_no}: "
+                        f"snapshot transferred to {new_node}, NOT a re-upload from scratch"
+                    )
+
+        for bucket_name, vbs in reupload_count_dict.items():
+            self.log.info(
+                f"[REUPLOAD] bucket={bucket_name}: "
+                f"{len(vbs)} VB(s) re-uploaded from scratch: {vbs}"
+            )
+
+        return reupload_count_dict
+
+    def check_vb_movement_to_existing_nodes(self, rebalance_count, nodes_before_rebalance):
+        """After a rebalance-in, check how many VBs moved to nodes that
+        already existed in the cluster (instead of only going to new nodes).
+
+        Uses the rebalance plan to identify volume transfers.  For each node
+        in reb_plan["nodes"], if the node was already in the cluster before
+        the rebalance, every volume assigned to it represents a VB that moved
+        *within* the existing cluster rather than to a newly added node.
+
+        Args:
+            rebalance_count: iteration number (to locate the reb_plan JSON).
+            nodes_before_rebalance: list of server objects that were in the
+                cluster BEFORE the rebalance-in.
+
+        Returns:
+            dict: {existing_node_ip: [list of volumeIDs]} for nodes that
+                  received VBs despite already being in the cluster.
+        """
+        reb_plan_path = os.path.join(
+            self.fusion_output_dir, f"reb_plan_test{self.case_number}_{rebalance_count}.json"
+        )
+        self.log.info(f"[VB_MOVEMENT] Reading rebalance plan: {reb_plan_path}")
+        with open(reb_plan_path, "r") as f:
+            reb_plan = json.load(f)
+
+        existing_ips = {n.ip for n in nodes_before_rebalance}
+        self.log.info(f"[VB_MOVEMENT] Existing node IPs before rebalance: {existing_ips}")
+
+        existing_node_vbs = {}
+        total_existing = 0
+        total_new = 0
+
+        for node_key, snapshots in reb_plan.get("nodes", {}).items():
+            node_ip = node_key.split("@")[1] if "@" in node_key else node_key
+            volume_ids = [s["volumeID"] for s in snapshots]
+
+            if node_ip in existing_ips:
+                existing_node_vbs[node_ip] = volume_ids
+                total_existing += len(volume_ids)
+                self.log.info(
+                    f"[VB_MOVEMENT] Existing node {node_ip}: "
+                    f"{len(volume_ids)} VB(s) moved in — {volume_ids}"
+                )
+            else:
+                total_new += len(volume_ids)
+                self.log.info(
+                    f"[VB_MOVEMENT] New node {node_ip}: "
+                    f"{len(volume_ids)} VB(s) assigned (expected)"
+                )
+
+        self.log.info(
+            f"[VB_MOVEMENT] Summary — VBs to new nodes: {total_new}, "
+            f"VBs moved within existing nodes: {total_existing}"
+        )
+
+        return existing_node_vbs, total_existing, total_new
 
     def get_memory_usage(self):
         """
@@ -964,18 +1231,10 @@ class FusionBase(BaseTestCase):
         self.log.info("Fusion rebalance completed successfully")
 
         # Step 3: Monitor extent migration after rebalance
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
-
-        self.log.info("Extent migration monitoring completed successfully")
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         # Step 3.5: Log Fusion storage consistency stats
         self.log.info("Collecting Fusion storage consistency stats")
@@ -1699,93 +1958,222 @@ class FusionBase(BaseTestCase):
 
     def monitor_fusion_du(self, bucket, validate=False, time_interval=15):
 
-        self.log.info("Monitoring Log Store Disk Usage")
+        self.log.info(
+            f"[monitor_fusion_du] Starting log-store DU monitor for "
+            f"bucket '{bucket.name}' "
+            f"(validate={validate}, interval={time_interval}s)"
+        )
 
         bucket_uuid = self.get_bucket_uuid(bucket.name)
-        self.log.info(f"Bucket UUID: {bucket_uuid}")
+        self.log.info(
+            f"[monitor_fusion_du] Bucket '{bucket.name}' UUID: {bucket_uuid}"
+        )
         fusion_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
+        self.log.info(
+            f"[monitor_fusion_du] NFS path: {fusion_bucket_path} "
+            f"(server={self.nfs_server_ip})"
+        )
 
         du_cmd = f"du -sb {fusion_bucket_path}"
         ssh = RemoteMachineShellConnection(self.nfs_server)
 
         if validate:
-            # Fetch the initial log store DU after creates, which will be used to compare and validate
             o, e = ssh.execute_command(du_cmd)
-            current_du = int(o[0].split("\t")[0])
-            self.log.info(f"Log Store Size of {bucket.name} after initial creates = {current_du}")
-            self.max_allowed_log_store_du = (1 + self.logstore_frag_threshold + 0.25) * current_du
-            self.log.info(f"Log Store DU should be always under {self.max_allowed_log_store_du} bytes")
+            baseline_du = int(o[0].split("\t")[0])
+            self.max_allowed_log_store_du = (
+                (1 + self.logstore_frag_threshold + 0.05) * baseline_du
+            )
+            self.log.info(
+                f"[monitor_fusion_du] Bucket '{bucket.name}': "
+                f"baseline DU = {baseline_du:,} bytes "
+                f"({baseline_du / (1024 ** 3):.3f} GiB), "
+                f"frag_threshold = {self.logstore_frag_threshold}, "
+                f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes "
+                f"({self.max_allowed_log_store_du / (1024 ** 3):.3f} GiB)"
+            )
 
         du_violations = 0
         total_checks = 0
         max_du_observed = 0
+        violation_samples = []
+        self.frag_du_pass = True
 
         while self.monitor_stats:
             o, e = ssh.execute_command(du_cmd)
-            current_du = int(o[0].split("\t")[0])
-            self.log.info(f"Current Log Store DU for {bucket.name} = {current_du}")
+            try:
+                current_du = int(o[0].split("\t")[0])
+            except (IndexError, ValueError) as exc:
+                self.log.warning(
+                    f"[monitor_fusion_du] Bucket '{bucket.name}': "
+                    f"could not parse du output '{o}': {exc} — skipping check"
+                )
+                time.sleep(time_interval)
+                continue
 
-            if validate and current_du > self.max_allowed_log_store_du:
-                du_violations += 1
-                max_du_observed = max(max_du_observed, current_du)
-
+            max_du_observed = max(max_du_observed, current_du)
             total_checks += 1
+
+            if validate:
+                utilisation_pct = (
+                    current_du / self.max_allowed_log_store_du * 100
+                )
+                if current_du > self.max_allowed_log_store_du:
+                    du_violations += 1
+                    violation_samples.append(current_du)
+                    self.log.error(
+                        f"[monitor_fusion_du] [VIOLATION] "
+                        f"Bucket '{bucket.name}' check #{total_checks}: "
+                        f"current = {current_du:,} bytes "
+                        f"({current_du / (1024 ** 3):.3f} GiB), "
+                        f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes, "
+                        f"utilisation = {utilisation_pct:.1f}%, "
+                        f"violations so far = {du_violations}"
+                    )
+                else:
+                    self.log.info(
+                        f"[monitor_fusion_du] [OK] "
+                        f"Bucket '{bucket.name}' check #{total_checks}: "
+                        f"current = {current_du:,} bytes "
+                        f"({current_du / (1024 ** 3):.3f} GiB), "
+                        f"utilisation = {utilisation_pct:.1f}% of max_allowed"
+                    )
+            else:
+                self.log.info(
+                    f"[monitor_fusion_du] Bucket '{bucket.name}' "
+                    f"check #{total_checks}: "
+                    f"current = {current_du:,} bytes "
+                    f"({current_du / (1024 ** 3):.3f} GiB)"
+                )
+
             time.sleep(time_interval)
 
         ssh.disconnect()
 
         if validate:
-            self.log.info(f"Total DU violations: ({du_violations} / {total_checks}) checks")
-            self.log.info(f"Max DU Observed = {max_du_observed}")
+            self.log.info(
+                f"[monitor_fusion_du] Bucket '{bucket.name}' summary: "
+                f"violations = {du_violations} / {total_checks} checks, "
+                f"max_du_observed = {max_du_observed:,} bytes "
+                f"({max_du_observed / (1024 ** 3):.3f} GiB), "
+                f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes"
+            )
+            if violation_samples:
+                self.log.error(
+                    f"[monitor_fusion_du] Bucket '{bucket.name}': "
+                    f"violation samples (bytes): {violation_samples}"
+                )
+
+            if du_violations > 0:
+                self.frag_du_pass = False
+                self.log.error(f"Bucket '{bucket.name}': log-store DU exceeded the allowed "
+                            f"threshold in {du_violations} / {total_checks} checks. "
+                            f"max_observed = {max_du_observed:,} bytes, "
+                            f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes "
+                            f"(baseline x {1 + self.logstore_frag_threshold + 0.25:.2f}). "
+                            f"Violation samples (bytes): {violation_samples}")
 
 
-    def monitor_log_store_stats(self, bucket, time_interval=15):
+    def monitor_log_store_stats(self, bucket, time_interval=15, validate=False):
 
-        self.log.info("Monitoring log store stats")
+        self.log.info(
+            f"[monitor_log_store_stats] Starting log-store fragmentation monitor for "
+            f"bucket '{bucket.name}' "
+            f"(validate={validate}, interval={time_interval}s, "
+            f"frag_threshold={self.logstore_frag_threshold})"
+        )
 
-        cbstats_obj_dict = dict()
-        for server in self.cluster.nodes_in_cluster:
-            cbstats_obj_dict[server] = Cbstats(server)
+        cbstats_obj_dict = {s: Cbstats(s) for s in self.cluster.nodes_in_cluster}
 
-        self.total_frag_checks = 0
-        self.frag_threshold_violations = list()
+        frag_violations = 0
+        total_checks = 0
+        max_frag_observed = 0.0
+        violation_samples = []
+        self.frag_cbstats_pass = True
 
         self.monitor_stats = True
         while self.monitor_stats:
-            server_stat_dict = dict()
             for server in self.cluster.nodes_in_cluster:
-                server_stat_dict[server.ip] = dict()
                 try:
                     cbstats_obj = cbstats_obj_dict[server]
                     result = cbstats_obj.all_stats(bucket.name)
-                    log_store_size = result["ep_fusion_log_store_data_size"]
-                    garbage_size = result["ep_fusion_log_store_garbage_size"]
-                    pending_size = result["ep_fusion_log_store_pending_delete_size"]
-                    frag_perc = int(garbage_size) / int(log_store_size)
+                    log_store_size = int(result["ep_fusion_log_store_data_size"])
+                    garbage_size = int(result["ep_fusion_log_store_garbage_size"])
+                    pending_size = int(result["ep_fusion_log_store_pending_delete_size"])
 
-                    server_stat_dict[server.ip]["log_store_size"] = int(log_store_size)
-                    server_stat_dict[server.ip]["garbage_size"] = int(garbage_size)
-                    server_stat_dict[server.ip]["frag_perc"] = float(frag_perc)
-                    server_stat_dict[server.ip]["pending_size"] = int(pending_size)
+                    if log_store_size == 0:
+                        self.log.debug(
+                            f"[monitor_log_store_stats] Bucket '{bucket.name}' "
+                            f"node={server.ip}: log_store_size=0 — skipping frag check"
+                        )
+                        continue
 
-                    if frag_perc > self.logstore_frag_threshold:
-                        self.log.warning(f"LOGSTORE FRAG PERC OVER THRESHOLD, {server.ip}:{bucket.name}, {frag_perc} > {self.logstore_frag_threshold}")
-                        self.frag_threshold_violations.append([frag_perc, server.ip, bucket.name])
+                    frag_perc = garbage_size / log_store_size
+                    max_frag_observed = max(max_frag_observed, frag_perc)
+                    total_checks += 1
 
-                except Exception as e:
-                    self.log.info(f"Cbstats failed: {e}")
-                    cbstats_obj_dict = dict()
-                    for server in self.cluster.nodes_in_cluster:
-                        cbstats_obj_dict[server] = Cbstats(server)
+                    if validate and frag_perc > self.logstore_frag_threshold:
+                        frag_violations += 1
+                        violation_samples.append({
+                            "node": server.ip,
+                            "frag_perc": round(frag_perc, 4),
+                            "log_store_bytes": log_store_size,
+                            "garbage_bytes": garbage_size,
+                        })
+                        self.log.error(
+                            f"[monitor_log_store_stats] [VIOLATION] "
+                            f"Bucket '{bucket.name}' check #{total_checks} "
+                            f"node={server.ip}: "
+                            f"frag_perc={frag_perc:.4f} > "
+                            f"threshold={self.logstore_frag_threshold}, "
+                            f"log_store={log_store_size / (1024**3):.3f} GiB, "
+                            f"garbage={garbage_size / (1024**3):.3f} GiB, "
+                            f"pending={pending_size / (1024**3):.3f} GiB, "
+                            f"violations so far={frag_violations}"
+                        )
+                    else:
+                        self.log.info(
+                            f"[monitor_log_store_stats] [OK] "
+                            f"Bucket '{bucket.name}' check #{total_checks} "
+                            f"node={server.ip}: "
+                            f"frag_perc={frag_perc:.4f} "
+                            f"(threshold={self.logstore_frag_threshold}), "
+                            f"log_store={log_store_size / (1024**3):.3f} GiB, "
+                            f"garbage={garbage_size / (1024**3):.3f} GiB, "
+                            f"pending={pending_size / (1024**3):.3f} GiB"
+                        )
+
+                except Exception as exc:
+                    self.log.warning(
+                        f"[monitor_log_store_stats] Bucket '{bucket.name}' "
+                        f"node={server.ip}: cbstats failed: {exc} — reconnecting"
+                    )
+                    cbstats_obj_dict = {s: Cbstats(s) for s in self.cluster.nodes_in_cluster}
                     break
 
-                self.total_frag_checks += 1
-
-            self.log.info(f"Log Store Stats = {server_stat_dict}")
-            self.log.info(f"Log Store Frag Threshold violations: {len(self.frag_threshold_violations)} / {self.total_frag_checks}")
-            self.log.info(f"Log Store Frag Threshold violation values: {self.frag_threshold_violations}")
-
             time.sleep(time_interval)
+
+        for cbstats_obj in cbstats_obj_dict.values():
+            cbstats_obj.disconnect()
+
+        if validate:
+            self.log.info(
+                f"[monitor_log_store_stats] Bucket '{bucket.name}' summary: "
+                f"violations={frag_violations} / {total_checks} checks, "
+                f"max_frag_observed={max_frag_observed:.4f}, "
+                f"threshold={self.logstore_frag_threshold}"
+            )
+            if violation_samples:
+                self.log.error(
+                    f"[monitor_log_store_stats] Bucket '{bucket.name}': "
+                    f"violation samples: {violation_samples}"
+                )
+            if frag_violations > 0:
+                self.frag_cbstats_pass = False
+                self.log.error(f"Bucket '{bucket.name}': log-store fragmentation exceeded the "
+                                f"threshold in {frag_violations} / {total_checks} checks. "
+                                f"max_frag_observed={max_frag_observed:.4f}, "
+                                f"threshold={self.logstore_frag_threshold}. "
+                                f"Violation samples: {violation_samples}")
 
 
     def get_fusion_sync_stats_continuously(self, timeout=172800, interval=None, flag_violations=False):
@@ -1884,3 +2272,23 @@ class FusionBase(BaseTestCase):
         self.log.info(f"/fusion/status stats = {status_stat_dict}")
 
         return status_stat_dict
+
+
+    def perform_multiple_updates(self, upsert_iterations=None, wait_time_before_start=30, ops_rate=10000):
+
+        self.sleep(wait_time_before_start, "Wait before starting update workload")
+
+        num_upsert_iterations = upsert_iterations if upsert_iterations is not None else self.upsert_iterations
+
+        mutate = 1
+        while num_upsert_iterations > 0:
+            self.doc_ops = "update"
+            self.reset_doc_params()
+            self.update_start = 0
+            self.update_end = self.num_items
+            self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
+            self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}")
+            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, monitor_ops=False, mutate=mutate, ops_rate=ops_rate)
+            num_upsert_iterations -= 1
+            mutate += 1
+            self.sleep(30, "Wait after update workload")

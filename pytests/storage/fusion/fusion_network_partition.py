@@ -29,7 +29,7 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
                                         checkpoint_interval=self.fusion_log_checkpoint_interval,
                                         logstore_frag_threshold=self.logstore_frag_threshold)
-        
+
         self.log.info("Setting magma_fusion_max_log_size to 10MB on all nodes")
         for server in self.cluster.servers:
             shell = RemoteMachineShellConnection(server)
@@ -58,7 +58,7 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
         self.log.info("Setting fusion_sync_rate_limit to 0 (unlimited)")
         ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
             fusion_sync_rate_limit=0)
-        
+
         self.log.info("Collecting sync-related stats BEFORE initial load")
         self.print_fusion_sync_stats()
 
@@ -137,11 +137,11 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
 
         self.log.info("Setting fusion_sync_rate_limit to 100MB/s")
         rate_limit_100mb = 100 * 1024 * 1024
-        
+
         ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
             fusion_sync_rate_limit=rate_limit_100mb)
         self.log.info(f"Set rate limit on active cluster: node1={node1.ip}, node2={node2.ip}")
-        
+
         shell = RemoteMachineShellConnection(node3)
         rate_limit_cmd = f'curl -X POST http://localhost:8091/pools/default/settings/memcached/global -u Administrator:password -d "fusion_sync_rate_limit={rate_limit_100mb}"'
         o, e = shell.execute_command(rate_limit_cmd)
@@ -162,7 +162,7 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
             self.fail(f"Expected all vBuckets to have term=2 after rebalance, but found: {term_mismatches}")
 
         self.log.info(f"Verified {term2_count} failed-over vBuckets have term=2")
-        
+
         test_vbucket = node3_vbuckets[self.cluster.buckets[0].name][0]
         self.log.info(f"Loading data to vBucket {test_vbucket} on active cluster and zombie node")
 
@@ -202,7 +202,7 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
 
         self.log.info("Verifying Chronicle fencing - zombie node cannot delete term-2 files")
         self.validate_zombie_node_cannot_delete_term2_files(node3)
-        
+
         self.log.info(f"Resetting zombie node {node3.ip} to clean state")
         try:
             rest_node3 = ClusterRestAPI(node3)
@@ -214,37 +214,30 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
         except Exception as e:
             self.log.error(f"Failed to reset node {node3.ip}: {e}")
             self.fail(f"Node reset failed: {e}")
-        
+
         self.log.info("Removing network partition after node reset")
         self.remove_network_split()
         self.sleep(30, "Wait for network to stabilize after removing partition")
-        
+
         if self.num_nodes_to_swap_rebalance > 0:
             self.log.info(f"Removing node3 {node3.ip} from available servers to prevent it being used in swap rebalance")
             if node3 in self.cluster.servers:
                 self.cluster.servers.remove(node3)
                 self.log.info(f"Removed node3 from cluster.servers. Available servers: {[s.ip for s in self.cluster.servers]}")
-            
+
             self.log.info("Performing swap rebalance (node3 will NOT be added, using other spare nodes)")
             nodes_to_monitor = self.run_rebalance(
                 output_dir=self.fusion_output_dir,
                 rebalance_count=1,
                 wait_for_rebalance_to_complete=True)
-            
+
             self.sleep(30, "Wait after swap rebalance")
-            
-            extent_migration_threads = []
-            for node in nodes_to_monitor:
-                for bucket in self.cluster.buckets:
-                    th = threading.Thread(
-                        target=self.monitor_extent_migration,
-                        args=[node, bucket])
-                    th.start()
-                    extent_migration_threads.append(th)
-            
-            for th in extent_migration_threads:
-                th.join()
-        
+
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
+            guest_volume_th.join()
+
         self.log.info("Validating final cluster stats")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
@@ -258,11 +251,11 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
             "ep_fusion_sync_session_completed_bytes",
             "ep_fusion_sync_session_total_bytes"
         ]
-        
+
         self.log.info("=" * 80)
         self.log.info("FUSION SYNC STATS")
         self.log.info("=" * 80)
-        
+
         for bucket in self.cluster.buckets:
             self.log.info(f"Bucket: {bucket.name}")
             for node in self.cluster.nodes_in_cluster:
@@ -279,13 +272,13 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
                     self.log.error(f"    Error getting stats: {e}")
                 finally:
                     cbstats.disconnect()
-        
+
         self.log.info("=" * 80)
 
     def verify_term_files_exist(self, term_num):
         ssh = RemoteMachineShellConnection(self.nfs_server)
         term_files_found = False
-        
+
         for bucket in self.cluster.buckets:
             bucket_uuid = self.get_bucket_uuid(bucket.name)
             for vb_no in range(bucket.numVBuckets):
@@ -297,7 +290,7 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
                     break
             if term_files_found:
                 break
-        
+
         ssh.disconnect()
         self.log.info(f"Term-{term_num} files: {'Found' if term_files_found else 'Not found'}")
         return term_files_found
@@ -307,17 +300,17 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
         grep_cmd = 'grep -i "term.*superseded" /opt/couchbase/var/lib/couchbase/logs/memcached.log* 2>/dev/null | tail -20'
         o, e = shell.execute_command(grep_cmd)
         shell.disconnect()
-        
+
         if o and len(o) > 0:
             self.log.info(f"Term supersession detected on {node.ip}")
             for line in o[:5]:
                 self.log.info(f"  {line.strip()}")
             return True
         return False
-    
+
     def validate_zombie_node_cannot_delete_term2_files(self, zombie_node):
         self.log.info("Monitoring zombie node stats for 5 minutes")
-        
+
         for bucket in self.cluster.buckets:
             cbstats = Cbstats(zombie_node)
             try:
@@ -325,37 +318,37 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
                 initial_syncs = int(result.get("ep_fusion_syncs", 0))
                 initial_remote_deletes = int(result.get("ep_fusion_log_store_remote_deletes", 0))
                 initial_pending = int(result.get("ep_fusion_log_store_pending_delete_size", 0))
-                
+
                 self.log.info(f"Initial stats for bucket {bucket.name}")
                 self.log.info(f"  ep_fusion_syncs: {initial_syncs}")
                 self.log.info(f"  ep_fusion_log_store_remote_deletes: {initial_remote_deletes}")
                 self.log.info(f"  ep_fusion_log_store_pending_delete_size: {initial_pending}")
-                
+
                 if initial_remote_deletes > 0:
                     self.fail(f"Chronicle fencing failed - remote_deletes={initial_remote_deletes}")
-                
+
                 previous_syncs = initial_syncs
                 for interval in [60, 120, 180, 240, 300]:
                     self.sleep(60, f"Monitoring stats ({interval}s/300s)")
-                    
+
                     result = cbstats.all_stats(bucket.name)
                     current_syncs = int(result.get("ep_fusion_syncs", 0))
                     current_remote_deletes = int(result.get("ep_fusion_log_store_remote_deletes", 0))
                     current_pending = int(result.get("ep_fusion_log_store_pending_delete_size", 0))
-                    
+
                     self.log.info(f"Stats at {interval}s")
                     self.log.info(f"  ep_fusion_syncs: {current_syncs} (+{current_syncs - previous_syncs}, total: +{current_syncs - initial_syncs})")
                     self.log.info(f"  ep_fusion_log_store_remote_deletes: {current_remote_deletes}")
                     self.log.info(f"  ep_fusion_log_store_pending_delete_size: {current_pending}")
-                    
+
                     if current_remote_deletes > 0:
                         self.fail(f"Chronicle fencing failed at {interval}s - zombie deleted {current_remote_deletes} remote files")
-                    
+
                     previous_syncs = current_syncs
-                
+
                 syncs_increase = current_syncs - initial_syncs
                 self.log.info(f"Validation complete for {bucket.name}: syncs increased by {syncs_increase}, remote_deletes=0")
-                
+
             except Exception as e:
                 self.log.error(f"Error monitoring zombie node: {e}")
                 self.fail(f"Chronicle fencing validation failed: {e}")

@@ -1,10 +1,12 @@
 from copy import deepcopy
+import datetime
 import json
 import os
 import random
 import subprocess
 import threading
 import time
+from table_view import TableView
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
@@ -131,16 +133,10 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 ClusterRestAPI(self.cluster.master).\
                         manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-                extent_migration_array = list()
-                self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-                for node in nodes_to_monitor:
-                    for bucket in self.cluster.buckets:
-                        extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                        extent_th.start()
-                        extent_migration_array.append(extent_th)
-
-                for th in extent_migration_array:
-                    th.join()
+                self.log.info("Monitoring active guest volumes")
+                guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+                guest_volume_th.start()
+                guest_volume_th.join()
 
                 self.cluster_util.print_cluster_stats(self.cluster)
 
@@ -186,7 +182,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
     def test_fusion_rebalance(self):
 
-        self.validate_reupload = self.input.param("validate_reupload", False)
         self.validate_cache_transfer = self.input.param("validate_cache_transfer", False)
 
         self.log.info("Running Fusion Rebalance Test")
@@ -196,10 +191,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        if self.validate_reupload:
-            # Get Uploader info before rebalance
-            self.get_fusion_uploader_info()
-            self.uploader_map1 = deepcopy(self.fusion_vb_uploader_map)
+        # Get Uploader info before rebalance
+        self.get_fusion_uploader_info()
+        self.uploader_map1 = deepcopy(self.fusion_vb_uploader_map)
 
         # Perform a data workload in parallel when rebalance is taking place
         doc_loading_tasks = self.perform_workload(self.num_items,
@@ -215,37 +209,27 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         for task in doc_loading_tasks:
             self.doc_loading_tm.get_task_result(task)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
         self.log.info("Validating item count after rebalance")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                  self.num_items)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
-        if self.validate_reupload:
-            # Get Uploader info after rebalance
-            self.get_fusion_uploader_info()
-            self.uploader_map2 = deepcopy(self.fusion_vb_uploader_map)
+        # Get Uploader info after rebalance
+        self.get_fusion_uploader_info()
+        self.uploader_map2 = deepcopy(self.fusion_vb_uploader_map)
 
-            # Perform a data load post rebalance
-            self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), ops_rate=20000)
-            sleep_time = 120 + (2 * self.fusion_upload_interval) + 60
-            self.sleep(sleep_time, "Sleep after data loading")
-
-            self.verify_fusion_reupload(prev_uploader_map=self.uploader_map1, new_uploader_map=self.uploader_map2)
+        if self.validate_uploaders_are_active:
+            self.verify_uploaders_are_active()
+            self.verify_fusion_reupload_optimized(prev_uploader_map=self.uploader_map1,
+                                                    new_uploader_map=self.uploader_map2,
+                                                    rebalance_count=1)
 
         if self.validate_cache_transfer:
             # Fetch ep_bg_fetched before read workload
@@ -339,19 +323,14 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                                               rebalance_master=self.rebalance_master,
                                               rebalance_sleep_time=rebalance_sleep_time)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
 
         if rebalance_data_load:
             doc_load_th.join()
 
-        for th in extent_migration_array:
-            th.join()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
 
@@ -364,81 +343,411 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
     def test_multiple_random_fusion_rebalances(self):
 
-        self.num_rebalances = self.input.param("num_rebalances", 3)
-        aggressive_variant = self.input.param("aggressive_variant", False)
+        num_rebalances = self.input.param("num_rebalances", 3)
+        rebalance_type = self.input.param("rebalance_type", "fusion")
+        stop_fusion_during_rebalances = self.input.param("stop_fusion_during_rebalances", False)
+        alternate_between_dcp_fusion = self.input.param("alternate_between_dcp_fusion", False)
 
         self.log.info("Running Multiple Random Fusion Rebalance Test")
         self.initial_load()
-        sleep_time = 120 + self.fusion_upload_interval + 60
-        self.sleep(sleep_time, "Sleep after data loading")
+        self.sleep(120 + self.fusion_upload_interval + 60, "Sleep after data loading")
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        rebalance_count = 1
+        if stop_fusion_during_rebalances:
+            status, content = FusionRestAPI(self.cluster.master).stop_fusion()
+            self.log.info(f"Stopping Fusion, Status: {status}, Content: {content}")
 
-        while rebalance_count <= self.num_rebalances:
+        summary_rows = []
+        initial_num_items = self.num_items
 
-            # Get Uploader info before rebalance
+        for rebalance_count in range(1, num_rebalances + 1):
+            self.log.info(f"=== Rebalance iteration {rebalance_count}/{num_rebalances} ===")
+
             self.get_fusion_uploader_info()
-            self.uploader_map1 = deepcopy(self.fusion_vb_uploader_map)
+            uploader_map_before = deepcopy(self.fusion_vb_uploader_map)
 
+            # Snapshot cluster state for this iteration
+            spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
+            nodes_in_cluster = self.cluster.nodes_in_cluster
+            cluster_size_before = len(nodes_in_cluster)
+            self.log.info(f"Cluster size: {cluster_size_before}, Spare nodes: {len(spare_nodes)}, {spare_nodes}")
+
+            # Build eligible operations from current cluster state
+            reb_operations = []
+            if spare_nodes:
+                reb_operations.append("rebalance_in")
+            if len(nodes_in_cluster) > max(1, self.num_replicas + 1):
+                reb_operations.append("rebalance_out")
+            if spare_nodes and len(nodes_in_cluster) > 1:
+                reb_operations.append("swap_rebalance")
+
+            if not reb_operations:
+                self.log.warning("No valid rebalance operation possible, skipping iteration")
+                continue
+
+            random.seed()
+            reb_op = random.choice(reb_operations)
+            self.log.info(f"Chosen rebalance operation: {reb_op}")
+
+            # Set node counts based on chosen operation
+            self.num_nodes_to_rebalance_in = 0
+            self.num_nodes_to_rebalance_out = 0
+            self.num_nodes_to_swap_rebalance = 0
+            random.seed()
+            if reb_op == "rebalance_in":
+                self.num_nodes_to_rebalance_in = random.randint(1, len(spare_nodes))
+            elif reb_op == "rebalance_out":
+                self.num_nodes_to_rebalance_out = random.randint(1, len(nodes_in_cluster) - (self.num_replicas + 1))
+            elif reb_op == "swap_rebalance":
+                self.num_nodes_to_swap_rebalance = random.randint(1, min(len(nodes_in_cluster), len(spare_nodes)))
+
+            num_nodes_involved = max(self.num_nodes_to_rebalance_in,
+                                     self.num_nodes_to_rebalance_out,
+                                     self.num_nodes_to_swap_rebalance)
+
+            if alternate_between_dcp_fusion:
+                rebalance_type = "fusion" if rebalance_count % 2 == 1 else "dcp"
+
+            # Execute rebalance
+            if rebalance_type == "fusion":
+                self.run_rebalance(output_dir=self.fusion_output_dir,
+                                   rebalance_count=rebalance_count,
+                                   rebalance_master=self.rebalance_master)
+            else:  # dcp
+                non_master_nodes = [n for n in nodes_in_cluster if n.ip != self.cluster.master.ip]
+                if reb_op == "rebalance_in":
+                    add, remove = spare_nodes[:self.num_nodes_to_rebalance_in], []
+                elif reb_op == "rebalance_out":
+                    add, remove = [], non_master_nodes[:self.num_nodes_to_rebalance_out]
+                else:  # swap
+                    add = spare_nodes[:self.num_nodes_to_swap_rebalance]
+                    remove = non_master_nodes[:self.num_nodes_to_swap_rebalance]
+                self.log.info(f"DCP rebalance — add: {[n.ip for n in add]}, remove: {[n.ip for n in remove]}")
+                self.task.rebalance(self.cluster, add, remove,
+                                    check_vbucket_shuffling=False,
+                                    retry_get_process_num=self.retry_get_process_num)
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+            cluster_size_after = len(self.cluster.nodes_in_cluster)
+
+            self.get_fusion_uploader_info()
+            uploader_map_after = deepcopy(self.fusion_vb_uploader_map)
+
+            # Check VB movement to existing nodes after rebalance-in
+            vb_movement_result = "SKIP"
+            total_vb_moves = "SKIP"
+            if reb_op == "rebalance_in" and rebalance_type == "fusion":
+                existing_node_vbs, moved_existing, moved_new = \
+                    self.check_vb_movement_to_existing_nodes(
+                        rebalance_count, nodes_in_cluster)
+                total_vb_moves = str(moved_existing + moved_new)
+                if moved_existing == 0:
+                    vb_movement_result = "PASS (0 VBs to existing)"
+                else:
+                    vb_movement_result = ", ".join(
+                        f"{ip}:{len(vbs)} VBs" for ip, vbs in existing_node_vbs.items())
+
+            uploaders_result = "SKIP"
+            reupload_result = "SKIP"
+
+            if self.validate_uploaders_are_active:
+                inactive_counts = self.verify_uploaders_are_active()
+                if any(v > 0 for v in inactive_counts.values()):
+                    uploaders_result = ", ".join(
+                        f"{b}:{n} inactive" for b, n in inactive_counts.items() if n > 0)
+                else:
+                    uploaders_result = "PASS"
+
+                if rebalance_type == "fusion":
+                    reupload_dict = self.verify_fusion_reupload_optimized(
+                        prev_uploader_map=uploader_map_before,
+                        new_uploader_map=uploader_map_after,
+                        rebalance_count=rebalance_count)
+                elif rebalance_type == "dcp":
+                    self.perform_workload(self.num_items, self.num_items + (initial_num_items // 2), ops_rate=20000)
+                    sleep_time = 120 + (2 * self.fusion_upload_interval) + 60
+                    self.sleep(sleep_time, "Sleep after data loading")
+                    reupload_dict = self.verify_fusion_reupload(
+                        prev_uploader_map=uploader_map_before,
+                        new_uploader_map=uploader_map_after)
+
+                total_reuploads = sum(len(v) for v in reupload_dict.values())
+                if total_reuploads == 0:
+                    reupload_result = "PASS (0 re-uploads)"
+                else:
+                    reupload_result = ", ".join(
+                        f"{b}:{len(v)} VBs" for b, v in reupload_dict.items() if v)
+
+            summary_rows.append([
+                str(rebalance_count),
+                rebalance_type,
+                reb_op,
+                str(num_nodes_involved),
+                str(cluster_size_before),
+                str(cluster_size_after),
+                uploaders_result,
+                reupload_result,
+                total_vb_moves,
+                vb_movement_result,
+            ])
+
+            # Print per-rebalance summary table
+            table = TableView(self.log.info)
+            table.set_headers(["#", "Reb Type", "Operation", "Nodes Involved",
+                            "Size Before", "Size After",
+                            "Uploaders Active", "Reupload Check",
+                            "Total VB Moves", "VB Movement to Existing"])
+            for row in summary_rows:
+                table.add_row(row)
+            table.display("Rebalance Summary")
+
+        if stop_fusion_during_rebalances:
+            self.enable_fusion()
+            self.verify_uploaders_are_active()
+
+        self.log.info("Validating item count after all rebalances")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+
+    def test_fusion_deterministic_rebalances(self):
+        """Execute a fixed, reproducible sequence of rebalance operations so
+        that results are directly comparable across runs (e.g. with
+        place_uploaders_on_actives=True vs False).
+
+        The rebalance plan is hardcoded as:
+            [reb_op, num_nodes_involved, expected_size_before, expected_size_after]
+
+        The test asserts the real cluster size matches the expected sizes at
+        each step and runs the same uploader / reupload validations as
+        test_multiple_random_fusion_rebalances().
+        """
+
+        REBALANCE_PLAN = [
+            ["swap_rebalance", 2, 4, 4],
+            ["swap_rebalance", 1, 4, 4],
+            ["rebalance_out", 3, 4, 1],
+            ["rebalance_in", 6, 1, 7],
+            ["swap_rebalance", 1, 7, 7],
+            ["rebalance_out", 2, 7, 5],
+            ["rebalance_out", 4, 5, 1],
+            ["rebalance_in", 9, 1, 10],
+            ["rebalance_out", 6, 10, 4],
+            ["rebalance_in", 5, 4, 9],
+            ["rebalance_out", 4, 9, 5],
+            ["rebalance_in", 1, 5, 6],
+            ["rebalance_in", 2, 6, 8],
+            ["rebalance_in", 2, 8, 10],
+            ["rebalance_out", 7, 10, 3],
+            ["rebalance_out", 2, 3, 1],
+            ["rebalance_in", 3, 1, 4],
+            ["swap_rebalance", 2, 4, 4],
+            ["rebalance_in", 3, 4, 7],
+            ["rebalance_out", 5, 7, 2],
+            ["swap_rebalance", 2, 2, 2],
+            ["swap_rebalance", 2, 2, 2],
+            ["swap_rebalance", 1, 2, 2],
+            ["swap_rebalance", 2, 2, 2],
+            ["rebalance_in", 2, 2, 4],
+            ["rebalance_in", 4, 4, 8],
+            ["swap_rebalance", 1, 8, 8],
+            ["rebalance_in", 2, 8, 10],
+            ["rebalance_out", 9, 10, 1],
+            ["rebalance_in", 6, 1, 7],
+            ["rebalance_out", 4, 7, 3],
+            ["rebalance_in", 7, 3, 10],
+            ["rebalance_out", 7, 10, 3],
+            ["rebalance_in", 7, 3, 10],
+            ["rebalance_out", 4, 10, 6],
+            ["swap_rebalance", 4, 6, 6],
+            ["rebalance_in", 2, 6, 8],
+            ["swap_rebalance", 2, 8, 8],
+            ["rebalance_in", 2, 8, 10],
+            ["rebalance_out", 6, 10, 4],
+            ["swap_rebalance", 3, 4, 4],
+            ["rebalance_in", 5, 4, 9],
+            ["swap_rebalance", 1, 9, 9],
+            ["rebalance_out", 2, 9, 7],
+            ["rebalance_in", 2, 7, 9],
+            ["rebalance_in", 1, 9, 10],
+            ["rebalance_out", 4, 10, 6],
+            ["rebalance_in", 3, 6, 9],
+            ["rebalance_in", 1, 9, 10],
+            ["rebalance_out", 6, 10, 4],
+            ["rebalance_out", 3, 4, 1],
+            ["rebalance_in", 5, 1, 6],
+            ["swap_rebalance", 4, 6, 6],
+            ["swap_rebalance", 4, 6, 6],
+            ["swap_rebalance", 1, 6, 6],
+            ["rebalance_out", 5, 6, 1],
+            ["rebalance_in", 3, 1, 4],
+            ["rebalance_out", 3, 4, 1],
+            ["rebalance_in", 7, 1, 8],
+            ["rebalance_in", 2, 8, 10],
+            ["rebalance_out", 3, 10, 7],
+            ["swap_rebalance", 3, 7, 7],
+            ["swap_rebalance", 1, 7, 7],
+            ["rebalance_out", 2, 7, 5],
+            ["rebalance_in", 5, 5, 10],
+            ["rebalance_out", 2, 10, 8],
+            ["swap_rebalance", 2, 8, 8],
+            ["rebalance_out", 2, 8, 6],
+            ["rebalance_out", 2, 6, 4],
+            ["swap_rebalance", 4, 4, 4],
+            ["rebalance_in", 6, 4, 10],
+            ["rebalance_out", 1, 10, 9],
+            ["swap_rebalance", 1, 9, 9],
+            ["swap_rebalance", 1, 9, 9],
+            ["swap_rebalance", 1, 9, 9],
+            ["rebalance_in", 1, 9, 10],
+            ["rebalance_out", 7, 10, 3],
+            ["swap_rebalance", 1, 3, 3],
+            ["rebalance_out", 1, 3, 2],
+            ["rebalance_in", 1, 2, 3],
+            ["rebalance_in", 1, 3, 4],
+            ["swap_rebalance", 1, 4, 4],
+            ["swap_rebalance", 2, 4, 4],
+            ["rebalance_in", 3, 4, 7],
+            ["swap_rebalance", 2, 7, 7],
+            ["rebalance_in", 3, 7, 10],
+            ["rebalance_out", 6, 10, 4],
+            ["rebalance_out", 1, 4, 3],
+            ["rebalance_out", 1, 3, 2],
+            ["swap_rebalance", 2, 2, 2],
+            ["swap_rebalance", 2, 2, 2],
+            ["rebalance_in", 4, 2, 6],
+            ["swap_rebalance", 2, 6, 6],
+            ["rebalance_out", 3, 6, 3],
+            ["swap_rebalance", 1, 3, 3],
+            ["rebalance_out", 1, 3, 2],
+            ["rebalance_in", 1, 2, 3],
+            ["rebalance_out", 1, 3, 2],
+            ["rebalance_in", 7, 2, 9],
+            ["rebalance_out", 2, 9, 7],
+        ]
+
+        self.log.info("Running Deterministic Fusion Rebalance Test")
+        self.initial_load()
+        self.sleep(120 + self.fusion_upload_interval + 60, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        summary_rows = []
+
+        for rebalance_count, (reb_op, num_nodes_involved, exp_size_before, exp_size_after) \
+                in enumerate(REBALANCE_PLAN, start=1):
+
+            self.log.info(
+                f"=== Step {rebalance_count}/{len(REBALANCE_PLAN)}: "
+                f"{reb_op} x{num_nodes_involved} "
+                f"({exp_size_before} → {exp_size_after}) ==="
+            )
+
+            self.get_fusion_uploader_info()
+            uploader_map_before = deepcopy(self.fusion_vb_uploader_map)
+
+            spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
+            nodes_in_cluster = list(self.cluster.nodes_in_cluster)
+            cluster_size_before = len(nodes_in_cluster)
+
+            self.assertEqual(
+                cluster_size_before, exp_size_before,
+                f"Step {rebalance_count}: expected {exp_size_before} nodes before rebalance, "
+                f"got {cluster_size_before}"
+            )
+
+            # Set node counts for run_rebalance()
             self.num_nodes_to_rebalance_in = 0
             self.num_nodes_to_rebalance_out = 0
             self.num_nodes_to_swap_rebalance = 0
 
-            if len(self.cluster.nodes_in_cluster) <= 1:
-                reb_operations = ["rebalance_in", "swap_rebalance"]
-            else:
-                reb_operations = ["rebalance_in", "rebalance_out", "swap_rebalance"]
-
-            reb_op = random.choice(reb_operations)
-            self.log.info(f"Performing a rebalance operation of type: {reb_op}")
-
             if reb_op == "rebalance_in":
-                self.num_nodes_to_rebalance_in = random.randint(1, len(self.cluster.servers) - len(self.cluster.nodes_in_cluster))
+                self.num_nodes_to_rebalance_in = num_nodes_involved
             elif reb_op == "rebalance_out":
-                self.num_nodes_to_rebalance_out = random.randint(1, len(self.cluster.nodes_in_cluster) - 1)
+                self.num_nodes_to_rebalance_out = num_nodes_involved
             elif reb_op == "swap_rebalance":
-                self.num_nodes_to_swap_rebalance = random.randint(1, min(len(self.cluster.nodes_in_cluster), len(self.cluster.servers) - len(self.cluster.nodes_in_cluster)))
+                self.num_nodes_to_swap_rebalance = num_nodes_involved
 
-            self.log.info("Running a Fusion rebalance")
-            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                                  rebalance_count=rebalance_count,
-                                                  rebalance_master=self.rebalance_master)
-
-            if not aggressive_variant:
-                extent_migration_array = list()
-                self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-                for node in nodes_to_monitor:
-                    for bucket in self.cluster.buckets:
-                        extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                        extent_th.start()
-                        extent_migration_array.append(extent_th)
-
-                for th in extent_migration_array:
-                    th.join()
+            self.run_rebalance(
+                output_dir=self.fusion_output_dir,
+                rebalance_count=rebalance_count,
+                rebalance_master=self.rebalance_master,
+            )
 
             self.cluster_util.print_cluster_stats(self.cluster)
+            cluster_size_after = len(self.cluster.nodes_in_cluster)
 
-            # Get Uploader info after rebalance
+            self.assertEqual(
+                cluster_size_after, exp_size_after,
+                f"Step {rebalance_count}: expected {exp_size_after} nodes after rebalance, "
+                f"got {cluster_size_after}"
+            )
+
             self.get_fusion_uploader_info()
-            self.uploader_map2 = deepcopy(self.fusion_vb_uploader_map)
+            uploader_map_after = deepcopy(self.fusion_vb_uploader_map)
 
-            if not aggressive_variant:
+            # VB movement check (rebalance-in only)
+            total_vb_moves = "SKIP"
+            vbs_to_existing = "SKIP"
+            vbs_to_existing_pct = "SKIP"
+            if reb_op == "rebalance_in" or reb_op == "swap_rebalance":
+                existing_node_vbs, moved_existing, moved_new = \
+                    self.check_vb_movement_to_existing_nodes(rebalance_count, nodes_in_cluster)
+                total = moved_existing + moved_new
+                total_vb_moves = str(total)
+                vbs_to_existing = str(moved_existing)
+                vbs_to_existing_pct = (
+                    f"{moved_existing / total * 100:.1f}%" if total > 0 else "0.0%"
+                )
 
-                self.log.info("Validating item count after rebalance")
-                self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-                self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+            uploaders_result = "SKIP"
+            reupload_result = "SKIP"
 
-                # Perform a data load post rebalance
-                self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), ops_rate=20000)
-                sleep_time = 120 + (2 * self.fusion_upload_interval) + 60
-                self.sleep(sleep_time, "Sleep after data loading")
-                self.bucket_util.print_bucket_stats(self.cluster)
+            if self.validate_uploaders_are_active:
+                inactive_counts = self.verify_uploaders_are_active()
+                if any(v > 0 for v in inactive_counts.values()):
+                    uploaders_result = ", ".join(
+                        f"{b}:{n} inactive" for b, n in inactive_counts.items() if n > 0)
+                else:
+                    uploaders_result = "PASS"
 
-                self.verify_fusion_reupload(prev_uploader_map=self.uploader_map1, new_uploader_map=self.uploader_map2)
+                reupload_dict = self.verify_fusion_reupload_optimized(
+                    prev_uploader_map=uploader_map_before,
+                    new_uploader_map=uploader_map_after,
+                    rebalance_count=rebalance_count,
+                )
+                total_reuploads = sum(len(v) for v in reupload_dict.values())
+                if total_reuploads == 0:
+                    reupload_result = "PASS (0 re-uploads)"
+                else:
+                    reupload_result = ", ".join(
+                        f"{b}:{len(v)} VBs" for b, v in reupload_dict.items() if v)
 
-            rebalance_count += 1
+            summary_rows.append([
+                str(rebalance_count),
+                reb_op,
+                str(num_nodes_involved),
+                str(exp_size_before),
+                str(cluster_size_after),
+                uploaders_result,
+                reupload_result,
+                total_vb_moves,
+                vbs_to_existing,
+                vbs_to_existing_pct,
+            ])
 
+            # Print cumulative table after each rebalance
+            table = TableView(self.log.info)
+            table.set_headers(["#", "Operation", "Nodes Involved",
+                                "Size Before", "Size After",
+                                "Uploaders Active", "Reupload Check",
+                                "Total VB Moves", "VBs to Existing", "% to Existing"])
+            for row in summary_rows:
+                table.add_row(row)
+            table.display("Deterministic Rebalance Summary")
+
+        self.log.info("Validating item count after all rebalances")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_fusion_with_server_groups(self):
 
@@ -486,16 +795,10 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                                               rebalance_master=self.rebalance_master,
                                               skip_add_nodes=True)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
 
@@ -523,6 +826,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         aggressive_variant = self.input.param("aggressive_variant", True)
         num_rebalances_to_perform = self.input.param("num_rebalances_to_perform", 1000)
         num_bucket_batch_size = self.input.param("num_bucket_batch_size", 2)
+        rebalance_num_nodes = self.input.param("rebalance_num_nodes", 3)
 
         self.log.info("Running Fusion Rebalance Test Scale Up/Down in a loop")
 
@@ -534,7 +838,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             buckets_batch = self.cluster.buckets[i:i+num_bucket_batch_size]
             bucket_names = ', '.join(bucket.name for bucket in buckets_batch)
             self.log.info(f"Performing data load on {bucket_names}")
-            self.perform_workload(0, self.num_items, buckets=buckets_batch, ops_rate=10000)
+            self.perform_workload(0, self.num_items, buckets=buckets_batch, ops_rate=self.ops_rate)
             self.sleep(10, "Wait after one batch")
 
         sleep_time = 300 + self.fusion_upload_interval + 60
@@ -553,42 +857,121 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         read_load_th.start()
 
         self.num_rebalance_count = 1
+        # swap_rebalance_num_nodes: when > 0 every iteration performs a swap
+        # rebalance (in + out the same number of nodes) instead of the default
+        # alternating scale-up / scale-down pattern.
+        swap_rebalance_num_nodes = self.input.param("num_nodes_to_swap_rebalance", 0)
 
         cleanup_thread = threading.Thread(target=self.cleanup_nfs_guest_volumes_periodically)
         cleanup_thread.start()
 
+        summary_rows = []
+
         while num_rebalances_to_perform > 0:
 
-            if self.num_rebalance_count % 2 == 1:
-                self.num_nodes_to_rebalance_in = 3
-                self.num_nodes_to_rebalance_out = 0
-                self.num_nodes_to_swap_rebalance = 0
-            else:
+            if swap_rebalance_num_nodes > 0:
+                reb_op = "swap_rebalance"
                 self.num_nodes_to_rebalance_in = 0
-                self.num_nodes_to_rebalance_out = 3
-                self.num_nodes_to_swap_rebalance = 0
+                self.num_nodes_to_rebalance_out = 0
+                self.num_nodes_to_swap_rebalance = swap_rebalance_num_nodes
+                num_nodes_involved = swap_rebalance_num_nodes
+            else:
+                is_rebalance_in = (self.num_rebalance_count % 2 == 1)
+                reb_op = "rebalance_in" if is_rebalance_in else "rebalance_out"
+                if is_rebalance_in:
+                    self.num_nodes_to_rebalance_in = rebalance_num_nodes
+                    self.num_nodes_to_rebalance_out = 0
+                    self.num_nodes_to_swap_rebalance = 0
+                else:
+                    self.num_nodes_to_rebalance_in = 0
+                    self.num_nodes_to_rebalance_out = rebalance_num_nodes
+                    self.num_nodes_to_swap_rebalance = 0
+                num_nodes_involved = rebalance_num_nodes
 
-            self.log.info(f"Running Fusion rebalance count: {self.num_rebalance_count}")
+            # Snapshot state before rebalance
+            nodes_in_cluster = list(self.cluster.nodes_in_cluster)
+            cluster_size_before = len(nodes_in_cluster)
+            self.get_fusion_uploader_info()
+            uploader_map_before = deepcopy(self.fusion_vb_uploader_map)
+
+            self.log.info(f"Running Fusion rebalance count: {self.num_rebalance_count} ({reb_op})")
             nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                                   rebalance_count=self.num_rebalance_count,
                                                   skip_file_linking=True,
                                                   rebalance_sleep_time=30)
 
             if not aggressive_variant:
-
-                extent_migration_array = list()
-                self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-                for node in nodes_to_monitor:
-                    for bucket in self.cluster.buckets:
-                        extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                        extent_th.start()
-                        extent_migration_array.append(extent_th)
-
-                for th in extent_migration_array:
-                    th.join()
+                self.log.info("Monitoring active guest volumes")
+                guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+                guest_volume_th.start()
+                guest_volume_th.join()
 
             self.cluster_util.print_cluster_stats(self.cluster)
-            self.sleep(30, "Wait after rebalance")
+            cluster_size_after = len(self.cluster.nodes_in_cluster)
+
+            self.get_fusion_uploader_info()
+            uploader_map_after = deepcopy(self.fusion_vb_uploader_map)
+
+            # VB movement check — applies for rebalance_in and swap_rebalance
+            # (both bring new nodes into the cluster)
+            total_vb_moves = "SKIP"
+            vbs_to_existing = "SKIP"
+            vbs_to_existing_pct = "SKIP"
+            if reb_op in ("rebalance_in", "swap_rebalance"):
+                existing_node_vbs, moved_existing, moved_new = \
+                    self.check_vb_movement_to_existing_nodes(
+                        self.num_rebalance_count, nodes_in_cluster)
+                total = moved_existing + moved_new
+                total_vb_moves = str(total)
+                vbs_to_existing = str(moved_existing)
+                vbs_to_existing_pct = (
+                    f"{moved_existing / total * 100:.1f}%" if total > 0 else "0.0%"
+                )
+
+            uploaders_result = "SKIP"
+            reupload_result = "SKIP"
+
+            if self.validate_uploaders_are_active:
+                inactive_counts = self.verify_uploaders_are_active()
+                if any(v > 0 for v in inactive_counts.values()):
+                    uploaders_result = ", ".join(
+                        f"{b}:{n} inactive" for b, n in inactive_counts.items() if n > 0)
+                else:
+                    uploaders_result = "PASS"
+
+                reupload_dict = self.verify_fusion_reupload_optimized(
+                    prev_uploader_map=uploader_map_before,
+                    new_uploader_map=uploader_map_after,
+                    rebalance_count=self.num_rebalance_count,
+                )
+                total_reuploads = sum(len(v) for v in reupload_dict.values())
+                if total_reuploads == 0:
+                    reupload_result = "PASS (0 re-uploads)"
+                else:
+                    reupload_result = ", ".join(
+                        f"{b}:{len(v)} VBs" for b, v in reupload_dict.items() if v)
+
+            summary_rows.append([
+                str(self.num_rebalance_count),
+                reb_op,
+                str(num_nodes_involved),
+                str(cluster_size_before),
+                str(cluster_size_after),
+                uploaders_result,
+                reupload_result,
+                total_vb_moves,
+                vbs_to_existing,
+                vbs_to_existing_pct,
+            ])
+
+            table = TableView(self.log.info)
+            table.set_headers(["#", "Operation", "Nodes Involved",
+                                "Size Before", "Size After",
+                                "Uploaders Active", "Reupload Check",
+                                "Total VB Moves", "VBs to Existing", "% to Existing"])
+            for row in summary_rows:
+                table.add_row(row)
+            table.display("Scale Up/Down Rebalance Summary")
 
             num_rebalances_to_perform -= 1
             self.num_rebalance_count += 1
@@ -653,16 +1036,10 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         # Perform read workload during migration
         doc_loading_tasks = self.perform_workload(0, self.num_items, doc_op="read", wait=False)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         for task in doc_loading_tasks:
             self.doc_loading_tm.get_task_result(task)
@@ -698,7 +1075,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
         for bucket in self.cluster.buckets:
             reupload_count_dict[bucket.name] = list()
-            for kvstore_num in range(128):
+            for kvstore_num in range(bucket.numVBuckets):
                 prev_term = prev_uploader_map[bucket.name][kvstore_num]["term"]
                 new_term = new_uploader_map[bucket.name][kvstore_num]["term"]
                 if prev_term != new_term:
@@ -777,3 +1154,209 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
             count += 1
             time.sleep(5)
+
+    def test_fusion_resource_monitoring(self):
+        """
+        Monitors CPU utilisation and Magma memory usage across all cluster
+        nodes while an async data load runs in the background.
+
+        CPU / system memory:
+          Polled via self.cluster_util.get_cluster_stats(self.cluster.master),
+          which reads /pools/default and returns cpu_utilization_rate,
+          mem_free and mem_total per node hostname.
+
+        Magma TotalMemUsed:
+          Polled via self.get_magma_stats() (cbstats magma).  For each node
+          the rw_0 ... rw_N shard JSON blobs are parsed and their
+          TotalMemUsed values are summed to give a per-node total and a
+          cluster-wide total for each bucket.
+
+        Every sample is timestamped, logged immediately and appended to an
+        in-memory list.  When the load finishes the full sample list is
+        written to a plain-text report file.
+
+        Parameters (test params):
+          monitor_interval_sec  : polling interval in seconds (default: 30)
+          output_file           : absolute path for the report file
+                                  (default: <fusion_output_dir>/resource_monitor_<ts>.log)
+          num_bucket_batch_size : batch size for the data load (default: 1)
+        """
+        monitor_interval_sec = self.input.param("monitor_interval_sec", 30)
+        num_bucket_batch_size = self.input.param("num_bucket_batch_size", 1)
+        ts_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_output = os.path.join(
+            self.fusion_output_dir, f"resource_monitor_{ts_tag}.log"
+        )
+        output_file = self.input.param("output_file", default_output)
+
+        samples = []
+        stop_monitor = threading.Event()
+
+        def _monitor_loop():
+            tick = 0
+            while not stop_monitor.is_set():
+                tick += 1
+                ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                sample = {"tick": tick, "timestamp": ts, "cpu_mem": {}, "magma_mem": {}}
+
+                # ---- CPU + system memory (one REST call covers all nodes) ----
+                try:
+                    cluster_stats = self.cluster_util.get_cluster_stats(
+                        self.cluster.master
+                    )
+                    for hostname, node_stats in cluster_stats.items():
+                        cpu = node_stats.get("cpu_utilization", 0) or 0
+                        mem_free = node_stats.get("mem_free", 0) or 0
+                        mem_total = node_stats.get("mem_total", 1) or 1
+                        mem_used = mem_total - mem_free
+                        mem_used_pct = mem_used / mem_total * 100
+                        sample["cpu_mem"][hostname] = {
+                            "cpu_utilization_pct": round(cpu, 2),
+                            "mem_used_bytes": mem_used,
+                            "mem_total_bytes": mem_total,
+                            "mem_used_pct": round(mem_used_pct, 2),
+                        }
+                        self.log.info(
+                            f"[resource_monitor] tick={tick} ts={ts} "
+                            f"node={hostname} "
+                            f"cpu={cpu:.1f}% "
+                            f"mem_used={mem_used / (1024**3):.2f}/"
+                            f"{mem_total / (1024**3):.2f} GiB "
+                            f"({mem_used_pct:.1f}%)"
+                        )
+                except Exception as exc:
+                    self.log.warning(
+                        f"[resource_monitor] tick={tick} cluster_stats error: {exc}"
+                    )
+
+                # ---- Magma TotalMemUsed (cbstats, per bucket per node) ----
+                for bucket in self.cluster.buckets:
+                    sample["magma_mem"][bucket.name] = {}
+                    cluster_total_mem = 0
+                    for server in self.cluster.nodes_in_cluster:
+                        node_total = 0
+                        shard_values = {}
+                        shard_idx = 0
+                        # Iterate shards individually with field_to_grep so
+                        # cbstats only parses the JSON magma blob for that
+                        # shard — avoids json.loads failures on non-JSON
+                        # kvstore lines (e.g. rw_0:backend_type: magma).
+                        while True:
+                            grep_field = f"rw_{shard_idx}:magma"
+                            try:
+                                shard_raw = self.get_magma_stats(
+                                    bucket, [server], field_to_grep=grep_field
+                                )
+                                shard_data = shard_raw.get(server.ip, {}).get(grep_field)
+                                if not shard_data:
+                                    break
+                                magma_data = (
+                                    shard_data
+                                    if isinstance(shard_data, dict)
+                                    else json.loads(shard_data)
+                                )
+                                mem = magma_data.get("TotalMemUsed", 0)
+                                shard_values[grep_field] = mem
+                                node_total += mem
+                                shard_idx += 1
+                            except Exception:
+                                break
+                        cluster_total_mem += node_total
+                        sample["magma_mem"][bucket.name][server.ip] = {
+                            "total_mem_used_bytes": node_total,
+                            "shards": shard_values,
+                        }
+                        self.log.info(
+                            f"[resource_monitor] tick={tick} ts={ts} "
+                            f"bucket={bucket.name} node={server.ip} "
+                            f"magma_TotalMemUsed={node_total / (1024**2):.2f} MiB "
+                            f"({shard_idx} shard(s))"
+                        )
+                    self.log.info(
+                        f"[resource_monitor] tick={tick} ts={ts} "
+                        f"bucket={bucket.name} cluster_magma_TotalMemUsed="
+                        f"{cluster_total_mem / (1024**2):.2f} MiB"
+                    )
+
+                samples.append(sample)
+                stop_monitor.wait(timeout=monitor_interval_sec)
+
+        # ---- Start monitor thread ----
+        monitor_th = threading.Thread(target=_monitor_loop, daemon=True)
+        monitor_th.start()
+        self.log.info(
+            f"[resource_monitor] Monitor started "
+            f"(interval={monitor_interval_sec}s, output={output_file})"
+        )
+
+        # ---- Async data load ----
+        self.log.info("[resource_monitor] Starting async data load")
+        for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
+            buckets_batch = self.cluster.buckets[i:i + num_bucket_batch_size]
+            bucket_names = ", ".join(b.name for b in buckets_batch)
+            self.log.info(f"[resource_monitor] Loading data into: {bucket_names}")
+            self.perform_workload(
+                0, self.num_items,
+                buckets=buckets_batch,
+                ops_rate=self.ops_rate,
+            )
+            self.sleep(10, "Wait between bucket batches")
+
+        self.log.info("[resource_monitor] Data load complete - stopping monitor")
+
+        # ---- Stop monitor and flush samples to file ----
+        stop_monitor.set()
+        monitor_th.join()
+
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        with open(output_file, "w") as fh:
+            fh.write(
+                f"Fusion Resource Monitor Report\n"
+                f"Generated : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Interval  : {monitor_interval_sec}s\n"
+                f"Nodes     : {[s.ip for s in self.cluster.nodes_in_cluster]}\n"
+                f"Buckets   : {[b.name for b in self.cluster.buckets]}\n"
+                f"{'=' * 80}\n\n"
+            )
+            for s in samples:
+                fh.write(f"[tick={s['tick']}] {s['timestamp']}\n")
+                fh.write("  CPU / System Memory:\n")
+                for hostname, cm in s["cpu_mem"].items():
+                    mem_used_gib = cm["mem_used_bytes"] / (1024 ** 3)
+                    mem_total_gib = cm["mem_total_bytes"] / (1024 ** 3)
+                    fh.write(
+                        f"    {hostname}: "
+                        f"cpu={cm['cpu_utilization_pct']:.1f}%  "
+                        f"mem={mem_used_gib:.2f}/{mem_total_gib:.2f} GiB "
+                        f"({cm['mem_used_pct']:.1f}%)\n"
+                    )
+                fh.write("  Magma TotalMemUsed:\n")
+                for bname, node_map in s["magma_mem"].items():
+                    bucket_total = sum(
+                        v["total_mem_used_bytes"] for v in node_map.values()
+                    )
+                    fh.write(
+                        f"    bucket={bname}  "
+                        f"cluster_total={bucket_total / (1024**2):.2f} MiB\n"
+                    )
+                    for node_ip, nd in node_map.items():
+                        shard_summary = ", ".join(
+                            f"{k}={v / (1024**2):.2f}MiB"
+                            for k, v in nd["shards"].items()
+                        )
+                        fh.write(
+                            f"      {node_ip}: "
+                            f"{nd['total_mem_used_bytes'] / (1024**2):.2f} MiB"
+                            f"  [{shard_summary}]\n"
+                        )
+                fh.write("\n")
+
+        self.log.info(
+            f"[resource_monitor] Report written to {output_file} "
+            f"({len(samples)} samples)"
+        )
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets
+        )
+        self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+        self.log.info("test_fusion_resource_monitoring complete")

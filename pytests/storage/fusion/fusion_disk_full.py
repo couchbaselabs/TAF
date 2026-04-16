@@ -63,16 +63,10 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=1,
                                               rebalance_sleep_time=60)
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -107,13 +101,9 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
         ClusterRestAPI(self.cluster.master).\
                 manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
 
         if kill_memcached:
             self.sleep(200, "Wait before crashing continuously")
@@ -126,8 +116,7 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
             self.log.info(f"Freeing disk on {node.ip}")
             self.free_disk(server=node)
 
-        for th in extent_migration_array:
-            th.join()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -204,16 +193,10 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=1,
                                               rebalance_sleep_time=60)
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)

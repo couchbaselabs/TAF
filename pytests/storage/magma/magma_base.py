@@ -145,6 +145,18 @@ class MagmaBaseTest(StorageBase):
                                 fusion_max_pending_upload_bytes_lwm_percentage=self.fusion_max_pending_upload_bytes_lwm_percentage)
             self.log.info(f"Status = {status}, Content = {content}")
 
+            # Configure whether the uploader placement algorithm restricts
+            # uploaders to active VBs only (default: True / enabled).
+            # Set place_uploaders_on_actives=False to disable this behaviour.
+            place_uploaders_on_actives = self.input.param("place_uploaders_on_actives", True)
+            if not place_uploaders_on_actives:
+                cmd = f"ns_config:set({{fusion_uploaders, place_uploades_on_actives}}, {str(place_uploaders_on_actives).lower()})."
+                status, content = ClusterRestAPI(self.cluster.master).diag_eval(code=cmd)
+                self.log.info(
+                    f"place_uploaders_on_actives={place_uploaders_on_actives} | "
+                    f"diag/eval status={status}, content={content}"
+                )
+
         self.log.info("==========Finished magma base setup========")
 
     def tearDown(self):

@@ -63,16 +63,10 @@ class FusionReplicaUpdate(MagmaBaseTest, FusionBase):
             for task in doc_loading_tasks:
                 self.doc_loading_tm.get_task_result(task)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.bucket_util.print_bucket_stats(self.cluster)
 
@@ -121,16 +115,10 @@ class FusionReplicaUpdate(MagmaBaseTest, FusionBase):
                                               rebalance_count=2)
         self.sleep(10, "Wait after rebalance")
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}, {nodes_to_monitor2}")
-        for node in nodes_to_monitor + nodes_to_monitor2:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.bucket_util.print_bucket_stats(self.cluster)
 
@@ -187,16 +175,10 @@ class FusionReplicaUpdate(MagmaBaseTest, FusionBase):
                                                rebalance_count=2)
         self.sleep(10, "Wait after rebalance")
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}, {nodes_to_monitor2}")
-        for node in nodes_to_monitor + nodes_to_monitor2:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.bucket_util.print_bucket_stats(self.cluster)
 

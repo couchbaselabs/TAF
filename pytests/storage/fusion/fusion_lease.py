@@ -48,7 +48,7 @@ class FusionLease(MagmaBaseTest, FusionBase):
         return volume_ids
 
     def wait_for_plan(self, ssh, rebalance_count=1, timeout=300, poll_interval=5):
-        plan_file_path = f"/root/fusion/reb_plan{rebalance_count}.json"
+        plan_file_path = f"/root/fusion/reb_plan_test{self.case_number}_{rebalance_count}.json"
         end_time = time.time() + timeout
         while time.time() < end_time:
             out, _ = ssh.execute_command(f'test -f "{plan_file_path}" && echo 1 || echo 0')

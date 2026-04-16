@@ -74,16 +74,10 @@ class FusionS3(MagmaBaseTest, FusionBase):
             self.toggle_s3_traffic = False
             s3_traffic_thread.join()
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -125,16 +119,10 @@ class FusionS3(MagmaBaseTest, FusionBase):
                                               rebalance_count=1,
                                               log_store="s3")
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -209,16 +197,10 @@ class FusionS3(MagmaBaseTest, FusionBase):
                                               manifest_parts=1,
                                               guest_storage_dest_path=self.guest_storage_dest_path)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -232,6 +214,234 @@ class FusionS3(MagmaBaseTest, FusionBase):
         self.monitor_sync_stats = False
         monitor_th.join()
 
+
+    def test_s3_disk_usage_vs_local(self):
+        """
+        Verifies that the S3 log-store footprint for each bucket stays within
+        an acceptable overhead ratio of the local on-disk footprint at two
+        distinct checkpoints in the data lifecycle:
+
+          Checkpoint 1 — after initial CREATE workload + S3 sync.
+          Checkpoint 2 — after UPDATE workload + S3 sync.
+
+        The ratio check (s3_bytes <= local_bytes * s3_overhead_ratio) is
+        enforced independently at each checkpoint so that S3 amplification
+        introduced specifically by the update / compaction cycle is visible
+        and caught separately from the baseline create footprint.
+
+        Steps:
+          1. Load initial data via initial_load().
+          2. Sleep sync_wait_sec for Fusion to upload to S3.
+          3. Checkpoint 1: compare S3 vs local DU for every bucket.
+          4. For each update iteration (num_upsert_iterations):
+             a. Run one update pass over the full key range.
+             b. Sleep sync_wait_sec for Fusion to sync to S3.
+             c. Checkpoint: compare S3 vs local DU for every bucket.
+          5. Assert no ratio violations were recorded at any checkpoint.
+
+        Parameters (test params):
+          s3_bucket_name       : S3 bucket name (default: cb-fusion-test)
+          s3_key_prefix        : key prefix for bucket data (default: buckets/kv)
+          sync_wait_sec        : seconds to wait for S3 sync at each checkpoint
+                                 (default: 600)
+          s3_overhead_ratio    : maximum allowed S3/local ratio (default: 1.5)
+          num_upsert_iterations: update passes over the full key range
+                                 (default: 2)
+        """
+        s3_bucket_name = self.input.param("s3_bucket_name", "cb-fusion-test")
+        s3_key_prefix = self.input.param("s3_key_prefix", "buckets/kv")
+        sync_wait_sec = self.input.param("sync_wait_sec", 300)
+        s3_overhead_ratio = self.input.param("s3_overhead_ratio", 1.5)
+        num_upsert_iterations = self.input.param("num_upsert_iterations", 2)
+
+        def _parse_s3_human_size(size_str):
+            """Convert an AWS --human-readable size string to bytes.
+
+            Handles '4.5 GiB', '1.2 MiB', '512 KiB', '1 Byte' / '3 Bytes'
+            and decimal variants (KB/MB/GB).
+            """
+            _units = {
+                'B': 1, 'BYTE': 1, 'BYTES': 1,
+                'KB': 1000, 'KIB': 1024,
+                'MB': 1000 ** 2, 'MIB': 1024 ** 2,
+                'GB': 1000 ** 3, 'GIB': 1024 ** 3,
+                'TB': 1000 ** 4, 'TIB': 1024 ** 4,
+            }
+            parts = size_str.strip().split()
+            if len(parts) == 2:
+                value = float(parts[0])
+                unit = parts[1].upper().rstrip('S')
+                return int(value * _units.get(unit, 1))
+            return int(float(size_str.strip()))
+
+        def _compare_du(checkpoint_label, failures):
+            """Measure local + S3 DU for every bucket and record violations."""
+            self.log.info(f"--- DU Checkpoint: {checkpoint_label} ---")
+            for bucket in self.cluster.buckets:
+                bucket_uuid = self.get_bucket_uuid(bucket.name)
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}' "
+                    f"(uuid={bucket_uuid})"
+                )
+
+                # Local disk usage — sum across all nodes
+                local_bytes = 0
+                for server in self.cluster.nodes_in_cluster:
+                    ssh = RemoteMachineShellConnection(server)
+                    du_cmd = f"du -sb {self.data_path}/{bucket_uuid}"
+                    output, error = ssh.execute_command(du_cmd)
+                    ssh.disconnect()
+                    if output:
+                        try:
+                            local_bytes += int(output[0].split()[0])
+                        except (IndexError, ValueError) as exc:
+                            self.log.warning(
+                                f"[{server.ip}] Could not parse du output "
+                                f"'{output}': {exc}"
+                            )
+                    else:
+                        self.log.warning(
+                            f"[{server.ip}] du returned no output for "
+                            f"{self.data_path}/{bucket_uuid} (error={error})"
+                        )
+
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                    f"local = {local_bytes:,} bytes "
+                    f"({local_bytes / (1024 ** 3):.3f} GiB) "
+                    f"across {len(self.cluster.nodes_in_cluster)} node(s)"
+                )
+
+                if local_bytes == 0:
+                    self.log.warning(
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"local disk usage is 0, skipping S3 comparison"
+                    )
+                    continue
+
+                # S3 disk usage
+                s3_path = (
+                    f"s3://{s3_bucket_name}/{s3_key_prefix}/{bucket_uuid}/"
+                )
+                s3_cmd = (
+                    f"aws s3 ls {s3_path} "
+                    f"--recursive --human-readable --summarize | tail -n 2"
+                )
+                self.log.info(
+                    f"[{checkpoint_label}] Running S3 usage cmd: {s3_cmd}"
+                )
+                ssh = RemoteMachineShellConnection(self.cluster.master)
+                s3_output, s3_error = ssh.execute_command(s3_cmd)
+                ssh.disconnect()
+                self.log.info(
+                    f"[{checkpoint_label}] S3 output: {s3_output}, "
+                    f"error: {s3_error}"
+                )
+
+                s3_bytes = None
+                for line in s3_output:
+                    if "Total Size" in line:
+                        size_part = line.split("Total Size:")[-1].strip()
+                        try:
+                            s3_bytes = _parse_s3_human_size(size_part)
+                        except (ValueError, IndexError) as exc:
+                            self.log.warning(
+                                f"[{checkpoint_label}] Bucket '{bucket.name}':"
+                                f" could not parse S3 size from '{line}': {exc}"
+                            )
+                        break
+
+                if s3_bytes is None:
+                    self.log.warning(
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"'Total Size' not found in S3 output — skipping"
+                    )
+                    continue
+
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                    f"S3 = {s3_bytes:,} bytes "
+                    f"({s3_bytes / (1024 ** 3):.3f} GiB)"
+                )
+
+                ratio = s3_bytes / local_bytes
+                max_allowed = local_bytes * s3_overhead_ratio
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                    f"S3/local ratio = {ratio:.3f} "
+                    f"(limit = {s3_overhead_ratio}x, "
+                    f"max_allowed_s3 = {max_allowed:,.0f} bytes)"
+                )
+
+                if s3_bytes > max_allowed:
+                    msg = (
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"S3 usage ({s3_bytes:,} bytes) exceeds "
+                        f"{s3_overhead_ratio}x local usage "
+                        f"({local_bytes:,} bytes). Ratio = {ratio:.3f}"
+                    )
+                    self.log.error(msg)
+                    failures.append(msg)
+                else:
+                    self.log.info(
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"PASSED ({ratio:.3f} <= {s3_overhead_ratio})"
+                    )
+
+        failures = []
+
+        # ---- Phase 1: initial CREATE workload ----
+        self.log.info("Phase 1: Loading initial data")
+        self.initial_load()
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # ---- Phase 2: wait for S3 sync, then Checkpoint 1 ----
+        self.sleep(sync_wait_sec, "Waiting for Fusion to sync CREATE data to S3")
+        _compare_du("after_create", failures)
+
+        # ---- Phase 3: UPDATE workload — DU checked after every iteration ----
+        self.log.info(
+            f"Phase 3: Running update workload "
+            f"({num_upsert_iterations} iteration(s)), "
+            f"DU comparison after each iteration"
+        )
+        self.sleep(30, "Wait before starting update workload")
+        mutate = 1
+        remaining = num_upsert_iterations
+        while remaining > 0:
+            iteration = num_upsert_iterations - remaining + 1
+            self.log.info(
+                f"Phase 3: Update iteration {iteration}/{num_upsert_iterations}"
+            )
+            self.doc_ops = "update"
+            self.reset_doc_params()
+            self.update_start = 0
+            self.update_end = self.num_items
+            self.java_doc_loader(
+                wait=True,
+                skip_default=self.skip_load_to_default_collection,
+                monitor_ops=False,
+                mutate=mutate,
+                ops_rate=self.ops_rate,
+            )
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.sleep(
+                sync_wait_sec,
+                f"Waiting for Fusion to sync UPDATE data to S3 "
+                f"(iteration {iteration}/{num_upsert_iterations})",
+            )
+            _compare_du(f"after_update_iter_{iteration}", failures)
+            remaining -= 1
+            mutate += 1
+            self.sleep(30, "Wait after update iteration")
+
+        # ---- Final assertion ----
+        self.assertEqual(
+            len(failures), 0,
+            f"S3 disk usage exceeded the {s3_overhead_ratio}x ratio at "
+            f"{len(failures)} checkpoint(s):\n" + "\n".join(failures)
+        )
+        self.log.info("test_s3_disk_usage_vs_local complete")
 
     def copy_data_to_s3(self, delete=False):
 

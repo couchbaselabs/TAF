@@ -1,13 +1,12 @@
 import os
 import threading
 import time
-from cb_tools.cbstats import Cbstats
 from storage.fusion.fusion_base import FusionBase
-from storage.fusion.fusion_sync import FusionSync
 from shell_util.remote_connection import RemoteMachineShellConnection
+from storage.magma.magma_base import MagmaBaseTest
 
 
-class FusionLogCleaning(FusionSync, FusionBase):
+class FusionLogCleaning(MagmaBaseTest, FusionBase):
     def setUp(self):
         super(FusionLogCleaning, self).setUp()
         self.monitor_log_store = self.input.param("monitor_log_store", True)
@@ -33,6 +32,7 @@ class FusionLogCleaning(FusionSync, FusionBase):
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         monitor_du_threads = list()
         monitor_cbstats_threads = list()
@@ -40,19 +40,21 @@ class FusionLogCleaning(FusionSync, FusionBase):
             th = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True])
             monitor_du_threads.append(th)
             th.start()
-            th1 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket])
-            monitor_cbstats_threads.append(th1)
-            th1.start()
+            th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket, 15, True])
+            monitor_cbstats_threads.append(th2)
+            th2.start()
 
         self.perform_multiple_updates(upsert_iterations=self.upsert_iterations)
 
         self.monitor_stats = False
-        self.monitor_sync_stats = True
         for th in monitor_du_threads:
             th.join()
         for th in monitor_cbstats_threads:
             th.join()
         self.sync_stats_th.join()
+
+        if not self.frag_cbstats_pass:
+            self.fail("Cbstats Log Store Frag Values Above Threshold were found")
 
 
     def test_log_cleaning_during_rebalance(self):
@@ -71,43 +73,38 @@ class FusionLogCleaning(FusionSync, FusionBase):
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 20
         self.sleep(sleep_time, "Sleep after data loading")
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         update_th = threading.Thread(target=self.perform_multiple_updates, args=[1, 90])
         update_th.start()
 
-        monitor_th_array = list()
         monitor_du_threads = list()
+        monitor_cbstats_threads = list()
         for bucket in self.cluster.buckets:
-            monitor_th = threading.Thread(target=self.monitor_log_store_stats, args=[bucket])
-            monitor_th_array.append(monitor_th)
-            monitor_th.start()
             th = threading.Thread(target=self.monitor_fusion_du, args=[bucket])
             monitor_du_threads.append(th)
             th.start()
+            th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket])
+            monitor_cbstats_threads.append(th2)
+            th2.start()
 
         self.log.info("Running a Fusion rebalance")
-        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1,
-                                              rebalance_sleep_time=900)
+        self.run_rebalance(output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=900)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.sleep(600, "Wait before stopping monitor threads")
 
         self.monitor_stats = False
         update_th.join()
-        for th in monitor_th_array:
-            th.join()
         for th in monitor_du_threads:
+            th.join()
+        for th in monitor_cbstats_threads:
             th.join()
         self.log_count_monitor = False
         for th in monitor_count_th_array:
@@ -133,9 +130,9 @@ class FusionLogCleaning(FusionSync, FusionBase):
             th = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True])
             monitor_du_threads.append(th)
             th.start()
-            th1 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket])
-            monitor_cbstats_threads.append(th1)
-            th1.start()
+            th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket, 15, True])
+            monitor_cbstats_threads.append(th2)
+            th2.start()
 
         self.perform_multiple_updates(upsert_iterations=self.upsert_iterations)
 
@@ -162,16 +159,10 @@ class FusionLogCleaning(FusionSync, FusionBase):
                                               rebalance_sleep_time=60)
         self.sleep(30, "Wait after rebalance")
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -192,6 +183,8 @@ class FusionLogCleaning(FusionSync, FusionBase):
                               f"Expected: {seq_count_before_rebalance[bucket.name]}, "
                               f"Actual: {seq_count_after_rebalance[bucket.name]}")
 
+        if not self.frag_cbstats_pass:
+            self.fail("Log Store Frag Values Above Threshold were found")
         if mismatch > 0:
             self.fail("Mismtach in seq number validation")
 
@@ -242,16 +235,10 @@ class FusionLogCleaning(FusionSync, FusionBase):
         doc_loading_tasks = self.perform_workload(self.num_items, self.num_items * 1.5,
                                                   doc_op="create", ops_rate=20000, wait=False)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         for task in doc_loading_tasks:
             self.doc_loading_tm.get_task_result(task)
@@ -277,11 +264,15 @@ class FusionLogCleaning(FusionSync, FusionBase):
         upsert_data_pct = self.input.param("upsert_data_pct", 1) # 100%
         total_ops_rate = self.input.param("total_ops_rate", 10000)
 
+        monitor_du_threads = list()
         monitor_cbstats_threads = list()
         for bucket in self.cluster.buckets:
-            th1 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket])
-            monitor_cbstats_threads.append(th1)
+            th1 = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True, 30])
+            monitor_du_threads.append(th1)
             th1.start()
+            th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket, 30, True])
+            monitor_cbstats_threads.append(th2)
+            th2.start()
 
         self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously, args=[172800, 60, False])
         self.sync_stats_th.start()
@@ -334,49 +325,224 @@ class FusionLogCleaning(FusionSync, FusionBase):
 
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")
-        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1,
-                                              rebalance_sleep_time=60)
+        self.run_rebalance(output_dir=self.fusion_output_dir,
+                            rebalance_count=1,
+                            rebalance_sleep_time=60)
         self.sleep(10, "Wait after rebalance")
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         # Stop all monitoring threads
         self.monitor_stats = False
+        for th in monitor_du_threads:
+            th.join()
         for th in monitor_cbstats_threads:
             th.join()
         self.monitor_sync_stats = False
         self.sync_stats_th.join()
 
+        if not self.frag_cbstats_pass:
+            self.fail("Log Store Frag Values Above Threshold were found")
 
-    def perform_multiple_updates(self, upsert_iterations=None, wait_time_before_start=30, ops_rate=10000):
 
-        self.sleep(wait_time_before_start, "Wait before starting update workload")
+    def test_nfs_disk_usage_vs_local(self):
+        """
+        Verifies that the NFS log-store footprint for each bucket stays within
+        an acceptable overhead ratio of the local on-disk footprint at two
+        distinct checkpoints in the data lifecycle:
 
-        num_upsert_iterations = upsert_iterations if upsert_iterations is not None else self.upsert_iterations
+          Checkpoint 1 — after initial CREATE workload + sync wait.
+          Checkpoint 2 — after UPDATE workload + sync wait.
 
+        Both local and NFS sizes are measured with ``du -sb`` (bytes), so no
+        unit conversion is required.  Local usage is summed across all cluster
+        nodes; NFS usage is measured on self.nfs_server under
+        self.nfs_server_path/kv/<bucket_uuid>.
+
+        Steps:
+          1. Load initial data via initial_load().
+          2. Sleep sync_wait_sec for Fusion to flush log segments to NFS.
+          3. Checkpoint 1: compare NFS vs local DU for every bucket.
+          4. Run update workload (perform_multiple_updates).
+          5. Sleep sync_wait_sec for Fusion to sync updated log segments.
+          6. Checkpoint 2: compare NFS vs local DU for every bucket.
+          7. Assert no ratio violations were recorded at either checkpoint.
+
+        Parameters (test params):
+          sync_wait_sec        : seconds to wait for NFS sync at each checkpoint
+                                 (default: 600)
+          nfs_overhead_ratio   : maximum allowed NFS/local ratio (default: 1.5)
+          num_upsert_iterations: update passes over the full key range
+                                 (default: 2)
+        """
+        sync_wait_sec = self.input.param("sync_wait_sec", 300)
+        nfs_overhead_ratio = self.input.param("nfs_overhead_ratio", 1.5)
+        num_upsert_iterations = self.input.param("num_upsert_iterations", 2)
+
+        def _compare_du(checkpoint_label, failures):
+            """Measure local + NFS DU for every bucket and record violations."""
+            self.log.info(f"--- DU Checkpoint: {checkpoint_label} ---")
+            for bucket in self.cluster.buckets:
+                bucket_uuid = self.get_bucket_uuid(bucket.name)
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}' "
+                    f"(uuid={bucket_uuid})"
+                )
+
+                # Local disk usage — sum across all cluster nodes
+                local_bytes = 0
+                for server in self.cluster.nodes_in_cluster:
+                    ssh = RemoteMachineShellConnection(server)
+                    du_cmd = f"du -sb {self.data_path}/{bucket_uuid}"
+                    output, error = ssh.execute_command(du_cmd)
+                    ssh.disconnect()
+                    if output:
+                        try:
+                            local_bytes += int(output[0].split()[0])
+                        except (IndexError, ValueError) as exc:
+                            self.log.warning(
+                                f"[{server.ip}] Could not parse du output "
+                                f"'{output}': {exc}"
+                            )
+                    else:
+                        self.log.warning(
+                            f"[{server.ip}] du returned no output for "
+                            f"{self.data_path}/{bucket_uuid} (error={error})"
+                        )
+
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                    f"local = {local_bytes:,} bytes "
+                    f"({local_bytes / (1024 ** 3):.3f} GiB) "
+                    f"across {len(self.cluster.nodes_in_cluster)} node(s)"
+                )
+
+                if local_bytes == 0:
+                    self.log.warning(
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"local disk usage is 0, skipping NFS comparison"
+                    )
+                    continue
+
+                # NFS disk usage
+                nfs_bucket_path = os.path.join(
+                    self.nfs_server_path, "kv", bucket_uuid
+                )
+                du_cmd = f"du -sb {nfs_bucket_path}"
+                self.log.info(
+                    f"[{checkpoint_label}] Running NFS du cmd on "
+                    f"{self.nfs_server_ip}: {du_cmd}"
+                )
+                ssh = RemoteMachineShellConnection(self.nfs_server)
+                output, error = ssh.execute_command(du_cmd)
+                ssh.disconnect()
+
+                if not output:
+                    self.log.warning(
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"du returned no output for {nfs_bucket_path} "
+                        f"(error={error}) — skipping"
+                    )
+                    continue
+
+                try:
+                    nfs_bytes = int(output[0].split()[0])
+                except (IndexError, ValueError) as exc:
+                    self.log.warning(
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"Could not parse NFS du output '{output}': {exc} "
+                        f"— skipping"
+                    )
+                    continue
+
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                    f"NFS = {nfs_bytes:,} bytes "
+                    f"({nfs_bytes / (1024 ** 3):.3f} GiB) "
+                    f"at {nfs_bucket_path}"
+                )
+
+                ratio = nfs_bytes / local_bytes
+                max_allowed = local_bytes * nfs_overhead_ratio
+                self.log.info(
+                    f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                    f"NFS/local ratio = {ratio:.3f} "
+                    f"(limit = {nfs_overhead_ratio}x, "
+                    f"max_allowed_nfs = {max_allowed:,.0f} bytes)"
+                )
+
+                if nfs_bytes > max_allowed:
+                    msg = (
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"NFS usage ({nfs_bytes:,} bytes) exceeds "
+                        f"{nfs_overhead_ratio}x local usage "
+                        f"({local_bytes:,} bytes). Ratio = {ratio:.3f}"
+                    )
+                    self.log.error(msg)
+                    failures.append(msg)
+                else:
+                    self.log.info(
+                        f"[{checkpoint_label}] Bucket '{bucket.name}': "
+                        f"PASSED ({ratio:.3f} <= {nfs_overhead_ratio})"
+                    )
+
+        failures = []
+
+        # ---- Phase 1: initial CREATE workload ----
+        self.log.info("Phase 1: Loading initial data")
+        self.initial_load()
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # ---- Phase 2: wait for NFS sync, then Checkpoint 1 ----
+        self.sleep(sync_wait_sec, "Waiting for Fusion to sync CREATE data to NFS")
+        _compare_du("after_create", failures)
+
+        # ---- Phase 3: UPDATE workload — DU checked after every iteration ----
+        self.log.info(
+            f"Phase 3: Running update workload "
+            f"({num_upsert_iterations} iteration(s)), "
+            f"DU comparison after each iteration"
+        )
+        self.sleep(30, "Wait before starting update workload")
         mutate = 1
-        while num_upsert_iterations > 0:
+        remaining = num_upsert_iterations
+        while remaining > 0:
+            iteration = num_upsert_iterations - remaining + 1
+            self.log.info(
+                f"Phase 3: Update iteration {iteration}/{num_upsert_iterations}"
+            )
             self.doc_ops = "update"
             self.reset_doc_params()
             self.update_start = 0
             self.update_end = self.num_items
-            self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
-            self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}")
-            self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, monitor_ops=False, mutate=mutate, ops_rate=ops_rate)
-            num_upsert_iterations -= 1
+            self.java_doc_loader(
+                wait=True,
+                skip_default=self.skip_load_to_default_collection,
+                monitor_ops=False,
+                mutate=mutate,
+                ops_rate=self.ops_rate,
+            )
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.sleep(
+                sync_wait_sec,
+                f"Waiting for Fusion to sync UPDATE data to NFS "
+                f"(iteration {iteration}/{num_upsert_iterations})",
+            )
+            _compare_du(f"after_update_iter_{iteration}", failures)
+            remaining -= 1
             mutate += 1
-            self.sleep(30, "Wait after update workload")
+            self.sleep(30, "Wait after update iteration")
 
+        # ---- Final assertion ----
+        self.assertEqual(
+            len(failures), 0,
+            f"NFS disk usage exceeded the {nfs_overhead_ratio}x ratio at "
+            f"{len(failures)} checkpoint(s):\n" + "\n".join(failures)
+        )
+        self.log.info("test_nfs_disk_usage_vs_local complete")
 
     def monitor_log_count(self, bucket, interval=5, timeout=3600):
 

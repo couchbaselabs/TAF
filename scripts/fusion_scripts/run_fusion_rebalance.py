@@ -385,6 +385,7 @@ def main():
     parser.add_argument('--log-store', default='nfs', help='Fusion Log Store')
     parser.add_argument('--s3-end-to-end', action='store_true', help='End to End S3 test')
     parser.add_argument('--guest-storage-dest-path', default=None, help='Override GUEST_STORAGE_PATH in run_local_accelerator.sh')
+    parser.add_argument('--case-number', type=int, default=0, help='Test case number for reb_plan file naming')
 
     args = parser.parse_args()
 
@@ -408,7 +409,7 @@ def main():
 
 
         global REBALANCE_PLAN_FILE
-        REBALANCE_PLAN_FILE = "/root/fusion/reb_plan{}.json".format(reb_count)
+        REBALANCE_PLAN_FILE = "/root/fusion/reb_plan_test{}_{}.json".format(args.case_number, reb_count)
 
         rebalancer = RebalanceAutomation(
             base_url=args.base_url,

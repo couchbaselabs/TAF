@@ -71,16 +71,10 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
                                               rebalance_sleep_time=20,
                                               skip_file_linking=True)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -284,16 +278,10 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
         if throttle_syncs:
             remove_th.join()
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -384,16 +372,10 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
                                               rebalance_sleep_time=20,
                                               skip_file_linking=True)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -426,8 +408,10 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
         update_data_pct = self.input.param("update_data_pct", 1)
         new_fusion_max_pending_upload_bytes = self.input.param("new_fusion_max_pending_upload_bytes", 200161927680) # 200GB
         new_lwm_percent = self.input.param("new_lwm_percent", 100)
+        post_sync_manager_update_itr = self.input.param("post_sync_manager_update_itr", 3)
 
         num_items = self.num_items
+        mutate = 1
 
         monitor_th = threading.Thread(target=self.get_fusion_sync_stats_continuously, args=[172800, 120])
         monitor_th.start()
@@ -444,25 +428,28 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
         initial_load_time_taken = initial_load_end_time - initial_load_start_time
         self.log.info(f"Initial load time taken = {initial_load_time_taken} seconds")
 
-        time_delta = self.fusion_upload_interval - initial_load_time_taken + 300
+        time_delta = max(0, self.fusion_upload_interval - initial_load_time_taken + 300)
         self.sleep(time_delta, "Wait for sync1 containing creates to take place")
 
         update_load_start_time = time.time()
 
+        frag_th = threading.Thread(target=self.monitor_fusion_du, args=[self.cluster.buckets[0], True, 30])
+        frag_th.start()
+        cbstats_frag_th = threading.Thread(target=self.monitor_log_store_stats, args=[self.cluster.buckets[0], 30, True])
+        cbstats_frag_th.start()
+
         # Update items
-        self.perform_workload(0, self.num_items * update_data_pct, "update", True, ops_rate=bucket_ops_rate, mutate=1)
+        self.perform_workload(0, self.num_items * update_data_pct, "update", True, ops_rate=bucket_ops_rate, mutate=mutate)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.sleep(60, "Wait after running update workload")
         self.bucket_util.print_bucket_stats(self.cluster)
+        mutate += 1
 
         update_load_end_time = time.time()
         update_load_time_taken = update_load_end_time - update_load_start_time
         self.log.info(f"Time taken for update workload = {update_load_time_taken} seconds")
 
-        frag_th = threading.Thread(target=self.monitor_log_store_stats, args=[self.cluster.buckets[0], 30])
-        frag_th.start()
-
-        time_delta = (3 * self.fusion_upload_interval)
+        time_delta = max(0, self.fusion_upload_interval - update_load_time_taken + 300)
         self.sleep(time_delta, "Wait for sync2 containing updates to take place")
 
         # Enable Sync Manager now
@@ -474,18 +461,27 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
         self.sleep(120, "Wait after enabling Sync Manager")
 
         # Load more data
-        self.log.info(f"Loading {num_items}:{num_items*1.5} into the bucket")
-        self.perform_workload(num_items, num_items*1.5, "create", True, ops_rate=bucket_ops_rate)
-        self.sleep(60, "Wait after workload")
-        self.bucket_util.print_bucket_stats(self.cluster)
+        update_itr = 1
+        while update_itr <= post_sync_manager_update_itr:
+            self.log.info(f"Performing post sync manager update itr: {update_itr}")
+            self.perform_workload(0, self.num_items * update_data_pct, "update", True, ops_rate=bucket_ops_rate, mutate=mutate)
+            self.sleep(60, "Wait after workload")
+            self.bucket_util.print_bucket_stats(self.cluster)
+
+            update_itr += 1
+            mutate += 1
 
         self.sleep(2 * self.fusion_upload_interval, "Wait to see if a sync is issued for log cleaning")
 
         self.monitor_stats = False
         frag_th.join()
+        cbstats_frag_th.join()
 
         self.monitor_sync_stats = False
         monitor_th.join()
+
+        if not self.frag_cbstats_pass:
+            self.fail("Log Store Frag Values Above Threshold were found")
 
 
     def test_fusion_small_purge_interval(self):
@@ -533,16 +529,10 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
                                               rebalance_sleep_time=20,
                                               skip_file_linking=True)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -599,16 +589,10 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
                                               rebalance_sleep_time=20,
                                               skip_file_linking=True)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -666,16 +650,10 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
                                               rebalance_sleep_time=20,
                                               skip_file_linking=True)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)

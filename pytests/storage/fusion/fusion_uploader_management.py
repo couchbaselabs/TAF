@@ -76,16 +76,10 @@ class FusionUploader(MagmaBaseTest, FusionBase):
 
             self.cluster_util.print_cluster_stats(self.cluster)
 
-            extent_migration_array = list()
-            self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-            for node in nodes_to_monitor:
-                for bucket in self.cluster.buckets:
-                    extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                    extent_th.start()
-                    extent_migration_array.append(extent_th)
-
-            for th in extent_migration_array:
-                th.join()
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
+            guest_volume_th.join()
 
             self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
@@ -134,16 +128,10 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         for task in doc_loading_tasks:
             self.doc_loading_tm.get_task_result(task)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
@@ -264,16 +252,10 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.sleep(30, "Wait after rebalance")
         self.cluster_util.print_cluster_stats(self.cluster)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.monitor_du = False
         for th in du_th_array:
@@ -365,16 +347,10 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.sleep(30, "Wait after rebalance")
         self.cluster_util.print_cluster_stats(self.cluster)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.monitor_du = False
         for th in du_th_array:
@@ -387,7 +363,10 @@ class FusionUploader(MagmaBaseTest, FusionBase):
     def test_fusion_uploader_failover(self):
 
         post_failover_step = self.input.param("post_failover_step", "recovery") # recovery/rebalance-out
+        failover_type = self.input.param("failover_type", "graceful") # graceful/hard
         recovery_type = self.input.param("recovery_type", "delta") # full/delta
+        num_nodes_to_failover = self.input.param("num_nodes_to_failover", 1)
+        rebalance_type = self.input.param("rebalance_type", "dcp") # dcp/fusion
 
         # With/without failover data load
         failover_data_load = self.input.param("failover_data_load", False)
@@ -400,29 +379,40 @@ class FusionUploader(MagmaBaseTest, FusionBase):
 
         # Get Uploader Map before failover
         self.get_fusion_uploader_info()
+        self.uploader_map1 = deepcopy(self.fusion_vb_uploader_map)
 
         # Perform graceful failover
-        node_to_failover = None
+        nodes_to_failover = list()
         for server in self.cluster.nodes_in_cluster:
             if server.ip != self.cluster.master.ip:
-                node_to_failover = server
-                break
+                nodes_to_failover.append(server)
+                if len(nodes_to_failover) == num_nodes_to_failover:
+                    break
 
+        self.log.info(f"Nodes to failover: {nodes_to_failover}")
+
+        otp_nodes = list()
         rest = ClusterRestAPI(self.cluster.master)
-        otp_node = self.get_otp_node(self.cluster.master, node_to_failover)
+        for node in nodes_to_failover:
+            otp_node = self.get_otp_node(self.cluster.master, node)
+            otp_nodes.append(otp_node)
 
-        self.log.info(f"Failing over the node {otp_node.id}")
-        success, _ = rest.perform_graceful_failover(otp_node.id)
-        if not success:
-            self.fail("Failover unsuccessful")
+        for otp_node in otp_nodes:
+            self.log.info(f"Failing over the node {otp_node.id}")
+            if failover_type == "graceful":
+                success, _ = rest.perform_graceful_failover(otp_node.id)
+                if not success:
+                    self.fail(f"Graceful Failover of {otp_node.id} unsuccessful")
 
-        # Monitor failover rebalance
-        rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
-        if not rebalance_passed:
-            self.fail("Graceful failover rebalance failed")
+                # Monitor failover rebalance
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
+                if not rebalance_passed:
+                    self.fail("Graceful failover rebalance failed")
 
-        # Get Uploader Map after failover
-        self.get_fusion_uploader_info()
+            elif failover_type == "hard":
+                success, _ = rest.perform_hard_failover(otp_node.id)
+                if not success:
+                    self.fail(f"Hard Failover of {otp_node.id} unsuccessful")
 
         # Perform data load
         if failover_data_load:
@@ -441,8 +431,10 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.sleep(60, "Wait before recovering/rebalancing-out the node")
 
         if post_failover_step == "recovery":
+
             # Perform delta/full recovery
-            rest.set_failover_recovery_type(otp_node.id, recovery_type)
+            for otp_node in otp_nodes:
+                rest.set_failover_recovery_type(otp_node.id, recovery_type)
             self.sleep(5, "Wait after setting failover recovery type")
 
             known_nodes=[node.id for node in self.cluster_util.get_nodes(self.cluster.master, inactive_added=True)]
@@ -452,19 +444,40 @@ class FusionUploader(MagmaBaseTest, FusionBase):
 
             self.log.info(f"Running {recovery_type} recovery rebalance")
             self.log.info("Known nodes: {}".format(known_nodes))
-            _, _ = rest.rebalance(known_nodes=known_nodes,
-                                delta_recovery_buckets=delta_recovery_buckets)
+            if rebalance_type == "dcp":
+                _, _ = rest.rebalance(known_nodes=known_nodes,
+                                    delta_recovery_buckets=delta_recovery_buckets)
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
+                if not rebalance_passed:
+                    self.fail("Rebalance operation post failover failed")
+
+            elif rebalance_type == "fusion":
+                # Perform a Fusion Recovery Rebalance
+                self.log.info("Running a Fusion rebalance")
+                nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                      rebalance_count=1,
+                                                      rebalance_sleep_time=60)
 
         elif post_failover_step == "rebalance_out":
+
             known_nodes=[node.id for node in self.cluster_util.get_nodes(self.cluster.master, inactive_failed=True)]
             self.log.info("Known nodes: {}".format(known_nodes))
             self.log.info("Rebalancing-out the failed over node")
-            _, _ = rest.rebalance(known_nodes=known_nodes,
-                                  eject_nodes=[otp_node.id])
 
-        rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
-        if not rebalance_passed:
-            self.fail("Rebalance operation post failover failed")
+            if rebalance_type == "dcp":
+                _, _ = rest.rebalance(known_nodes=known_nodes,
+                                    eject_nodes=[otp_node.id for otp_node in otp_nodes])
+                rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
+                if not rebalance_passed:
+                    self.fail("Rebalance operation post failover failed")
+
+            elif rebalance_type == "fusion":
+                # Perform a Fusion Recovery Rebalance
+                self.log.info("Running a Fusion rebalance")
+                nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                      rebalance_count=1,
+                                                      rebalance_sleep_time=60,
+                                                      remove_nodes=nodes_to_failover)
 
         self.log.info("Failover/recovery/rebalance-out process complete")
 
@@ -472,6 +485,14 @@ class FusionUploader(MagmaBaseTest, FusionBase):
 
         # Get Uploader Map after recovery
         self.get_fusion_uploader_info()
+        self.uploader_map2 = deepcopy(self.fusion_vb_uploader_map)
+
+        if self.validate_uploaders_are_active:
+            self.verify_uploaders_are_active()
+            if rebalance_type == "fusion":
+                self.verify_fusion_reupload_optimized(prev_uploader_map=self.uploader_map1,
+                                                    new_uploader_map=self.uploader_map2,
+                                                    rebalance_count=1)
 
 
     def test_fusion_uploader_cannot_start_without_chronicle(self):
@@ -560,7 +581,7 @@ class FusionUploader(MagmaBaseTest, FusionBase):
         self.vb_log_ckpt_dict = dict()
         self.bucket_uuid_map = dict()
 
-        reb_plan_path = os.path.join(self.fusion_output_dir, "reb_plan{}.json".format(str(rebalance_counter)))
+        reb_plan_path = os.path.join(self.fusion_output_dir, "reb_plan_test{}_{}.json".format(str(self.case_number), str(rebalance_counter)))
         with open(reb_plan_path, "r") as f:
             data = json.load(f)
         self.involved_nodes = list(data['nodes'].keys())

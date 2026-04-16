@@ -62,6 +62,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         workload_during_enabling = self.input.param("workload_during_enabling", False)
         workload_ops_during_enabling = self.input.param("workload_ops_during_enabling", 10000)
+        load_data = self.input.param("load_data", True)
+        perform_rebalance = self.input.param("perform_rebalance", True)
 
         self.enable_bucket_count = self.input.param("enable_bucket_count", None)
         if self.enable_bucket_count is not None:
@@ -77,10 +79,11 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
 
-        self.log.info("Starting initial load")
-        self.initial_load()
-        sleep_time = 120 + self.fusion_upload_interval + 30
-        self.sleep(sleep_time, "Sleep after data loading")
+        if load_data:
+            self.log.info("Starting initial load")
+            self.initial_load()
+            sleep_time = 120 + self.fusion_upload_interval + 30
+            self.sleep(sleep_time, "Sleep after data loading")
 
         fusion_enable_buckets = None
         if self.enable_bucket_count is not None:
@@ -133,21 +136,16 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             sleep_time = 120 + self.fusion_upload_interval + 30
             self.sleep(sleep_time, "Sleep after subsequent data loading")
 
-        # Perform a Fusion Rebalance
-        self.log.info("Running a Fusion rebalance")
-        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1)
+        if perform_rebalance:
+            # Perform a Fusion Rebalance
+            self.log.info("Running a Fusion rebalance")
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                rebalance_count=1)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.fusion_enabled_buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
+            guest_volume_th.join()
 
         if workload_during_enabling:
             create_th.join()
@@ -265,13 +263,9 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=1)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
 
         self.sleep(30, "Wait before disabling Fusion")
 
@@ -283,8 +277,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
         monitor_fusion_th.start()
 
-        for th in extent_migration_array:
-            th.join()
+        guest_volume_th.join()
 
         self.monitor_fusion_info = False
         monitor_fusion_th.join()
@@ -337,16 +330,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             self.doc_loading_tm.get_task_result(task)
 
         self.sleep(5, "Wait before monitoring extent migration")
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.sleep(30, "Wait after completion of the entire rebalance/migration process")
 
@@ -649,16 +636,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
                 self.num_nodes_to_rebalance_in = 1
                 nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                                       rebalance_count=1)
-                extent_migration_array = list()
-                self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-                for node in nodes_to_monitor:
-                    for bucket in self.cluster.buckets:
-                        extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                        extent_th.start()
-                        extent_migration_array.append(extent_th)
-
-                for th in extent_migration_array:
-                    th.join()
+                self.log.info("Monitoring active guest volumes")
+                guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+                guest_volume_th.start()
+                guest_volume_th.join()
 
                 self.get_fusion_uploader_info(buckets=self.fusion_enabled_buckets)
 
@@ -796,13 +777,9 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             self.doc_loading_tm.get_task_result(task)
 
         self.sleep(5, "Wait before monitoring extent migration")
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
 
         if stop_fusion_during == "migration":
             self.sleep(30, "Wait before stopping Fusion during extent migration")
@@ -813,8 +790,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
             monitor_fusion_th.start()
 
-        for th in extent_migration_array:
-            th.join()
+        guest_volume_th.join()
 
         self.sleep(30, "Wait after completion of the entire rebalance/migration process")
 
@@ -1000,16 +976,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         ClusterRestAPI(self.cluster.master).\
                 manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
-        extent_migration_array = list()
-        self.log.info(f"Monitoring extent migration on nodes: {nodes_to_monitor}")
-        for node in nodes_to_monitor:
-            for bucket in self.cluster.buckets:
-                extent_th = threading.Thread(target=self.monitor_extent_migration, args=[node, bucket])
-                extent_th.start()
-                extent_migration_array.append(extent_th)
-
-        for th in extent_migration_array:
-            th.join()
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
 
         self.sleep(60, "Wait after extent migration completion")
         self.monitor_fusion_info = False
