@@ -12,19 +12,23 @@ from sirius_client_framework.sirius_constants import DB_MGMT_PATH, SiriusCodes
 class SiriusSetup(object):
     __running_process = None
     sirius_url = "http://0.0.0.0:4000"
+    unique_name = "java_doc_loader"
 
     @staticmethod
     def get_running_pid():
         return SiriusSetup.__running_process
 
     @staticmethod
-    def is_sirius_online(url, expected_name="java_loader"):
+    def is_sirius_online(url):
         for i in range(5):
             try:
                 response = requests.get(url=url + "/check-online")
                 if response.status_code == 200:
+                    if SiriusSetup.unique_name == "Golang_loader":
+                        return True
+                    # Check server_id only for java loader
                     response_json = response.json()
-                    if response_json.get("name") == expected_name:
+                    if response_json.get("name") == SiriusSetup.unique_name:
                         return True
             except Exception as e:
                 print(str(e))
@@ -33,7 +37,7 @@ class SiriusSetup(object):
 
 
     @staticmethod
-    def start_java_loader(taf_path, unique_name="java_loader", port=8080):
+    def start_java_loader(taf_path, port=8080):
         doc_loader_path = f"{taf_path}/DocLoader"
         """
         print("Building Loader")
@@ -51,12 +55,13 @@ class SiriusSetup(object):
                f"{doc_loader_path}/target/magmadocloader/magmadocloader.jar",
                "RestServer.RestApplication",
                f"--server.port={port}",
-               f"--server.name={unique_name}"]
+               f"--server.name={SiriusSetup.unique_name}"]
         SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 
 
     @staticmethod
     def start_golang_loader(taf_path, port=4000):
+        SiriusSetup.unique_name = "Golang_loader"
         fp = open("logs/sirius_build.log", "w")
 
         print("Building sirius")
@@ -119,6 +124,7 @@ class SiriusSetup(object):
 
     @staticmethod
     def start_golang_docker(port=4000):
+        SiriusSetup.unique_name = "Golang_loader"
         docker_file_path = os.path.join(os.getcwd(), "sirius",
                                         "docker-compose.yaml")
         if os.path.exists(docker_file_path):
