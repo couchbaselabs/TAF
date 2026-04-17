@@ -275,3 +275,4 @@ See [agents/AGENTS.md](agents/AGENTS.md) for the full list of agents and skills.
 ### Component specific Documentation
 - If asked about **KV** or **data-service**: refer to docs/agent-context/data-service/AGENTS.md
 - If asked about **NS Server** or **Cluster-manager**: refer to docs/agent-context/ns-server/AGENTS.md
+- If asked about **Couchbase REST API**, **REST endpoints**, or **cb_server_rest_util**: refer to [couchbase_utils/cb_server_rest_util/AGENTS.md](couchbase_utils/cb_server_rest_util/AGENTS.md)
