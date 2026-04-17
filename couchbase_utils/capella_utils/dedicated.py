@@ -785,6 +785,7 @@ class CapellaUtils(object):
                                       format(resp.status_code))
             raise Exception("Updating Fusion Feature Flag failed: {}".
                             format(resp.content))
+        CapellaUtils.log.info("Updated the fusion-rebalances feature flag successfully")
         resp = capella_api.update_global_feature_flag("fusion-fallback-replace", {"value": True})
         if resp.status_code != 204:
             CapellaUtils.log.critical("Updating Fusion Feature \
@@ -792,3 +793,5 @@ class CapellaUtils(object):
                                       format(resp.status_code))
             raise Exception("Updating Fusion Feature Flag failed: {}".
                             format(resp.content))
+        CapellaUtils.log.info("Updated the fusion-fallback-replace feature flag successfully")
+        return
