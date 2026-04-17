@@ -1,0 +1,9 @@
+{
+  "skills": [
+    {
+      "name": "source-attribution",
+      "description": "Adds source citations to responses from TAF docs",
+      "path": "agents/skills/source-attribution.md"
+    }
+  ]
+}

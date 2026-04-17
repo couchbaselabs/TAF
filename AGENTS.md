@@ -224,6 +224,48 @@ Before completion, ensure:
 
 ---
 
+## Agents & Skills
+
+### Structure
+`agents/` is the canonical location for all agent definitions and skills:
+```
+agents/
+  <name>.md  – feature-specific agents live directly here
+  skills/    – general-purpose utility skills (e.g., source-attribution)
+```
+
+`.factory/droids/` and `.factory/skills/` contain symlinks into `agents/` — do not edit files there directly.
+
+### Adding a new agent
+1. Create `agents/<name>.md` with YAML frontmatter:
+   ```yaml
+   ---
+   name: your-agent-name
+   description: What this agent specializes in
+   model: inherit
+   ---
+   ```
+2. Create symlink: `ln -s ../../agents/<name>.md .factory/droids/<name>.md`
+
+### Adding a new skill
+1. Create `agents/skills/<name>.md` with YAML frontmatter:
+   ```yaml
+   ---
+   name: your-skill-name
+   description: What this skill does
+   ---
+   ```
+2. Register in `.claude/settings.json` under `skills`
+3. Create symlink: `ln -s ../../../agents/skills/<name>.md .factory/skills/<name>/SKILL.md`
+
+### Available agents
+- [Fusion Test Architect](agents/fusion.md) – writing fusion accelerator tests
+
+### Available skills
+- [Source Attribution](agents/skills/source-attribution.md) – cites TAF docs in responses
+
+---
+
 ## Supporting Documentation
 ### Framework Documentation
 - [Repo Inventory](docs/agent-context/repo-inventory.md) – Detailed component breakdown
