@@ -16,6 +16,8 @@ class StatsBasicOps(CollectionBase):
         super(StatsBasicOps, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.stats_basic_ops_util = StatsBasicOpsUtil(self.log)
+        self.metrics_config = self.stats_basic_ops_util.load_metrics_config(self.input)
+        self.metrics_validation_cfg = self.metrics_config.get("validation", {})
 
     def tearDown(self):
         self.log.info("Reverting settings to default")
@@ -30,6 +32,42 @@ class StatsBasicOps(CollectionBase):
         key = "%s:%s" % (str(server.ip), str(server.port))
         server_services = services_map[key]
         return server_services
+
+    def get_target_servers_for_component(self, component):
+        candidate_servers = self.cluster.servers[:self.nodes_init]
+        if component != "index":
+            return candidate_servers
+
+        index_servers = []
+        for server in candidate_servers:
+            server_services = self.get_services_from_node(server)
+            if "index" in server_services:
+                index_servers.append(server)
+
+        if not index_servers:
+            self.skipTest("No index service present on selected nodes for component=index")
+        return index_servers
+
+    def load_sample_buckets_for_metrics(self):
+        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
+        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
+
+    def fetch_metrics_for_component(self, server, component, cardinality="low", parse=False):
+        if component == "index":
+            self.log.info(
+                "Index metrics source on %s: curl -u %s:***** http://%s:%s/metrics",
+                server.ip, self.rest.username, server.ip, server.port
+            )
+            return StatsHelper(server).get_all_metrics()
+        if cardinality == "high":
+            return StatsHelper(server).get_prometheus_metrics_high(component=component, parse=parse)
+        return StatsHelper(server).get_prometheus_metrics(component=component, parse=parse)
+
+    def validate_metrics_if_needed(self, server, content, parse, policy_name="default"):
+        if not parse:
+            self.stats_basic_ops_util.validate_metrics(
+                server, content, self.metrics_validation_cfg, policy_name=policy_name
+            )
 
     def get_warmup_stat_dict(self, content):
         warmup_stat_dict = dict()
@@ -159,7 +197,7 @@ class StatsBasicOps(CollectionBase):
             content = StatsHelper(server).get_prometheus_metrics(
                 component=component)
             if not parse:
-                StatsHelper(server)._validate_metrics(content)
+                self.stats_basic_ops_util.validate_metrics(server, content, self.metrics_validation_cfg)
         self.log.info("Content : ")
         for line in content:
             print(line.strip("\n"))
@@ -175,13 +213,13 @@ class StatsBasicOps(CollectionBase):
         component = self.input.param("component", "ns_server")
         parse = self.input.param("parse", False)
 
-        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
-        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
-        for server in self.cluster.servers[:self.nodes_init]:
-            content = StatsHelper(server).get_prometheus_metrics(
-                component=component, parse=parse)
-            if not parse:
-                StatsHelper(server)._validate_metrics(content)
+        self.load_sample_buckets_for_metrics()
+        if component == "index":
+            self.sleep(10, "Waiting for index metrics to settle after bucket load")
+        target_servers = self.get_target_servers_for_component(component)
+        for server in target_servers:
+            content = self.fetch_metrics_for_component(server, component, cardinality="low", parse=parse)
+            self.validate_metrics_if_needed(server, content, parse=parse)
         for line in content:
             print(line.strip("\n"))
 
@@ -194,12 +232,13 @@ class StatsBasicOps(CollectionBase):
         component = self.input.param("component", "kv")
         parse = self.input.param("parse", False)
 
-        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
-        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
-        for server in self.cluster.servers[:self.nodes_init]:
-            content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=parse)
-            if not parse:
-                StatsHelper(server)._validate_metrics(content)
+        self.load_sample_buckets_for_metrics()
+        if component == "index":
+            self.sleep(10, "Waiting for index metrics to settle after bucket load")
+        target_servers = self.get_target_servers_for_component(component)
+        for server in target_servers:
+            content = self.fetch_metrics_for_component(server, component, cardinality="high", parse=parse)
+            self.validate_metrics_if_needed(server, content, parse=parse)
         for line in content:
             print(line.strip("\n"))
 
@@ -247,17 +286,22 @@ class StatsBasicOps(CollectionBase):
                 self.log.info("trying again with Administrator privilages")
                 stats_helper_object.username = "Administrator"
                 content = stats_helper_object.get_prometheus_metrics_high(component=component, parse=False)
-                StatsHelper(server)._validate_metrics(content)
+                self.stats_basic_ops_util.validate_metrics(
+                    server,
+                    content,
+                    self.metrics_validation_cfg,
+                    policy_name="authorization_high_cardinality"
+                )
 
     def test_check_get_all_metrics(self):
         """
         Test /metrics endpoint. Validate for duplicity and prefix
         """
-        self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
-        self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
+        self.load_sample_buckets_for_metrics()
+        self.sleep(10, "Waiting for index metrics to settle after bucket load")
         for server in self.cluster.servers[:self.nodes_init]:
             content = StatsHelper(server).get_all_metrics()
-            StatsHelper(server)._validate_metrics(content)
+            self.validate_metrics_if_needed(server, content, parse=False, policy_name="get_all_metrics")
         for line in content:
             print(line.strip("\n"))
 
@@ -458,23 +502,38 @@ class StatsBasicOps(CollectionBase):
         """
         Call all endpoints, for all components, and validate with 1000 collections in the cluster
         """
-        for server in self.cluster.servers[:self.nodes_init]:
-            self.log.info("calling low cardinality metrics on {0} with component ns server".format(server.ip))
-            content = StatsHelper(server).get_prometheus_metrics(component="ns_server", parse=False)
-            StatsHelper(server)._validate_metrics(content)
+        def fetch_and_validate(server, fetch_desc, fetch_fn):
+            self.log.info(fetch_desc)
+            metrics_content = fetch_fn()
+            self.validate_metrics_if_needed(
+                server, metrics_content, parse=False, policy_name="stats_1000_collections"
+            )
+            return metrics_content
 
-            self.log.info("calling /metrics on {0}".format(server.ip))
-            content = StatsHelper(server).get_all_metrics()
-            StatsHelper(server)._validate_metrics(content)
+        for server in self.cluster.servers[:self.nodes_init]:
+            fetch_and_validate(
+                server,
+                "calling low cardinality metrics on {0} with component ns server".format(server.ip),
+                lambda: StatsHelper(server).get_prometheus_metrics(component="ns_server", parse=False)
+            )
+            fetch_and_validate(
+                server,
+                "calling /metrics on {0}".format(server.ip),
+                lambda: StatsHelper(server).get_all_metrics()
+            )
 
             server_services = self.get_services_from_node(server)
             for component in server_services:
-                self.log.info("calling low cardinality metrics on {0} with component {1}".format(server.ip, component))
-                content = StatsHelper(server).get_prometheus_metrics(component=component, parse=False)
-                StatsHelper(server)._validate_metrics(content)
-                self.log.info("calling high cardinality metrics on {0} with component {1}".format(server.ip, component))
-                content = StatsHelper(server).get_prometheus_metrics_high(component=component, parse=False)
-                StatsHelper(server)._validate_metrics(content)
+                fetch_and_validate(
+                    server,
+                    "calling low cardinality metrics on {0} with component {1}".format(server.ip, component),
+                    lambda: StatsHelper(server).get_prometheus_metrics(component=component, parse=False)
+                )
+                fetch_and_validate(
+                    server,
+                    "calling high cardinality metrics on {0} with component {1}".format(server.ip, component),
+                    lambda: StatsHelper(server).get_prometheus_metrics_high(component=component, parse=False)
+                )
 
     def recover_failed_over_node(self, target_server, recovery_type="delta"):
         otp_node = "ns_1@{0}".format(target_server.ip)

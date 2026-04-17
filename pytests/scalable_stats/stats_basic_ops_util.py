@@ -62,6 +62,21 @@ class StatsBasicOpsUtil(object):
     def fetch_metrics(server):
         return StatsHelper(server).get_all_metrics()
 
+    @staticmethod
+    def validate_metrics(server, content, metrics_validation_cfg=None, policy_name="default"):
+        metrics_validation_cfg = metrics_validation_cfg or {}
+        configured_allowed_prefixes = metrics_validation_cfg.get("allowed_prefixes")
+        policies = metrics_validation_cfg.get("policies", {})
+        policy = policies.get(policy_name, policies.get("default", {}))
+        fail_on_unknown_prefix = bool(policy.get("fail_on_unknown_prefix", False))
+        skip_prefix_validation = bool(policy.get("skip_prefix_validation", False))
+        allowed_prefixes = None if skip_prefix_validation else configured_allowed_prefixes
+        StatsHelper(server)._validate_metrics(
+            content,
+            allowed_prefixes=allowed_prefixes,
+            fail_on_unknown_prefix=fail_on_unknown_prefix
+        )
+
     def log_metric_snapshot(self, lines, metric_helper, stage):
         matched = metric_helper.get_matching_lines(lines)
         value = metric_helper.get_value(lines)

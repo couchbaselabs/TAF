@@ -62,7 +62,6 @@ class StatsHelper(RestConnection):
             cmd = "{3} -i -o - --silent -u {0}:{1} http://{2}:11280/_prometheusMetrics". \
                 format(self.username, self.password, "localhost", self.curl_path)
             content = self._run_curl_command_from_localhost(cmd)
-
         else:
             url = self._get_url_from_service(component)
             api = '%s%s' % (url, '/_prometheusMetrics')
@@ -320,18 +319,27 @@ class StatsHelper(RestConnection):
         if error:
             self.log.error("Error making Curl request on server {0} {1}".format(self.server.ip, error))
 
-        output_index = 0
-        for line in output:
+        body_start_index = None
+        saw_http_status = False
+        for output_index, line in enumerate(output):
             if line.startswith("HTTP"):
+                saw_http_status = True
                 status_code_line = line.split(" ")
                 status_code = status_code_line[1]
                 status_msg = " ".join(status_code_line[2:])
                 if status_code not in ['200', '201', '202']:
                     raise Exception("Exception {0} {1}".format(status_code, status_msg))
-            elif not line.strip():
-                content = output[output_index + 1:]
-                return content
-            output_index = output_index + 1
+            elif saw_http_status and not line.strip():
+                body_start_index = output_index + 1
+                break
+
+        if body_start_index is not None:
+            return output[body_start_index:]
+        if saw_http_status:
+            return []
+
+       
+        return output
 
     def _call_component_parser(self, content, component="ns_server", cardinality="low"):
         """
@@ -488,7 +496,7 @@ class StatsHelper(RestConnection):
         return map
 
     @staticmethod
-    def _validate_metrics(content):
+    def _validate_metrics(content, allowed_prefixes=None, fail_on_unknown_prefix=False):
         """
         Method to validate exposition of metrics in /_getPrometheusMetrics, /_getPrometheusMetricsHigh, /metrics endpoints
             1. Check for duplicate entries (for component other than ns-server
@@ -502,17 +510,22 @@ class StatsHelper(RestConnection):
         #ToDo...called when cluster is heavy
         """
 
-        def check_prefixes(line_to_check):
-            allowed_prefixes = ["audit", "sysproc", "sys", "couch",
-                                "exposer", "cm", "kv",
-                                "index", "n1ql", "fts", "eventing", "xdcr"
-                                ]
-            for prefix in allowed_prefixes:
+        def check_prefixes(line_to_check, prefixes):
+            for prefix in prefixes:
                 if line_to_check.startswith(prefix):
                     return True
             return False
 
         log = logger.get("test")
+        if content is None:
+            raise Exception("Metrics content is None; failed to fetch endpoint output")
+        default_allowed_prefixes = [
+            "audit", "sysproc", "sys", "couch",
+            "exposer", "cm", "kv", "index", "n1ql",
+            "fts", "eventing", "xdcr"
+        ]
+        if allowed_prefixes is None:
+            allowed_prefixes = default_allowed_prefixes
         log.info("Validating metrics")
         # Validate duplicates at the "series" level (metric name + labels).
         # Allow exact duplicate samples for the same series (same value + same ts),
@@ -532,6 +545,7 @@ class StatsHelper(RestConnection):
             r'(?:\s+(?P<ts>[0-9]+))?\s*$'
         , re.IGNORECASE)
         seen_series = {}
+        unknown_prefix_metrics = set()
         for idx, line in enumerate(content):
             if not line or line.startswith("#"):
                 continue
@@ -546,9 +560,9 @@ class StatsHelper(RestConnection):
             value = m.group("value")
             ts = m.group("ts") or ""
 
-            if not check_prefixes(name):
-                raise Exception(
-                    "Invalid prefix for metric (idx={0}) {1}".format(idx, line))
+            if allowed_prefixes is not None:
+                if not check_prefixes(name, allowed_prefixes):
+                    unknown_prefix_metrics.add(name)
 
             series_key = name + labels
             prev = seen_series.get(series_key)
@@ -566,6 +580,18 @@ class StatsHelper(RestConnection):
                 "(series={0}, first_idx={1}, dup_idx={2}) first={3} dup={4}"
                 .format(series_key, prev_idx, idx, prev_line, line)
             )
+        if unknown_prefix_metrics:
+            max_log_metrics = 40
+            unknown_sorted = sorted(unknown_prefix_metrics)
+            display = unknown_sorted[:max_log_metrics]
+            unknown_list = ", ".join(display)
+            if len(unknown_sorted) > max_log_metrics:
+                unknown_list += " ... ({0} more)".format(
+                    len(unknown_sorted) - max_log_metrics
+                )
+            if fail_on_unknown_prefix:
+                raise Exception("Unknown metric prefixes seen: {0}".format(unknown_list))
+            log.warning("Unknown metric prefixes seen (warning-only): {0}".format(unknown_list))
         if len(content) == 0:
             log.error("No metrics are present to validate")
 

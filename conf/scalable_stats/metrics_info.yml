@@ -2,3 +2,32 @@ metrics:
   cm_alerts_triggered_total:
     labels:
       type: auto_failover_node
+validation:
+  allowed_prefixes:
+    - audit
+    - sysproc
+    - sys
+    - couch
+    - exposer
+    - cm
+    - kv
+    - index
+    - n1ql
+    - fts
+    - eventing
+    - xdcr
+    - cookie
+    - contbk
+  policies:
+    default:
+      fail_on_unknown_prefix: false
+      skip_prefix_validation: false
+    authorization_high_cardinality:
+      fail_on_unknown_prefix: false
+      skip_prefix_validation: true
+    get_all_metrics:
+      fail_on_unknown_prefix: false
+      skip_prefix_validation: false
+    stats_1000_collections:
+      fail_on_unknown_prefix: false
+      skip_prefix_validation: true
