@@ -1,1 +1,1 @@
-../../agents/fusion.md
+@agents/fusion.md

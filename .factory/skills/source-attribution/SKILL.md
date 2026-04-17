@@ -1,1 +1,1 @@
-../../../agents/skills/source-attribution.md
+@agents/skills/source-attribution.md

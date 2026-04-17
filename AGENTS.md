@@ -234,7 +234,7 @@ agents/
   skills/    – general-purpose utility skills (e.g., source-attribution)
 ```
 
-`.factory/droids/` and `.factory/skills/` contain symlinks into `agents/` — do not edit files there directly.
+`.factory/droids/` and `.factory/skills/` contain `@`-reference files pointing into `agents/` — do not edit files there directly.
 
 ### Adding a new agent
 1. Create `agents/<name>.md` with YAML frontmatter:
@@ -245,7 +245,7 @@ agents/
    model: inherit
    ---
    ```
-2. Create symlink: `ln -s ../../agents/<name>.md .factory/droids/<name>.md`
+2. Create `.factory/droids/<name>.md` containing: `@agents/<name>.md`
 
 ### Adding a new skill
 1. Create `agents/skills/<name>.md` with YAML frontmatter:
@@ -256,13 +256,11 @@ agents/
    ---
    ```
 2. Register in `.claude/settings.json` under `skills`
-3. Create symlink: `ln -s ../../../agents/skills/<name>.md .factory/skills/<name>/SKILL.md`
+3. Create `.factory/skills/<name>/SKILL.md` containing: `@agents/skills/<name>.md`
+4. Add an entry to `agents/skills/AGENTS.md`
 
-### Available agents
-- [Fusion Test Architect](agents/fusion.md) – writing fusion accelerator tests
-
-### Available skills
-- [Source Attribution](agents/skills/source-attribution.md) – cites TAF docs in responses
+### Available agents & skills
+See [agents/AGENTS.md](agents/AGENTS.md) for the full list of agents and skills.
 
 ---
 
