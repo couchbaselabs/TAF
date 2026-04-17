@@ -706,39 +706,6 @@ class EC2Lib(AWSBase):
         volumes = self.ec2_client.describe_volumes(Filters=_filters)
         return volumes.get('Volumes', [])
 
-    def poll_volumes_by_cluster_id(self, cluster_id: str, poll_interval: int = 30, max_polls: int = 10) -> List[Dict[str, Any]]:
-        """
-        Poll for EBS volumes filtered by the cluster id tag ('couchbase-cloud-cluster-id').
-        Returns a list of volume dicts.
-        """
-        filters = [
-            {'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster_id)]},
-            {'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}
-        ]
-        poll_count = 0
-        last_volumes = []
-        while poll_count < max_polls:
-            try:
-                response = self.ec2_client.describe_volumes(Filters=filters)
-                volumes = response.get('Volumes', [])
-                print(f"[poll_volumes_by_cluster_id] Poll {poll_count+1}/{max_polls} - Found {len(volumes)} volumes")
-                for volume in volumes:
-                    volume_id = volume.get('VolumeId')
-                    size = volume.get('Size')
-                    state = volume.get('State')
-                    iops = volume.get('Iops', 'N/A')
-                    attachments = volume.get('Attachments', [])
-                    device = attachments[0]['Device'] if attachments else 'N/A'
-                    instance_id = attachments[0]['InstanceId'] if attachments else 'N/A'
-                    print(f"  VolumeId: {volume_id}, Size: {size} GiB, IOPS: {iops}, State: {state}, Instance: {instance_id}, Device: {device}")
-                last_volumes = volumes
-            except Exception as e:
-                self.logger.error(f"Error polling volumes by cluster id {cluster_id}: {e}")
-            poll_count += 1
-            if poll_count < max_polls:
-                time.sleep(poll_interval)
-        return last_volumes
-
     def get_hostname_public_ip_mapping(self, dns_name:str="l3ocuqshernpf2ih.sandbox.nonprod-project-avengers.com") -> Optional[str]:
         """
         Get the hostname and public IP mapping of an EC2 instance.

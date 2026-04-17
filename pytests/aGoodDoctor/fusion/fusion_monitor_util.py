@@ -426,7 +426,7 @@ class FusionMonitorUtil():
                     filters = [{
                         'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
                     }]
-                    instances = self.fusion_aws_util.list_instances(filters, log="Couchbase Cloud Cluster", suppress_log=True)
+                    instances = self.fusion_aws_util.ec2.list_instances(filters)
 
                     results = {}
                     table = PrettyTable()
@@ -437,7 +437,6 @@ class FusionMonitorUtil():
                         public_ip = instance.get('PublicIpAddress', 'N/A')
                         if public_ip not in [node.aws_public_ip for node in cluster.nodes_in_cluster]:
                             continue
-
                         try:
                             result = self.fusion_aws_util.ec2.run_shell_command(instance_id, cmd)
                             if result.get('success'):
