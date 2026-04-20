@@ -194,7 +194,7 @@ class IndexAdvisor(ColumnarBaseTest):
 
         for dataset in datasets:
             queries = [f"select count(*) from {dataset.full_name} where price = 1000",
-                       f"select count(*) from {dataset.full_name} where price > 1800"]
+                       f"select count(*) from {dataset.full_name} where price > 18000"]
             for query in queries:
                 self.advisor(self.columnar_cluster, dataset.full_name,
                              query, validate_recommended_index=True)
@@ -217,7 +217,7 @@ class IndexAdvisor(ColumnarBaseTest):
         print(f"Number of datasets: {len(datasets)}")
 
         for dataset in datasets:
-            query = f"select h.`name`, h.`city`, h.`country`, h.`price` from {dataset.full_name} as h where h.`city` IN ( select value h2.`city` from {dataset.full_name} as h2 where h2.`type` = 'Suites' )"
+            query = f"select h.`name`, h.`city`, h.`country`, h.`price` from {dataset.full_name} as h where h.`city` IN ( select value h2.`city` from {dataset.full_name} as h2 where h2.`type` = 'Room' )"
             self.advisor(self.columnar_cluster, dataset.full_name,
                          query, validate_recommended_index=True)
 

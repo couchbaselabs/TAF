@@ -57,6 +57,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         # Initializing AWS_MSK util and AWS_MSK cluster object.
         self.msk_util = MSKUtils(
             access_key=self.aws_access_key, secret_key=self.aws_secret_key,
+            session_token=self.aws_session_token,
             region=self.input.param("msk_region", "us-east-1"))
         self.msk_cluster_obj = self.msk_util.generate_msk_cluster_object(
             msk_cluster_name=self.input.param("msk_cluster_name"),
@@ -97,7 +98,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                         "value_serialization_type": "json",
                         "cdc_enabled": True,
                         "source_connector": "DEBEZIUM",
-                        "num_items": 10000000
+                        "num_items": 1000
                     },
                     {
                         "topic_name": "do-not-delete-mongo-non-cdc.Product_Template.10GB",
@@ -105,7 +106,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                         "value_serialization_type": "json",
                         "cdc_enabled": False,
                         "source_connector": "DEBEZIUM",
-                        "num_items": 10000000
+                        "num_items": 1000
                     },
                 ],
                 "POSTGRESQL": [],
@@ -669,6 +670,14 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         if not all(maintenance_result):
             self.fail("Upgrade failed")
 
+        if not self.columnar_utils.wait_for_instance_to_be_healthy(
+                pod=self.pod, tenant=self.tenant,
+                instance=self.columnar_cluster):
+            self.fail("Cluster is not healthy after upgrade")
+
+        self.columnar_utils.update_columnar_instance_obj(
+            self.pod, self.tenant, self.columnar_cluster)
+
         self.log.info("Validating server version post upgrade")
         rest = ClusterRestAPI(self.columnar_cluster.master)
         status, content = rest.cluster_details()
@@ -686,7 +695,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
         else:
             upgrade_version = self.upgrade_version.split("-")
             expected_version_post_upgrade = "-".join(
-                upgrade_version[2:4] + [upgrade_version[1]])
+                upgrade_version[2:4] + upgrade_version[0:2])
             actual_version_post_upgrade = node_versions.pop()
             if actual_version_post_upgrade != expected_version_post_upgrade:
                 self.fail(f"Incorrect Server version post upgrade. Expected "

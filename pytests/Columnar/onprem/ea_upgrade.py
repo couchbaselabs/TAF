@@ -98,6 +98,8 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         super(EnterpriseAnalyticsUpgrade, self).setUp()
         self.upgrade_version = self.input.param(
             "upgrade_version", "2.1.0-1367")
+        self.pre_upgrade_version = self.input.param(
+            "pre_upgrade_version", "2.0.0-1069")
         self.nodes_init = self.input.param("nodes_init", 2)
         self.spare_node = self.cluster.servers[self.nodes_init]
         # Track buckets created during upgrade for cleanup
@@ -934,6 +936,72 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             self.cluster.master.ip))
         self.cluster_util.print_cluster_stats(self.cluster)
 
+    def _get_prod_compat_version(self, node=None):
+        """
+        Retrieve prodCompatVersion for every node in the cluster via GET /pools/default.
+        Uses cluster_details() which is already present in ClusterRestAPI.
+
+        Returns:
+            dict: {hostname: prodCompatVersion} for every node, or None on failure.
+        """
+        if node is None:
+            node = self.cluster.master
+        rest = ClusterRestAPI(node)
+        status, content = rest.cluster_details()
+        if not status or not content:
+            self.log.error(
+                "Failed to get cluster details from node {}".format(node.ip))
+            return None
+        nodes = content.get("nodes", [])
+        if not nodes:
+            self.log.error("No nodes found in cluster details response")
+            return None
+        versions = {}
+        for node_info in nodes:
+            hostname = node_info.get("hostname", "unknown")
+            prod_compat = node_info.get("prodCompatVersion", "unknown")
+            versions[hostname] = prod_compat
+        return versions
+
+    def _validate_prod_compat_version(self, expected_version, label="", node=None):
+        """
+        Assert that every node in the cluster reports the expected prodCompatVersion.
+
+        Parameters:
+            expected_version: str  - e.g. "2.1.0" (build number must be stripped)
+            label:            str  - prefix used in log lines for easier grepping
+            node:             server object to query (defaults to cluster.master)
+
+        Returns:
+            bool: True when every node matches, False otherwise.
+        """
+        if node is None:
+            node = self.cluster.master
+        versions = self._get_prod_compat_version(node)
+        if versions is None:
+            self.log.error(
+                "[{}] Failed to retrieve prodCompatVersion".format(label))
+            return False
+        self.log.info(
+            "[{}] prodCompatVersion per node:".format(label))
+        all_match = True
+        for hostname, version in versions.items():
+            match = (version == expected_version)
+            marker = "✓" if match else "✗"
+            self.log.info("  {} {} -> {} (expected: {})".format(
+                marker, hostname, version, expected_version))
+            if not match:
+                all_match = False
+        if all_match:
+            self.log.info(
+                "[{}] All nodes are on prodCompatVersion {}".format(
+                    label, expected_version))
+        else:
+            self.log.warn(
+                "[{}] One or more nodes are NOT on prodCompatVersion {}".format(
+                    label, expected_version))
+        return all_match
+
     def _upgrade_and_prepare_node(self, node):
         shell = RemoteMachineShellConnection(node)
         try:
@@ -1014,11 +1082,16 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             "Expected spare node to be the node at index {}, found {}"
             .format(self.nodes_init, self.spare_node.ip))
 
-        # initail cluster state
+        # Initial cluster state
         self.log.info("=" * 60)
         self.log.info("Initial cluster state")
         self.log.info("=" * 60)
         self.cluster_util.print_cluster_stats(self.cluster)
+
+        # Validate prodCompatVersion before upgrade
+        pre_upgrade_version_base = self.pre_upgrade_version.split("-")[0]
+        self._validate_prod_compat_version(
+            pre_upgrade_version_base, label="Pre-upgrade")
 
         nodes_to_upgrade = list(self.cluster.nodes_in_cluster)
         spare_node = self.spare_node
@@ -1086,6 +1159,15 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             else:
                 self.log.warn("Node {} version {} does not contain {}"
                               .format(node.ip, node_version, self.upgrade_version))
+
+        # Validate prodCompatVersion after upgrade
+        post_upgrade_version = self.upgrade_version.split("-")[0]
+        prod_compat_valid = self._validate_prod_compat_version(
+            post_upgrade_version, label="Post-upgrade")
+        self.assertTrue(
+            prod_compat_valid,
+            "prodCompatVersion validation failed: one or more nodes are not "
+            "reporting prodCompatVersion={}".format(post_upgrade_version))
 
         self.log.info("=" * 60)
         self.log.info("Swap rebalance upgrade test completed successfully")
