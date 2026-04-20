@@ -26,6 +26,86 @@ class CBASHelper(AnalyticsRestAPI):
     def closeConn(self):
         pass
 
+    @staticmethod
+    def _normalize_response_content(content):
+        if isinstance(content, (dict, list)):
+            return json.dumps(content)
+        if isinstance(content, bytes):
+            return content.decode("utf-8", errors="replace")
+        return content
+
+    def _create_headers(self, username=None, password=None):
+        return self.create_headers(
+            username=username, password=password,
+            content_type='application/x-www-form-urlencoded')
+
+    def _create_capi_headers(self, username=None, password=None,
+                             contentType='application/json',
+                             connection='close'):
+        headers = self.create_headers(
+            username=username, password=password,
+            content_type=contentType)
+        headers['Connection'] = connection
+        return headers
+
+    def _http_request(self, api, method='GET', params='', headers=None,
+                      timeout=60):
+        status, content, response = self.request(
+            api, method=method, params=params, headers=headers,
+            timeout=timeout, verify=False)
+        return status, self._normalize_response_content(content), response
+
+    def execute_statement_on_cbas(self, statement, mode, pretty=True,
+                                  timeout=70, client_context_id=None,
+                                  username=None, password=None,
+                                  analytics_timeout=120, time_out_unit="s",
+                                  scan_consistency=None, scan_wait=None,
+                                  max_warning=25):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+        api = self.cbas_base_url + "/analytics/service"
+        headers = self._create_capi_headers(username, password)
+
+        params = {'statement': statement, 'pretty': pretty,
+                  'max-warnings': max_warning,
+                  'client_context_id': client_context_id,
+                  'timeout': str(analytics_timeout) + time_out_unit}
+
+        if mode is not None:
+            params['mode'] = mode
+
+        if scan_consistency is not None:
+            params['scan_consistency'] = scan_consistency
+
+        if scan_wait is not None:
+            params['scan_wait'] = scan_wait
+        params = json.dumps(params)
+        status, content, response = self._http_request(
+            api, 'POST', headers=headers, params=params, timeout=timeout)
+        if hasattr(response, "status"):
+            status_code = response.status
+        elif hasattr(response, "status_code"):
+            status_code = response.status_code
+
+        if status:
+            return content
+        elif status_code == 503:
+            self.log.info("Request Rejected")
+            raise Exception("Request Rejected")
+        elif status_code in [500, 400, 401, 403, 409]:
+            json_content = json.loads(content)
+            msg = json_content['errors'][0]['msg']
+            if "Job requirement" in msg and "exceeds capacity" in msg:
+                raise Exception("Capacity cannot meet job requirement")
+            else:
+                return content
+        else:
+            self.log.error("/analytics/service status:{0}, content:{1}"
+                           .format(status, content))
+            raise Exception("Analytics Service API failed")
+
     def execute_parameter_statement_on_cbas(self, statement, mode, pretty=True,
                                             timeout=70, client_context_id=None,
                                             username=None, password=None,
