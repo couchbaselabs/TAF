@@ -10,6 +10,7 @@ from .awslib.ec2_lib import EC2Lib
 from .awslib.s3_lib import S3Lib
 from .awslib.secrets_manager_lib import SecretsManagerLib
 import time, datetime
+import concurrent.futures
 from prettytable import PrettyTable
 import logging
 
@@ -238,14 +239,15 @@ class FusionAWSUtil:
             'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster_id)]
         }])
 
-        for instance in instances:
+        def scan_instance(instance):
             instance_id = instance.get('InstanceId', 'N/A')
+            local_errors_found = False
 
             try:
                 public_ip = instance.get('PublicIpAddress')
                 if not public_ip:
                     self.log.warning(f"Instance {instance_id} does not have a Public IP. Skipping SSM check.")
-                    continue
+                    return False
 
                 self.log.info(f"Checking for core dumps on instance {instance_id} [{public_ip}] using SSM...")
 
@@ -254,7 +256,7 @@ class FusionAWSUtil:
                 core_output = result.get('stdout', '')
                 if 'core' in core_output or 'core.' in core_output:
                     self.log.warning(f"Core dump(s) found on instance {instance_id}: {core_output}")
-                    errors_found = True
+                    local_errors_found = True
                 else:
                     self.log.info(f"No core dumps found on instance {instance_id}.")
 
@@ -279,10 +281,18 @@ class FusionAWSUtil:
                             grep_output = grep_result.get('stdout', '').strip()
                             if grep_output:
                                 self.log.critical(f"{pattern} found in {log_file} on instance {instance_id}:\n{grep_output}")
-                                errors_found = True
+                                local_errors_found = True
 
             except Exception as e:
                 self.log.error(f"Failed to check for core dumps and scan memcached logs on {instance_id}: {e}")
+
+            return local_errors_found
+
+        if instances:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(instances), 50)) as executor:
+                results = executor.map(scan_instance, instances)
+                if any(results):
+                    errors_found = True
 
         return errors_found
 

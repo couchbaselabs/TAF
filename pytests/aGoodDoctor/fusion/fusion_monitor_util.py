@@ -436,7 +436,7 @@ class FusionMonitorUtil():
                         instance_id = instance.get('InstanceId')
                         public_ip = instance.get('PublicIpAddress', 'N/A')
                         if public_ip not in [node.aws_public_ip for node in cluster.nodes_in_cluster]:
-                            continue
+                            continue    
                         try:
                             result = self.fusion_aws_util.ec2.run_shell_command(instance_id, cmd)
                             if result.get('success'):
