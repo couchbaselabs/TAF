@@ -1,3 +1,4 @@
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 
@@ -27,6 +28,16 @@ class MultiBucketTests(ClusterSetup):
             target_vbucket=self.target_vbucket,
             vbuckets=self.cluster.buckets[0].numVBuckets)
         self.log.info("doc_generator created")
+
+        if self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.cluster.buckets:
+                self.log.info(f"Creating Java SDK pool for {bucket.name}")
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master,
+                    self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name,
+                    req_clients=self.sdk_pool_capacity)
 
         # Load all buckets with initial load of docs
         tasks = list()

@@ -648,6 +648,14 @@ class StorageBase(BaseTestCase):
             for task in tasks:
                 self.task_manager.get_task_result(task)
         elif self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.cluster.buckets:
+                self.log.info(f"Creating Java SDK pool for {bucket.name}")
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master,
+                    self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name,
+                    req_clients=self.sdk_pool_capacity)
             self.java_doc_loader(generator=self.gen_create,
                                  doc_ops="create",
                                  process_concurrency=2,
