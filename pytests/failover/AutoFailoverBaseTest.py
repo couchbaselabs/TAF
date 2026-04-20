@@ -2,6 +2,7 @@
 import time
 
 from BucketLib.bucket import Bucket
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
@@ -49,7 +50,7 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.skip_collections_during_data_load = self.input.param(
             "skip_col_dict", None)
-        
+
         self.range_scan_timeout = self.input.param("range_scan_timeout",
                                                    None)
         self.expect_range_scan_exceptions = self.input.param(
@@ -132,7 +133,16 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
                 vbuckets=self.bucket_num_vb)
             self.sleep(5, "Wait for bucket to accept SDK connections")
 
-            if self.cluster.sdk_client_pool:
+            if self.load_docs_using == "sirius_java_sdk":
+                for bucket in self.cluster.buckets:
+                    self.log.info(f"Creating Java SDK pool for {bucket.name}")
+                    SiriusCouchbaseLoader.create_clients_in_pool(
+                        self.cluster.master,
+                        self.cluster.master.rest_username,
+                        self.cluster.master.rest_password,
+                        bucket.name,
+                        req_clients=self.sdk_pool_capacity)
+            elif self.cluster.sdk_client_pool:
                 self.log.info("Creating SDK clients for client_pool")
                 for bucket in self.cluster.buckets:
                     self.cluster.sdk_client_pool.create_clients(
@@ -678,7 +688,6 @@ class AutoFailoverBaseTest(ClusterSetup, FusionBase):
                                                       False)
         self.multiple_node_failure = self.input.param("multiple_nodes_failure",
                                                       False)
-        self.doc_size = self.input.param("doc_size", 10)
         self.key_size = self.input.param("key_size", None)
         self.num_items = self.input.param("num_items", 1000000)
         self.update_items = self.input.param("update_items", 100000)
