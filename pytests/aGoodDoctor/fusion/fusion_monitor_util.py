@@ -426,7 +426,7 @@ class FusionMonitorUtil():
                     filters = [{
                         'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
                     }]
-                    instances = self.fusion_aws_util.ec2.list_instances(filters)
+                    instances = self.fusion_aws_util.ec2.list_instances(filters=filters)
 
                     results = {}
                     table = PrettyTable()
