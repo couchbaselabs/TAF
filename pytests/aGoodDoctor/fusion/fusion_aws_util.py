@@ -100,45 +100,6 @@ class FusionAWSUtil:
                             temp['VolumeCreateTime'].strftime('%Y-%m-%d %H:%M:%S') if temp['VolumeCreateTime'] else 'N/A',
                             str(datetime.datetime.now(datetime.timezone.utc) - temp['InstanceCreateTime']) if temp['InstanceCreateTime'] else 'N/A',
                             temp['FusionRebalance'] if temp['FusionRebalance'] else 'N/A'])
-            temp = dict()            
-            temp['InstanceId'] = instance.get('InstanceId', 'N/A')
-            temp['InstanceType'] = instance.get('InstanceType', 'N/A')
-            temp['PublicIpAddress'] = instance.get('PublicIpAddress', 'N/A')
-            temp['InstanceCreateTime'] = instance.get('LaunchTime', None)
-            temp['FusionRebalance'] = 'N/A'
-            for tag in instance.get('Tags', []):
-                if tag.get('Key') == 'couchbase-cloud-fusion-rebalance':
-                    temp['FusionRebalance'] = tag.get('Value')
-                    break
-            block_devices = instance.get('BlockDeviceMappings', [])
-            # Assume info only for root device
-            for block_device in block_devices:
-                if 'Ebs' in block_device:
-                    ebs = block_device['Ebs']
-                    volume_id = ebs.get('VolumeId', None)
-                    if volume_id:
-                        temp['VolumeId'] = volume_id
-                        # Get volume details using ec2_lib
-                        volume = self.ec2.get_ebs_volume_by_id(volume_id)
-                        if volume:
-                            temp['DiskSize'] = volume.get('Size', 'N/A')
-                            temp['IOPS'] = volume.get('Iops', 'N/A')
-                            temp['VolumeCreateTime'] = volume.get('CreateTime', None)
-                        else:
-                            temp['DiskSize'] = 'N/A'
-                            temp['IOPS'] = 'N/A'
-                            temp['VolumeCreateTime'] = None
-                        table.add_row([
-                            temp['InstanceId'],
-                            temp['InstanceType'],
-                            volume_id,
-                            temp['DiskSize'] if temp['DiskSize'] else 'N/A',
-                            temp['IOPS'] if temp['IOPS'] else 'N/A',
-                            temp['PublicIpAddress'],
-                            temp['InstanceCreateTime'].strftime('%Y-%m-%d %H:%M:%S') if temp['InstanceCreateTime'] else 'N/A',
-                            temp['VolumeCreateTime'].strftime('%Y-%m-%d %H:%M:%S') if temp['VolumeCreateTime'] else 'N/A',
-                            str(datetime.datetime.now(datetime.timezone.utc) - temp['InstanceCreateTime']) if temp['InstanceCreateTime'] else 'N/A',
-                            temp['FusionRebalance'] if temp['FusionRebalance'] else 'N/A'])
         if table.rowcount > 0 and not suppress_log:
             self.log.info(f"{log}: \n" + str(table))
         return instances
