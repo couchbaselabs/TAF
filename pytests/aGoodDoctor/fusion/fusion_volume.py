@@ -8,6 +8,7 @@ import os
 import socket
 import threading
 import time
+from datetime import datetime
 
 from membase.api.rest_client import RestConnection
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
@@ -168,6 +169,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
         """Monitor fusion cluster status during rebalance."""
         import threading
         self.log.info(f"Monitoring cluster status for cluster {cluster.id}")
+        rebalance_start_time = datetime.now()
+        self.log.info(f"Rebalance start time (scaling): {rebalance_start_time.strftime('%Y-%m-%d %H:%M:%S')} for cluster {cluster.id}")
         threads = []
         result = {}
         
@@ -202,8 +205,18 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         for thread in threads:
             thread.join()
-        self.assertTrue(result.get("monitor_fusion_guest_volumes_complete", False), 
+        self.assertTrue(result.get("monitor_fusion_guest_volumes_complete", False),
                        f"monitor_fusion_guest_volumes failed for cluster {cluster.id}")
+
+        rebalance_end_time = datetime.now()
+        elapsed_s = (rebalance_end_time - rebalance_start_time).total_seconds()
+        elapsed_str = f"{int(elapsed_s // 60)}m {elapsed_s % 60:.1f}s" if elapsed_s >= 60 else f"{elapsed_s:.1f}s"
+        self.log.info(
+            f"Fusion rebalance completed for cluster {cluster.id}: "
+            f"start={rebalance_start_time.strftime('%Y-%m-%d %H:%M:%S')}, "
+            f"end={rebalance_end_time.strftime('%Y-%m-%d %H:%M:%S')}, "
+            f"total={elapsed_str}"
+        )
 
     def check_ebs_cleanup_for_cluster(self, cluster):
         """Check EBS cleanup for a specific cluster."""
@@ -461,7 +474,11 @@ class VolumeTest(BaseTestCase, hostedOPD):
     def log_fusion_dcp_items_remaining(self):
         """Log DCP items remaining for all clusters using fusion monitor."""
         self._log_dcp_items_stop_event = threading.Event()
+        deadline = time.time() + 7200  # 2-hour absolute cap; guards against missed stop signal
         while not self._log_dcp_items_stop_event.is_set():
+            if time.time() > deadline:
+                self.log.warning("log_fusion_dcp_items_remaining: absolute timeout reached, stopping loop")
+                break
             clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
             self.fusion_monitor.log_fusion_dcp_items_remaining(clusters)
             self._log_dcp_items_stop_event.wait(300)  # Wait for 5 minutes before next
@@ -787,7 +804,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 self.task_manager.get_task_result(task)
                 self.loader_tasks.remove(task)
 
-    def data_validation(self, cluster):
+    def data_validation(self, cluster, skip_default=True):
         for bucket in cluster.buckets:
             JavaDocLoaderUtils.generate_docs(bucket=bucket, doc_ops=["read"])
             self.loader_tasks = JavaDocLoaderUtils.perform_load(cluster=cluster,
@@ -796,6 +813,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                                                 mutate=self.mutate,
                                                                 validate_data=True,
                                                                 overRidePattern={"read": 100},
+                                                                skip_default=skip_default,
                                                                 suppress_error_table=False,
                                                                 track_failures=True)
             if not self.loader_tasks:
