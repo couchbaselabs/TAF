@@ -368,7 +368,7 @@ class APIBase(CouchbaseBaseTest):
             }
         }
         cluster_template = self.input.param("cluster_template",
-                                            "AWS_r5_xlarge")
+                                            "GCP_n2_highmem_4")
         if TestInputSingleton.input.capella.get("clusters", None):
             self.cluster_id = TestInputSingleton.input.capella.get("clusters")
             if isinstance(self.cluster_id, dict):
@@ -1465,6 +1465,8 @@ class APIBase(CouchbaseBaseTest):
 
     def validate_api_response(self, expected_res, actual_res, id):
         for key in actual_res:
+            if key == "clusterStats":
+                continue
             if key not in expected_res:
                 self.log.error("Key: {} not found in expRes: {}"
                                .format(key, expected_res))

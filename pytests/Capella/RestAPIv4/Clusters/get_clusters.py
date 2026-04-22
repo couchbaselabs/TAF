@@ -27,7 +27,8 @@ class GetCluster(GetProject):
                 "version": None
             },
             "connectionString": None,
-            "configurationType": None
+            "configurationType": None,
+            "expressScaling": "disabled"
         }
         cluster_template = self.input.param("cluster_template",
                                             "AWS_r5_xlarge")
