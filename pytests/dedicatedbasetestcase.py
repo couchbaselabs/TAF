@@ -202,8 +202,18 @@ class CapellaBaseTest(CouchbaseBaseTest):
         if feature_flags_param:
             for tenant in self.tenants:
                 for flag_entry in feature_flags_param.split(","):
-                    ff, value = flag_entry.split(":", 1)
-                    CapellaUtils.create_tenant_feature_flag(self.pod, tenant, ff.strip(), value.strip())
+                    ff, raw = flag_entry.split(":", 1)
+                    raw = raw.strip()
+                    if raw.lower() == "true":
+                        value = True
+                    elif raw.lower() == "false":
+                        value = False
+                    else:
+                        try:
+                            value = int(raw)
+                        except ValueError:
+                            value = raw
+                    CapellaUtils.create_tenant_feature_flag(self.pod, tenant, ff.strip(), value)
 
 class ProvisionedBaseTestCase(CapellaBaseTest):
     def setUp(self):

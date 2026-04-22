@@ -796,7 +796,19 @@ class CapellaUtils(object):
                                  tenant.pwd,
                                  pod.TOKEN)
         resp = capella_api.create_tenant_feature_flag(tenant.id, ff, {"value": value})
-        if resp.status_code not in [200, 201]:
+        if resp.status_code not in [200, 201, 204]:
+            try:
+                error = json.loads(resp.content)
+            except Exception:
+                error = {}
+            if error.get("errorType") == "FeatureFlagAlreadyExists":
+                CapellaUtils.log.info(f"Tenant feature flag {ff} already exists, updating instead")
+                resp = capella_api.update_tenant_feature_flag(tenant.id, ff, {"value": value})
+                if resp.status_code not in [200, 204]:
+                    CapellaUtils.log.critical(f"Updating tenant feature flag {ff} failed: {resp.status_code}")
+                    raise Exception("Updating tenant feature flag failed: {}".format(resp.content))
+                CapellaUtils.log.info(f"Updated tenant feature flag {ff} for tenant {tenant.id} successfully")
+                return
             CapellaUtils.log.critical(f"Creating tenant feature flag {ff} failed: {resp.status_code}")
             raise Exception("Creating tenant feature flag failed: {}".format(resp.content))
         CapellaUtils.log.info(f"Created tenant feature flag {ff} for tenant {tenant.id} successfully")
