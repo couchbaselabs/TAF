@@ -195,6 +195,16 @@ class CapellaBaseTest(CouchbaseBaseTest):
         for tenant in self.tenants:
             tenant.project_id = tenant.projects[0]
 
+        # Create tenant-scoped feature flags from test params.
+        # Usage: feature_flags=flagName:value,anotherFlag:value
+        # Example: feature_flags=fusion-rebalances:true,fusion-fallback-replace:true
+        feature_flags_param = self.input.param("feature_flags", None)
+        if feature_flags_param:
+            for tenant in self.tenants:
+                for flag_entry in feature_flags_param.split(","):
+                    ff, value = flag_entry.split(":", 1)
+                    CapellaUtils.create_tenant_feature_flag(self.pod, tenant, ff.strip(), value.strip())
+
 class ProvisionedBaseTestCase(CapellaBaseTest):
     def setUp(self):
         CapellaBaseTest.setUp(self)

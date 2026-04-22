@@ -771,27 +771,34 @@ class CapellaUtils(object):
         return json.loads(resp.content)
 
     @staticmethod
-    def update_fusion_feature_flag(pod, tenant):
+    def update_feature_flag_globally(pod, tenant, ff, value):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd,
                                  pod.TOKEN)
-        resp = capella_api.update_global_feature_flag("fusion-rebalances", {"value": True})
+        resp = capella_api.update_global_feature_flag(ff, {"value": value})
         if resp.status_code != 204:
-            CapellaUtils.log.critical("Updating Fusion Feature \
-                                       Flag fusion-rebalances failed for pod {}".
-                                      format(resp.status_code))
+            CapellaUtils.log.critical(f"Updating  Feature \
+                                       Flag {ff} failed for pod {resp.status_code}")
             raise Exception("Updating Fusion Feature Flag failed: {}".
                             format(resp.content))
-        CapellaUtils.log.info("Updated the fusion-rebalances feature flag successfully")
-        resp = capella_api.update_global_feature_flag("fusion-fallback-replace", {"value": True})
-        if resp.status_code != 204:
-            CapellaUtils.log.critical("Updating Fusion Feature \
-                                       Flag fusion-fallback-replace failed for cluster {}".
-                                      format(resp.status_code))
-            raise Exception("Updating Fusion Feature Flag failed: {}".
-                            format(resp.content))
-        CapellaUtils.log.info("Updated the fusion-fallback-replace feature flag successfully")
+        CapellaUtils.log.info(f"Updated the {ff} feature flag successfully")
         return
+    
+    @staticmethod
+    def create_tenant_feature_flag(pod, tenant, ff, value):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.create_tenant_feature_flag(tenant.id, ff, {"value": value})
+        if resp.status_code not in [200, 201]:
+            CapellaUtils.log.critical(f"Creating tenant feature flag {ff} failed: {resp.status_code}")
+            raise Exception("Creating tenant feature flag failed: {}".format(resp.content))
+        CapellaUtils.log.info(f"Created tenant feature flag {ff} for tenant {tenant.id} successfully")
+        return
+

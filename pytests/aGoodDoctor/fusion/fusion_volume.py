@@ -237,7 +237,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # Enable fusion using Capella API
         for tenant in self.tenants:
             for cluster in tenant.clusters:
-                CapellaAPI.update_fusion_feature_flag(self.pod, tenant)
+                CapellaAPI.update_feature_flag_globally(self.pod, tenant, "fusion-rebalances", True)
+                CapellaAPI.update_feature_flag_globally(self.pod, tenant, "fusion-fallback-replace", True)
                 fusion_state = CapellaAPI.get_fusion_status(self.pod, tenant, cluster.id)
                 self.log.info(f"Fusion state for cluster {cluster.id}: {fusion_state}")
                 if fusion_state.get('state') == "enabled":
