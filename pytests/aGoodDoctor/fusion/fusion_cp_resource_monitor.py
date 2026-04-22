@@ -267,10 +267,10 @@ class FusionCPResourceMonitor:
                 import traceback
                 traceback.print_exc()
                 self.log.error(f"Failed to get active guest volumes for cluster {cluster.id}: {e}")
-                time.sleep(60)
+                time.sleep(300)
                 continue
             self.log.info(f"EBS Guest Volumes attached to the cluster {cluster.id}:\n{table}")
-            time.sleep(60)
+            time.sleep(300)
         return True
 
     def monitor_ebs_cleanup(self, cluster, stop_run_event, timeout=None):

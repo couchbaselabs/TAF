@@ -196,7 +196,7 @@ class FusionMonitorUtil():
             self.log.info(f"Total Fusion Log Store Data Size on S3 for bucket {bucket.name} on cluster {cluster.id}: {bucket.total_s3_size:.2f} GB")
         return None
 
-    def run_cbstats_on_all_nodes(self, cluster, bucket, stat_key="ep_fusion_log_store_data_size"):
+    def run_cbstats_on_all_nodes(self, cluster, bucket, stat_key="ep_fusion_log_store_data_size", subcommand="all"):
         """
         Run cbstats command on all Couchbase server nodes via SSM and grep for a specific stat.
 
@@ -211,23 +211,18 @@ class FusionMonitorUtil():
         }]
         instances = self.fusion_aws_util.list_instances(filters, log="Couchbase Cloud Cluster", suppress_log=True)
 
-        results = {}
-        table = PrettyTable()
-        table.field_names = ["Instance ID", "Public IP", "Stat Key", "Value", "Status"]
-
         cmd = (
-            f"/opt/couchbase/bin/cbstats localhost:11210 all "
+            f"/opt/couchbase/bin/cbstats localhost:11210 {subcommand} "
             f"-b {bucket.name} "
             f"-u {cluster.master.rest_username} "
             f"-p '{cluster.master.rest_password}' "
             f"| grep {stat_key}"
         )
         self.log.info(f"Running cbstats command: {cmd}")
-        total_size_gb = 0
-        for instance in instances:
+
+        def run_on_instance(instance):
             instance_id = instance.get('InstanceId')
             public_ip = instance.get('PublicIpAddress', 'N/A')
-
             try:
                 result = self.fusion_aws_util.ec2.run_shell_command(instance_id, cmd)
                 self.log.info(f"cbstats command result for instance {instance_id}: {result}")
@@ -237,36 +232,22 @@ class FusionMonitorUtil():
                         for line in stdout.splitlines():
                             if stat_key in line:
                                 parts = line.split(':')
-                                if len(parts) >= 2:
-                                    value = parts[1].strip()
-                                    results[public_ip] = value
-                                    try:
-                                        val_clean = value.replace(",", "").strip()
-                                        val_int = int(val_clean)
-                                        gb = val_int / (1024 ** 3)
-                                        results[public_ip] = {"bytes": val_int, "gb": gb}
-                                        value = f"{gb:.2f} GB"
-                                        total_size_gb += gb
-                                    except Exception:
-                                        pass
-                                    table.add_row([instance_id, public_ip, stat_key, value, "Success"])
-                                else:
-                                    results[public_ip] = line
-                                    table.add_row([instance_id, public_ip, stat_key, line, "Success"])
-                    else:
-                        results[public_ip] = "N/A"
-                        table.add_row([instance_id, public_ip, stat_key, "N/A", "No output"])
+                                value = parts[1].strip() if len(parts) >= 2 else line
+                                return instance_id, public_ip, value, "Success"
+                    return instance_id, public_ip, "N/A", "No output"
                 else:
                     error = result.get('stderr', 'Unknown error')
-                    results[public_ip] = f"Error: {error}"
-                    table.add_row([instance_id, public_ip, stat_key, "N/A", f"Error: {error[:50]}"])
+                    return instance_id, public_ip, f"Error: {error[:50]}", f"Error: {error[:50]}"
             except Exception as e:
-                results[public_ip] = f"Exception: {str(e)}"
-                table.add_row([instance_id, public_ip, stat_key, "N/A", f"Exception: {str(e)[:50]}"])
+                return instance_id, public_ip, f"Exception: {str(e)[:50]}", f"Exception: {str(e)[:50]}"
 
-        self.log.info(f"cbstats results for {stat_key} on bucket {bucket.name}:\n{table}")
-        bucket.fusion_log_store_data_size_gb = total_size_gb
-        return results
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        rows = []
+        with ThreadPoolExecutor(max_workers=len(instances) or 1) as executor:
+            futures = {executor.submit(run_on_instance, inst): inst for inst in instances}
+            for future in as_completed(futures):
+                rows.append(future.result())
+        return rows
 
     def _populate_fusion_uploader_map(self, tenant, cluster, find_master_func=None):
         """
@@ -397,9 +378,22 @@ class FusionMonitorUtil():
         for cluster in clusters:
             for bucket in cluster.buckets:
                 try:
-                    self.run_cbstats_on_all_nodes(cluster, bucket=bucket, stat_key="ep_fusion_log_store_data_size")
+                    rows = self.run_cbstats_on_all_nodes(cluster, bucket=bucket, stat_key="ep_fusion_log_store_data_size")
+                    table = PrettyTable()
+                    table.field_names = ["Instance ID", "Public IP", "Bucket", "Size (GB)", "Status"]
+                    total_size_gb = 0
+                    for instance_id, public_ip, raw_value, status in rows:
+                        try:
+                            gb = int(str(raw_value).replace(",", "").strip()) / (1024 ** 3)
+                            total_size_gb += gb
+                            display = f"{gb:.4f}"
+                        except (ValueError, AttributeError):
+                            display = raw_value
+                        table.add_row([instance_id, public_ip, bucket.name, display, status])
+                    bucket.fusion_log_store_data_size_gb = total_size_gb
+                    self.log.info(f"Fusion Log Store Data Size for bucket {bucket.name} on cluster {cluster.id}:\n{table}")
                     self.get_fusion_log_store_data_size_on_s3(cluster, bucket)
-                    self.log.info(f"{bucket.name} Fusion Log Store Data Size (GB): {bucket.fusion_log_store_data_size_gb}")
+                    self.log.info(f"{bucket.name} Fusion Log Store Data Size (GB): {bucket.fusion_log_store_data_size_gb:.4f}")
                     self.log.info(f"{bucket.name} Fusion Log Store Data Size on S3 (GB): {bucket.total_s3_size}")
                 except Exception as e:
                     self.log.debug(f"cbstats monitor exception: {e}")
@@ -414,55 +408,13 @@ class FusionMonitorUtil():
             self.set_admin_credentials(cluster)
             for bucket in cluster.buckets:
                 try:
-                    cmd = (
-                        f"/opt/couchbase/bin/cbstats localhost:11210 dcp "
-                        f"-b {bucket.name} "
-                        f"-u {cluster.master.rest_username} "
-                        f"-p '{cluster.master.rest_password}' "
-                        f"| grep ep_dcp_items_remaining"
-                    )
-                    self.log.info(f"Running cbstats DCP command: {cmd}")
-
-                    filters = [{
-                        'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
-                    }]
-                    instances = self.fusion_aws_util.ec2.list_instances(filters=filters)
-
-                    results = {}
+                    rows = self.run_cbstats_on_all_nodes(cluster, bucket,
+                                                         stat_key="ep_dcp_items_remaining",
+                                                         subcommand="dcp")
                     table = PrettyTable()
-                    table.field_names = ["Instance ID", "Public IP", "Bucket Name", "ep_dcp_items_remaining", "Status"]
-                    self.get_hostname_public_ip_mapping(cluster, suppress_log=True)
-                    for instance in instances:
-                        instance_id = instance.get('InstanceId')
-                        public_ip = instance.get('PublicIpAddress', 'N/A')
-                        if public_ip not in [node.aws_public_ip for node in cluster.nodes_in_cluster]:
-                            continue    
-                        try:
-                            result = self.fusion_aws_util.ec2.run_shell_command(instance_id, cmd)
-                            if result.get('success'):
-                                stdout = result.get('stdout', '').strip()
-                                if stdout:
-                                    for line in stdout.splitlines():
-                                        if 'ep_dcp_items_remaining' in line:
-                                            parts = line.split(':')
-                                            if len(parts) >= 2:
-                                                value = parts[1].strip()
-                                                results[public_ip] = value
-                                                table.add_row([instance_id, public_ip, bucket.name, value, "Success"])
-                                            else:
-                                                results[public_ip] = line
-                                                table.add_row([instance_id, public_ip, bucket.name, line, "Success"])
-                                else:
-                                    results[public_ip] = "N/A"
-                                    table.add_row([instance_id, public_ip, bucket.name, "N/A", "No output"])
-                            else:
-                                error = result.get('stderr', 'Unknown error')
-                                results[public_ip] = f"Error: {error}"
-                                table.add_row([instance_id, public_ip, bucket.name, "N/A", f"Error: {error[:50]}"])
-                        except Exception as e:
-                            results[public_ip] = f"Exception: {str(e)}"
-                            table.add_row([instance_id, public_ip, bucket.name, "N/A", f"Exception: {str(e)[:50]}"])
-
+                    table.field_names = ["Instance ID", "Public IP", "Bucket", "ep_dcp_items_remaining", "Status"]
+                    for instance_id, public_ip, value, status in rows:
+                        table.add_row([instance_id, public_ip, bucket.name, value, status])
                     self.log.info(f"DCP items remaining for bucket {bucket.name} on cluster {cluster.id}:\n{table}")
                 except Exception as e:
                     self.log.debug(f"DCP items remaining monitor exception for cluster {cluster.id}, bucket {bucket.name}: {e}")
