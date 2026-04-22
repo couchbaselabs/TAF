@@ -93,7 +93,9 @@ class CollectionScopeNumberManager:
         if self.update_spec is False:
             return self._spec
         count = self.get_number_of_spec_to_be_updated()
-        self.current_max_collections = self.current_max_collections // count if count else self.current_max_collections
+        num_buckets = self._spec.get(MetaConstants.NUM_BUCKETS, 1)
+        divisor = max(count, num_buckets) if count else num_buckets
+        self.current_max_collections = self.current_max_collections // divisor
 
         if (self._spec.get(MetaConstants.NUM_SCOPES_PER_BUCKET, None)
                 and self._spec.get(MetaConstants.NUM_COLLECTIONS_PER_SCOPE, None)):
