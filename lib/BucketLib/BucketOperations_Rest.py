@@ -7,6 +7,7 @@ Created on Sep 25, 2017
 import json
 import time
 import urllib
+import urllib.parse
 
 import requests.utils
 
@@ -510,12 +511,11 @@ class BucketHelper(BucketRestApi):
         return status, content
 
     def update_memcached_settings(self, **params):
-        api = self.base_url + "pools/default/settings/memcached/global"
-        params = urllib.urlencode(params)
+        api = "{0}/pools/default/settings/memcached/global".format(
+            self.base_url.rstrip('/'))
         self.log.info("Updating memcached properties")
         self.log.debug("%s with param: %s" % (api, params))
-
-        status, content, _ = self._http_request(api, 'POST', params)
+        status, content, _ = self.request(api, method='POST', params=params)
         if not status:
             self.log.error("Failed to update memcached settings: %s"
                            % content)

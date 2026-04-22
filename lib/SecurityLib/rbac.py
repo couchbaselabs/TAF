@@ -59,7 +59,11 @@ class RbacUtil:
             if self.source == "ldap":
                 response = rest.set_user_roles(userid, payload)
             elif self.source == 'builtin':
-                status, response = rest.create_local_user(userid, payload)
+                if hasattr(rest, "create_local_user"):
+                    status, response = rest.create_local_user(userid, payload)
+                else:
+                    response = rest.add_set_builtin_user(userid, payload)
+                    status = True
             response_return.append({'id': userid, 'reponse': response})
         return response_return
 
