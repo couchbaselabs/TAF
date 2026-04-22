@@ -74,6 +74,12 @@ class CBASHelper(AnalyticsRestAPI):
                 scan_consistency=scan_consistency,
                 scan_wait=scan_wait, max_warning=max_warning)
             if not status:
+                try:
+                    payload = json.loads(content) if isinstance(content, (str, bytes)) else content
+                    if isinstance(payload, dict) and "errors" in payload:
+                        return content
+                except (TypeError, ValueError):
+                    pass
                 raise Exception(content)
             return content
         finally:
