@@ -8,6 +8,7 @@ including EBS guest volumes, accelerator instances, ASG cleanup, and error scann
 import time
 from prettytable import PrettyTable
 from botocore.exceptions import ClientError, ConnectionError
+from .fusion_monitor_util import FusionMonitorUtil
 
 
 class FusionCPResourceMonitor:
@@ -24,8 +25,7 @@ class FusionCPResourceMonitor:
 
     # Fusion accelerator instances use 16K IOPS volumes
     FUSION_ACCELERATOR_IOPS = 16000
-    # Default timeout for monitoring operations (30 minutes)
-    DEFAULT_TIMEOUT = 1800
+    DEFAULT_TIMEOUT = FusionMonitorUtil.DEFAULT_TIMEOUT
     # Timeout for EBS volume cleanup operations (20 minutes)
     EBS_CLEANUP_TIMEOUT = 1200
 
@@ -206,9 +206,10 @@ class FusionCPResourceMonitor:
         """
         while not stop_run_event.is_set():
             self.log.info(f"Checking if CP is cleaning up the hydrated EBS guest volumes for cluster {cluster.id}")
-            instances = self.fusion_aws_util.list_instances(filters=[{
-                'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
-            }], log="EBS Guest Volumes Attached to Cluster", suppress_log=True)
+            instances = self.fusion_aws_util.list_instances(
+                self.fusion_aws_util._cluster_filter(cluster.id),
+                log="EBS Guest Volumes Attached to Cluster", suppress_log=True
+            )
             volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
                     'couchbase-cloud-cluster-id': cluster.id,
                     'couchbase-cloud-function': 'fusion-accelerator'
@@ -293,24 +294,10 @@ class FusionCPResourceMonitor:
                         'couchbase-cloud-cluster-id': cluster.id,
                         'couchbase-cloud-function': 'fusion-accelerator'
                         })
-                filters = [{
-                    'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
-                }]
-
-                # Get hostname to IP mapping
-                import socket
-                cluster.hostname_public_ip_mapping = dict()
-                nodes_in_cluster_list = []
-                from membase.api.rest_client import RestConnection
-                nodes = RestConnection(cluster.master).node_statuses()
-                for node in nodes:
-                    try:
-                        public_ip = socket.gethostbyname(node.ip)
-                        cluster.hostname_public_ip_mapping[node.ip] = public_ip
-                    except Exception as e:
-                        self.log.error(f"Unexpected error resolving hostname '{node.ip}': {e}")
-
-                instances = self.fusion_aws_util.list_instances(filters, log="EBS Guest Volumes Attached to Cluster")
+                instances = self.fusion_aws_util.list_instances(
+                    self.fusion_aws_util._cluster_filter(cluster.id),
+                    log="EBS Guest Volumes Attached to Cluster"
+                )
             except (ClientError, ConnectionError) as e:
                 self.log.error(f"Failed to list volumes/instances for cluster {cluster.id}: {e}")
                 time.sleep(10)
@@ -355,12 +342,10 @@ class FusionCPResourceMonitor:
         self.log.info(f"Checking if Fusion Accelerator nodes are still present for cluster {cluster.id}")
         start_time = time.time()
         while time.time() - start_time < timeout:
-            filters = [{
-                'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
-            }, {
-                'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']
-            }]
-            instances = self.fusion_aws_util.list_instances(filters, log="Fusion Accelerator")
+            instances = self.fusion_aws_util.list_instances(
+                self.fusion_aws_util._cluster_filter(cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}]),
+                log="Fusion Accelerator"
+            )
             if len(instances) == 0:
                 self.log.info(f"Fusion Accelerator nodes not found for cluster {cluster.id}")
                 return True
@@ -395,13 +380,11 @@ class FusionCPResourceMonitor:
                 return False
             if rebalance_task.state == "healthy":
                 return instances_count == 0
-            filters = [{
-                'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
-            }, {
-                'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']
-            }]
             try:
-                instances = self.fusion_aws_util.list_accelerator_instances(filters, log="Fusion Accelerator")
+                instances = self.fusion_aws_util.list_accelerator_instances(
+                    self.fusion_aws_util._cluster_filter(cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}]),
+                    log="Fusion Accelerator"
+                )
                 instances_count = len(instances)
                 if not transition_started:
                     if instances_count > 0:
@@ -458,8 +441,7 @@ class FusionCPResourceMonitor:
                     self.log.error(f"Failed to list volumes for cluster {cluster.id}: {e}")
                     continue
                 for volume in volumes:
-                    if volume.get('State') == 'available':
-                        table.add_row([serial_no, rebalance, len(volumes), volume.get('VolumeId')])
+                    table.add_row([serial_no, rebalance, len(volumes), volume.get('VolumeId')])
                     serial_no += 1
             if table.rowcount > 0:
                 self.log.info(f"Available Volumes by Fusion Rebalance:\n{table}")

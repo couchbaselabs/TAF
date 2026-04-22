@@ -110,7 +110,7 @@ class FusionMonitorUtil():
 
         try:
             instances = self.fusion_aws_util.list_instances(
-                [{'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]}],
+                self.fusion_aws_util._cluster_filter(cluster.id),
                 suppress_log=True
             )
         except Exception as e:
@@ -206,10 +206,10 @@ class FusionMonitorUtil():
         :return: Dictionary mapping node IPs to their stat values
         """
         self.set_admin_credentials(cluster)
-        filters = [{
-            'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
-        }]
-        instances = self.fusion_aws_util.list_instances(filters, log="Couchbase Cloud Cluster", suppress_log=True)
+        instances = self.fusion_aws_util.list_instances(
+            self.fusion_aws_util._cluster_filter(cluster.id),
+            log="Couchbase Cloud Cluster", suppress_log=True
+        )
 
         cmd = (
             f"/opt/couchbase/bin/cbstats localhost:11210 {subcommand} "
@@ -257,10 +257,10 @@ class FusionMonitorUtil():
         :param cluster: Cluster object
         :param find_master_func: Optional callback function to find master node (signature: find_master_func(tenant, cluster))
         """
-        filters = [{
-                'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster.id)]
-            }]
-        instances = self.fusion_aws_util.list_instances(filters, log="Couchbase Cloud Cluster")
+        instances = self.fusion_aws_util.list_instances(
+            self.fusion_aws_util._cluster_filter(cluster.id),
+            log="Couchbase Cloud Cluster"
+        )
         try:
             if find_master_func:
                 find_master_func(tenant, cluster)
@@ -405,7 +405,6 @@ class FusionMonitorUtil():
         :param clusters: List of cluster objects
         """
         for cluster in clusters:
-            self.set_admin_credentials(cluster)
             for bucket in cluster.buckets:
                 try:
                     rows = self.run_cbstats_on_all_nodes(cluster, bucket,

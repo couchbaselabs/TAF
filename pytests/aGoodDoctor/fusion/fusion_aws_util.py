@@ -35,6 +35,13 @@ class FusionAWSUtil:
         self.log = logging.getLogger(__name__)
         self.log.setLevel(logging.INFO)
 
+    def _cluster_filter(self, cluster_id, extra_tags=None):
+        """Return an EC2 filter list scoped to a single cluster, with optional extra tag filters."""
+        filters = [{'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster_id)]}]
+        if extra_tags:
+            filters.extend(extra_tags)
+        return filters
+
     def list_instances(self, filters: list[dict[str, str]], log="Fusion Accelerator", suppress_log=False) -> list:
         """
         List EC2 instances with detailed volume and fusion rebalance information.
@@ -196,9 +203,7 @@ class FusionAWSUtil:
         :return: True if any errors are found, False otherwise
         """
         errors_found = False
-        instances = self.list_instances(filters=[{
-            'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster_id)]
-        }])
+        instances = self.list_instances(filters=self._cluster_filter(cluster_id))
 
         def scan_instance(instance):
             instance_id = instance.get('InstanceId', 'N/A')
@@ -267,9 +272,6 @@ class FusionAWSUtil:
         :param cluster_id: Cluster identifier to filter ASGs
         :return: List of Auto Scaling Group objects
         """
-        filters = [
-            {'Name': 'tag:couchbase-cloud-cluster-id', 'Values': [str(cluster_id)]},
-            {'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']},
-        ]
+        filters = self._cluster_filter(cluster_id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}])
         asgs = self.ec2.list_asgs(filters=filters)
         return asgs

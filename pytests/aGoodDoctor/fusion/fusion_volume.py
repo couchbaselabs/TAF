@@ -29,8 +29,7 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 
 class VolumeTest(BaseTestCase, hostedOPD):
 
-    # Constants
-    DEFAULT_TIMEOUT = 1800
+    DEFAULT_TIMEOUT = FusionMonitorUtil.DEFAULT_TIMEOUT
 
     def init_doc_params(self):
         self.create_perc = self.input.param("create_perc", 100)
