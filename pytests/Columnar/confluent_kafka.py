@@ -100,8 +100,7 @@ class ConfluentKafka(ColumnarBaseTest):
                 self.confluent_util.cleanup_kafka_resources(
                     self.kafka_connect_hostname_non_cdc_confluent,
                     [self.non_cdc_connector_name],
-                    self.kafka_topic_prefix + "_non_cdc",
-                    self.confluent_cluster_obj.cluster_access_key))
+                    self.kafka_topic_prefix + "_non_cdc"))
         else:
             confluent_cleanup_for_non_cdc = True
 

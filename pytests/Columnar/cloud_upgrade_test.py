@@ -8,6 +8,7 @@ This test suite contains tests for columnar upgrades on cloud.
 import time
 from queue import Queue
 import random
+import gc
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from Columnar.columnar_base import ColumnarBaseTest
@@ -184,10 +185,22 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                 self.confluent_util.cleanup_kafka_resources(
                     self.kafka_connect_hostname_non_cdc_confluent,
                     [self.non_cdc_connector_name],
-                    self.kafka_topic_prefix + "_non_cdc",
-                    self.confluent_cluster_obj.cluster_access_key))
+                    self.kafka_topic_prefix + "_non_cdc"))
         else:
             confluent_cleanup_for_non_cdc = True
+
+        try:
+            if self.confluent_util.is_api_key_valid(
+                    self.confluent_cluster_obj.cluster_access_key):
+                self.confluent_util.confluent_apis.delete_api_key(
+                    self.confluent_cluster_obj.cluster_access_key)
+        except Exception as err:
+            self.log.error(str(err))
+
+        if self.confluent_util.kafka_cluster_util:
+            self.confluent_util.kafka_cluster_util.client = None
+            self.confluent_util.kafka_cluster_util = None
+            gc.collect()
 
         mongo_collections_deleted = True
         for mongo_coll, _ in self.mongo_collections.items():

@@ -2,6 +2,7 @@
 Created on 2025
 @author: Anisha Sinha
 """
+import gc
 import json
 import random
 import string
@@ -99,16 +100,21 @@ class SingleMessageTransformationTest(ColumnarBaseTest):
                 if hasattr(self, "kafka_connect_hostname_non_cdc_confluent") and hasattr(self, "non_cdc_connector_name"):
                     self.confluent_util.cleanup_kafka_resources(
                         self.kafka_connect_hostname_non_cdc_confluent,
-                        [self.non_cdc_connector_name], self.kafka_topic_prefix + "_non_cdc",
-                        self.confluent_cluster_obj.cluster_access_key)
+                        [self.non_cdc_connector_name], self.kafka_topic_prefix + "_non_cdc")
                 
                 # Delete API key
-                if hasattr(self, "confluent_cluster_obj") and hasattr(self.confluent_cluster_obj, "cluster_access_key"):
-                    try:
+                try:
+                    if self.confluent_util.is_api_key_valid(
+                            self.confluent_cluster_obj.cluster_access_key):
                         self.confluent_util.confluent_apis.delete_api_key(
                             self.confluent_cluster_obj.cluster_access_key)
-                    except Exception as err:
-                        self.log.error(f"Error deleting API key: {err}")
+                except Exception as err:
+                    self.log.error(str(err))
+
+                if self.confluent_util.kafka_cluster_util:
+                    self.confluent_util.kafka_cluster_util.client = None
+                    self.confluent_util.kafka_cluster_util = None
+                    gc.collect()
                         
             except Exception as e:
                 self.log.error(f"Error during Kafka cleanup: {e}")
