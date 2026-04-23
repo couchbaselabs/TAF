@@ -901,7 +901,7 @@ class UpgradeBase(BaseTestCase):
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
 
-    def online_incremental(self, node_to_upgrade, version):
+    def online_incremental(self, node_to_upgrade):
         # Fetch active services on node_to_upgrade
         rest_node, rest = self.__get_rest_node(node_to_upgrade)
         services = self.cluster_util.get_nodes_services(node_to_upgrade)
@@ -922,7 +922,7 @@ class UpgradeBase(BaseTestCase):
 
         # Install the required version on the node
         self.upgrade_helper.install_version_on_nodes(
-            [node_to_upgrade], version)
+            [node_to_upgrade], self.upgrade_version)
 
         # Wait for ns_server to be ready on the upgraded node
         self.log.info("Wait for ns_server to accept connections on upgraded node")

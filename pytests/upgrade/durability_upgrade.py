@@ -293,8 +293,7 @@ class UpgradeTests(UpgradeBase):
                     self.upgrade_function[self.upgrade_type](
                         self.cluster.nodes_in_cluster)
                 else:
-                    self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                              self.upgrade_version)
+                    self.upgrade_function[self.upgrade_type](node_to_upgrade)
 
                 # Upgrade of node
                 self.cluster_util.print_cluster_stats(self.cluster)
@@ -1229,26 +1228,27 @@ class UpgradeTests(UpgradeBase):
         log_path = self.input.param("logs_folder")
         self.log.info("Starting update tasks")
         update_tasks = list()
+        batch_size = 500
         update_tasks.append(self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_load,
             op_type=DocLoading.Bucket.DocOps.UPDATE,
             persist_to=1, replicate_to=1,
             process_concurrency=1,
-            batch_size=10,
+            batch_size=batch_size,
             timeout_secs=30))
         update_tasks.append(self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_load,
             op_type=DocLoading.Bucket.DocOps.UPDATE,
             replicate_to=1,
             process_concurrency=1,
-            batch_size=10,
+            batch_size=batch_size,
             timeout_secs=30))
         update_tasks.append(self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_load,
             op_type=DocLoading.Bucket.DocOps.UPDATE,
             persist_to=1,
             process_concurrency=1,
-            batch_size=10,
+            batch_size=batch_size,
             timeout_secs=30))
 
         for upgrade_version in self.upgrade_chain:
