@@ -117,6 +117,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.enforce_tls = self.input.param("enforce_tls", True)
         self.encryption_level = self.input.param("encryption_level", "all")
         self.private_key_passphrase = self.input.param("private_key_passphrase", None)
+        self.hashicorp_key_passphrase = self.input.param("hashicorp_key_passphrase", "password")
         self.kmip_key_uuid = self.input.param("kmip_key_uuid", None)
         config_path = os.path.join(os.path.dirname(__file__), "kmip_config.json")
         with open(config_path, "r") as f:
@@ -146,6 +147,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.encryption_at_rest_id = self.input.param(
             "encryption_at_rest_id", None)
         self.gcp_kms_json_file = self.input.param("gcp_kms_json_file","gcp-kms-creds.json")
+        self.hashicorp_key_name = self.input.param("hashicorp_key_file","couchbase-key")
+        self.hashicorp_cert_name = self.input.param("hashicorp_cert_name", "couchbase-client.crt")
+        self.hashcb_key_name =  self.input.param("hashcb_key_name",
+                                                 "couchbase-client-encrypted.key")
         self.azure_key_path = kmip_config["certs"]["azure_key_path"]
         self.KMIP_id = self.input.param("KMIP_id", None)
         self.enable_config_encryption_at_rest = self.input.param(

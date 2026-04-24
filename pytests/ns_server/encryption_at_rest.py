@@ -21,8 +21,8 @@ class EncryptionAtRest(CollectionBase):
     def enable_log_and_config_encryption(self):
         rest = RestConnection(self.cluster.master)
         bucket_helper = BucketHelper(self.cluster.master)
-        self.log_secret_name = "TestSecretLogEncryption"
-        self.conf_secret_name = "TestSecretConfigEncryption"
+        self.log_secret_name = EncryptionUtil.generate_random_name("TestSecretLogEncryption")
+        self.conf_secret_name = EncryptionUtil.generate_random_name("TestSecretConfigEncryption")
         # Create secret for log encryption
         log_params = bucket_helper.create_secret_params(
             secret_type="cb-server-managed-aes-key-256",
@@ -175,6 +175,39 @@ class EncryptionAtRest(CollectionBase):
         }
         status, response = rest.configure_encryption_at_rest(valid_params)
         self.assertTrue(status, "Secret creation have failed with azure KMS parameters")
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            bucket_helper.change_bucket_props(
+                bucket,
+                encryptionAtRestKeyId=secret_id,
+                encryptionAtRestDekRotationInterval=3,
+                encryptionAtRestDekLifetime=2
+            )
+
+    def test_validate_hashicorp_kms_encryption(self):
+        params = EncryptionUtil.create_hashicorp_kms_params(
+            name="TestSecretHashicorpKMS",
+            host=self.kmip_ip,
+            keyName=self.hashicorp_key_name,
+            keyPath=self.client_certs_path + self.hashcb_key_name,
+            certPath=self.client_certs_path + self.hashicorp_cert_name,
+            keyPassphrase=self.hashicorp_key_passphrase
+        )
+        rest = RestConnection(self.cluster.master)
+        status, response = rest.create_kms_secret(params)
+        secret_id = False
+        if status:
+            response_dict = json.loads(response)
+            secret_id = response_dict.get('id')
+        self.assertTrue(secret_id, "HashiCorp KMS KEK creation failed")
+        valid_params = {
+            "log.encryptionMethod": "encryptionKey",
+            "config.encryptionMethod": "encryptionKey",
+            "log.encryptionKeyId": secret_id,
+            "config.encryptionKeyId": secret_id
+        }
+        status, response = rest.configure_encryption_at_rest(valid_params)
+        self.assertTrue(status, "Secret creation have failed with HashiCorp KMS parameters")
         bucket_helper = BucketHelper(self.cluster.master)
         for bucket in self.cluster.buckets:
             bucket_helper.change_bucket_props(

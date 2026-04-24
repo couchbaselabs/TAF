@@ -96,6 +96,64 @@ class EncryptionUtil:
         return params
 
     @staticmethod
+    def create_hashicorp_kms_params(name="HashicorpKmsKey",
+                                    host=None,
+                                    port=8200,
+                                    keyName=None,
+                                    keyPath=None,
+                                    certPath=None,
+                                    keyPassphrase=None,
+                                    caSelection="skipServerCertVerification",
+                                    encryptWith="nodeSecretManager",
+                                    usage=None):
+        """
+        Helper to create params for HashiCorp Vault KMS key secret creation.
+        :param name: Name of the secret
+        :param host: HashiCorp Vault host address
+        :param port: HashiCorp Vault port (default: 8200)
+        :param keyName: Name of the transit key in Vault
+        :param keyPath: Path to client private key file
+        :param certPath: Path to client certificate file
+        :param keyPassphrase: Passphrase for the client private key (required)
+        :param caSelection: CA selection mode (default: useCbCa)
+        :param encryptWith: Encryption method (default: nodeSecretManager)
+        :param usage: List of usages (default: all supported)
+        :return: dict suitable for POST /settings/encryptionKeys
+        """
+        if usage is None:
+            usage = [
+                "KEK-encryption",
+                "bucket-encryption",
+                "config-encryption",
+                "log-encryption",
+                "audit-encryption",
+                "other-encryption"
+            ]
+        if not host or not keyName:
+            raise ValueError("host and keyName are required for HashiCorp KMS secret")
+        if not keyPath or not certPath:
+            raise ValueError("keyPath and certPath are required for HashiCorp KMS secret")
+        if keyPassphrase is None:
+            raise ValueError("keyPassphrase is required for HashiCorp KMS secret")
+
+        keyURL = "https://{}:{}/{}".format(host, port, keyName)
+        data = {
+            "keyURL": keyURL,
+            "keyPath": keyPath,
+            "certPath": certPath,
+            "keyPassphrase": keyPassphrase,
+            "caSelection": caSelection,
+            "encryptWith": encryptWith
+        }
+        params = {
+            "name": name,
+            "type": "hashikms-key",
+            "usage": usage,
+            "data": data
+        }
+        return params
+
+    @staticmethod
     def create_secret_params(secret_type="cb-server-managed-aes-key-256",
                              name="Default secret", usage=None,
                              autoRotation=True, rotationIntervalInDays=60,
