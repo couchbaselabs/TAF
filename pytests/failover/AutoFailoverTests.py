@@ -454,11 +454,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         self.bring_back_failed_nodes_up()
         self.sleep(30, "Wait after removing failures")
-        self.nodes = self.cluster_util.get_nodes(self.cluster.master)
-        self.log.info("Adding back {0} using {1} recovery".format(self.server_to_fail[0].ip,
-                                                                  self.recovery_strategy))
-        self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
-                                                         0].ip),
+        self.nodes = self.cluster_util.get_nodes(self.cluster.master,
+                                                 inactive_failed=True)
+        self.log.info(f"Adding back {self.server_to_fail[0].ip} with "
+                      f"{self.recovery_strategy} recovery")
+        self.rest.set_recovery_type(f"ns_1@{self.server_to_fail[0].ip}",
                                     self.recovery_strategy)
         self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
         msg = "rebalance failed while recovering failover nodes {0}".format(
