@@ -71,6 +71,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(
             "volume_test_load")
         self.set_retry_exceptions(doc_loading_spec)
+        CollectionBase.over_ride_doc_loading_template_params(
+            self, doc_loading_spec)
+
         tasks = self.bucket_util.run_scenario_from_spec(
             self.task,
             self.cluster,

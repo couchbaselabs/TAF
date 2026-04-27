@@ -592,6 +592,9 @@ class volume(CollectionBase):
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package(self.data_load_spec)
         self.set_retry_exceptions(doc_loading_spec)
+        CollectionBase.over_ride_doc_loading_template_params(
+            self, doc_loading_spec)
+
         doc_loading_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_loading_spec[MetaCrudParams.SKIP_READ_SUCCESS_RESULTS] = skip_read_success_results
         task = self.bucket_util.run_scenario_from_spec(self.task,

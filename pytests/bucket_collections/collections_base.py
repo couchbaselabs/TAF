@@ -976,6 +976,9 @@ class CollectionBase(ClusterSetup, FusionBase):
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):
+        if target_spec and "doc_crud" in target_spec:
+            target_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] = test_obj.key
+
         for key, value in test_obj.input.test_params.items():
             if key == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \
