@@ -304,12 +304,12 @@ if [ $status -eq 0 ]; then
   CLIENT_SHARE_DIR=""
   NFS_FUSION_SERVER_IP=""
   if [ "${component}" = "fusion" ]; then
-    NFS_FUSION_SERVER_IP=$(echo "$parameters" | grep -oP 'nfs_server_ip=\K[^,]*')
-    NFS_FUSION_SERVER_IP=${NFS_FUSION_SERVER_IP:-172.23.219.42}
-    NFS_SETUP_OUTPUT=$(python scripts/fusion_scripts/nfs_setup.py setup --ini "$WORKSPACE/testexec.$$.ini" --nfs-server-ip "$NFS_FUSION_SERVER_IP" --local-scripts-path "scripts/fusion_scripts")
+    echo "NODE_NAME=$NODE_NAME"
+    NFS_SETUP_OUTPUT=$(python scripts/fusion_scripts/nfs_setup.py setup --ini "$WORKSPACE/testexec.$$.ini" --node-name "$NODE_NAME" --local-scripts-path "scripts/fusion_scripts")
     echo "$NFS_SETUP_OUTPUT"
     CLIENT_SHARE_DIR=$(echo "$NFS_SETUP_OUTPUT" | grep "^CLIENT_SHARE_DIR=" | cut -d'=' -f2)
-    parameters="${parameters},skip_fusion_setup=True,client_share_dir=${CLIENT_SHARE_DIR}"
+    NFS_FUSION_SERVER_IP=$(echo "$NFS_SETUP_OUTPUT" | grep "^NFS_SERVER_IP=" | cut -d'=' -f2)
+    parameters="${parameters},skip_fusion_setup=True,client_share_dir=${CLIENT_SHARE_DIR},nfs_server_ip=${NFS_FUSION_SERVER_IP}"
   fi
 
   # Find free port on this machine to use for this run

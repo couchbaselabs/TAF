@@ -5,7 +5,7 @@ NFS setup and teardown for Fusion tests, called by executor_script.sh.
 Usage:
   python nfs_setup.py setup
       --ini <populated_testexec_ini>
-      --nfs-server-ip <ip>
+      --node-name <jenkins_slave_name>
       --local-scripts-path <path_to_fusion_scripts_dir>
 
   python nfs_setup.py teardown
@@ -19,10 +19,20 @@ executor_script.sh can capture it and forward it to testrunner.py.
 
 import argparse
 import concurrent.futures
+import json
 import os
 import sys
 
 import paramiko
+
+_MAPPING_FILE = os.path.join(os.path.dirname(__file__), "nfs_server_mapping.json")
+def resolve_nfs_server_ip(node_name):
+    with open(_MAPPING_FILE) as f:
+        mapping = json.load(f)
+    if node_name not in mapping:
+        raise KeyError(f"No NFS server mapping found for slave '{node_name}'. "
+                       f"Known Fusion Slaves: {list(mapping.keys())}")
+    return mapping[node_name]
 
 
 SSH_USER = "root"
@@ -131,16 +141,20 @@ def setup_nfs_client(server_ip, nfs_server_ip, client_share_dir, local_scripts_p
 
 
 def cmd_setup(args):
+    nfs_server_ip = resolve_nfs_server_ip(args.node_name)
+    print(f"[NFS] Resolved NFS server for node '{args.node_name}': {nfs_server_ip}")
+    print(f"NFS_SERVER_IP={nfs_server_ip}")
+
     cluster_ips = parse_ini_ips(args.ini)
     print(f"[NFS] Cluster server IPs: {cluster_ips}")
 
-    client_share_dir = setup_nfs_server(args.nfs_server_ip, args.local_scripts_path)
+    client_share_dir = setup_nfs_server(nfs_server_ip, args.local_scripts_path)
     print(f"[NFS] New share: {client_share_dir}")
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [
             executor.submit(
-                setup_nfs_client, ip, args.nfs_server_ip, client_share_dir, args.local_scripts_path
+                setup_nfs_client, ip, nfs_server_ip, client_share_dir, args.local_scripts_path
             )
             for ip in cluster_ips
         ]
@@ -216,7 +230,7 @@ def main():
 
     p_setup = sub.add_parser("setup")
     p_setup.add_argument("--ini", required=True, help="Path to the populated testexec ini file")
-    p_setup.add_argument("--nfs-server-ip", required=True)
+    p_setup.add_argument("--node-name", required=True, help="Jenkins slave name (NODE_NAME)")
     p_setup.add_argument("--local-scripts-path", required=True,
                          help="Local path to scripts/fusion_scripts/")
 
