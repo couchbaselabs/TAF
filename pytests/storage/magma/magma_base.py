@@ -19,6 +19,8 @@ from storage_utils.magma_utils import MagmaUtils
 class MagmaBaseTest(StorageBase):
     def setUp(self):
         super(MagmaBaseTest, self).setUp()
+        self.load_docs_using = self.input.param("load_docs_using",
+                                                "sirius_java_sdk")
 
         # Verify FBR (File-Based Rebalance) setting is enabled by default
         self.rest = ClusterRestAPI(self.cluster.master)
