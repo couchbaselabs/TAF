@@ -785,13 +785,15 @@ class VolumeTest(BaseTestCase, hostedOPD):
         while self.mutations:
             self.mutate += 1
             for bucket in cluster.buckets:
-                JavaDocLoaderUtils.generate_docs(bucket=bucket)
+                read_start = self.input.param("read_start", None)
+                read_end = self.input.param("read_end", None)
+                JavaDocLoaderUtils.generate_docs(bucket=bucket, read_start=read_start, read_end=read_end)
                 bucket.original_ops = bucket.loadDefn["ops"]
                 bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
             self.loader_tasks = JavaDocLoaderUtils.perform_load(cluster=cluster,
                                                                 buckets=cluster.buckets,
-                                                                overRidePattern={"update": 20,
-                                                                                 "read": 80},
+                                                                overRidePattern={"update": self.update_perc,
+                                                                                 "read": self.read_perc},
                                                                 wait_for_load=False,
                                                                 mutate=self.mutate,
                                                                 suppress_error_table=self.suppress_error_table,
