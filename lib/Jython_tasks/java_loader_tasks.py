@@ -281,7 +281,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.fail_count = 0
 
         if ops is None:
-            self.ops = 20000
+            self.ops = 40000
             self.gtm = True
 
         if generator is not None:

@@ -66,7 +66,7 @@ default = {
 
 Hotel = {
     "key_prefix": "test_docs-",
-    "key_size": 20,
+    "key_size": _input.param("key_size", 20),
     "key_type": _input.param("key_type", "SimpleKey"),
     "valType": "Hotel",
     "doc_size": _input.param("doc_size", 1024),

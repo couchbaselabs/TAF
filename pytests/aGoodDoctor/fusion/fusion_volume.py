@@ -510,7 +510,6 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self._log_store_stop_event.set()
 
         self.compute["data"] = self.input.param("fusion_compute", "m5.4xlarge")
-        self.num_nodes["data"] = 3
         self.fusion_rebalances = list()
 
         h_scaling = self.input.param("h_scaling", True)
