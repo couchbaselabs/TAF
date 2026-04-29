@@ -1139,11 +1139,17 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 ssh_sessions[server.ip].execute_command(f"mkdir -p {paths}")
             else:
                 # For Linux servers, use whatever paths are already configured
-                paths = f"{server.data_path} {server.cbas_path} " \
-                        f"{server.eventing_path} {server.index_path}"
-
-                # On Unix/Linux, use mkdir, chattr, and chown
+                path_list = [server.data_path, server.cbas_path,
+                             server.eventing_path, server.index_path]
+                paths = " ".join(filter(None, path_list))
+                if paths:
+                    rm_cmds = "rm -rf %s ; " % format(
+                        ' '.join(f'{p}/*' for p in paths.split()))
+                else:
+                    rm_cmds = ""
+                # On Unix/Linux, clean, mkdir, chattr, and chown
                 ssh_sessions[server.ip].execute_command(
+                    f"{rm_cmds}"
                     f"mkdir -p {paths} ;"
                     f"chattr -i {paths} ;"
                     f"chown -R couchbase:couchbase {paths}")
