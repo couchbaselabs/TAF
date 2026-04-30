@@ -1,12 +1,9 @@
 import json
-import random
-import string
+import uuid
 from datetime import datetime, timedelta
 
 from global_vars import logger
-from membase.api.rest_client import RestConnection
-from shell_util.remote_connection import RemoteMachineShellConnection
-
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 
 
 class EncryptionUtil:
@@ -15,8 +12,7 @@ class EncryptionUtil:
 
     @staticmethod
     def generate_random_name(prefix, length=8):
-        chars = string.ascii_letters + string.digits
-        suffix = ''.join(random.choice(chars) for _ in range(length))
+        suffix = str(uuid.uuid4()).replace('-', '')[:length]
         return prefix + suffix
 
     @staticmethod
