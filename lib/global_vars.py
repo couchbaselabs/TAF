@@ -3,6 +3,7 @@ import logging
 logger = dict()
 logger["infra"] = logging.getLogger("infra")
 logger["test"] = logging.getLogger("test")
+logger["rest_api"] = logging.getLogger("rest_api")
 
 system_event_logs = None
 

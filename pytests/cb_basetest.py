@@ -287,6 +287,6 @@ class CouchbaseBaseTest(unittest.TestCase):
         return self.task_manager
 
     def shutdown_task_manager(self):
+        self.task_manager.abort_all_tasks()
         self.task_manager.shutdown()
         self.task.shutdown(force=True)
-        self.task_manager.abort_all_tasks()

@@ -232,15 +232,16 @@ class CBRestConnection(object):
                 elif method.upper() != "GET":
                     request_args["data"] = params # Send as body payload
 
+                self.log.debug(f"Request: {method} :: {api}, params: {params}")
                 response = session.request(**request_args)
-
                 content = response.content
+                self.log.debug(f"Response:: Code: {response.status_code}, "
+                               f"Content: {content}")
                 if 200 <= response.status_code < 300:
                     status = True
                 try:
                     content = response.json()
                 except ValueError:
-                    content
                     pass
                 return status, content, response
             except requests.exceptions.HTTPError as errh:
