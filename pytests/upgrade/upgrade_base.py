@@ -666,6 +666,9 @@ class UpgradeBase(BaseTestCase):
             self.cluster_util.wait_for_ns_servers_or_assert([self.spare_node],
                                                             wait_time=120)
 
+            # Prepare data directories before initializing node
+            self._prepare_node_paths(self.spare_node)
+
             # Initialize paths on the spare node
             status, content = ClusterRestAPI(self.spare_node).initialize_node(
                 self.spare_node.rest_username,

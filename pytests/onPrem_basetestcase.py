@@ -1099,6 +1099,34 @@ class OnPremBaseTest(CouchbaseBaseTest):
         except Exception as e:
             self.log.warning("Exception during REST log_client_error: %s" % e)
 
+    def _prepare_node_paths(self, server):
+        """Create and set ownership for data/index/cbas/eventing paths
+        so that initialize_node() can set them successfully.
+        Removes immutable attr (chattr -i) on all path components which
+        blocks mkdir under /data."""
+        path_list = [server.data_path, server.cbas_path,
+                     server.eventing_path, server.index_path]
+        paths = " ".join(filter(None, path_list))
+        if not paths:
+            return
+        shell = RemoteMachineShellConnection(server)
+        try:
+            chattr_paths = set()
+            for p in paths.split():
+                parts = p.strip("/").split("/")
+                for i in range(1, len(parts) + 1):
+                    chattr_paths.add("/" + "/".join(parts[:i]))
+            chattr_str = " ".join(sorted(chattr_paths))
+            rm_cmds = "rm -rf %s ; " % format(
+                ' '.join(f'{p}/*' for p in paths.split()))
+            shell.execute_command(
+                f"chattr -i {chattr_str} ;"
+                f"{rm_cmds}"
+                f"mkdir -p {paths} ;"
+                f"chown -R couchbase:couchbase {paths}")
+        finally:
+            shell.disconnect()
+
     def _initialize_nodes(self, task, cluster, disabled_consistent_view=None,
                           rebalance_index_waiting_disabled=None,
                           rebalance_index_pausing_disabled=None,
@@ -1138,21 +1166,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 paths = cygwin_couchbase_path
                 ssh_sessions[server.ip].execute_command(f"mkdir -p {paths}")
             else:
-                # For Linux servers, use whatever paths are already configured
-                path_list = [server.data_path, server.cbas_path,
-                             server.eventing_path, server.index_path]
-                paths = " ".join(filter(None, path_list))
-                if paths:
-                    rm_cmds = "rm -rf %s ; " % format(
-                        ' '.join(f'{p}/*' for p in paths.split()))
-                else:
-                    rm_cmds = ""
-                # On Unix/Linux, clean, mkdir, chattr, and chown
-                ssh_sessions[server.ip].execute_command(
-                    f"{rm_cmds}"
-                    f"mkdir -p {paths} ;"
-                    f"chattr -i {paths} ;"
-                    f"chown -R couchbase:couchbase {paths}")
+                # For Linux servers, prepare paths (chattr, clean, mkdir, chown)
+                self._prepare_node_paths(server)
 
             status, content = ClusterRestAPI(server).initialize_node(
                 server.rest_username,

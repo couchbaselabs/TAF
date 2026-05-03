@@ -457,6 +457,8 @@ class UpgradeTests(UpgradeBase):
                                   f"{self.upgrade_version} on the spare node")
                     self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
+                    # Prepare data directories before initializing node
+                    self._prepare_node_paths(self.spare_node)
                     # Initialize paths on the spare node
                     status, content = ClusterRestAPI(self.spare_node).initialize_node(
                         self.spare_node.rest_username,
@@ -477,6 +479,8 @@ class UpgradeTests(UpgradeBase):
                                   f"{self.upgrade_version} on the spare node")
                     self.upgrade_helper.new_install_version_on_all_nodes(
                         [self.spare_node], self.upgrade_version)
+                    # Prepare data directories before initializing node
+                    self._prepare_node_paths(self.spare_node)
                     # Initialize paths on the spare node
                     status, content = ClusterRestAPI(self.spare_node).initialize_node(
                         self.spare_node.rest_username,
@@ -1498,6 +1502,8 @@ class UpgradeTests(UpgradeBase):
             if reb_task == "rebalance_in":
                 self.upgrade_helper.new_install_version_on_all_nodes(
                     [self.spare_node], self.upgrade_version)
+                # Prepare data directories before initializing node
+                self._prepare_node_paths(self.spare_node)
                 # Initialize paths on the spare node
                 status, content = ClusterRestAPI(self.spare_node).initialize_node(
                     self.spare_node.rest_username,
@@ -1827,6 +1833,8 @@ class UpgradeTests(UpgradeBase):
                                                         self.upgrade_version))
         self.upgrade_helper.new_install_version_on_all_nodes(
             [self.spare_node], self.upgrade_version)
+        # Prepare data directories before initializing node
+        self._prepare_node_paths(self.spare_node)
         # Initialize paths on the spare node
         status, content = ClusterRestAPI(self.spare_node).initialize_node(
             self.spare_node.rest_username,
@@ -1872,6 +1880,8 @@ class UpgradeTests(UpgradeBase):
                                                     self.upgrade_version))
         self.upgrade_helper.new_install_version_on_all_nodes(
             [self.spare_node], self.upgrade_version)
+        # Prepare data directories before initializing node
+        self._prepare_node_paths(self.spare_node)
         # Initialize paths on the spare node
         status, content = ClusterRestAPI(self.spare_node).initialize_node(
             self.spare_node.rest_username,
