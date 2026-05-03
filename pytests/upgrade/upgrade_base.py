@@ -563,6 +563,9 @@ class UpgradeBase(BaseTestCase):
                 install_tasks=install_tasks)
             self.sleep(60, "Wait after installation on the spare node")
 
+            # Prepare data directories before initializing node
+            self._prepare_node_paths(self.spare_node)
+
             # Initialize paths on the spare node
             status, content = ClusterRestAPI(self.spare_node).initialize_node(
                 self.spare_node.rest_username,
