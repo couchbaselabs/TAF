@@ -273,7 +273,22 @@ See [agents/AGENTS.md](agents/AGENTS.md) for the full list of agents and skills.
 - [Test-Agent Skill](agents/test-agent.md) – Test writing guidance and constraints
 
 ### Component specific Documentation
-- If asked about **KV** or **data-service**: refer to docs/agent-context/data-service/AGENTS.md
+- If asked about **KV** or **data-service** or **epengine**: refer to docs/agent-context/data-service/AGENTS.md
+  - Test coverage: [pytests/epengine/AGENTS.md](pytests/epengine/AGENTS.md), [pytests/castest/AGENTS.md](pytests/castest/AGENTS.md), [pytests/subdoc/AGENTS.md](pytests/subdoc/AGENTS.md)
 - If asked about **NS Server** or **Cluster-manager**: refer to docs/agent-context/ns-server/AGENTS.md
+  - Test coverage: [pytests/upgrade/AGENTS.md](pytests/upgrade/AGENTS.md)
 - If asked about **Couchbase REST API**, **REST endpoints**, or **cb_server_rest_util**: refer to [couchbase_utils/cb_server_rest_util/AGENTS.md](couchbase_utils/cb_server_rest_util/AGENTS.md)
 - If asked about **couchbase_utils**, **bucket_utils**, **cluster_utils**, **security_utils**, **cb_tools**, **backup_utils**, **xdcr_utils**, **rebalance_utils**, **upgrade_utils**, **eventing_utils**, **fts_utils**, **index_utils**, **dcp_utils**, **cbas_utils**, **capella_utils**, **sdk_utils**, **storage_utils**, **rbac_utils**, **node_utils**, **kafka_util**, **nfs_utils**, **tpch_utils**, **transaction_utils**, or **delta_lake_util**: refer to [couchbase_utils/AGENTS.md](couchbase_utils/AGENTS.md)
+  - Task framework built on top of these utils: [lib/Jython_tasks/AGENTS.md](lib/Jython_tasks/AGENTS.md)
+
+### Test Component Documentation (with flow maps)
+- If asked about **epengine** tests, **KV durability**, **collection CRUD**, **bucket-level durability**, **CAS ops**, **OOO returns**, **rate limiting**, or **secondary warmup**: refer to [pytests/epengine/AGENTS.md](pytests/epengine/AGENTS.md)
+  - Component background: [docs/agent-context/data-service/AGENTS.md](docs/agent-context/data-service/AGENTS.md)
+- If asked about **subdoc** tests, **XATTR** tests, or **sub-document** operations: refer to [pytests/subdoc/AGENTS.md](pytests/subdoc/AGENTS.md)
+  - Component background: [docs/agent-context/data-service/AGENTS.md](docs/agent-context/data-service/AGENTS.md)
+- If asked about **castest** or **CAS value correctness** tests: refer to [pytests/castest/AGENTS.md](pytests/castest/AGENTS.md)
+  - Component background: [docs/agent-context/data-service/AGENTS.md](docs/agent-context/data-service/AGENTS.md)
+- If asked about **upgrade** tests, **mixed-mode cluster**, **storage migration**, **upgrade chain**, or **cluster_features guards**: refer to [pytests/upgrade/AGENTS.md](pytests/upgrade/AGENTS.md)
+  - Component background: [docs/agent-context/ns-server/AGENTS.md](docs/agent-context/ns-server/AGENTS.md), [couchbase_utils/AGENTS.md](couchbase_utils/AGENTS.md)
+- If asked about **Sirius Java SDK**, **DocLoader**, **SiriusCouchbaseLoader**, `java_loader_tasks.py`, or `load_docs_using=sirius_java_sdk`: refer to [lib/Jython_tasks/AGENTS.md](lib/Jython_tasks/AGENTS.md)
+  - Utility layer: [couchbase_utils/AGENTS.md](couchbase_utils/AGENTS.md)

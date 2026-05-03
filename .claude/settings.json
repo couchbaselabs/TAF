@@ -4,6 +4,11 @@
       "name": "source-attribution",
       "description": "Adds source citations to responses from TAF docs",
       "path": "agents/skills/source-attribution.md"
+    },
+    {
+      "name": "test_debugging",
+      "description": "Given a scenario or test logs, maps to the actual code, debugs the failure, and proposes a concrete fix. Resolves which layer owns the failure, reads the source, diagnoses root cause, and provides before/after fix.",
+      "path": "agents/skills/test_debugging.md"
     }
   ]
 }
