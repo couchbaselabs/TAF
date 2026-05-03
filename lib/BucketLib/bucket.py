@@ -299,9 +299,9 @@ class Bucket(object):
         self.encryptionAtRestDekLifetime = new_params.get(
             Bucket.encryptionAtRestDekLifetime, 31536000)
         self.throttleReserved = new_params.get(
-            Bucket.throttleReserved, 18446744073709551615)
+            Bucket.throttleReserved, None)
         self.throttleHardLimit = new_params.get(
-            Bucket.throttleHardLimit, 18446744073709551615)
+            Bucket.throttleHardLimit, None)
         self.throttleEnabled = new_params.get(
             Bucket.throttleEnabled, False)
         self.encryptionAtRestInfo = {

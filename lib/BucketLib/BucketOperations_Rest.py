@@ -402,9 +402,15 @@ class BucketHelper(BucketRestApi):
             Bucket.encryptionAtRestKeyId: bucket_params.get(Bucket.encryptionAtRestKeyId),
             Bucket.encryptionAtRestDekRotationInterval: bucket_params.get(Bucket.encryptionAtRestDekRotationInterval),
             Bucket.encryptionAtRestDekLifetime: bucket_params.get(Bucket.encryptionAtRestDekLifetime),
-            Bucket.throttleReserved: bucket_params.get(Bucket.throttleReserved, None),
-            Bucket.throttleHardLimit: bucket_params.get(Bucket.throttleHardLimit, None),
             Bucket.throttleEnabled: bucket_params.get(Bucket.throttleEnabled, False)}
+        # Only include throttle limits when explicitly set — sending UINT64_MAX as a
+        # default causes the per-node sum check in CB Server 8.1.0+ to reject creation.
+        _throttle_reserved = bucket_params.get(Bucket.throttleReserved)
+        if _throttle_reserved is not None:
+            init_params[Bucket.throttleReserved] = _throttle_reserved
+        _throttle_hard_limit = bucket_params.get(Bucket.throttleHardLimit)
+        if _throttle_hard_limit is not None:
+            init_params[Bucket.throttleHardLimit] = _throttle_hard_limit
 
         # Set Bucket's width/weight param only if serverless is enabled
         if bucket_params.get('serverless'):
