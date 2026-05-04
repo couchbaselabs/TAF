@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from global_vars import logger
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from membase.api.rest_client import RestConnection
 
 
 class EncryptionUtil:
