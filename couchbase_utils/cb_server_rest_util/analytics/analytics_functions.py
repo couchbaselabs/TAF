@@ -22,16 +22,19 @@ class AnalyticsFunctionsAPI(CBRestConnection):
         api = f"{self.cbas_url}/analytics/service"
         headers = self.get_headers_for_content_type_json()
 
-        params = {'statement': statement, 'pretty': pretty, 'client_context_id': client_context_id}
+        params = {'statement': statement, 'pretty': pretty}
 
+        if client_context_id is not None:
+            params['clientContextID'] = client_context_id
         if mode is not None:
             params['mode'] = mode
         if scan_consistency is not None:
-            params['scan_consistency'] = scan_consistency
+            params['scan-consistency'] = scan_consistency
         if scan_wait is not None:
-            params['scan_wait'] = scan_wait
-        params["timeout"] = f"{analytics_timeout}{time_out_unit}"
-        params["max_warning"] = max_warning
+            params['scan-wait'] = scan_wait
+
+        params['timeout'] = f"{analytics_timeout}{time_out_unit}"
+        params['max-warnings'] = max_warning
 
         status, content, _ = self.request(api, self.POST,
                                           headers=headers,

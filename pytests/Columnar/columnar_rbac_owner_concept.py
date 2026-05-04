@@ -112,18 +112,19 @@ class ColumnarRBACOwnerConcept(ColumnarBaseTest):
         else:
             confluent_cleanup_for_non_cdc = True
 
-        try:
-            if self.confluent_util.is_api_key_valid(
-                    self.confluent_cluster_obj.cluster_access_key):
-                self.confluent_util.confluent_apis.delete_api_key(
-                    self.confluent_cluster_obj.cluster_access_key)
-        except Exception as err:
-            self.log.error(str(err))
+        if hasattr(self, "confluent_util") and hasattr(self, "confluent_cluster_obj"):
+            try:
+                if self.confluent_util.is_api_key_valid(
+                        self.confluent_cluster_obj.cluster_access_key):
+                    self.confluent_util.confluent_apis.delete_api_key(
+                        self.confluent_cluster_obj.cluster_access_key)
+            except Exception as err:
+                self.log.error(str(err))
 
-        if self.confluent_util.kafka_cluster_util:
-            self.confluent_util.kafka_cluster_util.client = None
-            self.confluent_util.kafka_cluster_util = None
-            gc.collect()
+            if self.confluent_util.kafka_cluster_util:
+                self.confluent_util.kafka_cluster_util.client = None
+                self.confluent_util.kafka_cluster_util = None
+                gc.collect()
 
         mongo_collections_deleted = True
         if hasattr(self, "mongo_collections"):
