@@ -7,6 +7,7 @@ like instance discovery, accelerator management, and error scanning.
 """
 
 from .awslib.ec2_lib import EC2Lib
+from .awslib.fis_lib import FISLib
 from .awslib.s3_lib import S3Lib
 from .awslib.secrets_manager_lib import SecretsManagerLib
 import time, datetime
@@ -30,6 +31,7 @@ class FusionAWSUtil:
         :param region: AWS region (default: us-east-1)
         """
         self.ec2 = EC2Lib(access_key, secret_key, region=region)
+        self.fis = FISLib(access_key, secret_key, region=region)
         self.s3 = S3Lib(access_key, secret_key, region=region)
         self.secrets = SecretsManagerLib(access_key, secret_key, region=region)
         self.log = logging.getLogger(__name__)
@@ -275,3 +277,147 @@ class FusionAWSUtil:
         filters = self._cluster_filter(cluster_id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}])
         asgs = self.ec2.list_asgs(filters=filters)
         return asgs
+
+    def suspend_asg_launch_process(self, asg_names: list) -> list:
+        """
+        Suspend the Launch scaling process on the given ASGs so that Auto Scaling
+        makes no RunInstances calls until the process is resumed.
+
+        Call this immediately after detecting the ASGs and before starting a FIS
+        experiment, to guarantee that FIS is active before the first launch attempt.
+
+        :param asg_names: List of ASG names to suspend Launch on
+        :return: The same list (for convenient reference in cleanup)
+        """
+        self.ec2.suspend_asg_launch_process(asg_names)
+        return asg_names
+
+    def resume_asg_launch_process(self, asg_names: list) -> None:
+        """
+        Resume the Launch scaling process on the given ASGs so that Auto Scaling
+        resumes making RunInstances calls (which will hit any active FIS fault).
+
+        :param asg_names: List of ASG names to resume Launch on
+        """
+        self.ec2.resume_asg_launch_process(asg_names)
+
+    def get_az_names_for_cluster_asgs(self, cluster_id: str) -> list:
+        """
+        Return the set of AZ names used by the cluster's fusion ASGs.
+
+        Reads the VPCZoneIdentifier of the first ASG (all ASGs in a rebalance
+        use the same subnet/AZ) and resolves the subnet to an AZ name.
+
+        :param cluster_id: Cluster identifier
+        :return: Sorted list of unique AZ names
+        """
+        asgs = self.list_cluster_fusion_asg(cluster_id)
+        if not asgs:
+            raise RuntimeError(f"No fusion ASGs found for cluster {cluster_id}")
+
+        az_names = set()
+        for asg in asgs:
+            vpc_zone = asg.get("VPCZoneIdentifier", "")
+            subnet_ids = [s.strip() for s in vpc_zone.split(",") if s.strip()]
+            for subnet in self.ec2.describe_subnets(subnet_ids):
+                az_names.add(subnet["AvailabilityZone"])
+        return sorted(az_names)
+
+    def get_asg_ordered_instance_types(self, cluster_id: str) -> list:
+        """
+        Return the instance type override list from a cluster's fusion ASG in
+        priority order (index 0 = highest priority).
+
+        All ASGs in a fusion rebalance share the same override list (derived
+        from unifiedInstanceTypes in autoscalinggroups.go).
+
+        :param cluster_id: Cluster identifier
+        :return: Ordered list of instance type strings
+        """
+        asgs = self.list_cluster_fusion_asg(cluster_id)
+        if not asgs:
+            raise RuntimeError(f"No fusion ASGs found for cluster {cluster_id}")
+
+        # All ASGs share the same override list; use the first one
+        asg = asgs[0]
+        policy = asg.get("MixedInstancesPolicy") or {}
+        lt = policy.get("LaunchTemplate") or {}
+        overrides = lt.get("Overrides") or []
+        return [o["InstanceType"] for o in overrides if "InstanceType" in o]
+
+    def count_capacity_failures_per_asg(
+        self,
+        cluster_id: str,
+        since_time: datetime.datetime,
+    ) -> dict:
+        """
+        Return a mapping of {asg_name: failure_count} for all fusion ASGs in
+        the cluster, counting InsufficientInstanceCapacity failures since the
+        given timestamp.
+
+        :param cluster_id: Cluster identifier
+        :param since_time: Count only failures that started after this UTC time
+        :return: Dict of asg_name → failure count
+        """
+        asgs = self.list_cluster_fusion_asg(cluster_id)
+        result = {}
+        for asg in asgs:
+            name = asg["AutoScalingGroupName"]
+            result[name] = self.fis.get_asg_capacity_failure_count(name, since_time)
+        return result
+
+    def wait_for_min_capacity_failures_per_asg(
+        self,
+        cluster_id: str,
+        min_failures: int,
+        since_time: datetime.datetime,
+        timeout: int = 300,
+        poll_interval: int = 5,
+    ) -> dict:
+        """
+        Block until every fusion ASG in the cluster has seen at least
+        `min_failures` InsufficientInstanceCapacity failures since `since_time`.
+
+        Returns the final failure-count mapping when the condition is met.
+
+        :param cluster_id: Cluster identifier
+        :param min_failures: Minimum failures required per ASG
+        :param since_time: Count failures after this UTC-aware datetime
+        :param timeout: Maximum wait time in seconds
+        :param poll_interval: Seconds between polls
+        :return: Dict of asg_name → failure count
+        :raises TimeoutError: If the condition isn't met within timeout
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            counts = self.count_capacity_failures_per_asg(cluster_id, since_time)
+            if counts and all(v >= min_failures for v in counts.values()):
+                self.log.info(
+                    f"All {len(counts)} ASGs reached {min_failures} capacity failures: {counts}"
+                )
+                return counts
+            self.log.info(
+                f"Waiting for {min_failures} failures per ASG: {counts}"
+            )
+            time.sleep(poll_interval)
+        raise TimeoutError(
+            f"ASGs for cluster {cluster_id} did not reach {min_failures} capacity failures "
+            f"within {timeout}s"
+        )
+
+    def get_instance_type_per_asg(self, cluster_id: str) -> dict:
+        """
+        Return the instance type of the current InService instance for each
+        fusion ASG in the cluster. ASGs with no running instance are omitted.
+
+        :param cluster_id: Cluster identifier
+        :return: Dict of asg_name → instance type string
+        """
+        asgs = self.list_cluster_fusion_asg(cluster_id)
+        result = {}
+        for asg in asgs:
+            for inst in asg.get("Instances", []):
+                if inst.get("LifecycleState") == "InService":
+                    result[asg["AutoScalingGroupName"]] = inst["InstanceType"]
+                    break
+        return result

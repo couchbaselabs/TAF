@@ -731,6 +731,50 @@ class EC2Lib(AWSBase):
             self.logger.error(f"Error getting hostname/public IP mapping for record {dns_name}: {e}")
             return {}
         
+    def suspend_asg_launch_process(self, asg_names: List[str]) -> None:
+        """
+        Suspend the Launch scaling process on the given ASGs so that Auto Scaling
+        makes no RunInstances calls until the process is resumed.
+
+        :param asg_names: List of ASG names to suspend Launch on
+        """
+        asg_client = self.create_service_client(service_name="autoscaling", region=self.region)
+        for name in asg_names:
+            self.logger.info(f"Suspending Launch process on ASG {name}")
+            asg_client.suspend_processes(
+                AutoScalingGroupName=name,
+                ScalingProcesses=["Launch"],
+            )
+
+    def resume_asg_launch_process(self, asg_names: List[str]) -> None:
+        """
+        Resume the Launch scaling process on the given ASGs so that Auto Scaling
+        resumes making RunInstances calls.
+
+        :param asg_names: List of ASG names to resume Launch on
+        """
+        asg_client = self.create_service_client(service_name="autoscaling", region=self.region)
+        for name in asg_names:
+            self.logger.info(f"Resuming Launch process on ASG {name}")
+            asg_client.resume_processes(
+                AutoScalingGroupName=name,
+                ScalingProcesses=["Launch"],
+            )
+
+    def describe_subnets(self, subnet_ids: List[str]) -> List[Dict[str, Any]]:
+        """
+        Describe the given subnets and return their details (including AvailabilityZone).
+
+        :param subnet_ids: List of subnet IDs to describe
+        :return: List of subnet dicts
+        """
+        try:
+            response = self.ec2_client.describe_subnets(SubnetIds=subnet_ids)
+            return response.get("Subnets", [])
+        except Exception as e:
+            self.logger.error(f"Error describing subnets {subnet_ids}: {e}")
+            return []
+
     def list_asgs(self, filters: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         List Auto Scaling Groups (ASGs) filtered by tags.

@@ -23,6 +23,7 @@ Usage Example:
 """
 
 import time
+import datetime
 import boto3
 from botocore.exceptions import ClientError
 from typing import List, Dict, Optional, Any
@@ -221,15 +222,15 @@ class FISLib:
         try:
             response = self.fis_client.start_experiment(
                 experimentTemplateId=template_id,
-                experimentToken=str(int(time.time())),  # Unique token
+                clientToken=str(int(time.time())),
                 tags=tags or {}
             )
-            
+
             experiment_id = response['experiment']['id']
             self.logger.info(f"Successfully started experiment: {experiment_id}")
-            
+
             return experiment_id
-            
+
         except ClientError as e:
             self.logger.error(f"Failed to start experiment: {e}")
             raise
@@ -536,12 +537,12 @@ class FISLib:
             account_id = response['Account']
             
             # Standard FIS service-linked role format
-            return f"arn:aws:iam::{account_id}:role/AWSServiceRoleForFIS"
+            return f"arn:aws:iam::{account_id}:role/service-role/AWSFISIAMRole-1778713119614"
             
         except Exception as e:
             self.logger.warning(f"Could not get account ID for FIS role: {e}")
             # Return a generic role ARN - this may need to be adjusted based on setup
-            return "arn:aws:iam::*:role/AWSServiceRoleForFIS"
+            return "arn:aws:iam::*:role/service-role/AWSFISIAMRole-1778713119614"
 
     def get_instance_architecture(self, instance_id: str) -> str:
         """
@@ -693,6 +694,244 @@ class FISLib:
         
         self.logger.info(f"\n=== Fusion Accelerator Fallback Test Report ===")
         self.logger.info(f"{table}\n")
+
+    def stop_experiment(self, experiment_id: str) -> bool:
+        """
+        Stop a running FIS experiment.
+
+        :param experiment_id: ID of the experiment to stop
+        :return: True if stopped successfully
+        :raises ClientError: If stop operation fails
+        """
+        self.logger.info(f"Stopping experiment: {experiment_id}")
+        try:
+            self.fis_client.stop_experiment(id=experiment_id)
+            self.logger.info(f"Successfully stopped experiment: {experiment_id}")
+            return True
+        except ClientError as e:
+            self.logger.error(f"Failed to stop experiment: {e}")
+            raise
+
+    def create_capacity_error_experiment_for_role(
+        self,
+        experiment_name: str,
+        role_arn: str,
+        az_ids: List[str],
+        duration: str = "PT10M",
+        percentage: int = 100,
+        fis_role_arn: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+    ) -> str:
+        """
+        Create an FIS experiment template that injects InsufficientInstanceCapacity
+        errors for EC2 RunInstances calls made by the specified IAM role.
+
+        :param experiment_name: Descriptive name for the experiment template
+        :param role_arn: ARN of the IAM role to target
+        :param az_ids: List of AZ IDs to inject errors in, or ["all"] for all AZs
+        :param duration: ISO 8601 duration while errors are injected (e.g. 'PT10M')
+        :param percentage: Percentage of launch attempts to fail (default 100)
+        :param fis_role_arn: ARN of the FIS execution role (defaults to AWSServiceRoleForFIS)
+        :param tags: Optional tags for the experiment template
+        :return: Experiment template ID
+        """
+        az_id_str = "all" if (not az_ids or az_ids == ["all"]) else ",".join(az_ids)
+
+        self.logger.info(
+            f"Creating capacity error experiment '{experiment_name}' targeting role {role_arn} "
+            f"in AZs={az_id_str}, duration={duration}, percentage={percentage}"
+        )
+
+        if not az_ids:
+            az_id_str = "all"
+        else:
+            az_id_str = ",".join(az_ids)
+
+        actions = {
+            "inject-capacity-errors": {
+                "actionId": "aws:ec2:api-insufficient-instance-capacity-error",
+                "parameters": {
+                    "availabilityZoneIdentifiers": az_id_str,
+                    "duration": duration,
+                    "percentage": str(percentage),
+                },
+                "targets": {
+                    "Roles": "target-accelerator-role",
+                },
+            }
+        }
+
+        targets = {
+            "target-accelerator-role": {
+                "resourceType": "aws:iam:role",
+                "resourceArns": [role_arn],
+                "selectionMode": "ALL",
+            }
+        }
+
+        stop_conditions = [{"source": "none"}]
+        experiment_role = fis_role_arn or self._get_fis_experiment_role_arn()
+
+        try:
+            response = self.fis_client.create_experiment_template(
+                description=(
+                    f"Inject InsufficientInstanceCapacity for role {role_arn} "
+                    f"to test ASG instance type fallback"
+                ),
+                stopConditions=stop_conditions,
+                targets=targets,
+                actions=actions,
+                roleArn=experiment_role,
+                tags=tags or {},
+            )
+            template_id = response["experimentTemplate"]["id"]
+            self.logger.info(f"Created capacity error experiment template: {template_id}")
+            return template_id
+        except ClientError as e:
+            self.logger.error(f"Failed to create capacity error experiment: {e}")
+            raise
+
+    def get_asg_capacity_failure_count(
+        self,
+        asg_name: str,
+        since_time: datetime.datetime,
+        region: Optional[str] = None,
+    ) -> int:
+        """
+        Count InsufficientInstanceCapacity failures in ASG scaling activities since
+        the given timestamp. Used to know when to stop FIS once N type overrides
+        have been attempted and failed.
+
+        :param asg_name: Name of the Auto Scaling Group
+        :param since_time: Count failures that occurred after this time (UTC-aware)
+        :param region: AWS region (defaults to self.region)
+        :return: Number of capacity-related launch failures observed
+        """
+        asg_client = self.aws_session.client(
+            "autoscaling", region_name=region or self.region
+        )
+        try:
+            response = asg_client.describe_scaling_activities(
+                AutoScalingGroupName=asg_name,
+                MaxRecords=50,
+            )
+        except ClientError as e:
+            self.logger.warning(f"Could not describe scaling activities for {asg_name}: {e}")
+            return 0
+
+        count = 0
+        for activity in response.get("Activities", []):
+            start = activity.get("StartTime")
+            if start and start < since_time:
+                break
+            cause = activity.get("Cause", "")
+            status_msg = activity.get("StatusMessage", "")
+            status_code = activity.get("StatusCode", "")
+            if status_code == "Failed" and (
+                "InsufficientInstanceCapacity" in cause
+                or "InsufficientInstanceCapacity" in status_msg
+                or "capacity" in status_msg.lower()
+            ):
+                count += 1
+                self.logger.debug(
+                    f"Capacity failure #{count} in ASG {asg_name}: {status_msg[:120]}"
+                )
+
+        return count
+
+    def create_asg_capacity_error_experiment_for_cluster(
+        self,
+        experiment_name: str,
+        cluster_id: str,
+        duration: str = "PT15M",
+        fis_role_arn: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+    ) -> str:
+        """
+        Create an FIS experiment template using aws:ec2:asg-insufficient-instance-capacity-error
+        targeting all fusion ASGs in the cluster (matched by couchbase-cloud-cluster-id and
+        couchbase-cloud-function=fusion-accelerator tags).
+
+        The experiment injects InsufficientInstanceCapacity errors for every RunInstances
+        attempt made by Auto Scaling within the targeted groups. The caller must:
+          1. Suspend the ASG Launch process before starting the experiment
+          2. Start the experiment (this method + start_experiment)
+          3. Resume the ASG Launch process so launches hit the FIS fault
+
+        :param experiment_name: Descriptive name for the experiment template
+        :param cluster_id: Cluster ID used to scope target ASGs via tag filter
+        :param duration: ISO 8601 duration while errors are injected (default 'PT15M')
+        :param fis_role_arn: ARN of the FIS execution role
+        :param tags: Optional tags for the experiment template
+        :return: Experiment template ID
+        """
+        self.logger.info(
+            f"Creating ASG capacity error experiment '{experiment_name}' "
+            f"for cluster {cluster_id}, duration={duration}"
+        )
+
+        actions = {
+            "inject-asg-capacity-errors": {
+                "actionId": "aws:ec2:asg-insufficient-instance-capacity-error",
+                "parameters": {
+                    "duration": duration,
+                    "percentage": "100",
+                    "availabilityZoneIdentifiers": "all",
+                },
+                "targets": {"AutoScalingGroups": "target-fusion-asgs"},
+            }
+        }
+
+        targets = {
+            "target-fusion-asgs": {
+                "resourceType": "aws:ec2:autoscaling-group",
+                "resourceTags": {
+                    "couchbase-cloud-cluster-id": cluster_id,
+                    "couchbase-cloud-function": "fusion-accelerator",
+                },
+                "selectionMode": "ALL",
+            }
+        }
+
+        stop_conditions = [{"source": "none"}]
+        experiment_role = fis_role_arn or self._get_fis_experiment_role_arn()
+
+        try:
+            response = self.fis_client.create_experiment_template(
+                description=(
+                    f"Inject InsufficientInstanceCapacity for fusion ASGs "
+                    f"in cluster {cluster_id} to test instance-type fallback"
+                ),
+                stopConditions=stop_conditions,
+                targets=targets,
+                actions=actions,
+                roleArn=experiment_role,
+                tags=tags or {},
+            )
+            template_id = response["experimentTemplate"]["id"]
+            self.logger.info(f"Created ASG capacity error experiment template: {template_id}")
+            return template_id
+        except ClientError as e:
+            self.logger.error(f"Failed to create ASG capacity error experiment: {e}")
+            raise
+
+    def get_az_ids(self, az_names: List[str]) -> List[str]:
+        """
+        Convert AZ names (e.g. 'us-east-1a') to AZ IDs (e.g. 'use1-az1').
+        FIS requires AZ IDs rather than AZ names.
+
+        :param az_names: List of availability zone names
+        :return: List of corresponding AZ IDs
+        """
+        try:
+            response = self.ec2_client.describe_availability_zones(
+                ZoneNames=az_names,
+                AllAvailabilityZones=False,
+            )
+            return [az["ZoneId"] for az in response.get("AvailabilityZones", [])]
+        except ClientError as e:
+            self.logger.error(f"Failed to describe availability zones: {e}")
+            raise
 
     # Placeholder methods for EBS mount failure simulations (future implementation)
     def create_ebs_mount_failure_experiment(self, *args, **kwargs):
