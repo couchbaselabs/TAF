@@ -643,6 +643,31 @@ class APIBase(CouchbaseBaseTest):
             name = prefix + name
 
         return name
+    
+    @staticmethod
+    def generate_random_string_with_one_digit(length=10, special_characters=True, prefix=""):
+        if special_characters:
+            special_chars = "!@#$%^&*()-_=+{[]}\|;:'\",.<>/?" + " " + "\t"
+        else:
+            special_chars = ""
+
+        characters = string.ascii_letters + string.digits + special_chars
+
+        # Ensure at least one digit
+        result = [random.choice(string.digits)]
+
+        # Fill remaining
+        result += [random.choice(characters) for _ in range(length - 1)]
+
+        # Shuffle to avoid digit always first
+        random.shuffle(result)
+
+        name = "".join(result)
+
+        if prefix:
+            name = prefix + name
+
+        return name
 
     def handle_rate_limit(self, retry_after):
         self.log.warning("Rate Limit hit by the key: {}."

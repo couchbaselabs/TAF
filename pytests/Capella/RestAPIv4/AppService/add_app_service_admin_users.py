@@ -350,7 +350,7 @@ class PostAdminUsers(GetAdminUsers):
 
             for v in [
                 "", 1, 0, 100000, -1, 123.123, None, [], {},
-                self.generate_random_string(special_characters=False),
+                self.generate_random_string_with_one_digit(special_characters=False),
                 self.generate_random_string(500, special_characters=False),
             ]:
                 testcase = deepcopy(self.expected_res)
