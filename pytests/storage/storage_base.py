@@ -868,7 +868,8 @@ class StorageBase(BaseTestCase):
 
     def java_doc_loader(self, buckets=None, scopes=None, collections=None, generator=None, doc_ops=None,
                         wait=True, process_concurrency=2, skip_default=False, exp_ttl=None,
-                        validate_docs=False, ops_rate=None, monitor_ops=True, mutate=0, target_vbs=None):
+                        validate_docs=False, ops_rate=None, monitor_ops=True, mutate=0, target_vbs=None,
+                        value_type="SimpleValue"):
 
         doc_loading_tasks = list()
         ops_rate = ops_rate if ops_rate is not None else self.ops_rate
@@ -943,7 +944,8 @@ class StorageBase(BaseTestCase):
                             validate_docs=validate_docs,
                             ops=ops_rate,
                             mutate=mutate,
-                            target_vbuckets=target_vbs)
+                            target_vbuckets=target_vbs,
+                            value_type=value_type)
                     _task.create_doc_load_task()
                     self.doc_loading_tm.add_new_task(_task)
                     doc_loading_tasks.append(_task)
