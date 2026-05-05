@@ -345,7 +345,7 @@ class CapellaUtils(object):
 
     @staticmethod
     def delete_bucket(pod, tenant, cluster, name):
-        bucket_id = CapellaUtils.get_bucket_id(pod, cluster, name)
+        bucket_id = CapellaUtils.get_bucket_id(pod, tenant, cluster, name)
         if bucket_id:
             capella_api = CapellaAPI(pod.url_public,
                                      tenant.api_secret_key,
@@ -731,13 +731,13 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.disable_fusion(cluster_id)
+        resp = capella_api.disable_fusion(tenant.id, tenant.projects[0], cluster_id)
         if resp.status_code != 200:
             CapellaUtils.log.critical("Disabling Fusion failed for cluster {}:{}".
                                       format(cluster_id, resp.status_code))
             raise Exception("Disabling Fusion failed: {}".
                             format(resp.content))
-        return json.loads(resp.content)
+        return resp
 
     @staticmethod
     def get_fusion_status(pod, tenant, cluster_id):
@@ -783,9 +783,7 @@ class CapellaUtils(object):
         if resp.status_code != 200:
             CapellaUtils.log.critical("Stopping Fusion (internal) failed for cluster {}:{}".
                                       format(cluster_id, resp.status_code))
-            raise Exception("Stopping Fusion (internal) failed: {}".
-                            format(resp.content))
-        return json.loads(resp.content)
+        return resp
 
     @staticmethod
     def override_fusion_rebalances(pod, tenant, cluster_id, override):
@@ -851,14 +849,9 @@ class CapellaUtils(object):
             raise Exception("Creating tenant feature flag failed: {}".format(resp.content))
         CapellaUtils.log.info(f"Created tenant feature flag {ff} for tenant {tenant.id} successfully")
         return
-
+    
     @staticmethod
-    def set_cluster_feature_flag(pod, tenant, cluster_id, ff, value):
-        """Create or update a cluster-scoped feature flag.
-
-        Cluster-level flags override tenant/global flags for that specific cluster,
-        making them the right choice when you only want to affect one cluster.
-        """
+    def create_cluster_feature_flag(pod, tenant, cluster_id, ff, value):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,

@@ -46,7 +46,7 @@ class hostedOPD(OPD):
             time.sleep(step)
 
     def create_buckets(self, pod, tenant, cluster, sdk_init=True):
-        self.PrintStep("Step 2: Create required buckets and collections.")
+        self.PrintStep("Create required buckets and collections.")
         self.log.info("Create CB buckets")
         # Create Buckets
         self.log.info("Get the available memory quota")

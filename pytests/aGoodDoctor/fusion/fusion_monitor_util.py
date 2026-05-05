@@ -6,10 +6,7 @@ Fusion Monitor Util - Core fusion stats monitoring utilities
 
 from membase.api.rest_client import RestConnection
 from prettytable import PrettyTable
-import ast
-import json
-import socket
-import statistics
+import time
 from datetime import datetime
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
@@ -75,6 +72,32 @@ class FusionMonitorUtil():
             else:
                 self.log.error(f"Failed to get Fusion status for cluster {cluster.id}: {content}")
 
+    def wait_for_fusion_pending_byte_zero(self, cluster, timeout=3600):
+        """
+        Wait for fusion pending bytes to reach zero.
+        """
+        if timeout is None:
+            timeout = self.DEFAULT_TIMEOUT
+        self.set_admin_credentials(cluster)
+        while timeout > 0:
+            status, content = FusionRestAPI(cluster.master).get_fusion_status()
+            if status:
+                nodes = content.get("nodes") or {}
+                pending_bytes = 0
+                for node, stats in nodes.items():
+                    buckets = stats.get("buckets") or {}
+                    for bucket_name, bucket_stats in buckets.items():
+                        pending_bytes += bucket_stats.get("snapshotPendingBytes")
+                        self.log.info(f"Fusion Pending Bytes for node {node}, bucket {bucket_name}: {pending_bytes}")
+                if pending_bytes > 0:
+                    self.log.info(f"Fusion Pending Bytes for cluster {pending_bytes} is not zero")
+                    timeout -= 10
+                    time.sleep(10)
+                else:
+                    return
+            else:
+                self.log.error(f"Failed to get Fusion status for cluster {cluster.id}: {content}")
+
     def wait_for_fusion_status(self, cluster, state="enabled", timeout=None):
         """
         Wait for fusion to reach a specific state.
@@ -93,6 +116,7 @@ class FusionMonitorUtil():
             status, content = FusionRestAPI(cluster.master).get_fusion_status()
             self.log.info(f"Status = {status}, Content = {content}")
             if content['state'] == state:
+                time.sleep(5)
                 return
             time.sleep(10)
         raise AssertionError(f"Fusion is not {state} on cluster {cluster.id}")
@@ -171,6 +195,8 @@ class FusionMonitorUtil():
         uri = self.get_fusion_s3_uri(cluster, bucket.name)
         uri = uri.split("?")[0] if uri else None
         bucket_uuid = None
+        total_size_gb = 0
+        total_files_count = 0
         if uri:
             try:
                 rest = RestConnection(cluster.master)
@@ -191,10 +217,12 @@ class FusionMonitorUtil():
             for storage_class, metadata in result.get("folders", {}).items():
                 size = metadata.get("size_gb", 0)
                 file_count = metadata.get("file_count", 0)
+                total_size_gb += size
+                total_files_count += file_count
                 table.add_row([storage_class, f"{size:.2f} GB", file_count])
             self.log.info(f"Fusion Log Store Data Size on S3 for bucket {bucket.name} on cluster {cluster.id}: \n{table}")
             self.log.info(f"Total Fusion Log Store Data Size on S3 for bucket {bucket.name} on cluster {cluster.id}: {bucket.total_s3_size:.2f} GB")
-        return None
+        return total_size_gb, total_files_count
 
     def run_cbstats_on_all_nodes(self, cluster, bucket, stat_key="ep_fusion_log_store_data_size", subcommand="all"):
         """
