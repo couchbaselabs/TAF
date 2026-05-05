@@ -783,7 +783,8 @@ class StorageBase(BaseTestCase):
             self.gen_update = self.genrate_docs_basic(self.update_start,
                                                       self.update_end,
                                                       target_vbucket=target_vbucket,
-                                                      mutate=self.mutate)
+                                                      mutate=self.mutate,
+                                                      load_using=self.load_docs_using)
         if "delete" in doc_ops:
             if delete_start is not None:
                 self.delete_start = delete_start
@@ -794,7 +795,8 @@ class StorageBase(BaseTestCase):
             self.gen_delete = self.genrate_docs_basic(self.delete_start,
                                                       self.delete_end,
                                                       target_vbucket=target_vbucket,
-                                                      mutate=read_mutate)
+                                                      mutate=read_mutate,
+                                                      load_using=self.load_docs_using)
         if "create" in doc_ops:
             if create_start is not None:
                 self.create_start = create_start
@@ -805,7 +807,8 @@ class StorageBase(BaseTestCase):
             self.gen_create = self.genrate_docs_basic(self.create_start,
                                                       self.create_end,
                                                       target_vbucket=target_vbucket,
-                                                      mutate=create_mutate)
+                                                      mutate=create_mutate,
+                                                      load_using=self.load_docs_using)
         if "read" in doc_ops:
             if read_start is not None:
                 self.read_start = read_start
@@ -821,7 +824,8 @@ class StorageBase(BaseTestCase):
             self.gen_read = self.genrate_docs_basic(self.read_start,
                                                     self.read_end,
                                                     target_vbucket=target_vbucket,
-                                                    mutate=read_mutate)
+                                                    mutate=read_mutate,
+                                                    load_using=self.load_docs_using)
         if "expiry" in doc_ops:
             if expiry_start is not None:
                 self.expiry_start = expiry_start
@@ -833,7 +837,8 @@ class StorageBase(BaseTestCase):
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
                                                       target_vbucket=target_vbucket,
-                                                      mutate=expiry_mutate)
+                                                      mutate=expiry_mutate,
+                                                      load_using=self.load_docs_using)
 
     def generate_subDocs(self, sub_doc_ops=None,
                       upsert_end=None, upsert_start=None
