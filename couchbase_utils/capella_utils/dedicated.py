@@ -852,3 +852,39 @@ class CapellaUtils(object):
         CapellaUtils.log.info(f"Created tenant feature flag {ff} for tenant {tenant.id} successfully")
         return
 
+    @staticmethod
+    def set_cluster_feature_flag(pod, tenant, cluster_id, ff, value):
+        """Create or update a cluster-scoped feature flag.
+
+        Cluster-level flags override tenant/global flags for that specific cluster,
+        making them the right choice when you only want to affect one cluster.
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.create_cluster_feature_flag(tenant.id, cluster_id, ff, {"value": value})
+        if resp.status_code not in [200, 201, 204]:
+            try:
+                error = json.loads(resp.content)
+            except Exception:
+                error = {}
+            if error.get("errorType") == "FeatureFlagAlreadyExists":
+                CapellaUtils.log.info(
+                    f"Cluster feature flag {ff} already exists for cluster {cluster_id}, updating")
+                resp = capella_api.update_cluster_feature_flag(
+                    tenant.id, cluster_id, ff, {"value": value})
+                if resp.status_code not in [200, 204]:
+                    CapellaUtils.log.critical(
+                        f"Updating cluster feature flag {ff} failed: {resp.status_code}")
+                    raise Exception("Updating cluster feature flag failed: {}".format(resp.content))
+                CapellaUtils.log.info(
+                    f"Updated cluster feature flag {ff} for cluster {cluster_id}")
+                return
+            CapellaUtils.log.critical(
+                f"Creating cluster feature flag {ff} failed: {resp.status_code}")
+            raise Exception("Creating cluster feature flag failed: {}".format(resp.content))
+        CapellaUtils.log.info(f"Set cluster feature flag {ff}={value} for cluster {cluster_id}")
+
