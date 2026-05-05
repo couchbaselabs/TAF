@@ -771,6 +771,44 @@ class CapellaUtils(object):
         return json.loads(resp.content)
 
     @staticmethod
+    def stop_fusion_internal(pod, tenant, cluster_id):
+        """Stop fusion via the internal support API: POST /internal/support/clusters/{id}/fusion/stop."""
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.stop_fusion_internal(cluster_id=cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Stopping Fusion (internal) failed for cluster {}:{}".
+                                      format(cluster_id, resp.status_code))
+            raise Exception("Stopping Fusion (internal) failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    @staticmethod
+    def override_fusion_rebalances(pod, tenant, cluster_id, override):
+        """Set/unset fusion rebalance override via POST /internal/support/clusters/{id}/fusion/overrideRebalances.
+
+        When override=True, the control plane skips fusion for the next rebalance even
+        though fusion remains enabled. Set override=False to restore normal fusion behaviour.
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.override_fusion_rebalances(cluster_id=cluster_id, override=override)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical(
+                "Override fusion rebalances (override={}) failed for cluster {}: {}".format(
+                    override, cluster_id, resp.status_code))
+            raise Exception("Override fusion rebalances failed: {}".format(resp.content))
+        return json.loads(resp.content) if resp.content else {}
+
+    @staticmethod
     def update_feature_flag_globally(pod, tenant, ff, value):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
