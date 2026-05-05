@@ -811,6 +811,8 @@ class APIBase(CouchbaseBaseTest):
                                expected_failure_error=None):
         testcases = []
         for role in self.api_keys:
+            if "roles" not in self.api_keys[role]:
+                continue
             testcase = {
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"]

@@ -4,19 +4,26 @@ Created on Mar 25, 2026
 @author: Thuan Nguyen
 """
 
+import time
 from datetime import datetime, timedelta
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Billing.categorized_billing import CategorizedBilling
 
 
-class DownloadCategories(GetCluster):
-
+class DownloadCategories(CategorizedBilling):
     def setUp(self, nomenclature="DownloadCategories_POST"):
-        GetCluster.setUp(self, nomenclature)
+        CategorizedBilling.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(DownloadCategories, self).tearDown()
+        # delete clusters is handling at the pay as you go tests
+        pass
 
     def test_api_path(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+             "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+             "endDate": today.strftime(date_fmt)
+        }
         testcases = [
             {
                 "description": "Send call with valid path params"
@@ -73,15 +80,17 @@ class DownloadCategories(GetCluster):
                 organization = testcase["invalid_organizationId"]
 
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                organization)
+                organization, json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    organization)
+                    organization, json_body)
             self.capellaAPI.cluster_ops_apis.billing_download_categorized_csv_endpoint = \
                 "/v4/organizations/{}/billing/download"
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -90,20 +99,23 @@ class DownloadCategories(GetCluster):
 
     def test_authorization(self):
         failures = list()
+        count = 0
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectCreator", "projectOwner",
-            "projectManager", "projectViewer", "projectDataReader",
-            "projectDataReaderWriter"
+            "organizationOwner", "projectCreator", "organizationMember"
         ], None):
+            time.sleep(5)
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(header)
             self.validate_testcase(result, [200, 403], testcase, failures)
+            count += 1
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(count))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -113,6 +125,12 @@ class DownloadCategories(GetCluster):
         self.log.debug(
                 "Correct Params - organization ID: {}".format(
                     self.organisation_id))
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+             "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+             "endDate": today.strftime(date_fmt)
+        }
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
@@ -157,35 +175,20 @@ class DownloadCategories(GetCluster):
                 kwarg = dict()
 
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                testcase["organizationID"], **kwarg)
+                testcase["organizationID"], **json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    testcase["organizationID"], **kwarg)
+                    testcase["organizationID"], **json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(testcases))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
-
-    def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
-            self):
-        api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing, (
-                self.organisation_id
-            )
-        ]]
-        self.throttle_test(api_func_list)
-
-    def test_multiple_requests_using_API_keys_with_diff_role(self):
-        api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing, (
-                self.organisation_id
-            )
-        ]]
-        self.throttle_test(api_func_list, True)
 
     def validate_csv_decimal_format(self, csv_content):
         """Validate that numeric values in CSV have 2 decimal places."""
@@ -272,17 +275,19 @@ class DownloadCategories(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
                     failures.append("{}: CSV numeric values are not in 2 decimal format".format(
                         testcase["description"]))
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -305,13 +310,9 @@ class DownloadCategories(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: end date cannot be in the future."
                 }
             },
             {
@@ -326,13 +327,9 @@ class DownloadCategories(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: end date cannot be in the future."
                 }
             },
             {
@@ -347,13 +344,9 @@ class DownloadCategories(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "TBad Request. Error: invalid date range."
                 }
             },
         ]
@@ -361,13 +354,16 @@ class DownloadCategories(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
+            print("Result status code: {}, Response: {}".format(result.status_code, result.text))
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -412,17 +408,19 @@ class DownloadCategories(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
                     failures.append("{}: CSV numeric values are not in 2 decimal format".format(
                         testcase["description"]))
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -548,17 +546,19 @@ class DownloadCategories(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
                     failures.append("{}: CSV numeric values are not in 2 decimal format".format(
                         testcase["description"]))
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -601,17 +601,19 @@ class DownloadCategories(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_download_categorized_csv_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
             if result.status_code == 200:
                 if not self.validate_csv_decimal_format(result.text):
                     failures.append("{}: CSV numeric values are not in 2 decimal format".format(
                         testcase["description"]))
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)

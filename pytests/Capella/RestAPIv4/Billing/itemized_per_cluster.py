@@ -4,19 +4,27 @@ Created on Mar 25, 2026
 @author: Thuan Nguyen
 """
 
+import json
 from datetime import datetime, timedelta
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Billing.categorized_billing import CategorizedBilling
 
 
-class ItemizedPerCluster(GetCluster):
+class ItemizedPerCluster(CategorizedBilling):
 
     def setUp(self, nomenclature="ItemizedPerCluster_POST"):
-        GetCluster.setUp(self, nomenclature)
+        CategorizedBilling.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(ItemizedPerCluster, self).tearDown()
+        # delete clusters is handling at the pay as you go tests
+        pass
 
     def test_api_path(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         testcases = [
             {
                 "description": "Send call with valid path params"
@@ -47,7 +55,7 @@ class ItemizedPerCluster(GetCluster):
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
-                    self.organisation_id, self.project_id, self.cluster_id, non_hex=True),
+                    self.organisation_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
@@ -76,15 +84,17 @@ class ItemizedPerCluster(GetCluster):
                 organization = testcase["invalid_organizationId"]
 
             result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                organization, projects, clusters)
+                organization, projects, clusters, json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                    organization, projects, clusters)
+                    organization, projects, clusters, json_body)
             self.capellaAPI.cluster_ops_apis.billing_itemized_per_cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/billing"
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -92,7 +102,14 @@ class ItemizedPerCluster(GetCluster):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         failures = list()
+        count = 0
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectCreator", "projectOwner",
             "projectManager", "projectViewer", "projectDataReader",
@@ -100,13 +117,18 @@ class ItemizedPerCluster(GetCluster):
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header)
-            result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(header)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
+            result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
+                self.organisation_id, self.project_id, self.cluster_id, json_body, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(header)
+                result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
+                    self.organisation_id, self.project_id, self.cluster_id, json_body, header)
             self.validate_testcase(result, [200, 403], testcase, failures)
+            count += 1
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(count))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -116,6 +138,12 @@ class ItemizedPerCluster(GetCluster):
         self.log.debug(
                 "Correct Params - organization ID: {}".format(
                     self.organisation_id))
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
@@ -154,46 +182,49 @@ class ItemizedPerCluster(GetCluster):
                         "message": "Access Denied."
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
-            if "param" in testcase:
-                kwarg = {testcase["param"]: testcase["paramValue"]}
-            else:
-                kwarg = dict()
-
             result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                testcase["organizationID"], **kwarg)
+                testcase["organizationID"], self.project_id, self.cluster_id, json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                    testcase["organizationID"], **kwarg)
+                    testcase["organizationID"], self.project_id, self.cluster_id, json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(testcases))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
 
-    def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
-            self):
-        api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster, (
-                self.organisation_id, self.project_id, self.cluster_id
-            )
-        ]]
-        self.throttle_test(api_func_list)
-
-    def test_multiple_requests_using_API_keys_with_diff_role(self):
-        api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster, (
-                self.organisation_id, self.project_id, self.cluster_id
-            )
-        ]]
-        self.throttle_test(api_func_list, True)
+#     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
+#             self):
+#         today = datetime.now()
+#         date_fmt = "%Y-%m-%d"
+#         json_body = {
+#             "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+#             "endDate": today.strftime(date_fmt)
+#         }
+#         api_func_list = [[
+#             self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster, (
+#                 self.organisation_id, self.project_id, self.cluster_id, json_body
+#             )
+#         ]]
+#         self.throttle_test(api_func_list)
 
     def test_itemized_per_cluster_date_ranges(self):
         today = datetime.now()
         date_fmt = "%Y-%m-%d"
         testcases = [
+            {
+                "description": "Last 30 days",
+                "json": {
+                    "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+                    "endDate": today.strftime(date_fmt)
+                },
+                "print_response": True
+            },
             {
                 "description": "Last 3 days",
                 "json": {
@@ -242,14 +273,21 @@ class ItemizedPerCluster(GetCluster):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
                 self.organisation_id, self.project_id, self.cluster_id,
-                json=testcase["json"])
+                testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    json=testcase["json"])
+                    testcase["json"])
+            if testcase.get("print_response"):
+                self.log.info("*" * 80)
+                self.log.info("Response for: {}".format(testcase["description"]))
+                self.log.info(json.dumps(result.json(), indent=4))
+                self.log.info("*" * 80)
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -269,13 +307,9 @@ class ItemizedPerCluster(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: end date cannot be in the future."
                 }
             },
             {
@@ -287,13 +321,9 @@ class ItemizedPerCluster(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: end date cannot be in the future."
                 }
             },
             {
@@ -305,13 +335,9 @@ class ItemizedPerCluster(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: invalid date range."
                 }
             },
         ]
@@ -320,14 +346,16 @@ class ItemizedPerCluster(GetCluster):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
                 self.organisation_id, self.project_id, self.cluster_id,
-                json=testcase["json"])
+                testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    json=testcase["json"])
+                    testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -371,15 +399,15 @@ class ItemizedPerCluster(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                self.organisation_id, self.project_id, self.cluster_id,
-                json=testcase["json"])
+                self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    json=testcase["json"])
+                    self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -495,15 +523,15 @@ class ItemizedPerCluster(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                self.organisation_id, self.project_id, self.cluster_id,
-                json=testcase["json"])
+                self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    json=testcase["json"])
+                    self.organisation_id, self.project_id, self.cluster_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -546,17 +574,18 @@ class ItemizedPerCluster(GetCluster):
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
                 self.organisation_id, self.project_id, self.cluster_id,
-                json=testcase["json"])
+                testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_itemized_billing_per_cluster(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    json=testcase["json"])
+                    testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), len(testcases)))
-

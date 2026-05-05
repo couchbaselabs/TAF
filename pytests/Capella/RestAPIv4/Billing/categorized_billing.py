@@ -4,6 +4,7 @@ Created on Mar 25, 2026
 @author: Thuan Nguyen
 """
 
+import json
 from datetime import datetime, timedelta
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
@@ -14,9 +15,16 @@ class CategorizedBilling(GetCluster):
         GetCluster.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(CategorizedBilling, self).tearDown()
+        # delete clusters is handling at the pay as you go tests
+        pass
 
     def test_api_path(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+             "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+             "endDate": today.strftime(date_fmt)
+        }
         testcases = [
             {
                 "description": "Send call with valid path params"
@@ -73,15 +81,17 @@ class CategorizedBilling(GetCluster):
                 organization = testcase["invalid_organizationId"]
 
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                organization)
+                organization, json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    organization)
+                    organization, json_body)
             self.capellaAPI.cluster_ops_apis.billing_categorized_endpoint = \
                 "/v4/organizations/{}/billing"
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -97,7 +107,7 @@ class CategorizedBilling(GetCluster):
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
@@ -113,6 +123,12 @@ class CategorizedBilling(GetCluster):
         self.log.debug(
                 "Correct Params - organization ID: {}".format(
                     self.organisation_id))
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+             "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+             "endDate": today.strftime(date_fmt)
+        }
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
@@ -157,13 +173,15 @@ class CategorizedBilling(GetCluster):
                 kwarg = dict()
 
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                testcase["organizationID"], **kwarg)
+                testcase["organizationID"], **json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    testcase["organizationID"], **kwarg)
+                    testcase["organizationID"], **json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(testcases))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -172,25 +190,45 @@ class CategorizedBilling(GetCluster):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.get_categorized_billing, (
-                self.organisation_id
+                self.organisation_id, json_body
             )
         ]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.get_categorized_billing, (
-                self.organisation_id
+                self.organisation_id, json_body
             )
         ]]
-        self.throttle_test(api_func_list, True)
+        self.throttle_test(api_func_list, True, self.project_id)
 
     def test_categorized_billing_without_filter(self):
         today = datetime.now()
         date_fmt = "%Y-%m-%d"
         testcases = [
+            {
+                "description": "Last 30 days",
+                "json": {
+                    "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+                    "endDate": today.strftime(date_fmt)
+                },
+                "print_response": True
+            },
             {
                 "description": "Last 3 days",
                 "json": {
@@ -242,13 +280,9 @@ class CategorizedBilling(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: end date cannot be in the future."
                 }
             },
             {
@@ -260,13 +294,9 @@ class CategorizedBilling(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: end date cannot be in the future."
                 }
             },
             {
@@ -278,13 +308,9 @@ class CategorizedBilling(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: invalid date range."
                 }
             },
         ]
@@ -292,13 +318,20 @@ class CategorizedBilling(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
+            if testcase.get("print_response"):
+                self.log.info("*" * 80)
+                self.log.info("Response for: {}".format(testcase["description"]))
+                self.log.info(json.dumps(result.json(), indent=4))
+                self.log.info("*" * 80)
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -366,13 +399,15 @@ class CategorizedBilling(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_categorized_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
+        print("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)

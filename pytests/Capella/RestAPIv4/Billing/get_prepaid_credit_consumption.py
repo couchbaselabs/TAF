@@ -14,7 +14,8 @@ class GetPrepaidCreditConsumption(GetCluster):
         GetCluster.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(GetPrepaidCreditConsumption, self).tearDown()
+        # delete clusters is handling at the pay as you go tests
+        pass
 
     def test_api_path(self):
         testcases = [
@@ -22,17 +23,17 @@ class GetPrepaidCreditConsumption(GetCluster):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/billing",
+                "url": "/v3/organizations/{}/prePaidCredits",
                 "expected_status_code": 404,
                 "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/billing",
+                "url": "/v4/organizations/{}/prePaidCredits",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/billing/bill",
+                "url": "/v4/organizations/{}/prePaidCredits/bill",
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
@@ -73,13 +74,13 @@ class GetPrepaidCreditConsumption(GetCluster):
                 organization = testcase["invalid_organizationId"]
 
             result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                organization)
+                organization, page=1, perPage=10)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                    organization)
+                    organization, page=1, perPage=10)
             self.capellaAPI.cluster_ops_apis.billing_get_prepaid_credit_endpoint = \
-                "/v4/organizations/{}/billing"
+                "/v4/organizations/{}/prePaidCredits"
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -97,11 +98,13 @@ class GetPrepaidCreditConsumption(GetCluster):
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header)
-            result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(header)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
+            result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
+                self.organisation_id, page=1, perPage=10, headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(header)
+                result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
+                    self.organisation_id, page=1, perPage=10, headers=header)
             self.validate_testcase(result, [200, 403], testcase, failures)
 
         if failures:
@@ -157,11 +160,11 @@ class GetPrepaidCreditConsumption(GetCluster):
                 kwarg = dict()
 
             result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                testcase["organizationID"], **kwarg)
+                testcase["organizationID"], page=1, perPage=10)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
-                    testcase["organizationID"], **kwarg)
+                    testcase["organizationID"], page=1, perPage=10)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -172,20 +175,28 @@ class GetPrepaidCreditConsumption(GetCluster):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
+        json_body = {
+            "page": 1,
+            "perPage": 10
+        }
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption, (
-                self.organisation_id
+                self.organisation_id, json_body
             )
         ]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
+        json_body = {
+            "page": 1,
+            "perPage": 10
+        }
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption, (
-                self.organisation_id
+                self.organisation_id, json_body
             )
         ]]
-        self.throttle_test(api_func_list, True)
+        self.throttle_test(api_func_list, True, self.project_id)
 
     def test_pagination_valid_params(self):
         testcases = [
@@ -227,14 +238,10 @@ class GetPrepaidCreditConsumption(GetCluster):
                 "perPage": 0,
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all required parameters are correctly provided.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Pagination per page must be greater than 1 and less than or equal to 100"
                 }
             },
             {
@@ -243,14 +250,10 @@ class GetPrepaidCreditConsumption(GetCluster):
                 "perPage": 120,
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all required parameters are correctly provided.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Pagination per page must be greater than 1 and less than or equal to 100"
                 }
             },
             {
@@ -259,14 +262,10 @@ class GetPrepaidCreditConsumption(GetCluster):
                 "perPage": -5,
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all required parameters are correctly provided.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Pagination per page must be greater than 1 and less than or equal to 100"
                 }
             },
             {
@@ -275,14 +274,10 @@ class GetPrepaidCreditConsumption(GetCluster):
                 "perPage": 10,
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all required parameters are correctly provided.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Pagination page must be greater than 0."
                 }
             },
             {
@@ -291,14 +286,10 @@ class GetPrepaidCreditConsumption(GetCluster):
                 "perPage": 10,
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all required parameters are correctly provided.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Pagination page must be greater than 0."
                 }
             },
         ]
@@ -308,6 +299,7 @@ class GetPrepaidCreditConsumption(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(
                 self.organisation_id, page=testcase["page"],
                 perPage=testcase["perPage"])
+            print("\n***** Response: {}, {}".format(result.status_code, result.text))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_prepaid_credit_consumption(

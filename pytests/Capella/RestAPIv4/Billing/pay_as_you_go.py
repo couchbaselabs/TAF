@@ -5,18 +5,25 @@ Created on Mar 25, 2026
 """
 
 from datetime import datetime, timedelta
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Billing.categorized_billing import CategorizedBilling
 
 
-class PayAsYouGo(GetCluster):
+class PayAsYouGo(CategorizedBilling):
 
     def setUp(self, nomenclature="PayAsYouGo_GET"):
-        GetCluster.setUp(self, nomenclature)
+        CategorizedBilling.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(PayAsYouGo, self).tearDown()
+        print("Tearing down the test environment...")
+        super(CategorizedBilling, self).tearDown()
 
     def test_api_path(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         testcases = [
             {
                 "description": "Send call with valid path params"
@@ -73,15 +80,17 @@ class PayAsYouGo(GetCluster):
                 organization = testcase["invalid_organizationId"]
 
             result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                organization)
+                organization, json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                    organization)
+                    organization, json_body)
             self.capellaAPI.cluster_ops_apis.billing_pay_as_you_go_endpoint = \
                 "/v4/organizations/{}/billing"
             self.validate_testcase(result, [200], testcase, failures)
 
+        self.log.info("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -89,6 +98,12 @@ class PayAsYouGo(GetCluster):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectCreator", "projectOwner",
@@ -97,11 +112,13 @@ class PayAsYouGo(GetCluster):
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header)
-            result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(header)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
+            result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
+                self.organisation_id, json_body, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(header)
+                result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
+                    self.organisation_id, json_body, header)
             self.validate_testcase(result, [200, 403], testcase, failures)
 
         if failures:
@@ -113,6 +130,12 @@ class PayAsYouGo(GetCluster):
         self.log.debug(
                 "Correct Params - organization ID: {}".format(
                     self.organisation_id))
+        today = datetime.now()
+        date_fmt = "%Y-%m-%d"
+        json_body = {
+            "startDate": (today - timedelta(days=30)).strftime(date_fmt),
+            "endDate": today.strftime(date_fmt)
+        }
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
@@ -157,13 +180,15 @@ class PayAsYouGo(GetCluster):
                 kwarg = dict()
 
             result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                testcase["organizationID"], **kwarg)
+                testcase["organizationID"], json_body)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                    testcase["organizationID"], **kwarg)
+                    testcase["organizationID"], json_body)
             self.validate_testcase(result, [200], testcase, failures)
 
+        self.log.info("*" * 80)
+        self.log.info("Total testcases: {}".format(testcases))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -172,20 +197,28 @@ class PayAsYouGo(GetCluster):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
+        json_body = {
+            "page": 1,
+            "perPage": 10
+        }
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing, (
-                self.organisation_id
+                self.organisation_id, json_body
             )
         ]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
+        json_body = {
+                    "page": 1,
+                    "perPage": 10
+                }
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing, (
-                self.organisation_id
+                self.organisation_id, json_body
             )
         ]]
-        self.throttle_test(api_func_list, True)
+        self.throttle_test(api_func_list, True, self.project_id)
 
     def test_pay_as_you_go(self):
         today = datetime.now()
@@ -310,13 +343,15 @@ class PayAsYouGo(GetCluster):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                self.organisation_id, json=testcase["json"])
+                self.organisation_id, testcase["json"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.get_pay_as_you_go_billing(
-                    self.organisation_id, json=testcase["json"])
+                    self.organisation_id, testcase["json"])
             self.validate_testcase(result, [200], testcase, failures)
 
+        self.log.info("*" * 80)
+        self.log.info("Total testcases: {}".format(len(testcases)))
         if failures:
             for fail in failures:
                 self.log.warning(fail)
