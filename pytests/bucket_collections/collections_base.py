@@ -24,6 +24,7 @@ from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.fusion.fusion_base import FusionBase
+from TestInput import TestInputSingleton
 from pytests.bucket_collections.collection_scope_number_manager import CollectionScopeNumberManager
 
 from couchbase.exceptions import InvalidIndexException, \
@@ -230,24 +231,69 @@ class CollectionBase(ClusterSetup, FusionBase):
 
         # Clean up continuous backup folder
         if self.cont_bkp_test == "NFS":
-            shell = RemoteMachineShellConnection(self.cluster.master)
-            try:
-                self.log.info("Removing continuous backup folder: %s" % self.continuous_backup_location)
-                output, error = shell.execute_command(f"rm -rf {self.continuous_backup_location}")
-                if error:
-                    self.log.warning("Error removing continuous backup folder: %s" % error)
-            except Exception as e:
-                self.log.warning("Exception during cleanup: %s" % str(e))
 
-            # Clean up backup folders
-            try:
-                if hasattr(self, 'repo_name') and self.repo_name:
-                    self.log.info("Removing backup repository")
-                    shell.execute_command(f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}")
-            except Exception as e:
-                self.log.warning(f"Exception during cleanup: {e}")
+            if self.is_test_failed():
+                self.log.warning("Test failed, skipping cleanup of continuous backup folder to preserve data for investigation: %s" % self.continuous_backup_location)
+                if self.get_cbcollect_info:
+                    self._collect_backup_logs_on_failure()
+            else:
+                shell = RemoteMachineShellConnection(self.cluster.master)
+                try:
+                    self.log.info("Removing continuous backup folder: %s" % self.continuous_backup_location)
+                    output, error = shell.execute_command(f"rm -rf {self.continuous_backup_location}")
+                    if error:
+                        self.log.warning("Error removing continuous backup folder: %s" % error)
+                except Exception as e:
+                    self.log.warning("Exception during cleanup: %s" % str(e))
+
+                # Clean up backup folders
+                try:
+                    if hasattr(self, 'repo_name') and self.repo_name:
+                        self.log.info("Removing backup repository")
+                        shell.execute_command(f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}")
+                except Exception as e:
+                    self.log.warning(f"Exception during cleanup: {e}")
 
         super(CollectionBase, self).tearDown()
+
+    def _collect_backup_logs_on_failure(self):
+        """
+        Collects cbbackupmgr and cbcontbk logs on test failure.
+        Only runs on Linux nodes. Logs are collected to /data/tmp on the remote
+        node and then copied to the local log path.
+        """
+        log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+        remote_tmp_dir = "/data/tmp"
+
+        collectors = [
+            ("cbbackupmgr", self.backup_mgr,
+             lambda mgr, tmp: mgr.collect_logs(archive_dir=self.backup_archive_dir,
+                                               output_dir=tmp)),
+            ("cbcontbk", self.cont_bk_mgr,
+             lambda mgr, tmp: mgr.collect_logs(location=self.continuous_backup_location,
+                                               temp_dir=tmp)),
+        ]
+
+        for name, mgr, collect_fn in collectors:
+            try:
+                shell = mgr.shellConn
+                os_info = shell.extract_remote_info()
+                if os_info.type.lower() != "linux":
+                    self.log.info(f"Skipping {name} log collection: OS is not Linux")
+                    continue
+
+                self.log.info(f"Collecting {name} logs for investigation")
+                shell.execute_command(f"mkdir -p {remote_tmp_dir}")
+                collect_fn(mgr, remote_tmp_dir)
+
+                output, _ = shell.execute_command(f"ls {remote_tmp_dir}/*.zip 2>/dev/null")
+                for log_file in output:
+                    log_file = log_file.strip()
+                    if log_file:
+                        self.log.info(f"Copying {log_file} to {log_path}")
+                        shell.get_file(remote_tmp_dir, log_file.split("/")[-1], log_path)
+            except Exception as e:
+                self.log.error(f"Exception during {name} log collection: {e}")
 
     def collection_setup(self):
         ttl_buckets = [
