@@ -45,6 +45,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
         loading_spec["doc_crud"][
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
+        loading_spec["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         if op_type == DocLoading.Bucket.DocOps.CREATE:
             loading_spec["doc_crud"][
