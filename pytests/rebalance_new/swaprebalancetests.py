@@ -295,9 +295,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
             self.assertTrue(otp_node, msg % server.ip)
 
         if self.swap_orchestrator:
-            self.rest = ClusterRestAPI(new_swap_servers[0])
-            self.reb_util = RebalanceUtil(new_swap_servers[0])
             self.cluster.master = new_swap_servers[0]
+            self.rest = ClusterRestAPI(self.cluster.master)
+            self.reb_util = RebalanceUtil(self.cluster)
 
         self.log.info("SWAP REBALANCE PHASE")
         status, content = self.rest.rebalance(
