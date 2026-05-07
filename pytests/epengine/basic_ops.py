@@ -727,7 +727,8 @@ class basic_ops(ClusterSetup):
         max_gets = 2500000000
         bucket = self.cluster.buckets[0]
         doc_gen = doc_generator(self.key, 0, self.num_items,
-                                doc_size=1)
+                                doc_size=1,
+                                load_using=self.load_docs_using)
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=self.process_concurrency,
@@ -830,11 +831,12 @@ class basic_ops(ClusterSetup):
         for node in kv_nodes:
             cb_stat_obj[node] = Cbstats(node)
 
-        doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=1)
+        doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=1,
+                                load_using=self.load_docs_using)
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=500, process_concurrency=self.process_concurrency,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
         self.task_manager.get_task_result(create_task)
 
         mc_stat_reset_thread = Thread(target=reset_mcstat, args=[bucket.name])
@@ -1384,7 +1386,8 @@ class basic_ops(ClusterSetup):
         small_bucket = self.cluster.buckets[1]
 
         # Big bucket docs generation
-        doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=10)
+        doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=10,
+                                load_using=self.load_docs_using)
         load_task = self.task.async_load_gen_docs(
             self.cluster, big_bucket, doc_gen,
             DocLoading.Bucket.DocOps.CREATE, 0,
@@ -1400,7 +1403,8 @@ class basic_ops(ClusterSetup):
         self.task_manager.get_task_result(load_task)
 
         # Small bucket docs generation
-        doc_gen_small = doc_generator(self.key, 0, 500, doc_size=10)
+        doc_gen_small = doc_generator(self.key, 0, 500, doc_size=10,
+                                      load_using=self.load_docs_using)
         load_task_2 = self.task.async_load_gen_docs(
             self.cluster, small_bucket, doc_gen_small,
             DocLoading.Bucket.DocOps.CREATE, 0,
@@ -1484,7 +1488,8 @@ class basic_ops(ClusterSetup):
                                           vbucket_type="active")
         doc_gen = doc_generator(self.key, 0, 10000,
                                 doc_size=1, vbuckets=bucket.numVBuckets,
-                                target_vbucket=active_vbs)
+                                target_vbucket=active_vbs,
+                                load_using=self.load_docs_using)
 
         # Load with doc_ttl set
         self.log.info("Setting doc_ttl=1 for %s docs" % 10000)

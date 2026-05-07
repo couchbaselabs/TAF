@@ -228,7 +228,8 @@ class Bucket_DGM_Tests(ClusterSetup):
                 mutation_type="ADD")
             read_gen = doc_generator(
                 self.key, op_index, op_index+op_batch_size,
-                key_size=self.key_size, doc_size=0)
+                key_size=self.key_size, doc_size=0,
+                load_using=self.load_docs_using)
 
             create_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, create_gen, "create", 0,

@@ -589,7 +589,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.fail("Test requires valid durability level for sync_writes")
 
         doc_gen = doc_generator(self.key, self.num_items, self.num_items*3,
-                                key_size=10, doc_size=5)
+                                key_size=10, doc_size=5,
+                                load_using=self.load_docs_using)
         self.log.info("Loading %s keys into the bucket" % (self.num_items*2))
         load_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen,
