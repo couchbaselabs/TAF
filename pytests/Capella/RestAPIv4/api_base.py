@@ -368,7 +368,7 @@ class APIBase(CouchbaseBaseTest):
             }
         }
         cluster_template = self.input.param("cluster_template",
-                                            "GCP_n2_highmem_4")
+                                            "AWS_r5_xlarge")
         if TestInputSingleton.input.capella.get("clusters", None):
             self.cluster_id = TestInputSingleton.input.capella.get("clusters")
             if isinstance(self.cluster_id, dict):
