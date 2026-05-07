@@ -464,7 +464,8 @@ class DocLoaderUtils(object):
                           generic_key, mutation_num=0,
                           target_vbuckets="all", type="default",
                           doc_size=256, randomize_value=False,
-                          randomize_doc_size=False, key_size=None):
+                          randomize_doc_size=False, key_size=None,
+                          load_using="default_loader"):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -522,7 +523,8 @@ class DocLoaderUtils(object):
                                      mutate=mutation_num,
                                      randomize_value=randomize_value,
                                      randomize_doc_size=randomize_doc_size,
-                                     key_size=key_size)
+                                     key_size=key_size,
+                                     load_using=load_using)
         else:
             json_generator = JsonGenerator()
             if type == "employee":
@@ -631,7 +633,8 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def create_doc_gens_for_spec(buckets, input_spec, mutation_num=0,
-                                 op_details=dict()):
+                                 op_details=dict(),
+                                 load_using="default_loader"):
         """
         To perform the set of CRUD operations based on the given input spec.
         :param buckets: List of Bucket objects which needs to be considered
@@ -732,7 +735,8 @@ class DocLoaderUtils(object):
                                         type=c_crud_data[op_type]["doc_gen_type"],
                                         randomize_value=randomize_value,
                                         randomize_doc_size=randomize_doc_size,
-                                        key_size=doc_key_size)
+                                        key_size=doc_key_size,
+                                        load_using=load_using)
                             else:
                                 c_crud_data[op_type]["xattr_test"] = \
                                     is_xattr_test
@@ -1209,7 +1213,8 @@ class DocLoaderUtils(object):
         crud_spec = DocLoaderUtils.create_doc_gens_for_spec(buckets,
                                                             input_spec,
                                                             mutation_num,
-                                                            op_details)
+                                                            op_details,
+                                                            load_using)
         sleep(15, "Wait for SDK to warmup")
         doc_loading_task = DocLoaderUtils.perform_doc_loading_for_spec(
             task_manager,
