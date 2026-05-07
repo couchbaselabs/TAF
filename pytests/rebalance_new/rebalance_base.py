@@ -212,11 +212,20 @@ class RebalanceBaseTest(BaseTestCase):
         bucket_count = len(self.cluster.buckets)
         max_clients = self.task_manager.number_of_threads
         clients_per_bucket = ceil(max_clients // bucket_count)
-        for bucket in self.cluster.buckets:
-            self.cluster.sdk_client_pool.create_clients(
-                self.cluster, bucket,
-                req_clients=clients_per_bucket,
-                compression_settings=self.sdk_compression)
+        if self.load_docs_using == "sirius_java_sdk":
+            self.log.info("Creating SDK clients in Java side")
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master,
+                    self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name, req_clients=clients_per_bucket)
+        else:
+            for bucket in self.cluster.buckets:
+                self.cluster.sdk_client_pool.create_clients(
+                    self.cluster, bucket,
+                    req_clients=clients_per_bucket,
+                    compression_settings=self.sdk_compression)
 
         CollectionBase.load_data_from_spec_file(self, "initial_load")
 
