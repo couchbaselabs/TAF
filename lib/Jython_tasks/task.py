@@ -3582,9 +3582,9 @@ class StatsWaitTask(Task):
             self.stop = True
 
     def _compare(self, cmp_type, a, b):
-        if isinstance(b, (int, long)) and a.isdigit():
-            a = long(a)
-        elif isinstance(b, (int, long)) and not a.isdigit():
+        if isinstance(b, int) and a.isdigit():
+            a = int(a)
+        elif isinstance(b, int) and not a.isdigit():
             return False
         self.test_log.debug("Comparing %s %s %s" % (a, cmp_type, b))
         if (cmp_type == StatsWaitTask.EQUAL and a == b) or \

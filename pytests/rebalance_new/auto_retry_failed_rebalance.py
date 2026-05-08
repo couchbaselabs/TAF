@@ -82,7 +82,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             mutation_num=0,
             async_load=True,
             batch_size=self.batch_size,
-            process_concurrency=self.process_concurrency)
+            process_concurrency=self.process_concurrency,
+            load_using=self.load_docs_using)
         return [tasks, cont_load_task]
 
     def data_validation(self, tasks):
