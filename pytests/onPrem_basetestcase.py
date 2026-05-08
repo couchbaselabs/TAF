@@ -194,6 +194,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
         expected_cont_bkp_test_values = [None, "single_node", "NFS"]
         if self.cont_bkp_test not in expected_cont_bkp_test_values:
             self.fail(f"Invalid value for cont_bkp_test. Expected: {expected_cont_bkp_test_values}. Got: {self.cont_bkp_test}")
+        self.retention_test = self.input.param("retention_test", False)
+        self.retention_check_mins = self.input.param("retention_check_mins", 5)
+        self.retention_period_unsafe = self.input.param("retention_period_unsafe", "5m")
         self.continuous_backup_enabled = self.input.param("continuous_backup_enabled", False)
         self.continuous_backup_interval = self.input.param("continuous_backup_interval", 5)
         # Location where continuous backup files will be stored. This can be local path or NFS mount depending on the test configuration
@@ -545,6 +548,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 if result == "unknown pool":
                     self.skip_cluster_reset = False
                 if not self.skip_cluster_reset:
+                    if self.retention_test:
+                        cluster.env_variables["CB_CONTBK_RETENTION_CHECK_MINS"] = self.retention_check_mins
+                        cluster.env_variables["CB_CONTBK_RETENTION_PERIOD_UNSAFE"] = self.retention_period_unsafe
                     services = None
                     if self.services_init:
                         services = str(self.services_init.split("-")[0]) \

@@ -3588,6 +3588,7 @@ class BucketUtils(ScopeUtils):
                                continuous_backup_enabled=None,
                                continuous_backup_location=None,
                                continuous_backup_interval=None,
+                               continuous_backup_retention_period=None,
                                magma_key_tree_data_block_size=None,
                                magma_seq_tree_data_block_size=None,
                                durability_impossible_fallback=None,
@@ -3610,6 +3611,7 @@ class BucketUtils(ScopeUtils):
             continuous_backup_enabled=continuous_backup_enabled,
             continuous_backup_location=continuous_backup_location,
             continuous_backup_interval=continuous_backup_interval,
+            continuous_backup_retention_period=continuous_backup_retention_period,
             magma_key_tree_data_block_size=magma_key_tree_data_block_size,
             magma_seq_tree_data_block_size=magma_seq_tree_data_block_size,
             storageBackend=storageBackend,
@@ -3640,6 +3642,7 @@ class BucketUtils(ScopeUtils):
         - continuousBackupEnabled: boolean
         - continuousBackupLocation: string
         - continuousBackupInterval: integer (minutes)
+        - continuousBackupRetentionPeriod: integer (hours)
         - historyRetentionSeconds: integer
         - historyRetentionCollectionDefault: boolean
         - historyRetentionBytes: integer

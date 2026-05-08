@@ -47,6 +47,9 @@ class CouchbaseCluster:
         self.bucketDNNodes = dict()
         self.bucketNodes = dict()
 
+        # Extra environment variables to set on cluster nodes
+        self.env_variables = dict()
+
 
 class OtpNode(object):
     def __init__(self, id='', status=''):

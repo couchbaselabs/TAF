@@ -530,6 +530,7 @@ class BucketHelper(BucketRestApi):
                             continuous_backup_enabled=None,
                             continuous_backup_location=None,
                             continuous_backup_interval=None,
+                            continuous_backup_retention_period=None,
                             magma_key_tree_data_block_size=None,
                             magma_seq_tree_data_block_size=None,
                             durability_impossible_fallback=None,
@@ -583,6 +584,9 @@ class BucketHelper(BucketRestApi):
         if continuous_backup_interval is not None:
             params_dict[Bucket.continuousBackupInterval] \
                 = continuous_backup_interval
+        if continuous_backup_retention_period is not None:
+            params_dict[Bucket.continuousBackupRetentionPeriod] \
+                = continuous_backup_retention_period
         if magma_key_tree_data_block_size is not None:
             params_dict[Bucket.magmaKeyTreeDataBlockSize] \
                 = magma_key_tree_data_block_size
@@ -630,6 +634,7 @@ class BucketHelper(BucketRestApi):
         - continuousBackupEnabled: boolean
         - continuousBackupLocation: string
         - continuousBackupInterval: integer (minutes)
+        - continuousBackupRetentionPeriod: integer (hours)
         - historyRetentionSeconds: integer
         - historyRetentionCollectionDefault: boolean
         - historyRetentionBytes: integer
@@ -639,6 +644,7 @@ class BucketHelper(BucketRestApi):
             "continuousBackupEnabled": bucket_info.get(Bucket.continuousBackupEnabled),
             "continuousBackupLocation": bucket_info.get(Bucket.continuousBackupLocation),
             "continuousBackupInterval": bucket_info.get(Bucket.continuousBackupInterval),
+            "continuousBackupRetentionPeriod": bucket_info.get(Bucket.continuousBackupRetentionPeriod),
             "historyRetentionSeconds": bucket_info.get(Bucket.historyRetentionSeconds),
             "historyRetentionCollectionDefault": bucket_info.get(Bucket.historyRetentionCollectionDefault),
             "historyRetentionBytes": bucket_info.get(Bucket.historyRetentionBytes)

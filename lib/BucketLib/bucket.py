@@ -161,6 +161,7 @@ class Bucket(object):
     continuousBackupEnabled = "continuousBackupEnabled"
     continuousBackupLocation = "continuousBackupLocation"
     continuousBackupInterval = "continuousBackupInterval"
+    continuousBackupRetentionPeriod = "continuousBackupRetentionPeriod"
     magmaKeyTreeDataBlockSize = "magmaKeyTreeDataBlockSize"
     magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
     durabilityImpossibleFallback = "durabilityImpossibleFallback"
@@ -282,6 +283,8 @@ class Bucket(object):
             Bucket.continuousBackupLocation, None)
         self.continuousBackupInterval = new_params.get(
             Bucket.continuousBackupInterval, None)
+        self.continuousBackupRetentionPeriod = new_params.get(
+            Bucket.continuousBackupRetentionPeriod, None)
         self.magmaKeyTreeDataBlockSize = new_params.get(
             Bucket.magmaKeyTreeDataBlockSize, 4096)
         self.magmaSeqTreeDataBlockSize = new_params.get(
