@@ -10,6 +10,7 @@ from rebalance_utils.rebalance_util import RebalanceUtil
 from remote.remote_util import RemoteUtilHelper
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
+from throttling_helper import ThrottlingHelper
 
 GRACEFUL = "graceful"
 
@@ -25,6 +26,10 @@ class FailoverTests(FailoverBaseTest):
             doc_size=self.doc_size,
             doc_type=self.doc_type)
         self.server_map = self.get_server_map()
+
+        # Initialize Throttling Helper
+        self.throttling_helper = ThrottlingHelper(self.cluster.master, self.log)
+        self.throttle_stats_before = {}
 
     def tearDown(self):
         super(FailoverTests, self).tearDown()
@@ -54,6 +59,22 @@ class FailoverTests(FailoverBaseTest):
         self.add_back_flag = True
         self.common_test_body('normal', rebalance_type="swap")
 
+    def validate_throttling_after_failover(self):
+        """
+        Validate rate limiting stats after failover and rebalance.
+        """
+        if self.throttling_helper.is_rate_limiting_enabled(self.input):
+            for bucket in self.buckets:
+                throttle_stats_after = self.throttling_helper.get_throttle_stats(bucket.name)
+                self.throttling_helper.log_throttle_stats_comparison(
+                    bucket.name, "Post-failover", throttle_stats_after)
+
+                # Failover/Rebalance operations should not be throttled
+                self.assertTrue(
+                    self.throttling_helper.verify_no_client_throttling_during_operation(
+                        bucket.name, self.throttle_stats_before[bucket.name], throttle_stats_after),
+                    f"Internal failover/rebalance operations on {bucket.name} were unexpectedly throttled")
+
     def common_test_body(self, failover_reason, rebalance_type=None):
         """
             Main Test body which contains the flow of the failover basic steps
@@ -77,6 +98,15 @@ class FailoverTests(FailoverBaseTest):
                       .format(self.master.ip))
         self.print_test_params(failover_reason)
         self.rest = ClusterRestAPI(self.master)
+
+        # Capture throttle stats before failover
+        if self.throttling_helper.is_rate_limiting_enabled(self.input):
+            for bucket in self.buckets:
+                self.throttle_stats_before[bucket.name] = \
+                    self.throttling_helper.get_throttle_stats(bucket.name)
+                self.throttling_helper.log_throttle_stats_comparison(
+                    bucket.name, "Pre-failover", self.throttle_stats_before[bucket.name])
+
         self.nodes = self.cluster_util.get_otp_nodes(self.master)
         # Set the data path for the cluster
         status, content = self.rest.node_details()
@@ -346,6 +376,8 @@ class FailoverTests(FailoverBaseTest):
                 num_replicas=self.num_replicas,
                 std=20.0)
         self.log.info("End VERIFICATION for Rebalance after Failover Only")
+        # Validate throttling after failover
+        self.validate_throttling_after_failover()
 
     def run_add_back_operation_and_verify(self, chosen, prev_vbucket_stats,
                                           record_static_data_set,
@@ -527,6 +559,8 @@ class FailoverTests(FailoverBaseTest):
                 std=20.0)
 
         self.log.info("End VERIFICATION for Add-back and rebalance")
+        # Validate throttling after failover
+        self.validate_throttling_after_failover()
 
     def print_test_params(self, failover_reason):
         """ Method to print test parameters """

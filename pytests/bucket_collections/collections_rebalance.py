@@ -8,6 +8,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
+from throttling_helper import ThrottlingHelper
 
 from couchbase_helper.tuq_helper import N1QLHelper
 from pytests.N1qlTransaction.N1qlBase import N1qlBase
@@ -26,6 +27,10 @@ class CollectionsRebalance(CollectionBase):
         self.bucket_util._expiry_pager(self.cluster)
         self.bucket = self.cluster.buckets[0]
         self.rest = ClusterRestAPI(self.cluster.master)
+
+        # Initialize Throttling Helper
+        self.throttling_helper = ThrottlingHelper(self.cluster.master, self.log)
+        self.throttle_stats_before = {}
 
         # Verify FBR (File-Based Rebalance) setting and configure if needed
         self.verify_and_configure_fbr()
@@ -1155,9 +1160,30 @@ class CollectionsRebalance(CollectionBase):
             failover_nodes = self.cluster.servers[:self.nodes_init][-self.nodes_failover:]
         return failover_nodes
 
+    def validate_rate_limiting_after_rebalance(self):
+        """
+        Validate rate limiting stats after rebalance operation.
+        """
+        if self.throttling_helper.is_rate_limiting_enabled(self.input):
+            throttle_stats_after = self.throttling_helper.get_throttle_stats(self.bucket.name)
+            self.throttling_helper.log_throttle_stats_comparison(
+                self.bucket.name, "Post-rebalance", throttle_stats_after)
+
+            # Rebalance operations should not be throttled
+            self.assertTrue(
+                self.throttling_helper.verify_no_client_throttling_during_operation(
+                    self.bucket.name, self.throttle_stats_before, throttle_stats_after),
+                "Internal rebalance operations were unexpectedly throttled")
+
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = (None, None)
         rebalance = None
+
+        # Capture throttle stats before rebalance
+        if self.throttling_helper.is_rate_limiting_enabled(self.input):
+            self.throttle_stats_before = self.throttling_helper.get_throttle_stats(self.bucket.name)
+            self.throttling_helper.log_throttle_stats_comparison(
+                self.bucket.name, "Pre-rebalance", self.throttle_stats_before)
 
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":
@@ -1297,6 +1323,9 @@ class CollectionsRebalance(CollectionBase):
             self.update_replica_and_validate_vbuckets()
         if self.input.param("test_oso_backfill", False):
             CollectionBase.recreate_indexes_on_each_collection(self, 1)
+
+        # Validate rate limiting after rebalance
+        self.validate_rate_limiting_after_rebalance()
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")
