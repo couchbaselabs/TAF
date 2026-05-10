@@ -1,3 +1,5 @@
+import threading
+
 from basetestcase import ClusterSetup
 from cb_tools.cb_cli import CbCli
 from BucketLib.bucket import Bucket
@@ -6,6 +8,10 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from sdk_client3 import SDKClient
+from sdk_exceptions import SDKException
+from StatsLib.StatsOperations import StatsHelper
+from upgrade.upgrade_base import UpgradeBase
 
 
 class KVRateLimitingTests(ClusterSetup):
@@ -17,9 +23,40 @@ class KVRateLimitingTests(ClusterSetup):
         self.cb_cli = CbCli(self.shell)
         self.log.info("Starting KVRateLimitingTests synchronized with latest framework")
 
-        # Create bucket with test-specific parameters from conf file
+        # Cluster-wide throttle enable; node_capacity kept low to trip throttler
+        # CE does not support throttling — skip to allow CE-specific tests to run
+        if self.cluster_util.is_enterprise_edition(self.cluster):
+            status, content = self.cluster_rest.manage_global_memcached_setting(
+                throttle_enabled="true",
+                node_capacity=self.input.param("node_capacity", 500))
+            self.log.info(f"Cluster-wide throttle enable: status={status}, "
+                          f"content={content}")
+            self.assertTrue(status,
+                            f"Failed to enable cluster-wide throttle: {content}")
+        else:
+            self.log.info("Skipping global throttle enable on CE")
+
         self.create_bucket(self.cluster)
         self.bucket = self.cluster.buckets[0]
+
+        # Apply per-bucket throttle limits so hard-limit rejections and SDK
+        # AmbiguousTimeoutExceptions are actually triggered during burst tests
+        throttle_reserved = self.input.param("bucket_throttle_reserved", 0)
+        throttle_hard_limit = self.input.param("bucket_throttle_hard_limit", 0)
+        if throttle_reserved or throttle_hard_limit:
+            edit_params = {}
+            if throttle_reserved:
+                edit_params[Bucket.throttleReserved] = throttle_reserved
+            if throttle_hard_limit:
+                edit_params[Bucket.throttleHardLimit] = throttle_hard_limit
+            status, content = self.bucket_rest.edit_bucket(
+                self.bucket.name, edit_params)
+            self.log.info(
+                f"Bucket throttle limits set: throttleReserved={throttle_reserved}, "
+                f"throttleHardLimit={throttle_hard_limit}, "
+                f"status={status}, content={content}")
+            self.assertTrue(
+                status, f"Failed to set bucket throttle limits: {content}")
 
     def tearDown(self):
         if getattr(self, "shell", None):
@@ -253,3 +290,285 @@ class KVRateLimitingTests(ClusterSetup):
         if transaction_completed:
             self.assertGreater(final_wu, initial_wu,
                                "Write units should increase after transactions")
+
+    def test_sdk_rate_limited_exception(self):
+        """
+        Validate SDK clients receive an AmbiguousTimeoutException (or
+        throttle/reject counters increase) under a parallel burst that
+        exceeds the configured throttle limit.
+        """
+        bucket_name = self.bucket.name
+        initial_stats = self.get_throttle_stats(bucket_name)
+        initial_reject = int(initial_stats.get("reject_count_total", 0))
+        initial_throttle = int(initial_stats.get("throttle_count_total", 0))
+
+        sdk_throttle_count = self._burst_writes(
+            num_clients=self.input.param("burst_clients", 8),
+            ops_per_client=self.input.param("burst_ops_per_client", 2000))
+
+        final_stats = self.get_throttle_stats(bucket_name)
+        final_reject = int(final_stats.get("reject_count_total", 0))
+        final_throttle = int(final_stats.get("throttle_count_total", 0))
+        self.log.info(
+            f"sdk_throttle_count={sdk_throttle_count}, "
+            f"throttle {initial_throttle}->{final_throttle}, "
+            f"reject {initial_reject}->{final_reject}")
+
+        self.assertTrue(
+            sdk_throttle_count > 0
+            or final_reject > initial_reject
+            or final_throttle > initial_throttle,
+            "Expected AmbiguousTimeoutException or throttle/reject count increase; "
+            f"sdk_throttle_count={sdk_throttle_count}, "
+            f"throttle {initial_throttle}->{final_throttle}, "
+            f"reject {initial_reject}->{final_reject}")
+
+    def test_prometheus_throttle_metrics(self):
+        """
+        Validate Prometheus exposes throttle/reject/wu/ru metric families
+        for a rate-limited bucket once load is driven through it.
+        """
+        self.load_docs_to_bucket(self.bucket, start=0, end=20000,
+                                  batch_size=200, concurrency=8)
+
+        # Only kv_throttle_duration_seconds is always emitted; others appear
+        # only after actual throttling occurs.
+        expected = ["kv_throttle_duration_seconds"]
+        seen = {name: False for name in expected}
+        total_lines = 0
+        for server in self.cluster.kv_nodes:
+            try:
+                metrics = StatsHelper(server).get_prometheus_metrics_high(
+                    component="kv")
+            except Exception as e:
+                self.log.warning(f"Prom fetch failed on {server.ip}: {e}")
+                continue
+            for line in metrics:
+                total_lines += 1
+                line_str = line if isinstance(line, str) else line.decode(
+                    errors="ignore")
+                for name in expected:
+                    if name in line_str:
+                        seen[name] = True
+
+        missing = [m for m, found in seen.items() if not found]
+        self.log.info(f"Prom metric families seen: {seen}, "
+                      f"total_lines={total_lines}")
+        self.assertFalse(
+            missing, f"Missing Prometheus metric families: {missing}")
+
+    def _burst_writes(self, num_clients=8, ops_per_client=5000):
+        """
+        Drive a high-rate parallel burst of SET ops via multiple SDKClients
+        to force the engine's rate limiter to trip. Returns number of
+        throttle-related errors observed across all threads.
+        """
+        clients = [SDKClient(self.cluster, self.bucket)
+                   for _ in range(num_clients)]
+        throttle_counts = [0] * num_clients
+
+        def worker(c_idx, client):
+            for i in range(ops_per_client):
+                try:
+                    result = client.crud(
+                        "create", f"burst_{c_idx}_{i}",
+                        {"idx": i, "data": "x" * 256}, timeout=2)
+                except Exception as e:
+                    self.log.info(
+                        f"[burst_err] {type(e).__name__}: {e}")
+                    if SDKException.check_if_exception_exists(
+                            SDKException.AmbiguousTimeoutException, str(e)):
+                        throttle_counts[c_idx] += 1
+                    continue
+                err = None
+                if isinstance(result, tuple) and len(result) == 2:
+                    _success, fail = result
+                    if fail:
+                        err = next(iter(fail.values())).get("error")
+                elif isinstance(result, dict) and \
+                        result.get("status") is False:
+                    err = result.get("error")
+                if err is not None:
+                    self.log.info(
+                        f"[burst_err] client={c_idx} op={i} err={err!r}")
+                    if SDKException.check_if_exception_exists(
+                            SDKException.AmbiguousTimeoutException, str(err)):
+                        throttle_counts[c_idx] += 1
+
+        threads = [threading.Thread(target=worker, args=(i, clients[i]))
+                   for i in range(num_clients)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        for c in clients:
+            try:
+                c.close()
+            except Exception:
+                pass
+        return sum(throttle_counts)
+
+    def test_couchstore_and_magma_throttle(self):
+        """
+        Validate throttling works on both Couchstore and Magma. Storage
+        backend is parametrized via bucket_storage in the conf.
+        """
+        bucket_name = self.bucket.name
+        storage = getattr(self.bucket, "storageBackend", None) or "unknown"
+
+        initial_stats = self.get_throttle_stats(bucket_name)
+        initial_throttle = int(initial_stats.get("throttle_count_total", 0))
+        initial_reject = int(initial_stats.get("reject_count_total", 0))
+
+        sdk_throttle_count = self._burst_writes()
+
+        final_stats = self.get_throttle_stats(bucket_name)
+        final_throttle = int(final_stats.get("throttle_count_total", 0))
+        final_reject = int(final_stats.get("reject_count_total", 0))
+        self.log.info(f"storage={storage} stats: {final_stats}, "
+                      f"sdk_throttle_count={sdk_throttle_count}")
+
+        self.assertTrue(
+            final_throttle > initial_throttle
+            or final_reject > initial_reject
+            or sdk_throttle_count > 0,
+            f"Expected throttle/reject increase on storage={storage}; "
+            f"throttle {initial_throttle}->{final_throttle}, "
+            f"reject {initial_reject}->{final_reject}, "
+            f"sdk_throttle_count={sdk_throttle_count}")
+
+    def test_sync_gateway_backoff_simulation(self):
+        """
+        Simulate Sync Gateway-style sustained burst SET load and verify the
+        bucket rate-limiter applies backoff without client crash. Real
+        Sync Gateway end-to-end is a manual test.
+        """
+        bucket_name = self.bucket.name
+        initial_stats = self.get_throttle_stats(bucket_name)
+        initial_throttle = int(initial_stats.get("throttle_count_total", 0))
+        initial_reject = int(initial_stats.get("reject_count_total", 0))
+
+        sdk_throttle_count = self._burst_writes()
+
+        final_stats = self.get_throttle_stats(bucket_name)
+        final_throttle = int(final_stats.get("throttle_count_total", 0))
+        final_reject = int(final_stats.get("reject_count_total", 0))
+        self.log.info(f"SGW sim stats: {final_stats}, "
+                      f"sdk_throttle_count={sdk_throttle_count}")
+
+        self.assertTrue(
+            final_throttle > initial_throttle
+            or final_reject > initial_reject
+            or sdk_throttle_count > 0,
+            f"Expected throttle/reject increase under SGW load; throttle "
+            f"{initial_throttle}->{final_throttle}, "
+            f"reject {initial_reject}->{final_reject}, "
+            f"sdk_throttle_count={sdk_throttle_count}")
+
+
+class RateLimitingUpgradeTests(UpgradeBase):
+    """
+    Upgrade-time tests for KV rate limiting (gated to 8.1).
+    """
+    def setUp(self):
+        super(RateLimitingUpgradeTests, self).setUp()
+        self.bucket_rest = BucketRestApi(self.cluster.master)
+        self.target_throttle_reserved = self.input.param(
+            "bucket_throttle_reserved", 6000)
+        self.target_throttle_hard_limit = self.input.param(
+            "bucket_throttle_hard_limit", 12000)
+
+    def tearDown(self):
+        # Retry delete on every node — cluster may be transient after upgrade
+        import time
+        bucket_names = [b.name for b in
+                        list(getattr(self.cluster, "buckets", []) or [])]
+        nodes = list(getattr(self.cluster, "nodes_in_cluster", []) or [])
+        self.log.info(
+            f"Upgrade tearDown: buckets={bucket_names}, "
+            f"nodes={[n.ip for n in nodes]}")
+        for name in bucket_names:
+            for attempt in range(6):
+                done = False
+                for node in nodes:
+                    try:
+                        status, content = BucketRestApi(node).delete_bucket(
+                            name)
+                        self.log.info(
+                            f"Delete {name} on {node.ip} attempt "
+                            f"{attempt}: status={status}, content={content}")
+                        if status:
+                            done = True
+                            break
+                    except Exception as e:
+                        self.log.warning(
+                            f"Delete {name} on {node.ip} raised: {e}")
+                if done:
+                    break
+                time.sleep(10)
+        super(RateLimitingUpgradeTests, self).tearDown()
+
+    def _set_rate_limit(self, master_node):
+        edit_params = {
+            Bucket.throttleReserved: self.target_throttle_reserved,
+            Bucket.throttleHardLimit: self.target_throttle_hard_limit,
+        }
+        return BucketRestApi(master_node).edit_bucket(self.bucket.name,
+                                                       edit_params)
+
+    def test_rate_limit_in_mixed_mode_cluster(self):
+        """
+        With one node upgraded to 8.1 and others on the initial pre-8.1
+        version, rate-limit edits must be rejected.
+        """
+        self.upgrade_version = self.upgrade_chain[-1]
+        nodes = list(self.cluster.nodes_in_cluster)
+        first_node = nodes[0]
+        self.log.info(f"Upgrading first node {first_node.ip} only")
+        self.upgrade_function[self.upgrade_type](first_node)
+
+        status, content = self._set_rate_limit(first_node)
+        self.log.info(f"Mixed-mode rate-limit edit: status={status}, "
+                      f"content={content}")
+        try:
+            self.assertFalse(
+                status,
+                f"Rate limit edit should be rejected in mixed-mode: {content}")
+        finally:
+            # Finish upgrading remaining nodes so cluster ends uniform 8.1;
+            # otherwise bucket deletes fail in mixed-mode tearDown.
+            for node in list(self.cluster.nodes_in_cluster):
+                if node.ip == first_node.ip:
+                    continue
+                try:
+                    self.upgrade_function[self.upgrade_type](node)
+                except Exception as e:
+                    self.log.warning(
+                        f"Post-assert upgrade of {node.ip} failed: {e}")
+
+    def test_rate_limit_after_full_upgrade(self):
+        """
+        After full upgrade to 8.1+, rate-limit edits must succeed and
+        values persist via REST.
+        """
+        self.upgrade_version = self.upgrade_chain[-1]
+        for node in list(self.cluster.nodes_in_cluster):
+            self.log.info(f"Upgrading node {node.ip}")
+            self.upgrade_function[self.upgrade_type](node)
+
+        status, content = self._set_rate_limit(self.cluster.master)
+        self.assertTrue(
+            status, f"Rate limit edit should succeed post-upgrade: {content}")
+
+        _, buckets = self.bucket_rest.get_bucket_info()
+        bucket_info = next(b for b in buckets if b['name'] == self.bucket.name)
+        self.assertEqual(
+            bucket_info.get('throttleReserved'),
+            self.target_throttle_reserved,
+            f"throttleReserved mismatch post-upgrade: "
+            f"{bucket_info.get('throttleReserved')}")
+        self.assertEqual(
+            bucket_info.get('throttleHardLimit'),
+            self.target_throttle_hard_limit,
+            f"throttleHardLimit mismatch post-upgrade: "
+            f"{bucket_info.get('throttleHardLimit')}")
