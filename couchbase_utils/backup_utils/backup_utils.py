@@ -112,7 +112,7 @@ class ContinuousBackupUtil(object):
                 self.log.info(f"Skipping continuous restore verification for {bucket.name}: "
                               f"storage backend is {bucket.storageBackend}, not magma")
                 continue
-            restore_bucket_name = f"{bucket.name}_cont_restore_{int(time.time())}"
+            restore_bucket_name = f"{bucket.name}"
             self.log.info(f"Performing continuous restore (PITR) for bucket: {bucket.name}")
             self._create_restore_bucket(bucket_util, cluster, restore_bucket_name, bucket)
             try:
@@ -165,8 +165,8 @@ class ContinuousBackupUtil(object):
         bucket_type = source_bucket.bucketType
         replica = source_bucket.replicaNumber
         storage = source_bucket.storageBackend
-        ram_quota = max(source_bucket.ramQuotaMB, 1024) if storage == Bucket.StorageBackend.magma else source_bucket.ramQuotaMB
-
+        ram_quota = source_bucket.ramQuotaMB
+        bucket_util.delete_bucket(cluster, source_bucket)
         bucket_util.create_default_bucket(
             cluster,
             bucket_name=restore_bucket_name,
