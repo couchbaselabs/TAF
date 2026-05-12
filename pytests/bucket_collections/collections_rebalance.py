@@ -1252,6 +1252,8 @@ class CollectionsRebalance(CollectionBase):
             failover_nodes = self.get_failover_nodes()
             rebalance = self.forced_failover_operation(known_nodes=self.cluster.servers[:self.nodes_init],
                                                        failover_nodes=failover_nodes)
+        if self.N1ql_txn:
+            self.execute_N1qltxn()
         # Updating collection maxTTL value during rebalance
         if self.update_max_ttl:
             if self.spec_name == "multi_bucket.buckets_for_rebalance_tests_with_ttl_large" or \
