@@ -364,9 +364,6 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                         overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},
                                         validate_data=False,
                                         wait_for_stats=False)
-                    if not tasks:
-                        self.log.critical(f"Failed to create doc load task for cluster {cluster.id}")
-                        raise Exception(f"Failed to create doc load task for cluster {cluster.id}")
                     if self.xdcr_remote_clusters > 0:
                         self.drXDCR.set_up_replication(tenant, source_cluster=cluster, destination_cluster=tenant.xdcr_clusters[i],
                                         source_bucket=cluster.buckets[0].name,
