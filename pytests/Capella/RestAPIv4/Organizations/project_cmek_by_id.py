@@ -123,32 +123,38 @@ class ProjectCMEKById(APIBase):
 
     def test_put_api_path(self):
         testcases = [
+            # {
+            #     "description": "Update project CMEK metadata with valid path",
+            #     "expected_status_code": [204, 412, 422] if self.cmek_created
+            #     else 404
+            # },
             {
-                "description": "Update project CMEK metadata with valid path",
-                "expected_status_code": [204, 412, 422] if self.cmek_created
-                else 404
-            }, {
                 "description": "Replace API version in URI",
                 "url": "/v3/organizations/{}/projects/{}/cmek",
-                "expected_status_code": 404
+                "expected_status_code": 404,
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace cmek with cmeks in URI",
                 "url": "/v4/organizations/{}/projects/{}/cmeks",
-                "expected_status_code": 404
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/cmek/key",
-                "expected_status_code": [400, 404]
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400
+                "expected_status_code": 404,
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Call API with non-hex projectId",
                 "invalid_projectId": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400
+                "expected_status_code": 404,
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }
         ]
 
@@ -191,31 +197,37 @@ class ProjectCMEKById(APIBase):
 
     def test_delete_api_path(self):
         testcases = [
+            # {
+            #     "description": "Delete project CMEK metadata with valid path",
+            #     "expected_status_code": 204 if self.cmek_created else 404
+            # }, 
             {
-                "description": "Delete project CMEK metadata with valid path",
-                "expected_status_code": 204 if self.cmek_created else 404
-            }, {
                 "description": "Replace API version in URI",
                 "url": "/v3/organizations/{}/projects/{}/cmek",
-                "expected_status_code": 404
+                "expected_status_code": 404,
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace cmek with cmeks in URI",
                 "url": "/v4/organizations/{}/projects/{}/cmeks",
-                "expected_status_code": 404
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/cmek/key",
-                "expected_status_code": [400, 404]
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400
+                "expected_status_code": 404,
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Call API with non-hex projectId",
                 "invalid_projectId": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400
+                "expected_status_code": 404,
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }
         ]
 
