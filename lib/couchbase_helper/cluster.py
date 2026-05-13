@@ -210,12 +210,17 @@ class ServerTasks(object):
                         retry_exception=retry_exception,
                         iterations=iterations).create_sirius_task()
                 elif load_using == "sirius_java_sdk":
+                    if generator.doc_size == 0:
+                        value_type = "EmptyValue"
+                    else:
+                        value_type = "SimpleValue"
                     _task = SiriusCouchbaseLoader(
                         cluster.master.ip, cluster.master.port,
                         generator, op_type,
                         cluster.master.rest_username,
                         cluster.master.rest_password,
                         bucket, scope, collection,
+                        value_type=value_type,
                         durability=durability,
                         exp=exp,
                         timeout=timeout_secs, time_unit=time_unit,
