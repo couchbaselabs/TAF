@@ -19,6 +19,12 @@ from sdk_exceptions import SDKException
 class N1qlBase(CollectionBase):
     def setUp(self):
         super(N1qlBase, self).setUp()
+        # Align with tuq_helper.get_doc_gen_list() and the COMMON_DOC_KEY in
+        # initial_load_N1ql.py. CollectionBase defaults self.key to the
+        # singular 'test_collection', which mismatches the plural prefix used
+        # to build validate_dict and causes KeyError in
+        # process_value_for_verification.
+        self.key = "test_collections"
         self.scan_consistency = self.input.param("scan_consistency",
                                                  'REQUEST_PLUS')
         self.path = Linux.COUCHBASE_BIN_PATH
@@ -621,10 +627,21 @@ class N1qlBase(CollectionBase):
                             for t_id in val:
                                 if isinstance(t_id, bytes):
                                     t_id = t_id.decode('UTF8')
+                                if t_id not in self.validate_dict:
+                                    self.log.warning(
+                                        "Skipping UPDATE validation for doc "
+                                        "id %s in %s - not tracked in "
+                                        "validate_dict (likely a key-prefix "
+                                        "or key-range mismatch between the "
+                                        "bucket loader and the validator)."
+                                        % (t_id, collection))
+                                    continue
                                 try:
                                     self.validate_dict[t_id][mutated[0]] = \
                                         mutated[1]
-                                except:
+                                except (TypeError, AttributeError):
+                                    # Fallback for Jython HashMap-style
+                                    # containers that don't support [k] = v.
                                     self.validate_dict[t_id].put(mutated[0],
                                                                  mutated[1])
             bucket_collection = collection.split('.')

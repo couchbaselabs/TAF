@@ -166,6 +166,12 @@ class CollectionsRebalance(CollectionBase):
             except Exception as error:
                 self.log.info("error is %s" % error)
                 self.retry_n1qltxn = True
+                # Ensure validate_N1qltxn_data reports a real failure instead
+                # of AttributeError when create_txn/full_execute_query raise
+                # before collection_savepoint is assigned.
+                self.collection_savepoint = "execute_N1qltxn failed: %s" % error
+                self.savepoints = None
+                self.queries = None
 
     def execute_allowedhosts(self):
         if self.allowed_hosts:
