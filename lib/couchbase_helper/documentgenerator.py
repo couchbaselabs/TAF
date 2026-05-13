@@ -38,14 +38,17 @@ def doc_generator(key, start, end,
                                 doc_size=doc_size, mutate=mutate)
 
     # Defaults to JSON doc_type
-    template_obj = {"mutated": mutate,
-                    "age": 5,
-                    "name": "james",
-                    "mutation_type": mutation_type,
-                    "body": ""}
-    doc_size -= len(str(template_obj))
-    if doc_size <= 0:
-        raise ValueError("doc_size must be positive")
+    if doc_size == 0:
+        template_obj = {}
+    else:
+        template_obj = {"mutated": mutate,
+                        "age": 5,
+                        "name": "james",
+                        "mutation_type": mutation_type,
+                        "body": ""}
+        doc_size -= len(str(template_obj))
+        if doc_size <= 0:
+            raise ValueError("doc_size must be positive")
     return DocumentGenerator(key, template_obj,
                              start=start, end=end,
                              key_size=key_size, mix_key_size=mix_key_size,
