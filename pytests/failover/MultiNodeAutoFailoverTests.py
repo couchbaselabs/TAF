@@ -5,6 +5,7 @@ from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from custom_exceptions.exception import RebalanceFailedException, \
     ServerUnavailableException
 from membase.api.rest_client import RestConnection
+from rebalance_utils.rebalance_util import RebalanceUtil
 
 
 class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
@@ -195,7 +196,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         started, _ = self.rest.rebalance(known_nodes=nodes, eject_nodes=nodes_to_remove)
         rebalance_success = False
         if started:
-            rebalance_success = self.rest.monitorRebalance()
+            reb_util = RebalanceUtil(self.cluster)
+            rebalance_success = reb_util.monitor_rebalance()
         if (not rebalance_success or not started) and not \
                 self.failover_expected:
             self.fail("Rebalance failed. Check logs")
@@ -234,7 +236,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
         msg = "rebalance failed while recovering failover nodes {0}" \
               .format(self.server_to_fail[0])
-        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+        reb_util = RebalanceUtil(self.cluster)
+        self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
         if self.spec_name is None:
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
@@ -265,8 +268,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
         msg = "rebalance failed while removing failover nodes {0}" \
               .format(self.server_to_fail[0])
-        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
-                        msg)
+        reb_util = RebalanceUtil(self.cluster)
+        self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
         if self.spec_name is None:
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
