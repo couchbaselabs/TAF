@@ -932,6 +932,7 @@ class DocLoaderUtils(object):
                                 initial_exception = pattern_match.group(1)
                                 break
 
+                        break_loop = False
                         for tem_exception in op_data["ignore_exceptions"]:
                             if not isinstance(tem_exception, list):
                                 tem_exception = [tem_exception]
@@ -982,7 +983,7 @@ class DocLoaderUtils(object):
                         else:
                             result = dict()
                             result['status'] = True
-                            for tup in failed_doc["path_val"]:
+                            for tup in failed_doc.get("path_val", []):
                                 if op_type in [DocLoading.Bucket.SubDocOps.LOOKUP,
                                                DocLoading.Bucket.SubDocOps.REMOVE]:
                                     tup = tup[0]
@@ -1003,9 +1004,15 @@ class DocLoaderUtils(object):
 
                         retry_strategy = "unwanted"
                         for ex in op_data["retry_exceptions"]:
-                            if str(exception).find(ex) != -1:
-                                retry_strategy = "retried"
-                                break
+                            if not isinstance(ex, list):
+                                ex = [ex]
+                            for t_ex in ex:
+                                if str(exception).find(t_ex) != -1:
+                                    retry_strategy = "retried"
+                                    break
+                            else:
+                                continue
+                            break
 
                         if result["status"] \
                                 or (ambiguous_state
