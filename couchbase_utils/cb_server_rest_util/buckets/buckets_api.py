@@ -1,3 +1,4 @@
+from cb_server_rest_util.buckets.bucket_guardrails import BucketGuardrailsAPI
 from cb_server_rest_util.buckets.bucket_info import BucketInfo
 from cb_server_rest_util.buckets.bucket_stats import BucketStats
 from cb_server_rest_util.buckets.doc_ops import DocOpAPI
@@ -7,7 +8,7 @@ from cb_server_rest_util.buckets.scope_and_collections import \
 
 
 class BucketRestApi(BucketManageAPI, BucketInfo, BucketStats,
-                    DocOpAPI,
+                    DocOpAPI, BucketGuardrailsAPI,
                     ScopeAndCollectionsAPI):
     def __init__(self, server):
         super(BucketRestApi, self).__init__()

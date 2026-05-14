@@ -23,6 +23,18 @@ agents/
 
 See [skills/AGENTS.md](skills/AGENTS.md) for the full list of available skills and usage guidance.
 
+## .claude/ — Harness Configuration
+
+`.claude/` is the Claude Code harness config layer. It activates agents and skills defined in `agents/`.
+
+| File | Purpose |
+|---|---|
+| `.claude/settings.json` | Registers skills (name, description, path into `agents/skills/`) and configures permissions/hooks. Committed — shared by all contributors. |
+| `.claude/settings.local.json` | Local overrides (personal permissions, env vars). Not committed. |
+| `.claude/skills/<name>/SKILL.md` | Per-skill entry point read by the harness — contains `@agents/skills/<name>.md` to forward to the canonical skill file. |
+
+**Skills must be registered in `.claude/settings.json` to be invocable via `/skill-name`.** Adding a `.md` file under `agents/skills/` alone is not enough — see "Adding a new skill" in the root `AGENTS.md`.
+
 ## Adding a New Agent
 
 1. Create `agents/<name>.md` with YAML frontmatter:

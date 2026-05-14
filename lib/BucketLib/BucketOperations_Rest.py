@@ -285,11 +285,8 @@ class BucketHelper(BucketRestApi):
         bucket -- bucket name
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
-        api = self.base_url \
-              + 'pools/default/buckets/@xdcr-{0}/stats?zoom={1}' \
-                .format(urllib.quote_plus("%s" % bucket), zoom)
-        _, content, _ = self._http_request(api)
-        return json.loads(content)
+        _, content = super().get_bucket_xdcr_stats(bucket, zoom=zoom)
+        return content
 
     def get_bucket_stats(self, bucket='default', zoom=None):
         stats = {}
@@ -504,17 +501,8 @@ class BucketHelper(BucketRestApi):
         return True
 
     def set_throttle_n_storage_limit(self, bucket_name, throttle_limit=5000, storage_limit=500, service="data"):
-        key_throttle_limit = service + "ThrottleLimit"
-        key_storage_limit = service + "StorageLimit"
-        api = '{0}{1}{2}'.format(self.base_url, 'pools/default/buckets/',
-                              urllib.quote_plus("%s" % bucket_name))
-        params = urllib.urlencode({key_throttle_limit: throttle_limit, key_storage_limit: storage_limit})
-        self.log.debug("%s with param: %s" % (api, params))
-        status, content, _ = self._http_request(api, 'POST', params)
-        if not status:
-            self.log.error("Failed to update throttle limit: %s"
-                           % content)
-        return status, content
+        return super().set_throttle_n_storage_limit(
+            bucket_name, throttle_limit, storage_limit, service)
 
     def update_memcached_settings(self, **params):
         api = "{0}/pools/default/settings/memcached/global".format(
@@ -665,34 +653,13 @@ class BucketHelper(BucketRestApi):
                                     collection_spec={"history": history})
 
     def set_bucket_rr_guardrails(self, couch_min_rr=None, magma_min_rr=None):
-        api = self.base_url + "settings/resourceManagement/bucket/residentRatio"
-        params = {}
-        if couch_min_rr is not None:
-            params['couchstoreMinimum'] = couch_min_rr
-        if magma_min_rr is not None:
-            params['magmaMinimum'] = magma_min_rr
-        params = urllib.urlencode(params)
-        status, content, _ = self._http_request(api, "POST", params)
-        return status, content
+        return super().set_bucket_rr_guardrails(couch_min_rr, magma_min_rr)
 
     def set_max_data_per_bucket_guardrails(self, couch_max_data=None, magma_max_data=None):
-        api = self.base_url + "settings/resourceManagement/bucket/dataSizePerNode"
-        params = {}
-        if couch_max_data is not None:
-            params['couchstoreMaximum'] = couch_max_data
-        if magma_max_data is not None:
-            params['magmaMaximum'] = magma_max_data
-        params = urllib.urlencode(params)
-        status, content, _ = self._http_request(api, "POST", params)
-        return status, content
+        return super().set_max_data_per_bucket_guardrails(couch_max_data, magma_max_data)
 
     def set_max_disk_usage_guardrails(self, max_disk_usage):
-        api = self.base_url + "settings/resourceManagement/diskUsage"
-        params = {}
-        params['maximum'] = max_disk_usage
-        params = urllib.urlencode(params)
-        status, content, _ = self._http_request(api, "POST", params)
-        return status, content
+        return super().set_max_disk_usage_guardrails(max_disk_usage)
 
     def get_auto_compaction_settings(self):
         api = self.base_url + "settings/autoCompaction"
@@ -738,16 +705,12 @@ class BucketHelper(BucketRestApi):
 
     def flush_bucket(self, bucket="default"):
         status, _ = super().flush_bucket(bucket)
-        self.log.debug("Bucket flush '%s' triggered" % bucket)
         return status
 
     def get_bucket_CCCP(self, bucket):
-        self.log.debug("Getting CCCP config")
-        api = '%spools/default/b/%s' % (self.base_url,
-                                        urllib.quote_plus("%s" % bucket))
-        status, content, _ = self._http_request(api)
+        status, content = super().get_bucket_cccp(bucket)
         if status:
-            return json.loads(content)
+            return content
         return None
 
     def compact_bucket(self, bucket="default"):
@@ -790,15 +753,11 @@ class BucketHelper(BucketRestApi):
 
     # the same as Preview a Random Document on UI
     def get_random_key(self, bucket):
-        api = self.base_url + 'pools/default/buckets/{0}/localRandomKey' \
-                             .format(urllib.quote_plus("%s" % bucket))
-        status, content, _ = self._http_request(
-            api, headers=self._create_capi_headers())
-        json_parsed = json.loads(content)
+        status, content = super().get_random_key(bucket)
         if not status:
             raise Exception("unable to get random document/key for bucket %s"
                             % bucket)
-        return json_parsed
+        return content
 
     '''
         Add/Update user role assignment

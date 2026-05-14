@@ -58,4 +58,4 @@ If you encounter such an import, warn the user and replace it with `self.request
 
 - `delete_remote_reference` uses POST despite being a delete operation — this matches the Couchbase REST API spec.
 - `create_replication` and `connection_pre_check` method bodies are incomplete stubs; implement before use.
-- `xdcr_stats.py` is empty — XDCR stats endpoints are not yet implemented here.
+- `xdcr_stats.py` is empty — per-bucket XDCR stats live in `buckets/bucket_stats.py::get_bucket_xdcr_stats`; replication-level stats not yet implemented.

@@ -6,6 +6,20 @@ class BucketStats(CBRestConnection):
     def __init__(self):
         super(BucketStats, self).__init__()
 
+    def get_bucket_xdcr_stats(self, bucket_name, zoom=None):
+        """
+        GET /pools/default/buckets/@xdcr-<bucket_name>/stats
+        Returns XDCR stats for a bucket.
+        :param bucket_name: Bucket name
+        :param zoom: minute | hour | day | week | month | year
+        """
+        bucket_name = quote(bucket_name)
+        api = self.base_url + f"/pools/default/buckets/@xdcr-{bucket_name}/stats"
+        if zoom:
+            api += f"?zoom={zoom}"
+        status, content, _ = self.request(api)
+        return status, content
+
     def get_bucket_stats(self, bucket_name, zoom=None):
         """
         :param bucket_name: Bucket name to fetch stats

@@ -19,6 +19,7 @@ model: inherit
 | `manage_bucket.py` | `BucketManageAPI` | `CBRestConnection` |
 | `bucket_info.py` | `BucketInfo` | `CBRestConnection` |
 | `bucket_stats.py` | `BucketStats` | `CBRestConnection` |
+| `bucket_guardrails.py` | `BucketGuardrailsAPI` | `CBRestConnection` |
 | `doc_ops.py` | `DocOpAPI` | `CBRestConnection` |
 | `scope_and_collections.py` | `ScopeAndCollectionsAPI` | `CBRestConnection` |
 
@@ -26,25 +27,27 @@ model: inherit
 
 ### manage_bucket.py — `BucketManageAPI`
 
-| Method | Verb | Path |
-|---|---|---|
-| `get_available_sample_buckets` | GET | `/sampleBuckets` |
-| `load_sample_bucket` | POST | `/sampleBuckets/install` |
-| `create_bucket` | POST | `/pools/default/buckets` |
-| `edit_bucket` | POST | `/pools/default/buckets/{bucket_name}` |
-| `delete_bucket` | DELETE | `/pools/default/buckets/{bucket_name}` |
-| `compact_bucket` | POST | `/pools/default/buckets/{bucket_name}/controller/compactBucket` |
-| `cancel_compaction` | POST | `/pools/default/buckets/{bucket_name}/controller/cancelBucketCompaction` |
-| `flush_bucket` | POST | `/pools/default/buckets/{bucket_name}/controller/` |
-| `enable_bucket_encryption` | POST | `/pools/default/buckets/{bucket}` |
-| `disable_bucket_encryption` | POST | `/pools/default/buckets/{bucket}` |
-| `set_auto_compaction` | POST | `/pools/default/buckets/{bucket_name}` or `/controller/setAutoCompaction` |
+| Method | Verb | Path | Notes |
+|---|---|---|---|
+| `get_available_sample_buckets` | GET | `/sampleBuckets` | |
+| `load_sample_bucket` | POST | `/sampleBuckets/install` | |
+| `create_bucket` | POST | `/pools/default/buckets` | |
+| `edit_bucket` | POST | `/pools/default/buckets/{bucket_name}` | |
+| `delete_bucket` | DELETE | `/pools/default/buckets/{bucket_name}` | |
+| `compact_bucket` | POST | `/pools/default/buckets/{bucket_name}/controller/compactBucket` | |
+| `cancel_compaction` | POST | `/pools/default/buckets/{bucket_name}/controller/cancelBucketCompaction` | |
+| `flush_bucket` | POST | `/pools/default/buckets/{bucket_name}/controller/doFlush` | |
+| `enable_bucket_encryption` | POST | `/pools/default/buckets/{bucket}` | |
+| `disable_bucket_encryption` | POST | `/pools/default/buckets/{bucket}` | |
+| `set_auto_compaction` | POST | `/pools/default/buckets/{bucket_name}` or `/controller/setAutoCompaction` | no `bucket_name` → cluster-wide |
+| `set_throttle_n_storage_limit` | POST | `/pools/default/buckets/{bucket_name}` | unused — no known callers |
 
 ### bucket_info.py — `BucketInfo`
 
-| Method | Verb | Path |
-|---|---|---|
-| `get_bucket_info` | GET | `/pools/default/buckets[/{bucket_name}]` |
+| Method | Verb | Path | Notes |
+|---|---|---|---|
+| `get_bucket_info` | GET | `/pools/default/buckets[/{bucket_name}]` | omit name → all buckets |
+| `get_bucket_cccp` | GET | `/pools/default/b/{bucket_name}` | CCCP config (cluster topology) |
 
 ### bucket_stats.py — `BucketStats`
 
@@ -52,7 +55,16 @@ model: inherit
 |---|---|---|
 | `get_bucket_stats` | GET | `/pools/default/buckets/{bucket_name}/stats` |
 | `get_bucket_stats_from_node` | GET | `/pools/default/buckets/{bucket_name}/nodes/{node_ip}:{port}/stats` |
+| `get_bucket_xdcr_stats` | GET | `/pools/default/buckets/@xdcr-{bucket_name}/stats` |
 | `get_stats_range` | GET | `/pools/default/stats/range` |
+
+### bucket_guardrails.py — `BucketGuardrailsAPI`
+
+| Method | Verb | Path |
+|---|---|---|
+| `set_bucket_rr_guardrails` | POST | `/settings/resourceManagement/bucket/residentRatio` |
+| `set_max_data_per_bucket_guardrails` | POST | `/settings/resourceManagement/bucket/dataSizePerNode` |
+| `set_max_disk_usage_guardrails` | POST | `/settings/resourceManagement/diskUsage` |
 
 ### doc_ops.py — `DocOpAPI`
 

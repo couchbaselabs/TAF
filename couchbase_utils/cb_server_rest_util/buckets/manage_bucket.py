@@ -110,6 +110,22 @@ class BucketManageAPI(CBRestConnection):
         status, content, _ = self.request(api, self.POST)
         return status, content
 
+    def set_throttle_n_storage_limit(self, bucket_name, throttle_limit=5000,
+                                     storage_limit=500, service="data"):
+        """
+        POST /pools/default/buckets/<bucket_name>
+        Sets throttle and storage limits for a bucket service.
+        Serverless-only API — no active TAF tests use this endpoint.
+        """
+        bucket_name = quote(bucket_name)
+        api = self.base_url + f"/pools/default/buckets/{bucket_name}"
+        params = {
+            service + "ThrottleLimit": throttle_limit,
+            service + "StorageLimit": storage_limit,
+        }
+        status, content, _ = self.request(api, self.POST, params=params)
+        return status, content
+
     def set_auto_compaction(self, bucket_name,
                             parallel_db_and_vc="false",
                             db_fragment_threshold=None,

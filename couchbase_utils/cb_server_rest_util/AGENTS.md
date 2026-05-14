@@ -46,6 +46,7 @@ rest.security.get_rbac_user(...)
 | `xdcr/` | `XdcrRestAPI` | References, replications |
 | `server_groups/` | `ServerGroupsAPI` | Server group management |
 | `fusion/` | `FusionRestAPI` | Fusion-specific endpoints |
+| `mem_storage/` | _(empty)_ | Placeholder — no methods implemented yet |
 
 ## Mandatory Standards
 
