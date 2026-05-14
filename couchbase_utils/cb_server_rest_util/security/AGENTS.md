@@ -45,9 +45,19 @@ No REST methods implemented yet — placeholder class.
 | Method | Verb | Path |
 |---|---|---|
 | `list_encryption_at_rest_keys` | GET | `/settings/encryptionKeys/` |
+| `get_encryption_at_rest_key` | GET | `/settings/encryptionKeys/{KEY_ID}` |
 | `create_encryption_at_rest_key` | POST | `/settings/encryptionKeys` |
-| `update_encryption_at_rest_key` | PUT | `/settings/encryptionKeys/{keyId}` |
-| `test_encryption_at_rest_key` | POST | `/settings/encryptionKeys/{keyId}/test` |
+| `update_encryption_at_rest_key` | PUT | `/settings/encryptionKeys/{KEY_ID}` |
+| `delete_encryption_at_rest_key` | DELETE | `/settings/encryptionKeys/{KEY_ID}` |
+| `test_encryption_at_rest_key` | POST | `/settings/encryptionKeys/{KEY_ID}/test` |
+| `test_encryption_at_rest_key_changes` | PUT | `/settings/encryptionKeys/{KEY_ID}/test` |
+| `get_encryption_at_rest_settings` | GET | `/settings/security/encryptionAtRest` |
+| `set_encryption_at_rest_settings` | POST | `/settings/security/encryptionAtRest` |
+| `drop_encryption_deks_for_bucket` | POST | `/controller/dropEncryptionAtRestDeks/bucket/{BUCKET_NAME}` |
+| `drop_encryption_deks_for_type` | POST | `/controller/dropEncryptionAtRestDeks/{TYPE}` — `audit\|config\|log` |
+| `rotate_encryption_at_rest_key` | POST | `/controller/rotateEncryptionKey/{KEY_ID}` |
+| `force_encryption_at_rest_for_bucket` | POST | `/controller/forceEncryptionAtRest/bucket/{BUCKET_NAME}` |
+| `force_encryption_at_rest_for_type` | POST | `/controller/forceEncryptionAtRest/{TYPE}` — `audit\|config\|log` |
 
 ### jwt.py — `JWTAPI`
 
@@ -94,6 +104,6 @@ If you encounter such an import, warn the user and replace it with `self.request
 
 ## Notes
 
-- `EncryptionAtRest` is not yet included in `SecurityRestAPI`'s inheritance chain — verify before using via `rest.security`.
+- `EncryptionAtRest` is included in `SecurityRestAPI` — all encryption methods are accessible via `rest.security`.
 - `disable_jwt` makes two sequential requests (GET then PUT) — this is a known pattern exception; do not split.
 - `Auditing` class is a stub; REST methods for `/settings/audit` are not yet implemented.

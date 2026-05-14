@@ -262,6 +262,11 @@ agents/
 ### Available agents & skills
 See [agents/AGENTS.md](agents/AGENTS.md) for the full list of agents and skills.
 
+### AGENTS.md-first rule
+Before opening any `.py` file in a directory, read that directory's `AGENTS.md` if one exists.
+AGENTS.md files pre-compile file-to-class mappings, method inventories, inheritance chains, and known stubs — reading them first avoids redundant file reads.
+If the subdirectory also has an AGENTS.md (e.g. `buckets/AGENTS.md`), read that too before its `.py` files.
+
 ---
 
 ## Supporting Documentation
