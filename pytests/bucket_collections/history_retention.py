@@ -903,7 +903,8 @@ class DocHistoryRetention(ClusterSetup):
 
             doc_loading_task = self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, data_load_spec,
-                mutation_num=1, batch_size=500, process_concurrency=1)
+                mutation_num=1, batch_size=500, process_concurrency=1,
+                load_using=self.load_docs_using)
             if doc_loading_task.result is False:
                 self.fail("Doc_loading failed")
 
@@ -1147,7 +1148,7 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
                 mutation_num=1, batch_size=500, process_concurrency=1,
-                async_load=True)
+                async_load=True, load_using=self.load_docs_using)
 
         self.log.info("Testing with scenario=%s" % scenario)
         for index in range(1, iterations+1):
@@ -1248,7 +1249,7 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
                 mutation_num=1, batch_size=500, process_concurrency=1,
-                async_load=False)
+                async_load=False, load_using=self.load_docs_using)
         self.assertTrue(doc_loading_task.result, "Dedupe load failed")
 
         loader_spec = self.get_loader_spec(1, -1)
@@ -1256,7 +1257,7 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
                 mutation_num=1, batch_size=500, process_concurrency=1,
-                async_load=True)
+                async_load=True, load_using=self.load_docs_using)
         while num_compactions > 0:
             self.sleep(60, "Wait before performing compaction")
             compaction_tasks = list()
@@ -1311,7 +1312,8 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
                 mutation_num=1, batch_size=500, process_concurrency=1,
-                async_load=False, validate_task=True, print_ops_rate=False)
+                async_load=False, validate_task=True, print_ops_rate=False,
+                load_using=self.load_docs_using)
         self.assertTrue(doc_loading_task.result, "Dedupe load failed")
 
         if num_cols_to_drop > 0:
@@ -1344,7 +1346,7 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
                 mutation_num=1, batch_size=500, process_concurrency=1,
-                async_load=True)
+                async_load=True, load_using=self.load_docs_using)
 
         self.sleep(60, "Wait before starting rebalance")
         self.log.info("Performing rebalance")
@@ -1493,7 +1495,8 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, [b1], load_spec,
                 mutation_num=0, batch_size=self.batch_size,
-                process_concurrency=1)
+                process_concurrency=1,
+                load_using=self.load_docs_using)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
 
@@ -1537,7 +1540,8 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, [b1], load_spec,
                 mutation_num=1, batch_size=500, process_concurrency=1,
-                async_load=False, print_ops_rate=False)
+                async_load=False, print_ops_rate=False,
+                load_using=self.load_docs_using)
         self.assertTrue(doc_loading_task.result, "Dedupe load failed")
 
         self.log.info("Starting XDCR replication from {0} -> {1}"
