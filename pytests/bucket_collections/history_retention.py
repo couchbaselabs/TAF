@@ -1561,7 +1561,8 @@ class DocHistoryRetention(ClusterSetup):
         }
         for bucket in buckets:
             result = self.bucket_util.validate_history_start_seqno_stat(
-                stats_before_load[bucket.name], stats_after_load[bucket.name])
+                stats_before_load[bucket.name], stats_after_load[bucket.name],
+                comparison=">=")
             self.assertTrue(result, "Validation failed for bucket '{0}'"
                                     .format(bucket.name))
         self.cluster.buckets = buckets

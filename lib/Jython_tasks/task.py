@@ -5402,6 +5402,21 @@ class MutateDocsFromSpecTask(Task):
                         "skip_read_success_results"],
                     iterations=iterations)
                 self.load_gen_tasks.append(load_task)
+        elif self.load_using == "sirius_java_sdk":
+            load_task = SiriusCouchbaseLoader(
+                self.cluster.master.ip, self.cluster.master.port,
+                op_data["doc_gen"], op_type.replace("cont_", ""),
+                self.cluster.master.rest_username,
+                self.cluster.master.rest_password,
+                bucket, scope_name, col_name,
+                durability=op_data["durability_level"],
+                exp=op_data["doc_ttl"],
+                timeout=op_data["sdk_timeout"],
+                process_concurrency=self.process_concurrency,
+                iterations=iterations,
+                ops=self.ops_rate)
+            load_task.create_doc_load_task()
+            self.cont_load_gen_tasks.append(load_task)
         else:
             raise Exception(f"Invalid loader option {self.load_using}")
 
