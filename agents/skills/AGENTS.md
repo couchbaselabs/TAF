@@ -60,6 +60,23 @@ Comprehensive code map and flow reference for `pytests/upgrade/`. Covers class h
 
 ---
 
+### review-guidelines
+Structured code review process for TAF changes. Produces prioritized BLOCKER/MAJOR/MINOR/NIT comments across correctness, TAF patterns, configuration, security, and code quality.
+
+**Usage:** When asked to review a PR, diff, branch, or changed files — "review these changes", "check my changes before I commit".
+
+**Key features:**
+- 8-step review process: scope → correctness → TAF patterns → config → security → quality → docs → output
+- TAF-specific checks: base class, TestInputSingleton params, tearDown cleanup, submodule boundaries
+- Enforces `.conf` entry for every new `test_*` method added under `pytests/`
+- Catches leftover debug prints (`print`, `pdb`, `breakpoint`) and trailing whitespace
+- Severity-tiered output format (BLOCKER / MAJOR / MINOR / NIT) with file:line citations
+- Quick reference checklist for full coverage at a glance
+
+**File:** `agents/skills/review-guidelines/SKILL.md`
+
+---
+
 ## Adding a New Skill
 
 1. Create `agents/skills/<name>.md` with YAML frontmatter:

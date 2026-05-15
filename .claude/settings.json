@@ -9,6 +9,11 @@
       "name": "test_debugging",
       "description": "Given a scenario or test logs, maps to the actual code, debugs the failure, and proposes a concrete fix. Resolves which layer owns the failure, reads the source, diagnoses root cause, and provides before/after fix.",
       "path": "agents/skills/test_debugging.md"
+    },
+    {
+      "name": "review-guidelines",
+      "description": "Structured code review process for TAF changes. Use when asked to review a PR, diff, branch, or set of changed files — covers correctness, TAF pattern compliance, configuration validity, security, and produces prioritized BLOCKER/MAJOR/MINOR/NIT comments.",
+      "path": "agents/skills/review-guidelines/SKILL.md"
     }
   ]
 }
