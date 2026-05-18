@@ -461,16 +461,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.aws_access_key = os.getenv("AZURE_BLOB_ACCESS_KEY_ID", None)
                 self.aws_secret_key = os.getenv("AZURE_BLOB_SECRET_ACCESS_KEY", None)
                 self.aws_session_token = None
+                self.aws_region = None
                 self.aws_endpoint = self.input.param("aws_endpoint", "https://testeaazureblob.blob.core.windows.net")
-                self.aws_region = self.input.param("aws_region", "us-east-1")
 
             elif self.storage_provider == "gs":
                 self.log.info("Fetching certificate file path from the env: gcp_access_file")
                 self.gcs_certificate = os.getenv('gcp_access_file')
-                self.aws_region = "us-east1"
                 with open(self.gcs_certificate, 'r') as file:
                     # Load JSON data from file
                     self.gcs_credentials_data = json.load(file)
+                self.aws_region = None
 
                 for server in self.servers:
                     if server.type == "analytics":
@@ -987,8 +987,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.log.critical("System event log validation failed: %s"
                               % sys_event_validation_failure)
 
-        # Always restore FBR to default (True) for all clusters
+        # Always restore FBR to default (True) for all clusters.
+        # Skip analytics-type cluster masters: file-based rebalance is a
+        # KV/data-service-only setting and enterprise-analytics does not
+        # expose it.  Attempting to call it on a columnar node raises
+        # ServerUnavailableException when the service is mid-restart.
         for _, cluster in self.cb_clusters.items():
+            if cluster.master.type == CbServer.Services.COLUMNAR:
+                continue
             self.cluster_util.set_file_based_rebalance(
                 cluster.master, enabled=True)
 
@@ -1066,15 +1072,44 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         self.node_utils.reset_cluster_nodes(
                             self.cluster_util, cluster)
 
+        # Stop the analytics service on columnar nodes before deleting the
+        # cloud storage bucket.
+        #
+        # Why this matters:
+        #   reset_cluster_nodes() sends a REST reset that triggers a process
+        #   restart but returns before the service has fully stopped.
+        #   CloudGuardian (running inside enterprise-analytics) keeps polling
+        #   S3 on a background thread.  If we delete the bucket while it is
+        #   still alive it sees "topology not found", wipes the local metadata
+        #   cache, and the node enters an illegal bootstrap state for the next
+        #   test.
+        if self.analytics_compute_storage_separation:
+            self.log.info("Stopping enterprise-analytics service on columnar "
+                          "nodes before deleting cloud storage bucket")
+            for _cluster_name, cluster in self.cb_clusters.items():
+                for server in cluster.servers:
+                    if server.type == CbServer.Services.COLUMNAR:
+                        try:
+                            shell = RemoteMachineShellConnection(server)
+                            shell.stop_enterprise_analytics()
+                            shell.disconnect()
+                            self.log.info(
+                                "Stopped enterprise-analytics on {}".format(
+                                    server.ip))
+                        except Exception as e:
+                            self.log.warning(
+                                "Failed to stop enterprise-analytics on "
+                                "{}: {}".format(server.ip, e))
+
         # delete aws bucket that was created for compute storage separation
         if (self.analytics_compute_storage_separation and
-                self.columnar_aws_bucket_created):
+                getattr(self, "columnar_aws_bucket_created", False)):
             self.log.info("Deleting AWS S3 bucket - {}".format(
                 self.columnar_aws_bucket_name))
             if not self.columnar_s3_obj.delete_bucket(self.columnar_aws_bucket_name):
                 self.log.error("AWS bucket failed to delete - {}".format(
                     self.columnar_aws_bucket_name))
-        elif self.analytics_compute_storage_separation and self.columnar_azure_bucket_created:
+        elif self.analytics_compute_storage_separation and getattr(self, "columnar_azure_bucket_created", False):
             self.log.info("Deleting Azure container - {}".format(
                 self.columnar_azure_bucket_name))
             if not self.azure_client.delete_container(self.columnar_azure_bucket_name):
@@ -1085,6 +1120,24 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if not self.gcs_client.delete_bucket(self.columnar_gs_bucket_name):
                 self.log.error("GCS bucket {} failed to delete.".format(
                     self.columnar_gs_bucket_name))
+
+        # Restart enterprise-analytics after bucket deletion so that the
+        # analytics node is reachable for the rest of tearDown
+        if self.analytics_compute_storage_separation:
+            for _cluster_name, cluster in self.cb_clusters.items():
+                for server in cluster.servers:
+                    if server.type == CbServer.Services.COLUMNAR:
+                        try:
+                            shell = RemoteMachineShellConnection(server)
+                            shell.start_enterprise_analytics()
+                            shell.disconnect()
+                            self.log.info(
+                                "Restarted enterprise-analytics on {}".format(
+                                    server.ip))
+                        except Exception as e:
+                            self.log.warning(
+                                "Failed to restart enterprise-analytics on "
+                                "{}: {}".format(server.ip, e))
 
         # Deleting all backups from test runs in the backup location
         for server in self.servers:

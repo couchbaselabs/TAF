@@ -808,14 +808,6 @@ class AsyncRestApi(ColumnarBaseTest):
             remote_cluster=None,
             external_collection_file_formats=[self.file_format])
 
-        # Set primary key for standalone dataset
-        if self.file_format == "parquet":
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [
-                {"`name=id`": "string"}]
-        else:
-            self.columnar_spec["standalone_dataset"]["primary_key"] = [
-                {"id": "string"}]
-
         # Create entities on columnar cluster
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             cluster=self.columnar_cluster, cbas_spec=self.columnar_spec,

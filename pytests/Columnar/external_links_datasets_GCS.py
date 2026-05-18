@@ -38,12 +38,12 @@ class GCSLinksDatasets(ColumnarBaseTest):
             external_collection_file_formats=[self.input.param("file_format")])
 
         self.doc_count_per_format = {
-            "json": 240000, "parquet": 240000,
-            "csv": 240000, "tsv": 240000, "avro": 240000}
+            "json": 1680000, "parquet": 1680000,
+            "csv": 1680000, "tsv": 1680000, "avro": 1680000}
 
         self.doc_count_level_1_folder_1 = {
-            "json": 120000, "parquet": 120000,
-            "csv": 120000, "tsv": 120000, "avro": 120000}
+            "json": 1560000, "parquet": 1560000,
+            "csv": 1560000, "tsv": 1560000, "avro": 1560000}
 
         # path variable type
         #level_{level_no:int}_folder_{folder_no:int}
@@ -136,7 +136,7 @@ class GCSLinksDatasets(ColumnarBaseTest):
                     self.fail(
                         "Doc count mismatch. Expected - {0}, Actual - {1}".format(
                             self.doc_count_level_1_folder_1[file_format],
-                            len(result[3])))
+                            result[3][0]["$1"]))
 
             # Verify docs read from a particular folder are embedded with
             # compute fields used in dynamic prefix.

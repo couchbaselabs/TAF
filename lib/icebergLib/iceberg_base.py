@@ -9,7 +9,7 @@ from lib.awsLib.S3 import S3
 class IcebergBase:
     def __init__(self, aws_access_key=None, aws_secret_key=None, aws_session_token=None, gcs_credentials=None, catalog_type=None):
         # Common
-        self.database_name = "icebergdb"  # aka Namespace
+        self.database_name = "analyticsicebergdb"  # aka Namespace
         self.table_name = "hotel"
         self.iceberg_bucket = f"analytics-iceberg-testing-{str(int(time.time()))}"
         self.catalog_type = catalog_type

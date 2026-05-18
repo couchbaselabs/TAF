@@ -579,7 +579,7 @@ class UpdateStatementTest(ColumnarBaseTest):
                 results[0], initial_city, "Deleting non-existing fields should not modify existing fields")
 
             cmd = (f'SELECT VALUE {{"ghostFieldMissing": IS_MISSING(p.ghostField), '
-                   f'"ghostSubFieldMissing": IS_MISSING(p.address.ghostSubField)}} '
+                   f'"ghostSubFieldMissing": IS_MISSING(p.address.ghostSubField.x)}} '
                    f'FROM {dataset} p WHERE p.id = "{randomId}"')
             status, metrics, errors, results, _, warnings = self.cbas_util.execute_statement_on_cbas_util(
                 self.columnar_cluster, cmd)
@@ -612,11 +612,15 @@ class UpdateStatementTest(ColumnarBaseTest):
                 where_clause=f'p.id = "{randomId}"',
             )
             print(f"status: {status}, errors: {errors}")
-            if status != "success":
-                self.fail(
-                    f"Update statement failed with error: {errors}")
+            self.assertEqual(
+                status, "fatal", "Update statement that modifies primary key should have failed")
             self.assertTrue(
                 errors, "Expected an error when updating the primary key field")
+            self.assertEqual(
+                errors[0].get("msg"),
+                "Cannot update primary key '$p.id'",
+                "Incorrect error message for primary key update",
+            )
 
             cmd = f'SELECT VALUE COUNT(*) FROM {dataset} p WHERE p.id = "{randomId}"'
             status, metrics, errors, results, _, warnings = self.cbas_util.execute_statement_on_cbas_util(
@@ -749,7 +753,7 @@ class UpdateStatementTest(ColumnarBaseTest):
                 bucket=dataset,
                 alias="p",
                 array_mutations=[
-                    '(UPDATE p.hobbies AS hobby AT ord SET hobby = 0 WHERE ord IN [1,2,3,10])',
+                    '(UPDATE p.hobbies AS hobby AT ord SET hobby = 0 WHERE ord IN [0,1,2,9])',
                 ],
                 where_clause=f'p.id = "{randomId}"',
             )
@@ -806,7 +810,7 @@ class UpdateStatementTest(ColumnarBaseTest):
             if status != "success":
                 self.fail(
                     f"Failed to query standalone collection after update: {errors}")
-            self.assertEqual(result[0], [1, 0, 3, 0, 5, 0, 7, 0, 9, 0],
+            self.assertEqual(results[0], [1, 0, 3, 0, 5, 0, 7, 0, 9, 0],
                              f"Hobbies arr is incorrect after updating: got {results[0]}")
         self.log.info(
             "Validation completed for test_update_multiple_array_elements_with_condition")
@@ -837,7 +841,7 @@ class UpdateStatementTest(ColumnarBaseTest):
                 bucket=dataset,
                 alias="p",
                 array_mutations=[
-                    '(DELETE FROM p.hobbies AT ord WHERE ord IN [1,2,3,10])',
+                    '(DELETE FROM p.hobbies AT ord WHERE ord IN [0,1,2,9])',
                 ],
                 where_clause=f'p.id = "{randomId}"',
             )
@@ -850,8 +854,8 @@ class UpdateStatementTest(ColumnarBaseTest):
             if status != "success":
                 self.fail(
                     f"Failed to query standalone collection after update: {errors}")
-            self.assertTrue(results[0][0] == 0 and results[0][1] == 0 and results[0][2] == 0 and results[0][9] == 0,
-                            f"Hobbies arr is incorrect after updating: got {results[0]}")
+            self.assertEqual(results[0], [4, 5, 6, 7, 8, 9],
+                             f"Hobbies arr is incorrect after updating: got {results[0]}")
         self.log.info(
             "Validation completed for test_delete_multiple_array_elements")
         return

@@ -522,3 +522,23 @@ class Linux(ShellConnection, LinuxConstants):
         command = "mount -o loop,rw,usrquota,grpquota /usr/disk-img/disk-quota.ext4 {0}; df -Thl".format(location)
         output, error = self.execute_command(command)
         return output, error
+
+    """
+    EA START
+    """
+
+    def start_enterprise_analytics(self):
+        o, r = self.execute_command(
+            "systemctl start enterprise-analytics.service")
+        self.log_command_output(o, r)
+        return o, r
+
+    def stop_enterprise_analytics(self):
+        o, r = self.execute_command(
+            "systemctl stop enterprise-analytics.service")
+        self.log_command_output(o, r)
+        return o, r
+
+    """
+    EA END
+    """
