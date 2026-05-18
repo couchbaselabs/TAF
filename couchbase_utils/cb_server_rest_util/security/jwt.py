@@ -74,3 +74,40 @@ class JWTAPI(CBRestConnection):
         except Exception as e:
             self.log.warning(f"GET before disable failed: {e}")
         return self.put_jwt_config({"enabled": False, "issuers": []})
+
+    def request_with_bearer(self, token, endpoint, method="GET", params=""):
+        """
+        Make a Couchbase REST request authenticated with a JWT Bearer token.
+
+        Args:
+            token: JWT bearer token string
+            endpoint: REST endpoint path (e.g., "/whoami", "/pools/default")
+            method: HTTP method (GET, POST, PUT, DELETE)
+            params: Request body or query parameters string
+
+        Returns:
+            tuple: (status_bool, content, response)
+        """
+        api = f"{self.base_url}/{endpoint.lstrip('/')}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        status, content, response = self.request(api, method, params, headers=headers)
+        if not status:
+            self.log.warning(
+                f"Bearer request {method} {endpoint} failed: content={content}"
+            )
+        return status, content, response
+
+    def get_whoami_with_bearer(self, token):
+        """
+        GET /whoami authenticated with a JWT Bearer token.
+
+        Returns the raw Couchbase identity response (user id, domain, roles).
+
+        Returns:
+            tuple: (status_bool, content, response)
+        """
+        return self.request_with_bearer(token, "/whoami")
