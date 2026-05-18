@@ -68,7 +68,20 @@ def scan_all_slaves():
                   "172.23.123.72","172.23.123.75","172.23.123.73","172.23.123.74","172.23.123.70",
                   "172.23.123.77","172.23.123.76","172.23.123.78","172.23.123.80",
                   "172.23.123.79","172.23.97.128","172.23.99.156","172.23.104.136","172.23.97.128",
-                  "172.23.99.156","172.23.97.101","172.23.107.216","172.23.104.34"
+                  "172.23.99.156","172.23.97.101","172.23.107.216","172.23.104.34",
+                  "172.23.222.77","172.23.222.78","172.23.222.79","172.23.222.80","172.23.222.81","172.23.222.82",
+                  "172.23.120.173","172.23.120.174","172.23.120.175","172.23.120.178",
+                  "172.23.104.235",
+                  "172.23.104.73","172.23.104.80","172.23.104.103","172.23.104.105","172.23.104.121","172.23.104.167",
+                  "172.23.104.193","172.23.104.201","172.23.105.10",
+                  "172.23.105.32","172.23.105.109","172.23.105.125",
+                  "172.23.104.248","172.23.104.249","172.23.104.250","172.23.105.0",
+                  "172.23.221.187","172.23.221.188","172.23.221.189","172.23.221.190",
+                  "172.23.218.190","172.23.218.191","172.23.218.192","172.23.218.193","172.23.218.194","172.23.218.195",
+                  "172.23.219.59","172.23.219.60","172.23.219.61","172.23.219.62","172.23.219.63","172.23.219.64",
+                  "172.23.219.65","172.23.219.66",
+                  "172.23.104.171","172.23.104.176","172.23.105.208",
+                  "172.23.104.219","172.23.104.241","172.23.105.152","172.23.105.154"
                   ]
     count = 1
     for server in all_slaves:
@@ -179,15 +192,15 @@ def scan_all_servers():
     cluster_env = ClusterEnvironment.builder().ioConfig(IoConfig.numKvConnections(25)).timeoutConfig(TimeoutConfig.builder().connectTimeout(Duration.ofSeconds(20)).kvTimeout(Duration.ofSeconds(10)))
     cluster_options = ClusterOptions.clusterOptions("Administrator", "esabhcuoc").environment(cluster_env.build())
     cluster = Cluster.connect("172.23.217.21", cluster_options)
-    STATEMENT = "SELECT META().id FROM `QE-server-pool` WHERE os='debian' AND (regression IN poolId OR 'magmareg' IN poolId OR 'magmanew' IN poolId OR 'magmaUpgrade' IN poolId);"
+    STATEMENT = "SELECT ipaddr FROM `QE-server-pool` WHERE os='debian';"
     result = cluster.query(STATEMENT)
 
     count = 1
     for server in result.rowsAsObject():
         print("--+--+--+--+-- %s. CHECKING ON SERVER: %s --+--+--+--+--"
-              % (count, server.get("id")))
+              % (count, server.get("ipaddr")))
         count += 1
-        check_coredump_exist(server.get("id"))
+        check_coredump_exist(server.get("ipaddr"))
 
 
 if __name__ == "__main__":
