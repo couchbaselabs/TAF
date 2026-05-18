@@ -75,8 +75,9 @@ class SteadyStateTests(MagmaBaseTest):
 
         self.PrintStep("Step 4: Sequence number count check")
 
-        expected_count = ((count) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1))) \
-                            + (3 * (self.vbuckets*(self.num_replicas+1)))
+        vb_count = self.cluster.buckets[0].numVBuckets
+        expected_count = ((count) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (vb_count*(self.num_replicas+1))) \
+                            + (3 * (vb_count*(self.num_replicas+1)))
         seq_count = self.get_seqnumber_count()
         self.log.info("expected_count = {}".format(expected_count))
         self.assertEqual(seq_count, expected_count, "Not all sequence numbers are present")
@@ -191,10 +192,11 @@ class SteadyStateTests(MagmaBaseTest):
             self.sleep(60, "sleep before seq number count")
 
             self.PrintStep("Step 4: Sequence number count check")
+            vb_count = self.cluster.buckets[0].numVBuckets
             expected_count = ((count-1) * ((self.num_replicas+1) * (2 * self.init_items_per_collection) * (self.num_scopes *(self.num_collections-1))))\
-            + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1))) \
+            + ((self.num_collections) * (vb_count*(self.num_replicas+1))) \
             + ((self.num_replicas+1) * self.init_items_per_collection * (self.num_scopes * (self.num_collections-1))) \
-            + (3 * (self.vbuckets*(self.num_replicas+1)))
+            + (3 * (vb_count*(self.num_replicas+1)))
 
             seq_count = self.get_seqnumber_count()
             self.log.info("expected_count = {}".format(expected_count))
@@ -310,8 +312,9 @@ class SteadyStateTests(MagmaBaseTest):
 
         self.PrintStep("Step 4: Sequence number count check")
 
-        expected_count = (( 1+ (count * 2)) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1))) \
-                            + (3 * (self.vbuckets*(self.num_replicas+1)))
+        vb_count = self.cluster.buckets[0].numVBuckets
+        expected_count = (( 1+ (count * 2)) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (vb_count*(self.num_replicas+1))) \
+                            + (3 * (vb_count*(self.num_replicas+1)))
         seq_count = self.get_seqnumber_count()
         self.log.info("expected_count = {}".format(expected_count))
         self.assertEqual(seq_count, expected_count, "Not all sequence numbers are present")
