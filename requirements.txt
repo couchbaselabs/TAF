@@ -23,5 +23,5 @@ faker
 elasticsearch
 azure-storage-blob
 cryptography==46.0.3
-PyJWT==2.10.1
+PyJWT==2.12.0
 httplib2
