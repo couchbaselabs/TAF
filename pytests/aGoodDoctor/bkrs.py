@@ -15,9 +15,8 @@ class DoctorBKRS():
         self.log = logger.get("infra")
         self.cluster = cluster
         shell = RemoteMachineShellConnection(self.cluster.master)
-        bin_path = shell.return_bin_path_based_on_os(shell.return_os_type())
+        self.cbbackupmgr = os.path.join(f"{shell.cb_path}/bin", "cbbackupmgr")
         shell.disconnect()
-        self.cbbackupmgr = os.path.join(bin_path, "cbbackupmgr")
 
     def configure_backup(self, archive, repo, exclude, include):
 
