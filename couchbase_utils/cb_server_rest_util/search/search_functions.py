@@ -16,7 +16,8 @@ class IndexFunctions(CBRestConnection):
         """
         api = f"{self.fts_url}/api/index/{index_name}"
         headers = self.create_headers(content_type="application/json")
-        status, content, _ = self.request(api, self.PUT, param_data, headers=headers, timeout=timeout)
+        status, content, _ = self.request(api, self.PUT, param_data,
+                                          headers=headers, timeout=timeout)
         return status, content
 
     def run_fts_query(self, index_name, param_data, timeout=120):
@@ -26,7 +27,8 @@ class IndexFunctions(CBRestConnection):
         """
         api = f"{self.fts_url}/api/index/{index_name}/query"
         headers = self.create_headers(content_type="application/json")
-        status, content, _ = self.request(api, self.POST, param_data, headers=headers, timeout=timeout)
+        status, content, _ = self.request(api, self.POST, param_data,
+                                          headers=headers, timeout=timeout)
         return status, content
 
     def delete_fts_index(self, index_name, timeout=60):
@@ -44,5 +46,17 @@ class IndexFunctions(CBRestConnection):
         docs.couchbase.com/server/current/rest-api/rest-fts-indexing.html
         """
         api = f"{self.fts_url}/api/index/{index_name}/count"
+        status, content, _ = self.request(api, self.GET, timeout=timeout)
+        return status, content
+
+    def fts_scoped_index_item_count(self, bucket_name, scope_name, index_name,
+                                    timeout=60):
+        """
+        GET :: /api/bucket/{bucket}/scope/{scope}/index/{index_name}/count
+        docs.couchbase.com/server/current/rest-api/rest-fts-indexing.html
+        Used for CB 7.x scoped FTS indexes.
+        """
+        api = (f"{self.fts_url}/api/bucket/{bucket_name}/scope/{scope_name}"
+               f"/index/{index_name}/count")
         status, content, _ = self.request(api, self.GET, timeout=timeout)
         return status, content

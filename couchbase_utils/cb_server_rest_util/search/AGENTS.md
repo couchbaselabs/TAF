@@ -28,6 +28,7 @@ model: inherit
 | `run_fts_query` | POST | `/api/index/{index_name}/query` |
 | `delete_fts_index` | DELETE | `/api/index/{index_name}` |
 | `fts_index_item_count` | GET | `/api/index/{index_name}/count` |
+| `fts_scoped_index_item_count` | GET | `/api/bucket/{bucket}/scope/{scope}/index/{index_name}/count` |
 
 ## No Business Logic — Pure Wrappers Only
 

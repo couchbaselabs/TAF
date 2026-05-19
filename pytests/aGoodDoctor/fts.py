@@ -13,7 +13,7 @@ import time
 from copy import deepcopy
 from threading import Thread
 
-from FtsLib.FtsOperations import FtsHelper
+from cb_server_rest_util.search.search_api import SearchRestAPI
 from TestInput import TestInputSingleton
 from .serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
     HotelIndex, template
@@ -21,9 +21,9 @@ from global_vars import logger
 # from elasticsearch import EsClient
 from py_constants.cb_constants.CBServer import CbServer
 import traceback
-from couchbase.exceptions import (RequestCanceledException, CouchbaseException, 
-                                 TimeoutException, AmbiguousTimeoutException, 
-                                 UnAmbiguousTimeoutException, RateLimitedException)
+from couchbase.exceptions import (RequestCanceledException, CouchbaseException,
+                                  TimeoutException, AmbiguousTimeoutException,
+                                  UnAmbiguousTimeoutException, RateLimitedException)
 from couchbase.search import SearchRequest
 from couchbase.search import QueryStringQuery, MatchQuery, PrefixQuery
 from couchbase.vector_search import VectorSearch, VectorQuery
@@ -39,11 +39,11 @@ class Vector:
         self.fashionBrands = ["Nike", "Adidas", "Puma", "Gucci", "Prada"]
         self.flt_buf = None
         self.flt_buf_length = 0
-        
+
     def setEmbeddingsModel(self, model):
         # Stub implementation - in real usage, this would load a ML model
         pass
-        
+
     def convertToBase64Bytes(self, floats):
         import base64
         import struct
@@ -97,7 +97,7 @@ class DoctorFTS:
 
     def create_fts_indexes(self, cluster, dims=1536, similarity="l2_norm", _type="vector"):
         status = False
-        fts_helper = FtsHelper(cluster.fts_nodes[0])
+        fts_helper = SearchRestAPI(cluster.fts_nodes[0])
         for b in cluster.buckets:
             b.ftsIndexes = dict()
             b.FTSqueries = ftsQueries
@@ -146,14 +146,14 @@ class DoctorFTS:
                         while retry > 0:
                             status, content = fts_helper.create_fts_index_from_json(
                                 name, str(fts_param_template))
-                            if content.find(" an index with the same name already exists") != -1:
+                            if str(content).find(" an index with the same name already exists") != -1:
                                 status = True
                             if status is False:
-                                self.log.critical("FTS index creation failed")
+                                self.log.critical("FTS index creation failed: {}".format(content))
                                 time.sleep(10)
                                 retry -= 1
                             else:
-                                b.ftsIndexes.update({name: (c, queryTypes)})
+                                b.ftsIndexes.update({name: (s, c, queryTypes)})
                                 break
                         i += 1
                         time.sleep(1)
@@ -162,24 +162,28 @@ class DoctorFTS:
         self.stop_run = True
 
     def wait_for_fts_index_online(self, cluster, timeout=86400):
-        fts_helper = FtsHelper(cluster.fts_nodes[0])
+        fts_helper = SearchRestAPI(cluster.fts_nodes[0])
         status = False
         for bucket in cluster.buckets:
-            for index_name, _ in bucket.ftsIndexes.items():
+            for index_name, (scope, _, __) in bucket.ftsIndexes.items():
                 status = False
                 stop_time = time.time() + timeout
                 while time.time() < stop_time:
-                    _status, content = fts_helper.fts_index_item_count(
-                        "%s" % (index_name))
-                    self.log.debug("index: {}, status: {}, count: {}, expected: {}"
-                                   .format(index_name, _status,
-                                           json.loads(content)["count"], bucket.loadDefn.get("num_items")))
-                    if json.loads(content)["count"] == bucket.loadDefn.get("num_items"):
+                    _status, content = fts_helper.fts_scoped_index_item_count(
+                        bucket.name, scope, index_name)
+                    if not _status:
+                        self.log.debug("index: {}, not ready: {}".format(index_name, content))
+                        time.sleep(5)
+                        continue
+                    count = content.get("count", 0)
+                    self.log.debug("index: {}, count: {}, expected: {}"
+                                   .format(index_name, count, bucket.loadDefn.get("num_items")))
+                    if count == bucket.loadDefn.get("num_items"):
                         self.log.info("FTS index is ready: {}".format(index_name))
                         status = True
                         break
                     time.sleep(5)
-                if status is False:
+                if not status:
                     return status
         return status
 
@@ -188,7 +192,7 @@ class DoctorFTS:
         Drop count number of fts indexes using fts name
         from fts_dict
         """
-        fts_helper = FtsHelper(cluster.fts_nodes[0])
+        fts_helper = SearchRestAPI(cluster.fts_nodes[0])
         self.log.debug("Dropping fts index: {}".format(idx_name))
         status, _ = fts_helper.delete_fts_index(idx_name)
         return status
@@ -212,7 +216,7 @@ class FTSQueryLoad:
         self.cluster = cluster
         self.cluster_conn = random.choice(self.bucket.clients).cluster
         self.fts_node = random.choice(self.cluster.fts_nodes)
-        self.fts_helper = FtsHelper(self.fts_node)
+        self.fts_helper = SearchRestAPI(self.fts_node)
         self.esClient = esClient
         self.mockVector = mockVector
         self.dim = dim
@@ -254,8 +258,8 @@ class FTSQueryLoad:
             try:
                 vector.setEmbeddingsModel(_input.param("model", "sentence-transformers/all-MiniLM-L6-v2"))
                 FTSQueryLoad.predictor = vector.predictor
-            except Exception or NoClassDefFoundError as e:
-                print(e)
+            except Exception as e:
+                self.log.critical(e)
                 traceback.print_exc()
                 exc_info = sys.exc_info()
                 traceback.print_exception(*exc_info)
@@ -263,7 +267,7 @@ class FTSQueryLoad:
                 del exc_info
         while not self.stop_run:
             index, _tuple = random.choice(self.bucket.ftsIndexes.items())
-            collection, queries = _tuple
+            _, collection, queries = _tuple
             k = random.randint(2, 50)
             vector_float = []
             if self.mockVector:
@@ -292,7 +296,7 @@ class FTSQueryLoad:
                 vector_query = VectorQuery.create("embedding", vector_float, num_candidates=k)
                 vector_search = VectorSearch.from_vector_query(vector_query)
                 request = SearchRequest(vector_search)
-        
+
                 search_options = SearchOptions(limit=k, fields=["productDescription"])
                 result = self.cluster_conn.search(index, request, search_options)
                 if result.metaData().errors():
@@ -306,7 +310,7 @@ class FTSQueryLoad:
                     if self.esClient:
                         try:
                             esResult = self.esClient.performKNNSearch(collection.lower().replace("_", ""), "embedding", text_vector, k);
-                        except SocketTimeoutException as e:
+                        except Exception as e:
                             self.esClient = EsClient(self.esClient.serverUrl, self.esClient.apiKey)
                             self.esClient.initializeSDK()
                             print(e)
@@ -326,7 +330,7 @@ class FTSQueryLoad:
                 else:
                     self.failed_count.next()
                     self.log.critical("k=%s, total_hits=%s, hits=%s" % (k, result.metaData().metrics().totalRows(), result.rows().size()))
-            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+            except TimeoutException or AmbiguousTimeoutException or UnAmbiguousTimeoutException as e:
                 pass
             except RequestCanceledException as e:
                 pass
@@ -358,7 +362,7 @@ class FTSQueryLoad:
     def _run_query(self, validate_item_count=False, expected_count=0):
         while not self.stop_run:
             index, _tuple = random.choice(self.bucket.ftsIndexes.items())
-            _, queries = _tuple
+            _, _, queries = _tuple
             query = random.choice(queries)
             start = time.time()
             e = ""
@@ -372,7 +376,7 @@ class FTSQueryLoad:
                         self.success_count.next()
                 else:
                     self.success_count.next()
-            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+            except TimeoutException or AmbiguousTimeoutException or UnAmbiguousTimeoutException as e:
                 pass
             except RequestCanceledException as e:
                 pass
