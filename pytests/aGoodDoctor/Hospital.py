@@ -358,12 +358,13 @@ class Murphy(BaseTestCase, OPD):
 
     def testKvRangeScan(self):
         self.create_perc = 100
-        self.PrintStep("Step 1: Create %s items: %s" % (self.num_items, self.key_type))
+        self.PrintStep(f"Step 1: Create {self.num_items} items: {self.key_type}")
         if not self.skip_init:
             JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets)
 
         self.drN1QL = DoctorN1QL(self.cluster, self.bucket_util,
-                                      self.num_indexes, num_query=5, query_without_index=True)
+                                 self.num_indexes, num_query=5,
+                                 query_without_index=True)
 
         th = threading.Thread(target=self.drN1QL.run_concurrent_queries,
                               kwargs=dict(num_queries=5))
@@ -376,21 +377,22 @@ class Murphy(BaseTestCase, OPD):
         self.update_perc = perc
         self.delete_perc = perc
         self.read_perc = perc
-        self.generate_docs(doc_ops=self.doc_ops,
-                           read_start=0,
-                           read_end=self.num_items,
-                           create_start=self.num_items,
-                           create_end=self.num_items*10,
-                           update_start=0,
-                           update_end=self.num_items*10,
-                           delete_start=self.num_items//2,
-                           delete_end=self.num_items,
-                           expire_start=self.num_items,
-                           expire_end=self.num_items*10
-                           )
-        self.perform_load(wait_for_load=False, validate_data=False)
+        JavaDocLoaderUtils.generate_docs(
+            doc_ops=self.doc_ops,
+            read_start=0,
+            read_end=self.num_items,
+            create_start=self.num_items,
+            create_end=self.num_items*10,
+            update_start=0,
+            update_end=self.num_items*10,
+            delete_start=self.num_items//2,
+            delete_end=self.num_items,
+            expire_start=self.num_items,
+            expire_end=self.num_items*10)
+        loader_tasks = JavaDocLoaderUtils.perform_load(
+            wait_for_load=False, validate_data=False)
         crash_th = threading.Thread(target=self.crash_memcached,
-                                  kwargs={"graceful": False})
+                                    kwargs={"graceful": False})
         crash_th.start()
         self.doc_loading_tm.getAllTaskResult()
 
@@ -418,8 +420,10 @@ class Murphy(BaseTestCase, OPD):
             deletes: 0 - 10M
             Final Docs = 0
             '''
-            self.generate_docs()
-            self.perform_load(validate_data=True)
+            for bucket in self.cluster.buckets:
+                JavaDocLoaderUtils.generate_docs(bucket=bucket)
+            JavaDocLoaderUtils.perform_load(self.cluster, self.cluster.buckets,
+                                            validate_data=True)
             self.loop += 1
         # self.stop_stats = True
         # stat_th.join()
@@ -472,10 +476,11 @@ class Murphy(BaseTestCase, OPD):
                                             overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0})
             else:
                 for bucket in self.cluster.buckets:
-                    JavaDocLoaderUtils.generate_docs(doc_ops=["create"],
-                                create_start=0,
-                                create_end=bucket.loadDefn.get("num_items"),
-                                bucket=bucket)
+                    JavaDocLoaderUtils.generate_docs(
+                        doc_ops=["create"],
+                        create_start=0,
+                        create_end=bucket.loadDefn.get("num_items"),
+                        bucket=bucket)
         self.print_stats(self.cluster)
 
         if self.cluster.cbas_nodes:

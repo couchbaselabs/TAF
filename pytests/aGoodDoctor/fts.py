@@ -266,7 +266,7 @@ class FTSQueryLoad:
                 traceback.print_stack()
                 del exc_info
         while not self.stop_run:
-            index, _tuple = random.choice(self.bucket.ftsIndexes.items())
+            index, _tuple = random.choice(list(self.bucket.ftsIndexes.items()))
             _, collection, queries = _tuple
             k = random.randint(2, 50)
             vector_float = []
@@ -301,12 +301,12 @@ class FTSQueryLoad:
                 result = self.cluster_conn.search(index, request, search_options)
                 if result.metaData().errors():
                     if str(result.metaData().errors()).find("query request rejected") != -1:
-                        self.rejected_count.next()
+                        next(self.rejected_count)
                     else:
-                        self.error_count.next()
+                        next(self.error_count)
                         self.log.critical(result.metaData().errors())
                 elif result.metaData().metrics().totalRows() == k:
-                    self.success_count.next()
+                    next(self.success_count)
                     if self.esClient:
                         try:
                             esResult = self.esClient.performKNNSearch(collection.lower().replace("_", ""), "embedding", text_vector, k);
@@ -328,31 +328,33 @@ class FTSQueryLoad:
                         self.log.critical("Query: {}, k={}, Accuracy: {}, recall: {}".format(
                             text, k, round(100.0 * accuracy/k, 2), round(100.0 * recall/k, 2)))
                 else:
-                    self.failed_count.next()
+                    next(self.failed_count)
                     self.log.critical("k=%s, total_hits=%s, hits=%s" % (k, result.metaData().metrics().totalRows(), result.rows().size()))
-            except TimeoutException or AmbiguousTimeoutException or UnAmbiguousTimeoutException as e:
-                pass
-            except RequestCanceledException as e:
-                pass
-            except CouchbaseException as e:
-                pass
-            except RateLimitedException as e:
-                print(e)
-            except Exception as e:
-                print(e)
-            if str(e).find("TimeoutException") != -1\
-                or str(e).find("AmbiguousTimeoutException") != -1\
-                    or str(e).find("UnambiguousTimeoutException") != -1:
-                self.timeout_count.next()
-            elif str(e).find("RequestCanceledException") != -1:
-                self.failures += self.cancel_count.next()
-            elif str(e).find("CouchbaseException") != -1:
-                self.failures += self.error_count.next()
-            elif str(e).find("RateLimitedException") != -1:
+            except (TimeoutException, AmbiguousTimeoutException, UnAmbiguousTimeoutException) as _e:
+                e = str(_e)
+            except RequestCanceledException as _e:
+                e = str(_e)
+            except CouchbaseException as _e:
+                e = str(_e)
+            except RateLimitedException as _e:
+                e = str(_e)
+                print(_e)
+            except Exception as _e:
+                e = str(_e)
+                print(_e)
+            if e.find("TimeoutException") != -1\
+                or e.find("AmbiguousTimeoutException") != -1\
+                    or e.find("UnambiguousTimeoutException") != -1:
+                next(self.timeout_count)
+            elif e.find("RequestCanceledException") != -1:
+                self.failures += next(self.cancel_count)
+            elif e.find("CouchbaseException") != -1:
+                self.failures += next(self.error_count)
+            elif e.find("RateLimitedException") != -1:
                 self.log.critical(e)
-                self.failures += self.rejected_count.next()
+                self.failures += next(self.rejected_count)
 
-            if str(e).find("no more information available") != -1:
+            if e.find("no more information available") != -1:
                 self.log.critical(e)
             end = time.time()
             if end - start < 1:
@@ -361,7 +363,7 @@ class FTSQueryLoad:
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         while not self.stop_run:
-            index, _tuple = random.choice(self.bucket.ftsIndexes.items())
+            index, _tuple = random.choice(list(self.bucket.ftsIndexes.items()))
             _, _, queries = _tuple
             query = random.choice(queries)
             start = time.time()
@@ -371,29 +373,29 @@ class FTSQueryLoad:
                 result = self.execute_fts_query("{}".format(index), query)
                 if validate_item_count:
                     if result.metaData().metrics().totalRows() != expected_count:
-                        self.failed_count.next()
+                        next(self.failed_count)
                     else:
-                        self.success_count.next()
+                        next(self.success_count)
                 else:
-                    self.success_count.next()
-            except TimeoutException or AmbiguousTimeoutException or UnAmbiguousTimeoutException as e:
-                pass
-            except RequestCanceledException as e:
-                pass
-            except CouchbaseException as e:
-                pass
-            except Exception as e:
-                pass
-            if str(e).find("TimeoutException") != -1\
+                    next(self.success_count)
+            except (TimeoutException, AmbiguousTimeoutException, UnAmbiguousTimeoutException) as _e:
+                e = str(_e)
+            except RequestCanceledException as _e:
+                e = str(_e)
+            except CouchbaseException as _e:
+                e = str(_e)
+            except Exception as _e:
+                e = str(_e)
+            if e.find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
-                self.timeout_count.next()
-            elif str(e).find("RequestCanceledException") != -1:
-                self.failures += self.cancel_count.next()
-            elif str(e).find("CouchbaseException") != -1:
-                self.failures += self.error_count.next()
+                next(self.timeout_count)
+            elif e.find("RequestCanceledException") != -1:
+                self.failures += next(self.cancel_count)
+            elif e.find("CouchbaseException") != -1:
+                self.failures += next(self.error_count)
 
-            if str(e).find("no more information available") != -1:
+            if e.find("no more information available") != -1:
                 self.log.critical(query)
                 self.log.critical(e)
             end = time.time()
