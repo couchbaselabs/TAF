@@ -129,7 +129,7 @@ class DoctorFTS:
                     if valType == "NimbusM":
                         queryTypes = NimbusMQueries
                     i = 0
-                    while i < workload.get("FTS")[0]:
+                    while i < workload.get("FTS")["num_indexes"]:
                         name = str(b.name).replace("-", "_") + c + "_fts_idx_"+str(i)
                         fts_param_template = deepcopy(template)
                         fts_param_template.update({
