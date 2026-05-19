@@ -107,6 +107,10 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             instance_ids = instance_ids.split(',')
 
         provider = self.input.param("columnar_provider", "aws").lower()
+        region = {"aws": self.region, "azure": self.azure_region}.get(
+            provider, self.gcp_region)
+        self.log.info(f"Provider is {provider}")
+        self.log.info(f"Region is {region}")
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):
                 populate_columnar_instance_obj(self.tenant, instance_ids[i])
@@ -116,7 +120,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         name=self.prefix + "Columnar_{0}".format(
                             random.randint(1, 100000)),
                         provider = provider,
-                        region=self.region if provider == "aws" else self.gcp_region,
+                        region=region,
                         nodes=self.num_nodes_in_columnar_instance,
                         instance_types={
                             "vcpus": self.instance_type[0],

@@ -400,7 +400,10 @@ class ColumnarUtils:
             provider = random.choice(["aws"])
 
         if not region:
-            region = random.choice(["us-east-2"])
+            if provider == "azure":
+                region = random.choice(["eastus"])
+            else:
+                region = random.choice(["us-east-2"])
 
         if not nodes:
             nodes = random.choice([1, 2, 4, 8, 16, 32])

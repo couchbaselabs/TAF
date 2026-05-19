@@ -88,6 +88,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
             }
         self.region = self.input.param("region", AWS.Region.US_WEST_2).lower()
         self.gcp_region = self.input.param("gcp_region", GCP.Region.US_EAST_1).lower()
+        self.azure_region = self.input.param("azure_region", "eastus").lower()
         storage_type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd" if provider == "gcp" else "P6"
         self.storage_type = self.input.param("type", storage_type).lower()
         if provider == "aws":
@@ -469,7 +470,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             description="Amazing Cloud",
             single_az=False,
             provider=self.provider,
-            region=self.region if self.provider == "aws" else self.gcp_region,
+            region=self.region if self.provider == "aws" else (
+                self.azure_region if self.provider == "hostedAzure"
+                else self.gcp_region),
             timezone=Cluster.Timezone.PT,
             plan=self.package,
             version=self.input.capella.get("server_version", None),
@@ -524,7 +527,13 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
     def generate_cluster_config_internal(self):
         specs = self.create_specs()
         provider = self.input.param("provider", AWS.__str__).lower()
-        self.log.info("Specs are {} . Provider is {}. Region is {}".format(specs, provider, self.region))
+        if provider == "aws":
+            region = self.region
+        elif provider == "azure":
+            region = self.azure_region
+        else:
+            region = self.gcp_region
+        self.log.info("Specs are {} . Provider is {}. Region is {}".format(specs, provider, region))
         if provider == "aws":
             provider = "hostedAWS"
             package = "enterprise"
@@ -537,7 +546,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         else:
             raise Exception("Provider has to be one of aws, gcp, or azure")
         self.capella_cluster_config = {
-            "region": self.region,
+            "region": region,
             "provider": provider,
             "name": str(uuid.uuid4()),
             "cidr": None,
