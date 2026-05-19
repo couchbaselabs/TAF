@@ -133,6 +133,8 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
 
     def test_fusion_local_disk_full_during_sync(self):
 
+        validate_du = self.input.param("validate_du", True)
+
         self.log.info("Starting initial load")
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 60
@@ -145,23 +147,12 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
 
         self.sleep(2 * self.fusion_upload_interval, "Wait after enabling Fusion")
 
-        # Verify that the log store contains data
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
-
-        # Disable Fusion
-        status, content = FusionRestAPI(self.cluster.master).disable_fusion()
-        self.log.info(f"Disabling Fusion, Status: {status}, Content: {content}")
-
-        self.sleep(120, "Wait after disabling Fusion")
-
-        # Verify that the log store is cleaned up
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        if validate_du:
+            # Verify that log store contains data after 'enabling' Fusion
+            o, e, initial_size = self.get_log_store_du()
+            self.assertTrue(len(o) > 0, "DU command should return output")
+            self.assertFalse(e, f"DU command failed with error: {e}")
+            self.assertGreater(initial_size, 0, "Log store should contain data after enabling Fusion")
 
         # Fill local data directory on nodes
         for node in self.cluster.nodes_in_cluster:
@@ -171,22 +162,56 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
         for server in self.cluster.nodes_in_cluster:
             self.fill_final_space_left_on_file_system(server)
 
-        # Enable Fusion
+        # Disable Fusion
+        self.disable_fusion()
+        self.sleep(60, "Wait after disabling Fusion")
+
+        if validate_du:
+            # Verify that the log store is cleaned up
+            o, e, cleanup_size = self.get_log_store_du()
+            self.assertTrue(len(o) > 0, "DU command should return output")
+            self.assertEqual(cleanup_size, 0, "Log store should be empty after disabling Fusion")
+
+        # Re-Enable Fusion
         self.log.info("Configuring Fusion settings")
         self.configure_fusion()
-        status, content = FusionRestAPI(self.cluster.master).enable_fusion()
-        self.log.info(f"Enabling Fusion, Status = {status}, Content = {content}")
-        self.assertTrue(status, "Enabling Fusion failed")
+        enable_th = threading.Thread(target=self.enable_fusion)
+        enable_th.start()
 
-        self.sleep(10, "Wait before monitoring Fusion status")
-        monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
-        monitor_fusion_th.start()
-
-        self.sleep(600, "Wait after Fusion Initial Sync is fully complete")
-        self.monitor_fusion_info = False
+        self.sleep(600, "Wait before clearing up disk space on log store")
 
         for server in self.cluster.nodes_in_cluster:
             self.free_disk(server)
+
+        enable_th.join()
+
+        if validate_du:
+            # Verify that log store contains data after 're-enabling' Fusion
+            o, e, initial_size = self.get_log_store_du()
+            self.assertTrue(len(o) > 0, "DU command should return output")
+            self.assertFalse(e, f"DU command failed with error: {e}")
+            self.assertGreater(initial_size, 0, "Log store should contain data after re-enabling Fusion")
+
+        # Disable after freeing disk
+        self.disable_fusion()
+        self.sleep(60, "Wait after disabling Fusion")
+
+        if validate_du:
+            # Verify that the log store is cleaned up
+            o, e, cleanup_size = self.get_log_store_du()
+            self.assertTrue(len(o) > 0, "DU command should return output")
+            self.assertEqual(cleanup_size, 0, "Log store should be empty after disabling Fusion")
+
+        # Re-Enable Fusion again
+        self.enable_fusion()
+        self.sleep(60, "Wait after Enabling Fusion")
+
+        if validate_du:
+            # Verify that log store contains data after 're-enabling' Fusion
+            o, e, initial_size = self.get_log_store_du()
+            self.assertTrue(len(o) > 0, "DU command should return output")
+            self.assertFalse(e, f"DU command failed with error: {e}")
+            self.assertGreater(initial_size, 0, "Log store should contain data after re-enabling Fusion")
 
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")

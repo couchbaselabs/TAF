@@ -150,7 +150,7 @@ class FusionFailoverRebalance(MagmaBaseTest, FusionBase):
                                               wait_for_rebalance_to_complete=False)
         # Kill memcached
         self.sleep(5, "Wait before killing memcached")
-        selected_node = nodes_to_monitor[0]
+        selected_node = nodes_to_monitor[0][0]
         self.log.info(f"Killing memcached on {selected_node.ip}")
         shell = RemoteMachineShellConnection(selected_node)
         shell.kill_memcached()

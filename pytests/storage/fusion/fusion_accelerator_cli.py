@@ -23,8 +23,7 @@ class FusionAcceleratorCLI(MagmaBaseTest, FusionBase):
         subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
         # Override Fusion default settings
         for bucket in self.cluster.buckets:
-            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval)
+            self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval)
 
     def tearDown(self):
         super(FusionAcceleratorCLI, self).tearDown()

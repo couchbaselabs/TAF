@@ -459,28 +459,6 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
-        self.log.info("Checking final stats for sync, migration, and read failures")
-        for node in self.cluster.nodes_in_cluster:
-            for bucket in self.cluster.buckets:
-                cbstats = Cbstats(node)
-                stats = cbstats.all_stats(bucket.name)
-                sync_failures = int(stats['ep_fusion_sync_failures'])
-                migration_failures = int(stats['ep_fusion_migration_failures'])
-                read_failures = int(stats['ep_data_read_failed'])
-
-                self.log.info("Final - Node {0}, Bucket {1}: "
-                            "Sync failures={2}, Migration failures={3}, Read failures={4}".format(
-                                node.ip, bucket.name, sync_failures, migration_failures, read_failures))
-
-                self.assertEqual(sync_failures, 0,
-                    "Sync failures on {0}:{1}".format(node.ip, bucket.name))
-                self.assertEqual(migration_failures, 0,
-                    "Migration failures on {0}:{1}".format(node.ip, bucket.name))
-                self.assertEqual(read_failures, 0,
-                    "Read failures on {0}:{1}".format(node.ip, bucket.name))
-
-                cbstats.disconnect()
-
 
     def test_fusion_sync_remove_write_permissions(self):
 

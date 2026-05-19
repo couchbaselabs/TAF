@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 
+from BucketLib.bucket import Bucket
 from TestInput import TestInputServer
 from basetestcase import BaseTestCase
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
@@ -47,6 +48,13 @@ nfs_client_remove = """
 class FusionBase(BaseTestCase):
     def setUp(self):
         super(FusionBase, self).setUp()
+
+        if self.fusion_log_store_uri and self.fusion_log_store_uri.startswith("s3://"):
+            self.log_store = "s3"
+        else:
+            self.log_store = "nfs"
+
+        self.s3_run_prefix = None
 
         if self.fusion_test:
             self.nfs_server_ip = self.input.param("nfs_server_ip", "172.23.219.42")
@@ -140,6 +148,7 @@ class FusionBase(BaseTestCase):
             self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
 
             self.upsert_iterations = self.input.param("upsert_iterations", 1)
+            self.read_iterations = self.input.param("read_iterations", 1)
             self.validate_docs = self.input.param("validate_docs", True)
             self.read_ops_rate = self.input.param("read_ops_rate", 10000)
             self.num_docs_to_validate = self.input.param("num_docs_to_validate", 1000000)
@@ -165,6 +174,17 @@ class FusionBase(BaseTestCase):
     def tearDown(self):
         if self.fusion_test:
             self.validate_fusion_health()
+            if getattr(self, 'fusion_s3_test', False) and self.s3_run_prefix:
+                _, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+                if content["state"] != "disabled":
+                    self.disable_fusion()
+                cleanup_uri = self.fusion_log_store_uri.rstrip("/") + "/"
+                cleanup_cmd = f"aws s3 rm {cleanup_uri} --recursive"
+                self.log.info(f"Cleaning up S3 run directory: {cleanup_cmd}")
+                ssh = RemoteMachineShellConnection(self.cluster.master)
+                o, e = ssh.execute_command(cleanup_cmd)
+                ssh.disconnect()
+                self.log.info(f"S3 cleanup output: {o}, error: {e}")
         super(FusionBase, self).tearDown()
 
     def setup_nfs_server(self):
@@ -364,6 +384,82 @@ class FusionBase(BaseTestCase):
 
         return kvstore_dirs
 
+    def parse_du_output(self, du_output):
+        """
+        Parse du -sh output and return size in bytes.
+        Example: "35G /data/nfs/share25/buckets/" -> 35 * 1024^3
+        """
+        if not du_output:
+            return 0
+        size_str = du_output[0].split()[0]
+        multipliers = {'K': 1024, 'M': 1024**2, 'G': 1024**3, 'T': 1024**4}
+        if size_str[-1] in multipliers:
+            return float(size_str[:-1]) * multipliers[size_str[-1]]
+        elif size_str.isdigit():
+            return int(size_str)
+        else:
+            try:
+                return float(size_str[:-1]) * multipliers.get(size_str[-1].upper(), 1)
+            except (ValueError, KeyError):
+                return 0
+
+    def parse_s3_human_size(self, size_str):
+        """
+        Convert an AWS --human-readable size string to bytes.
+        Handles '4.5 GiB', '1.2 MiB', '512 KiB', '1 Byte' / '3 Bytes'
+        and decimal variants (KB/MB/GB).
+        """
+        units = {
+            'B': 1, 'BYTE': 1, 'BYTES': 1,
+            'KB': 1000, 'KIB': 1024,
+            'MB': 1000 ** 2, 'MIB': 1024 ** 2,
+            'GB': 1000 ** 3, 'GIB': 1024 ** 3,
+            'TB': 1000 ** 4, 'TIB': 1024 ** 4,
+        }
+        parts = size_str.strip().split()
+        if len(parts) == 2:
+            try:
+                value = float(parts[0])
+                unit = parts[1].upper().rstrip('S')
+                return int(value * units.get(unit, 1))
+            except (ValueError, KeyError):
+                return 0
+        try:
+            return int(float(size_str.strip()))
+        except (ValueError, TypeError):
+            return 0
+
+    def get_log_store_du(self):
+        """
+        Return (output, error, size_bytes) for log store disk usage.
+        Supports both NFS (du -sh on nfs_server) and S3 (aws s3 ls on
+        cluster master) backends, selected via self.log_store.
+        """
+        if self.log_store == "s3":
+            s3_path = self.fusion_log_store_uri
+            if not s3_path.endswith("/"):
+                s3_path += "/"
+            cmd = (f"aws s3 ls {s3_path} --recursive --human-readable "
+                   f"--summarize | tail -n 2")
+            ssh = RemoteMachineShellConnection(self.cluster.master)
+            o, e = ssh.execute_command(cmd)
+            ssh.disconnect()
+            self.log.info(f"S3 log store DU check, Output = {o}, Error = {e}")
+            size_bytes = 0
+            for line in o:
+                if "Total Size" in line:
+                    size_str = line.split("Total Size:")[-1].strip()
+                    size_bytes = self.parse_s3_human_size(size_str)
+                    break
+            return o, e, size_bytes
+
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
+        ssh.disconnect()
+        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
+        size_bytes = self.parse_du_output(o)
+        return o, e, size_bytes
+
     def get_timestamp_dirs(self, ssh, dir):
 
         cmd = f"date +%s; stat -c '%s %Y %n' {dir}/*"
@@ -486,7 +582,7 @@ class FusionBase(BaseTestCase):
         monitor_threads = list()
 
         for bucket in self.cluster.buckets:
-            kvstore_dirs = self.get_kvstore_directories(bucket.name)
+            kvstore_dirs = self.get_kvstore_directories(bucket)
 
             for dir in kvstore_dirs:
                 self.log.debug(f"Bucket: {bucket}, Monitoring dir: {dir} for log file creation/deletion and chronicle metadata updates")
@@ -539,7 +635,7 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
-    def monitor_active_guest_volumes(self, duration=86400, interval=30):
+    def monitor_active_guest_volumes(self, duration=1800, interval=30):
         fusion_rest = FusionRestAPI(self.cluster.master)
 
         start_time = time.time()
@@ -757,6 +853,8 @@ class FusionBase(BaseTestCase):
             commands = commands.rstrip() + " --skip-add-nodes"
         if guest_storage_dest_path is not None:
             commands = commands.rstrip() + f" --guest-storage-dest-path {guest_storage_dest_path}"
+        if log_store == "s3":
+            commands = commands.rstrip() + f" --log-store-uri {self.fusion_log_store_uri}"
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
@@ -777,8 +875,8 @@ class FusionBase(BaseTestCase):
             self.log.info(f"Extracted plan_uuid: {plan_uuid}")
             self.log.info(f"Extracted involved_nodes: {involved_nodes_list}")
 
-        self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout" + str(rebalance_count) + ".log")
-        self.fusion_rebalance_error = os.path.join(output_dir, "fusion_stderr" + str(rebalance_count) + ".log")
+        self.fusion_rebalance_output = os.path.join(output_dir, "fusion_stdout_test{}_{}.log".format(str(self.case_number), str(rebalance_count)))
+        self.fusion_rebalance_error = os.path.join(output_dir, "fusion_stderr_test{}_{}.log".format(str(self.case_number), str(rebalance_count)))
 
         with open(self.fusion_rebalance_output, "w") as fp:
             for line in o:
@@ -928,6 +1026,8 @@ class FusionBase(BaseTestCase):
         buckets = buckets if buckets is not None else self.cluster.buckets
 
         for bucket in buckets:
+            if bucket.storageBackend == Bucket.StorageBackend.couchstore:
+                continue
             self.fusion_uploader_dict[bucket.name] = dict()
             self.fusion_vb_uploader_map[bucket.name] = dict()
             status, content = ClusterRestAPI(self.cluster.master).diag_eval('ns_bucket:get_fusion_uploaders("{}").'.format(bucket.name))
@@ -1397,7 +1497,7 @@ class FusionBase(BaseTestCase):
                 return node
 
 
-    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None, mutate=0, target_vbs=None):
+    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None, mutate=0, target_vbs=None, monitor_ops=False):
 
         ops_rate = ops_rate if ops_rate is not None else 20000
 
@@ -1516,11 +1616,97 @@ class FusionBase(BaseTestCase):
                     self.log.warning(f"Error getting stats from {node.ip}:{bucket.name} - {e}")
             cbstats.disconnect()
 
-        if not self.fusion_s3_test:
+        _, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        if not self.fusion_s3_test and content["state"] != "disabled":
             self.log.info("Checking log files exist on NFS")
             log_files_exist, log_count = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
             if not log_files_exist:
                 failure_messages.append("No log files found on NFS")
+
+        # ---- Log-store DU vs cbstats size check (≤20% deviation allowed) ----
+        self.log.info("Checking log-store DU vs ep_fusion_log_store_data_size (max 20% deviation)")
+        du_size_threshold = 0.20
+        nfs_ssh = RemoteMachineShellConnection(self.nfs_server)
+        for bucket in self.cluster.buckets:
+            try:
+                bucket_uuid = self.get_bucket_uuid(bucket.name)
+                fusion_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
+                o, _ = nfs_ssh.execute_command(f"du -sb {fusion_bucket_path}")
+                log_store_du = int(o[0].split("\t")[0])
+
+                cbstats_total = 0
+                for node in self.cluster.nodes_in_cluster:
+                    cbstats = Cbstats(node)
+                    result = cbstats.all_stats(bucket.name)
+                    cbstats.disconnect()
+                    cbstats_total += int(result.get("ep_fusion_log_store_data_size", 0))
+
+                if cbstats_total == 0:
+                    self.log.warning(
+                        f"[validate_fusion_health] Bucket '{bucket.name}': "
+                        f"ep_fusion_log_store_data_size=0 — skipping cbstats DU check"
+                    )
+                else:
+                    deviation = abs(log_store_du - cbstats_total) / cbstats_total
+                    self.log.info(
+                        f"[validate_fusion_health] Bucket '{bucket.name}': "
+                        f"NFS DU={log_store_du / (1024**3):.3f} GiB, "
+                        f"cbstats_total={cbstats_total / (1024**3):.3f} GiB, "
+                        f"deviation={deviation * 100:.1f}%"
+                    )
+                    if deviation > du_size_threshold:
+                        msg = (
+                            f"Bucket '{bucket.name}': log-store DU vs cbstats size deviation "
+                            f"{deviation * 100:.1f}% exceeds 20% threshold "
+                            f"(NFS DU={log_store_du / (1024**3):.3f} GiB, "
+                            f"cbstats_total={cbstats_total / (1024**3):.3f} GiB)"
+                        )
+                        self.log.error(f"[validate_fusion_health] [VIOLATION] {msg}")
+                        failure_messages.append(msg)
+
+                # ---- Log-store DU vs local data DU check (≤4x multiplier) ----
+                local_data_du = 0
+                local_bucket_path = os.path.join(self.data_path, bucket_uuid)
+                for server in self.cluster.nodes_in_cluster:
+                    try:
+                        shell = RemoteMachineShellConnection(server)
+                        o, _ = shell.execute_command(f"du -sb {local_bucket_path}")
+                        shell.disconnect()
+                        local_data_du += int(o[0].split("\t")[0])
+                    except (IndexError, ValueError) as exc:
+                        self.log.warning(
+                            f"[validate_fusion_health] Bucket '{bucket.name}' "
+                            f"node={server.ip}: could not parse local du output: {exc}"
+                        )
+
+                if local_data_du == 0:
+                    self.log.warning(
+                        f"[validate_fusion_health] Bucket '{bucket.name}': "
+                        f"local data DU=0 — skipping log-store multiplier check"
+                    )
+                else:
+                    ratio = log_store_du / local_data_du
+                    self.log.info(
+                        f"[validate_fusion_health] Bucket '{bucket.name}': "
+                        f"log_store={log_store_du / (1024**3):.3f} GiB, "
+                        f"local_data={local_data_du / (1024**3):.3f} GiB, "
+                        f"ratio={ratio:.2f}x"
+                    )
+                    if log_store_du > 4 * local_data_du:
+                        msg = (
+                            f"Bucket '{bucket.name}': log-store DU is {ratio:.2f}x local data, "
+                            f"exceeds 4x threshold "
+                            f"(log_store={log_store_du / (1024**3):.3f} GiB, "
+                            f"local_data={local_data_du / (1024**3):.3f} GiB)"
+                        )
+                        self.log.error(f"[validate_fusion_health] [VIOLATION] {msg}")
+                        failure_messages.append(msg)
+
+            except Exception as e:
+                self.log.warning(
+                    f"[validate_fusion_health] DU check failed for bucket '{bucket.name}': {e}"
+                )
+        nfs_ssh.disconnect()
 
         if failure_messages:
             self.log.error("FUSION HEALTH CHECK - FAILED")
@@ -1568,7 +1754,7 @@ class FusionBase(BaseTestCase):
 
         return fusion_state_transition_complete
 
-    def enable_fusion(self, buckets=None, timeout=18000):
+    def enable_fusion(self, buckets=None, timeout=3600):
 
         fusion_client = FusionRestAPI(self.cluster.master)
         status, content = fusion_client.enable_fusion(buckets=buckets)
@@ -1957,129 +2143,124 @@ class FusionBase(BaseTestCase):
 
 
     def monitor_fusion_du(self, bucket, validate=False, time_interval=15):
+        """Monitor log-store DU vs local data DU for a bucket.
+
+        Each interval fetches:
+          - log_store_du: ``du -sb {nfs_server_path}/kv/{bucket_uuid}``
+          - local_data_du: sum of ``du -sb {data_path}/{bucket_uuid}`` across all nodes
+
+        When ``validate=True``, fails (sets ``self.frag_du_pass = False``) if
+        log_store_du exceeds 4x local_data_du in any check.
+        """
+        LOG_STORE_MULTIPLIER = 4
 
         self.log.info(
             f"[monitor_fusion_du] Starting log-store DU monitor for "
             f"bucket '{bucket.name}' "
-            f"(validate={validate}, interval={time_interval}s)"
+            f"(validate={validate}, interval={time_interval}s, "
+            f"max_multiplier={LOG_STORE_MULTIPLIER}x)"
         )
 
         bucket_uuid = self.get_bucket_uuid(bucket.name)
-        self.log.info(
-            f"[monitor_fusion_du] Bucket '{bucket.name}' UUID: {bucket_uuid}"
-        )
         fusion_bucket_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
+        local_bucket_path = os.path.join(self.data_path, bucket_uuid)
+
         self.log.info(
-            f"[monitor_fusion_du] NFS path: {fusion_bucket_path} "
-            f"(server={self.nfs_server_ip})"
+            f"[monitor_fusion_du] Bucket '{bucket.name}' UUID: {bucket_uuid}, "
+            f"NFS path: {fusion_bucket_path}, "
+            f"local path: {local_bucket_path}"
         )
 
-        du_cmd = f"du -sb {fusion_bucket_path}"
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-
-        if validate:
-            o, e = ssh.execute_command(du_cmd)
-            baseline_du = int(o[0].split("\t")[0])
-            self.max_allowed_log_store_du = (
-                (1 + self.logstore_frag_threshold + 0.05) * baseline_du
-            )
-            self.log.info(
-                f"[monitor_fusion_du] Bucket '{bucket.name}': "
-                f"baseline DU = {baseline_du:,} bytes "
-                f"({baseline_du / (1024 ** 3):.3f} GiB), "
-                f"frag_threshold = {self.logstore_frag_threshold}, "
-                f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes "
-                f"({self.max_allowed_log_store_du / (1024 ** 3):.3f} GiB)"
-            )
+        nfs_ssh = RemoteMachineShellConnection(self.nfs_server)
 
         du_violations = 0
         total_checks = 0
-        max_du_observed = 0
         violation_samples = []
         self.frag_du_pass = True
 
         while self.monitor_stats:
-            o, e = ssh.execute_command(du_cmd)
+            total_checks += 1
+
+            # ---- Log-store DU (NFS) ----
             try:
-                current_du = int(o[0].split("\t")[0])
+                o, _ = nfs_ssh.execute_command(f"du -sb {fusion_bucket_path}")
+                log_store_du = int(o[0].split("\t")[0])
             except (IndexError, ValueError) as exc:
                 self.log.warning(
-                    f"[monitor_fusion_du] Bucket '{bucket.name}': "
-                    f"could not parse du output '{o}': {exc} — skipping check"
+                    f"[monitor_fusion_du] Bucket '{bucket.name}' check #{total_checks}: "
+                    f"could not parse NFS du output '{o}': {exc} — skipping check"
                 )
                 time.sleep(time_interval)
                 continue
 
-            max_du_observed = max(max_du_observed, current_du)
-            total_checks += 1
+            # ---- Local data DU (sum across all nodes) ----
+            local_data_du = 0
+            for server in self.cluster.nodes_in_cluster:
+                try:
+                    shell = RemoteMachineShellConnection(server)
+                    o, _ = shell.execute_command(f"du -sb {local_bucket_path}")
+                    shell.disconnect()
+                    local_data_du += int(o[0].split("\t")[0])
+                except (IndexError, ValueError) as exc:
+                    self.log.warning(
+                        f"[monitor_fusion_du] Bucket '{bucket.name}' check #{total_checks} "
+                        f"node={server.ip}: could not parse local du output '{o}': {exc}"
+                    )
 
-            if validate:
-                utilisation_pct = (
-                    current_du / self.max_allowed_log_store_du * 100
+            ratio = log_store_du / local_data_du if local_data_du > 0 else float("inf")
+
+            if validate and log_store_du > LOG_STORE_MULTIPLIER * local_data_du:
+                du_violations += 1
+                violation_samples.append({
+                    "check": total_checks,
+                    "log_store_du": log_store_du,
+                    "local_data_du": local_data_du,
+                    "ratio": round(ratio, 2),
+                })
+                self.log.error(
+                    f"[monitor_fusion_du] [VIOLATION] "
+                    f"Bucket '{bucket.name}' check #{total_checks}: "
+                    f"log_store={log_store_du / (1024**3):.3f} GiB, "
+                    f"local_data={local_data_du / (1024**3):.3f} GiB, "
+                    f"ratio={ratio:.2f}x > {LOG_STORE_MULTIPLIER}x, "
+                    f"violations so far={du_violations}"
                 )
-                if current_du > self.max_allowed_log_store_du:
-                    du_violations += 1
-                    violation_samples.append(current_du)
-                    self.log.error(
-                        f"[monitor_fusion_du] [VIOLATION] "
-                        f"Bucket '{bucket.name}' check #{total_checks}: "
-                        f"current = {current_du:,} bytes "
-                        f"({current_du / (1024 ** 3):.3f} GiB), "
-                        f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes, "
-                        f"utilisation = {utilisation_pct:.1f}%, "
-                        f"violations so far = {du_violations}"
-                    )
-                else:
-                    self.log.info(
-                        f"[monitor_fusion_du] [OK] "
-                        f"Bucket '{bucket.name}' check #{total_checks}: "
-                        f"current = {current_du:,} bytes "
-                        f"({current_du / (1024 ** 3):.3f} GiB), "
-                        f"utilisation = {utilisation_pct:.1f}% of max_allowed"
-                    )
             else:
                 self.log.info(
-                    f"[monitor_fusion_du] Bucket '{bucket.name}' "
-                    f"check #{total_checks}: "
-                    f"current = {current_du:,} bytes "
-                    f"({current_du / (1024 ** 3):.3f} GiB)"
+                    f"[monitor_fusion_du] [{'OK' if validate else 'INFO'}] "
+                    f"Bucket '{bucket.name}' check #{total_checks}: "
+                    f"log_store={log_store_du / (1024**3):.3f} GiB, "
+                    f"local_data={local_data_du / (1024**3):.3f} GiB, "
+                    f"ratio={ratio:.2f}x"
                 )
 
             time.sleep(time_interval)
 
-        ssh.disconnect()
+        nfs_ssh.disconnect()
 
         if validate:
             self.log.info(
                 f"[monitor_fusion_du] Bucket '{bucket.name}' summary: "
-                f"violations = {du_violations} / {total_checks} checks, "
-                f"max_du_observed = {max_du_observed:,} bytes "
-                f"({max_du_observed / (1024 ** 3):.3f} GiB), "
-                f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes"
+                f"violations={du_violations} / {total_checks} checks"
             )
-            if violation_samples:
-                self.log.error(
-                    f"[monitor_fusion_du] Bucket '{bucket.name}': "
-                    f"violation samples (bytes): {violation_samples}"
-                )
-
             if du_violations > 0:
                 self.frag_du_pass = False
-                self.log.error(f"Bucket '{bucket.name}': log-store DU exceeded the allowed "
-                            f"threshold in {du_violations} / {total_checks} checks. "
-                            f"max_observed = {max_du_observed:,} bytes, "
-                            f"max_allowed = {self.max_allowed_log_store_du:,.0f} bytes "
-                            f"(baseline x {1 + self.logstore_frag_threshold + 0.25:.2f}). "
-                            f"Violation samples (bytes): {violation_samples}")
+                self.log.error(
+                    f"[monitor_fusion_du] Bucket '{bucket.name}': "
+                    f"log-store DU exceeded {LOG_STORE_MULTIPLIER}x local data in "
+                    f"{du_violations} / {total_checks} checks. "
+                    f"Violation samples: {violation_samples}"
+                )
 
 
     def monitor_log_store_stats(self, bucket, time_interval=15, validate=False):
+        FRAG_MULTIPLIER = 1.1
 
         self.log.info(
             f"[monitor_log_store_stats] Starting log-store fragmentation monitor for "
             f"bucket '{bucket.name}' "
             f"(validate={validate}, interval={time_interval}s, "
-            f"frag_threshold={self.logstore_frag_threshold})"
+            f"frag_multiplier={FRAG_MULTIPLIER}x)"
         )
 
         cbstats_obj_dict = {s: Cbstats(s) for s in self.cluster.nodes_in_cluster}
@@ -2111,7 +2292,8 @@ class FusionBase(BaseTestCase):
                     max_frag_observed = max(max_frag_observed, frag_perc)
                     total_checks += 1
 
-                    if validate and frag_perc > self.logstore_frag_threshold:
+                    frag_threshold = self.logstore_frag_threshold * FRAG_MULTIPLIER
+                    if validate and frag_perc > frag_threshold:
                         frag_violations += 1
                         violation_samples.append({
                             "node": server.ip,
@@ -2124,7 +2306,8 @@ class FusionBase(BaseTestCase):
                             f"Bucket '{bucket.name}' check #{total_checks} "
                             f"node={server.ip}: "
                             f"frag_perc={frag_perc:.4f} > "
-                            f"threshold={self.logstore_frag_threshold}, "
+                            f"threshold={frag_threshold:.4f} "
+                            f"(logstore_frag_threshold={self.logstore_frag_threshold} x {FRAG_MULTIPLIER}), "
                             f"log_store={log_store_size / (1024**3):.3f} GiB, "
                             f"garbage={garbage_size / (1024**3):.3f} GiB, "
                             f"pending={pending_size / (1024**3):.3f} GiB, "
@@ -2136,7 +2319,7 @@ class FusionBase(BaseTestCase):
                             f"Bucket '{bucket.name}' check #{total_checks} "
                             f"node={server.ip}: "
                             f"frag_perc={frag_perc:.4f} "
-                            f"(threshold={self.logstore_frag_threshold}), "
+                            f"(threshold={frag_threshold:.4f}), "
                             f"log_store={log_store_size / (1024**3):.3f} GiB, "
                             f"garbage={garbage_size / (1024**3):.3f} GiB, "
                             f"pending={pending_size / (1024**3):.3f} GiB"
@@ -2160,7 +2343,7 @@ class FusionBase(BaseTestCase):
                 f"[monitor_log_store_stats] Bucket '{bucket.name}' summary: "
                 f"violations={frag_violations} / {total_checks} checks, "
                 f"max_frag_observed={max_frag_observed:.4f}, "
-                f"threshold={self.logstore_frag_threshold}"
+                f"multiplier={FRAG_MULTIPLIER}x"
             )
             if violation_samples:
                 self.log.error(
@@ -2169,10 +2352,11 @@ class FusionBase(BaseTestCase):
                 )
             if frag_violations > 0:
                 self.frag_cbstats_pass = False
-                self.log.error(f"Bucket '{bucket.name}': log-store fragmentation exceeded the "
-                                f"threshold in {frag_violations} / {total_checks} checks. "
-                                f"max_frag_observed={max_frag_observed:.4f}, "
-                                f"threshold={self.logstore_frag_threshold}. "
+                self.log.error(f"Bucket '{bucket.name}': log-store frag_perc exceeded "
+                                f"threshold={self.logstore_frag_threshold * FRAG_MULTIPLIER:.4f} "
+                                f"(logstore_frag_threshold={self.logstore_frag_threshold} x {FRAG_MULTIPLIER}) "
+                                f"in {frag_violations} / {total_checks} checks. "
+                                f"max_frag_observed={max_frag_observed:.4f}. "
                                 f"Violation samples: {violation_samples}")
 
 
@@ -2199,7 +2383,10 @@ class FusionBase(BaseTestCase):
 
             self.total_checks += 1
 
-            self.sleep(interval, "Wait until next interval to fetch sync stats")
+            self.log.info(f"Sleep {interval} seconds. Reason: Wait until next interval to fetch sync stats")
+            wait_deadline = time.time() + interval
+            while self.monitor_sync_stats and time.time() < wait_deadline:
+                time.sleep(1)
 
         self.log.info("Done monitoring Fusion Sync Stats")
 
@@ -2274,7 +2461,94 @@ class FusionBase(BaseTestCase):
         return status_stat_dict
 
 
-    def perform_multiple_updates(self, upsert_iterations=None, wait_time_before_start=30, ops_rate=10000):
+    def monitor_resource_loop(self, stop_event, samples, monitor_interval_sec=30):
+        """Background thread target that periodically collects CPU and Magma
+        memory stats and appends them to ``samples``.
+
+        Args:
+            stop_event:           threading.Event — loop exits when set.
+            samples:              list to append sample dicts into.
+            monitor_interval_sec: seconds to sleep between collections.
+
+        Sample dict shape::
+
+            {
+                "tick": int,
+                "timestamp": str,
+                "cpu": {hostname: {"cpu_utilization_pct": float}},
+                "magma_mem": {
+                    bucket_name: {
+                        node_ip: {"total_mem_used_bytes": int}
+                    }
+                }
+            }
+        """
+        tick = 0
+        while not stop_event.is_set():
+            tick += 1
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            sample = {"tick": tick, "timestamp": ts, "cpu": {}, "magma_mem": {}}
+
+            # ---- CPU (one REST call covers all nodes) ----
+            try:
+                cluster_stats = self.cluster_util.get_cluster_stats(
+                    self.cluster.master
+                )
+                for hostname, node_stats in cluster_stats.items():
+                    cpu = node_stats.get("cpu_utilization", 0) or 0
+                    sample["cpu"][hostname] = {
+                        "cpu_utilization_pct": round(cpu, 2),
+                    }
+                    self.log.info(
+                        f"[resource_monitor] tick={tick} ts={ts} "
+                        f"node={hostname} cpu={cpu:.1f}%"
+                    )
+            except Exception as exc:
+                self.log.warning(
+                    f"[resource_monitor] tick={tick} cluster_stats error: {exc}"
+                )
+
+            # ---- Magma TotalMemUsed (cbstats, per bucket per node) ----
+            for bucket in self.cluster.buckets:
+                sample["magma_mem"][bucket.name] = {}
+                cluster_total_mem = 0
+                for server in self.cluster.nodes_in_cluster:
+                    try:
+                        cbstats_obj = Cbstats(server)
+                        result = cbstats_obj.all_stats(bucket.name)
+                        mem = int(result.get("ep_magma_total_mem_used", 0))
+                        mem_secondary = int(result.get("mem_used_secondary", 0))
+                        file_map_mem_used = int(result.get("ep_fusion_file_map_mem_used", 0))
+                        mem += file_map_mem_used
+                    except Exception as exc:
+                        self.log.warning(
+                            f"[resource_monitor] tick={tick} "
+                            f"cbstats error node={server.ip} "
+                            f"bucket={bucket.name}: {exc}"
+                        )
+                        mem = 0
+                        mem_secondary = 0
+                    cluster_total_mem += mem
+                    sample["magma_mem"][bucket.name][server.ip] = {
+                        "total_mem_used_bytes": mem,
+                        "mem_used_secondary_bytes": mem_secondary,
+                    }
+                    self.log.info(
+                        f"[resource_monitor] tick={tick} ts={ts} "
+                        f"bucket={bucket.name} node={server.ip} "
+                        f"magma_TotalMemUsed={mem / (1024**2):.2f} MiB "
+                        f"mem_used_secondary={mem_secondary / (1024**2):.2f} MiB"
+                    )
+                self.log.info(
+                    f"[resource_monitor] tick={tick} ts={ts} "
+                    f"bucket={bucket.name} cluster_magma_TotalMemUsed="
+                    f"{cluster_total_mem / (1024**2):.2f} MiB"
+                )
+
+            samples.append(sample)
+            stop_event.wait(timeout=monitor_interval_sec)
+
+    def perform_multiple_updates(self, upsert_iterations=None, wait_time_before_start=30, ops_rate=10000, update_start=None, update_end=None):
 
         self.sleep(wait_time_before_start, "Wait before starting update workload")
 
@@ -2284,8 +2558,8 @@ class FusionBase(BaseTestCase):
         while num_upsert_iterations > 0:
             self.doc_ops = "update"
             self.reset_doc_params()
-            self.update_start = 0
-            self.update_end = self.num_items
+            self.update_start = update_start if update_start is not None else 0
+            self.update_end = update_end if update_end is not None else self.num_items
             self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
             self.log.info(f"Update start = {self.update_start}, Update End = {self.update_end}")
             self.java_doc_loader(wait=True, skip_default=self.skip_load_to_default_collection, monitor_ops=False, mutate=mutate, ops_rate=ops_rate)

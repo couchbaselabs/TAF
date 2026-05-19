@@ -216,18 +216,14 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         self.sleep(10, "Wait before checking rebalance progress")
         try:
             rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance(progress_count=500)
-            if not rebalance_result:
-                self.log.info("Rebalance failed")
+            if rebalance_result:
+                self.fail("Rebalance succeeded but was expected to fail due to log corruption")
+            self.log.info("Rebalance failed as expected due to log corruption")
         except Exception as ex:
-            self.log.error(f"Fusion Rebalance failed: {ex}")
+            self.log.error(f"Fusion Rebalance failed as expected: {ex}")
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
-
-        self.log.info("Monitoring active guest volumes")
-        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
-        guest_volume_th.start()
-        guest_volume_th.join()
 
         if validate_reads:
             self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
@@ -281,7 +277,9 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         elif num_kvstores is not None:
 
             for bucket in self.cluster.buckets:
-                random_kvstores = random.sample(list(self.kvstore_log_dict[bucket.uuid].keys()), int(num_kvstores))
+                non_empty_kvstores = [k for k, v in self.kvstore_log_dict[bucket.uuid].items() if v]
+                self.log.info(f"Non-empty kvstores available: {len(non_empty_kvstores)}")
+                random_kvstores = random.sample(non_empty_kvstores, min(int(num_kvstores), len(non_empty_kvstores)))
                 self.log.info(f"Random kvstores = {random_kvstores}")
 
                 for kvstore in random_kvstores:

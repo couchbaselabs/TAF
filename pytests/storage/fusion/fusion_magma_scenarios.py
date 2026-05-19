@@ -1,5 +1,6 @@
 import threading
 import time
+from copy import deepcopy
 from BucketLib.bucket import Bucket
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
@@ -25,6 +26,217 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
     def tearDown(self):
         super(FusionMagmaScenarios, self).tearDown()
 
+
+    # ------------------------------------------------------------------ #
+    #  Helpers for the flush re-upload scenario                          #
+    # ------------------------------------------------------------------ #
+    def _delete_fusion_sync_state(self, bucket):
+        """Delete the .fusion sync-state directories for every VB of the
+        bucket across all magma shards, on all cluster nodes. Couchbase must
+        be stopped before calling this so the files are not in use.
+
+        Path layout (per the scenario):
+          <data_path>/<bucket_uuid>/magma.<shard>/kvstore-<vb>/rev-*/.fusion
+        """
+        bucket_uuid = self.get_bucket_uuid(bucket.name)
+        fusion_glob = (f"{self.data_path}/{bucket_uuid}/magma.*/kvstore-*/"
+                       f"rev-*/.fusion")
+        for server in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(server)
+            # Log how many .fusion dirs exist before deletion for traceability
+            count_cmd = (f"find {self.data_path}/{bucket_uuid} -type d "
+                         f"-name .fusion 2>/dev/null | wc -l")
+            o, _ = shell.execute_command(count_cmd)
+            self.log.info(f".fusion dir count on {server.ip} before delete = {o}")
+            rm_cmd = f"rm -rf {fusion_glob}"
+            self.log.info(f"Deleting fusion sync state on {server.ip}: {rm_cmd}")
+            out, err = shell.execute_command(rm_cmd)
+            shell.log_command_output(out, err)
+            shell.disconnect()
+
+    def _restart_cluster_with_fusion_state_cleanup(self, bucket):
+        """Stop Couchbase on all nodes, delete fusion sync state for the
+        bucket, then start Couchbase again and wait for warmup. This forces
+        Fusion to re-upload all data from scratch for every VB."""
+        shells = {}
+        for server in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(server)
+            shells[server] = shell
+            self.log.info(f"Stopping couchbase-server on {server.ip}")
+            shell.stop_couchbase()
+        self.sleep(30, "Wait after stopping couchbase-server on all nodes")
+
+        # Delete the sync-state files while the server is down.
+        self._delete_fusion_sync_state(bucket)
+
+        for server, shell in shells.items():
+            self.log.info(f"Starting couchbase-server on {server.ip}")
+            shell.start_couchbase()
+            shell.disconnect()
+
+        self.cluster_util.wait_for_ns_servers_or_assert(
+            self.cluster.nodes_in_cluster)
+        self.assertTrue(
+            self.bucket_util.is_warmup_complete(self.cluster.buckets),
+            "Buckets did not warm up after restart with fusion state cleanup")
+
+    def _count_log_store_kvstore_dirs(self, bucket):
+        """Count the kvstore-* directories present on the (NFS) log store for
+        the bucket — i.e. how many VBs have uploaded data.
+
+        Mirrors the manual check:
+          ls -l <nfs_path>/kv/<uuid> | grep 'kvstore-' | wc -l
+        """
+        bucket_uuid = self.get_bucket_uuid(bucket.name)
+        kv_path = f"{self.nfs_server_path}/kv/{bucket_uuid}"
+        ssh = RemoteMachineShellConnection(self.nfs_server)
+        cmd = f"ls -l {kv_path} 2>/dev/null | grep 'kvstore-' | wc -l"
+        o, e = ssh.execute_command(cmd)
+        ssh.disconnect()
+        count = 0
+        if o:
+            try:
+                count = int(o[0].strip())
+            except (ValueError, IndexError):
+                count = 0
+        self.log.info(
+            f"Log store kvstore dir count for {bucket.name} = {count} "
+            f"(path={kv_path})")
+        return count
+
+    def test_fusion_flush_reupload_all_vbs(self):
+        """Regression: after a from-scratch re-upload + swap rebalance + bucket
+        flush, a fresh data load must upload data for ALL VBs to the log store
+        (the observed bug uploaded only 112/128 VBs).
+
+        Flow:
+          1. Load data into a fusion magma bucket and wait for sync.
+          2. Stop the cluster, delete all .fusion sync-state files, restart ->
+             forces Fusion to re-upload every VB from scratch.
+          3. Swap-rebalance one node out for a spare node in.
+          4. Flush the bucket (item count -> 0, log files removed; term per VB
+             is expected to increment).
+          5. Load data again and assert every VB uploads to the log store.
+        """
+        bucket = self.cluster.buckets[0]
+        num_vbuckets = int(bucket.numVBuckets)
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        reupload_wait = self.input.param(
+            "reupload_wait", 300 + self.fusion_upload_interval)
+
+        # 1. Initial load + wait for sync to the log store.
+        self.log.info("Starting initial load")
+        self.initial_load()
+        total_items = self.num_items
+        self.sleep(sleep_time,
+                   "Sleep after data loading to ensure sync to Fusion")
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        kvstore_count = self._count_log_store_kvstore_dirs(bucket)
+        self.assertEqual(
+            kvstore_count, num_vbuckets,
+            f"After initial load, only {kvstore_count}/{num_vbuckets} VBs "
+            f"uploaded to the log store")
+
+        # 2. Stop cluster, delete fusion sync state, restart -> re-upload all
+        #    VBs from scratch.
+        self.log.info("Deleting fusion sync state and restarting the cluster")
+        self._restart_cluster_with_fusion_state_cleanup(bucket)
+        self.sleep(reupload_wait,
+                   "Wait for Fusion to re-upload all VBs from scratch")
+        kvstore_count = self._count_log_store_kvstore_dirs(bucket)
+        self.assertEqual(
+            kvstore_count, num_vbuckets,
+            f"After from-scratch re-upload, only {kvstore_count}/"
+            f"{num_vbuckets} VBs uploaded to the log store")
+
+        # 3. Swap rebalance: remove a non-master node, add a spare node.
+        remove_node = next(
+            (n for n in self.cluster.nodes_in_cluster
+             if n.ip != self.cluster.master.ip), None)
+        spare_nodes = [n for n in self.cluster.servers
+                       if n not in self.cluster.nodes_in_cluster]
+        self.assertIsNotNone(
+            remove_node, "Could not find a non-master node to rebalance out")
+        self.assertTrue(
+            spare_nodes, "No spare node available to swap in")
+        add_node = spare_nodes[0]
+
+        self.log.info(
+            f"Swap rebalance: out={remove_node.ip}, in={add_node.ip}")
+        nodes_to_monitor = self.run_rebalance(
+            output_dir=self.fusion_output_dir, rebalance_count=1,
+            rebalance_sleep_time=60,
+            add_nodes=[add_node], remove_nodes=[remove_node])
+
+        # Wait for guest volumes to drain and extent migration to complete.
+        self.log.info("Monitoring active guest volumes")
+        guest_volume_th = threading.Thread(
+            target=self.monitor_active_guest_volumes)
+        guest_volume_th.start()
+        guest_volume_th.join()
+
+        self.log.info("Monitoring extent migration on involved nodes")
+        for server in nodes_to_monitor:
+            self.monitor_extent_migration(server, bucket)
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # 4. Capture uploader/term map, flush, then re-capture to observe the
+        #    term increment.
+        self.get_fusion_uploader_info()
+        prev_uploader_map = deepcopy(self.fusion_vb_uploader_map)
+
+        self.log.info(f"Flushing bucket: {bucket.name}")
+        self.bucket_util.flush_bucket(self.cluster, bucket)
+        self.sleep(60, "Wait after flushing the bucket")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        # Item count must drop to 0.
+        items_after_flush = self.bucket_util.get_buckets_item_count(
+            self.cluster, bucket.name)
+        self.log.info(f"Item count after flush = {items_after_flush}")
+        self.assertEqual(
+            items_after_flush, 0,
+            f"Item count did not become 0 after flush: {items_after_flush}")
+
+        # Log files should be removed from the log store after flush.
+        post_flush_kvstore_count = self._count_log_store_kvstore_dirs(bucket)
+        self.log.info(
+            f"Log store kvstore dir count after flush = "
+            f"{post_flush_kvstore_count}")
+
+        # Observe term increment per VB after flush.
+        self.get_fusion_uploader_info()
+        new_uploader_map = deepcopy(self.fusion_vb_uploader_map)
+        incremented = 0
+        for vb_no in range(num_vbuckets):
+            prev_term = prev_uploader_map[bucket.name][vb_no]["term"]
+            new_term = new_uploader_map[bucket.name][vb_no]["term"]
+            if new_term > prev_term:
+                incremented += 1
+        self.log.info(
+            f"Term incremented after flush for {incremented}/{num_vbuckets} "
+            f"VBs")
+
+        # 5. Load data again after flush and assert ALL VBs upload.
+        self.log.info("Starting data load after flush")
+        self.perform_workload(0, total_items, "create", True, ops_rate=30000)
+        self.sleep(sleep_time,
+                   "Sleep after data loading to ensure sync to Fusion")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        kvstore_count = self._count_log_store_kvstore_dirs(bucket)
+        self.assertEqual(
+            kvstore_count, num_vbuckets,
+            f"After post-flush data load, only {kvstore_count}/{num_vbuckets} "
+            f"VBs uploaded to the log store (regression: not all VBs are "
+            f"uploading after flush)")
+        self.log.info(
+            f"All {num_vbuckets} VBs uploaded to the log store after the "
+            f"post-flush data load")
 
     def test_fusion_with_history(self):
 
@@ -378,7 +590,8 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Delete the bucket/s
-        for bucket in self.cluster.buckets:
+        tmp_bucket_list = self.cluster.buckets
+        for bucket in tmp_bucket_list:
             self.log.info(f"Deleting bucket: {bucket.name}")
             self.bucket_util.delete_bucket(self.cluster, bucket)
 

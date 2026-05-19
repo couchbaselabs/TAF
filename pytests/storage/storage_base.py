@@ -47,6 +47,21 @@ class StorageBase(BaseTestCase):
         self.aws_profile = self.input.param("aws_profile", "default")
         if self.fusion_s3_test:
             self.insert_aws_env_vars()
+            if self.fusion_log_store_uri and self.fusion_log_store_uri.startswith("s3://"):
+                run_prefix = "".join(random.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(10))
+                uri_without_scheme = self.fusion_log_store_uri[len("s3://"):]
+                s3_bucket_name = uri_without_scheme.split("/")[0]
+                base_path = "/".join(uri_without_scheme.split("/")[1:])
+                s3_key = f"{base_path}/{run_prefix}"
+                create_cmd = f"aws s3api put-object --bucket {s3_bucket_name} --key {s3_key}"
+                self.log.info(f"Creating S3 run directory: {create_cmd}")
+                ssh = RemoteMachineShellConnection(self.cluster.master)
+                o, e = ssh.execute_command(create_cmd)
+                ssh.disconnect()
+                self.log.info(f"S3 directory creation output: {o}, error: {e}")
+                self.fusion_log_store_uri = f"s3://{s3_bucket_name}/{s3_key}"
+                self.s3_run_prefix = run_prefix
+                self.log.info(f"Updated fusion_log_store_uri to: {self.fusion_log_store_uri}")
 
         self.set_kv_quota = self.input.param("set_kv_quota", False)
         if self.set_kv_quota:

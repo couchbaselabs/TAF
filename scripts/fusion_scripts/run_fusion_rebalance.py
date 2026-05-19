@@ -45,7 +45,7 @@ class RebalanceAutomation:
                  new_nodes: List[str], config: dict, rebalanceID: str, dry_run: bool = False, replica_update: bool = False,
                  skip_file_linking: bool = False, force_sync_during_sleep: bool = False, stop_before_rebalance: bool = False,
                  min_storage_size: int = None, manifest_parts: int = 20, log_store: str = "nfs",
-                 guest_storage_dest_path: str = None):
+                 guest_storage_dest_path: str = None, log_store_uri: str = None):
 
         self.base_url = base_url.rstrip('/')
         self.auth = (username, password)
@@ -62,6 +62,7 @@ class RebalanceAutomation:
         self.manifest_part = manifest_parts
         self.log_store = log_store
         self.guest_storage_dest_path = guest_storage_dest_path
+        self.log_store_uri = log_store_uri
 
         if os.path.exists(REBALANCE_PLAN_FILE): os.remove(REBALANCE_PLAN_FILE)
         if os.path.exists(MANIFEST_OUTPUT_DIR): shutil.rmtree(MANIFEST_OUTPUT_DIR)
@@ -139,7 +140,7 @@ class RebalanceAutomation:
         if self.log_store == "nfs":
             cmd += f" -base-uri {self.config['base_uri']}"
         elif self.log_store == "s3":
-            cmd += f" -base-uri s3://cb-fusion-test/buckets"
+            cmd += f" -base-uri {self.log_store_uri}"
         self._execute_command(cmd, "Splitting rebalance manifest")
 
     def sync_manifests(self):
@@ -206,6 +207,8 @@ class RebalanceAutomation:
                 cmd += " --skip-file-linking"
             if self.guest_storage_dest_path:
                 cmd += f" --guest-storage-dest-path {self.guest_storage_dest_path}"
+            if self.log_store_uri:
+                cmd += f" --log-store-uri {self.log_store_uri}"
             print(cmd)
 
             # Start command
@@ -385,6 +388,7 @@ def main():
     parser.add_argument('--log-store', default='nfs', help='Fusion Log Store')
     parser.add_argument('--s3-end-to-end', action='store_true', help='End to End S3 test')
     parser.add_argument('--guest-storage-dest-path', default=None, help='Override GUEST_STORAGE_PATH in run_local_accelerator.sh')
+    parser.add_argument('--log-store-uri', default=None, help='Override BASE_URI in run_local_accelerator.sh')
     parser.add_argument('--case-number', type=int, default=0, help='Test case number for reb_plan file naming')
 
     args = parser.parse_args()
@@ -406,6 +410,7 @@ def main():
         manifest_parts = args.manifest_parts
         log_store = args.log_store
         guest_storage_dest_path = args.guest_storage_dest_path
+        log_store_uri = args.log_store_uri
 
 
         global REBALANCE_PLAN_FILE
@@ -427,7 +432,8 @@ def main():
             min_storage_size = min_storage_size,
             manifest_parts=args.manifest_parts,
             log_store=log_store,
-            guest_storage_dest_path=guest_storage_dest_path
+            guest_storage_dest_path=guest_storage_dest_path,
+            log_store_uri=log_store_uri
         )
 
         # Step 1: Add/Remove nodes

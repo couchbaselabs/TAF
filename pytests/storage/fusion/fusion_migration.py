@@ -216,8 +216,8 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.sleep(10, "Wait before performing rebalance-in during migration")
         nodes_to_monitor2 = list()
         if self.rebalance_in_method == "dcp":
-            nodes_to_rebalance_in = self.cluster.servers[len(self.cluster.nodes_in_cluster):
-                                        len(self.cluster.nodes_in_cluster)+self.rebalance_in_nodes_during_migration]
+            spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
+            nodes_to_rebalance_in = spare_nodes[:self.rebalance_in_nodes_during_migration]
 
             self.log.info(f"Rebalancing-in {nodes_to_rebalance_in} during extent migration")
             result = self.task.rebalance(self.cluster, nodes_to_rebalance_in,
@@ -272,7 +272,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             self.log.info(f"Rebalancing-out {nodes_to_rebalance_out} during extent migration")
             result = self.task.rebalance(self.cluster, [],
                                          nodes_to_rebalance_out, services=["kv"])
-            self.assertFalse(result, "Rebalance-in during migration failed")
+            self.assertTrue(result, "Rebalance-out during migration failed")
 
         elif self.rebalance_out_method == "fusion":
             self.num_nodes_to_rebalance_in = 0
@@ -329,7 +329,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             result = self.task.rebalance(self.cluster, nodes_to_rebalance_in,
                                          nodes_to_rebalance_out,
                                          services=["kv"]*self.swap_rebalance_nodes_during_migration)
-            self.assertFalse(result, "Swap rebalance during migration failed")
+            self.assertTrue(result, "Swap rebalance during migration failed")
 
         elif self.swap_rebalance_method == "fusion":
             self.num_nodes_to_rebalance_in = 0
@@ -745,6 +745,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             ClusterRestAPI(self.cluster.master).\
                 manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
+            self.rate_limit_toggle_stop = False
             permission_toggle_thread = threading.Thread(target=self.toggle_guest_volume_permissions,
                                                        args=(permission_toggle_interval,
                                                              nodes_to_monitor,
@@ -824,8 +825,6 @@ class FusionMigration(MagmaBaseTest, FusionBase):
                 else:
                     self.log.warning(f"No guest directory found for {node_id} during permission restore")
             ssh.disconnect()
-
-            self.rate_limit_toggle_stop = False
 
             if rebalance_count < num_rebalances:
                 self.sleep(60)

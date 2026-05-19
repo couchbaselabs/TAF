@@ -1183,6 +1183,8 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         """
         monitor_interval_sec = self.input.param("monitor_interval_sec", 30)
         num_bucket_batch_size = self.input.param("num_bucket_batch_size", 1)
+        monitor_ops = self.input.param("monitor_ops", False)
+        sync_stats_interval = self.input.param("sync_stats_interval", self.fusion_upload_interval)
         ts_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_output = os.path.join(
             self.fusion_output_dir, f"resource_monitor_{ts_tag}.log"
@@ -1192,102 +1194,22 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         samples = []
         stop_monitor = threading.Event()
 
-        def _monitor_loop():
-            tick = 0
-            while not stop_monitor.is_set():
-                tick += 1
-                ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                sample = {"tick": tick, "timestamp": ts, "cpu_mem": {}, "magma_mem": {}}
-
-                # ---- CPU + system memory (one REST call covers all nodes) ----
-                try:
-                    cluster_stats = self.cluster_util.get_cluster_stats(
-                        self.cluster.master
-                    )
-                    for hostname, node_stats in cluster_stats.items():
-                        cpu = node_stats.get("cpu_utilization", 0) or 0
-                        mem_free = node_stats.get("mem_free", 0) or 0
-                        mem_total = node_stats.get("mem_total", 1) or 1
-                        mem_used = mem_total - mem_free
-                        mem_used_pct = mem_used / mem_total * 100
-                        sample["cpu_mem"][hostname] = {
-                            "cpu_utilization_pct": round(cpu, 2),
-                            "mem_used_bytes": mem_used,
-                            "mem_total_bytes": mem_total,
-                            "mem_used_pct": round(mem_used_pct, 2),
-                        }
-                        self.log.info(
-                            f"[resource_monitor] tick={tick} ts={ts} "
-                            f"node={hostname} "
-                            f"cpu={cpu:.1f}% "
-                            f"mem_used={mem_used / (1024**3):.2f}/"
-                            f"{mem_total / (1024**3):.2f} GiB "
-                            f"({mem_used_pct:.1f}%)"
-                        )
-                except Exception as exc:
-                    self.log.warning(
-                        f"[resource_monitor] tick={tick} cluster_stats error: {exc}"
-                    )
-
-                # ---- Magma TotalMemUsed (cbstats, per bucket per node) ----
-                for bucket in self.cluster.buckets:
-                    sample["magma_mem"][bucket.name] = {}
-                    cluster_total_mem = 0
-                    for server in self.cluster.nodes_in_cluster:
-                        node_total = 0
-                        shard_values = {}
-                        shard_idx = 0
-                        # Iterate shards individually with field_to_grep so
-                        # cbstats only parses the JSON magma blob for that
-                        # shard — avoids json.loads failures on non-JSON
-                        # kvstore lines (e.g. rw_0:backend_type: magma).
-                        while True:
-                            grep_field = f"rw_{shard_idx}:magma"
-                            try:
-                                shard_raw = self.get_magma_stats(
-                                    bucket, [server], field_to_grep=grep_field
-                                )
-                                shard_data = shard_raw.get(server.ip, {}).get(grep_field)
-                                if not shard_data:
-                                    break
-                                magma_data = (
-                                    shard_data
-                                    if isinstance(shard_data, dict)
-                                    else json.loads(shard_data)
-                                )
-                                mem = magma_data.get("TotalMemUsed", 0)
-                                shard_values[grep_field] = mem
-                                node_total += mem
-                                shard_idx += 1
-                            except Exception:
-                                break
-                        cluster_total_mem += node_total
-                        sample["magma_mem"][bucket.name][server.ip] = {
-                            "total_mem_used_bytes": node_total,
-                            "shards": shard_values,
-                        }
-                        self.log.info(
-                            f"[resource_monitor] tick={tick} ts={ts} "
-                            f"bucket={bucket.name} node={server.ip} "
-                            f"magma_TotalMemUsed={node_total / (1024**2):.2f} MiB "
-                            f"({shard_idx} shard(s))"
-                        )
-                    self.log.info(
-                        f"[resource_monitor] tick={tick} ts={ts} "
-                        f"bucket={bucket.name} cluster_magma_TotalMemUsed="
-                        f"{cluster_total_mem / (1024**2):.2f} MiB"
-                    )
-
-                samples.append(sample)
-                stop_monitor.wait(timeout=monitor_interval_sec)
-
         # ---- Start monitor thread ----
-        monitor_th = threading.Thread(target=_monitor_loop, daemon=True)
+        monitor_th = threading.Thread(
+            target=self.monitor_resource_loop,
+            args=(stop_monitor, samples, monitor_interval_sec),
+            daemon=True,
+        )
         monitor_th.start()
         self.log.info(
             f"[resource_monitor] Monitor started "
             f"(interval={monitor_interval_sec}s, output={output_file})"
         )
+
+        # Start Monitoring Fusion Sync Stats
+        self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously,
+                                              args=[172800, sync_stats_interval])
+        self.sync_stats_th.start()
 
         # ---- Async data load ----
         self.log.info("[resource_monitor] Starting async data load")
@@ -1299,6 +1221,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 0, self.num_items,
                 buckets=buckets_batch,
                 ops_rate=self.ops_rate,
+                monitor_ops=monitor_ops
             )
             self.sleep(10, "Wait between bucket batches")
 
@@ -1307,6 +1230,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         # ---- Stop monitor and flush samples to file ----
         stop_monitor.set()
         monitor_th.join()
+
+        self.monitor_sync_stats = False
+        self.sync_stats_th.join()
 
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         with open(output_file, "w") as fh:
@@ -1320,15 +1246,11 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             )
             for s in samples:
                 fh.write(f"[tick={s['tick']}] {s['timestamp']}\n")
-                fh.write("  CPU / System Memory:\n")
-                for hostname, cm in s["cpu_mem"].items():
-                    mem_used_gib = cm["mem_used_bytes"] / (1024 ** 3)
-                    mem_total_gib = cm["mem_total_bytes"] / (1024 ** 3)
+                fh.write("  CPU:\n")
+                for hostname, cm in s["cpu"].items():
                     fh.write(
                         f"    {hostname}: "
-                        f"cpu={cm['cpu_utilization_pct']:.1f}%  "
-                        f"mem={mem_used_gib:.2f}/{mem_total_gib:.2f} GiB "
-                        f"({cm['mem_used_pct']:.1f}%)\n"
+                        f"cpu={cm['cpu_utilization_pct']:.1f}%\n"
                     )
                 fh.write("  Magma TotalMemUsed:\n")
                 for bname, node_map in s["magma_mem"].items():
@@ -1340,14 +1262,10 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                         f"cluster_total={bucket_total / (1024**2):.2f} MiB\n"
                     )
                     for node_ip, nd in node_map.items():
-                        shard_summary = ", ".join(
-                            f"{k}={v / (1024**2):.2f}MiB"
-                            for k, v in nd["shards"].items()
-                        )
                         fh.write(
                             f"      {node_ip}: "
-                            f"{nd['total_mem_used_bytes'] / (1024**2):.2f} MiB"
-                            f"  [{shard_summary}]\n"
+                            f"magma_total={nd['total_mem_used_bytes'] / (1024**2):.2f} MiB  "
+                            f"mem_secondary={nd['mem_used_secondary_bytes'] / (1024**2):.2f} MiB\n"
                         )
                 fh.write("\n")
 

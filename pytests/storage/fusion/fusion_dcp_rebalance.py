@@ -868,16 +868,6 @@ class FusionDcpRebalance(MagmaBaseTest, FusionBase):
             retry_get_process_num=self.retry_get_process_num
         )
 
-        # Enable Fusion in parallel while DCP rebalance is running
-        self.log.info("Enabling Fusion during DCP rebalance")
-        def enable_fusion_thread():
-            self.configure_fusion()
-            self.enable_fusion()
-
-        fusion_thread = threading.Thread(target=enable_fusion_thread)
-        fusion_thread.start()
-        self.log.info("Fusion enabling thread started")
-
         # Wait for DCP rebalance to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result,

@@ -27,7 +27,6 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
 
         for bucket in self.cluster.buckets:
             self.change_fusion_settings(bucket, upload_interval=self.fusion_upload_interval,
-                                        checkpoint_interval=self.fusion_log_checkpoint_interval,
                                         logstore_frag_threshold=self.logstore_frag_threshold)
 
         self.log.info("Setting magma_fusion_max_log_size to 10MB on all nodes")

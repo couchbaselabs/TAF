@@ -1013,8 +1013,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.sleep(self.exp_pager_stime*10, "Wait for KV purger to scan expired docs and add \
         tombstones.")
 
-        self.task.async_failover(self.cluster.nodes_in_cluster,
-                                 self.cluster.nodes_in_cluster[-1],
+        self.task.async_failover(self.cluster,
+                                 [self.cluster.nodes_in_cluster[-1]],
                                  graceful=True)
 
         self.nodes = self.rest.get_node_statuses()

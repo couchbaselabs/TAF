@@ -20,6 +20,8 @@ class FusionLogCleaning(MagmaBaseTest, FusionBase):
 
     def test_monitor_fusion_disk_usage(self):
 
+        update_workload_type = self.input.param("update_workload_type", "random_uniform") # [random_uniform, zipfian]
+
         bucket = self.cluster.buckets[0]
 
         self.log.info("Monitor Fusion Log Store Disk Usage Test Started")
@@ -37,16 +39,48 @@ class FusionLogCleaning(MagmaBaseTest, FusionBase):
         monitor_du_threads = list()
         monitor_cbstats_threads = list()
         for bucket in self.cluster.buckets:
-            th = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True])
+            th = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True, 30])
             monitor_du_threads.append(th)
             th.start()
-            th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket, 15, True])
+            th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket, 30, True])
             monitor_cbstats_threads.append(th2)
             th2.start()
 
-        self.perform_multiple_updates(upsert_iterations=self.upsert_iterations)
+        if update_workload_type == "random_uniform":
+            self.perform_multiple_updates(upsert_iterations=self.upsert_iterations, ops_rate=self.ops_rate, update_start=0, update_end=self.num_items)
+        else:
+            # Zipfian Workload: concentrate updates + reads on a small hot key
+            # range (bottom 10% by default) to maximise write amplification and
+            # log-store garbage on that hotspot.
+            hotspot_end = self.input.param("zipfian_hotspot_size", max(1, self.num_items // 10))
+            self.log.info(
+                f"Zipfian workload: hotspot=[0, {hotspot_end}), "
+                f"iterations={self.upsert_iterations}, ops_rate={self.ops_rate}"
+            )
+            self.doc_ops = "update:read"
+            self.reset_doc_params()
+            self.update_start = 0
+            self.update_end = hotspot_end
+            self.read_start = 0
+            self.read_end = hotspot_end
+            mutate = 1
+            for itr in range(self.upsert_iterations):
+                self.log.info(f"Zipfian iteration {itr + 1}/{self.upsert_iterations}")
+                self.java_doc_loader(
+                    wait=True,
+                    doc_ops="update:read",
+                    skip_default=self.skip_load_to_default_collection,
+                    monitor_ops=False,
+                    mutate=mutate,
+                    ops_rate=self.ops_rate
+                )
+                mutate += 1
+                self.sleep(5, "Wait after Zipfian update+read iteration")
+
+        self.sleep(self.fusion_upload_interval * 1.5, "Wait for log cleaning to kick in to reduce fragmentation")
 
         self.monitor_stats = False
+        self.monitor_sync_stats = False
         for th in monitor_du_threads:
             th.join()
         for th in monitor_cbstats_threads:

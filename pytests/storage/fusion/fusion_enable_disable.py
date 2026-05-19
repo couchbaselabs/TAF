@@ -23,8 +23,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
 
     def tearDown(self):
+        self.fetch_cb_collect_logs()
         super(FusionEnableDisable, self).tearDown()
-
 
     def monitor_sync_stats(self, server, bucket, timeout=300):
 
@@ -78,6 +78,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is disabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "disabled", "Fusion should be disabled initially")
 
         if load_data:
             self.log.info("Starting initial load")
@@ -129,6 +131,12 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         # Get Uploader Map after enabling Fusion
         self.get_fusion_uploader_info(buckets=self.fusion_enabled_buckets)
 
+        # Verify that log store contains data after 'enabling' Fusion
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data after enabling Fusion")
+
         if not workload_during_enabling:
             # Load more data after Fusion is enabled
             self.log.info("Performing data load after Fusion is enabled")
@@ -140,7 +148,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             # Perform a Fusion Rebalance
             self.log.info("Running a Fusion rebalance")
             nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                                rebalance_count=1)
+                                                rebalance_count=1,
+                                                log_store=self.log_store)
 
             self.log.info("Monitoring active guest volumes")
             guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
@@ -167,6 +176,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -174,43 +185,36 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
 
         # Verify that log store initially contains data
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data initially")
 
         # Get Initial Uploader Map
         self.get_fusion_uploader_info()
 
-        status, content = FusionRestAPI(self.cluster.master).disable_fusion()
-        self.log.info(f"Status = {status}, Content = {content}")
-        self.assertTrue(status, "Disabling Fusion failed")
+        self.disable_fusion()
 
         self.sleep(30, "Wait after disabling Fusion")
 
-        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
-        self.log.info(f"Status = {status}, Content = {content}")
-
         # Verify that the log store is cleaned up
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, cleanup_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertEqual(cleanup_size, 0, "Log store should be empty after disabling Fusion")
 
         # Get Uploader Map after disabling Fusion
         self.get_fusion_uploader_info()
 
         # Load more data after Fusion is disabled
-        self.log.info("Performing data load after Fusion is enabled")
+        self.log.info("Performing data load after Fusion is disabled")
         self.perform_workload(self.num_items, self.num_items + (self.num_items // 2), "create", True)
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after subsequent data loading")
 
         # Verify that nothing is being uploaded to the log store
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, post_load_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertEqual(post_load_size, 0, "Log store should remain empty after loading data with Fusion disabled")
 
         # Perform a DCP rebalance
         if perform_dcp_rebalance:
@@ -246,6 +250,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -253,15 +259,16 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
 
         # Verify that the log store initially contains some data
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data initially")
 
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1)
+                                              rebalance_count=1,
+                                              log_store=self.log_store)
 
         self.log.info("Monitoring active guest volumes")
         guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
@@ -288,6 +295,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -295,10 +304,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
 
         # Verify that the log store initially contains some data
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data initially")
 
         # Perform a data workload in parallel when rebalance is taking place
         self.log.info("Performing data load in parallel when rebalance is taking place")
@@ -308,7 +317,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=1,
-                                              wait_for_rebalance_to_complete=False)
+                                              wait_for_rebalance_to_complete=False,
+                                              log_store=self.log_store)
         self.sleep(10, "Wait before checking rebalance progress")
         rebalance_monitor_thread = threading.Thread(target=RebalanceUtil(self.cluster).monitor_rebalance)
         rebalance_monitor_thread.start()
@@ -341,13 +351,12 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         monitor_fusion_th.join()
 
         # Disable Fusion after the completion of rebalance
-        status, content = FusionRestAPI(self.cluster.master).disable_fusion()
-        self.log.info(f"Disabling Fusion, Status = {status}, Content = {content}")
-        self.assertTrue(status, "Disabling Fusion after Fusion rebalance failed")
+        self.disable_fusion()
 
-        self.sleep(30, "Wait before fetching Fusion status")
-        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
-        self.log.info(f"Status = {status}, Content = {content}")
+        # Verify that the log store is cleaned up after disabling
+        o, e, cleanup_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertEqual(cleanup_size, 0, "Log store should be empty after disabling Fusion")
 
 
     def test_fusion_rebalance_while_disabling(self):
@@ -360,6 +369,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -369,13 +380,15 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1)
+                                              rebalance_count=1,
+                                              log_store=self.log_store)
 
         self.sleep(10, "Wait before disabling Fusion during a rebalance")
 
         # Disable Fusion when extent migration is set to 0
         status, content = FusionRestAPI(self.cluster.master).disable_fusion()
         self.log.info(f"Disabling Fusion, Status = {status}, Content = {content}")
+        self.assertTrue(status, "Disabling Fusion API call failed")
 
         monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
         monitor_fusion_th.start()
@@ -384,15 +397,21 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(30, "Wait before fetching active guest volumes")
         status, content = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
         self.log.info(f"Active guest volumes, Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get active guest volumes")
 
         # Start another Fusion Rebalance-in while state = 'disabling'
         self.log.info("Starting another Fusion Rebalance while Fusion is being disabled")
-        new_node = self.cluster.servers[len(self.cluster.nodes_in_cluster)]
+        self.spare_nodes = [s for s in self.cluster.servers if s not in self.cluster.nodes_in_cluster]
+        if not self.spare_nodes:
+            self.fail("No spare nodes available")
+        new_node = self.spare_nodes[0]
+
         self.log.info(f"Adding new node {new_node.ip}")
         status, content = ClusterRestAPI(self.cluster.master).add_node(
                                         new_node.ip, new_node.rest_username,
                                         new_node.rest_password, ["kv"])
         self.log.info(f"Adding node, Status = {status}, Content = {content}")
+        self.assertTrue(status, f"Failed to add node {new_node.ip}")
 
         keep_nodes = list()
         for server in self.cluster.nodes_in_cluster:
@@ -407,6 +426,11 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.monitor_fusion_info = False
         monitor_fusion_th.join()
 
+        # Wait until Fusion state changes to 'disabled'
+        fusion_disabled = self.monitor_fusion_state_transition(state="disabled", timeout=1800)
+        if not fusion_disabled:
+            self.fail("Disabling Fusion failed after timeout")
+
 
     def test_disable_fusion_during_upload(self):
 
@@ -418,6 +442,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is disabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "disabled", "Fusion should be disabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -431,6 +457,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Enabling Fusion midway")
         status, content = FusionRestAPI(self.cluster.master).enable_fusion()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Enabling Fusion failed")
 
         monitor_sync_threads = list()
         for server in self.cluster.nodes_in_cluster:
@@ -444,17 +471,12 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.get_fusion_uploader_info()
 
         self.sleep(30, "Sleep before disabling Fusion during snapshot upload")
-        status, content = FusionRestAPI(self.cluster.master).disable_fusion()
-        self.log.info(f"Status = {status}, Content = {content}")
-        self.assertTrue(status, "Disabling Fusion during snapshot upload failed")
-
-        self.sleep(15, "Sleeping after disabling Fusion")
+        self.disable_fusion()
 
         # Verify that the log store is cleaned up
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, cleanup_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertEqual(cleanup_size, 0, "Log store should be empty after disabling Fusion")
 
         # Get Uploader Map after disabling Fusion
         self.get_fusion_uploader_info()
@@ -468,6 +490,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -480,6 +504,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info(f"Removing permissions CMD: {remove_perm_cmd}")
         ssh = RemoteMachineShellConnection(self.cluster.master)
         o, e = ssh.execute_command(remove_perm_cmd)
+        self.assertFalse(e, f"Failed to remove permissions: {e}")
 
         # Disable Fusion
         status, content = FusionRestAPI(self.cluster.master).disable_fusion()
@@ -491,6 +516,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(60, "Wait before re-introduing permissions")
         restore_perm_cmd = f"chown -R couchbase:couchbase {log_store_dir}"
         o, e = ssh.execute_command(restore_perm_cmd)
+        self.assertFalse(e, f"Failed to restore permissions: {e}")
         ssh.disconnect()
 
         self.sleep(60, "Wait before stopping all monitoring threads")
@@ -503,6 +529,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is disabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "disabled", "Fusion should be disabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -547,6 +575,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -555,10 +585,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         self.get_fusion_uploader_info()
 
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data after initial load")
 
         # Stop Fusion
         status, content = FusionRestAPI(self.cluster.master).stop_fusion()
@@ -626,16 +656,16 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             sleep_time = 120 + self.fusion_upload_interval + 30
             self.sleep(sleep_time, "Sleep after data loading")
 
-            ssh = RemoteMachineShellConnection(self.nfs_server)
-            o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-            self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-            ssh.disconnect()
+            o, e, post_enable_size = self.get_log_store_du()
+            self.assertTrue(len(o) > 0, "DU command should return output")
+            self.assertGreater(post_enable_size, 0, "Log store should contain data after re-enabling Fusion")
 
             if perform_fusion_rebalance:
                 self.log.info("Running a Fusion rebalance")
                 self.num_nodes_to_rebalance_in = 1
                 nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                                      rebalance_count=1)
+                                                      rebalance_count=1,
+                                                      log_store=self.log_store)
                 self.log.info("Monitoring active guest volumes")
                 guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
                 guest_volume_th.start()
@@ -649,26 +679,18 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
                 sleep_time = 120 + self.fusion_upload_interval + 30
                 self.sleep(sleep_time, "Sleep after data loading")
 
-                ssh = RemoteMachineShellConnection(self.nfs_server)
-                o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-                self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-                ssh.disconnect()
+                o, e, post_rebalance_size = self.get_log_store_du()
+                self.assertTrue(len(o) > 0, "DU command should return output")
+                self.assertGreater(post_rebalance_size, 0, "Log store should contain data after Fusion rebalance")
 
 
         elif post_stop_step == "disable":
 
-            status, content = FusionRestAPI(self.cluster.master).disable_fusion()
-            self.log.info(f"Stopping Fusion, Status: {status}, Content: {content}")
-            self.assertTrue(status, "Disabling Fusion from stopped state failed")
+            self.disable_fusion()
 
-            self.sleep(30, "Wait after disabling Fusion")
-            status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
-            self.log.info(f"Status = {status}, Content = {content}")
-
-            ssh = RemoteMachineShellConnection(self.nfs_server)
-            o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-            self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-            ssh.disconnect()
+            o, e, post_disable_size = self.get_log_store_du()
+            self.assertTrue(len(o) > 0, "DU command should return output")
+            self.assertEqual(post_disable_size, 0, "Log store should be empty after disabling Fusion")
 
 
     def test_stop_fusion_while_enabling_and_enable_again(self):
@@ -678,6 +700,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is disabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "disabled", "Fusion should be disabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -692,6 +716,9 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.assertTrue(status, "Enabling Fusion failed")
 
         self.sleep(20, "Wait before monitoring Fusion status")
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
         monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
         monitor_fusion_th.start()
 
@@ -734,6 +761,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -741,10 +770,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
 
         # Verify that the log store initially contains some data
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data initially")
 
         # Perform a data workload in parallel when rebalance is taking place
         self.log.info("Performing data load during rebalance")
@@ -756,7 +785,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=1,
-                                              wait_for_rebalance_to_complete=False)
+                                              wait_for_rebalance_to_complete=False,
+                                              log_store=self.log_store)
         self.sleep(10, "Wait before checking rebalance progress")
         rebalance_monitor_thread = threading.Thread(target=RebalanceUtil(self.cluster).monitor_rebalance)
         rebalance_monitor_thread.start()
@@ -805,6 +835,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -812,10 +844,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
 
         # Verify that the log store initially contains some data
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data initially")
 
         # Perform a DCP rebalance
         self.spare_node = self.cluster.servers[self.nodes_init]
@@ -854,6 +886,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -861,23 +895,26 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
 
         # Verify that the log store initially contains some data
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check, Output = {o}, Error = {e}")
-        ssh.disconnect()
+        o, e, initial_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(initial_size, 0, "Log store should contain data initially")
 
         if fusion_state_change == "stop":
             status, content = FusionRestAPI(self.cluster.master).stop_fusion()
             self.log.info(f"Stopping Fusion, Status = {status}, Content = {content}")
             self.assertTrue(status, "Stopping Fusion failed")
         elif fusion_state_change == "disable":
-            status, content = FusionRestAPI(self.cluster.master).disable_fusion()
-            self.log.info(f"Disabling Fusion, Status = {status}, Content = {content}")
-            self.assertTrue(status, "Disabling Fusion failed")
+            self.disable_fusion()
 
         self.sleep(10, "Wait before fetching status info")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        if fusion_state_change == "stop":
+            self.assertEqual(content.get("state"), "stopped", "Fusion should be stopped")
+        elif fusion_state_change == "disable":
+            self.assertEqual(content.get("state"), "disabled", "Fusion should be disabled")
 
         # Create new bucket/s
         for i in range(new_bucket_count):
@@ -943,6 +980,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -956,7 +995,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1)
+                                              rebalance_count=1,
+                                              log_store=self.log_store)
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -991,6 +1031,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled", "Fusion should be enabled initially")
 
         self.log.info("Starting initial load")
         self.initial_load()
@@ -1003,6 +1045,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.log.info(f"Removing permissions CMD: {remove_perm_cmd}")
         ssh = RemoteMachineShellConnection(self.cluster.master)
         o, e = ssh.execute_command(remove_perm_cmd)
+        self.assertFalse(e, f"Failed to remove permissions: {e}")
 
         # Disable Fusion
         status, content = FusionRestAPI(self.cluster.master).disable_fusion()
@@ -1011,13 +1054,14 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
         monitor_fusion_th.start()
 
-        # Perform chaos action during 'stopping' state
+        # Perform chaos action during 'disabling' state
         self.sleep(10, "Wait before performing chaos actions")
         self.perform_chaos_actions(self.chaos_action, duration=300)
 
         self.sleep(60, "Wait before re-introduing permissions")
         restore_perm_cmd = f"chown -R couchbase:couchbase {log_store_dir}"
         o, e = ssh.execute_command(restore_perm_cmd)
+        self.assertFalse(e, f"Failed to restore permissions: {e}")
         ssh.disconnect()
 
         self.sleep(60, "Wait before stopping all monitoring threads")
@@ -1060,6 +1104,7 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Fusion status: {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
 
         self.configure_fusion()
         status, content = FusionRestAPI(self.cluster.master).enable_fusion()
@@ -1120,7 +1165,8 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                                   rebalance_count=swap_count + 1,
                                                   wait_for_rebalance_to_complete=True,
-                                                  rebalance_master=False)
+                                                  rebalance_master=False,
+                                                  log_store=self.log_store)
 
             current_cluster_ips = [n.ip for n in self.cluster.nodes_in_cluster]
             if node_to_remove.ip in current_cluster_ips:
@@ -1140,10 +1186,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Wait for first Fusion upload")
 
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS path DU check: {o}")
-        ssh.disconnect()
+        o, e, upload_size = self.get_log_store_du()
+        self.assertTrue(len(o) > 0, "DU command should return output")
+        self.assertFalse(e, f"DU command failed with error: {e}")
+        self.assertGreater(upload_size, 0, "Log store should contain data after Fusion upload")
 
         self.get_fusion_uploader_info()
         self.cluster_util.print_cluster_stats(self.cluster)

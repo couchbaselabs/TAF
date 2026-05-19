@@ -227,8 +227,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                     self.log.info("Fusion already enabled, skipping enable_fusion() call")
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
-                [self.cluster.master],
                 self.cluster.buckets[0],
+                [self.cluster.master],
                 wait_time=self.wait_timeout * 10))
 
             '''

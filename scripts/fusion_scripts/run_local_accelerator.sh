@@ -25,7 +25,6 @@ else
     BASE_URI="s3://cb-fusion-test/buckets"
     SKIP_FLAG="-skip-file-linking"
 fi
-echo "Base Uri: $BASE_URI"
 
 # Parse remaining arguments
 shift 3
@@ -39,11 +38,16 @@ while [[ $# -gt 0 ]]; do
             GUEST_STORAGE_PATH="$2"
             shift 2
             ;;
+        --log-store-uri)
+            BASE_URI="$2"
+            shift 2
+            ;;
         *)
             shift
             ;;
     esac
 done
+echo "Base Uri: $BASE_URI"
 
 echo "Guest Storage path: $GUEST_STORAGE_PATH"
 
