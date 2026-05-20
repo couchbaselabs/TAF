@@ -350,7 +350,6 @@ class CollectionsRebalance(CollectionBase):
             maxttl = 0
         self.log.info("Loading docs with maxttl:{0} in default collection "
                       "in order to load bucket in dgm".format(maxttl))
-        self.key = "test_collections"
         start = self.bucket.scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
             .num_items
