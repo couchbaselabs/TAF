@@ -4,10 +4,15 @@ Created on Mar 24, 2025
 Fusion Monitor Util - Core fusion stats monitoring utilities
 '''
 
-from membase.api.rest_client import RestConnection
-from prettytable import PrettyTable
+import ast
+import json
+import socket
+import statistics
 import time
 from datetime import datetime
+
+from membase.api.rest_client import RestConnection
+from prettytable import PrettyTable
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 
