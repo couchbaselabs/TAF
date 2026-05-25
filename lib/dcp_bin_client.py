@@ -152,12 +152,10 @@ class DcpClient(MemcachedClient):
         response = self._handle_op(op)
 
         def __generator(response):
-
             yield response
             last_by_seqno = 0
 
             while True:
-
                 if not op.queue.empty():
                     response = op.queue.get()
                 else:
@@ -247,14 +245,16 @@ class DcpClient(MemcachedClient):
                     self.ack_dcp_noop_req(opaque)
 
             except Exception as ex:
-                print("recv_op Exception:", ex)
-                if 'died' in str(ex):
+                ex_str = str(ex)
+                if 'died' in ex_str:
+                    print("recv_op Exception:", ex)
                     return {'opcode': op.opcode,
                             'status': 0xff}
-                elif 'Timeout' in str(ex):
-                    self._stream_timeout = True
+                elif 'timed out' in ex_str or 'Timeout' in ex_str:
+                    # Socket poll timeout — expected on slow streams, not an error
                     return None
                 else:
+                    print("recv_op Exception:", ex)
                     return None
 
     def ack_stream_req(self, opaque):

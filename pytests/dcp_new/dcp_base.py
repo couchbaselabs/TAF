@@ -59,6 +59,7 @@ class DCPBase(CollectionBase):
 
         config_json = json.loads(DcpClient.get_config(init_dcp_client)[2])
         self.vb_map = config_json['vBucketServerMap']['vBucketMap']
+        self.vbuckets = range(len(self.vb_map))
 
         self.dcp_client_dict = dict()
 
@@ -183,6 +184,8 @@ class DCPBase(CollectionBase):
 
     def handleSystemEvent(self, response, manifest):
         # Unpack a DCP system event
+        if isinstance(response.get('key'), bytes):
+            response['key'] = response['key'].decode('utf-8', errors='surrogateescape')
         if response['event'] == EVENT_CREATE_COLLECTION:
             if response['version'] == 0:
                 uid, sid, cid = struct.unpack(">QII", response['value'])
