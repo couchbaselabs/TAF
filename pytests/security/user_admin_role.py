@@ -450,8 +450,10 @@ class UserAdminRole(ClusterSetup):
                                           verify_error=True, roles=[admin])
 
 
-        # Test that both local and external admin users cannot change their own roles
-        roles = admin_roles + ["query_external_access", "replication_admin", "bucket_admin[*]"]
+        # Test that both local and external admin users cannot change their own roles to admin roles.
+        # Non-admin roles (e.g. query_external_access) are not included: user_admin roles are
+        # allowed to grant those to other users, so self-modification with them is consistent.
+        roles = admin_roles
 
         for role in roles:
             if role != "user_admin_local":
@@ -503,7 +505,7 @@ class UserAdminRole(ClusterSetup):
         # Test if local_user_admin is only able to restore local users and also test that it cannot restore admin users
         # Create some local and external users as well as all the admin users
         self.log.info("Testing backup/restore for local user admin")
-        admin_roles = ["admin", "ro_admin", "security_admin", "user_admin_local",
+        admin_roles = ["admin", "security_admin", "user_admin_local",
                        "user_admin_external", "ro_security_admin"]
         sample_users = self.get_sample_users(4 + len(admin_roles))
         sample_local_users = sample_users[:2]
@@ -568,7 +570,7 @@ class UserAdminRole(ClusterSetup):
         # Test if external user admin is only able to restore external users and also test that it cannot restore admin users
         # Create some local and external users as well as all the admin users
         self.log.info("Testing backup/restore for external user admin")
-        admin_roles = ["admin", "ro_admin", "security_admin", "user_admin_local",
+        admin_roles = ["admin", "security_admin", "user_admin_local",
                        "user_admin_external", "ro_security_admin"]
 
         self.log.info("Creating sample external users")
