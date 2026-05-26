@@ -380,19 +380,29 @@ class CollectionBase(ClusterSetup, FusionBase):
                             continuous_backup_enabled="true")
                         self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
 
-            self.sleep(self.continuous_backup_interval * 60,
-                           f"Waiting for {self.continuous_backup_interval} "
-                           "minutes after enabling continuous backup")
-            if  self.input.param("initial_load", True):
+            if self.cont_bkp_test == "NFS":
+                self.sleep(self.continuous_backup_interval * 60,
+                               f"Waiting for {self.continuous_backup_interval} "
+                               "minutes after enabling continuous backup")
+
                 self.log.info("Reconnecting shell before backup operations")
-                self.backup_mgr.shellConn = RemoteMachineShellConnection(
-                    self.cluster.master)
-                self.log.info("Creating backup repository")
-                self.backup_mgr.create_repo(self.backup_archive_dir,
-                                                self.backup_repo_name)
-                self.log.info("Performing initial backup")
-                self.backup_mgr.backup(self.backup_archive_dir,
-                                           self.backup_repo_name)
+                old_backup_shell = self.backup_mgr.shellConn
+                old_cont_shell = self.cont_bk_mgr.shellConn
+                shell = RemoteMachineShellConnection(self.cluster.master)
+                self.backup_mgr.shellConn = shell
+                self.cont_bk_mgr.shellConn = shell
+                if old_backup_shell is not None:
+                    old_backup_shell.disconnect()
+                if old_cont_shell is not None and old_cont_shell is not old_backup_shell:
+                    old_cont_shell.disconnect()
+
+                if self.input.param("initial_load", True):
+                    self.log.info("Creating backup repository")
+                    self.backup_mgr.create_repo(self.backup_archive_dir,
+                                                    self.backup_repo_name)
+                    self.log.info("Performing initial backup")
+                    self.backup_mgr.backup(self.backup_archive_dir,
+                                               self.backup_repo_name)
 
         if isinstance(self.range_scan_collections, int) \
                 and self.range_scan_collections > 0:
@@ -431,6 +441,12 @@ class CollectionBase(ClusterSetup, FusionBase):
                     servers_to_connect, servers_to_connect.rest_username,
                     servers_to_connect.rest_password,
                     bucket.name, req_clients=req_clients)
+                cluster.sdk_client_pool.create_clients(
+                    cluster, bucket=bucket, servers=[servers_to_connect],
+                    req_clients=req_clients,
+                    username=servers_to_connect.rest_username,
+                    password=servers_to_connect.rest_password,
+                    compression_settings=sdk_compression)
 
     @staticmethod
     def setup_collection_history_settings(test_obj):
@@ -902,10 +918,16 @@ class CollectionBase(ClusterSetup, FusionBase):
         if not cluster:
             cluster = test_obj.cluster
 
-        # Init sdk_client_pool if not initialized before
-        if test_obj.load_docs_using == "default_loader":
-            if cluster.sdk_client_pool is None:
-                cluster.sdk_client_pool = SDKClientPool()
+        # Init sdk_client_pool if not initialized before.
+        # Always needed for test-side SDK operations (reads, TTL checks, etc.)
+        # regardless of which loader is used for bulk loading.
+        # For sirius_java_sdk, reset any existing pool to avoid reusing stale
+        # clients from a previous test against already-deleted buckets.
+        if cluster.sdk_client_pool is None:
+            cluster.sdk_client_pool = SDKClientPool()
+        elif test_obj.load_docs_using == "sirius_java_sdk":
+            cluster.sdk_client_pool.shutdown()
+            cluster.sdk_client_pool = SDKClientPool()
 
         test_obj.log.info("Creating required SDK clients for client_pool")
         CollectionBase.create_sdk_clients(
