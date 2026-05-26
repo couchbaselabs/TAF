@@ -1,4 +1,6 @@
+import time
 import urllib
+import uuid
 from random import choice, randint
 from threading import Thread
 
@@ -2767,6 +2769,174 @@ class basic_ops(ClusterSetup):
         result = self.task.rebalance(self.cluster, [], [])
         self.assertTrue(result, "Delta recovery rebalance failed")
         validate_item_count()
+
+    def test_ephemeral_auto_delete_pager_throttle(self):
+        """
+        Ref: MB-63560 — 2-node cluster scenario using a frozen replica as
+        the lagging DCP cursor.
+
+        Setup:
+          - 2-node cluster (nodes_init >= 2), ephemeral NRU bucket with replicas=1.
+          - node1 stays running; node2 memcached is SIGSTOP'd.
+
+        Mechanism:
+          When node2 is frozen, the DCP replica stream from node1 to node2 stalls.
+          node1's checkpoint manager cannot free entries for VBuckets whose
+          replica cursor is stuck. The item pager on node1:
+            Run 1  — allowed (bytesPagerDeleted starts at 0 < pager_limit)
+            Run 2+ — throttled (bytesPagerDeleted >= limit, cursor hasn't
+                     advanced past pagedSeqno → pager_throttled increments)
+          Memory stays above high_wm despite repeated pager invocations.
+
+        Steps:
+          1. Fail fast if nodes_init < 2.
+          2. Read default watermarks from cbstats; query active VBuckets from
+             both nodes.
+          3. Pre-load N items uniformly across all VBuckets (both nodes up)
+             to bring mem_used close to low_wm, reducing warm-up time.
+          4. SIGSTOP node2 memcached.
+          5. Incrementally load batches of ~10 K items targeting only node1's
+             active VBs (target_vbucket=); observe mem_used > high_wm on node1
+             for 3 separate batches — confirming pager is throttled.
+          6. Sleep 60 s with pager stuck.
+          7. SIGCONT node2 — replica DCP drains, pager resumes.
+          8. Wait up to 120 s for mem_used to fall within 10 % of low_wm.
+          9. Assert total active items on node1 > 100,000 (no over-deletion).
+        """
+        if self.nodes_init < 2:
+            self.fail("test_ephemeral_auto_delete_pager_throttle requires "
+                      "nodes_init >= 2")
+
+        bucket = self.cluster.buckets[0]
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+        node1 = kv_nodes[0]   # stays running — target for all loads
+        node2 = kv_nodes[1]   # memcached will be SIGSTOP'd
+
+        shell2 = RemoteMachineShellConnection(node2)
+        cbstat1 = Cbstats(node1)
+        cbstat2 = Cbstats(node2)
+        err_sim = CouchbaseError(self.log, shell2, node=node2)
+
+        low_wm_hit = False
+        doc_size = 1024
+        load_batch = 50000       # docs per incremental round (node1 VBs only)
+        max_load_batches = 100   # safety cap to avoid infinite loop
+
+        try:
+            # ---- Read default watermarks from cbstats (no forced overrides) ----
+            a_stats = cbstat1.all_stats(bucket.name)
+            high_wm = int(a_stats["ep_mem_high_wat"])
+            low_wm = int(a_stats["ep_mem_low_wat"])
+            self.log.info("Watermarks from cbstats: "
+                          "high_wm=%dMB low_wm=%dMB"
+                          % (high_wm >> 20, low_wm >> 20))
+
+            # ---- VBucket distribution (both nodes) ----
+            node1_active_vbs = cbstat1.vbucket_list(bucket.name, "active")
+            node2_active_vbs = cbstat2.vbucket_list(bucket.name, "active")
+            self.log.debug("node1(%s): %d active VBs  node2(%s): %d active VBs"
+                           % (node1.ip, len(node1_active_vbs),
+                              node2.ip, len(node2_active_vbs)))
+
+            # ---- SIGSTOP node2 memcached ----
+            err_sim.create(CouchbaseError.STOP_MEMCACHED)
+
+            # ---- Incremental load — node1 VBs only ----
+            # target_vbucket filters doc_generator to emit only keys that hash
+            # to node1's active VBs, so every write goes to the running node.
+            # A range of 2×load_batch covers ~load_batch effective docs at the
+            # ~50 % VBucket split.
+            # After each batch, compare mem_used to the previous reading.
+            # A drop means the pager ran and freed items — stop loading there.
+            a_stats = cbstat1.all_stats(bucket.name)
+            mem_used = int(a_stats["mem_used"])
+            itrs_after_low_wm_hit = 5
+            for batch_num in range(1, max_load_batches + 1):
+                if itrs_after_low_wm_hit == 0:
+                    break
+                self.key = uuid.uuid4().hex[:6]
+                doc_gen = doc_generator(
+                    self.key, 0, load_batch,
+                    key_size=self.key_size, doc_size=doc_size,
+                    target_vbucket=node1_active_vbs)
+                load_task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, doc_gen,
+                    DocLoading.Bucket.DocOps.CREATE,
+                    timeout_secs=3,
+                    print_ops_rate=False, skip_read_on_error=True,
+                    suppress_error_table=True,
+                    batch_size=100, process_concurrency=1)
+                self.task_manager.get_task_result(load_task)
+
+                a_stats = cbstat1.all_stats(bucket.name)
+                mem_used = int(a_stats["mem_used"])
+                if low_wm_hit:
+                    itrs_after_low_wm_hit -= 1
+                elif mem_used > low_wm:
+                    low_wm_hit = True
+                    self.log.info("Low watermark level hit")
+                    load_batch = 20000
+                active_items = int(a_stats.get("vb_active_curr_items", 0))
+                self.log.info(
+                    "Batch %d: mem_used=%dMB high_wm=%dMB low_wm=%dMB "
+                    "vb_active_curr_items=%d pager_throttled=%s"
+                    % (batch_num, mem_used >> 20, high_wm >> 20,
+                       low_wm >> 20, active_items,
+                       a_stats.get("pager_throttled", "n/a")))
+            else:
+                self.log_failure(
+                    "Pager did not activate after %d batches — "
+                    "mem_used=%dMB low_wm=%dMB" % (max_load_batches,
+                                                   mem_used >> 20,
+                                                   low_wm >> 20))
+
+            # ---- SIGCONT node2 — release DCP cursor ----
+            err_sim.revert(CouchbaseError.STOP_MEMCACHED)
+
+            # ---- Wait with pager stuck ----
+            self.sleep(60, "Wait for eviction to complete")
+
+            # ---- Wait for memory to normalize (within 20 % of low_wm) ----
+            deadline = time.time() + 120
+            normalized = False
+            while time.time() < deadline:
+                a_stats = cbstat1.all_stats(bucket.name)
+                mem_used = int(a_stats["mem_used"])
+                mem_pct = int(mem_used * 100 / low_wm)
+                self.log.info(
+                    "Waiting for normalization: mem_used=%dMB "
+                    "(%d%% of low_wm=%dMB)"
+                    % (mem_used >> 20, mem_pct, low_wm >> 20))
+                if abs(mem_used - low_wm) * 100 <= low_wm * 20:
+                    self.log.info(
+                        "Memory normalized: mem_used=%dMB (%d%% of low_wm=%dMB)"
+                        % (mem_used >> 20, mem_pct, low_wm >> 20))
+                    normalized = True
+                    break
+                self.sleep(5)
+            if not normalized:
+                a_stats = cbstat1.all_stats(bucket.name)
+                final_mem = int(a_stats["mem_used"])
+                final_pct = int(final_mem * 100 / low_wm)
+                self.log_failure(
+                    "mem_used did not reach low_wm ±20%% within 120 s after "
+                    "SIGCONT: mem_used=%dMB (%d%% of low_wm=%dMB)"
+                    % (final_mem >> 20, final_pct, low_wm >> 20))
+
+            # ---- Validate item count ----
+            curr_items = int(
+                cbstat1.all_stats(bucket.name).get("curr_items", 0))
+            self.log.info(f"Final curr_items on node1: {curr_items}")
+            if curr_items < 100000:
+                self.log_failure(
+                    f"Pager over-deleted: curr_items={curr_items} after test")
+        finally:
+            err_sim.revert(CouchbaseError.STOP_MEMCACHED)
+            cbstat1.disconnect()
+            cbstat2.disconnect()
+            shell2.disconnect()
+
+        self.validate_test_failure()
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
