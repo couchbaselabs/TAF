@@ -63,7 +63,7 @@ class FlushTests(CollectionBase):
             # Doc loading params
             "doc_crud": {
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 5000,
-                MetaCrudParams.DocCrud.COMMON_DOC_KEY: self.key,
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 100,
             },
 
@@ -93,7 +93,6 @@ class FlushTests(CollectionBase):
                       "doc_ttl: %s, durability: %s"
                       % (doc_ttl, durability))
         mutate_spec = self.__get_mutate_spec(doc_ttl, durability)
-        CollectionBase.over_ride_doc_loading_template_params(self, mutate_spec)
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task,
@@ -134,8 +133,6 @@ class FlushTests(CollectionBase):
         self.log.info("Loading same docs back into collections")
         doc_loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
-        CollectionBase.over_ride_doc_loading_template_params(
-            self, doc_loading_spec)
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
@@ -260,8 +257,6 @@ class FlushTests(CollectionBase):
 
         self.log.info("Running mutations with doc_ttl: %s, durability: %s"
                       % (doc_ttl, durability_level))
-        CollectionBase.over_ride_doc_loading_template_params(
-            self, mutate_spec)
         mutate_task = self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
@@ -330,8 +325,6 @@ class FlushTests(CollectionBase):
             doc_ttl, durability_level = \
                 self.__get_random_doc_ttl_and_durability_level()
             mutate_spec = self.__get_mutate_spec(doc_ttl, durability_level)
-            CollectionBase.over_ride_doc_loading_template_params(
-                self, mutate_spec)
             mutate_spec[
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 50
             mutate_spec[

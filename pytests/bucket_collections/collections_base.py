@@ -36,7 +36,7 @@ class CollectionBase(ClusterSetup, FusionBase):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
 
-        self.key = 'test_collection'
+        self.key = 'test_collections'
 
         self.skip_collections_during_data_load = self.input.param("skip_col_dict", None)
         self.simulate_error = self.input.param("simulate_error", None)
@@ -1022,9 +1022,6 @@ class CollectionBase(ClusterSetup, FusionBase):
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):
-        if target_spec and "doc_crud" in target_spec:
-            target_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] = test_obj.key
-
         for key, value in test_obj.input.test_params.items():
             if key == "durability":
                 target_spec[MetaCrudParams.DURABILITY_LEVEL] = \

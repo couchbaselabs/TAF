@@ -34,7 +34,7 @@ class CollectionsSuccessTests(CollectionBase):
         collection_crud_spec["doc_crud"][
             MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 100
         collection_crud_spec["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
 
         collection_crud_task = \
             self.bucket_util.run_scenario_from_spec(
@@ -87,8 +87,7 @@ class CollectionsSuccessTests(CollectionBase):
             MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 25
         load_spec["doc_crud"][
             MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 25
-        load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] \
-            = "test_collections"
+        load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
 
         self.log.info("Perform 'create', 'update', 'delete' mutations")
         doc_loading_task = \
@@ -204,7 +203,7 @@ class CollectionsSuccessTests(CollectionBase):
         load_spec["doc_crud"][
             MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 25
         load_spec["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
 
         self.log.info("Perform 'create', 'update', 'delete' mutations")
         doc_loading_task = \
@@ -330,7 +329,7 @@ class CollectionsSuccessTests(CollectionBase):
         load_spec["doc_crud"][
             MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 25
         load_spec["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
         load_spec["target_vbuckets"] = list(set(range(0, 1024))
                                             ^ set(active_vbs_in_target_nodes))
 
@@ -475,7 +474,7 @@ class CollectionsSuccessTests(CollectionBase):
         doc_load_template["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         doc_load_template["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
 
         # Create required doc_generators for CRUD ops
         doc_load_template["doc_crud"][
@@ -549,7 +548,7 @@ class CollectionsSuccessTests(CollectionBase):
         load_spec["doc_crud"][
             MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 25
         load_spec["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
 
         # Create transaction task
         atomicity_task = self.task.async_load_gen_docs_atomicity(
@@ -633,7 +632,7 @@ class CollectionsSuccessTests(CollectionBase):
         load_spec["subdoc_crud"][
             MetaCrudParams.SubDocCrud.REMOVE_PER_COLLECTION] = 0
         load_spec["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
         load_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = "all"
         load_spec[MetaCrudParams.SCOPES_CONSIDERED_FOR_CRUD] = "all"
         load_spec[MetaCrudParams.BUCKETS_CONSIDERED_FOR_CRUD] = "all"
@@ -743,7 +742,7 @@ class CollectionsSuccessTests(CollectionBase):
         doc_load_template[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 3
 
         doc_load_template["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
         doc_load_template["doc_crud"][
             MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 50
 
@@ -831,7 +830,7 @@ class CollectionsSuccessTests(CollectionBase):
         load_spec["doc_crud"] = dict()
         load_spec["subdoc_crud"] = dict()
         load_spec["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = "test_collections"
+            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
         load_spec["doc_crud"][
             MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 50
         load_spec["subdoc_crud"][

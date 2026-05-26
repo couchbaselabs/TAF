@@ -355,8 +355,7 @@ class SDKExceptionTests(CollectionBase):
         doc_load_spec[MetaCrudParams.DURABILITY_LEVEL] = self.durability_level
         doc_load_spec["doc_crud"] = dict()
         doc_load_spec["subdoc_crud"] = dict()
-        doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] = \
-            "test_collections"
+        doc_load_spec["doc_crud"][MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
         doc_load_spec["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         doc_load_spec["doc_crud"][
@@ -543,7 +542,6 @@ class SDKExceptionTests(CollectionBase):
 
         # Override crud_batch_size to minimum value for testing
         self.crud_batch_size = 5
-        self.key = "test_collections"
         self.sdk_timeout = 3
 
         # Select target vbucket type to load_docs
