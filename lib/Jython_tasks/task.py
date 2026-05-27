@@ -1099,7 +1099,7 @@ class GenericLoadingTask(Task):
                     # self.test_log.debug("Reading values {0} after failure"
                     # .format(fail.keys()))
                     read_map, read_fail = self.batch_read(list(fail.keys()))
-                    for key, value in fail.items():
+                    for key, value in list(fail.items()):
                         if key in read_map and read_map[key]["cas"] != 0:
                             success[key] = value
                             success[key].pop("error", None)
@@ -1147,7 +1147,7 @@ class GenericLoadingTask(Task):
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(list(fail.keys()))
-                    for key, value in fail.items():
+                    for key, value in list(fail.items()):
                         if key in read_map and read_map[key]["cas"] != 0 \
                                 and value == read_map[key]["value"]:
                             success[key] = value
@@ -1197,7 +1197,7 @@ class GenericLoadingTask(Task):
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
                     read_map, _ = self.batch_read(list(fail.keys()))
-                    for key, value in fail.items():
+                    for key, value in list(fail.items()):
                         if key in read_map and read_map[key]["cas"] != 0:
                             success[key] = value
                             success[key].pop("error")
