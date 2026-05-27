@@ -182,6 +182,43 @@ The team is migrating to `cb_server_rest_util/`. Do not add JWT constants there.
 | `combined_user@localhost.com` | cb | ro_admin |
 | `unmapped_user@localhost.com` | cb | (none — RBAC denial test) |
 
+### `test-client` Browser OIDC Settings
+
+Bearer-token tests use Keycloak's token endpoint directly, but manual browser
+authorization-code checks exercise Couchbase `/oidc/auth`. Couchbase redirects to
+Keycloak with a JWT Secured Authorization Request (`request=<encrypted JWE>`), so
+the `cb` realm client `test-client` must allow that request object.
+
+In Keycloak UI:
+
+1. Select realm `cb`
+2. Open `Clients` → `test-client`
+3. Open `Advanced`
+4. Configure request object settings:
+
+| Setting | Value |
+|---------|-------|
+| Request object signature algorithm | `RS384` |
+| Request object encryption algorithm | `RSA-OAEP` |
+| Request object content encryption algorithm | `A256GCM` |
+| Request object required | `Not required` |
+| Valid request URIs | empty |
+
+The `cb` realm must also have an active encryption key exposed in JWKS with
+`use=enc` and `alg=RSA-OAEP`.
+
+Failure signature when this is missing:
+
+```text
+Browser OIDC flow result: success=False cookies=[] error=Keycloak login page failed: 400
+step={'step': 'oidc_auth', 'status': 302}
+step={'step': 'keycloak_login_page', 'status': 400}
+```
+
+Keycloak shows `Invalid Request` because it rejects Couchbase's encrypted `request=`
+object before rendering the login form. Plain bearer-token tests can still pass in this
+state because they do not use the browser authorization request object.
+
 ---
 
 ## Environment Variables (Secrets)
@@ -244,14 +281,42 @@ withCredentials([
 | `test_oidc_admin_login_with_keycloak_token` | P0 | Full auth flow: config, token, identity, authz |
 | `test_oidc_redirect_flow` | P0 | Validate 302 redirect to Keycloak login |
 | `test_oidc_external_readonly_user` | P0 | RBAC: readonly user can read, cannot write |
-| `test_oidc_no_rbac_mapping` | P0 | Security: unmapped user denied access |
+| `test_oidc_no_rbac_mapping` | P0 | Security: unmapped user denied (jit=False) |
+| `test_oidc_jit_provisioning_allows_unmapped_user` | P0 | JIT auto-creates user from a clean RBAC state; no roles are granted without rolesClaim |
+| `test_oidc_jit_with_roles_claim` | P0 | JIT + rolesClaim: expected token role is required, mapped into Couchbase, and grants authz without manual RBAC |
 | `test_oidc_get_settings_masked` | P0 | Secrets masked in GET /settings/jwt |
 | `test_oidc_invalid_config_rejected` | P0 | Invalid configs return 400, not 500 |
 | `test_oidc_disable_preserves_local_admin_auth` | P0 | Disabling OIDC doesn't break local auth |
 | `test_oidc_config_persists_after_restart` | P0 | Config survives ns_server restart |
 | `test_oidc_expired_token_rejected` | P0 | Expired tokens return 401 |
-| `test_oidc_jwks_key_rotation` | P0 | Keycloak key rotation via Admin API |
+| `test_oidc_jwks_key_rotation` | P0 | Keycloak key rotation via Admin API with config reapply |
 | `test_oidc_cluster_wide_consistency` | P0 | Config propagates to all nodes + rebalance |
+| `test_oidc_invalid_bearer_tokens_rejected` | P0 | Rejects 7 invalid token variants: tampered payload, alg=none, wrong issuer, wrong azp/aud, nbf in future, malformed, empty |
+| `test_oidc_jwks_rotation_without_config_reapply` | P0 | CB auto-discovers new JWKS keys on unknown kid (no admin PUT required) |
+| `test_oidc_callback_rejects_invalid_state` | P0 | /oidc/callback with random/missing state must not create a CB session (CSRF defense) |
+| `test_oidc_query_service_with_bearer_token` | P0 | Bearer token auth on N1QL port 8093: admin allowed, unmapped user denied |
+
+### Manual-Only Browser OIDC Checks
+
+Do not run full browser session checks in Jenkins until CB-node -> Keycloak TCP
+reachability and Keycloak request-object settings are guaranteed across the fleet.
+Manual coverage should validate:
+
+- Full browser SSO: `/oidc/auth` -> Keycloak -> `/oidc/callback` -> session -> `/whoami`
+- Manual endpoint configuration without `oidcDiscoveryUri`
+- RP-initiated logout through `/oidc/deauth`
+
+### Pure JWT Backend Field Coverage
+
+Additional UI/backend field coverage lives in `pytests/security/jwt_token_test.py`
+and is run through `conf/security/py-jwt_auth_test.conf`:
+
+| Test | Priority | Description |
+|------|----------|-------------|
+| `test_jwt_hmac_algorithms` | P0 | HS256/HS384/HS512 shared-secret signing, /whoami + /pools/default success, wrong-secret and algorithm-mismatch rejection |
+| `test_jwt_nested_claim_paths` | P0 | Dot-notation extraction for subClaim, audClaim, and groupsClaim |
+| `test_jwt_mapping_rules_with_capture_groups` | P0 | subMaps regex capture substitution, e.g. `(.*)@example.com cb-\1` |
+| `test_jwt_custom_claims_validation` | P0 | customClaims validation for string pattern, number min/max, boolean const, and mandatory claims |
 
 ---
 

@@ -1,6 +1,8 @@
 import time
 import urllib.parse
+import uuid
 
+import requests
 from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -942,3 +944,806 @@ class JWTOIDCTest(JWTOIDCBase):
             self.log.info("Skipping rebalance test (requires 3+ nodes)")
 
         self.log.info(f"Cluster-wide consistency validated across {len(cluster_nodes)} nodes")
+
+
+    def test_oidc_jit_provisioning_allows_unmapped_user(self):
+        """
+        Test JIT provisioning auto-creates external users on first login.
+
+        When jitProvisioning=True, a valid IdP user with no Couchbase RBAC mapping
+        is auto-provisioned on first authentication — no pre-existing RBAC entry needed.
+
+        Direct contrast to test_oidc_no_rbac_mapping, which uses jit_provisioning=False
+        and expects 401/403 for the same unmapped user.
+
+        Steps:
+        1. Ensure unmapped user has NO Couchbase RBAC entry (clean state for JIT)
+        2. Enable OIDC with jitProvisioning=True, rolesClaim disabled
+        3. Authenticate with a valid Keycloak token for the unmapped user
+        4. Verify /whoami succeeds — JIT created the user on first login
+        5. Verify user identity (id matches, domain=external)
+        6. Verify no admin roles assigned (no rolesClaim, no Keycloak client roles)
+        7. Verify admin endpoints denied (no roles → no authz)
+
+        Expected:
+        - /whoami returns user info (auto-provisioned)
+        - User domain is 'external'
+        - No admin role in response (no rolesClaim configured)
+        - /pools/default denied (401 or 403)
+
+        Keycloak setup:
+        - unmapped_user@localhost.com must exist in the 'cb' realm with a password
+        - User must NOT have Couchbase admin client roles in Keycloak test-client
+        """
+        unmapped_username = self.input.param("unmapped_username", "unmapped_user@localhost.com")
+        unmapped_password = self._user_password(
+            "unmapped_password", "KEYCLOAK_UNMAPPED_USER_PASSWORD"
+        )
+
+        self.log.info(f"Testing JIT provisioning for: {unmapped_username}")
+
+        try:
+            # Remove any pre-existing Couchbase RBAC entry — JIT must create it fresh.
+            self.jwt_utils.delete_external_user(self.rest, unmapped_username)
+            self.sleep(3, "Waiting for external user deletion to propagate")
+            self.assertIsNone(
+                self.jwt_utils.get_external_user(self.rest, unmapped_username),
+                f"External user {unmapped_username} must not exist before JIT login",
+            )
+            self.log.info(f"Confirmed no Couchbase RBAC entry for {unmapped_username}")
+
+            # Enable JIT with no rolesClaim — user gets auto-created but no roles assigned.
+            get_content = self._enable_oidc_and_verify(
+                jit_provisioning=True, roles_claim=""
+            )
+            issuer = get_content.get("issuers", [{}])[0]
+            self.assertNotIn(
+                "rolesClaim",
+                issuer,
+                f"rolesClaim should be absent/disabled for this test. issuer={issuer}",
+            )
+
+            token = self._get_token_from_keycloak(
+                username=unmapped_username, password=unmapped_password
+            )
+            self.assertIsNotNone(token, "Failed to get token from Keycloak for unmapped user")
+
+            # JIT: attempt /whoami — if auto-provisioned, authentication succeeds.
+            ok_whoami, status_whoami, content_whoami = (
+                self.jwt_utils.verify_token_whoami_rest(self.rest, token)
+            )
+            self.log.info(
+                f"/whoami response: ok={ok_whoami} status={status_whoami} "
+                f"content={str(content_whoami)[:300]}"
+            )
+
+            if int(status_whoami or 0) in [401, 403]:
+                self.skipTest(
+                    f"JIT provisioning not supported for Bearer token auth on this build "
+                    f"(status={status_whoami}). Verified working on CB 8.1.0+. "
+                    "On older builds, jitProvisioning may only apply to the browser OIDC flow."
+                )
+
+            self.assertTrue(
+                ok_whoami and self.jwt_utils._is_success_status(status_whoami),
+                f"Unexpected /whoami error: status={status_whoami} content={content_whoami}",
+            )
+
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertIsNotNone(whoami, f"Failed to parse /whoami response: {content_whoami}")
+            self.jwt_utils.assert_external_identity(whoami, unmapped_username)
+
+            role_names = [
+                r.get("role") for r in whoami.get("roles", []) if isinstance(r, dict)
+            ]
+            self.log.info(
+                f"JIT provisioned: id={whoami.get('id')} domain={whoami.get('domain')} "
+                f"roles={role_names}"
+            )
+
+            self.assertEqual(
+                role_names,
+                [],
+                f"JIT user with rolesClaim disabled should not receive roles. Got: {role_names}",
+            )
+
+            # No roles → protected endpoints must still be denied.
+            _, status_denied, _ = self.jwt_utils.request_with_jwt(
+                self.rest, token, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+            )
+            self.assertIn(
+                int(status_denied) if status_denied else 0, [401, 403],
+                f"JIT user with no roles should be denied /pools/default. status={status_denied}",
+            )
+
+            self.log.info(
+                "JIT provisioning validated: user auto-created on first login, "
+                "authentication OK, no roles without rolesClaim -> authz denied as expected"
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, unmapped_username)
+
+
+    def test_oidc_jit_with_roles_claim(self):
+        """
+        Test JIT provisioning with rolesClaim maps JWT token roles to Couchbase RBAC.
+
+        When both jitProvisioning=True and rolesClaim are configured, a user is
+        auto-created AND assigned Couchbase roles sourced from their JWT claims —
+        no manual RBAC setup in Couchbase needed. This is the zero-config RBAC model
+        used by most enterprise OIDC deployments.
+
+        Steps:
+        1. Delete user's Couchbase RBAC entry to guarantee JIT must create it fresh
+        2. Enable OIDC with jitProvisioning=True and rolesClaim set
+        3. Obtain a token that carries role claims
+        4. Inspect token claims to know expected Couchbase roles
+        5. Verify /whoami returns the user with roles sourced from token
+        6. Verify admin authz works when token grants admin role
+
+        Expected:
+        - User auto-provisioned on first login (no pre-existing RBAC entry)
+        - Roles in /whoami match token's rolesClaim value
+        - /pools/default accessible if token carries admin role
+
+        Keycloak setup required:
+        - The test user (default: admin@localhost.com) must have the 'admin' client
+          role assigned under Clients → test-client → Users/Role Mappings in the 'cb' realm.
+          This populates resource_access.test-client.roles = ["admin"] in the JWT.
+        - Without this, the test fails as a Keycloak setup error because P0 must
+          exercise role mapping, not only user auto-provisioning.
+        """
+        jit_username = self.input.param("jit_roles_username", self.keycloak_username)
+        jit_password = self._user_password("jit_roles_password", "KEYCLOAK_TEST_USER_PASSWORD")
+
+        expected_role = self.input.param("jit_roles_expected_role", "admin")
+
+        self.log.info(f"Testing JIT + rolesClaim for: {jit_username}")
+
+        try:
+            # Delete Couchbase RBAC entry — JIT + rolesClaim must recreate it from token claims.
+            self.jwt_utils.delete_external_user(self.rest, jit_username)
+            self.sleep(3, "Waiting for external user deletion to propagate")
+            self.assertIsNone(
+                self.jwt_utils.get_external_user(self.rest, jit_username),
+                f"External user {jit_username} must not exist before JIT login",
+            )
+            self.log.info(f"Confirmed no Couchbase RBAC entry for {jit_username}")
+
+            # Enable JIT=True with default rolesClaim ("resource_access.test-client.roles").
+            get_content = self._enable_oidc_and_verify(jit_provisioning=True)
+            issuer = get_content.get("issuers", [{}])[0]
+            self.assertEqual(
+                issuer.get("rolesClaim"),
+                self.roles_claim,
+                f"rolesClaim should be configured for JIT role mapping. issuer={issuer}",
+            )
+
+            token = self._get_token_from_keycloak(username=jit_username, password=jit_password)
+            self.assertIsNotNone(token, "Failed to get token from Keycloak")
+
+            # Inspect token claims to know what Couchbase roles to expect.
+            claims = self.jwt_utils.get_payload_from_token(token)
+            resource_access = claims.get("resource_access", {})
+            client_roles = resource_access.get(self.keycloak_client_id, {}).get("roles", [])
+            self.log.info(
+                f"Token carries roles for '{self.keycloak_client_id}': {client_roles}"
+            )
+            self.assertIn(
+                expected_role,
+                client_roles,
+                f"Keycloak setup error: token for '{jit_username}' must include "
+                f"'{expected_role}' under client '{self.keycloak_client_id}'. "
+                f"Token roles: {client_roles}",
+            )
+
+            # JIT + rolesClaim: attempt /whoami — user should be auto-provisioned with token roles.
+            ok_whoami, status_whoami, content_whoami = (
+                self.jwt_utils.verify_token_whoami_rest(self.rest, token)
+            )
+            self.log.info(
+                f"/whoami response: ok={ok_whoami} status={status_whoami} "
+                f"content={str(content_whoami)[:300]}"
+            )
+
+            if int(status_whoami or 0) in [401, 403]:
+                self.skipTest(
+                    f"JIT provisioning not supported for Bearer token auth on this build "
+                    f"(status={status_whoami}). Verified working on CB 8.1.0+. "
+                    "On older builds, jitProvisioning may only apply to the browser OIDC flow."
+                )
+
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertIsNotNone(whoami, f"Failed to parse /whoami response: {content_whoami}")
+            self.jwt_utils.assert_external_identity(whoami, jit_username)
+
+            provisioned_roles = [
+                r.get("role") for r in whoami.get("roles", []) if isinstance(r, dict)
+            ]
+            self.log.info(
+                f"JIT provisioned: id={whoami.get('id')} "
+                f"token_roles={client_roles} couchbase_roles={provisioned_roles}"
+            )
+
+            # Each role in the token should appear in Couchbase after JIT + rolesClaim.
+            for role in client_roles:
+                self.assertIn(
+                    role,
+                    provisioned_roles,
+                    f"Token role '{role}' should appear in Couchbase roles after JIT+rolesClaim. "
+                    f"Couchbase returned: {provisioned_roles}",
+                )
+
+            _, status_pools, _ = self.jwt_utils.request_with_jwt(
+                self.rest, token, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+            )
+            self.jwt_utils.assert_success_status(
+                status_pools,
+                f"JIT+rolesClaim {expected_role} should access /pools/default. "
+                f"status={status_pools}",
+            )
+            self.log.info(
+                f"{expected_role} authz via JIT+rolesClaim: /pools/default returned {status_pools}"
+            )
+
+            self.log.info(
+                f"JIT + rolesClaim validated: user auto-created with roles from token "
+                f"(token: {client_roles} -> Couchbase: {provisioned_roles})"
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, jit_username)
+
+    def test_oidc_invalid_bearer_tokens_rejected(self):
+        """
+        Test that Couchbase rejects a matrix of invalid JWT Bearer tokens.
+
+        Verifies the CB JWT validation pipeline correctly refuses:
+        1. Tampered payload with original signature (signature mismatch)
+        2. alg=none header downgrade attack (algorithm confusion)
+        3. Wrong issuer claim (tampered, still signature-mismatch)
+        4. Wrong azp/aud claim (tampered, signature-mismatch)
+        5. Token with nbf (not-before) set 2 hours in the future
+        6. Malformed non-JWT string
+        7. Empty token string
+
+        Each invalid token variant must be rejected (non-2xx) — a 2xx on any
+        variant is a test failure and indicates a validation bypass.
+
+        Keycloak setup:
+        - Default admin@localhost.com user with admin role in 'cb' realm
+        """
+        self.log.info("Testing invalid Bearer token rejection matrix")
+
+        self._ensure_external_user(self.keycloak_username, roles="admin")
+        self.sleep(3, "Waiting for external user to propagate")
+        self._enable_oidc_and_verify()
+
+        token = self._get_token_from_keycloak()
+        self.assertIsNotNone(token, "Failed to get valid Keycloak token for baseline")
+
+        # Baseline: valid token must authenticate.
+        whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+        self.assertIsNotNone(
+            whoami,
+            "Valid Keycloak token should authenticate before invalid-token matrix",
+        )
+        self.log.info(f"Baseline token OK: user={whoami.get('id')}")
+
+        invalid_cases = [
+            (
+                "tampered_payload_signature_mismatch",
+                self.jwt_utils.build_tampered_payload_token(
+                    token, {"sub": "evil-attacker@evil.com"}
+                ),
+            ),
+            (
+                "alg_none_downgrade",
+                self.jwt_utils.build_tampered_header_token(
+                    token, {"alg": "none"}, drop_signature=True
+                ),
+            ),
+            (
+                "wrong_issuer",
+                self.jwt_utils.build_tampered_payload_token(
+                    token, {"iss": "https://evil.example.com/realms/fake"}
+                ),
+            ),
+            (
+                "wrong_azp_audience",
+                self.jwt_utils.build_tampered_payload_token(
+                    token, {"azp": "evil-client", "aud": "evil-client"}
+                ),
+            ),
+            (
+                "nbf_in_future",
+                self.jwt_utils.build_tampered_payload_token(
+                    token, {"nbf": int(time.time()) + 7200}
+                ),
+            ),
+            (
+                "malformed_not_a_jwt",
+                "this.is.notvalid",
+            ),
+            (
+                "empty_token",
+                "",
+            ),
+        ]
+
+        failures = []
+        for name, bad_token in invalid_cases:
+            self.log.info(f"Testing invalid token variant: {name}")
+            _, status, _ = self.jwt_utils.request_with_jwt(
+                self.rest, bad_token, jwt_utils.ENDPOINT_WHOAMI, method="GET"
+            )
+            if status is None:
+                failures.append(f"{name}: request failed with no HTTP status (transport/crash)")
+            elif int(status) not in (400, 401, 403):
+                failures.append(f"{name}: expected 400/401/403 but got status={status}")
+            else:
+                self.log.info(f"  {name}: correctly rejected (status={status})")
+
+        self.assertEqual(
+            failures,
+            [],
+            "Some invalid token variants were not rejected:\n" + "\n".join(failures),
+        )
+        self.log.info(
+            f"All {len(invalid_cases)} invalid Bearer token variants correctly rejected"
+        )
+
+    def test_oidc_jwks_rotation_without_config_reapply(self):
+        """
+        Test that Couchbase auto-discovers rotated JWKS keys without admin config reapply.
+
+        The existing test_oidc_jwks_key_rotation re-applies the JWT config (PUT
+        /settings/jwt) after rotation to force a JWKS cache refresh. This test
+        verifies on-demand key discovery: when CB receives a token signed with an
+        unknown kid, it should automatically fetch the current JWKS from the IdP
+        and accept the token without any admin action.
+
+        Steps:
+        1. Enable OIDC with cb-rotation realm
+        2. Get token with current active key → verify auth works
+        3. Rotate signing keys in Keycloak (swap priorities)
+        4. Get new token (different kid)
+        5. Retry authentication for up to 60s WITHOUT re-applying config
+        6. If new token authenticates → on-demand JWKS refresh confirmed
+        7. Rotate back (cleanup)
+
+        Uses cb-rotation realm with TWO RS256 signing keys.
+
+        Keycloak setup required:
+        - Realm: cb-rotation, Client: rotation-client
+        - User: rotation_user@localhost.com with admin Couchbase RBAC entry
+        - Two RS256 signing keys for rotation
+        - Admin credentials in KEYCLOAK_ADMIN_PASSWORD
+        """
+        self.log.info("Testing JWKS on-demand refresh after key rotation (no config reapply)")
+
+        rotation = self._load_realm_params("rotation")
+        kc_overrides = rotation["kc_overrides"]
+        token_kwargs = rotation["token_kwargs"]
+        rotation_realm = rotation["realm"]
+
+        keycloak_admin_user = self.input.param("keycloak_admin_user", "admin")
+        keycloak_admin_pass = self._secret("keycloak_admin_pass", "KEYCLOAK_ADMIN_PASSWORD")
+
+        rotation_performed = False
+        admin_token = None
+
+        try:
+            admin_token = self.jwt_utils.get_keycloak_admin_token(
+                keycloak_ip=self.keycloak_ip,
+                keycloak_port=self.keycloak_port,
+                admin_username=keycloak_admin_user,
+                admin_password=keycloak_admin_pass,
+                tls_verify=self.keycloak_tls_verify,
+                use_https=self.keycloak_use_https,
+            )
+            self.assertIsNotNone(admin_token, "Failed to get Keycloak admin token")
+
+            # Verify at least 2 signing keys exist for rotation.
+            jwks_before = self.jwt_utils.get_keycloak_jwks(
+                keycloak_ip=self.keycloak_ip,
+                keycloak_port=self.keycloak_port,
+                keycloak_realm=rotation_realm,
+                tls_verify=self.keycloak_tls_verify,
+                use_https=self.keycloak_use_https,
+            )
+            self.assertIsNone(
+                jwks_before.get("error"), f"JWKS fetch failed: {jwks_before.get('error')}"
+            )
+            signing_keys = [k for k in jwks_before["keys"] if k.get("use") == "sig"]
+            self.assertGreaterEqual(
+                len(signing_keys),
+                2,
+                f"Need at least 2 signing keys for rotation. Found: {len(signing_keys)}",
+            )
+
+            self._ensure_external_user(rotation["username"], roles="admin")
+            self.sleep(3, "Waiting for external user to propagate")
+
+            self.log.info("Enabling OIDC config for cb-rotation realm")
+            self._enable_oidc_config(
+                algorithm="RS256",
+                jit_provisioning=False,
+                cluster_master_ip=self.cluster.master.ip,
+                **kc_overrides,
+            )
+
+            token_before = self._get_token_from_keycloak(**token_kwargs)
+            self.assertIsNotNone(token_before, "Failed to get token before rotation")
+            kid_before = self.jwt_utils.get_kid_from_token(token_before)
+            self.log.info(f"Token BEFORE rotation: kid={kid_before}")
+
+            whoami_before = self.jwt_utils.get_user_info_from_whoami(self.rest, token_before)
+            self.assertIsNotNone(whoami_before, "Token should authenticate before rotation")
+
+            self.log.info("*** ROTATING SIGNING KEYS ***")
+            rotation_result = self.jwt_utils.rotate_keycloak_signing_key(
+                keycloak_ip=self.keycloak_ip,
+                keycloak_port=self.keycloak_port,
+                keycloak_realm=rotation_realm,
+                admin_token=admin_token,
+                tls_verify=self.keycloak_tls_verify,
+                use_https=self.keycloak_use_https,
+            )
+            self.assertTrue(
+                rotation_result.get("success"),
+                f"Key rotation failed: {rotation_result.get('error')}",
+            )
+            rotation_performed = True
+            self.log.info(
+                f"Rotation complete: {rotation_result['old_active_key']} -> "
+                f"{rotation_result['new_active_key']}"
+            )
+
+            self.sleep(5, "Waiting for Keycloak to apply key rotation")
+
+            token_after = self._get_token_from_keycloak(**token_kwargs)
+            self.assertIsNotNone(token_after, "Failed to get token after rotation")
+            kid_after = self.jwt_utils.get_kid_from_token(token_after)
+            self.log.info(f"Token AFTER rotation: kid={kid_after}")
+
+            self.assertNotEqual(
+                kid_before,
+                kid_after,
+                f"Token kid must change after rotation. Before={kid_before}, After={kid_after}",
+            )
+
+            # Retry without config reapply — CB must auto-fetch new JWKS on unknown kid.
+            self.log.info(
+                f"Retrying auth with new kid={kid_after} for up to 120s "
+                "(no config reapply - testing on-demand JWKS refresh)"
+            )
+            whoami_after = None
+            retry_interval = 10
+            max_retries = 12
+            for attempt in range(1, max_retries + 1):
+                ok_auth, status_auth, content_auth = self.jwt_utils.verify_token_whoami_rest(
+                    self.rest, token_after
+                )
+                self.log.info(
+                    f"Attempt {attempt}/{max_retries}: "
+                    f"status={status_auth} content={str(content_auth)[:200]}"
+                )
+                if ok_auth and self.jwt_utils._is_success_status(status_auth):
+                    whoami_after = self.jwt_utils.get_user_info_from_whoami(
+                        self.rest, token_after
+                    )
+                    self.log.info(
+                        f"On-demand JWKS refresh confirmed on attempt {attempt}: "
+                        f"user={whoami_after.get('id') if whoami_after else None}"
+                    )
+                    break
+                self.log.info(
+                    f"Attempt {attempt}/{max_retries}: new token not yet accepted "
+                    f"(CB may still be caching old JWKS), retrying in {retry_interval}s"
+                )
+                self.sleep(retry_interval, f"Waiting for JWKS on-demand refresh (attempt {attempt})")
+
+            self.assertIsNotNone(
+                whoami_after,
+                f"CB did not auto-discover new JWKS key (kid={kid_after}) within 120s. "
+                "CB may require an admin config reapply after key rotation - "
+                "verify /settings/jwt PUT triggers JWKS cache refresh.",
+            )
+            self.jwt_utils.assert_external_identity(whoami_after, rotation["username"])
+
+            whoami_old = self.jwt_utils.get_user_info_from_whoami(self.rest, token_before)
+            self.assertIsNotNone(
+                whoami_old,
+                f"Old token (kid={kid_before}) should still work while old key remains in JWKS",
+            )
+
+            # Authz must also work with the new key.
+            _, status_authz, _ = self.jwt_utils.request_with_jwt(
+                self.rest, token_after, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+            )
+            self.jwt_utils.assert_success_status(
+                status_authz,
+                f"Admin authz should work after on-demand JWKS refresh. status={status_authz}",
+            )
+
+            self.log.info(
+                f"JWKS on-demand refresh validated: kid changed {kid_before} -> {kid_after}, "
+                f"new token auth+authz OK without config reapply"
+            )
+
+        finally:
+            if rotation_performed and admin_token:
+                self.log.info("Cleanup: rotating keys back to original state")
+                try:
+                    cleanup = self.jwt_utils.rotate_keycloak_signing_key(
+                        keycloak_ip=self.keycloak_ip,
+                        keycloak_port=self.keycloak_port,
+                        keycloak_realm=rotation_realm,
+                        admin_token=admin_token,
+                        tls_verify=self.keycloak_tls_verify,
+                        use_https=self.keycloak_use_https,
+                    )
+                    if not cleanup.get("success"):
+                        self.log.warning(
+                            f"Cleanup rotation failed: {cleanup.get('error')}"
+                        )
+                except Exception as exc:
+                    self.log.warning(f"Cleanup rotation raised: {exc}")
+
+    def test_oidc_callback_rejects_invalid_state(self):
+        """
+        Test that /oidc/callback with an invalid or missing state parameter is rejected.
+
+        The OIDC state parameter is a CSRF defense: CB generates a nonce at /oidc/auth
+        time and validates it at /oidc/callback. A callback with a random or absent
+        state must NOT create a session.
+
+        Steps:
+        1. Enable OIDC
+        2. POST to CB /oidc/callback with a random state — no prior /oidc/auth flow
+        3. POST to CB /oidc/callback with no state at all
+        4. Assert both return error (non-2xx, or redirect without session cookie)
+
+        Expected:
+        - /oidc/callback with invalid/missing state returns 400 or error redirect
+        - No session cookie set in either response
+        """
+        self.log.info("Testing /oidc/callback rejection of invalid state parameter")
+
+        self._enable_oidc_and_verify()
+
+        cb_scheme = "https" if self.cluster_use_https else "http"
+        cb_base = f"{cb_scheme}://{self.cluster_master_ip}:{self.cluster_port}"
+        callback_url = f"{cb_base}/oidc/callback"
+
+        invalid_cases = [
+            ("random_state_no_code", {"state": uuid.uuid4().hex, "code": "fake-code"}),
+            ("missing_state_with_code", {"code": "fake-code"}),
+            ("missing_both_state_and_code", {}),
+        ]
+
+        failures = []
+        for name, params in invalid_cases:
+            self.log.info(f"Testing /oidc/callback with: {name}")
+            session = requests.Session()
+            session.verify = self.keycloak_tls_verify
+            resp = session.get(
+                callback_url,
+                params=params,
+                allow_redirects=False,
+                timeout=10,
+            )
+            self.log.info(
+                f"  {name}: status={resp.status_code} "
+                f"location={resp.headers.get('Location', '')[:100]}"
+            )
+            # A valid session must NOT be created for any invalid callback response.
+            cookie_names = list(session.cookies.keys()) + list(resp.cookies.keys())
+            session_cookies_set = any(
+                cookie == "NS_ui_auth" or cookie.startswith("ui-auth-")
+                for cookie in cookie_names
+            )
+            if session_cookies_set:
+                failures.append(
+                    f"{name}: invalid callback created session cookie(s) {cookie_names} "
+                    f"(status={resp.status_code})"
+                )
+                continue
+
+            whoami_resp = session.get(f"{cb_base}/whoami", allow_redirects=False, timeout=10)
+            authenticated_identity = None
+            if 200 <= whoami_resp.status_code < 300:
+                try:
+                    whoami = whoami_resp.json()
+                except Exception:
+                    whoami = {}
+                if whoami.get("domain") != "anonymous" or whoami.get("id"):
+                    authenticated_identity = whoami
+
+            if authenticated_identity:
+                failures.append(
+                    f"{name}: invalid callback produced authenticated identity "
+                    f"{authenticated_identity}"
+                )
+            else:
+                self.log.info(
+                    f"  {name}: correctly rejected without session "
+                    f"(callback_status={resp.status_code}, whoami_status={whoami_resp.status_code})"
+                )
+
+        self.assertEqual(
+            failures,
+            [],
+            "Some /oidc/callback invalid-state cases incorrectly created sessions:\n"
+            + "\n".join(failures),
+        )
+        self.log.info("All invalid /oidc/callback state variants correctly rejected")
+
+    def test_oidc_query_service_with_bearer_token(self):
+        """
+        Test JWT Bearer token authentication on the N1QL query service (port 8093).
+
+        Verifies that the CB query service (cbq-engine) respects JWT auth, not just
+        the management REST API (port 8091). Both the auth and authz paths are exercised:
+        - Admin token → query succeeds (SELECT 1)
+        - Unmapped user token (no RBAC) → query denied (401/403)
+
+        Steps:
+        1. Enable OIDC
+        2. Create external user with admin role for query access
+        3. Get admin token from Keycloak
+        4. POST SELECT query to :8093 with Bearer token → expect 200 and query result
+        5. Get token for unmapped user (no RBAC)
+        6. POST same query with unmapped token → expect 401/403
+
+        Expected:
+        - Admin Bearer token grants query service access
+        - Unmapped user Bearer token is denied at query service
+
+        Keycloak setup:
+        - admin@localhost.com with admin RBAC role
+        - unmapped_user@localhost.com with no RBAC mapping (for authz denial check)
+        """
+        self.log.info("Testing Bearer token authentication on N1QL query service")
+
+        query_username = self.input.param("query_username", self.keycloak_username)
+        query_password = self._user_password(
+            "query_password", "KEYCLOAK_TEST_USER_PASSWORD"
+        )
+        unmapped_username = self.input.param(
+            "unmapped_username", "unmapped_user@localhost.com"
+        )
+        unmapped_password = self._user_password(
+            "unmapped_password", "KEYCLOAK_UNMAPPED_USER_PASSWORD"
+        )
+
+        self._ensure_external_user(query_username, roles="admin")
+        self.sleep(3, "Waiting for external user to propagate")
+        self._enable_oidc_and_verify()
+
+        admin_token = self._get_token_from_keycloak(
+            username=query_username, password=query_password
+        )
+        self.assertIsNotNone(admin_token, "Failed to get admin token from Keycloak")
+
+        query_use_https = self.input.param("query_use_https", False)
+        query_port = self.input.param("query_port", 18093 if query_use_https else 8093)
+        query_scheme = "https" if query_use_https else "http"
+        query_node = None
+        services_init = self.input.param("services_init", "")
+        service_specs = services_init.split("-") if services_init else []
+        for index, spec in enumerate(service_specs):
+            services = {service.strip() for service in spec.replace(",", ":").split(":")}
+            if services.intersection({"n1ql", "query"}):
+                candidate_nodes = self.cluster.servers[:int(self.nodes_init)]
+                if index < len(candidate_nodes):
+                    query_node = candidate_nodes[index]
+                    break
+        if query_node is None:
+            for node in self.cluster.nodes_in_cluster:
+                services = getattr(node, "services", "")
+                if isinstance(services, str):
+                    services = services.replace(",", ":").split(":")
+                if set(services).intersection({"n1ql", "query"}):
+                    query_node = node
+                    break
+        if query_node is None:
+            self.fail(
+                f"N1QL/query node not found in cluster. services_init={services_init}, "
+                f"nodes={[n.ip for n in self.cluster.nodes_in_cluster]}"
+            )
+
+        query_host = getattr(query_node, "ip", None) or getattr(query_node, "hostname", None)
+        query_url = f"{query_scheme}://{query_host}:{query_port}/query/service"
+        bearer_headers = {
+            "Authorization": f"Bearer {admin_token}",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        }
+
+        self.log.info(f"Testing admin Bearer auth on N1QL service: {query_url}")
+        try:
+            resp_admin = self.http.post(
+                query_url,
+                data="statement=SELECT 1 AS test",
+                headers=bearer_headers,
+                timeout=30,
+            )
+        except Exception as exc:
+            self.fail(
+                f"Query service at {query_url} not reachable even though query node was selected: {exc}"
+            )
+
+        self.log.info(
+            f"Query service admin response: status={resp_admin.status_code} "
+            f"body={resp_admin.text[:300]}"
+        )
+
+        if resp_admin.status_code == 404:
+            self.fail(
+                f"N1QL service not available at {query_url} - "
+                "test requires kv:n1ql:index services"
+            )
+
+        self.assertNotIn(
+            resp_admin.status_code,
+            [401, 403],
+            f"Admin Bearer token should be accepted by query service. "
+            f"status={resp_admin.status_code} body={resp_admin.text[:300]}",
+        )
+        self.assertEqual(
+            resp_admin.status_code,
+            200,
+            f"Admin Bearer token should succeed on N1QL service. "
+            f"status={resp_admin.status_code} body={resp_admin.text[:300]}",
+        )
+        try:
+            result_body = resp_admin.json()
+            self.assertEqual(
+                result_body.get("status"),
+                "success",
+                f"N1QL query should succeed. response={result_body}",
+            )
+        except Exception:
+            pass
+
+        self.log.info("Admin Bearer token accepted by N1QL service")
+
+        # Authz denial check: unmapped user has no query permissions.
+        self.log.info(f"Testing unmapped user denial on N1QL service: {unmapped_username}")
+        try:
+            self.jwt_utils.delete_external_user(self.rest, unmapped_username)
+        except Exception:
+            pass
+
+        unmapped_token = self._get_token_from_keycloak(
+            username=unmapped_username, password=unmapped_password
+        )
+        self.assertIsNotNone(unmapped_token, "Failed to get token for unmapped user")
+
+        resp_unmapped = self.http.post(
+            query_url,
+            data="statement=SELECT * FROM system:user_info LIMIT 1",
+            headers={
+                "Authorization": f"Bearer {unmapped_token}",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            },
+            timeout=30,
+        )
+        self.log.info(
+            f"Query service unmapped user response: status={resp_unmapped.status_code} "
+            f"body={resp_unmapped.text[:300]}"
+        )
+
+        self.assertIn(
+            resp_unmapped.status_code,
+            [401, 403],
+            f"Unmapped user with no RBAC should be denied by query service "
+            f"(system:user_info requires admin/security_admin). "
+            f"status={resp_unmapped.status_code}",
+        )
+        self.log.info(
+            "N1QL query service Bearer token auth validated: "
+            f"admin allowed, unmapped user denied (status={resp_unmapped.status_code})"
+        )

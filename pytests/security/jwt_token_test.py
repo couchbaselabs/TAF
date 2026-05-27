@@ -2473,3 +2473,359 @@ class JWTTokenTest(OnPremBaseTest):
         finally:
             self._delete_group(group_name)
 
+    def test_jwt_hmac_algorithms(self):
+        """
+        Validate HMAC JWT signing algorithms.
+
+        This covers the HMAC-specific UI/backend path where sharedSecret is
+        required instead of PEM/JWKS key material.
+        """
+        algorithms = self.input.param("hmac_algorithms", "HS256,HS384,HS512").split(",")
+        shared_secret = self.input.param("hmac_shared_secret", None) or \
+            self.jwt_utils.generate_hmac_secret()
+        issuer_name = self.input.param("hmac_issuer_name", "manual-hmac-issuer")
+        audience = self.input.param("hmac_audience", "cb-server")
+        user_name = self.input.param("hmac_user_name", "hmac_user@example.com")
+
+        self.jwt_utils.create_external_user(self.rest, user_name=user_name, roles="admin")
+        self.sleep(3, "Waiting for external HMAC user to propagate")
+
+        try:
+            for algorithm in [alg.strip() for alg in algorithms if alg.strip()]:
+                self.log.info(f"Testing HMAC JWT algorithm: {algorithm}")
+                config = {
+                    "enabled": True,
+                    "issuers": [{
+                        "name": issuer_name,
+                        "signingAlgorithm": algorithm,
+                        "sharedSecret": shared_secret,
+                        "subClaim": "sub",
+                        "audClaim": "aud",
+                        "audienceHandling": "any",
+                        "audiences": [audience],
+                        "jitProvisioning": False,
+                    }],
+                }
+                self._setup_jwt_config(config, create_groups=False)
+
+                now = int(time.time())
+                payload = {
+                    "iss": issuer_name,
+                    "sub": user_name,
+                    "aud": audience,
+                    "iat": now,
+                    "nbf": now,
+                    "exp": now + self.ttl,
+                    "jti": str(uuid.uuid4()),
+                }
+                token = jwt.encode(payload, shared_secret, algorithm=algorithm)
+
+                whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+                self.assertTrue(whoami, f"{algorithm}: expected /whoami JSON")
+                self.jwt_utils.assert_external_identity(whoami, user_name)
+
+                _, status_pools, _ = self.jwt_utils.request_with_jwt(
+                    self.rest, token, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+                )
+                self.jwt_utils.assert_success_status(
+                    status_pools,
+                    f"{algorithm}: expected /pools/default authz success. status={status_pools}",
+                )
+
+                wrong_secret_token = jwt.encode(
+                    payload, f"{shared_secret}-wrong", algorithm=algorithm
+                )
+                _, status_wrong_secret, _ = self.jwt_utils.verify_token_whoami_rest(
+                    self.rest, wrong_secret_token
+                )
+                self.jwt_utils.assert_unauthorized_status(
+                    status_wrong_secret,
+                    f"{algorithm}: wrong shared secret token should be rejected. "
+                    f"status={status_wrong_secret}",
+                )
+
+            mismatch_config = {
+                "enabled": True,
+                "issuers": [{
+                    "name": issuer_name,
+                    "signingAlgorithm": "HS512",
+                    "sharedSecret": shared_secret,
+                    "subClaim": "sub",
+                    "audClaim": "aud",
+                    "audienceHandling": "any",
+                    "audiences": [audience],
+                    "jitProvisioning": False,
+                }],
+            }
+            self._setup_jwt_config(mismatch_config, create_groups=False)
+            now = int(time.time())
+            mismatch_token = jwt.encode(
+                {
+                    "iss": issuer_name,
+                    "sub": user_name,
+                    "aud": audience,
+                    "iat": now,
+                    "nbf": now,
+                    "exp": now + self.ttl,
+                    "jti": str(uuid.uuid4()),
+                },
+                shared_secret,
+                algorithm="HS256",
+            )
+            _, status_mismatch, _ = self.jwt_utils.verify_token_whoami_rest(
+                self.rest, mismatch_token
+            )
+            self.jwt_utils.assert_unauthorized_status(
+                status_mismatch,
+                f"Algorithm mismatch should be rejected. status={status_mismatch}",
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, user_name)
+
+    def test_jwt_nested_claim_paths(self):
+        """
+        Validate nested dot-notation claim extraction for sub, aud, and groups.
+        """
+        issuer_name = self.input.param("nested_issuer_name", "manual-nested-issuer")
+        user_name = self.input.param("nested_user_name", "nested_user@example.com")
+        audience = self.input.param("nested_audience", "cb-nested-audience")
+
+        self.jwt_utils.create_external_user(self.rest, user_name=user_name, roles="admin")
+        self.sleep(3, "Waiting for external nested-claim user to propagate")
+
+        config = {
+            "enabled": True,
+            "issuers": [{
+                "name": issuer_name,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "user.profile.email",
+                "audClaim": "client.audience",
+                "groupsClaim": "user.access.groups",
+                "audienceHandling": "any",
+                "audiences": [audience],
+                "jitProvisioning": False,
+            }],
+        }
+
+        try:
+            self._setup_jwt_config(config, create_groups=False)
+            now = int(time.time())
+            payload = {
+                "iss": issuer_name,
+                "user": {
+                    "profile": {"email": user_name},
+                    "access": {"groups": ["admin"]},
+                },
+                "client": {"audience": audience},
+                "iat": now,
+                "nbf": now,
+                "exp": now + self.ttl,
+                "jti": str(uuid.uuid4()),
+            }
+            token = self._create_signed_token_from_payload(payload)
+
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertTrue(whoami, "Expected /whoami JSON for nested claim token")
+            self.jwt_utils.assert_external_identity(whoami, user_name)
+
+            _, status_pools, _ = self.jwt_utils.request_with_jwt(
+                self.rest, token, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+            )
+            self.jwt_utils.assert_success_status(
+                status_pools,
+                f"Nested claim token should access /pools/default. status={status_pools}",
+            )
+
+            bad_payload = json.loads(json.dumps(payload))
+            bad_payload["client"]["audience"] = "wrong-audience"
+            bad_token = self._create_signed_token_from_payload(bad_payload)
+            _, status_bad, _ = self.jwt_utils.verify_token_whoami_rest(
+                self.rest, bad_token
+            )
+            self.jwt_utils.assert_unauthorized_status(
+                status_bad,
+                f"Wrong nested audience should be rejected. status={status_bad}",
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, user_name)
+
+    def test_jwt_mapping_rules_with_capture_groups(self):
+        """
+        Validate regex capture-group substitution in subject mapping rules.
+        """
+        issuer_name = self.input.param("submap_issuer_name", "manual-submap-issuer")
+        token_subject = self.input.param("submap_token_subject", "alice@example.com")
+        mapped_user = self.input.param("submap_mapped_user", "cb-alice")
+        audience = self.input.param("submap_audience", "cb-map-audience")
+
+        self.jwt_utils.create_external_user(self.rest, user_name=mapped_user, roles="admin")
+        self.sleep(3, "Waiting for mapped external user to propagate")
+
+        config = {
+            "enabled": True,
+            "issuers": [{
+                "name": issuer_name,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "sub",
+                "subMaps": [r"(.*)@example.com cb-\1"],
+                "audClaim": "aud",
+                "audienceHandling": "any",
+                "audiences": [audience],
+                "jitProvisioning": False,
+            }],
+        }
+
+        try:
+            self._setup_jwt_config(config, create_groups=False)
+            token = self.jwt_utils.create_token(
+                issuer_name=issuer_name,
+                user_name=token_subject,
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=audience,
+                user_groups=None,
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+            )
+
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertTrue(whoami, "Expected /whoami JSON for subject-mapped token")
+            self.jwt_utils.assert_external_identity(whoami, mapped_user)
+
+            _, status_pools, _ = self.jwt_utils.request_with_jwt(
+                self.rest, token, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+            )
+            self.jwt_utils.assert_success_status(
+                status_pools,
+                f"Subject-mapped user should access /pools/default. status={status_pools}",
+            )
+
+            unmatched_token = self.jwt_utils.create_token(
+                issuer_name=issuer_name,
+                user_name="bob@evil.com",
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=audience,
+                user_groups=None,
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+            )
+            _, status_unmatched, _ = self.jwt_utils.request_with_jwt(
+                self.rest, unmatched_token, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+            )
+            self.jwt_utils.assert_unauthorized_status(
+                status_unmatched,
+                f"Unmatched subject should not authorize. status={status_unmatched}",
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, mapped_user)
+
+    def test_jwt_custom_claims_validation(self):
+        """
+        Validate custom claim type and constraint enforcement.
+
+        Covers string pattern, number min/max, boolean const, and mandatory
+        claim rejection.
+        """
+        issuer_name = self.input.param("custom_claims_issuer_name", "manual-custom-claims-issuer")
+        user_name = self.input.param("custom_claims_user_name", "custom_claims_user@example.com")
+        audience = self.input.param("custom_claims_audience", "cb-custom-claims-audience")
+
+        self.jwt_utils.create_external_user(self.rest, user_name=user_name, roles="admin")
+        self.sleep(3, "Waiting for custom-claims external user to propagate")
+
+        config = {
+            "enabled": True,
+            "issuers": [{
+                "name": issuer_name,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "audienceHandling": "any",
+                "audiences": [audience],
+                "jitProvisioning": False,
+                "customClaims": [
+                    {
+                        "name": "email",
+                        "type": "string",
+                        "pattern": "^[a-z_]+@example\\.com$",
+                        "mandatory": True,
+                    },
+                    {
+                        "name": "access_level",
+                        "type": "number",
+                        "min": 1,
+                        "max": 5,
+                        "mandatory": True,
+                    },
+                    {
+                        "name": "is_admin",
+                        "type": "boolean",
+                        "const": True,
+                        "mandatory": True,
+                    },
+                ],
+            }],
+        }
+
+        def _payload(**overrides):
+            now = int(time.time())
+            payload = {
+                "iss": issuer_name,
+                "sub": user_name,
+                "aud": audience,
+                "iat": now,
+                "nbf": now,
+                "exp": now + self.ttl,
+                "jti": str(uuid.uuid4()),
+                "email": user_name,
+                "access_level": 3,
+                "is_admin": True,
+            }
+            for key, value in overrides.items():
+                if value is None:
+                    payload.pop(key, None)
+                else:
+                    payload[key] = value
+            return payload
+
+        try:
+            self._setup_jwt_config(config, create_groups=False)
+
+            valid_token = self._create_signed_token_from_payload(_payload())
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, valid_token)
+            self.assertTrue(whoami, "Expected /whoami JSON for valid custom-claims token")
+            self.jwt_utils.assert_external_identity(whoami, user_name)
+            _, status_pools, _ = self.jwt_utils.request_with_jwt(
+                self.rest, valid_token, jwt_utils.ENDPOINT_POOLS_DEFAULT, method="GET"
+            )
+            self.jwt_utils.assert_success_status(
+                status_pools,
+                f"Valid custom-claims token should access /pools/default. status={status_pools}",
+            )
+
+            invalid_cases = {
+                "missing_mandatory_email": _payload(email=None),
+                "string_pattern_mismatch": _payload(email="bad@evil.com"),
+                "number_above_max": _payload(access_level=9),
+                "boolean_const_false": _payload(is_admin=False),
+            }
+            for name, payload in invalid_cases.items():
+                self.log.info(f"Testing custom claim rejection: {name}")
+                token = self._create_signed_token_from_payload(payload)
+                _, status, _ = self.jwt_utils.verify_token_whoami_rest(self.rest, token)
+                self.jwt_utils.assert_unauthorized_status(
+                    status,
+                    f"Invalid custom claim case '{name}' should be rejected. status={status}",
+                )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, user_name)
+

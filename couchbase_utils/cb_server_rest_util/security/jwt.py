@@ -96,9 +96,24 @@ class JWTAPI(CBRestConnection):
         }
         status, content, response = self.request(api, method, params, headers=headers)
         if not status:
-            self.log.warning(
-                f"Bearer request {method} {endpoint} failed: content={content}"
-            )
+            http_code = getattr(response, "status_code", None)
+            if http_code is None:
+                http_code = getattr(response, "status", None)
+            try:
+                http_code = int(http_code)
+            except (TypeError, ValueError):
+                http_code = None
+            if http_code not in (401, 403):
+                if content is None:
+                    safe_preview = ""
+                elif isinstance(content, (bytes, bytearray)):
+                    safe_preview = content[:200].decode("utf-8", "replace")
+                else:
+                    safe_preview = str(content)[:200]
+                self.log.warning(
+                    f"Bearer request {method} {endpoint} failed "
+                    f"(status={http_code}): content_preview={safe_preview}"
+                )
         return status, content, response
 
     def get_whoami_with_bearer(self, token):

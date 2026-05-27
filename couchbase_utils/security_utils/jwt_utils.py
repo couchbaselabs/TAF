@@ -2,6 +2,7 @@ import ast
 import base64
 import json
 import re
+import secrets
 import time
 import urllib.parse
 import uuid
@@ -96,6 +97,10 @@ class JWTUtils:
         if self.log:
             self.log.info("Key pair generated successfully.")
         return private_key_pem.decode(), public_key_pem.decode()
+
+    def generate_hmac_secret(self, byte_length: int = 32) -> str:
+        """Generate a cryptographically random HMAC shared secret as a hex string."""
+        return secrets.token_hex(byte_length)
 
     def get_jwt_config(
         self,
@@ -341,9 +346,20 @@ class JWTUtils:
             status, content, response = jwt_api.request_with_bearer(
                 token, endpoint, method, params
             )
+            if self.log:
+                self.log.debug(
+                    f"request_with_jwt [JWTAPI] {method} {endpoint}: "
+                    f"status={status} http={self.status_code(response)} "
+                    f"base_url={jwt_api.base_url}"
+                )
             return status, self.status_code(response), content
-        except Exception:
-            pass
+        except Exception as _jwt_ex:
+            if method.upper() not in ("GET", "HEAD", "OPTIONS"):
+                raise
+            if self.log:
+                self.log.warning(
+                    f"request_with_jwt [JWTAPI] failed for {endpoint}: {_jwt_ex!r} — using legacy fallback"
+                )
 
         # Legacy fallback: use membase RestConnection directly
         if endpoint.startswith("/"):
@@ -354,6 +370,8 @@ class JWTUtils:
             "Accept": "*/*",
             "Content-Type": "application/x-www-form-urlencoded",
         }
+        if self.log:
+            self.log.debug(f"request_with_jwt [legacy] {method} {api}")
         ok, content, resp = rest_connection._http_request(api, method, params, headers=headers)
         return ok, self.status_code(resp), content
 
@@ -783,11 +801,35 @@ class JWTUtils:
         ok, status_code, content = self.request_with_jwt(
             rest_connection, token, ENDPOINT_WHOAMI, method="GET"
         )
+        if self.log:
+            content_preview = str(content)[:200] if content is not None else "None"
+            self.log.info(
+                f"get_user_info_from_whoami: ok={ok} status={status_code} "
+                f"content_type={type(content).__name__} preview={content_preview}"
+            )
         if not ok or not self._is_success_status(status_code):
+            if self.log:
+                self.log.warning(
+                    f"get_user_info_from_whoami: returning None — ok={ok} status={status_code}"
+                )
             return None
         try:
-            return json.loads(content)
-        except Exception:
+            parsed = content if isinstance(content, dict) else json.loads(content)
+            user_id = parsed.get("id")
+            domain = parsed.get("domain")
+            if user_id and domain and domain != "anonymous":
+                return parsed
+            if self.log:
+                self.log.warning(
+                    f"get_user_info_from_whoami: unauthenticated response — "
+                    f"id={user_id!r} domain={domain!r}"
+                )
+            return None
+        except Exception as e:
+            if self.log:
+                self.log.warning(
+                    f"get_user_info_from_whoami: parse failed — {e} — content={str(content)[:200]}"
+                )
             return None
 
     def verify_token_authentication(self, rest_connection, token, expected_status_code=200):
@@ -1876,7 +1918,9 @@ class JWTUtils:
                 f"Got: {redirect_location[:120]}"
             )
 
-        if keycloak_ip not in redirect_location:
+        import urllib.parse as _urlparse
+        parsed_redirect = _urlparse.urlparse(redirect_location)
+        if parsed_redirect.hostname != keycloak_ip:
             raise AssertionError(
                 f"Redirect should target Keycloak host {keycloak_ip}. "
                 f"Got: {redirect_location[:120]}"
