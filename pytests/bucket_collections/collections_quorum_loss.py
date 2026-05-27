@@ -250,24 +250,29 @@ class CollectionsQuorumLoss(CollectionBase):
 
     def validate_uids(self, pre_qf_ids, post_qf_ids):
         """
-        Validates if manifest, scope, coll uids are bumped by 4096
-        after qf
+        Validates if manifest, scope, coll uids are bumped by a known epoch
+        after QF. The epoch is a fixed constant in ns_server:
+        - Pre-8.1.0: 4096 (?EPOCH_PRE_TOTORO = 16#1000)
+        - 8.1.0+: 65536 (?EPOCH = 16#10000)
         """
         self.log.info("Validating UIDs after QF")
+        valid_epochs = (4096, 65536)
         uid_keys = ["uid", "sid", "cid"]
         for bucket in self.cluster.buckets:
             for uid_key in uid_keys:
                 int_uid_diff = int(post_qf_ids[bucket.name][uid_key], 16) - \
                                int(pre_qf_ids[bucket.name][uid_key], 16)
                 if uid_key == "uid":
-                    expected_diff = 4096 + 2
+                    num_ops = 2  # scope + collection creation
                 else:
-                    expected_diff = 4096 + 1
-                if int_uid_diff != expected_diff:
+                    num_ops = 1  # scope or collection creation
+                base_epoch = int_uid_diff - num_ops
+                if base_epoch not in valid_epochs:
                     self.fail("For bucket: {0}, uid_key: {1}, "
-                              "expected diff: {2} "
-                              "but actual diff: {3}".
-                              format(bucket.name, uid_key, expected_diff, int_uid_diff))
+                              "unexpected epoch: {2} (diff: {3}). "
+                              "Expected one of {4}".
+                              format(bucket.name, uid_key, base_epoch,
+                                     int_uid_diff, valid_epochs))
 
     def test_quorum_loss_failover(self):
         """
