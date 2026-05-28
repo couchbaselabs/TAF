@@ -752,3 +752,54 @@ class FusionMonitorUtil():
                 self.log.warning(f"No rebalance report available for cluster {cluster.id}")
         except Exception as e:
             self.log.error(f"Failed to fetch/analyze rebalance report for cluster {cluster.id}: {e}")
+
+    def verify_fusion_bucket_empty_after_restore(self, cluster, bucket_name: str, timeout: int = 300) -> bool:
+        """
+        Verify the fusion S3 log-store bucket is empty after a restore operation.
+
+        On restore, cleanFusionBucket() purges all objects from the target cluster's
+        fusion S3 bucket. This method polls until the bucket is empty or times out.
+
+        :param cluster: Cluster object with .id attribute
+        :param bucket_name: Couchbase bucket name to check
+        :param timeout: Max seconds to wait for the bucket to become empty
+        :return: True if the fusion S3 bucket is empty within the timeout
+        """
+        uri = self.get_fusion_s3_uri(cluster, bucket_name)
+        if not uri:
+            self.log.warning(
+                f"No fusion S3 URI for cluster {cluster.id}, bucket {bucket_name} - skipping empty check"
+            )
+            return False
+
+        uri_clean = uri.split("?")[0]
+        parts = uri_clean.replace("s3://", "").split("/", 1)
+        if len(parts) < 1 or not parts[0]:
+            self.log.error(f"Cannot parse fusion S3 URI: {uri}")
+            return False
+
+        s3_bucket = parts[0]
+        prefix = parts[1] if len(parts) > 1 else ""
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            size_info = self.fusion_aws_util.s3.get_bucket_size(s3_bucket, prefix=prefix)
+            file_count = size_info.get("file_count", 0)
+            total_mb = size_info.get("total_size_mb", 0)
+            self.log.info(
+                f"Fusion S3 bucket {s3_bucket}/{prefix}: {file_count} files, {total_mb} MB "
+                f"(cluster {cluster.id}, bucket {bucket_name})"
+            )
+            if file_count == 0:
+                self.log.info(
+                    f"Fusion S3 bucket is empty for cluster {cluster.id}, "
+                    f"bucket {bucket_name} - cleanFusionBucket confirmed"
+                )
+                return True
+            time.sleep(30)
+
+        self.log.error(
+            f"Fusion S3 bucket {s3_bucket}/{prefix} not empty after {timeout}s for "
+            f"cluster {cluster.id}, bucket {bucket_name}"
+        )
+        return False

@@ -4,6 +4,8 @@ import json
 from constants.cloud_constants.capella_constants import AWS, Cluster
 from global_vars import logger
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
+from capellaAPI.capella.dedicated.CapellaAPI_v4 import ClusterOperationsAPIs as ClusterOpsAPIv4
+from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI as CapellaAPIv4
 from capella_utils.common_utils import User
 
 
@@ -886,4 +888,298 @@ class CapellaUtils(object):
                 f"Creating cluster feature flag {ff} failed: {resp.status_code}")
             raise Exception("Creating cluster feature flag failed: {}".format(resp.content))
         CapellaUtils.log.info(f"Set cluster feature flag {ff}={value} for cluster {cluster_id}")
+
+    # ---------------------------------------------------------------------------
+    # Cloud snapshot backup methods (v2 internal API)
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def create_cloud_snapshot_backup(pod, tenant, project_id, cluster_id,
+                                     retention=None, regions_to_copy=None):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.create_cloud_snapshot_backup(
+            tenant.id, project_id, cluster_id,
+            retention=retention, regions_to_copy=regions_to_copy)
+        if resp.status_code == 202:
+            return resp.json()
+        CapellaUtils.log.error(
+            "Failed to create cloud snapshot backup for cluster {}, "
+            "status: {}".format(cluster_id, resp.status_code))
+        return None
+
+    @staticmethod
+    def list_cloud_snapshot_backups(pod, tenant, project_id, cluster_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        page = 1
+        backups = []
+        while True:
+            resp = capella_api.list_cloud_snapshot_backups(
+                tenant.id, project_id, cluster_id, page=page)
+            if resp.status_code == 200:
+                info = resp.json()
+                backups.extend(info.get("data", []))
+                pages = info.get("cursor", {}).get("pages", {})
+                if pages.get("last", page) > page:
+                    page += 1
+                else:
+                    break
+            else:
+                break
+        return backups
+
+    @staticmethod
+    def get_cloud_snapshot_backup_info(pod, tenant, project_id, cluster_id,
+                                       backup_id):
+        backups = CapellaUtils.list_cloud_snapshot_backups(
+            pod=pod, tenant=tenant, project_id=project_id,
+            cluster_id=cluster_id)
+        for backup in backups:
+            if backup.get("data", {}).get("id") == backup_id:
+                return backup.get("data")
+        return None
+
+    @staticmethod
+    def destroy_cloud_snapshot_backups(pod, tenant, project_id, cluster_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.destroy_cloud_snapshot_backups(tenant.id, project_id, cluster_id)
+        if resp.status_code == 202:
+            return True
+        CapellaUtils.log.error(
+            "Failed to destroy cloud snapshot backups for cluster {}, "
+            "status: {}".format(cluster_id, resp.status_code))
+        return False
+
+    @staticmethod
+    def edit_cloud_snapshot_backup_retention(pod, tenant, project_id, cluster_id,
+                                             backup_id, retention):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.edit_cloud_snapshot_backup_retention(
+            tenant.id, project_id, cluster_id, backup_id, retention)
+        if resp.status_code == 204:
+            return True
+        CapellaUtils.log.error(
+            "Failed to edit retention for cloud snapshot backup {}, "
+            "status: {}".format(backup_id, resp.status_code))
+        return False
+
+    @staticmethod
+    def delete_cloud_snapshot_backup(pod, tenant, project_id, cluster_id,
+                                     backup_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.delete_cloud_snapshot_backup(
+            tenant.id, project_id, cluster_id, backup_id)
+        if resp.status_code == 202:
+            return True
+        CapellaUtils.log.error(
+            "Failed to delete cloud snapshot backup {}, "
+            "status: {}".format(backup_id, resp.status_code))
+        return False
+
+    @staticmethod
+    def restore_cloud_snapshot_backup(pod, tenant, project_id, cluster_id,
+                                      backup_id,
+                                      cross_region_restore_preference=None):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.restore_cloud_snapshot_backup(
+            tenant.id, project_id, cluster_id, backup_id,
+            cross_region_restore_preference=cross_region_restore_preference)
+        if resp.status_code == 202:
+            return resp.json()
+        CapellaUtils.log.error(
+            "Failed to restore cloud snapshot backup {}, "
+            "status: {}".format(backup_id, resp.status_code))
+        return None
+
+    @staticmethod
+    def list_cloud_snapshot_restores(pod, tenant, project_id, cluster_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        page = 1
+        restores = []
+        while True:
+            resp = capella_api.list_cloud_snapshot_restores(
+                tenant.id, project_id, cluster_id, page=page)
+            if resp.status_code == 200:
+                info = resp.json()
+                restores.extend(info.get("data", []))
+                pages = info.get("cursor", {}).get("pages", {})
+                if pages.get("last", page) > page:
+                    page += 1
+                else:
+                    break
+            else:
+                break
+        return restores
+
+    @staticmethod
+    def list_cloud_snapshot_regions(pod, tenant, project_id, cluster_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.list_cloud_snapshot_regions(tenant.id, project_id, cluster_id)
+        if resp.status_code == 200:
+            return resp.json()
+        CapellaUtils.log.error(
+            "Failed to list cloud snapshot regions for cluster {}, "
+            "status: {}".format(cluster_id, resp.status_code))
+        return None
+
+    @staticmethod
+    def clone_cloud_snapshot_backup(pod, tenant, project_id, backup_id, name,
+                                    cloud_provider, availability, support,
+                                    description=None, zones=None):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.clone_cloud_snapshot_backup(
+            tenant.id, project_id, backup_id, name=name,
+            cloud_provider=cloud_provider, availability=availability,
+            support=support, description=description, zones=zones)
+        if resp.status_code == 202:
+            return resp.json()
+        CapellaUtils.log.error(
+            "Failed to clone cloud snapshot backup {}, "
+            "status: {}".format(backup_id, resp.status_code))
+        return None
+
+    @staticmethod
+    def upsert_cloud_snapshot_backup_schedule(pod, tenant, project_id,
+                                              cluster_id, interval, retention,
+                                              start_time, copy_to_regions=None):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.upsert_cloud_snapshot_backup_schedule(
+            tenant.id, project_id, cluster_id,
+            interval=interval, retention=retention, start_time=start_time,
+            copy_to_regions=copy_to_regions)
+        if resp.status_code == 204:
+            return True
+        CapellaUtils.log.error(
+            "Failed to upsert cloud snapshot backup schedule for cluster {}, "
+            "status: {}".format(cluster_id, resp.status_code))
+        return False
+
+    @staticmethod
+    def get_cloud_snapshot_backup_schedule(pod, tenant, project_id, cluster_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.get_cloud_snapshot_backup_schedule(
+            tenant.id, project_id, cluster_id)
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 204:
+            return None
+        CapellaUtils.log.error(
+            "Failed to get cloud snapshot backup schedule for cluster {}, "
+            "status: {}".format(cluster_id, resp.status_code))
+        return None
+
+    @staticmethod
+    def delete_cloud_snapshot_backup_schedule(pod, tenant, project_id,
+                                              cluster_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        resp = capella_api.delete_cloud_snapshot_backup_schedule(
+            tenant.id, project_id, cluster_id)
+        if resp.status_code == 204:
+            return True
+        CapellaUtils.log.error(
+            "Failed to delete cloud snapshot backup schedule for cluster {}, "
+            "status: {}".format(cluster_id, resp.status_code))
+        return False
+
+    @staticmethod
+    def list_project_level_cloud_snapshot_backups(pod, tenant, project_id):
+        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+                                 tenant.user, tenant.pwd)
+        page = 1
+        backups = []
+        while True:
+            resp = capella_api.list_project_level_cloud_snapshot_backups(
+                tenant.id, project_id, page=page)
+            if resp.status_code == 200:
+                info = resp.json()
+                backups.extend(info.get("data", []))
+                pages = info.get("cursor", {}).get("pages", {})
+                if pages.get("last", page) > page:
+                    page += 1
+                else:
+                    break
+            else:
+                break
+        return backups
+
+    @staticmethod
+    def wait_for_cloud_snapshot_backup_to_complete(pod, tenant, project_id,
+                                                   cluster_id, backup_id,
+                                                   timeout=3600):
+        start_time = time.time()
+        backup_state = None
+        not_found_count = 0
+        while backup_state != "complete" and time.time() < start_time + timeout:
+            backup_info = CapellaUtils.get_cloud_snapshot_backup_info(
+                pod=pod, tenant=tenant, project_id=project_id,
+                cluster_id=cluster_id, backup_id=backup_id)
+            if not backup_info:
+                CapellaUtils.log.error(
+                    "Cloud snapshot backup {} not found".format(backup_id))
+                not_found_count += 1
+                if not_found_count > 10:
+                    raise Exception(
+                        "Cloud snapshot backup {} not found after 10 "
+                        "retries".format(backup_id))
+                time.sleep(60)
+                continue
+            backup_state = backup_info.get("progress", {}).get("status")
+            CapellaUtils.log.info(
+                "Waiting for cloud snapshot backup to complete, current "
+                "state: {}".format(backup_state))
+            time.sleep(60)
+        if backup_state != "complete":
+            CapellaUtils.log.error(
+                "Cloud snapshot backup {} did not complete within {} "
+                "seconds".format(backup_id, timeout))
+            return False
+        CapellaUtils.log.info(
+            "Cloud snapshot backup {} completed in {} seconds".format(
+                backup_id, time.time() - start_time))
+        return True
+
+    @staticmethod
+    def wait_for_cloud_snapshot_restore_to_complete(pod, tenant, project_id,
+                                                    cluster_id, restore_id,
+                                                    timeout=3600):
+        start_time = time.time()
+        restore_state = None
+        while restore_state != "complete" and time.time() < start_time + timeout:
+            restores = CapellaUtils.list_cloud_snapshot_restores(
+                pod=pod, tenant=tenant, project_id=project_id,
+                cluster_id=cluster_id)
+            restore_info = next(
+                (r.get("data") for r in restores
+                 if r.get("data", {}).get("id") == restore_id),
+                None)
+            if not restore_info:
+                CapellaUtils.log.error(
+                    "Cloud snapshot restore {} not found".format(restore_id))
+                time.sleep(60)
+                continue
+            restore_state = restore_info.get("status")
+            CapellaUtils.log.info(
+                "Waiting for cloud snapshot restore to complete, current "
+                "state: {}".format(restore_state))
+            time.sleep(60)
+        if restore_state != "complete":
+            CapellaUtils.log.error(
+                "Cloud snapshot restore {} did not complete within {} "
+                "seconds".format(restore_id, timeout))
+            return False
+        CapellaUtils.log.info(
+            "Cloud snapshot restore {} completed in {} seconds".format(
+                restore_id, time.time() - start_time))
+        return True
 

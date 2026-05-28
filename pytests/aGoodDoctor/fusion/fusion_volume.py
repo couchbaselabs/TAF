@@ -33,10 +33,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
     def init_doc_params(self):
         self.create_perc = self.input.param("create_perc", 100)
-        self.update_perc = self.input.param("update_perc", 20)
-        self.delete_perc = self.input.param("delete_perc", 20)
-        self.expiry_perc = self.input.param("expiry_perc", 20)
-        self.read_perc = self.input.param("read_perc", 20)
+        self.update_perc = self.input.param("update_perc", 50)
+        self.delete_perc = self.input.param("delete_perc", 50)
+        self.expiry_perc = self.input.param("expiry_perc", 50)
+        self.read_perc = self.input.param("read_perc", 50)
         self.start = 0
         self.end = 0
         self.initial_items = self.start
@@ -793,7 +793,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 self.assertTrue(result, f"check_ebs_cleanup_for_cluster failed for cluster {cluster.id}")
                 self.log.info(f"EBS cleanup completed successfully for cluster {cluster.id}")
 
-    def normal_mutations(self, cluster):
+    def normal_mutations(self, cluster, wait_for_completion=True):
         while self.mutations:
             self.mutate += 1
             for bucket in cluster.buckets:
@@ -813,9 +813,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
             if not self.loader_tasks:
                 self.log.critical(f"Failed to create doc load task for cluster {cluster.id}")
                 raise Exception(f"Failed to create doc load task for cluster {cluster.id}")
-            for task in self.loader_tasks:
-                self.task_manager.get_task_result(task)
-                self.loader_tasks.remove(task)
+            if wait_for_completion:
+                for task in self.loader_tasks:
+                    self.task_manager.get_task_result(task)
+                    self.loader_tasks.remove(task)
 
     def data_validation(self, cluster, skip_default=True):
         for bucket in cluster.buckets:

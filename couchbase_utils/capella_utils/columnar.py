@@ -10,6 +10,7 @@ import random
 import string
 import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
+from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs as ColumnarAPIv4
 from sdk_client3 import SDKClient
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from TestInput import TestInputServer
@@ -1144,4 +1145,241 @@ class ColumnarUtils:
                 "{}".format(resp.status_code))
             return False
         return True
+
+    # ---------------------------------------------------------------------------
+    # Cloud snapshot backup methods (v4 public API)
+    # ---------------------------------------------------------------------------
+
+    def create_cloud_snapshot_backup(self, pod, tenant, project_id, instance,
+                                     retention=None):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        resp = columnar_api.create_cloud_snapshot_backup(
+            organizationId=tenant.id, projectId=project_id,
+            instanceId=instance.instance_id, retention=retention)
+        if resp.status_code == 202:
+            return resp.json()
+        self.log.error(
+            "Failed to create cloud snapshot backup for instance {}, "
+            "status: {}".format(instance.instance_id, resp.status_code))
+        return None
+
+    def list_cloud_snapshot_backups(self, pod, tenant, project_id, instance):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        page = 1
+        backups = []
+        while True:
+            resp = columnar_api.list_cloud_snapshot_backups(
+                organizationId=tenant.id, projectId=project_id,
+                instanceId=instance.instance_id, page=page)
+            if resp.status_code == 200:
+                info = resp.json()
+                backups.extend(info.get("data", []))
+                pages = info.get("cursor", {}).get("pages", {})
+                if pages.get("last", page) > page:
+                    page += 1
+                else:
+                    break
+            else:
+                break
+        return backups
+
+    def get_cloud_snapshot_backup_info(self, pod, tenant, project_id, instance,
+                                       backup_id):
+        backups = self.list_cloud_snapshot_backups(
+            pod=pod, tenant=tenant, project_id=project_id, instance=instance)
+        for backup in backups:
+            if backup.get("data", {}).get("id") == backup_id:
+                return backup.get("data")
+        return None
+
+    def update_cloud_snapshot_backup_retention(self, pod, tenant, project_id,
+                                               instance, backup_id, retention):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        resp = columnar_api.update_cloud_snapshot_backup_retention(
+            organizationId=tenant.id, projectId=project_id,
+            instanceId=instance.instance_id, backupId=backup_id,
+            retention=retention)
+        if resp.status_code == 204:
+            return True
+        self.log.error(
+            "Failed to update retention for cloud snapshot backup {}, "
+            "status: {}".format(backup_id, resp.status_code))
+        return False
+
+    def delete_cloud_snapshot_backup(self, pod, tenant, project_id, instance,
+                                     backup_id):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        resp = columnar_api.delete_cloud_snapshot_backup(
+            organizationId=tenant.id, projectId=project_id,
+            instanceId=instance.instance_id, backupId=backup_id)
+        if resp.status_code == 202:
+            return resp.json()
+        self.log.error(
+            "Failed to delete cloud snapshot backup {}, "
+            "status: {}".format(backup_id, resp.status_code))
+        return None
+
+    def restore_cloud_snapshot_backup(self, pod, tenant, project_id, instance,
+                                      backup_id):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        resp = columnar_api.restore_cloud_snapshot_backup(
+            organizationId=tenant.id, projectId=project_id,
+            instanceId=instance.instance_id, backupId=backup_id)
+        if resp.status_code == 202:
+            return resp.json()
+        self.log.error(
+            "Failed to restore cloud snapshot backup {}, "
+            "status: {}".format(backup_id, resp.status_code))
+        return None
+
+    def list_cloud_snapshot_restores(self, pod, tenant, project_id, instance):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        page = 1
+        restores = []
+        while True:
+            resp = columnar_api.list_cloud_snapshot_restores(
+                organizationId=tenant.id, projectId=project_id,
+                instanceId=instance.instance_id, page=page)
+            if resp.status_code == 200:
+                info = resp.json()
+                restores.extend(info.get("data", []))
+                pages = info.get("cursor", {}).get("pages", {})
+                if pages.get("last", page) > page:
+                    page += 1
+                else:
+                    break
+            else:
+                break
+        return restores
+
+    def get_cloud_snapshot_restore_info(self, pod, tenant, project_id, instance,
+                                        restore_id):
+        restores = self.list_cloud_snapshot_restores(
+            pod=pod, tenant=tenant, project_id=project_id, instance=instance)
+        for restore in restores:
+            if restore.get("data", {}).get("id") == restore_id:
+                return restore.get("data")
+        return None
+
+    def wait_for_cloud_snapshot_backup_to_complete(self, pod, tenant, project_id,
+                                                   instance, backup_id,
+                                                   timeout=3600):
+        start_time = time.time()
+        backup_state = None
+        not_found_count = 0
+        while backup_state != "complete" and time.time() < start_time + timeout:
+            backup_info = self.get_cloud_snapshot_backup_info(
+                pod=pod, tenant=tenant, project_id=project_id,
+                instance=instance, backup_id=backup_id)
+            if not backup_info:
+                self.log.error(
+                    "Cloud snapshot backup {} not found".format(backup_id))
+                not_found_count += 1
+                if not_found_count > 10:
+                    self.fail("Cloud snapshot backup {} not found after 10 "
+                              "retries".format(backup_id))
+                time.sleep(60)
+                continue
+            backup_state = backup_info.get("progress", {}).get("status")
+            self.log.info(
+                "Waiting for cloud snapshot backup to complete, current "
+                "state: {}".format(backup_state))
+            time.sleep(60)
+        if backup_state != "complete":
+            self.log.error(
+                "Cloud snapshot backup {} did not complete within {} "
+                "seconds".format(backup_id, timeout))
+            return False
+        self.log.info("Cloud snapshot backup {} completed in {} seconds".format(
+            backup_id, time.time() - start_time))
+        return True
+
+    def wait_for_cloud_snapshot_restore_to_complete(self, pod, tenant, project_id,
+                                                    instance, restore_id,
+                                                    timeout=3600):
+        start_time = time.time()
+        restore_state = None
+        while restore_state != "complete" and time.time() < start_time + timeout:
+            restore_info = self.get_cloud_snapshot_restore_info(
+                pod=pod, tenant=tenant, project_id=project_id,
+                instance=instance, restore_id=restore_id)
+            if not restore_info:
+                self.log.error(
+                    "Cloud snapshot restore {} not found".format(restore_id))
+                time.sleep(60)
+                continue
+            restore_state = restore_info.get("status")
+            self.log.info(
+                "Waiting for cloud snapshot restore to complete, current "
+                "state: {}".format(restore_state))
+            time.sleep(60)
+        if restore_state != "complete":
+            self.log.error(
+                "Cloud snapshot restore {} did not complete within {} "
+                "seconds".format(restore_id, timeout))
+            return False
+        self.log.info("Cloud snapshot restore {} completed in {} seconds".format(
+            restore_id, time.time() - start_time))
+        return True
+
+    def upsert_cloud_snapshot_backup_schedule(self, pod, tenant, project_id,
+                                              instance, interval, retention,
+                                              start_time):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        resp = columnar_api.upsert_cloud_snapshot_backup_schedule(
+            organizationId=tenant.id, projectId=project_id,
+            instanceId=instance.instance_id, interval=interval,
+            retention=retention, start_time=start_time)
+        if resp.status_code == 204:
+            return True
+        self.log.error(
+            "Failed to upsert cloud snapshot backup schedule for instance {}, "
+            "status: {}".format(instance.instance_id, resp.status_code))
+        return False
+
+    def get_cloud_snapshot_backup_schedule(self, pod, tenant, project_id,
+                                           instance):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        resp = columnar_api.get_cloud_snapshot_backup_schedule(
+            organizationId=tenant.id, projectId=project_id,
+            instanceId=instance.instance_id)
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 204:
+            return None
+        self.log.error(
+            "Failed to get cloud snapshot backup schedule for instance {}, "
+            "status: {}".format(instance.instance_id, resp.status_code))
+        return None
+
+    def delete_cloud_snapshot_backup_schedule(self, pod, tenant, project_id,
+                                              instance):
+        columnar_api = ColumnarAPIv4(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user)
+        resp = columnar_api.delete_cloud_snapshot_backup_schedule(
+            organizationId=tenant.id, projectId=project_id,
+            instanceId=instance.instance_id)
+        if resp.status_code == 204:
+            return True
+        self.log.error(
+            "Failed to delete cloud snapshot backup schedule for instance {}, "
+            "status: {}".format(instance.instance_id, resp.status_code))
+        return False
 

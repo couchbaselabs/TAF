@@ -793,3 +793,122 @@ class FusionCPResourceMonitor:
                 )
             except Exception as e:
                 self.log.error(f"Failed to run download_accelerator_logs.sh for cluster {cluster.id}: {e}")
+
+    def get_current_guest_volume_ids(self, cluster) -> list:
+        """
+        Return the EBS Volume IDs of all current fusion guest volumes for a cluster.
+
+        Guest volumes are tagged with couchbase-cloud-function=fusion-accelerator
+        and couchbase-cloud-cluster-id=<cluster.id>.
+
+        :param cluster: Cluster object with .id attribute
+        :return: List of volume ID strings (may be empty)
+        """
+        try:
+            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                "couchbase-cloud-cluster-id": cluster.id,
+                "couchbase-cloud-function": "fusion-accelerator",
+            })
+            ids = [v.get("VolumeId") for v in volumes if v.get("VolumeId")]
+            self.log.info(
+                f"Current guest volumes for cluster {cluster.id}: {ids}"
+            )
+            return ids
+        except Exception as e:
+            self.log.error(f"Error listing guest volumes for cluster {cluster.id}: {e}")
+            return []
+
+    def verify_old_guest_volumes_deleted(
+        self, cluster, pre_restore_volume_ids: list, timeout: int = 600
+    ) -> bool:
+        """
+        Verify that guest volumes that existed before a restore are gone.
+
+        After restore + subsequent fusion rebalance the control plane should
+        detach and delete the pre-restore guest volumes.  This polls until all
+        of them disappear or the timeout expires.
+
+        :param cluster: Cluster object
+        :param pre_restore_volume_ids: Volume IDs captured before the restore
+        :param timeout: Max seconds to wait
+        :return: True once all pre-restore volumes are no longer tagged to this cluster
+        """
+        if not pre_restore_volume_ids:
+            self.log.info(
+                f"No pre-restore guest volumes to verify for cluster {cluster.id}"
+            )
+            return True
+
+        target_ids = set(pre_restore_volume_ids)
+        self.log.info(
+            f"Waiting for {len(target_ids)} pre-restore guest volumes to be "
+            f"deleted on cluster {cluster.id}: {target_ids}"
+        )
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            current_ids = set(self.get_current_guest_volume_ids(cluster))
+            still_present = target_ids & current_ids
+            if not still_present:
+                self.log.info(
+                    f"All pre-restore guest volumes deleted for cluster {cluster.id}"
+                )
+                return True
+            self.log.info(
+                f"Still waiting — pre-restore volumes still present on {cluster.id}: "
+                f"{still_present}"
+            )
+            time.sleep(30)
+
+        remaining = target_ids & set(self.get_current_guest_volume_ids(cluster))
+        self.log.error(
+            f"Timed out ({timeout}s): pre-restore volumes still present on "
+            f"{cluster.id}: {remaining}"
+        )
+        return False
+
+    def verify_guest_volume_snapshots_for_backup(self, cluster, backup_id: str, num_snapshots: int) -> bool:
+        """
+        Verify EBS guest volume snapshots exist for a completed backup.
+
+        The backup process creates EBS snapshots tagged with:
+          - couchbase-cloud-guestvolume: "true"  (identifies fusion guest volume snapshots)
+          - couchbase-cloud-backup-id: <backup_id>
+          - couchbase-cloud-cluster-id: <cluster_id>
+
+        :param cluster: Cluster object with .id attribute
+        :param backup_id: Backup ID from the completed backup
+        :return: True if at least one guest volume snapshot found with a completed state
+        """
+
+        filters = [
+            {"Name": "tag:couchbase-cloud-guestvolume", "Values": ["true"]},
+            {"Name": "tag:couchbase-cloud-backup-id", "Values": [backup_id]},
+            {"Name": "tag:couchbase-cloud-cluster-id", "Values": [cluster.id]},
+        ]
+        snapshots = self.fusion_aws_util.ec2.list_snapshots_by_tags(filters)
+
+        table = PrettyTable()
+        table.field_names = ["Snapshot ID", "State", "Volume Size (GiB)", "Progress", "Start Time"]
+        for snap in snapshots:
+            start = snap.get("StartTime")
+            table.add_row([
+                snap.get("SnapshotId"),
+                snap.get("State"),
+                snap.get("VolumeSize"),
+                snap.get("Progress"),
+                start.strftime("%Y-%m-%d %H:%M:%S") if start else "N/A",
+            ])
+        self.log.info(f"Guest volume snapshots for backup {backup_id} on cluster {cluster.id}:\n{table}")
+
+        if len(snapshots) != num_snapshots:
+            self.log.error(
+                f"Mismatch in number of guest volume snapshots for backup {backup_id} on cluster {cluster.id}"
+            )
+            return False
+
+        completed = [s for s in snapshots if s.get("State") == "completed"]
+        self.log.info(
+            f"Snapshot summary for backup {backup_id}: "
+            f"{len(snapshots)} total, {len(completed)} completed"
+        )
+        return True

@@ -842,3 +842,26 @@ class EC2Lib(AWSBase):
             self.logger.warning(
                 f"Error checking IAM instance profile {profile_name}: {e}")
             return True
+
+    def list_snapshots_by_tags(self, filters: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """
+        List EBS snapshots owned by this account, filtered by tags.
+
+        :param filters: AWS-style filters [{'Name': 'tag:key', 'Values': ['value']}]
+        :return: List of snapshot dicts
+        """
+        try:
+            ec2_client = self.create_service_client(service_name="ec2", region=self.region)
+            snapshots = []
+            paginator = ec2_client.get_paginator("describe_snapshots")
+            page_iterator = paginator.paginate(
+                OwnerIds=["self"],
+                Filters=filters or []
+            )
+            for page in page_iterator:
+                snapshots.extend(page.get("Snapshots", []))
+            self.logger.info(f"Found {len(snapshots)} snapshots matching filters {filters}")
+            return snapshots
+        except Exception as e:
+            self.logger.error(f"Error listing snapshots with filters {filters}: {e}")
+            return []
