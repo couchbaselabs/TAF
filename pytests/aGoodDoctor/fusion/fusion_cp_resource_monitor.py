@@ -5,6 +5,7 @@ This class provides comprehensive monitoring for AWS resources managed by the fu
 including EBS guest volumes, accelerator instances, ASG cleanup, and error scanning.
 """
 
+import datetime
 import time
 from prettytable import PrettyTable
 from botocore.exceptions import ClientError, ConnectionError
@@ -329,30 +330,95 @@ class FusionCPResourceMonitor:
         self.log.info(f"EBS cleanup timeout reached. CP has not cleaned all the guest volumes on cluster {cluster.id}")
         return False
 
-    def monitor_fusion_accelerator_nodes_killed_after_rebalance(self, cluster, timeout=None):
+    def monitor_fusion_accelerator_nodes_killed_after_rebalance(
+            self, cluster, timeout=None, max_node_lifetime_seconds=1800):
         """
         Monitor fusion accelerator nodes after rebalance to ensure they're killed.
 
+        Fails immediately if any still-alive node has a LaunchTime older than
+        *max_node_lifetime_seconds* (default 30 min).  Every polling iteration
+        logs alive instances with their FusionRebalance tag so diagnostics show
+        which rebalance the lingering node belongs to.
+
         :param cluster: Cluster object
         :param timeout: Timeout in seconds (default: DEFAULT_TIMEOUT)
-        :return: True if nodes are killed, False otherwise
+        :param max_node_lifetime_seconds: Hard limit on how long an accelerator
+            node may live before the check is considered a failure (default 1800)
+        :return: True if all nodes are killed in time, False otherwise
         """
         if timeout is None:
             timeout = self.DEFAULT_TIMEOUT
-        self.log.info(f"Checking if Fusion Accelerator nodes are still present for cluster {cluster.id}")
+        self.log.info(
+            f"Checking if Fusion Accelerator nodes are still present for cluster {cluster.id}"
+        )
         start_time = time.time()
         while time.time() - start_time < timeout:
             instances = self.fusion_aws_util.list_instances(
-                self.fusion_aws_util._cluster_filter(cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}]),
+                self.fusion_aws_util._cluster_filter(
+                    cluster.id,
+                    [{'Name': 'tag:couchbase-cloud-function',
+                      'Values': ['fusion-accelerator']}]
+                ),
                 log="Fusion Accelerator"
             )
             if len(instances) == 0:
-                self.log.info(f"Fusion Accelerator nodes not found for cluster {cluster.id}")
+                self.log.info(
+                    f"Fusion Accelerator nodes not found for cluster {cluster.id}"
+                )
                 return True
-            else:
-                self.log.info(f"Fusion Accelerator nodes still exists for the cluster {cluster.id}")
-                time.sleep(10)
-        self.log.info(f"Fusion Accelerator nodes timeout reached. Fusion Accelerator nodes still present for cluster {cluster.id}")
+
+            now = datetime.datetime.now(datetime.timezone.utc)
+            info_table = PrettyTable()
+            info_table.field_names = [
+                "Instance ID", "Launch Time", "Age (s)", "FusionRebalance"
+            ]
+            violations = []
+            for inst in instances:
+                inst_id = inst.get('InstanceId', 'N/A')
+                launch_time = inst.get('LaunchTime')
+                age_s = int((now - launch_time).total_seconds()) if launch_time else 0
+                fusion_rebalance = next(
+                    (t['Value'] for t in inst.get('Tags', [])
+                     if t['Key'] == 'couchbase-cloud-fusion-rebalance'),
+                    'N/A'
+                )
+                info_table.add_row([
+                    inst_id,
+                    launch_time.strftime('%Y-%m-%d %H:%M:%S') if launch_time else 'N/A',
+                    age_s,
+                    fusion_rebalance,
+                ])
+                if age_s > max_node_lifetime_seconds:
+                    violations.append((inst_id, launch_time, age_s, fusion_rebalance))
+
+            self.log.info(
+                f"Fusion Accelerator nodes still present for cluster {cluster.id}:\n"
+                f"{info_table}"
+            )
+
+            if violations:
+                viol_table = PrettyTable()
+                viol_table.field_names = [
+                    "Instance ID", "Launch Time", "Age (s)", "FusionRebalance"
+                ]
+                for inst_id, launch_time, age_s, fusion_rebalance in violations:
+                    viol_table.add_row([
+                        inst_id,
+                        launch_time.strftime('%Y-%m-%d %H:%M:%S') if launch_time else 'N/A',
+                        age_s,
+                        fusion_rebalance,
+                    ])
+                self.log.error(
+                    f"Accelerator node lifetime VIOLATION on cluster {cluster.id} — "
+                    f"node(s) alive >{max_node_lifetime_seconds}s:\n{viol_table}"
+                )
+                return False
+
+            time.sleep(10)
+        self.log.info(
+            f"Fusion Accelerator nodes timeout reached. "
+            f"Fusion Accelerator nodes still present for cluster {cluster.id}"
+        )
         return False
 
     def monitor_cluster_accelerator_instances(self, cluster, rebalance_task, fusion_rebalances, timeout=None):
