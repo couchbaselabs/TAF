@@ -108,9 +108,12 @@ class CollectionBase(ClusterSetup, FusionBase):
                     Scipts to setup NFS Server : https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
                 """
                 self.nfs_server = TestInputServer()
-                self.nfs_server.ip = PITR_NFS_SERVER
-                self.nfs_server.ssh_username = "root"
-                self.nfs_server.ssh_password = "couchbase"
+                self.nfs_server.ip = self.input.param(
+                    "pitr_nfs_server", PITR_NFS_SERVER)
+                self.nfs_server.ssh_username = self.input.param(
+                    "pitr_nfs_username", "root")
+                self.nfs_server.ssh_password = self.input.param(
+                    "pitr_nfs_password", "couchbase")
 
                 self.nfs_util = NfsUtil(self.nfs_server)
 

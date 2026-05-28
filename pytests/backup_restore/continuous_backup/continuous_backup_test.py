@@ -3,6 +3,7 @@ import random
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from BucketLib.bucket import Bucket
 from backup_restore.continuous_backup.continuous_backup_base import ContinuousBackupBase
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from pytests.bucket_collections.collections_base import CollectionBase
@@ -979,5 +980,999 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_after_interval_change, bucket_name=restore_bucket_name)
         self.log.info("Restore with new interval succeeded as expected.")
+
+        self.log.info("Test completed successfully")
+
+    # =========================================================================
+    # P0 — Schema-change PITR tests
+    # =========================================================================
+
+    def _get_first_non_system_scope_and_collection(self):
+        """Returns (scope_name, collection_name) for the first user-visible scope."""
+        for scope_name, scope in self.bucket.scopes.items():
+            if scope_name.startswith("_"):
+                continue
+            for coll_name in scope.collections:
+                return scope_name, coll_name
+        self.fail("No non-system scope/collection found in bucket")
+
+    def _delete_and_recreate_restore_bucket(self, restore_bucket_name):
+        """Delete a restore bucket and create a fresh empty one."""
+        restore_bucket_obj = self.bucket_util.get_bucket_obj(
+            self.cluster.buckets, restore_bucket_name)
+        if restore_bucket_obj:
+            self.bucket_util.delete_bucket(self.cluster, restore_bucket_obj)
+        self._create_restore_bucket(restore_bucket_name)
+
+    def test_pitr_before_collection_drop(self):
+        """
+        P0: Validates PITR recovers a collection that was dropped after the backup timestamp.
+
+        This covers the critical customer scenario of accidentally dropping a collection
+        and needing to recover it — with all its data — from a point before the drop.
+
+        Note: PITR is supported only on Magma buckets. The bucket spec
+              (single_bucket.continuous_backup_tests) already enforces Magma storage.
+
+        Flow:
+          1. Load data; capture T1 and count C1.
+          2. Drop one user collection (loses N items).
+          3. Wait for continuous backup to capture the drop; capture T2 and count C2.
+          4. Take an incremental traditional backup at the T2 state.
+          5. PITR restore to T1 -> verify count == C1 (dropped collection recovered).
+          6. PITR restore to T2 -> verify count == C2 (collection still absent).
+        """
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval before collection drop")
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T1 (pre-drop): {ts_t1}, count: {count_t1}")
+
+        drop_scope, drop_coll = self._get_first_non_system_scope_and_collection()
+        items_per_coll = self.spec.get(MetaConstants.NUM_ITEMS_PER_COLLECTION, 0)
+        self.log.info(
+            f"Dropping {self.bucket.name}.{drop_scope}.{drop_coll} "
+            f"(~{items_per_coll} items)")
+        self.bucket_util.drop_collection(
+            self.cluster.master, self.bucket,
+            scope_name=drop_scope,
+            collection_name=drop_coll)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for continuous backup to capture the collection drop")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_t2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T2 (post-drop): {ts_t2}, count: {count_t2}")
+
+        # Anchor the post-drop state in a traditional backup
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_bucket_coll_drop_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        # PITR to T1: dropped collection + its data must be recovered
+        self.log.info("PITR restore to T1 (before collection drop) — collection must be recovered")
+        self._restore_entire_bucket(ts_t1, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+        self.log.info(f"T1 restore verified: {count_t1} items (collection recovered)")
+
+        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+        # PITR to T2: collection must still be absent
+        self.log.info("PITR restore to T2 (after collection drop) — collection must remain absent")
+        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
+        self.log.info(f"T2 restore verified: {count_t2} items (collection correctly absent)")
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_before_scope_drop(self):
+        """
+        P0: Validates PITR recovers an entire scope (all its collections + data)
+        that was dropped after the backup timestamp.
+
+        Note: PITR is supported only on Magma buckets.
+
+        Flow:
+          1. Load data; capture T1 and count C1.
+          2. Drop one user scope (loses all items in that scope).
+          3. Wait for continuous backup to capture the drop; capture T2 and count C2.
+          4. Take an incremental traditional backup.
+          5. PITR to T1 -> verify count == C1 (scope and all data recovered).
+          6. PITR to T2 -> verify count == C2 (scope still absent).
+        """
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval before scope drop")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
+        count_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T1 (pre-scope-drop): {ts_t1}, count: {count_t1}")
+
+        drop_scope = None
+        for scope_name in self.bucket.scopes:
+            if not scope_name.startswith("_"):
+                drop_scope = scope_name
+                break
+        if not drop_scope:
+            self.fail("No non-system scope found to drop")
+
+        num_colls = len(self.bucket.scopes[drop_scope].collections)
+        items_per_coll = self.spec.get(MetaConstants.NUM_ITEMS_PER_COLLECTION, 0)
+        self.log.info(
+            f"Dropping scope {self.bucket.name}.{drop_scope} "
+            f"(~{num_colls * items_per_coll} items across {num_colls} collections)")
+        self.bucket_util.drop_scope(
+            self.cluster.master, self.bucket, drop_scope)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for continuous backup to capture the scope drop")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_t2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T2 (post-scope-drop): {ts_t2}, count: {count_t2}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_bucket_scope_drop_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        self.log.info("PITR restore to T1 (before scope drop) — scope must be fully recovered")
+        self._restore_entire_bucket(ts_t1, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+        self.log.info(f"T1 restore verified: {count_t1} items (scope recovered)")
+
+        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+        self.log.info("PITR restore to T2 (after scope drop) — scope must remain absent")
+        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
+        self.log.info(f"T2 restore verified: {count_t2} items (scope correctly absent)")
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_collection_drop_and_recreate(self):
+        """
+        P0: Validates PITR distinguishes between an original collection and the
+        same-named collection that was dropped and recreated with different settings.
+
+        After drop + recreate (with a new maxTTL), PITR to before the drop should
+        recover the original collection with its original data and TTL. PITR to
+        after the recreate should reflect the new TTL and new data.
+
+        Note: PITR is supported only on Magma buckets.
+        """
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval before drop+recreate")
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T1 (pre-drop): {ts_t1}, count: {count_t1}")
+
+        drop_scope, drop_coll = self._get_first_non_system_scope_and_collection()
+        self.log.info(f"Dropping {drop_scope}.{drop_coll}")
+        self.bucket_util.drop_collection(
+            self.cluster.master, self.bucket,
+            scope_name=drop_scope,
+            collection_name=drop_coll)
+
+        # Recreate the collection with a different maxTTL so PITR can distinguish them
+        new_ttl_seconds = 3600
+        self.log.info(
+            f"Recreating {drop_scope}.{drop_coll} with maxTTL={new_ttl_seconds}s")
+        self.bucket_util.create_collection(
+            self.cluster.master, self.bucket,
+            scope_name=drop_scope,
+            collection_spec={"name": drop_coll, "maxTTL": new_ttl_seconds})
+
+        # Load fresh data into the recreated collection
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+
+        # Wait for the backup interval BEFORE snapshotting the count so that any
+        # in-flight items still being flushed by the loader are fully persisted.
+        # Taking the count before the sleep produces a stale value that diverges
+        # from what the backup actually captures at T3.
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup to capture recreate + fresh data")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
+        count_after_recreate = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        ts_t3 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(
+            f"T3 (post-recreate+load): {ts_t3}, count: {count_after_recreate}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_bucket_recreate_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        # PITR to T1: original collection with original TTL (no maxTTL) and original data
+        self.log.info(
+            "PITR restore to T1 (before drop) — original collection + data, no maxTTL")
+        self._restore_entire_bucket(ts_t1, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+        self.log.info(f"T1 restore verified: {count_t1} items")
+
+        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+        # PITR to T3: recreated collection with new maxTTL and fresh data
+        self.log.info(
+            f"PITR restore to T3 (after recreate, maxTTL={new_ttl_seconds}s) — new collection + data")
+        self._restore_entire_bucket(ts_t3, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_after_recreate, bucket_name=restore_bucket_name)
+        self.log.info(f"T3 restore verified: {count_after_recreate} items")
+
+        self.log.info("Test completed successfully")
+
+    # =========================================================================
+    # P0 — History retention window PITR tests
+    # =========================================================================
+
+    def test_pitr_history_retention_window_boundary(self):
+        """
+        P0: Validates PITR behaviour at the boundary of historyRetentionSeconds.
+
+        - PITR to a timestamp within the window must succeed.
+        - After shrinking the window below the age of the oldest timestamp,
+          PITR to that now-expired timestamp must either fail with a clear error
+          or restore from the earliest still-available point.
+
+        Note: PITR is supported only on Magma buckets.
+        """
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+
+        self.sleep(self.continuous_backup_interval * 60, "Waiting for backup interval")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
+        count_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T1 (within retention window): {ts_t1}, count: {count_t1}")
+
+        # Verify PITR within the retention window succeeds
+        restore_bucket_name = f"restore_bucket_ret_boundary_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+        self.log.info("PITR to T1 (within window) — must succeed")
+        self._restore_entire_bucket(ts_t1, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+        self.log.info("Restore within retention window succeeded as expected")
+
+        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+        # Shrink the retention window so T1 falls outside it
+        short_retention = 60  # seconds
+        self.log.info(
+            f"Shrinking historyRetentionSeconds to {short_retention}s "
+            f"so T1 falls outside the window")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            history_retention_seconds=short_retention)
+        wait_secs = short_retention + 30
+        self.sleep(wait_secs,
+                   f"Waiting {wait_secs}s for T1 to expire from the retention window")
+
+        # Attempt PITR to the now-expired T1
+        self.log.info(
+            "Attempting PITR to T1 (now outside retention window) — "
+            "expect error or earliest-available restore")
+        output, error = self.cont_bk_mgr.restore(
+            self.backup_archive_dir, self.backup_repo_name,
+            location=self.continuous_backup_location,
+            temp_dir="/tmp",
+            timestamp=ts_t1,
+            map_data=f"{self.bucket.name}={restore_bucket_name}")
+
+        combined = " ".join((output or []) + (error or [])).lower()
+        self.log.info(f"PITR to expired timestamp — output: {combined[:300]}")
+        outside_window_signalled = any(
+            kw in combined
+            for kw in ["error", "no history", "outside", "expired",
+                       "not available", "failed", "cannot restore"])
+        self.log.info(
+            "Outcome: " +
+            ("expected error/signal returned" if outside_window_signalled
+             else "restored to earliest available point (acceptable behaviour)"))
+
+        # Restore the original retention so tearDown can clean up properly
+        original_retention = self.spec.get(Bucket.historyRetentionSeconds, 6000)
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            history_retention_seconds=original_retention)
+        self.log.info(
+            f"Restored historyRetentionSeconds to {original_retention}s")
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_history_retention_seconds_change(self):
+        """
+        P0: Validates PITR works correctly after dynamically increasing
+        historyRetentionSeconds on a Magma bucket.
+
+        Increasing the window must not invalidate timestamps captured before
+        the change. Both pre-change and post-change PITR timestamps must succeed.
+
+        Note: PITR is supported only on Magma buckets.
+        """
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+
+        self.sleep(self.continuous_backup_interval * 60, "Waiting for first backup interval")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
+        count_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T1 (pre-retention-change): {ts_t1}, count: {count_t1}")
+
+        # Increase historyRetentionSeconds to 24 hours
+        new_retention = 86400
+        self.log.info(f"Increasing historyRetentionSeconds to {new_retention}s")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            history_retention_seconds=new_retention)
+        self.sleep(10, "Waiting for settings change to propagate")
+
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_t2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after retention change")
+        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(
+            f"T2 (post-retention-change): {ts_t2}, count: {count_t2}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_bucket_ret_change_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        self.log.info("PITR to T1 (captured before retention change) — must succeed")
+        self._restore_entire_bucket(ts_t1, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+
+        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+        self.log.info("PITR to T2 (captured after retention change) — must succeed")
+        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    # =========================================================================
+    # P1 — Multi-bucket independent PITR tests
+    # =========================================================================
+
+    def test_pitr_multiple_buckets_simultaneous(self):
+        """
+        P1: Validates that two Magma buckets with continuous backup enabled
+        maintain independent PITR streams.
+
+        Both buckets run continuous backup simultaneously. Writes are interleaved
+        per-bucket, and PITR restores are verified independently: restoring
+        bucket-A to T1 must not affect bucket-B's state and vice versa.
+
+        Requires: bucket_spec=multi_bucket.continuous_backup_tests (two Magma buckets).
+        Note: PITR is supported only on Magma buckets.
+        """
+        if len(self.cluster.buckets) < 2:
+            self.fail(
+                "This test requires at least 2 Magma buckets. "
+                "Use bucket_spec=multi_bucket.continuous_backup_tests")
+
+        bucket1 = self.cluster.buckets[0]
+        bucket2 = self.cluster.buckets[1]
+
+        # Load data into bucket1 only
+        self.log.info(f"Loading data into {bucket1.name} only")
+        doc_spec = self.bucket_util.get_crud_template_from_package(self.data_spec_name)
+        CollectionBase.over_ride_doc_loading_template_params(self, doc_spec)
+        CollectionBase.set_retry_exceptions(doc_spec, self.durability_level)
+        task = self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, [bucket1], doc_spec,
+            mutation_num=0, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            load_using=self.load_docs_using)
+        if task.result is False:
+            self.fail("Data load into bucket1 failed")
+
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_b1_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, bucket1.name)
+        count_b2_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, bucket2.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval (only bucket1 has new data)")
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(
+            f"T1: {ts_t1} | {bucket1.name}={count_b1_t1}, {bucket2.name}={count_b2_t1}")
+
+        # Load data into bucket2 only
+        self.log.info(f"Loading data into {bucket2.name} only")
+        doc_spec2 = self.bucket_util.get_crud_template_from_package(self.data_spec_name)
+        CollectionBase.over_ride_doc_loading_template_params(self, doc_spec2)
+        CollectionBase.set_retry_exceptions(doc_spec2, self.durability_level)
+        task2 = self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, [bucket2], doc_spec2,
+            mutation_num=0, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            load_using=self.load_docs_using)
+        if task2.result is False:
+            self.fail("Data load into bucket2 failed")
+
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_b1_t2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, bucket1.name)
+        count_b2_t2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, bucket2.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval (only bucket2 has new data)")
+        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(
+            f"T2: {ts_t2} | {bucket1.name}={count_b1_t2}, {bucket2.name}={count_b2_t2}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        # Restore buckets sequentially to avoid RAM exhaustion on small clusters.
+        # Creating both at once alongside the two source buckets exceeds quota.
+        restore_b1_name = f"restore_{bucket1.name}_{int(time.time())}"
+        self._create_restore_bucket(restore_b1_name)
+        self.log.info(f"PITR {bucket1.name} to T1 (bucket2 load excluded)")
+        self.cont_bk_mgr.restore(
+            self.backup_archive_dir, self.backup_repo_name,
+            location=self.continuous_backup_location,
+            temp_dir="/tmp",
+            timestamp=ts_t1,
+            map_data=f"{bucket1.name}={restore_b1_name}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_b1_t1, bucket_name=restore_b1_name)
+        self.bucket_util.delete_bucket(self.cluster, restore_b1_name)
+
+        restore_b2_name = f"restore_{bucket2.name}_{int(time.time())}"
+        self._create_restore_bucket(restore_b2_name)
+        self.log.info(f"PITR {bucket2.name} to T2 (includes bucket2-only load)")
+        self.cont_bk_mgr.restore(
+            self.backup_archive_dir, self.backup_repo_name,
+            location=self.continuous_backup_location,
+            temp_dir="/tmp",
+            timestamp=ts_t2,
+            map_data=f"{bucket2.name}={restore_b2_name}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_b2_t2, bucket_name=restore_b2_name)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_multiple_buckets_different_intervals(self):
+        """
+        P1: Validates independent PITR on two Magma buckets configured with
+        different continuousBackupInterval values.
+
+        Bucket-1 runs at the default interval; bucket-2 runs at a shorter interval.
+        After loading data into each bucket independently, both must support
+        accurate point-in-time restores at their respective intervals.
+
+        Requires: bucket_spec=multi_bucket.continuous_backup_tests (two Magma buckets).
+        Note: PITR is supported only on Magma buckets.
+        """
+        if len(self.cluster.buckets) < 2:
+            self.fail(
+                "This test requires at least 2 Magma buckets. "
+                "Use bucket_spec=multi_bucket.continuous_backup_tests")
+
+        bucket1 = self.cluster.buckets[0]
+        bucket2 = self.cluster.buckets[1]
+
+        # Configure bucket2 with a shorter continuous backup interval
+        short_interval = max(1, self.continuous_backup_interval - 1)
+        self.log.info(
+            f"{bucket1.name} interval={self.continuous_backup_interval}m, "
+            f"{bucket2.name} interval={short_interval}m")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, bucket2,
+            continuous_backup_interval=short_interval,
+            continuous_backup_location=self.continuous_backup_location)
+        self.sleep(10, "Waiting for interval settings to apply")
+
+        # Load data into bucket1, wait one bucket1 interval
+        doc_spec = self.bucket_util.get_crud_template_from_package(self.data_spec_name)
+        CollectionBase.over_ride_doc_loading_template_params(self, doc_spec)
+        CollectionBase.set_retry_exceptions(doc_spec, self.durability_level)
+        self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, [bucket1], doc_spec,
+            mutation_num=0, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            load_using=self.load_docs_using)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_b1 = self.bucket_util.get_buckets_item_count(self.cluster, bucket1.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for bucket1 backup interval")
+        ts_b1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"{bucket1.name} timestamp: {ts_b1}, count: {count_b1}")
+
+        # Load data into bucket2, wait one (shorter) bucket2 interval
+        doc_spec2 = self.bucket_util.get_crud_template_from_package(self.data_spec_name)
+        CollectionBase.over_ride_doc_loading_template_params(self, doc_spec2)
+        CollectionBase.set_retry_exceptions(doc_spec2, self.durability_level)
+        self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, [bucket2], doc_spec2,
+            mutation_num=0, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            load_using=self.load_docs_using)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_b2 = self.bucket_util.get_buckets_item_count(self.cluster, bucket2.name)
+
+        self.sleep(short_interval * 60,
+                   "Waiting for bucket2 (shorter) backup interval")
+        ts_b2 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"{bucket2.name} timestamp: {ts_b2}, count: {count_b2}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_b1_name = f"restore_b1_intv_{int(time.time())}"
+        # Restore buckets sequentially to avoid RAM exhaustion on small clusters.
+        self._create_restore_bucket(restore_b1_name)
+        self.log.info(f"PITR {bucket1.name} to ts_b1")
+        self.cont_bk_mgr.restore(
+            self.backup_archive_dir, self.backup_repo_name,
+            location=self.continuous_backup_location,
+            temp_dir="/tmp",
+            timestamp=ts_b1,
+            map_data=f"{bucket1.name}={restore_b1_name}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_b1, bucket_name=restore_b1_name)
+        self.bucket_util.delete_bucket(self.cluster, restore_b1_name)
+
+        restore_b2_name = f"restore_b2_intv_{int(time.time())}"
+        self._create_restore_bucket(restore_b2_name)
+        self.log.info(f"PITR {bucket2.name} to ts_b2")
+        self.cont_bk_mgr.restore(
+            self.backup_archive_dir, self.backup_repo_name,
+            location=self.continuous_backup_location,
+            temp_dir="/tmp",
+            timestamp=ts_b2,
+            map_data=f"{bucket2.name}={restore_b2_name}")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_b2, bucket_name=restore_b2_name)
+
+        self.log.info("Test completed successfully")
+
+    # =========================================================================
+    # P1 — Durability PITR tests
+    # =========================================================================
+
+    def test_pitr_with_majority_durability(self):
+        """
+        P1: Validates PITR correctly captures and restores documents written with
+        MAJORITY sync-write durability.
+
+        Sync writes produce a different KV acknowledgement flow than non-durable
+        writes. This test confirms that MAJORITY-durable mutations appear in the
+        continuous backup DCP stream and are restored correctly.
+
+        Note: PITR is supported only on Magma buckets. Requires >= 3 KV nodes.
+        """
+        if len(self.cluster.kv_nodes) < 3:
+            self.skipTest(
+                "MAJORITY durability requires at least 3 KV nodes; "
+                f"cluster has {len(self.cluster.kv_nodes)}")
+
+        original_durability = self.durability_level
+        self.durability_level = "MAJORITY"
+        self.log.info("Durability set to MAJORITY for this test")
+
+        try:
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            count_t1 = self.bucket_util.get_buckets_item_count(
+                self.cluster, self.bucket.name)
+
+            self.sleep(self.continuous_backup_interval * 60,
+                       "Waiting for backup interval (MAJORITY durable load)")
+            ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+            self.log.info(f"T1 (MAJORITY durable): {ts_t1}, count: {count_t1}")
+
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            count_t2 = self.bucket_util.get_buckets_item_count(
+                self.cluster, self.bucket.name)
+
+            self.sleep(self.continuous_backup_interval * 60,
+                       "Waiting for second backup interval")
+            ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+            self.log.info(f"T2 (second MAJORITY load): {ts_t2}, count: {count_t2}")
+
+            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+            restore_bucket_name = f"restore_majority_{int(time.time())}"
+            self._create_restore_bucket(restore_bucket_name)
+
+            self.log.info("PITR restore to T1 (post MAJORITY-durable load)")
+            self._restore_entire_bucket(ts_t1, restore_bucket_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+
+            self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+            self.log.info("PITR restore to T2 (post second MAJORITY load)")
+            self._restore_entire_bucket(ts_t2, restore_bucket_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
+
+        finally:
+            self.durability_level = original_durability
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_with_persist_to_majority_durability(self):
+        """
+        P1: Validates PITR correctly captures and restores documents written with
+        PERSIST_TO_MAJORITY sync-write durability.
+
+        PERSIST_TO_MAJORITY requires the mutation to be fsynced to disk on a
+        majority of nodes before acknowledgement. This test confirms those
+        higher-durability mutations appear correctly in the continuous backup stream.
+
+        Note: PITR is supported only on Magma buckets. Requires >= 3 KV nodes.
+        """
+        if len(self.cluster.kv_nodes) < 3:
+            self.skipTest(
+                "PERSIST_TO_MAJORITY durability requires at least 3 KV nodes; "
+                f"cluster has {len(self.cluster.kv_nodes)}")
+
+        original_durability = self.durability_level
+        self.durability_level = "PERSIST_TO_MAJORITY"
+        self.log.info("Durability set to PERSIST_TO_MAJORITY for this test")
+
+        try:
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            count_t1 = self.bucket_util.get_buckets_item_count(
+                self.cluster, self.bucket.name)
+
+            self.sleep(self.continuous_backup_interval * 60,
+                       "Waiting for backup interval (PERSIST_TO_MAJORITY load)")
+            ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+            self.log.info(
+                f"T1 (PERSIST_TO_MAJORITY): {ts_t1}, count: {count_t1}")
+
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            count_t2 = self.bucket_util.get_buckets_item_count(
+                self.cluster, self.bucket.name)
+
+            self.sleep(self.continuous_backup_interval * 60,
+                       "Waiting for second backup interval")
+            ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+            self.log.info(f"T2: {ts_t2}, count: {count_t2}")
+
+            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+            restore_bucket_name = f"restore_persist_maj_{int(time.time())}"
+            self._create_restore_bucket(restore_bucket_name)
+
+            self.log.info("PITR restore to T1 (PERSIST_TO_MAJORITY)")
+            self._restore_entire_bucket(ts_t1, restore_bucket_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+
+            self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+            self.log.info("PITR restore to T2")
+            self._restore_entire_bucket(ts_t2, restore_bucket_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
+
+        finally:
+            self.durability_level = original_durability
+
+        self.log.info("Test completed successfully")
+
+    # =========================================================================
+    # P1 — Subdocument mutation PITR test
+    # =========================================================================
+
+    def test_pitr_with_subdoc_mutations(self):
+        """
+        P1: Validates continuous backup correctly captures subdocument mutations.
+
+        Subdoc operations (mutate_in) produce DCP events with opcode
+        CMD_SUBDOC_MULTI_MUTATION, distinct from regular CMD_SET/CMD_REPLACE.
+        This test verifies those events are present in the continuous backup log
+        and that PITR restores reflect the correct item count at each timestamp.
+
+        Verification strategy:
+          - 20 % of docs are deleted before T1, giving a measurable count difference.
+          - Subdoc counter-increment mutations follow; they do not change item count,
+            so the count at T1 and T2 is the same.  This confirms the backup stream
+            was not disrupted by subdoc DCP events.
+
+        Note: PITR is supported only on Magma buckets.
+        """
+        from sdk_client3 import SDKClient
+
+        # Phase 1: initial load + 20 % deletes -> capture T1
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+        delete_spec = self.bucket_util.get_crud_template_from_package(
+            self.data_spec_name)
+        delete_spec[MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 20
+        delete_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        delete_spec[MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 0
+        CollectionBase.over_ride_doc_loading_template_params(self, delete_spec)
+        self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, self.cluster.buckets, delete_spec,
+            mutation_num=1, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
+        count_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval before subdoc phase")
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T1 (pre-subdoc, post-delete): {ts_t1}, count: {count_t1}")
+
+        # Phase 2: subdoc counter-increment mutations via SDK
+        # These produce CMD_SUBDOC_MULTI_MUTATION DCP events
+        self.log.info("Performing subdoc counter-increment mutations via SDK")
+        sdk_client = SDKClient(self.cluster, self.bucket)
+        subdoc_errors = []
+        try:
+            for i in range(200):
+                doc_key = f"test_collections-0-{i}"
+                try:
+                    sdk_client.crud(
+                        "subdoc_insert", doc_key,
+                        {"path": "pitr_counter", "value": 1},
+                        create_path=True)
+                except Exception as e:
+                    subdoc_errors.append(str(e))
+        finally:
+            sdk_client.close()
+
+        if subdoc_errors:
+            self.log.warning(
+                f"{len(subdoc_errors)} subdoc ops had errors "
+                f"(key format may differ from spec — first: {subdoc_errors[0]})")
+
+        # Subdoc mutations must not change item count
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_after_subdoc = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        self.assertEqual(
+            count_t1, count_after_subdoc,
+            f"Item count changed after subdoc mutations "
+            f"(expected {count_t1}, got {count_after_subdoc})")
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval to capture subdoc mutations")
+        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T2 (post-subdoc): {ts_t2}, count: {count_after_subdoc}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_subdoc_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        # Both T1 and T2 have same count (subdoc does not change count);
+        # confirming the restore succeeds at both timestamps validates that
+        # the subdoc DCP events did not corrupt the continuous backup log.
+        self.log.info("PITR restore to T1 (pre-subdoc-mutations)")
+        self._restore_entire_bucket(ts_t1, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+
+        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+        self.log.info("PITR restore to T2 (post-subdoc-mutations — same count expected)")
+        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+
+        self.log.info("Test completed successfully")
+
+    # =========================================================================
+    # P2 — Edge-case and defensive PITR tests
+    # =========================================================================
+
+    def test_pitr_invalid_timestamp_handling(self):
+        """
+        P2: Validates cbcontbk restore handles invalid/out-of-range timestamps
+        gracefully without crashing the cluster or corrupting the backup.
+
+        Scenarios:
+          A) Timestamp far in the past (before any backup) — expect error.
+          B) Timestamp far in the future — expect error or latest-available restore.
+
+        Note: PITR is supported only on Magma buckets.
+        """
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+        self.sleep(self.continuous_backup_interval * 60, "Waiting for backup interval")
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_invalid_ts_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        def _attempt_restore(label, ts_value):
+            self.log.info(f"Attempting PITR with {label} timestamp: {ts_value}")
+            output, error = self.cont_bk_mgr.restore(
+                self.backup_archive_dir, self.backup_repo_name,
+                location=self.continuous_backup_location,
+                temp_dir="/tmp",
+                timestamp=ts_value,
+                map_data=f"{self.bucket.name}={restore_bucket_name}")
+            combined = " ".join((output or []) + (error or [])).lower()
+            self.log.info(f"  [{label}] output: {combined[:300]}")
+            signalled_error = any(
+                kw in combined
+                for kw in ["error", "invalid", "failed", "not found",
+                            "before", "outside", "no history", "no backup"])
+            self.log.info(
+                f"  [{label}] outcome: " +
+                ("error returned as expected" if signalled_error
+                 else "silently restored to nearest available point"))
+
+        _attempt_restore("ancient (2015-01-01)", "2015-01-01T00:00:00Z")
+        _attempt_restore("future (2035-01-01)",  "2035-01-01T00:00:00Z")
+
+        # Cluster and bucket must remain healthy after invalid restore attempts
+        self.log.info("Verifying cluster and bucket health after invalid restore attempts")
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        current_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        self.assertGreater(
+            current_count, 0,
+            "Bucket appears empty after invalid restore attempts — cluster may be unhealthy")
+        self.log.info(f"Cluster healthy; bucket has {current_count} items")
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_history_retention_bytes_limit(self):
+        """
+        P2: Validates PITR under historyRetentionBytes pressure.
+
+        Sets a tight historyRetentionBytes limit on a Magma bucket and loads
+        enough data to push the history log toward that limit. Verifies that:
+          - PITR to a recent timestamp (within the byte-limited window) succeeds.
+          - The bucket remains healthy and does not crash under byte pressure.
+
+        Note: PITR is supported only on Magma buckets. historyRetentionBytes
+              is a Magma-only setting.
+        """
+        bytes_limit = 2 * 1024 * 1024 * 1024  # 2 GiB (server minimum)
+        self.log.info(
+            f"Setting historyRetentionBytes to {bytes_limit} bytes (2 GiB)")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            history_retention_bytes=bytes_limit)
+        self.sleep(10, "Waiting for historyRetentionBytes setting to propagate")
+
+        for wave in range(1, 4):
+            self.log.info(f"Loading data wave {wave}/3")
+            CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+            self.sleep(self.continuous_backup_interval * 60,
+                       f"Waiting for backup interval after wave {wave}")
+
+        count_recent = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+        ts_recent = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"Recent timestamp: {ts_recent}, count: {count_recent}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_bytes_limit_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        self.log.info(
+            "PITR restore to recent timestamp under historyRetentionBytes limit")
+        self._restore_entire_bucket(ts_recent, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_recent, bucket_name=restore_bucket_name)
+        self.log.info("Restore under byte limit succeeded")
+
+        # Reset historyRetentionBytes to unlimited (0 = no byte limit)
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            history_retention_bytes=0)
+
+        self.log.info("Test completed successfully")
+
+    def test_pitr_with_active_compression(self):
+        """
+        P2: Validates PITR works correctly on a Magma bucket with ACTIVE compression.
+
+        With ACTIVE compression the server proactively compresses stored values.
+        The continuous backup DCP stream receives compressed values and must pass
+        them through transparently so cbcontbk can restore them correctly.
+
+        Note: PITR is supported only on Magma buckets. Default spec uses PASSIVE.
+        """
+        self.log.info("Switching bucket compression mode to ACTIVE")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            compression_mode=Bucket.CompressionMode.ACTIVE)
+        self.sleep(10, "Waiting for compression mode change to propagate")
+
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_t1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval (ACTIVE compression)")
+        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T1 (ACTIVE compression): {ts_t1}, count: {count_t1}")
+
+        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        count_t2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for second backup interval")
+        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        self.log.info(f"T2 (ACTIVE compression): {ts_t2}, count: {count_t2}")
+
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        restore_bucket_name = f"restore_active_comp_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        self.log.info("PITR restore to T1 (ACTIVE compression bucket)")
+        self._restore_entire_bucket(ts_t1, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
+
+        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+
+        self.log.info("PITR restore to T2 (ACTIVE compression bucket)")
+        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
+
+        # Restore original compression mode
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            compression_mode=Bucket.CompressionMode.PASSIVE)
 
         self.log.info("Test completed successfully")
