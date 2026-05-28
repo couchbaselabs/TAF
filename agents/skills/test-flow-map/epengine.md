@@ -230,6 +230,10 @@ See Base Class Capabilities table above for `DurabilityTestsBase` and `BucketDur
 
 Common flow: create/load → read → update → delete → `verify_stats_all_buckets()`. Parallel mutations with reader threads. See source for full method list: `grep -n "def test_" pytests/epengine/basic_ops.py`.
 
+| Test Method | Key Params | Flow Summary |
+|---|---|---|
+| `test_kv_curr_connections_bucket_metrics` | `nodes_init=1` | For each KV node: (1) `query_prometheus(kv_curr_connections)` → assert bucket label present for every bucket, values ≥ 0, bucket sum ≤ node-level, node-level still exists; (2) `query_prometheus(kv_curr_connections_closing)` → assert bucket label present, each bucket value ≤ 1 |
+
 ---
 
 ### `expiry_maxttl.py`

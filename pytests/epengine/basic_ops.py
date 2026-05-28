@@ -19,6 +19,7 @@ from cb_constants import constants, CbServer, DocLoading
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.rest_client import RestConnection
+from membase.api.rest_client import RestConnection as MembaseRestConnection
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
@@ -2960,3 +2961,102 @@ class basic_ops(ClusterSetup):
                 self.fail(f"<MemcachedError #{error.status} `{error.msg}`>")
             if count % 1000 == 0:
                 self.log.info('The number of iteration is {}'.format(count))
+
+    def test_kv_curr_connections_bucket_metrics(self):
+        """
+        Validate bucket-level Prometheus metrics kv_curr_bucket_connections
+        and kv_curr_bucket_connections_closing using 2 queries per node:
+          - Both metrics must be present for every cluster bucket
+          - kv_curr_bucket_connections must be non-negative
+          - kv_curr_bucket_connections_closing must be 0 or 1 during
+            stable test execution (no active teardowns expected)
+        [P1] Bucket-level connection metric presence and sanity.
+        """
+        buckets = [b.name for b in self.cluster.buckets]
+
+        # Open SDK connections to each bucket so the per-bucket connection
+        # gauge is emitted (KV skips zero-connection buckets in the metric).
+        clients = []
+        try:
+            for bucket in self.cluster.buckets:
+                clients.append(SDKClient(self.cluster, bucket))
+
+            # Wait for Prometheus to scrape the KV endpoint with the active
+            # connections now open (scrape interval is ~10s).
+            self.sleep(15, "waiting for Prometheus to scrape active connections")
+
+            for server in self.cluster.kv_nodes:
+                # --- Query 1: kv_curr_bucket_connections ---
+                try:
+                    _, res_conn = MembaseRestConnection(server).query_prometheus(
+                        "kv_curr_bucket_connections")
+                except Exception as e:
+                    self.log.warning(
+                        f"query_prometheus(kv_curr_bucket_connections) failed on "
+                        f"{server.ip}: {e}")
+                    res_conn = {}
+
+                conn_results = res_conn.get("data", {}).get("result", [])
+                conn_bucket_found = {b: False for b in buckets}
+
+                for item in conn_results:
+                    b = item["metric"].get("bucket")
+                    if b not in conn_bucket_found:
+                        continue
+                    value = float(item["value"][1])
+                    conn_bucket_found[b] = True
+                    self.assertGreaterEqual(
+                        value, 0,
+                        f"kv_curr_bucket_connections[{b}] on {server.ip} "
+                        f"is negative: {value}")
+                    self.log.info(
+                        f"{server.ip}: kv_curr_bucket_connections[{b}]={value}")
+
+                missing = [b for b, found in conn_bucket_found.items()
+                           if not found]
+                self.assertFalse(
+                    missing,
+                    f"kv_curr_bucket_connections missing for buckets on "
+                    f"{server.ip}: {missing}")
+
+                # --- Query 2: kv_curr_bucket_connections_closing ---
+                try:
+                    _, res_closing = MembaseRestConnection(server).query_prometheus(
+                        "kv_curr_bucket_connections_closing")
+                except Exception as e:
+                    self.log.warning(
+                        f"query_prometheus(kv_curr_bucket_connections_closing) "
+                        f"failed on {server.ip}: {e}")
+                    res_closing = {}
+
+                closing_results = res_closing.get("data", {}).get("result", [])
+                closing_bucket_found = {b: False for b in buckets}
+
+                for item in closing_results:
+                    b = item["metric"].get("bucket")
+                    if b not in closing_bucket_found:
+                        continue
+                    value = float(item["value"][1])
+                    closing_bucket_found[b] = True
+                    self.assertLessEqual(
+                        value, 1,
+                        f"kv_curr_bucket_connections_closing[{b}] on "
+                        f"{server.ip} = {value} "
+                        f"(expected 0 or 1 during stable test execution)")
+                    self.log.info(
+                        f"{server.ip}: kv_curr_bucket_connections_closing"
+                        f"[{b}]={value}")
+
+                missing_closing = [
+                    b for b, found in closing_bucket_found.items() if not found]
+                self.assertFalse(
+                    missing_closing,
+                    f"kv_curr_bucket_connections_closing missing for buckets "
+                    f"on {server.ip}: {missing_closing}")
+
+        finally:
+            for c in clients:
+                try:
+                    c.close()
+                except Exception:
+                    pass
