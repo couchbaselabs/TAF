@@ -230,7 +230,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(30)
         self.nodes = self.cluster_util.get_nodes(self.orchestrator)
         for node in self.server_to_fail:
-            self.rest.add_back_node("ns_1@{}".format(node.ip))
+            self.rest.re_add_node("ns_1@{}".format(node.ip))
             self.rest.set_recovery_type("ns_1@{}".format(node.ip),
                                         self.recovery_strategy)
         self.rest.rebalance(known_nodes=[node.id for node in self.nodes])

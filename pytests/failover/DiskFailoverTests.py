@@ -309,7 +309,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         self.log.info(self.server_to_fail[0])
         self.nodes = self.cluster_util.get_otp_nodes(self.orchestrator)
         self.log.info("Adding back node {0}".format(self.server_to_fail[0].ip))
-        self.rest.add_back_node("ns_1@{}".format(self.server_to_fail[0].ip))
+        self.rest.re_add_node("ns_1@{}".format(self.server_to_fail[0].ip))
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
                                                          0].ip),
                                     self.recovery_strategy)
