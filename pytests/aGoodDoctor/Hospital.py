@@ -6,6 +6,7 @@ Created on 15-Apr-2021
 import os
 import random
 import threading
+import uuid
 
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
@@ -52,6 +53,8 @@ class Murphy(BaseTestCase, OPD):
         self.num_indexes = self.input.param("num_indexes", 0)
         self.mutation_perc = 100
         self.doc_ops = self.input.param("doc_ops", "create")
+        self.collections_to_add_per_itr = \
+            self.input.param("collections_to_add_per_itr", 0)
         if self.doc_ops:
             self.doc_ops = self.doc_ops.split(':')
 
@@ -413,6 +416,9 @@ class Murphy(BaseTestCase, OPD):
         self.delete_perc = perc
         self.read_perc = perc
         self.mutation_perc = self.input.param("mutation_perc", 100)
+        collection_prefix = self.input.param("collection_prefix",
+                                             "VolumeCollection")
+
         while self.loop <= self.iterations:
             #######################################################################
             '''
@@ -420,10 +426,84 @@ class Murphy(BaseTestCase, OPD):
             deletes: 0 - 10M
             Final Docs = 0
             '''
+
+            # Create required collections
+            new_collections_by_bucket = {}
+            for bucket in self.cluster.buckets:
+                collection_num = sum(
+                    len(self.bucket_util.get_active_collections(
+                        bucket, s, only_names=True))
+                    for s in self.bucket_util.get_active_scopes(
+                        bucket, only_names=True))
+                self.log.info(f"Total collections in {bucket}: {collection_num}")
+
+                new_cols = []
+                new_col_created = 0
+                while (collection_num < CbServer.max_collections
+                       and new_col_created < self.collections_to_add_per_itr):
+                    col_name = f"{collection_prefix}-{uuid.uuid4().hex[:8]}"
+                    self.bucket_util.create_collection(
+                        self.cluster.master, bucket, CbServer.default_scope,
+                        {"name": col_name})
+                    new_cols.append((CbServer.default_scope, col_name))
+                    new_col_created += 1
+                    collection_num += 1
+                new_collections_by_bucket[bucket] = new_cols
+
+            # Seed new collections with initial data before regular load cycle
+            for bucket, new_cols in new_collections_by_bucket.items():
+                if not new_cols:
+                    continue
+                num_items = bucket.loadDefn.get("num_items", 0)
+                workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                key_prefix = bucket.loadDefn.get("key_prefix", "test_docs-")
+                key_size = bucket.loadDefn.get("key_size", 20)
+                key_type = bucket.loadDefn.get("key_type", "SimpleKey")
+                model = bucket.loadDefn.get("model", "Hotel")
+                tasks = []
+                for idx, (scope_name, col_name) in enumerate(new_cols):
+                    wl = workloads[idx % len(workloads)]
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=self.cluster.master.ip,
+                        server_port=self.cluster.master.port,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope_name, collection_name=col_name,
+                        key_prefix=key_prefix, key_size=key_size,
+                        doc_size=wl.get("doc_size", 256),
+                        key_type=key_type, value_type=wl["valType"],
+                        create_percent=100, read_percent=0, update_percent=0,
+                        delete_percent=0, expiry_percent=0,
+                        create_start_index=0, create_end_index=num_items,
+                        process_concurrency=1,
+                        task_identifier="", ops=None,
+                        suppress_error_table=False, track_failures=True,
+                        mutate=0, elastic=False, model=model,
+                        mockVector=bucket.loadDefn.get("mockVector", False),
+                        dim=wl.get("dim", 128),
+                        base64=bucket.loadDefn.get("base64", False))
+                    result, json_response = loader.create_doc_load_task()
+                    if not result:
+                        self.log.error(
+                            f"Failed to seed new collection {col_name}: {json_response}")
+                        continue
+                    JavaDocLoaderUtils.doc_loading_tm.add_new_task(loader)
+                    tasks.append(loader)
+                if tasks:
+                    JavaDocLoaderUtils.wait_for_doc_load_completion(
+                        self.cluster, tasks, wait_for_stats=False)
+                for scope_name, col_name in new_cols:
+                    coll_obj = bucket.scopes[scope_name].collections.get(col_name)
+                    if coll_obj:
+                        coll_obj.num_items = num_items
+                        coll_obj.doc_index = (0, num_items)
+
             for bucket in self.cluster.buckets:
                 JavaDocLoaderUtils.generate_docs(bucket=bucket)
+            extra = {"process_concurrency": 1} if self.collections_to_add_per_itr else {}
             JavaDocLoaderUtils.perform_load(self.cluster, self.cluster.buckets,
-                                            validate_data=True)
+                                            validate_data=True,
+                                            **extra)
             self.loop += 1
         # self.stop_stats = True
         # stat_th.join()
@@ -435,8 +515,9 @@ class Murphy(BaseTestCase, OPD):
             repo = "magma"
             self.drBackup.configure_backup(archive, repo, [], [])
             self.drBackup.trigger_backup(archive, repo)
-            items = self.bucket_util.get_buckets_item_count(
-                self.cluster,
+
+            items=self.bucket_util.get_buckets_item_count(
+                    self.cluster,
                 self.cluster.buckets[0].name)
             self.bucket_util.flush_all_buckets(self.cluster)
             self.drBackup.trigger_restore(archive, repo)

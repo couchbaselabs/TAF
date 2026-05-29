@@ -264,12 +264,14 @@ class JavaDocLoaderUtils(object):
                      validate_data=False, overRidePattern=None, skip_default=True,
                      wait_for_stats=True, mutate=0,
                      suppress_error_table=False,
-                     track_failures=True):
-        loader_map = JavaDocLoaderUtils._loader_dict(cluster, buckets,
-                                                     overRidePattern, skip_default=skip_default,
-                                                     mutate=mutate,
-                                                     suppress_error_table=suppress_error_table,
-                                                     track_failures=track_failures)
+                     track_failures=True, process_concurrency=10):
+        loader_map = JavaDocLoaderUtils._loader_dict(
+            cluster, buckets, overRidePattern,
+            skip_default=skip_default,
+            mutate=mutate,
+            suppress_error_table=suppress_error_table,
+            track_failures=track_failures,
+            process_concurrency=process_concurrency)
         tasks = list()
         for bucket in buckets:
             for scope in bucket.scopes.keys():
