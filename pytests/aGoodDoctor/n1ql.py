@@ -223,8 +223,8 @@ class DoctorN1QL():
                                     self.idx_q = self.idx_q.replace('PARTITION BY HASH(meta().id)', "")
                             else:
                                 self.idx_q = indexType[i % len(indexType)].format(index_name=idx_name, bucket=b.name, scope=s, collection=c)
-                            print (self.idx_q)
                             b.indexes.update({idx_name: (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
+                            b.scopes[s].collections[c].secondary_indexes[idx_name] = self.idx_q
                             retry = 5
                             if not skip_index:
                                 while retry > 0:

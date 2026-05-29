@@ -36,11 +36,11 @@ class Murphy(BaseTestCase, OPD):
     def setUp(self):
         BaseTestCase.setUp(self)
 
+        self.num_scopes = self.input.param("num_scopes", 1)
         self.num_collections = self.input.param("num_collections", 1)
+        self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
         self.xdcr_collections = self.input.param("xdcr_collections", self.num_collections)
         self.num_collections_bkrs = self.input.param("num_collections_bkrs", self.num_collections)
-        self.num_scopes = self.input.param("num_scopes", 1)
-        self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
         self.num_buckets = self.input.param("num_buckets", 1)
         self.kv_nodes = self.nodes_init
         self.cbas_nodes = self.input.param("cbas_nodes", 0)
@@ -87,9 +87,9 @@ class Murphy(BaseTestCase, OPD):
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)
         self.gtm = self.input.param("gtm", False)
-        ##CDC Params
-        self.bucket_history_retention_bytes = int(self.input.param("bucket_history_retention_bytes",0))
-        self.bucket_history_retention_seconds = int(self.input.param("bucket_history_retention_seconds",0))
+        # CDC Params
+        self.bucket_history_retention_bytes = int(self.input.param("bucket_history_retention_bytes", 0))
+        self.bucket_history_retention_seconds = int(self.input.param("bucket_history_retention_seconds", 0))
 
         self.ql = list()
         self.ftsQL = list()
@@ -467,9 +467,9 @@ class Murphy(BaseTestCase, OPD):
         if self.val_type == "siftBigANN":
             if not self.skip_init:
                 JavaDocLoaderUtils.load_sift_data(self.cluster, self.cluster.buckets,
-                                                    overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
-                                                    wait_for_stats=False,
-                                                    validate_data=False)
+                                                  overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
+                                                  wait_for_stats=False,
+                                                  validate_data=False)
         else:
             if not self.skip_init:
                 JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets,
@@ -481,6 +481,14 @@ class Murphy(BaseTestCase, OPD):
                         create_start=0,
                         create_end=bucket.loadDefn.get("num_items"),
                         bucket=bucket)
+        for bucket in self.cluster.buckets:
+            per_coll_items = bucket.loadDefn.get("num_items", 0)
+            for scope_name, scope_obj in bucket.scopes.items():
+                if scope_name == CbServer.system_scope:
+                    continue
+                for coll_obj in scope_obj.collections.values():
+                    coll_obj.num_items = per_coll_items
+                    coll_obj.doc_index = (0, per_coll_items)
         self.print_stats(self.cluster)
 
         if self.cluster.cbas_nodes:
