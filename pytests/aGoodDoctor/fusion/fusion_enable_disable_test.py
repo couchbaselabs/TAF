@@ -47,9 +47,9 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
     deploys a fresh Capella cluster and stores its ID in
     TestInputSingleton.input.capella["clusters"]. Every subsequent setUp
     sees that key and reuses the same cluster instead of deploying a new one.
-    After all test classes have finished, tearDownClass removes the key and
-    calls CapellaUtils.destroy_cluster directly so the shared cluster is
-    cleaned up exactly once.
+    After the last test in the run (case_number == no_of_test_identified),
+    tearDown removes the key and calls CapellaUtils.destroy_cluster directly
+    so the shared cluster is cleaned up exactly once.
 
     When cluster IDs *are* supplied in the ini, this logic is skipped and
     the cluster is never destroyed by this class (caller owns it).
@@ -116,11 +116,8 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
             self.stop_run_event.set()
         self.stop_run = True
         # clusters= is in params → BaseTestCase.tearDown keeps the cluster alive
-        BaseTestCase.tearDown(self)
-
-    @classmethod
-    def tearDownClass(cls):
-        if _FusionTestBase._shared_cluster_ids is not None:
+        if (TestInputSingleton.input.test_params["case_number"] ==
+            TestInputSingleton.input.test_params["no_of_test_identified"]) and _FusionTestBase._shared_cluster_ids is not None:
             tenant = _FusionTestBase._last_tenants[0]
             cluster = tenant.clusters[0]
             try:
@@ -132,7 +129,7 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
             _FusionTestBase._shared_cluster_ids = None
             _FusionTestBase._last_pod = None
             _FusionTestBase._last_tenants = None
-        super().tearDownClass()
+        BaseTestCase.tearDown(self)
 
     # ------------------------------------------------------------------
     # Shared helpers
@@ -163,7 +160,8 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         while time.time() < deletion_deadline:
             try:
                 existing_names = [b.name for b in RestConnection(self.cluster.master).get_buckets()]
-            except Exception:
+            except Exception as e:
+                self.log.warning(f"Exception while fetching buckets: {e}")
                 existing_names = [bucket.name]
             if bucket.name not in existing_names:
                 self.log.info(f"Bucket {bucket.name} confirmed gone from ns_server")
@@ -2379,4 +2377,3 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.assertEqual(state, "disabled",
                          f"State changed after rejected /disable from disabled: {state}")
         self.log.info(f"/disable from disabled rejected with {resp4.status_code} ✓")
-
