@@ -12,6 +12,9 @@ from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from collections_helper.collections_spec_constants import MetaCrudParams
+from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
+from lib.testconstants import PITR_NFS_SERVER
+from platform_utils.ssh_util.install_util.test_input import TestInputServer
 from aGoodDoctor.bkrs import DoctorBKRS
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
@@ -124,6 +127,57 @@ class Murphy(BaseTestCase, OPD):
             self.load_defn.append(nimbus)
         else:
             self.load_defn.append(default)
+
+        # Continuous backup valid params - ["None", "single_node", "NFS"]
+        self.cont_bkp_test = self.input.param("cont_bkp_test", None)
+        if self.cont_bkp_test == "NFS":
+            """
+            NFS setup requirements:
+            - Server: /data directory exported with appropriate permissions
+            - Client: Mount NFS export at /mnt/nfs_data
+            - Validation: Ensure server export and client mount are working
+            - Cleanup: Unique subdirectory created under mount point and removed after test
+            Scipts to setup NFS Server : https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
+            """
+            self.nfs_server = TestInputServer()
+            self.nfs_server.ip = PITR_NFS_SERVER
+            self.nfs_server.ssh_username = "root"
+            self.nfs_server.ssh_password = "couchbase"
+
+            self.nfs_util = NfsUtil(self.nfs_server)
+
+            self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
+            self.nfs_util.validate_nfs_server()
+
+            for node in self.servers:
+                self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
+                try:
+                    self.nfs_util.validate_nfs_client(node)
+                except Exception as e:
+                    self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
+                    self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
+                    self.nfs_util.validate_nfs_client(node)
+
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            # Create continuous backup folder on NFS server
+            self.continuous_backup_location = f"/mnt/nfs_data/test_volume"
+
+            shell.execute_command(f"rm -rf {self.continuous_backup_location}")
+
+            output, error = shell.execute_command(f"mkdir -p {self.continuous_backup_location}")
+            if error:
+                self.fail("Error creating continuous backup folder: %s" % error)
+            else:
+                self.log.info("Created continuous backup folder: %s" % self.continuous_backup_location)
+                # Set permissions for couchbase user
+                output, error = shell.execute_command(f"chmod 777 {self.continuous_backup_location}")
+                if error:
+                    self.fail("Error setting permissions on continuous backup folder: %s" % error)
+                else:
+                    self.log.info("Set permissions on continuous backup folder")
+        elif self.cont_bkp_test is not None:
+            self.log.critical(f"Cont backup value '{self.cont_bkp_test}' "
+                              f"not yet supported")
 
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
@@ -325,6 +379,11 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.backup_nodes:
             self.drBackup = DoctorBKRS(self.cluster)
+            self.backup_archive = os.path.join(
+                self.cluster.backup_nodes[0].data_path, "bkrs")
+            self.backup_repo = "magma"
+            self.restore_timeout = self.input.param("restore_timeout",
+                                                    12 * 60 * 60)
         if self.cluster.index_nodes:
             self.drIndex = DoctorN1QL(self.bucket_util)
         if self.cluster.cbas_nodes:
@@ -436,16 +495,13 @@ class Murphy(BaseTestCase, OPD):
 
         # Starting the backup here.
         if self.backup_nodes > 0:
-            self.restore_timeout = self.input.param("restore_timeout", 12*60*60)
-            archive = os.path.join(self.cluster.backup_nodes[0].data_path, "bkrs")
-            repo = "magma"
-            self.drBackup.configure_backup(archive, repo, [], [])
-            self.drBackup.trigger_backup(archive, repo)
+            self.drBackup.configure_backup(self.backup_archive, self.backup_repo, [], [])
+            self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
             items = self.bucket_util.get_buckets_item_count(
                 self.cluster,
                 self.cluster.buckets[0].name)
             self.bucket_util.flush_all_buckets(self.cluster)
-            self.drBackup.trigger_restore(archive, repo)
+            self.drBackup.trigger_restore(self.backup_archive, self.backup_repo)
             result = self.drBackup.monitor_restore(self.bucket_util, items, timeout=self.restore_timeout)
             self.assertTrue(result, "Restore failed")
 
@@ -1000,6 +1056,10 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
+
                 ###################################################################
                 '''
                 Existing:
@@ -1023,6 +1083,10 @@ class Murphy(BaseTestCase, OPD):
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
+
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
 
                 ###################################################################
                 '''
@@ -1048,6 +1112,10 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
+
                 ###################################################################
                 '''
                 Existing:
@@ -1072,6 +1140,10 @@ class Murphy(BaseTestCase, OPD):
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
+
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
 
                 ###################################################################
                 '''
@@ -1179,6 +1251,10 @@ class Murphy(BaseTestCase, OPD):
                         num_replicas=self.num_replicas,
                         std=std)
 
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
+
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
                 if extra_node_gone > 0:
@@ -1192,6 +1268,10 @@ class Murphy(BaseTestCase, OPD):
                     self.task.jython_task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     self.end_step_checks()
+
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
 
                 ###################################################################
                 '''
@@ -1281,6 +1361,10 @@ class Murphy(BaseTestCase, OPD):
                         buckets=self.cluster.buckets,
                         num_replicas=self.num_replicas,
                         std=std)
+
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
 
                 ###################################################################
                 '''
@@ -1372,6 +1456,10 @@ class Murphy(BaseTestCase, OPD):
                     num_replicas=self.num_replicas,
                     std=std)
 
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
+
                 ###################################################################
                 '''
                 Existing:
@@ -1403,6 +1491,10 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
+                # Take an incremental backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
+
                 ####################################################################
                 '''
                 Existing:
@@ -1431,6 +1523,17 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
+                # Take an incremental backup, merge and restore from backup
+                if self.backup_nodes > 0:
+                    self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
+                    self.merge_all_backups(self.backup_archive, self.backup_repo)
+                    items = self.bucket_util.get_buckets_item_count(
+                        self.cluster,
+                        self.cluster.buckets[0].name)
+                    self.bucket_util.flush_all_buckets(self.cluster)
+                    self.drBackup.trigger_restore(self.backup_archive, self.backup_repo)
+                    result = self.drBackup.monitor_restore(self.bucket_util, items, timeout=self.restore_timeout)
+                    self.assertTrue(result, "Restore failed")
 
             #######################################################################
                 self.loop += 1
@@ -1847,7 +1950,11 @@ class Murphy(BaseTestCase, OPD):
 
     def test_30TB_10K_collections_cont_backup(self):
         self.initial_setup()
-        self.target_disk_util = self.input.param("target_disk_usage", "50G")
+
+        if self.backup_nodes > 0:
+            self.drBackup.configure_backup(self.backup_archive, self.backup_repo, [], [])
+            self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
+
         _val = int(self.target_disk_util[:-1])
         _suffix = self.target_disk_util[-1].upper()
         target_disk_util_bytes = _val * (1024 ** 4 if _suffix == "T" else 1024 ** 3)
