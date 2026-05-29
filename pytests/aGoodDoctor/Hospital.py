@@ -20,6 +20,7 @@ from couchbase_utils.backup_utils.backup_utils import BackupMgrUtil
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
 from py_constants.cb_constants.CBServer import CbServer
+from TestInput import TestInputSingleton
 from .cbas import CBASQueryLoad
 from .cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
@@ -386,6 +387,9 @@ class Murphy(BaseTestCase, OPD):
             self.backup_cluster_host = cluster_rest.base_url
             self.restore_timeout = self.input.param("restore_timeout",
                                                     12 * 60 * 60)
+            self.drBackup.cleanup_archive(self.backup_archive)
+            self.drBackup.configure_backup(self.backup_archive, self.backup_repo, [], [])
+
         if self.cluster.index_nodes:
             self.drIndex = DoctorN1QL(self.bucket_util)
         if self.cluster.cbas_nodes:
@@ -403,6 +407,7 @@ class Murphy(BaseTestCase, OPD):
         self.stop_rebalance = self.input.param("pause_rebalance", False)
         self.log_query_failures = True
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
+
         self.log_setup_status("Hospital.Murphy", "complete", "setup")
 
     def tearDown(self):
@@ -420,6 +425,17 @@ class Murphy(BaseTestCase, OPD):
             task.stop_query_load()
         for task in self.cbasQL:
             task.stop_query_load()
+
+        if self.cluster.backup_nodes:
+            if self.is_test_failed():
+                self.log.warning(f"Test failed, skipping cleanup of backup archive"
+                                f"to preserve data for investigation: {self.backup_archive}")
+                if self.get_cbcollect_info:
+                    log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+                    self.drBackup.collect_backup_logs_on_failure(self.backup_archive, log_path=log_path)
+            else:
+                self.drBackup.cleanup_archive(self.backup_archive)
+
         BaseTestCase.tearDown(self)
 
     def __init_doc_params(self):
@@ -509,22 +525,38 @@ class Murphy(BaseTestCase, OPD):
                 JavaDocLoaderUtils.generate_docs(bucket=bucket)
             JavaDocLoaderUtils.perform_load(self.cluster, self.cluster.buckets,
                                             validate_data=True)
+
+            # Starting the backup here.
+            if self.backup_nodes > 0:
+                output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
+                                                     cluster_host=self.backup_cluster_host)
+                self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+
             self.loop += 1
         # self.stop_stats = True
         # stat_th.join()
 
+        # Merge the backups
+        output, error = self.drBackup.merge_all_backups(archive=self.backup_archive, repo=self.backup_repo)
+        self.log.info(f"Merge output: {output}\n\n Merge error: {error}")
+
         # Starting the backup here.
         if self.backup_nodes > 0:
-            self.drBackup.configure_backup(self.backup_archive, self.backup_repo)
-            self.drBackup.backup(self.backup_archive, self.backup_repo,
-                                 cluster_host=self.backup_cluster_host)
+            output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
+                                                 cluster_host=self.backup_cluster_host)
+            self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+
             items = self.bucket_util.get_buckets_item_count(
                 self.cluster,
                 self.cluster.buckets[0].name)
             self.bucket_util.flush_all_buckets(self.cluster)
-            self.drBackup.restore(self.backup_archive, self.backup_repo,
-                                  cluster_host=self.backup_cluster_host,
-                                  threads=60)
+
+
+            output, error = self.drBackup.restore(self.backup_archive, self.backup_repo,
+                                                  cluster_host=self.backup_cluster_host,
+                                                  threads=60)
+            self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
+
             result = self.drBackup.monitor_restore(
                 self.bucket_util, self.cluster,
                 self.cluster.buckets[0].name, items,
@@ -1054,6 +1086,12 @@ class Murphy(BaseTestCase, OPD):
         self.initial_setup()
 
         self.loop = 0
+
+        if self.backup_nodes > 0:
+            output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
+                                                 cluster_host=self.backup_cluster_host)
+            self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+
         while self.loop < self.iterations:
             ###################################################################
             '''
@@ -1084,9 +1122,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 '''
@@ -1114,9 +1153,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 '''
@@ -1144,9 +1184,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 '''
@@ -1175,9 +1216,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 '''
@@ -1287,9 +1329,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
@@ -1307,9 +1350,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 '''
@@ -1403,9 +1447,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 '''
@@ -1499,9 +1544,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ###################################################################
                 '''
@@ -1536,9 +1582,10 @@ class Murphy(BaseTestCase, OPD):
 
                 # Take an incremental backup
                 if self.backup_nodes > 0:
-                    self.drBackup.backup(
+                    output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
                 ####################################################################
                 '''
@@ -1567,27 +1614,6 @@ class Murphy(BaseTestCase, OPD):
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
-
-                # Take an incremental backup, merge and restore from backup
-                if self.backup_nodes > 0:
-                    self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.drBackup.merge(self.backup_archive, self.backup_repo,
-                                        start=None, end=None)
-                    items = self.bucket_util.get_buckets_item_count(
-                        self.cluster,
-                        self.cluster.buckets[0].name)
-                    self.bucket_util.flush_all_buckets(self.cluster)
-                    self.drBackup.restore(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host,
-                        threads=60)
-                    result = self.drBackup.monitor_restore(
-                        self.bucket_util, self.cluster,
-                        self.cluster.buckets[0].name, items,
-                        timeout=self.restore_timeout)
-                    self.assertTrue(result, "Restore failed")
 
             #######################################################################
                 self.loop += 1
@@ -1661,13 +1687,13 @@ class Murphy(BaseTestCase, OPD):
                 Existing:
                 Sequential: 0 - 10M
                 Random: 0 - 10M, 20 - 30M
-    
+
                 This Step:
                 Create Random: 30 - 40M
                 Delete Random: 20 - 30M
                 Update Random: 0 - 10M
                 Nodes In Cluster = 4 -> 3
-    
+
                 Final Docs = 30M (Random: 0-10M, 30-40M, Sequential: 0-10M)
                 Nodes In Cluster = 3
                 '''
@@ -1693,13 +1719,13 @@ class Murphy(BaseTestCase, OPD):
                 Existing:
                 Sequential: 0 - 10M
                 Random: 0 - 10M, 30 - 40M
-    
+
                 This Step:
                 Create Random: 40 - 50M
                 Delete Random: 30 - 40M
                 Update Random: 0 - 10M
                 Nodes In Cluster = 3 -> 4
-    
+
                 Final Docs = 30M (Random: 0-10M, 40-50M, Sequential: 0-10M)
                 Nodes In Cluster = 4
                 '''
@@ -1723,13 +1749,13 @@ class Murphy(BaseTestCase, OPD):
                 Existing:
                 Sequential: 0 - 10M
                 Random: 0 - 10M, 40 - 50M
-    
+
                 This Step:
                 Create Random: 50 - 60M
                 Delete Random: 40 - 50M
                 Update Random: 0 - 10M
                 Nodes In Cluster = 4 -> 4 (SWAP)
-    
+
                 Final Docs = 30M (Random: 0-10M, 50-60M, Sequential: 0-10M)
                 Nodes In Cluster = 4
                 '''
@@ -1754,13 +1780,13 @@ class Murphy(BaseTestCase, OPD):
                 Existing:
                 Sequential: 0 - 10M
                 Random: 0 - 10M, 50 - 60M
-    
+
                 This Step:
                 Create Random: 60 - 70M
                 Delete Random: 50 - 60M
                 Update Random: 0 - 10M
                 Nodes In Cluster = 4 -> 3
-    
+
                 Final Docs = 30M (Random: 0-10M, 60-70M, Sequential: 0-10M)
                 Nodes In Cluster = 3
                 '''
@@ -1809,13 +1835,13 @@ class Murphy(BaseTestCase, OPD):
                 Existing:
                 Sequential: 0 - 10M
                 Random: 0 - 10M, 60 - 70M
-    
+
                 This Step:
                 Create Random: 70 - 80M
                 Delete Random: 60 - 70M
                 Update Random: 0 - 10M
                 Nodes In Cluster = 3 -> 3
-    
+
                 Final Docs = 30M (Random: 0-10M, 70-80M, Sequential: 0-10M)
                 Nodes In Cluster = 3
                 '''
@@ -1860,13 +1886,13 @@ class Murphy(BaseTestCase, OPD):
                 Existing:
                 Sequential: 0 - 10M
                 Random: 0 - 10M, 70 - 80M
-    
+
                 This Step:
                 Create Random: 80 - 90M
                 Delete Random: 70 - 80M
                 Update Random: 0 - 10M
                 Nodes In Cluster = 3 -> 3
-    
+
                 Final Docs = 30M (Random: 0-10M, 80-90M, Sequential: 0-10M)
                 Nodes In Cluster = 3
                 '''
@@ -1911,13 +1937,13 @@ class Murphy(BaseTestCase, OPD):
                 Existing:
                 Sequential: 0 - 10M
                 Random: 0 - 10M, 80 - 90M
-    
+
                 This Step:
                 Create Random: 90 - 100M
                 Delete Random: 80 - 90M
                 Update Random: 0 - 10M
                 Replica 1 - > 2
-    
+
                 Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
                 Nodes In Cluster = 3
                 '''
@@ -2006,10 +2032,10 @@ class Murphy(BaseTestCase, OPD):
         self.initial_setup()
 
         if self.backup_nodes > 0:
-            self.drBackup.configure_backup(self.backup_archive, self.backup_repo, [], [])
-            self.drBackup.backup(
+            output, error = self.drBackup.backup(
                 self.backup_archive, self.backup_repo,
                 cluster_host=self.backup_cluster_host)
+            self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
         self.target_disk_util = self.input.param("target_disk_usage", "50G")
         max_collections = self.input.param("max_collections",
@@ -2166,6 +2192,34 @@ class Murphy(BaseTestCase, OPD):
             # Wait for doc_loading tasks to complete
             doc_loading_task.stop_indefinite_doc_loading_tasks()
             self.task.jython_task_manager.get_task_result(doc_loading_task)
+
+            # Take an incremental backup, merge and restore from backup
+            if self.backup_nodes > 0:
+                output, error = self.drBackup.backup(
+                    self.backup_archive, self.backup_repo,
+                    cluster_host=self.backup_cluster_host)
+                self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+
+                output, error = self.drBackup.merge_all_backups(self.backup_archive, self.backup_repo)
+                self.log.info(f"Merge Output: {output}\n\n Merge Error: {error}")
+
+                items = self.bucket_util.get_buckets_item_count(
+                    self.cluster,
+                    self.cluster.buckets[0].name)
+                self.bucket_util.flush_all_buckets(self.cluster)
+
+                output, error = self.drBackup.restore(
+                    self.backup_archive, self.backup_repo,
+                    cluster_host=self.backup_cluster_host,
+                    threads=60)
+
+                self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
+
+                result = self.drBackup.monitor_restore(
+                    self.bucket_util, self.cluster,
+                    self.cluster.buckets[0].name, items,
+                    timeout=self.restore_timeout)
+                self.assertTrue(result, "Restore failed")
 
             loop_index += 1
             mutation_num += 1

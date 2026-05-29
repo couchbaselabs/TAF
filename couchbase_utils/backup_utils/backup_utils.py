@@ -179,6 +179,7 @@ class ContinuousBackupUtil(object):
 
 class BackupMgrUtil(CbBackupMgr):
     def __init__(self, cb_node):
+        self.cb_node = cb_node
         shell_conn = RemoteMachineShellConnection(cb_node)
         super().__init__(shell_conn, username=cb_node.rest_username,
                          password=cb_node.rest_password,
@@ -213,6 +214,79 @@ class BackupMgrUtil(CbBackupMgr):
         self.log.info(f"cbbackupmgr restore did not finish in {timeout} "
                       f"seconds: Actual:{curr_items}, Expected:{items}")
         return False
+
+    def collect_backup_logs_on_failure(self, archive='/data/backups', log_path='/tmp'):
+        """
+        Collects cbbackupmgr logs on test failure.
+        Only runs on Linux nodes. Logs are collected to /data/tmp on the remote
+        node and then copied to the local log path.
+        """
+        remote_tmp_dir = "/data/tmp"
+
+        try:
+            os_info = self.shellConn.extract_remote_info()
+            if os_info.type.lower() != "linux":
+                self.log.info("Skipping cbbackupmgr log collection: OS is not Linux")
+                return
+
+            self.log.info("Collecting cbbackupmgr logs for investigation")
+            self.shellConn.execute_command(f"mkdir -p {remote_tmp_dir}")
+            self.collect_logs(archive_dir=archive, output_dir=remote_tmp_dir)
+
+            output, _ = self.shellConn.execute_command(f"ls {remote_tmp_dir}/*.zip 2>/dev/null")
+            for log_file in output:
+                log_file = log_file.strip()
+                if log_file:
+                    self.log.info(f"Copying {log_file} to {log_path}")
+                    self.shellConn.get_file(remote_tmp_dir, log_file.split("/")[-1], log_path)
+        except Exception as e:
+            self.log.error(f"Exception during cbbackupmgr log collection: {e}")
+
+    def merge_all_backups(self, archive='/data/backups', repo='magma'):
+        """
+        Finds all backups in the archive and merges them from first to last.
+        Returns (output, error) from the merge command, or (None, None) if not enough backups.
+        """
+        self.log.info('Finding all backups in archive to merge')
+        find_cmd = "cd {0}/{1}; find . -maxdepth 1 -type d -name '[^.]*' | sed 's:^\\./::' | grep -v '^logs$' | sort".format(
+            archive, repo)
+        output, error = self.shellConn.execute_command(find_cmd)
+
+        if not output or len(output) < 2:
+            self.log.info("Not enough backups to merge. Found: {}".format(output))
+            return None, None
+
+        backup_list = [b.strip() for b in output if b.strip()]
+        merge_start = backup_list[0]
+        merge_end = backup_list[-1]
+        self.log.info("Merging backups from {} to {}".format(merge_start, merge_end))
+
+        return self.merge(archive_dir=archive, repo_name=repo,
+                          start=merge_start, end=merge_end)
+
+    def cleanup_archive(self, archive='/data/backups'):
+        """
+        Finds all repos in the archive and cleans them using cbbackupmgr remove
+        followed by manual rm -rf as fallback.
+        """
+        # List all directories in the archive (each directory is a repo)
+        find_repos_cmd = "find {0} -maxdepth 1 -mindepth 1 -type d -exec basename {{}} \\;".format(archive)
+        output, error = self.shellConn.execute_command(find_repos_cmd)
+        repos = [r.strip() for r in output if r.strip()]
+        self.log.info("Found repos in archive {}: {}".format(archive, repos))
+
+        for repo_name in repos:
+            self.log.info("Cleaning up repo: {}".format(repo_name))
+            # Cleanup using cbbackupmgr
+            output, error = self.remove(archive, repo_name)
+            self.log.info("cbbackupmgr remove output: {}".format(output))
+            if error:
+                self.log.warning("cbbackupmgr remove error: {}".format(error))
+
+        # Manual cleanup in case cbbackupmgr remove fails
+        cleanup_cmd = "rm -rf {0}/".format(archive)
+        self.log.info("Manual cleanup with command: {}".format(cleanup_cmd))
+        self.shellConn.execute_command(cleanup_cmd)
 
 
 class BackupServiceUtil(object):
