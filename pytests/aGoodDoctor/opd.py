@@ -1004,8 +1004,8 @@ class OPD:
                             for collection in stats[bucket][scope]:
                                 for idx in stats[bucket][scope][collection]:
                                     self.log.info(":".join([
-                                        bucket, scope, collection,
-                                        idx, "num_docs_pending",
+                                        bucket, scope, collection, 
+                                        idx, "num_docs_pending", 
                                         str(stats[bucket][scope][collection][idx]["num_docs_pending"])]))
                                     if stats[bucket][scope][collection][idx]["num_docs_pending"] > 0:
                                         check = True
