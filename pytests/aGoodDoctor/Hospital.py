@@ -16,7 +16,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
 from lib.testconstants import PITR_NFS_SERVER
 from platform_utils.ssh_util.install_util.test_input import TestInputServer
-from couchbase_utils.backup_utils.backup_utils import BackupMgrUtil
+from couchbase_utils.backup_utils.backup_utils import BackupMgrUtil, ContinuousBackupUtil
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
 from py_constants.cb_constants.CBServer import CbServer
@@ -176,6 +176,16 @@ class Murphy(BaseTestCase, OPD):
                     self.fail("Error setting permissions on continuous backup folder: %s" % error)
                 else:
                     self.log.info("Set permissions on continuous backup folder")
+
+            self.continuous_backup_timestamps = []
+
+            if self.cluster.backup_nodes:
+                shell = RemoteMachineShellConnection(self.cluster.backup_nodes[0])
+                self.drContBackup = ContinuousBackupUtil(shell=shell,
+                                                         username=self.cluster.master.rest_username,
+                                                         password=self.cluster.master.rest_password)
+            else:
+                self.fail("No backup node available to run continuous backup manager")
         elif self.cont_bkp_test is not None:
             self.log.critical(f"Cont backup value '{self.cont_bkp_test}' "
                               f"not yet supported")
@@ -433,8 +443,12 @@ class Murphy(BaseTestCase, OPD):
                 if self.get_cbcollect_info:
                     log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
                     self.drBackup.collect_backup_logs_on_failure(self.backup_archive, log_path=log_path)
+                    if self.cont_bkp_test == "NFS":
+                        self.drContBackup.collect_continuous_backup_logs_on_failure(self.continuous_backup_location)
             else:
                 self.drBackup.cleanup_archive(self.backup_archive)
+                if self.cont_bkp_test == "NFS":
+                    self.drContBackup.cleanup_continuous_backup(self.continuous_backup_location)
 
         BaseTestCase.tearDown(self)
 
@@ -514,6 +528,10 @@ class Murphy(BaseTestCase, OPD):
         self.delete_perc = perc
         self.read_perc = perc
         self.mutation_perc = self.input.param("mutation_perc", 100)
+
+        # Take first backup
+        self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
+
         while self.loop <= self.iterations:
             #######################################################################
             '''
@@ -526,42 +544,63 @@ class Murphy(BaseTestCase, OPD):
             JavaDocLoaderUtils.perform_load(self.cluster, self.cluster.buckets,
                                             validate_data=True)
 
-            # Starting the backup here.
-            if self.backup_nodes > 0:
-                output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
-                                                     cluster_host=self.backup_cluster_host)
-                self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+            # Taking incremental backups and recording timestamps for PITR
+            self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
             self.loop += 1
         # self.stop_stats = True
         # stat_th.join()
 
         # Merge the backups
-        output, error = self.drBackup.merge_all_backups(archive=self.backup_archive, repo=self.backup_repo)
-        self.log.info(f"Merge output: {output}\n\n Merge error: {error}")
+        if self.cont_bkp_test is None:
+            output, error = self.drBackup.merge_all_backups(archive=self.backup_archive, repo=self.backup_repo)
+            self.log.info(f"Merge output: {output}\n\n Merge error: {error}")
 
-        # Starting the backup here.
+        # Restore using backup/PITR
         if self.backup_nodes > 0:
-            output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
-                                                 cluster_host=self.backup_cluster_host)
-            self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+            if self.cont_bkp_test is None:
+                output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
+                                                    cluster_host=self.backup_cluster_host)
+                self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
-            items = self.bucket_util.get_buckets_item_count(
-                self.cluster,
-                self.cluster.buckets[0].name)
-            self.bucket_util.flush_all_buckets(self.cluster)
+                items = self.bucket_util.get_buckets_item_count(
+                    self.cluster,
+                    self.cluster.buckets[0].name)
+                self.bucket_util.flush_all_buckets(self.cluster)
 
 
-            output, error = self.drBackup.restore(self.backup_archive, self.backup_repo,
-                                                  cluster_host=self.backup_cluster_host,
-                                                  threads=60)
-            self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
+                output, error = self.drBackup.restore(self.backup_archive, self.backup_repo,
+                                                    cluster_host=self.backup_cluster_host,
+                                                    threads=60)
+                self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
 
-            result = self.drBackup.monitor_restore(
-                self.bucket_util, self.cluster,
-                self.cluster.buckets[0].name, items,
-                timeout=self.restore_timeout)
-            self.assertTrue(result, "Restore failed")
+                result = self.drBackup.monitor_restore(
+                    self.bucket_util, self.cluster,
+                    self.cluster.buckets[0].name, items,
+                    timeout=self.restore_timeout)
+                self.assertTrue(result, "Restore failed")
+            else:
+                self.toggle_continuous_backup(self.cluster.buckets[0], enable=True)
+                self.bucket_util.flush_all_buckets(self.cluster)
+                self.sleep(30, "Sleep for a while after flushing buckets and before triggering restore")
+                for timestamp, items in sorted(self.continuous_backup_timestamps, key=lambda x: x[0]):
+                    self.log.info("Restoring backup with timestamp: {}".format(timestamp))
+                    output, error = self.drContBackup.trigger_restore(cluster=self.cluster,
+                                                                      archive=self.backup_archive,
+                                                                      repo=self.backup_repo,
+                                                                      cont_backup_location=self.continuous_backup_location,
+                                                                      staging_dir="/data/tmp",
+                                                                      timestamp=timestamp,
+                                                                      threads=60)
+                    self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
+                    result = self.drContBackup.monitor_restore(self.bucket_util,
+                                                               cluster=self.cluster,
+                                                               bucket=self.cluster.buckets[0],
+                                                               items=items,
+                                                               timeout=self.restore_timeout)
+                    self.assertTrue(result, "Restore failed for backup with timestamp: {}".format(timestamp))
+                self.toggle_continuous_backup(self.cluster.buckets[0], enable=True)
+
 
     def initial_setup(self):
         if self.initial_setup_done or self.skip_init:
@@ -1087,10 +1126,8 @@ class Murphy(BaseTestCase, OPD):
 
         self.loop = 0
 
-        if self.backup_nodes > 0:
-            output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
-                                                 cluster_host=self.backup_cluster_host)
-            self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+        # Take first backup
+        self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
 
         while self.loop < self.iterations:
             ###################################################################
@@ -1120,12 +1157,8 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1151,12 +1184,8 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1182,12 +1211,8 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1214,12 +1239,8 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1327,12 +1348,8 @@ class Murphy(BaseTestCase, OPD):
                         num_replicas=self.num_replicas,
                         std=std)
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 extra_node_gone = self.num_replicas - 1
@@ -1445,12 +1462,8 @@ class Murphy(BaseTestCase, OPD):
                         num_replicas=self.num_replicas,
                         std=std)
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1542,12 +1555,8 @@ class Murphy(BaseTestCase, OPD):
                     num_replicas=self.num_replicas,
                     std=std)
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1580,12 +1589,8 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
 
-                # Take an incremental backup
-                if self.backup_nodes > 0:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ####################################################################
                 '''
@@ -1614,6 +1619,9 @@ class Murphy(BaseTestCase, OPD):
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.end_step_checks()
+
+                # Record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_timestamp"])
 
             #######################################################################
                 self.loop += 1
@@ -2195,31 +2203,53 @@ class Murphy(BaseTestCase, OPD):
 
             # Take an incremental backup, merge and restore from backup
             if self.backup_nodes > 0:
-                output, error = self.drBackup.backup(
-                    self.backup_archive, self.backup_repo,
-                    cluster_host=self.backup_cluster_host)
-                self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                if self.cont_bkp_test is None:
+                    output, error = self.drBackup.backup(
+                        self.backup_archive, self.backup_repo,
+                        cluster_host=self.backup_cluster_host)
+                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
 
-                output, error = self.drBackup.merge_all_backups(self.backup_archive, self.backup_repo)
-                self.log.info(f"Merge Output: {output}\n\n Merge Error: {error}")
+                    output, error = self.drBackup.merge_all_backups(self.backup_archive, self.backup_repo)
+                    self.log.info(f"Merge Output: {output}\n\n Merge Error: {error}")
 
-                items = self.bucket_util.get_buckets_item_count(
-                    self.cluster,
-                    self.cluster.buckets[0].name)
-                self.bucket_util.flush_all_buckets(self.cluster)
+                    items = self.bucket_util.get_buckets_item_count(
+                        self.cluster,
+                        self.cluster.buckets[0].name)
+                    self.bucket_util.flush_all_buckets(self.cluster)
 
-                output, error = self.drBackup.restore(
-                    self.backup_archive, self.backup_repo,
-                    cluster_host=self.backup_cluster_host,
-                    threads=60)
+                    output, error = self.drBackup.restore(
+                        self.backup_archive, self.backup_repo,
+                        cluster_host=self.backup_cluster_host,
+                        threads=60)
 
-                self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
+                    self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
 
-                result = self.drBackup.monitor_restore(
-                    self.bucket_util, self.cluster,
-                    self.cluster.buckets[0].name, items,
-                    timeout=self.restore_timeout)
-                self.assertTrue(result, "Restore failed")
+                    result = self.drBackup.monitor_restore(
+                        self.bucket_util, self.cluster,
+                        self.cluster.buckets[0].name, items,
+                        timeout=self.restore_timeout)
+                    self.assertTrue(result, "Restore failed")
+                else:
+                    self.toggle_continuous_backup(self.cluster.buckets[0], enable=False)
+                    self.bucket_util.flush_all_buckets(self.cluster)
+                    self.sleep(30, "Waiting for a while after flushing buckets")
+                    for timestamp, items in sorted(self.continuous_backup_timestamps, key=lambda x: x[0]):
+                        self.log.info("Restoring backup with timestamp: {}".format(timestamp))
+                        output, error = self.drContBackup.trigger_restore(cluster=self.cluster,
+                                                                          archive=self.backup_archive,
+                                                                          repo=self.backup_repo,
+                                                                          cont_backup_location=self.continuous_backup_location,
+                                                                          staging_dir="/data/tmp",
+                                                                          timestamp=timestamp,
+                                                                          threads=60)
+                        self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
+                        result = self.drContBackup.monitor_restore(self.bucket_util,
+                                                                   cluster=self.cluster,
+                                                                   bucket=self.cluster.buckets[0],
+                                                                   items=items,
+                                                                   timeout=self.restore_timeout)
+                        self.assertTrue(result, "Restore failed for backup with timestamp: {}".format(timestamp))
+                    self.toggle_continuous_backup(self.cluster.buckets[0], enable=True)
 
             loop_index += 1
             mutation_num += 1

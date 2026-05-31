@@ -29,6 +29,7 @@ from TestInput import TestInputServer
 from gsiLib.gsiHelper import GsiHelper
 from collections import defaultdict
 from memcached.helper.data_helper import MemcachedClientHelper
+from aGoodDoctor.cont_bkrs import DoctorContBKRS
 
 
 class OPD:
@@ -61,6 +62,7 @@ class OPD:
         buckets = ["GleamBookUsers"]*self.num_buckets
         bucket_type = self.bucket_type.split(';')*self.num_buckets
         compression_mode = self.compression_mode.split(';')*self.num_buckets
+        cont_bkp_test = self.input.param("cont_bkp_test", None)
         self.bucket_eviction_policy = self.bucket_eviction_policy
 
         for i in range(self.num_buckets):
@@ -84,6 +86,11 @@ class OPD:
                  Bucket.weight: self.bucket_weight,
                  Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
                  Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
+
+            if cont_bkp_test == "NFS":
+                bucket.continuousBackupEnabled = True
+                bucket.continuousBackupLocation = "/mnt/nfs_data/continuous_backup"
+                bucket.continuousBackupInterval = self.input.param("continuous_backup_interval", 5)
 
             bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
             if bucket.loadDefn.get("name"):
@@ -1033,3 +1040,57 @@ class OPD:
                 self.sleep(30, "Wait for index mutations pending")
             else:
                 break
+
+    def toggle_continuous_backup(self, bucket, enable):
+        """
+        Toggle continuous backup on or off for a bucket.
+
+        Args:
+            bucket: Bucket object to toggle continuous backup for
+            enable: Boolean - True to enable, False to disable
+
+        Returns:
+            Boolean indicating success/failure
+        """
+        rest = BucketHelper(self.cluster.master)
+        self.log.info("%s continuous backup for bucket: %s"
+                      % ("Enabling" if enable else "Disabling", bucket.name))
+        status = rest.change_bucket_props(bucket, continuous_backup_enabled=enable)
+
+        if status:
+            bucket.continuousBackupEnabled = enable
+            self.log.info("Continuous backup %s for bucket: %s"
+                          % ("enabled" if enable else "disabled", bucket.name))
+        else:
+            self.log.error("Failed to %s continuous backup for bucket: %s"
+                           % ("enable" if enable else "disable", bucket.name))
+        return status
+
+    def record_timestamp_for_continuous_backup(self, cluster, bucket_util, continuous_backup_timestamps):
+        # Get timestamp of backup for continuous backup test
+        shell = RemoteMachineShellConnection(cluster.backup_nodes[0])
+        output, _ = shell.execute_command("date -u +'%Y-%m-%dT%H:%M:%SZ'")
+        cont_bkp_timestamp = output[0].strip() if output else None
+        self.log.info("Continuous backup timestamp: {}".format(cont_bkp_timestamp))
+        shell.disconnect()
+
+        items = bucket_util.get_buckets_item_count(
+            cluster,
+            cluster.buckets[0].name)
+
+        continuous_backup_timestamps.append([cont_bkp_timestamp, items])
+
+    def traditional_backup_and_record_timestamp_for_continuous_backup(self, order=["record_timestamp", "traditional_backup"]):
+        if self.backup_nodes == 0:
+            return
+        for step in order:
+            if step == "traditional_backup":
+                output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
+                                                    cluster_host=self.backup_cluster_host)
+                self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+            elif step == "record_timestamp" and self.cont_bkp_test == "NFS":
+                self.sleep(60 * self.continuous_backup_interval * 2, "Sleep for a while before recording timestamp for continuous backup")
+                self.record_timestamp_for_continuous_backup(self.cluster,
+                                                            self.bucket_util,
+                                                            self.continuous_backup_timestamps)
+                self.sleep(60, "Sleep for a while after recording timestamp")

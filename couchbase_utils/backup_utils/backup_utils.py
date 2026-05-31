@@ -2,6 +2,7 @@ import time
 import traceback
 
 from BucketLib.bucket import Bucket
+from TestInput import TestInputSingleton
 from cb_server_rest_util.backup.backup_api import BackupRestApi
 from global_vars import logger
 from couchbase_utils.cb_tools.cbbackupmgr import CbBackupMgr
@@ -176,6 +177,81 @@ class ContinuousBackupUtil(object):
             replica=replica,
             storage=storage)
 
+    def monitor_restore(self, bucket_util, cluster, bucket, items, timeout=43200, tolerance=0.10):
+        end_time = time.time() + timeout
+        lower_bound = items * (1 - tolerance)
+        upper_bound = items * (1 + tolerance)
+        while time.time() < end_time:
+            curr_items = bucket_util.get_buckets_item_count(
+                cluster, bucket.name)
+            self.log.info("Current/Expected items during restore: %s == %s (tolerance: +/-%.0f%%)" % (curr_items, items, tolerance * 100))
+            self.log.info("Wait for items restoration")
+            time.sleep(5)
+            if lower_bound <= curr_items <= upper_bound:
+                return True
+        self.log.info("cbcontbk restore did not finish in %s seconds: Actual:%s, Expected:%s (tolerance: +/-%.0f%%)" % (timeout, curr_items, items, tolerance * 100))
+        return False
+
+    def trigger_restore(self, cluster, archive='/data/backups', repo='magma',
+                        cont_backup_location='/mnt/nfs_data/continuous_backup',
+                        staging_dir='/data/tmp', timestamp=None,
+                        threads=8):
+
+        self.log.info('Restore backup using cbcontbk')
+        return self.cont_bk_mgr.restore(archive_path=archive,
+                                        repo_name=repo,
+                                        location=cont_backup_location,
+                                        temp_dir=staging_dir,
+                                        timestamp=timestamp,
+                                        threads=threads,
+                                        cluster_host=f"http://{cluster.master.ip}:8091")
+
+    def collect_continuous_backup_logs_on_failure(self, backup_location='/data/continuous_backups'):
+        """
+        Collects cbcontbk logs on test failure.
+        Only runs on Linux nodes. Logs are collected to /data/tmp on the remote
+        node and then copied to the local log path.
+        """
+        log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+        remote_tmp_dir = "/data/tmp"
+
+        try:
+            os_info = self.shell_conn.extract_remote_info()
+            if os_info.type.lower() != "linux":
+                self.log.info(f"Skipping cbcontbk log collection: OS is not Linux")
+                return
+
+            self.log.info(f"Collecting cbcontbk logs for investigation")
+            self.shell_conn.execute_command(f"mkdir -p {remote_tmp_dir}")
+            self.cont_bk_mgr.collect_logs(location=backup_location,
+                                          temp_dir=remote_tmp_dir)
+
+            output, _ = self.shell_conn.execute_command(f"ls {remote_tmp_dir}/*.zip 2>/dev/null")
+            for log_file in output:
+                log_file = log_file.strip()
+                if log_file:
+                    self.log.info(f"Copying {log_file} to {log_path}")
+                    self.shell_conn.get_file(remote_tmp_dir, log_file.split("/")[-1], log_path)
+        except Exception as e:
+            self.log.error(f"Exception during cbcontbk log collection: {e}")
+
+    def cleanup_continuous_backup(self, backup_location='/data/continuous_backups'):
+        """
+        Cleans up continuous backup files from the backup location.
+        Only runs on Linux nodes. Uses rm -rf to clean up the backup location.
+        """
+        try:
+            os_info = self.shell_conn.extract_remote_info()
+            if os_info.type.lower() != "linux":
+                self.log.info(f"Skipping continuous backup cleanup: OS is not Linux")
+                return
+
+            self.log.info(f"Cleaning up continuous backup files at {backup_location}")
+            cleanup_cmd = f"rm -rf {backup_location}/*"
+            self.log.info(f"Executing cleanup command: {cleanup_cmd}")
+            self.shell_conn.execute_command(cleanup_cmd)
+        except Exception as e:
+            self.log.error(f"Exception during continuous backup cleanup: {e}")
 
 class BackupMgrUtil(CbBackupMgr):
     def __init__(self, cb_node):
