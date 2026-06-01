@@ -41,6 +41,9 @@ class UpgradeTests(UpgradeBase):
         self.verification_dict["ops_create"] = self.num_items
         self.verification_dict["ops_delete"] = 0
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+        # Initialize PITR timestamp dict for continuous backup tests
+        # Structure: {timestamp: {bucket_name: item_count, ...}, ...}
+        self.pitr_timestamps = dict()
 
     def tearDown(self):
         if self.range_scan_collections > 0:
@@ -569,9 +572,18 @@ class UpgradeTests(UpgradeBase):
 
         self.sleep(120)
         ### Rebalance/failover tasks after the whole cluster is upgraded ###
+        ### Also capture timestamps and item counts if continuous backup is enabled ###
         if self.rebalance_op != "None":
             self.PrintStep("Starting rebalance/failover tasks post upgrade...")
+            if self.cont_bkp_test == "NFS":
+                self._enable_continuous_backup_and_capture_initial_state()
+
+            # Run tasks_post_upgrade (will capture timestamps/item counts if NFS enabled)
             self.tasks_post_upgrade()
+
+        ### Continuous backup verification: disable, flush, and restore ###
+        if self.cont_bkp_test == "NFS" and len(self.pitr_timestamps) > 0:
+            self._verify_continuous_backup_restore()
 
         # Perform final collection/doc_count validation
         self.validate_test_failure()
@@ -1483,6 +1495,100 @@ class UpgradeTests(UpgradeBase):
             self.log.info(
                 "History start sequence numbers verified for all 1024 vbuckets")
 
+    def _enable_continuous_backup_and_capture_initial_state(self):
+        """
+        Enable continuous backup on all Magma buckets, create backup repository,
+        perform initial backup, and capture initial timestamp/item counts.
+        """
+        self.PrintStep("Enabling continuous backup on all buckets post upgrade")
+        for bucket in self.cluster.buckets:
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, bucket,
+                    history_retention_seconds=max(2 * self.continuous_backup_interval * 60, 900),
+                    history_retention_bytes=0,
+                    continuous_backup_interval=self.continuous_backup_interval,
+                    continuous_backup_location=self.continuous_backup_location,
+                    continuous_backup_enabled=True)
+                self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   f"Waiting for {self.continuous_backup_interval} minutes after enabling continuous backup")
+
+        # Create backup repository and perform initial backup
+        self.log.info("Creating backup repository")
+        self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
+        self.log.info("Performing initial backup using CbBackupMgr")
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+
+        self.sleep(self.continuous_backup_interval * 60,
+                   f"Waiting for {self.continuous_backup_interval} minutes after initial backup")
+
+        # Capture initial timestamp and item count
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        item_counts = {}
+        for bucket in self.cluster.buckets:
+            curr_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
+            item_counts[bucket.name] = curr_items
+            self.log.info("Initial item count for bucket %s: %s" % (bucket.name, curr_items))
+        timestamp = self.cont_bk_mgr.get_cluster_timestamp()
+        self.pitr_timestamps[timestamp] = item_counts
+        self.log.info("Initial timestamp captured: %s" % timestamp)
+
+    def _verify_continuous_backup_restore(self):
+        """
+        Disable continuous backup, flush buckets, and restore from all captured
+        timestamps sequentially, verifying item counts at each restore point.
+        """
+        self.PrintStep("Continuous backup verification: disable, flush, and restore")
+
+        # Disable continuous backup on all buckets
+        self.log.info("Disabling continuous backup on all buckets")
+        for bucket in self.cluster.buckets:
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
+                self.bucket_util.update_bucket_property(
+                    self.cluster.master, bucket,
+                    continuous_backup_enabled="false")
+                self.log.info("Continuous backup disabled for bucket: %s" % bucket.name)
+
+        # Flush all buckets
+        self.log.info("Flushing all buckets before restore verification")
+        for bucket in self.cluster.buckets:
+            self.bucket_util.flush_bucket(self.cluster, bucket)
+        self.sleep(30, "Waiting after bucket flush")
+
+        # Restore from all timestamps in sequential fashion and verify item counts
+        self.log.info("Restoring from %d timestamps sequentially" % len(self.pitr_timestamps))
+        for i, (timestamp, bucket_item_counts) in enumerate(sorted(self.pitr_timestamps.items())):
+            self.log.info("Restoring from timestamp %d: %s (expected items: %s)"
+                          % (i + 1, timestamp, bucket_item_counts))
+
+            # Restore using cbcontbk for each bucket
+            for bucket in self.cluster.buckets:
+                if bucket.storageBackend == Bucket.StorageBackend.magma:
+                    self.cont_bk_mgr.restore(
+                        self.backup_archive_dir, self.backup_repo_name,
+                        location=self.continuous_backup_location,
+                        temp_dir="/data/tmp",
+                        timestamp=timestamp,
+                        map_data=f"{bucket.name}={bucket.name}")
+
+            # Wait for stats and verify item count
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            for bucket in self.cluster.buckets:
+                actual_items = self.bucket_util.get_buckets_item_count(
+                    self.cluster, bucket.name)
+                expected_count = bucket_item_counts.get(bucket.name)
+                self.log.info("Bucket %s: Expected items=%s, Actual items=%s"
+                              % (bucket.name, expected_count, actual_items))
+                if expected_count is not None and actual_items != expected_count:
+                    self.log_failure("Item count mismatch for bucket %s at timestamp %s. "
+                                     "Expected: %s, Actual: %s"
+                                     % (bucket.name, timestamp, expected_count, actual_items))
+
+        self.log.info("Continuous backup restore verification completed")
+
     def tasks_post_upgrade(self, data_load=True):
         rebalance_tasks = []
 
@@ -1713,6 +1819,24 @@ class UpgradeTests(UpgradeBase):
 
             if rebalance_data_load is not None:
                 self.task_manager.get_task_result(rebalance_data_load)
+
+            # Capture timestamp and item count after each rebalance task if continuous backup enabled
+            if self.cont_bkp_test == "NFS":
+                self.sleep(self.continuous_backup_interval * 60,
+                           f"Waiting for {self.continuous_backup_interval} minutes for continuous backup")
+                self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+
+                item_counts = {}
+                for bucket in self.cluster.buckets:
+                    curr_items = self.bucket_util.get_buckets_item_count(
+                        self.cluster, bucket.name)
+                    item_counts[bucket.name] = curr_items
+                    self.log.info("Item count for bucket %s after %s: %s"
+                                  % (bucket.name, reb_task, curr_items))
+
+                timestamp = self.cont_bk_mgr.get_cluster_timestamp()
+                self.pitr_timestamps[timestamp] = item_counts
+                self.log.info("Timestamp captured after %s: %s" % (reb_task, timestamp))
 
     def create_new_bucket_post_upgrade_and_load_data(self):
 

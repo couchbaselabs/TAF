@@ -1,13 +1,19 @@
 import threading
 import json
+import uuid
 
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
 import Jython_tasks.task as jython_tasks
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_tools.cbbackupmgr import CbBackupMgr
+from cb_tools.cbcontbk import CbContBk
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
+from lib.testconstants import PITR_NFS_SERVER
+from platform_utils.ssh_util.install_util.test_input import TestInputServer
 from pytests.ns_server.enforce_tls import EnforceTls
 from BucketLib.bucket import Collection, Scope
 from BucketLib.BucketOperations import BucketHelper
@@ -347,10 +353,136 @@ class UpgradeBase(BaseTestCase):
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem,
                  CbServer.Settings.INDEX_MEM_QUOTA: self.index_quota_mem})
 
+        # NFS setup for continuous backup tests
+        if self.cont_bkp_test == "NFS":
+            self.setup_nfs_for_continuous_backup()
+
         self.retry_rebalance_util = RetryRebalanceUtil()
 
+    def setup_nfs_for_continuous_backup(self):
+        """
+        NFS setup requirements:
+        - Server: /data directory exported with appropriate permissions
+        - Client: Mount NFS export at /mnt/nfs_data
+        - Validation: Ensure server export and client mount are working
+        - Cleanup: Unique subdirectory created under mount point and removed after test
+        Scripts to setup NFS Server: https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
+        """
+        self.nfs_server = TestInputServer()
+        self.nfs_server.ip = PITR_NFS_SERVER
+        self.nfs_server.ssh_username = "root"
+        self.nfs_server.ssh_password = "couchbase"
+
+        self.nfs_util = NfsUtil(self.nfs_server)
+
+        self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
+        self.nfs_util.validate_nfs_server()
+
+        for node in self.cluster.servers:
+            self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
+            try:
+                self.nfs_util.validate_nfs_client(node)
+            except Exception as e:
+                self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
+                self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
+                self.nfs_util.validate_nfs_client(node)
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        # Create continuous backup folder on NFS server
+        self.continuous_backup_location = f"/mnt/nfs_data/test_{uuid.uuid4()}"
+        output, error = shell.execute_command(f"mkdir -p {self.continuous_backup_location}")
+        if error:
+            self.fail("Error creating continuous backup folder: %s" % error)
+        else:
+            self.log.info("Created continuous backup folder: %s" % self.continuous_backup_location)
+            # Set permissions for couchbase user
+            output, error = shell.execute_command(f"chmod 777 {self.continuous_backup_location}")
+            if error:
+                self.fail("Error setting permissions on continuous backup folder: %s" % error)
+            else:
+                self.log.info("Set permissions on continuous backup folder")
+
+        self.backup_mgr = CbBackupMgr(shell,
+                                      username=self.cluster.master.rest_username,
+                                      password=self.cluster.master.rest_password,
+                                      log=self.log)
+        self.cont_bk_mgr = CbContBk(shell,
+                                    username=self.cluster.master.rest_username,
+                                    password=self.cluster.master.rest_password,
+                                    log=self.log)
+
     def tearDown(self):
+        # Clean up continuous backup folder for NFS tests
+        if self.cont_bkp_test == "NFS":
+            if self.is_test_failed():
+                self.log.warning("Test failed, skipping cleanup of continuous backup folder "
+                                 "to preserve data for investigation: %s"
+                                 % self.continuous_backup_location)
+                if self.get_cbcollect_info:
+                    self._collect_backup_logs_on_failure()
+            else:
+                shell = RemoteMachineShellConnection(self.cluster.master)
+                try:
+                    self.log.info("Removing continuous backup folder: %s"
+                                  % self.continuous_backup_location)
+                    output, error = shell.execute_command(
+                        f"rm -rf {self.continuous_backup_location}")
+                    if error:
+                        self.log.warning("Error removing continuous backup folder: %s" % error)
+                except Exception as e:
+                    self.log.warning("Exception during cleanup: %s" % str(e))
+
+                # Clean up backup folders
+                try:
+                    if hasattr(self, 'backup_repo_name') and self.backup_repo_name:
+                        self.log.info("Removing backup repository")
+                        shell.execute_command(f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}")
+                except Exception as e:
+                    self.log.warning(f"Exception during cleanup: {e}")
+                finally:
+                    shell.disconnect()
+
         super(UpgradeBase, self).tearDown()
+
+    def _collect_backup_logs_on_failure(self):
+        """
+        Collects cbbackupmgr and cbcontbk logs on test failure.
+        Only runs on Linux nodes. Logs are collected to /data/tmp on the remote
+        node and then copied to the local log path.
+        """
+        from TestInput import TestInputSingleton
+        log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+        remote_tmp_dir = "/data/tmp"
+
+        collectors = [
+            ("cbbackupmgr", self.backup_mgr,
+             lambda mgr, tmp: mgr.collect_logs(archive_dir=self.backup_archive_dir,
+                                               output_dir=tmp)),
+            ("cbcontbk", self.cont_bk_mgr,
+             lambda mgr, tmp: mgr.collect_logs(location=self.continuous_backup_location,
+                                               temp_dir=tmp)),
+        ]
+
+        for name, mgr, collect_fn in collectors:
+            try:
+                shell = mgr.shellConn
+                os_info = shell.extract_remote_info()
+                if os_info.type.lower() != "linux":
+                    self.log.info(f"Skipping {name} log collection: OS is not Linux")
+                    continue
+
+                self.log.info(f"Collecting {name} logs for investigation")
+                shell.execute_command(f"mkdir -p {remote_tmp_dir}")
+                collect_fn(mgr, remote_tmp_dir)
+
+                output, _ = shell.execute_command(f"ls {remote_tmp_dir}/*.zip 2>/dev/null")
+                for log_file in output:
+                    log_file = log_file.strip()
+                    if log_file:
+                        self.log.info(f"Copying {log_file} to {log_path}")
+                        shell.get_file(remote_tmp_dir, log_file.split("/")[-1], log_path)
+            except Exception as e:
+                self.log.error(f"Exception during {name} log collection: {e}")
 
     def attempt_10k_collection_creation(self, scopes=5, collections=1000):
         bucket_selected = self.cluster.buckets[0]
