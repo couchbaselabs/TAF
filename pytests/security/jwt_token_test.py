@@ -1,5 +1,6 @@
 
 import json
+import re
 import time
 import uuid
 import urllib.parse
@@ -655,7 +656,7 @@ class JWTTokenTest(OnPremBaseTest):
         )
 
         self.log.info("Updating JWT config with new key")
-        rotated_config = self._perform_key_rotation(config, new_pub_key, sleep_seconds=10)
+        self._perform_key_rotation(config, new_pub_key, sleep_seconds=10)
 
         self.log.info("Testing old token after key rotation")
         ok, status_code, content = self._verify_token_rest(original_token)
@@ -2726,16 +2727,269 @@ class JWTTokenTest(OnPremBaseTest):
         finally:
             self.jwt_utils.delete_external_user(self.rest, mapped_user)
 
+    def test_jwt_audience_handling_all(self):
+        """
+        Validate audienceHandling=all with multiple allowed audiences.
+        """
+        issuer_name = self.input.param("aud_all_issuer_name", "manual-audience-all-issuer")
+        user_name = self.input.param("aud_all_user_name", "aud_all_user@example.com")
+        audiences = self.jwt_utils.safe_literal_list(
+            self.input.param("aud_all_audiences", "['cb-audience-a','cb-audience-b']"),
+            ["cb-audience-a", "cb-audience-b"],
+        )
+        unique_audiences = list(dict.fromkeys(audiences))
+
+        self.jwt_utils.create_external_user(self.rest, user_name=user_name, roles="admin")
+        self.sleep(3, "Waiting for audience-handling external user to propagate")
+
+        config = {
+            "enabled": True,
+            "issuers": [{
+                "name": issuer_name,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "audienceHandling": "all",
+                "audiences": unique_audiences,
+                "jitProvisioning": False,
+            }],
+        }
+
+        def _payload(aud):
+            now = int(time.time())
+            return {
+                "iss": issuer_name,
+                "sub": user_name,
+                "aud": aud,
+                "iat": now,
+                "nbf": now,
+                "exp": now + self.ttl,
+                "jti": str(uuid.uuid4()),
+            }
+
+        try:
+            self._setup_jwt_config(config, create_groups=False)
+
+            # Positive: token with all required audiences — auth + authz both pass
+            token_all = self._create_signed_token_from_payload(_payload(unique_audiences))
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token_all)
+            self.assertTrue(whoami, "Expected /whoami JSON when all audiences are present")
+            self.jwt_utils.assert_external_identity(whoami, user_name)
+            self.jwt_utils.verify_token_authorization(
+                self.rest, token_all, expected_status_code=True
+            )
+
+            # Negative: token missing one required audience — auth fails, authz fails
+            if len(unique_audiences) < 2:
+                self.skipTest(
+                    "audienceHandling=all negative case requires 2+ unique audiences; "
+                    f"only {len(unique_audiences)} configured"
+                )
+            missing_audiences = unique_audiences[:-1]
+            token_missing = self._create_signed_token_from_payload(_payload(missing_audiences))
+            self.jwt_utils.verify_token_authentication(
+                self.rest, token_missing, expected_status_code=False
+            )
+            self.jwt_utils.verify_token_authorization(
+                self.rest, token_missing, expected_status_code=False
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, user_name)
+
+    def test_jwt_role_mapping_rules(self):
+        """
+        Validate rolesClaim with role mapping rules.
+        """
+        issuer_name = self.input.param("rolemap_issuer_name", "manual-rolemap-issuer")
+        mapped_user = self.input.param("rolemap_user_name", "rolemap_user@example.com")
+        unmapped_user = self.input.param(
+            "rolemap_unmapped_user_name", "rolemap_unmapped@example.com"
+        )
+        audience = self.input.param("rolemap_audience", "cb-rolemap-audience")
+        roles_claim = self.input.param("rolemap_roles_claim", "app.roles")
+        token_role = self.input.param("rolemap_token_role", "external-admin")
+        mapped_role = self.input.param("rolemap_mapped_role", "admin")
+
+        config = {
+            "enabled": True,
+            "issuers": [{
+                "name": issuer_name,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "audienceHandling": "any",
+                "audiences": [audience],
+                "jitProvisioning": True,
+                "rolesClaim": roles_claim,
+                "rolesMaps": [f"^{token_role}$ {mapped_role}"],
+            }],
+        }
+
+        def _payload(user_name, roles):
+            now = int(time.time())
+            payload = {
+                "iss": issuer_name,
+                "sub": user_name,
+                "aud": audience,
+                "iat": now,
+                "nbf": now,
+                "exp": now + self.ttl,
+                "jti": str(uuid.uuid4()),
+            }
+            # Build nested claim path from roles_claim (e.g. "app.roles" → {"app": {"roles": roles}})
+            claim_parts = roles_claim.split(".")
+            current = payload
+            for key in claim_parts[:-1]:
+                existing = current.get(key)
+                if existing is not None and not isinstance(existing, dict):
+                    self.fail(
+                        f"rolesClaim path '{roles_claim}' collides with non-object '{key}'"
+                    )
+                current = current.setdefault(key, {})
+            current[claim_parts[-1]] = roles
+            return payload
+
+        try:
+            self.jwt_utils.delete_external_user(self.rest, mapped_user)
+            self.jwt_utils.delete_external_user(self.rest, unmapped_user)
+            self._setup_jwt_config(config, create_groups=False)
+
+            # Mapped role: auth + authz both pass, correct CB role assigned
+            mapped_token = self._create_signed_token_from_payload(
+                _payload(mapped_user, [token_role])
+            )
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, mapped_token)
+            self.assertTrue(whoami, "Expected /whoami JSON for role-mapped token")
+            self.jwt_utils.assert_external_identity(whoami, mapped_user)
+            self.jwt_utils.assert_role_present(whoami, mapped_role)
+            self.jwt_utils.verify_token_authorization(
+                self.rest, mapped_token, expected_status_code=True
+            )
+
+            # Unmapped role: auth succeeds (user JIT-created), authz fails (no CB role)
+            unmapped_token = self._create_signed_token_from_payload(
+                _payload(unmapped_user, ["external-readonly"])
+            )
+            whoami_unmapped = self.jwt_utils.get_user_info_from_whoami(
+                self.rest, unmapped_token
+            )
+            self.assertTrue(whoami_unmapped, "Expected /whoami JSON for unmapped role token")
+            roles = [
+                r.get("role") for r in (whoami_unmapped.get("roles") or [])
+                if isinstance(r, dict)
+            ]
+            self.assertNotIn(mapped_role, roles, f"Unexpected mapped role in {roles}")
+            self.jwt_utils.verify_token_authorization(
+                self.rest, unmapped_token, expected_status_code=False
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, mapped_user)
+            self.jwt_utils.delete_external_user(self.rest, unmapped_user)
+
+    def test_jwt_mapping_stop_on_first_match(self):
+        """
+        Validate stop-on-first-match behavior for ordered group mapping rules.
+        """
+        issuer_name = self.input.param("stop_first_issuer_name", "manual-stop-first-issuer")
+        user_name = self.input.param("stop_first_user_name", "stop_first_user@example.com")
+        audience = self.input.param("stop_first_audience", "cb-stop-first-audience")
+        group_ro = f"jwt_stop_ro_{uuid.uuid4().hex[:8]}"
+        group_admin = f"jwt_stop_admin_{uuid.uuid4().hex[:8]}"
+        groups_stop_field = self.input.param(
+            "groups_stop_on_first_match_field", "groupsMapsStopFirstMatch"
+        )
+
+        self._create_group(group_ro, roles="ro_admin")
+        self._create_group(group_admin, roles="admin")
+
+        config = {
+            "enabled": True,
+            "issuers": [{
+                "name": issuer_name,
+                "signingAlgorithm": self.algorithm,
+                "publicKeySource": "pem",
+                "publicKey": self.pub_key,
+                "subClaim": "sub",
+                "audClaim": "aud",
+                "groupsClaim": "groups",
+                "audienceHandling": "any",
+                "audiences": [audience],
+                "jitProvisioning": True,
+                "groupsMaps": [
+                    f"^ops$ {group_ro}",
+                    f"^ops$ {group_admin}",
+                ],
+                groups_stop_field: True,
+            }],
+        }
+
+        try:
+            self.jwt_utils.delete_external_user(self.rest, user_name)
+            self._setup_jwt_config(config, create_groups=False)
+
+            token = self.jwt_utils.create_token(
+                issuer_name=issuer_name,
+                user_name=user_name,
+                algorithm=self.algorithm,
+                private_key=self.private_key,
+                token_audience=audience,
+                user_groups=["ops"],
+                ttl=self.ttl,
+                nbf_seconds=self.nbf_seconds,
+                normalize_audience=True,
+            )
+            whoami = self.jwt_utils.get_user_info_from_whoami(self.rest, token)
+            self.assertTrue(whoami, "Expected /whoami JSON for stop-first token")
+            self.jwt_utils.assert_external_identity(whoami, user_name)
+
+            roles = [r.get("role") for r in (whoami.get("roles") or []) if isinstance(r, dict)]
+            self.assertIn("ro_admin", roles, f"Expected first mapped role in {roles}")
+            self.assertNotIn(
+                "admin",
+                roles,
+                "Stop-on-first-match should prevent later admin mapping from applying. "
+                f"roles={roles}",
+            )
+
+            # ro_admin CAN read /pools/default
+            self.jwt_utils.verify_token_authorization(
+                self.rest, token, expected_status_code=True
+            )
+
+            # ro_admin cannot access admin-only /settings/jwt
+            self.jwt_utils.verify_token_authorization(
+                self.rest, token,
+                endpoint=jwt_utils.ENDPOINT_SETTINGS_JWT,
+                expected_status_code=False,
+            )
+        finally:
+            self.jwt_utils.delete_external_user(self.rest, user_name)
+            self._delete_group(group_ro)
+            self._delete_group(group_admin)
+
     def test_jwt_custom_claims_validation(self):
         """
         Validate custom claim type and constraint enforcement.
 
-        Covers string pattern, number min/max, boolean const, and mandatory
-        claim rejection.
+        Covers string pattern, number min/max, boolean const, array, object,
+        and mandatory claim rejection.
         """
         issuer_name = self.input.param("custom_claims_issuer_name", "manual-custom-claims-issuer")
         user_name = self.input.param("custom_claims_user_name", "custom_claims_user@example.com")
         audience = self.input.param("custom_claims_audience", "cb-custom-claims-audience")
+        email_value = str(
+            self.input.param("custom_claims_email", user_name)
+        ).strip()
+        email_pattern = r"^[a-z_]+@example\.com$"
+        if not re.fullmatch(email_pattern, email_value):
+            self.fail(
+                f"custom_claims_email must match {email_pattern}, got: {email_value!r}. "
+                "Use a value like custom_claims_user@example.com"
+            )
 
         self.jwt_utils.create_external_user(self.rest, user_name=user_name, roles="admin")
         self.sleep(3, "Waiting for custom-claims external user to propagate")
@@ -2772,6 +3026,16 @@ class JWTTokenTest(OnPremBaseTest):
                         "const": True,
                         "mandatory": True,
                     },
+                    {
+                        "name": "project_tags",
+                        "type": "array",
+                        "mandatory": True,
+                    },
+                    {
+                        "name": "profile",
+                        "type": "object",
+                        "mandatory": True,
+                    },
                 ],
             }],
         }
@@ -2786,9 +3050,11 @@ class JWTTokenTest(OnPremBaseTest):
                 "nbf": now,
                 "exp": now + self.ttl,
                 "jti": str(uuid.uuid4()),
-                "email": user_name,
+                "email": email_value,
                 "access_level": 3,
                 "is_admin": True,
+                "project_tags": ["security", "jwt"],
+                "profile": {"team": "security", "active": True},
             }
             for key, value in overrides.items():
                 if value is None:
@@ -2816,7 +3082,12 @@ class JWTTokenTest(OnPremBaseTest):
                 "missing_mandatory_email": _payload(email=None),
                 "string_pattern_mismatch": _payload(email="bad@evil.com"),
                 "number_above_max": _payload(access_level=9),
+                "number_below_min": _payload(access_level=0),
                 "boolean_const_false": _payload(is_admin=False),
+                "array_wrong_type": _payload(project_tags="security"),
+                "object_wrong_type": _payload(profile="security"),
+                "missing_mandatory_array": _payload(project_tags=None),
+                "missing_mandatory_object": _payload(profile=None),
             }
             for name, payload in invalid_cases.items():
                 self.log.info(f"Testing custom claim rejection: {name}")

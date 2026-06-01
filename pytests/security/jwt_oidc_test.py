@@ -509,6 +509,11 @@ class JWTOIDCTest(JWTOIDCBase):
             enabled_before, enabled_after,
             f"Config 'enabled' state should be unchanged. Before: {enabled_before}, After: {enabled_after}"
         )
+        self.assertEqual(
+            config_before.get("issuers"),
+            config_after.get("issuers"),
+            "Issuers should be unchanged after all failed PUT attempts"
+        )
 
         self.log.info("Invalid configs properly rejected with 400, no partial persistence")
 
@@ -1626,8 +1631,15 @@ class JWTOIDCTest(JWTOIDCBase):
         )
         self.assertIsNotNone(admin_token, "Failed to get admin token from Keycloak")
 
-        query_use_https = self.input.param("query_use_https", False)
-        query_port = self.input.param("query_port", 18093 if query_use_https else 8093)
+        query_use_https = self.input.param("query_use_https", None)
+        if query_use_https is None:
+            query_use_https = self.cluster_use_https
+        query_port = int(
+            self.input.param(
+                "query_port",
+                18093 if query_use_https else 8093,
+            )
+        )
         query_scheme = "https" if query_use_https else "http"
         query_node = None
         services_init = self.input.param("services_init", "")
@@ -1654,7 +1666,36 @@ class JWTOIDCTest(JWTOIDCBase):
             )
 
         query_host = getattr(query_node, "ip", None) or getattr(query_node, "hostname", None)
+
+        # Probe actual open port — fall back to HTTP 8093 in mixed setups
+        import socket
+
+        def _port_open(host, port):
+            try:
+                port = int(port)
+                with socket.create_connection((host, port), timeout=5):
+                    return True
+            except (OSError, TypeError, ValueError):
+                return False
+
+        if not _port_open(query_host, query_port):
+            if query_use_https and _port_open(query_host, 8093):
+                self.log.warning(
+                    f"HTTPS N1QL port {query_port} closed on {query_host}; "
+                    "falling back to HTTP port 8093"
+                )
+                query_use_https = False
+                query_port = 8093
+                query_scheme = "http"
+            else:
+                self.fail(
+                    f"N1QL port {query_port} not open on {query_host}. "
+                    f"Ensure the cluster was set up with services_init={services_init} "
+                    "(do not use skip_cluster_reset=True for this test)."
+                )
+
         query_url = f"{query_scheme}://{query_host}:{query_port}/query/service"
+
         bearer_headers = {
             "Authorization": f"Bearer {admin_token}",
             "Content-Type": "application/x-www-form-urlencoded",
@@ -1699,13 +1740,14 @@ class JWTOIDCTest(JWTOIDCBase):
         )
         try:
             result_body = resp_admin.json()
-            self.assertEqual(
-                result_body.get("status"),
-                "success",
-                f"N1QL query should succeed. response={result_body}",
-            )
-        except Exception:
-            pass
+        except ValueError:
+            result_body = {}
+            self.log.warning(f"Could not parse N1QL response as JSON: {resp_admin.text[:200]}")
+        self.assertEqual(
+            result_body.get("status"),
+            "success",
+            f"N1QL query should succeed. response={result_body}",
+        )
 
         self.log.info("Admin Bearer token accepted by N1QL service")
 
