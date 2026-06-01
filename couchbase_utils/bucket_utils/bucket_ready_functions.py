@@ -6276,6 +6276,8 @@ class BucketUtils(ScopeUtils):
                            % (len(active_scopes), scope_data["count"]))
 
         for scope in BucketUtils.get_active_scopes(bucket):
+            if scope.name == CbServer.system_scope:
+                continue
             active_collections = \
                 CollectionUtils.get_active_collections(bucket, scope.name)
             # Validate collection count under current scope

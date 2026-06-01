@@ -6,9 +6,12 @@ Created on 15-Apr-2021
 import os
 import random
 import threading
+from copy import deepcopy
 
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from collections_helper.collections_spec_constants import MetaCrudParams
 from aGoodDoctor.bkrs import DoctorBKRS
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
@@ -90,6 +93,9 @@ class Murphy(BaseTestCase, OPD):
         # CDC Params
         self.bucket_history_retention_bytes = int(self.input.param("bucket_history_retention_bytes", 0))
         self.bucket_history_retention_seconds = int(self.input.param("bucket_history_retention_seconds", 0))
+
+        # Flag to avoid running initial_setup more than once
+        self.initial_setup_done = False
 
         self.ql = list()
         self.ftsQL = list()
@@ -444,6 +450,12 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(result, "Restore failed")
 
     def initial_setup(self):
+        if self.initial_setup_done:
+            return
+
+        # Set this flag, so this cannot be run if called again within the test
+        self.initial_setup_done = True
+
         cpu_monitor = threading.Thread(target=self.print_stats_loop,
                                        kwargs={"cluster": self.cluster})
         cpu_monitor.start()
@@ -486,7 +498,10 @@ class Murphy(BaseTestCase, OPD):
             for scope_name, scope_obj in bucket.scopes.items():
                 if scope_name == CbServer.system_scope:
                     continue
-                for coll_obj in scope_obj.collections.values():
+                for coll_name, coll_obj in scope_obj.collections.items():
+                    if coll_name == "_default" and scope_name == "_default":
+                        # Skipping _default since this was never loaded
+                        continue
                     coll_obj.num_items = per_coll_items
                     coll_obj.doc_index = (0, per_coll_items)
         self.print_stats(self.cluster)
@@ -550,6 +565,7 @@ class Murphy(BaseTestCase, OPD):
         if self.rollback:
             self.trigger_rollback()
 
+        normal_mutation = self.input.param("normal_mutation", True)
         if self.val_type == "siftBigANN":
             self.mutations = True
             self.mutation_th = threading.Thread(target=self.sift_mutations)
@@ -560,7 +576,7 @@ class Murphy(BaseTestCase, OPD):
             self.restart_query_load(self.cluster, 0)
             self.sleep(self.input.param("mutations_only_workload_sleep", 300))
             self.end_step_checks(" queries with mutations")
-        else:
+        elif normal_mutation:
             self.mutations = True
             self.mutation_th = threading.Thread(target=self.normal_mutations)
             self.mutation_th.start()
@@ -1828,3 +1844,145 @@ class Murphy(BaseTestCase, OPD):
         self.assertFalse(
             result,
             "CRASH | CRITICAL | WARN messages found in cb_logs")
+
+    def test_30TB_10K_collections_cont_backup(self):
+        self.initial_setup()
+        self.target_disk_util = self.input.param("target_disk_usage", "50G")
+        _val = int(self.target_disk_util[:-1])
+        _suffix = self.target_disk_util[-1].upper()
+        target_disk_util_bytes = _val * (1024 ** 4 if _suffix == "T" else 1024 ** 3)
+        bucket = self.cluster.buckets[0]
+
+        SiriusCouchbaseLoader.create_clients_in_pool(
+            self.cluster.master, self.cluster.master.rest_username,
+            self.cluster.master.rest_password,
+            bucket.name, req_clients=10)
+
+        self.log.info("Creating 10K collections + required data load")
+        actual_col_count = sum(
+            len(self.bucket_util.get_active_collections(
+                bucket, s, only_names=True))
+            for s in self.bucket_util.get_active_scopes(
+                bucket, only_names=True))
+
+        loader_spec_template = \
+            self.bucket_util.get_crud_template_from_package("initial_load")
+        loader_spec_template["doc_crud"][
+            MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] \
+            = self.num_items
+        loader_spec_template["doc_crud"][
+            MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        max_collections = CbServer.max_collections + 2
+        cols_to_create = min((max_collections - actual_col_count), 500)
+
+        self.PrintStep("10K collections creation + data_load")
+        while cols_to_create > 0:
+            self.log.info(f"Current collections in "
+                          f"bucket::{bucket.name} = {actual_col_count}")
+            # Collection creation + Doc loading
+            loader_spec = deepcopy(loader_spec_template)
+            loader_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] \
+                = cols_to_create
+            doc_loading_task = \
+                self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    loader_spec,
+                    mutation_num=0,
+                    batch_size=500,
+                    process_concurrency=2,
+                    load_using="sirius_java_sdk",
+                    ops_rate=10000,
+                    use_bulk_APIs=True)
+            if doc_loading_task.result is False:
+                self.fail("Initial doc_loading failed")
+
+            # Collections + num_item validation
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets, timeout=1200)
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.bucket_util.validate_docs_per_collections_all_buckets(
+                self.cluster, timeout=120)
+
+            # Used for next iteration
+            actual_col_count = sum(
+                len(self.bucket_util.get_active_collections(
+                    bucket, s, only_names=True))
+                for s in self.bucket_util.get_active_scopes(
+                    bucket, only_names=True))
+            cols_to_create = min((max_collections - actual_col_count), 500)
+
+        self.PrintStep(f"Load data until the disk_utilization is {self.target_disk_util}")
+        bucket_api = BucketRestApi(self.cluster.master)
+        bucket_stats = bucket_api.get_bucket_stats(bucket.name)
+        _samples = bucket_stats["couch_docs_disk_size"][-20:]
+        current_disk = sum(_samples) // len(_samples)
+
+        mutation_num = 0
+        while current_disk < target_disk_util_bytes:
+            mutation_num += 1
+            self.log.info(f"Loading docs with mutation_num: {mutation_num}")
+            loader_spec = deepcopy(loader_spec_template)
+            loader_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 100
+            loader_spec["doc_crud"][
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] \
+                = 20
+            loader_spec["doc_crud"][
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
+                = 5
+            doc_loading_task = \
+                self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    loader_spec,
+                    mutation_num=mutation_num,
+                    batch_size=500,
+                    process_concurrency=2,
+                    load_using="sirius_java_sdk")
+            if doc_loading_task.result is False:
+                self.fail("Doc_loading failed")
+
+            # Fetch values for next itr comparision
+            bucket_stats = bucket_api.get_bucket_stats(bucket.name)
+            _samples = bucket_stats["couch_docs_disk_size"][-20:]
+            current_disk = sum(_samples) // len(_samples)
+
+        # Driver for loop in this function
+        iterations = self.iterations
+        loop_index = 0
+
+        # Perform cluster rebalances / Failovers
+        # Always set this to 1 so the ClusterOpsVolume won't run more than once
+        self.iterations = 1
+
+        while loop_index < iterations:
+            self.PrintStep(f"ClusterOpsVolume :: {loop_index+1}")
+            loader_spec = deepcopy(loader_spec_template)
+            loader_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 200
+            loader_spec["doc_crud"][
+                MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] \
+                = 1
+            loader_spec["doc_crud"][
+                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
+                = 20
+            doc_loading_task = \
+                self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    loader_spec,
+                    mutation_num=mutation_num,
+                    batch_size=500,
+                    process_concurrency=2,
+                    load_using="sirius_java_sdk",
+                    async_load=True)
+
+            self.ClusterOpsVolume()
+
+            # Wait for doc_loading tasks to complete
+            self.task.jython_task_manager.get_task_result(doc_loading_task)
+
+            loop_index += 1
+            mutation_num += 1
