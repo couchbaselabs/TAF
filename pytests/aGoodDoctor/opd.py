@@ -253,33 +253,45 @@ class OPD:
                 self.servs_out.extend(servers)
 
         if nodes_in:
+            candidates = [s for s in self.available_servers
+                          if s.ip != self.cluster.master.ip]
             if "cbas" in services:
-                servers = random.sample(self.available_servers, nodes_in)
+                servers = random.sample(candidates, nodes_in)
                 self.servs_in.extend(servers)
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]
+                candidates = [s for s in self.available_servers
+                              if s.ip != self.cluster.master.ip]
             if "index" in services:
-                servers = random.sample(self.available_servers, nodes_in)
+                servers = random.sample(candidates, nodes_in)
                 self.servs_in.extend(servers)
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]
+                candidates = [s for s in self.available_servers
+                              if s.ip != self.cluster.master.ip]
             if "fts" in services:
-                servers = random.sample(self.available_servers, nodes_in)
+                servers = random.sample(candidates, nodes_in)
                 self.servs_in.extend(servers)
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]
+                candidates = [s for s in self.available_servers
+                              if s.ip != self.cluster.master.ip]
             if "query" in services:
-                servers = random.sample(self.available_servers, nodes_in)
+                servers = random.sample(candidates, nodes_in)
                 self.servs_in.extend(servers)
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]
+                candidates = [s for s in self.available_servers
+                              if s.ip != self.cluster.master.ip]
             if "eventing" in services:
-                servers = random.sample(self.available_servers, nodes_in)
+                servers = random.sample(candidates, nodes_in)
                 self.servs_in.extend(servers)
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]
+                candidates = [s for s in self.available_servers
+                              if s.ip != self.cluster.master.ip]
             if "kv" in services:
-                servers = random.sample(self.available_servers, nodes_in)
+                servers = random.sample(candidates, nodes_in)
                 self.servs_in.extend(servers)
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]

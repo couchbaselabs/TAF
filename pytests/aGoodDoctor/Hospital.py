@@ -10,6 +10,7 @@ from copy import deepcopy
 
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from bucket_collections.collections_base import CollectionBase
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
@@ -128,8 +129,7 @@ class Murphy(BaseTestCase, OPD):
         else:
             self.load_defn.append(default)
 
-        # Continuous backup valid params - ["None", "single_node", "NFS"]
-        self.cont_bkp_test = self.input.param("cont_bkp_test", None)
+        # Continuous backup valid params - [None, "single_node", "NFS"]
         if self.cont_bkp_test == "NFS":
             """
             NFS setup requirements:
@@ -1955,6 +1955,10 @@ class Murphy(BaseTestCase, OPD):
             self.drBackup.configure_backup(self.backup_archive, self.backup_repo, [], [])
             self.drBackup.trigger_backup(self.backup_archive, self.backup_repo)
 
+        self.target_disk_util = self.input.param("target_disk_usage", "50G")
+        max_collections = self.input.param("max_collections",
+                                           CbServer.max_collections)
+
         _val = int(self.target_disk_util[:-1])
         _suffix = self.target_disk_util[-1].upper()
         target_disk_util_bytes = _val * (1024 ** 4 if _suffix == "T" else 1024 ** 3)
@@ -1965,7 +1969,7 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.master.rest_password,
             bucket.name, req_clients=10)
 
-        self.log.info("Creating 10K collections + required data load")
+        self.log.info(f"Creating {max_collections} collections + required data load")
         actual_col_count = sum(
             len(self.bucket_util.get_active_collections(
                 bucket, s, only_names=True))
@@ -1979,7 +1983,7 @@ class Murphy(BaseTestCase, OPD):
             = self.num_items
         loader_spec_template["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
-        max_collections = CbServer.max_collections + 2
+        max_collections += 2
         cols_to_create = min((max_collections - actual_col_count), 500)
 
         self.PrintStep("10K collections creation + data_load")
@@ -1990,6 +1994,9 @@ class Murphy(BaseTestCase, OPD):
             loader_spec = deepcopy(loader_spec_template)
             loader_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] \
                 = cols_to_create
+
+            CollectionBase.over_ride_doc_loading_template_params(
+                self, loader_spec)
             doc_loading_task = \
                 self.bucket_util.run_scenario_from_spec(
                     self.task,
@@ -2000,7 +2007,6 @@ class Murphy(BaseTestCase, OPD):
                     batch_size=500,
                     process_concurrency=2,
                     load_using="sirius_java_sdk",
-                    ops_rate=10000,
                     use_bulk_APIs=True)
             if doc_loading_task.result is False:
                 self.fail("Initial doc_loading failed")
@@ -2022,9 +2028,11 @@ class Murphy(BaseTestCase, OPD):
 
         self.PrintStep(f"Load data until the disk_utilization is {self.target_disk_util}")
         bucket_api = BucketRestApi(self.cluster.master)
-        bucket_stats = bucket_api.get_bucket_stats(bucket.name)
-        _samples = bucket_stats["couch_docs_disk_size"][-20:]
-        current_disk = sum(_samples) // len(_samples)
+        status, stats = bucket_api.get_bucket_stats(bucket.name)
+        current_disk = 0
+        if status:
+            _samples = stats["op"]["samples"]["couch_docs_disk_size"][-20:]
+            current_disk = sum(_samples) // len(_samples)
 
         mutation_num = 0
         while current_disk < target_disk_util_bytes:
@@ -2038,6 +2046,9 @@ class Murphy(BaseTestCase, OPD):
             loader_spec["doc_crud"][
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
                 = 5
+
+            CollectionBase.over_ride_doc_loading_template_params(
+                self, loader_spec)
             doc_loading_task = \
                 self.bucket_util.run_scenario_from_spec(
                     self.task,
@@ -2046,15 +2057,17 @@ class Murphy(BaseTestCase, OPD):
                     loader_spec,
                     mutation_num=mutation_num,
                     batch_size=500,
+                    ops_rate=20000,
                     process_concurrency=2,
                     load_using="sirius_java_sdk")
             if doc_loading_task.result is False:
                 self.fail("Doc_loading failed")
 
             # Fetch values for next itr comparision
-            bucket_stats = bucket_api.get_bucket_stats(bucket.name)
-            _samples = bucket_stats["couch_docs_disk_size"][-20:]
-            current_disk = sum(_samples) // len(_samples)
+            status, stats = bucket_api.get_bucket_stats(bucket.name)
+            if status:
+                _samples = stats["op"]["samples"]["couch_docs_disk_size"][-20:]
+                current_disk = sum(_samples) // len(_samples)
 
         # Driver for loop in this function
         iterations = self.iterations
@@ -2074,6 +2087,9 @@ class Murphy(BaseTestCase, OPD):
             loader_spec["doc_crud"][
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
                 = 20
+
+            CollectionBase.over_ride_doc_loading_template_params(
+                self, loader_spec)
             doc_loading_task = \
                 self.bucket_util.run_scenario_from_spec(
                     self.task,

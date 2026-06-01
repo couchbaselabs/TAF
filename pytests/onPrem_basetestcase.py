@@ -192,6 +192,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Continuous backup params
         self.cont_bkp_test = self.input.param("cont_bkp_test", None) # ["None","single_node","NFS"]
         expected_cont_bkp_test_values = [None, "single_node", "NFS"]
+        if str(self.cont_bkp_test).lower() == 'none':
+            self.cont_bkp_test = None
         if self.cont_bkp_test not in expected_cont_bkp_test_values:
             self.fail(f"Invalid value for cont_bkp_test. Expected: {expected_cont_bkp_test_values}. Got: {self.cont_bkp_test}")
         self.retention_test = self.input.param("retention_test", False)
