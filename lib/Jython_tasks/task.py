@@ -1030,7 +1030,7 @@ class GenericLoadingTask(Task):
         self.docs_loaded = 0
         self.preserve_expiry = preserve_expiry
         self.sdk_retry_strategy = sdk_retry_strategy
-        self.req_iterations = iterations
+        self.iterations = iterations
         self.generator = None
         self.itr_count = 0
         self.__stop_loading = False
@@ -1041,11 +1041,11 @@ class GenericLoadingTask(Task):
 
     def call(self):
         self.start_task()
-        self.log.debug("Total req iterations: %s" % self.req_iterations)
+        self.log.debug("Total req iterations: %s" % self.iterations)
         while not self.__stop_loading:
             self.itr_count += 1
-            if self.req_iterations != -1 \
-                    and self.itr_count >= self.req_iterations:
+            if self.iterations != -1 \
+                    and self.itr_count >= self.iterations:
                 self.__stop_loading = True
             self.log.debug("%s - Iteration %s"
                            % (self.thread_name, self.itr_count))
@@ -2496,7 +2496,7 @@ class LoadDocumentsGeneratorsTask(Task):
         self.collection = collection
         self.preserve_expiry = preserve_expiry
         self.sdk_retry_strategy = sdk_retry_strategy
-        self.req_iterations = iterations
+        self.iterations = iterations
         self.doc_op_iterations_done = 0
         if isinstance(op_type, list):
             self.op_types = op_type
@@ -2647,7 +2647,7 @@ class LoadDocumentsGeneratorsTask(Task):
                 track_failures=self.track_failures,
                 preserve_expiry=self.preserve_expiry,
                 sdk_retry_strategy=self.sdk_retry_strategy,
-                iterations=self.req_iterations)
+                iterations=self.iterations)
             tasks.append(task)
         return tasks
 
@@ -5152,7 +5152,7 @@ class MutateDocsFromSpecTask(Task):
 
     def stop_indefinite_doc_loading_tasks(self):
         for task in self.cont_load_gen_tasks:
-            if task.req_iterations == -1:
+            if task.iterations == -1:
                 task.end_task()
 
     def call(self):
