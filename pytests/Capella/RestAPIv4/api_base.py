@@ -177,27 +177,29 @@ class APIBase(CouchbaseBaseTest):
                 TestInputSingleton.input.test_params["no_of_test_identified"]):
 
             # Delete the cluster that was created.
-            self.log.info("Destroying Cluster: {}".format(self.cluster_id))
-            if self.capellaAPI.cluster_ops_apis.delete_cluster(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id).status_code != 202:
-                self.log.error("Error while deleting cluster.")
+            if self.cluster_id:
+                self.log.info("Destroying Cluster: {}".format(self.cluster_id))
+                if self.capellaAPI.cluster_ops_apis.delete_cluster(
+                        self.organisation_id, self.project_id,
+                        self.cluster_id).status_code != 202:
+                    self.log.error("Error while deleting cluster.")
 
-            # Wait for the cluster to be destroyed.
-            self.log.info("Waiting for cluster to be destroyed.")
-            if not self.wait_for_deletion(self.cluster_id):
-                self.fail("Cluster could not be destroyed")
-            self.log.info("Cluster destroyed successfully.")
-            self.cluster_id = None
+                # Wait for the cluster to be destroyed.
+                self.log.info("Waiting for cluster to be destroyed.")
+                if not self.wait_for_deletion(self.cluster_id):
+                    self.fail("Cluster could not be destroyed")
+                self.log.info("Cluster destroyed successfully.")
+                self.cluster_id = None
 
             # Delete the project that was created.
-            self.log.info("Deleting Project: {}".format(self.project_id))
-            if self.delete_projects(self.organisation_id, [self.project_id],
-                                    self.org_owner_key["token"]):
-                self.log.error("Error while deleting project.")
-            else:
-                self.log.info("Project deleted successfully")
-                self.project_id = None
+            if self.project_id:
+                self.log.info("Deleting Project: {}".format(self.project_id))
+                if self.delete_projects(self.organisation_id, [self.project_id],
+                                        self.org_owner_key["token"]):
+                    self.log.error("Error while deleting project.")
+                else:
+                    self.log.info("Project deleted successfully")
+                    self.project_id = None
 
         # Delete organizationOwner API key
         self.log.info("Deleting API key for role organization Owner")
@@ -963,6 +965,10 @@ class APIBase(CouchbaseBaseTest):
                     "again." in result.json()["message"]:
                 cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
                 self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
+            else:
+                self.log.error("Cluster creation failed (422): {}".format(
+                    result.content))
+                return result
             if time.time() - start_time >= 1800:
                 self.log.error("Couldn't find CIDR within half an hour.")
 

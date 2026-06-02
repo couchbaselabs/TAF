@@ -58,3 +58,8 @@ credentials.json
 node_modules/
 package-lock.json
 package.json
+sdk.log.*
+test.logging.conf
+
+# Per-user Fusion backup/restore test config (contains Capella + AWS creds)
+fusion_backup_restore.ini

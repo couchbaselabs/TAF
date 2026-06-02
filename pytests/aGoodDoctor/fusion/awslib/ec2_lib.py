@@ -1015,3 +1015,47 @@ class EC2Lib(AWSBase):
         except Exception as e:
             self.logger.error(f"Error listing snapshots with filters {filters}: {e}")
             return []
+
+    def describe_ebs_snapshots(self, snapshot_ids: List[str]) -> List[Dict[str, Any]]:
+        """
+        Describe EBS snapshots by ID, handling batches of up to 200 per request.
+
+        :param snapshot_ids: List of EBS snapshot IDs to describe
+        :return: List of snapshot dicts with SnapshotId, Tags, VolumeId, StartTime, State
+        """
+        if not snapshot_ids:
+            return []
+        snapshots = []
+        chunk_size = 200
+        for i in range(0, len(snapshot_ids), chunk_size):
+            chunk = snapshot_ids[i:i + chunk_size]
+            try:
+                resp = self.ec2_client.describe_snapshots(SnapshotIds=chunk)
+                snapshots.extend(resp.get("Snapshots", []))
+            except Exception as e:
+                self.logger.error(f"Error describing snapshots {chunk}: {e}")
+        return snapshots
+
+    def describe_ebs_snapshots_by_tags(
+            self, tag_filters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Describe EBS snapshots owned by this account that match the given tag
+        filters.  Uses pagination to retrieve all results.
+
+        :param tag_filters: list of boto3-style filter dicts, e.g.
+            [{"Name": "tag:BackupID", "Values": ["<backup-id>"]}]
+        :return: list of snapshot dicts
+        """
+        snapshots = []
+        paginator = self.ec2_client.get_paginator("describe_snapshots")
+        pages = paginator.paginate(
+            OwnerIds=["self"],
+            Filters=tag_filters,
+        )
+        try:
+            for page in pages:
+                snapshots.extend(page.get("Snapshots", []))
+        except Exception as e:
+            self.logger.error(
+                f"Error describing snapshots by tags {tag_filters}: {e}")
+        return snapshots

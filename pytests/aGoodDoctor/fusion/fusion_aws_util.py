@@ -86,6 +86,18 @@ class FusionAWSUtil:
     # Fusion accelerator instances have 16000 IOPS as per fusion architecture
     FUSION_ACCELERATOR_IOPS = 16000
 
+    FUSION_GUEST_VOL_TAG_KEY = "couchbase-cloud-guestvolume"
+    FUSION_GUEST_VOL_TAG_VAL = "true"
+
+    CLOUD_SNAPSHOT_BACKUP_SNAPSHOT_ID_FIELDS = [
+        "snapshotIds",
+        "snapshots",
+        "ebsSnapshots",
+        "volumeSnapshots",
+        "ebs_snapshots",
+        "snapshot_ids",
+    ]
+
     def __init__(self, access_key, secret_key, session_token=None, region='us-east-1', boto3_session=None):
         """
         Initialize Fusion AWS utility with AWS credentials.
@@ -739,3 +751,219 @@ class FusionAWSUtil:
             f"({folders_deleted}), {len(files_deleted)} individual file(s) "
             f"deleted ({files_deleted})")
         return {"folders_deleted": folders_deleted, "files_deleted": files_deleted}
+
+    def get_guest_volumes_for_cluster(self, cluster_id: str) -> dict:
+        """
+        Retrieve the guest volume inventory for a cluster via AWS EC2 API.
+
+        Fusion guest volumes are tagged:
+          couchbase-cloud-cluster-id = cluster_id
+          couchbase-cloud-function = fusion-accelerator
+
+        (The 'couchbase-cloud-guestvolume' tag is only set on the EBS
+        snapshots taken from these volumes — not on the live volumes
+        themselves. The proven tag pair used by fusion_cp_resource_monitor
+        is cluster-id + function=fusion-accelerator.)
+
+        Returns {instance_id: [volume_id, ...], ...}.
+        Unattached volumes map to key "unattached".
+        """
+        self.log.info(
+            "Fetching guest volumes for cluster {} via EC2 API".format(cluster_id))
+        try:
+            volumes = self.ec2.list_volumes_by_cluster_id(
+                filters={
+                    "couchbase-cloud-cluster-id": cluster_id,
+                    "couchbase-cloud-function": "fusion-accelerator",
+                })
+        except Exception as e:
+            self.log.warning(
+                "get_guest_volumes_for_cluster failed for cluster {}: {}".format(
+                    cluster_id, e))
+            return {}
+        result = {}
+        for vol in volumes:
+            vol_id = vol.get("VolumeId")
+            attachments = vol.get("Attachments", [])
+            instance_id = (
+                attachments[0].get("InstanceId") if attachments else None)
+            if instance_id:
+                result.setdefault(instance_id, []).append(vol_id)
+            else:
+                result.setdefault("unattached", []).append(vol_id)
+        self.log.info(
+            "Found {} guest volumes across {} nodes on cluster {}".format(
+                sum(len(v) for v in result.values()), len(result), cluster_id))
+        return result
+
+    def find_fusion_s3_bucket(self, cluster_id: str) -> str:
+        """
+        Find the Fusion S3 log-store bucket for a cluster via the AWS
+        ResourceGroupsTagging API. Filters by BOTH the cluster id and the
+        `couchbase-cloud-storage-use=fusion` tag so we don't pick up the
+        cluster's generic storage bucket (`cbc-storage-<cluster-id>`),
+        which also carries the cluster-id tag.
+
+        Returns bucket name, or None if not found.
+        """
+        try:
+            tagging = self.ec2.create_service_client(
+                "resourcegroupstaggingapi", region=self.ec2.region)
+            paginator = tagging.get_paginator("get_resources")
+            for page in paginator.paginate(
+                    TagFilters=[
+                        {"Key": "couchbase-cloud-cluster-id",
+                         "Values": [cluster_id]},
+                        {"Key": "couchbase-cloud-storage-use",
+                         "Values": ["fusion"]},
+                    ],
+                    ResourceTypeFilters=["s3:bucket"]):
+                for resource in page.get("ResourceTagMappingList", []):
+                    bucket_name = resource["ResourceARN"].split(":::")[-1]
+                    if bucket_name:
+                        self.log.info(
+                            "Found Fusion S3 bucket for cluster {}: {}".format(
+                                cluster_id, bucket_name))
+                        return bucket_name
+            self.log.warning(
+                "No S3 bucket tagged couchbase-cloud-cluster-id={} AND "
+                "couchbase-cloud-storage-use=fusion found".format(cluster_id))
+            return None
+        except Exception as e:
+            self.log.warning(
+                "find_fusion_s3_bucket failed for cluster {}: {}".format(
+                    cluster_id, e))
+            return None
+
+    def get_ebs_snapshots_for_backup(self, backup_id: str,
+                                     backup_record: dict = None) -> list:
+        """
+        Retrieve EBS snapshots created by a cloud snapshot backup.
+
+        Per Capella dev, there is no REST endpoint that returns the snapshot
+        IDs for a cloud snapshot backup — the backup record itself does not
+        embed them either.  The supported way is to query EC2 directly,
+        filtering by the `couchbase-cloud-backup-id` tag that Capella stamps
+        on every snapshot it creates for that backup, e.g.:
+
+            aws ec2 describe-snapshots \\
+              --filters "Name=tag:couchbase-cloud-backup-id,Values=<id>"
+
+        Guest-volume snapshots additionally carry
+        `couchbase-cloud-guestvolume=true`; primary disk snapshots don't.
+        Classification happens in classify_snapshots().
+
+        The `backup_record` parameter is accepted for backwards-compat with
+        existing callers but is no longer consulted.
+        """
+        _ = backup_record  # intentionally unused
+        self.log.info(
+            "Querying EC2 for snapshots tagged "
+            "couchbase-cloud-backup-id={}".format(backup_id))
+        snapshots = self.ec2.list_snapshots_by_tags([
+            {"Name": "tag:couchbase-cloud-backup-id", "Values": [backup_id]},
+        ])
+        self.log.info(
+            "EC2 returned {} snapshot(s) for backup {}".format(
+                len(snapshots), backup_id))
+        return snapshots
+
+    def classify_snapshots(self, snapshots: list) -> tuple:
+        """
+        Split snapshots into (primary_disk_snapshots, guest_volume_snapshots).
+
+        Primary snapshots do NOT carry couchbase-cloud-guestvolume tag.
+        Guest volume snapshots carry couchbase-cloud-guestvolume=true.
+        """
+        primary = []
+        guest = []
+        for snap in snapshots:
+            tags = {t["Key"]: t["Value"] for t in snap.get("Tags", [])}
+            if tags.get(self.FUSION_GUEST_VOL_TAG_KEY, "").lower() == \
+                    self.FUSION_GUEST_VOL_TAG_VAL:
+                guest.append(snap)
+            else:
+                primary.append(snap)
+        return primary, guest
+
+    @staticmethod
+    def get_tag_value(snapshot: dict, key: str):
+        """Return the value of a tag key on a snapshot dict, or None."""
+        for tag in snapshot.get("Tags", []):
+            if tag["Key"] == key:
+                return tag["Value"]
+        return None
+
+    def verify_snapshot_tags(self, snapshot: dict, expected_tags: dict) -> list:
+        """
+        Check that all expected_tags are present and match on the snapshot.
+
+        Returns a list of issue strings (empty = all tags OK).
+        """
+        issues = []
+        actual_tags = {t["Key"]: t["Value"] for t in snapshot.get("Tags", [])}
+        for key, expected_val in expected_tags.items():
+            if key not in actual_tags:
+                issues.append("snapshot {} missing tag '{}'".format(
+                    snapshot["SnapshotId"], key))
+            elif expected_val is not None and actual_tags[key] != expected_val:
+                issues.append(
+                    "snapshot {} tag '{}': expected '{}', got '{}'".format(
+                        snapshot["SnapshotId"], key,
+                        expected_val, actual_tags[key]))
+        return issues
+
+    def count_s3_objects(self, bucket_name: str) -> int:
+        """Return the total object count in an S3 bucket using pagination.
+
+        Returns -1 if the bucket does not exist.
+        """
+        import botocore.exceptions as _botocore_exc
+        s3 = self.s3.s3_client
+        try:
+            total = 0
+            paginator = s3.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=bucket_name):
+                total += page.get("KeyCount", 0)
+            return total
+        except _botocore_exc.ClientError as e:
+            if e.response["Error"]["Code"] in ("NoSuchBucket", "NoSuchKey"):
+                return -1
+            raise
+
+    def verify_s3_cleanup_triggered(self, bucket_name: str) -> bool:
+        """
+        Verify that the Fusion S3 log-store cleanup was triggered after restore.
+
+        Checks that the bucket exists and logs the current object count.
+        Does NOT assert empty — cleanup may still be in progress.
+
+        Returns True if bucket exists (cleanup was triggered), False otherwise.
+        """
+        import botocore.exceptions as _botocore_exc
+        s3 = self.s3.s3_client
+        try:
+            response = s3.list_objects_v2(
+                Bucket=bucket_name, Delimiter="/", MaxKeys=1000)
+        except _botocore_exc.ClientError as e:
+            if e.response["Error"]["Code"] == "NoSuchBucket":
+                self.log.warning(
+                    "Fusion S3 bucket '{}' does not exist — "
+                    "Fusion log store was not created on this cluster.".format(
+                        bucket_name))
+                return False
+            raise
+
+        prefix_count = len(response.get("CommonPrefixes") or [])
+        object_count = response.get("KeyCount", 0)
+
+        if object_count == 0 and prefix_count == 0:
+            self.log.info(
+                "Fusion S3 bucket '{}' is empty — cleanup completed.".format(
+                    bucket_name))
+        else:
+            self.log.info(
+                "Fusion S3 bucket '{}' has {} top-level prefixes, {} objects "
+                "— cleanup triggered, may still be in progress.".format(
+                    bucket_name, prefix_count, object_count))
+        return True

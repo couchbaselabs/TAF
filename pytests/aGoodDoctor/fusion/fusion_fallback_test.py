@@ -41,6 +41,12 @@ from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
 from .fusion_test_base import _FusionTestBase
 from .awslib.fis_lib import iso8601_duration_to_seconds
+import threading
+from TestInput import TestInputSingleton
+from aGoodDoctor.workloads import Hotel
+from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
+from membase.api.rest_client import RestConnection
+from .awslib.s3_lib import S3Lib
 
 
 # Priority-ordered instance types mirroring unifiedInstanceTypes in
@@ -88,7 +94,6 @@ UNIFIED_INSTANCE_TYPES = [
     "m8i.4xlarge",
     "m7gd.4xlarge",
 ]
-
 
 class FusionFallbackInstanceTypeTests(_FusionTestBase):
     """

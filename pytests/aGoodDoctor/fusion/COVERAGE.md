@@ -10,36 +10,32 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 ## §1 Enable / Disable / Stop Fusion
 
+> The `aGoodDoctor/fusion/fusion_enable_disable_test.py` lifecycle suite
+> (`FusionEnableDisableTests`) was removed. Its shared `_FusionTestBase` now
+> lives in `fusion_fallback_test.py`. The on-prem storage lifecycle suite at
+> `pytests/storage/fusion/fusion_enable_disable.py` is unaffected.
+
+---
+
+## §1a Fusion Backup / Restore (Capella Dedicated)
+
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
-| `fusion_enable_disable_test.py` | `FusionEnableDisableTests` | `test_enable_fusion_on_existing_cluster` | ✅ |
-| | | `test_enable_fusion_cancel_leaves_empty_s3_bucket` | ✅ |
-| | | `test_stop_fusion_during_enable` | ✅ |
-| | | `test_kill_memcached_during_enable_cp_retries` | ✅ |
-| | | `test_enable_fusion_from_stopped_state` | ✅ |
-| | | `test_ns_server_restart_during_enable` | ✅ |
-| | | `test_small_cluster_uses_dcp_not_fusion` | ✅ |
-| | | `test_rebalance_below_threshold_uses_dcp` | ✅ |
-| | | `test_rebalance_above_threshold_uses_fusion` | ✅ |
-| | | `test_enable_fusion_no_rebalance_use` | ✅ |
-| | | `test_new_bucket_inherits_fusion_when_enabled` | ✅ |
-| | | `test_fusion_status_api_fields` | ✅ |
-| | | `test_stop_fusion_when_already_disabled` | ✅ |
-| | | `test_stop_fusion_during_active_rebalance` | ✅ |
-| | | `test_stop_vs_disable_s3_retention_difference` | ✅ |
-| | | `test_stop_fusion_on_synced_data_falls_back_to_dcp_rebalance` | ✅ |
-| | | `test_stop_then_reenable_resumes_uploads_from_checkpoint` | ✅ |
-| | | `test_disable_fusion_when_synced_deletes_s3_objects` | ✅ |
-| | | `test_disable_fusion_no_rebalance_stops_uploads` | ✅ |
-| | | `test_disable_fusion_during_rebalance_waits_for_operations` | ✅ |
-| | | `test_disable_fusion_during_prepare_rebalance_with_leased_logs` | ✅ |
-| | | `test_reenable_fusion_creates_new_s3_bucket` | ✅ |
-| | | `test_disable_fusion_from_stopped_state` | ✅ |
-| | | `test_disable_fusion_during_enabling_state` | ✅ |
-| | | `test_override_rebalances_skips_fusion_while_enabled` | ✅ |
-| | | `test_override_rebalances_false_restores_fusion_rebalance` | ✅ |
-| | | `test_override_has_no_effect_when_fusion_disabled` | ✅ |
-| | | `test_invalid_state_transitions` | ✅ |
+| `fusion_backup_restore.py` | `FusionBackupRestore` | `test_backup_restore_fusion_enabled_to_enabled` | ✅ |
+| | | `test_backup_restore_fusion_enabled_to_disabled` | ✅ |
+| | | `test_backup_restore_fusion_disabled_to_enabled` | ✅ |
+| | | `test_backup_restore_fusion_disabled_to_disabled` | ✅ |
+
+> **Restore behaviour note (observed):** a Fusion restore brings back KV
+> **primary data only** — it does **not** re-apply the `IsFusionGuestVolume`
+> snapshots to recreate guest volumes on the target. Data integrity is intact
+> (verified by doc-count checks); guest volumes are regenerated on the **next
+> Fusion rebalance**. Snapshot-verification tests that check post-restore guest
+> volumes therefore trigger a rebalance first
+> (`regenerate_guest_volumes_via_rebalance`) and assert guest volumes come back,
+> rather than expecting the backup's exact count/per-node mapping. This differs
+> from the design doc ("guest volumes recreated during restoration") — flagged
+> for the backup/fusion team to confirm intended behaviour.
 
 ---
 
