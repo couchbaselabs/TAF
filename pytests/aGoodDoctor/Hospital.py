@@ -422,6 +422,25 @@ class Murphy(BaseTestCase, OPD):
             task.stop_query_load()
         BaseTestCase.tearDown(self)
 
+    def __init_doc_params(self):
+        self.create_perc = self.input.param("create_perc", 100)
+        self.update_perc = self.input.param("update_perc", 20)
+        self.delete_perc = self.input.param("delete_perc", 20)
+        self.expiry_perc = self.input.param("expiry_perc", 20)
+        self.read_perc = self.input.param("read_perc", 20)
+        self.start = 0
+        self.end = 0
+        self.initial_items = self.start
+        self.final_items = self.end
+        self.create_end = 0
+        self.create_start = 0
+        self.update_end = 0
+        self.update_start = 0
+        self.delete_end = 0
+        self.delete_start = 0
+        self.expire_end = 0
+        self.expire_start = 0
+
     def testKvRangeScan(self):
         self.create_perc = 100
         self.PrintStep(f"Step 1: Create {self.num_items} items: {self.key_type}")
@@ -1581,7 +1600,7 @@ class Murphy(BaseTestCase, OPD):
                         self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 else:
                     self.log.info("Volume Test Run Complete")
-                self.init_doc_params()
+                self.__init_doc_params()
 
         self.mutations = False
         self.mutation_th.join()
