@@ -16,7 +16,6 @@ class LinuxConstants(object):
         "deb": {
             "uninstall":
                 "systemctl -q stop couchbase-server;" +
-                unmount_nfs_cmd +
                 "service ntp restart ; "
                 "apt-get purge -y 'couchbase*' > /dev/null; sleep 10;"
                 "dpkg --purge $(dpkg -l | grep couchbase | awk '{print $2}'"
