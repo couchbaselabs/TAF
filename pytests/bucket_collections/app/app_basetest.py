@@ -7,7 +7,7 @@ from couchbase.logic.analytics import AnalyticsStatus
 from couchbase.logic.n1ql import QueryStatus
 
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
-from backup_utils.backup_utils import BackupUtil
+from backup_utils.backup_utils import BackupServiceUtil
 from cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
 from basetestcase import BaseTestCase
@@ -405,7 +405,7 @@ class AppBase(BaseTestCase):
             return
 
         backup_node = self.cluster.backup_nodes[0]
-        backup_util = BackupUtil(backup_node)
+        backup_util = BackupServiceUtil(self.cluster, backup_node)
 
         # Remove old repos (if any)
         backup_util.archive_all_repos()

@@ -6,6 +6,7 @@ from cb_server_rest_util.backup.backup_api import BackupRestApi
 from global_vars import logger
 from couchbase_utils.cb_tools.cbbackupmgr import CbBackupMgr
 from couchbase_utils.cb_tools.cbcontbk import CbContBk
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class ContinuousBackupUtil(object):
@@ -16,13 +17,13 @@ class ContinuousBackupUtil(object):
         self.log = log if log else logger.get("test")
 
         self.backup_mgr = CbBackupMgr(shell_conn,
-                                       username=username,
-                                       password=password,
-                                       log=self.log)
+                                      username=username,
+                                      password=password,
+                                      log=self.log)
         self.cont_bk_mgr = CbContBk(shell_conn,
-                                     username=username,
-                                     password=password,
-                                     log=self.log)
+                                    username=username,
+                                    password=password,
+                                    log=self.log)
 
     def enable_continuous_backup(self, bucket_util, cluster, buckets, continuous_backup_location="/tmp/cont_bkp", continuous_backup_interval=5):
         """Enable continuous backup on all buckets in the cluster
@@ -176,14 +177,61 @@ class ContinuousBackupUtil(object):
             storage=storage)
 
 
-class BackupUtil(object):
-    def __init__(self, cluster_node):
-        self.server = cluster_node
-        self.rest = BackupRestApi(self.server)
-        self.log = logger.get("test")
+class BackupMgrUtil(CbBackupMgr):
+    def __init__(self, cb_node):
+        shell_conn = RemoteMachineShellConnection(cb_node)
+        super().__init__(shell_conn, username=cb_node.rest_username,
+                         password=cb_node.rest_password,
+                         no_ssl_verify=None, log=None)
 
-    def reset_cluster_node(self, cluster_node):
-        self.server = cluster_node
+    def configure_backup(self, archive, repo, exclude=None, include=None):
+        """Delete previous archive dir, then create backup repo."""
+        if not archive or archive == "/":
+            raise ValueError("archive must be a non-empty, non-root path")
+        self.log.info("Deleting previous backup archive: %s" % archive)
+        self.shellConn.execute_command(f"rm -rf -- {archive}")
+        stdout, stderr = super().create_repo(archive, repo,
+                                             exclude=exclude, include=include)
+        self.shellConn.execute_command(
+            f"chown -R couchbase:couchbase {archive}")
+        return stdout, stderr
+
+    def monitor_restore(self, bucket_util, cluster, bucket_name, items,
+                        timeout=43200):
+        """Poll item count until restore completes or timeout expires."""
+        end_time = time.time() + timeout
+        curr_items = 0
+        while time.time() < end_time:
+            curr_items = bucket_util.get_buckets_item_count(cluster,
+                                                            bucket_name)
+            self.log.info(
+                "Current/Expected items during restore: %s >= %s"
+                % (curr_items, items))
+            if curr_items >= items:
+                return True
+            time.sleep(5)
+        self.log.info(f"cbbackupmgr restore did not finish in {timeout} "
+                      f"seconds: Actual:{curr_items}, Expected:{items}")
+        return False
+
+
+class BackupServiceUtil(object):
+    def __init__(self, cluster, backup_node=None):
+        if cluster is None or not getattr(cluster, "backup_nodes", None):
+            raise ValueError("cluster must define at least one backup node")
+        self.log = logger.get("test")
+        self.cluster = cluster
+        self.server = None
+        self.rest = None
+
+        self.reset_cluster_node(backup_node)
+
+    def reset_cluster_node(self, backup_node=None):
+        if backup_node is None:
+            if not self.cluster.backup_nodes:
+                raise ValueError("No backup nodes available")
+            backup_node = self.cluster.backup_nodes[0]
+        self.server = backup_node
         self.rest = BackupRestApi(self.server)
 
     def archive_all_repos(self):

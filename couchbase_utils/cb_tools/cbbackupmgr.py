@@ -96,12 +96,17 @@ class CbBackupMgr(CbCmdBase):
     :param repo_name str: The name of the backup repository to create
     """
 
-    def create_repo(self, archive_dir, repo_name):
+    def create_repo(self, archive_dir, repo_name, exclude=None, include=None):
         """
         Execute cbbackupmgr config command to create a repository
         """
         cmd = "%s config --archive %s --repo %s" % (
             self.cbstatCmd, archive_dir, repo_name)
+
+        if exclude:
+            cmd += " --exclude-data " + ",".join(exclude)
+        if include:
+            cmd += " --include-data " + ",".join(include)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -292,12 +297,17 @@ class CbBackupMgr(CbCmdBase):
         :param start: The start of the merge range (either an integer backup number or a timestamp string).
         :param end: The end of the merge range (either an integer backup number or a timestamp string).
         """
-        cmd = "%s merge --archive %s --repo %s --start %s --end %s" % (
-            self.cbstatCmd, archive_dir, repo_name, start, end)
+
+        if start is None and end is None:
+            extra_flags = "--all"
+        else:
+            extra_flags = "--start %s --end %s"
+
+        cmd = "%s merge --archive %s --repo %s %s" % (
+            self.cbstatCmd, archive_dir, repo_name, extra_flags)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-
         self.log.debug(f"Command output: {output}")
 
         if not output or error:
