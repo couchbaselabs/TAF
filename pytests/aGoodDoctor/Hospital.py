@@ -513,7 +513,7 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(result, "Restore failed")
 
     def initial_setup(self):
-        if self.initial_setup_done:
+        if self.initial_setup_done or self.skip_init:
             return
 
         # Set this flag, so this cannot be run if called again within the test
@@ -2076,7 +2076,7 @@ class Murphy(BaseTestCase, OPD):
             mutation_num += 1
             self.log.info(f"Loading docs with mutation_num: {mutation_num}")
             loader_spec = deepcopy(loader_spec_template)
-            loader_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 100
+            loader_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 200
             loader_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] \
                 = 20
@@ -2120,10 +2120,13 @@ class Murphy(BaseTestCase, OPD):
             loader_spec[MetaCrudParams.COLLECTIONS_CONSIDERED_FOR_CRUD] = 200
             loader_spec["doc_crud"][
                 MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] \
-                = 1
-            loader_spec["doc_crud"][
-                MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] \
                 = 20
+            loader_spec["doc_crud"][
+                MetaCrudParams.DocCrud.CONT_UPDATE_PERCENT_PER_COLLECTION] \
+                = 10
+            loader_spec["doc_crud"][
+                MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] \
+                = 10
 
             CollectionBase.over_ride_doc_loading_template_params(
                 self, loader_spec)
@@ -2142,6 +2145,7 @@ class Murphy(BaseTestCase, OPD):
             self.ClusterOpsVolume()
 
             # Wait for doc_loading tasks to complete
+            doc_loading_task.stop_indefinite_doc_loading_tasks()
             self.task.jython_task_manager.get_task_result(doc_loading_task)
 
             loop_index += 1

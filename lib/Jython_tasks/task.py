@@ -4913,7 +4913,10 @@ class BucketCreateTask(Task):
                                        % self.bucket.name)
             elif self.bucket.numVBuckets is None:
                 # Set num_vbuckets to default it not provided by the user
-                if (self.bucket.bucketType == Bucket.Type.MEMBASE and
+                # "membase" is the REST API spelling of Bucket.Type.MEMBASE ("couchbase")
+                is_persistent = self.bucket.bucketType in (
+                    Bucket.Type.MEMBASE, "membase")
+                if (is_persistent and
                         self.bucket.storageBackend == Bucket.StorageBackend.magma):
                     self.bucket.numVBuckets = CbServer.magma_default_vbuckets
                 else:
