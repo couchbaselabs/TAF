@@ -2,6 +2,8 @@
 
 cleanup_dir_before_exit() {
   rm -rf .git b build conf pytests DocLoader lib couchbase_utils test_infra_runner
+  # Remove any installers downloaded locally
+  rm -rf *.deb *.rpm *.msi
 }
 
 setup_test_infra_repo_for_installation() {
