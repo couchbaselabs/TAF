@@ -174,7 +174,7 @@ class ListTenantEvents(GetProject):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.list_events, (
+            self.capellaAPI.cluster_ops_apis.list_tenant_events, (
                 self.organisation_id
             )
         ]]
@@ -182,7 +182,7 @@ class ListTenantEvents(GetProject):
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.list_events, (
+            self.capellaAPI.cluster_ops_apis.list_tenant_events, (
                 self.organisation_id
             )
         ]]

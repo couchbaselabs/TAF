@@ -66,11 +66,12 @@ class CreateReplication(ReplicationBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager"
-        ]):
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+        ], None):
+            self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.api_call_with_retry(
                 self.capellaAPI.cluster_ops_apis.create_replication,
                 self.organisation_id, self.project_id, self.cluster_id,

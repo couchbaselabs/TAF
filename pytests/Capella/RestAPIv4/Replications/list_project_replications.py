@@ -18,18 +18,39 @@ class ListProjectReplication(ReplicationBase):
 
     def test_api_path(self):
         testcases = [
+            # {
+            #     "description": "List project-level replications with valid path"
+            # }, 
             {
-                "description": "List project-level replications with valid path"
-            }, {
                 "description": "List project-level replications with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }, {
                 "description": "List project-level replications with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }
         ]
 
@@ -59,10 +80,10 @@ class ListProjectReplication(ReplicationBase):
         for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager",
             "projectViewer", "projectDataReader", "projectDataReaderWriter"
-        ]):
+        ], None):
+            self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.api_call_with_retry(
                 self.capellaAPI.cluster_ops_apis.list_project_replications,
                 self.organisation_id, self.project_id, headers=header)

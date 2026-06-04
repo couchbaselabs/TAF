@@ -261,7 +261,7 @@ class GetProjectEvent(GetProject):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.fetch_project_event_by_i_d_info, (
+            self.capellaAPI.cluster_ops_apis.fetch_project_event_info, (
                 self.organisation_id, self.project_id, self.event_id
             )
         ]]
@@ -269,7 +269,7 @@ class GetProjectEvent(GetProject):
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.fetch_project_event_by_i_d_info, (
+            self.capellaAPI.cluster_ops_apis.fetch_project_event_info, (
                 self.organisation_id, self.project_id, self.event_id
             )
         ]]
