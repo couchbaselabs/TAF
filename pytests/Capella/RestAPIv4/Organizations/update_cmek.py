@@ -72,7 +72,10 @@ class UpdateCMEK(GetCMEK):
 
     def test_authorization(self):
         failures = list()
-        for testcase in self.v4_RBAC_injection_init(["organizationOwner"], None):
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+        ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
@@ -84,8 +87,7 @@ class UpdateCMEK(GetCMEK):
                 result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
                     self.organisation_id, self.cmek_id, {"arn": self.rotate_arn},
                     headers=header)
-            expected = [204, 412, 422] if self.cmek_created else 404
-            self.validate_testcase(result, expected, testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:

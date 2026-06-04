@@ -107,35 +107,32 @@ class CreateCMEK(ListCMEK):
 
     def test_authorization(self):
         cmek_arn = self.input.param("cmek_arn", "")
+        payload = {
+            "name": self.prefix + "cmek",
+            "description": "CMEK metadata create path test",
+            "config": {
+                "arn": cmek_arn
+            }
+        }
+        cmek_arn = self.input.param("cmek_arn", "")
         failures = list()
-        for testcase in self.v4_RBAC_injection_init(["organizationOwner"], None):
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+        ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
-                self.organisation_id, self.prefix + "cmek",
-                {"arn": cmek_arn},
-                "CMEK metadata auth test",
-                headers=header)
+                self.organisation_id, payload["name"], payload["config"],
+                payload["description"])
+
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
-                    self.organisation_id, self.prefix + "cmek",
-                    {"arn": cmek_arn},
-                    "CMEK metadata auth test",
-                    headers=header)
-            self.validate_testcase(result, [200], testcase, failures)
-            if result.status_code == 200:
-                self.created_cmek_id = result.json()["id"]
-                result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                    self.organisation_id, self.created_cmek_id)
-                if result.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    result = self.capellaAPI.org_ops_apis.delete_cmek_metadata(
-                        self.organisation_id, self.created_cmek_id)
-                if result.status_code != 204:
-                    self.fail("CMEK cleanup failed with {}".format(result.content))
-                self.created_cmek_id = None
+                    self.organisation_id, payload["name"], payload["config"],
+                    payload["description"])
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:

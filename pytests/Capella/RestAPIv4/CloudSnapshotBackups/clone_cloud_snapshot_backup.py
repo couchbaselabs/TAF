@@ -100,13 +100,12 @@ class CloneCloudSnapshotBackup(CloudSnapshotBackupBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner"
-        ]):
-            payload = copy.deepcopy(self.clone_data)
-            payload["name"] = self.generate_random_string(special_characters=False)
+            "organizationOwner", "projectOwner", "projectManager",
+            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+        ], None):
+            self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(
-                testcase, failures, header, self.project_id, self.other_project_id)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.clone_call(
                 self.organisation_id, self.project_id, self.backup_id, payload,
                 headers=header)

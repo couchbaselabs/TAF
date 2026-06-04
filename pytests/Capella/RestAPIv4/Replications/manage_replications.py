@@ -130,14 +130,13 @@ class ManageReplication(ReplicationBase):
 
     def test_authorization(self):
         failures = list()
-        get_testcases = self.v4_RBAC_injection_init([
+        for testcase in self.v4_RBAC_injection_init([
             "organizationOwner", "projectOwner", "projectManager",
             "projectViewer", "projectDataReader", "projectDataReaderWriter"
-        ])
-        for testcase in get_testcases:
+        ], None):
+            self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             get_result = self._call_by_operation(
                 "get", self.organisation_id, self.project_id, self.cluster_id,
                 self.replication_id, headers=header)
@@ -149,8 +148,7 @@ class ManageReplication(ReplicationBase):
         ])
         for testcase in mutate_testcases:
             header = dict()
-            self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, self.other_project_id)
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             put_result = self._call_by_operation(
                 "put", self.organisation_id, self.project_id, self.cluster_id,
                 self.replication_id, headers=header)
