@@ -1,11 +1,13 @@
 from cb_tools.cb_tools_base import CbCmdBase
 from cb_constants import CbServer
 import logging
+import shlex
 
 
 class CbBackupMgr(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
-                 password="password", no_ssl_verify=None, log=None):
+                 password="password", no_ssl_verify=None, log=None,
+                 obj_staging_dir=None, aws_region=None):
         CbCmdBase.__init__(self, shell_conn, "cbbackupmgr",
                            username=username, password=password)
         if no_ssl_verify is None:
@@ -17,6 +19,25 @@ class CbBackupMgr(CbCmdBase):
             self.log = log
         else:
             self.log = logging.getLogger("test")
+        self.obj_staging_dir = obj_staging_dir
+        self.aws_region = self._normalise_aws_region(aws_region)
+
+    @staticmethod
+    def _normalise_aws_region(aws_region):
+        if aws_region is None:
+            return None
+        aws_region = str(aws_region).strip().strip('"\'')
+        return aws_region or None
+
+    def prepare_command(self, cmd):
+        if self.aws_region:
+            quoted_region = shlex.quote(self.aws_region)
+            return "AWS_DEFAULT_REGION=%s AWS_REGION=%s %s" % (
+                quoted_region, quoted_region, cmd)
+        return cmd
+
+    def _execute_cmd(self, cmd):
+        return CbCmdBase._execute_cmd(self, self.prepare_command(cmd))
 
     """
     Method to backup a Couchbase cluster using cbbackupmgr backup command
@@ -78,6 +99,9 @@ class CbBackupMgr(CbCmdBase):
         if consistency_check:
             cmd += " --consistency-check %d" % consistency_check
 
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
+
         cmd += self.cli_flags
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -96,7 +120,8 @@ class CbBackupMgr(CbCmdBase):
     :param repo_name str: The name of the backup repository to create
     """
 
-    def create_repo(self, archive_dir, repo_name, exclude=None, include=None):
+    def create_repo(self, archive_dir, repo_name, exclude=None, include=None,
+                    worm_period=None, default_retention=None):
         """
         Execute cbbackupmgr config command to create a repository
         """
@@ -107,6 +132,56 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --exclude-data " + ",".join(exclude)
         if include:
             cmd += " --include-data " + ",".join(include)
+
+        if worm_period is not None:
+            cmd += " --worm %s" % worm_period
+
+        if default_retention is not None:
+            cmd += " --default-retention %s" % default_retention
+
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
+
+        self.log.debug(f"Executing command: {cmd}")
+        output, error = self._execute_cmd(cmd)
+
+        self.log.debug(f"Command output: {output}")
+
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+
+        return output, error
+    def worm(self, archive_dir, repo_name, period):
+        """
+        Execute cbbackupmgr worm command to enable or disable WORM.
+        """
+        cmd = "%s worm --archive %s --repo %s --period %s" % (
+            self.cbstatCmd, archive_dir, repo_name, period)
+
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
+
+        self.log.debug(f"Executing command: {cmd}")
+        output, error = self._execute_cmd(cmd)
+
+        self.log.debug(f"Command output: {output}")
+
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+
+        return output, error
+
+    def info(self, archive_dir, repo_name=None):
+        """
+        Execute cbbackupmgr info command.
+        """
+        cmd = "%s info --archive %s" % (self.cbstatCmd, archive_dir)
+
+        if repo_name:
+            cmd += " --repo %s" % repo_name
+
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -131,6 +206,10 @@ class CbBackupMgr(CbCmdBase):
         """
         cmd = "%s list --archive %s --repo %s" % (
             self.cbstatCmd, archive_dir, repo_name)
+
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
+
         cmd += self.cli_flags
 
         self.log.debug(f"Executing command: {cmd}")
@@ -170,7 +249,8 @@ class CbBackupMgr(CbCmdBase):
                 map_indexes=True, map_views=True,
                 map_gsi_indexes=True, map_ft_indexes=True,
                 map_analytics=True, map_eventing=True,
-                filter_keys=None, filter_values=None):
+                filter_keys=None, filter_values=None,
+                allow_non_worm=False):
         """
         Execute cbbackupmgr restore command
         """
@@ -217,6 +297,12 @@ class CbBackupMgr(CbCmdBase):
         if filter_values:
             cmd += " --filter-values %s" % filter_values
 
+        if allow_non_worm:
+            cmd += " --allow-non-worm"
+
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
+
         cmd += self.cli_flags
 
         self.log.debug(f"Executing command: {cmd}")
@@ -237,7 +323,8 @@ class CbBackupMgr(CbCmdBase):
     :param backup_range str: Optional backup range to remove (e.g., "1-5" or "1,3,5")
     """
 
-    def remove(self, archive_dir, repo_name, backup_range=None):
+    def remove(self, archive_dir, repo_name, backup_range=None,
+               obj_versions=False):
         """
         Execute cbbackupmgr remove command to remove a repository or specific backups
         """
@@ -246,6 +333,12 @@ class CbBackupMgr(CbCmdBase):
 
         if backup_range:
             cmd += " --backups %s" % backup_range
+
+        if obj_versions:
+            cmd += " --obj-versions"
+
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -306,6 +399,9 @@ class CbBackupMgr(CbCmdBase):
         cmd = "%s merge --archive %s --repo %s %s" % (
             self.cbstatCmd, archive_dir, repo_name, extra_flags)
 
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
+
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
         self.log.debug(f"Command output: {output}")
@@ -326,6 +422,9 @@ class CbBackupMgr(CbCmdBase):
 
         if archive_dir:
             cmd += " --archive %s" % archive_dir
+
+        if self.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.obj_staging_dir
 
         if output_dir:
             cmd += " --output-dir %s" % output_dir

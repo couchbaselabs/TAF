@@ -264,12 +264,14 @@ class JavaDocLoaderUtils(object):
                      validate_data=False, overRidePattern=None, skip_default=True,
                      wait_for_stats=True, mutate=0,
                      suppress_error_table=False,
-                     track_failures=True):
-        loader_map = JavaDocLoaderUtils._loader_dict(cluster, buckets,
-                                                     overRidePattern, skip_default=skip_default,
-                                                     mutate=mutate,
-                                                     suppress_error_table=suppress_error_table,
-                                                     track_failures=track_failures)
+                     track_failures=True, process_concurrency=10):
+        loader_map = JavaDocLoaderUtils._loader_dict(
+            cluster, buckets, overRidePattern,
+            skip_default=skip_default,
+            mutate=mutate,
+            suppress_error_table=suppress_error_table,
+            track_failures=track_failures,
+            process_concurrency=process_concurrency)
         tasks = list()
         for bucket in buckets:
             for scope in list(bucket.scopes.keys()):
@@ -1222,8 +1224,7 @@ class DocLoaderUtils(object):
                                                             mutation_num,
                                                             op_details,
                                                             load_using)
-        if load_using == "default_loader":
-            sleep(15, "Wait for SDK to warmup")
+        sleep(15, "Wait for SDK to warmup")
         doc_loading_task = DocLoaderUtils.perform_doc_loading_for_spec(
             task_manager,
             cluster,
@@ -5472,9 +5473,24 @@ class BucketUtils(ScopeUtils):
     def get_all_buckets(self, cluster, cluster_node=None):
         node = cluster_node or cluster.master
         bucket_rest = BucketRestApi(node)
-        _, json_parsed = bucket_rest.get_bucket_info()
+        status, json_parsed = bucket_rest.get_bucket_info()
         bucket_list = list()
+        if not status or json_parsed is None:
+            raise GetBucketInfoFailed("all buckets on %s" % node.ip,
+                                      json_parsed)
+        if isinstance(json_parsed, dict):
+            if Bucket.name in json_parsed:
+                json_parsed = [json_parsed]
+            else:
+                raise GetBucketInfoFailed("all buckets on %s" % node.ip,
+                                          json_parsed)
+        if not isinstance(json_parsed, list):
+            raise GetBucketInfoFailed("all buckets on %s" % node.ip,
+                                      json_parsed)
         for item in json_parsed:
+            if not isinstance(item, dict) or Bucket.name not in item:
+                raise GetBucketInfoFailed("all buckets on %s" % node.ip,
+                                          json_parsed)
             bucket_list.append(self.parse_get_bucket_json(cluster.buckets,
                                                           item))
         return bucket_list
