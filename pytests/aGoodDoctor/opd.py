@@ -62,10 +62,16 @@ class OPD:
         bucket_type = self.bucket_type.split(';')*self.num_buckets
         compression_mode = self.compression_mode.split(';')*self.num_buckets
         self.bucket_eviction_policy = self.bucket_eviction_policy
+
         for i in range(self.num_buckets):
+            num_vb = CbServer.total_vbuckets
+            if bucket_type[i] in ("membase", "couchbase") \
+                    and self.bucket_storage == "magma":
+                num_vb = CbServer.magma_default_vbuckets
             bucket = Bucket(
                 {Bucket.name: buckets[i] + str(i),
                  Bucket.ramQuotaMB: ramQuota//self.num_buckets,
+                 Bucket.numVBuckets: num_vb,
                  Bucket.maxTTL: self.bucket_expiry,
                  Bucket.replicaNumber: self.num_replicas,
                  Bucket.storageBackend: self.bucket_storage,
@@ -1016,8 +1022,8 @@ class OPD:
                             for collection in stats[bucket][scope]:
                                 for idx in stats[bucket][scope][collection]:
                                     self.log.info(":".join([
-                                        bucket, scope, collection, 
-                                        idx, "num_docs_pending", 
+                                        bucket, scope, collection,
+                                        idx, "num_docs_pending",
                                         str(stats[bucket][scope][collection][idx]["num_docs_pending"])]))
                                     if stats[bucket][scope][collection][idx]["num_docs_pending"] > 0:
                                         check = True
