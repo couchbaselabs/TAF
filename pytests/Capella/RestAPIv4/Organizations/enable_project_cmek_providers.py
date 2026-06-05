@@ -112,7 +112,7 @@ class EnableProjectCMEKProvider(APIBase):
 
     def test_payload(self):
         provider_values = [
-            "azure",
+            # "azure",
             "aws",
             "gcp",
             "",

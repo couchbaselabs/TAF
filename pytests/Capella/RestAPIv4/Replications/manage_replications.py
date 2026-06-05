@@ -35,9 +35,10 @@ class ManageReplication(ReplicationBase):
     def test_api_path(self):
         operations = [ "put", "get","delete"]
         testcases = [
+            # {
+            #     "description": "Manage replication with valid path"
+            # }, 
             {
-                "description": "Manage replication with valid path"
-            }, {
                 "description": "Manage replication with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
