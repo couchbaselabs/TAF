@@ -92,8 +92,20 @@ class JWTOIDCBase(ClusterSetup):
             f"/realms/{self.keycloak_realm}"
         )
 
-        # Ensure Keycloak is running (only once per test class)
+        # Ensure Keycloak is running before every test.
+        # Use the class flag to skip the SSH check on healthy runs,
+        # but reset it if Keycloak is actually unreachable so the
+        # restart fires immediately rather than cascading failures.
         cls = self.__class__
+        if cls._keycloak_verified:
+            check_url = f"{self.issuer_url}/.well-known/openid-configuration"
+            try:
+                resp = self.http.get(check_url, timeout=5)
+                if resp.status_code != 200:
+                    cls._keycloak_verified = False
+            except Exception:
+                cls._keycloak_verified = False
+
         if not cls._keycloak_verified:
             self._ensure_keycloak_running()
             cls._keycloak_verified = True
@@ -373,6 +385,15 @@ class JWTOIDCBase(ClusterSetup):
             self.fail(f"Keycloak not reachable: {result['error']}")
         return result
 
+
+    @staticmethod
+    def _query_bearer_headers(token):
+        """Build HTTP headers for a bearer-token N1QL query request."""
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        }
 
     def _ensure_external_user(self, username, roles):
         """Create external RBAC user if not already present."""

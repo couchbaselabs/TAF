@@ -1640,34 +1640,17 @@ class JWTOIDCTest(JWTOIDCBase):
                 18093 if query_use_https else 8093,
             )
         )
-        query_scheme = "https" if query_use_https else "http"
-        query_node = None
-        services_init = self.input.param("services_init", "")
-        service_specs = services_init.split("-") if services_init else []
-        for index, spec in enumerate(service_specs):
-            services = {service.strip() for service in spec.replace(",", ":").split(":")}
-            if services.intersection({"n1ql", "query"}):
-                candidate_nodes = self.cluster.servers[:int(self.nodes_init)]
-                if index < len(candidate_nodes):
-                    query_node = candidate_nodes[index]
-                    break
-        if query_node is None:
-            for node in self.cluster.nodes_in_cluster:
-                services = getattr(node, "services", "")
-                if isinstance(services, str):
-                    services = services.replace(",", ":").split(":")
-                if set(services).intersection({"n1ql", "query"}):
-                    query_node = node
-                    break
-        if query_node is None:
+        if not self.cluster.query_nodes:
             self.fail(
-                f"N1QL/query node not found in cluster. services_init={services_init}, "
-                f"nodes={[n.ip for n in self.cluster.nodes_in_cluster]}"
+                "No node with n1ql/query service in cluster. "
+                "Ensure cluster was set up with n1ql in services_init "
+                "(e.g. kv:n1ql-kv:index-kv) and do not use skip_cluster_reset=True."
             )
+        query_node = self.cluster.query_nodes[0]
 
         query_host = getattr(query_node, "ip", None) or getattr(query_node, "hostname", None)
 
-        # Probe actual open port — fall back to HTTP 8093 in mixed setups
+        # Probe open N1QL port — try HTTPS and HTTP when cluster uses TLS.
         import socket
 
         def _port_open(host, port):
@@ -1678,36 +1661,48 @@ class JWTOIDCTest(JWTOIDCBase):
             except (OSError, TypeError, ValueError):
                 return False
 
-        if not _port_open(query_host, query_port):
-            if query_use_https and _port_open(query_host, 8093):
-                self.log.warning(
-                    f"HTTPS N1QL port {query_port} closed on {query_host}; "
-                    "falling back to HTTP port 8093"
-                )
-                query_use_https = False
-                query_port = 8093
-                query_scheme = "http"
-            else:
-                self.fail(
-                    f"N1QL port {query_port} not open on {query_host}. "
-                    f"Ensure the cluster was set up with services_init={services_init} "
-                    "(do not use skip_cluster_reset=True for this test)."
-                )
+        port_candidates = []
+        if query_use_https or self.cluster_use_https:
+            port_candidates.extend([(True, 18093), (False, 8093)])
+        else:
+            port_candidates.extend([(False, 8093), (True, 18093)])
+        seen_ports = set()
+        for https, port in port_candidates:
+            if port in seen_ports:
+                continue
+            seen_ports.add(port)
+            if _port_open(query_host, port):
+                if https != query_use_https or port != query_port:
+                    self.log.info(
+                        f"Using N1QL endpoint {query_host}:{port} "
+                        f"(https={https})"
+                    )
+                query_use_https = https
+                query_port = port
+                break
+        else:
+            layout = {
+                getattr(n, "ip", n): getattr(n, "services", "")
+                for n in self.cluster.nodes_in_cluster
+            }
+            self.fail(
+                f"No N1QL port open on {query_host} (tried 8093 and 18093). "
+                f"Cluster layout={layout}. "
+                f"Ensure services_init includes n1ql on a node "
+                f"(e.g. kv:n1ql-kv:index-kv) and do not use skip_cluster_reset=True "
+                "unless the cluster already has query service running."
+            )
+
+        query_scheme = "https" if query_use_https else "http"
 
         query_url = f"{query_scheme}://{query_host}:{query_port}/query/service"
-
-        bearer_headers = {
-            "Authorization": f"Bearer {admin_token}",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-        }
 
         self.log.info(f"Testing admin Bearer auth on N1QL service: {query_url}")
         try:
             resp_admin = self.http.post(
                 query_url,
                 data="statement=SELECT 1 AS test",
-                headers=bearer_headers,
+                headers=self._query_bearer_headers(admin_token),
                 timeout=30,
             )
         except Exception as exc:
@@ -1766,11 +1761,7 @@ class JWTOIDCTest(JWTOIDCBase):
         resp_unmapped = self.http.post(
             query_url,
             data="statement=SELECT * FROM system:user_info LIMIT 1",
-            headers={
-                "Authorization": f"Bearer {unmapped_token}",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-            },
+            headers=self._query_bearer_headers(unmapped_token),
             timeout=30,
         )
         self.log.info(
@@ -1778,9 +1769,8 @@ class JWTOIDCTest(JWTOIDCBase):
             f"body={resp_unmapped.text[:300]}"
         )
 
-        self.assertIn(
+        self.jwt_utils.assert_unauthorized_status(
             resp_unmapped.status_code,
-            [401, 403],
             f"Unmapped user with no RBAC should be denied by query service "
             f"(system:user_info requires admin/security_admin). "
             f"status={resp_unmapped.status_code}",
