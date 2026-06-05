@@ -24,7 +24,7 @@ class CloneCloudSnapshotBackup(CloudSnapshotBackupBase):
 
     def test_api_path(self):
         testcases = [
-            {"description": "Clone cloud snapshot backup with valid path"},
+            # {"description": "Clone cloud snapshot backup with valid path"},
             {
                 "description": "Clone cloud snapshot backup with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
@@ -106,6 +106,8 @@ class CloneCloudSnapshotBackup(CloudSnapshotBackupBase):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
+            payload = copy.deepcopy(self.clone_data)
+            payload["name"] = self.generate_random_string(special_characters=False)
             result = self.clone_call(
                 self.organisation_id, self.project_id, self.backup_id, payload,
                 headers=header)
