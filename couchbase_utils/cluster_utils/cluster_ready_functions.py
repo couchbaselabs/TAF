@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Created on Sep 26, 2017
 
@@ -171,6 +172,222 @@ class ClusterUtils:
         self.input = TestInputSingleton.input
         self.task_manager = task_manager
         self.log = logger.get("test")
+
+    def assertTrue(self, expr, msg=None):
+        if msg:
+            msg = "{0} is not true : {1}".format(expr, msg)
+        else:
+            msg = "{0} is not true".format(expr)
+        if not expr:
+            raise (Exception(msg))
+
+    def assertFalse(self, expr, msg=None):
+        if msg:
+            msg = "{0} is not false: {1}".format(expr, msg)
+        else:
+            msg = "{0} is false".format(expr)
+        if expr:
+            raise (Exception(msg))
+
+    @staticmethod
+    def _parse_cluster_node_counts(input_obj):
+        """
+        Determine the number of clusters and node count per cluster
+        from the pipe-separated nodes_init parameter.
+
+        :param input_obj: TestInput object
+        :returns: list[int] — node counts per cluster
+                  e.g. [2, 3] for nodes_init=2|3
+        """
+        raw_nodes_init = input_obj.param("nodes_init", 1)
+        if isinstance(raw_nodes_init, str) and "|" in raw_nodes_init:
+            return [int(x) for x in raw_nodes_init.split("|")]
+        return [int(raw_nodes_init)]
+
+    @staticmethod
+    def _parse_cluster_nodes(input_obj):
+        """
+        Slice input_obj.servers into per-cluster server object lists
+        based on pipe-separated nodes_init.
+
+        :param input_obj: TestInput object
+        :returns: list[list[TestInputServer]] — servers grouped by cluster
+                  e.g. [[server1, server2], [server3, server4]]
+        """
+        node_counts = ClusterUtils._parse_cluster_node_counts(input_obj)
+        all_servers = input_obj.servers
+        clusters_nodes = []
+        offset = 0
+        for count in node_counts:
+            clusters_nodes.append(all_servers[offset:offset + count])
+            offset += count
+        return clusters_nodes
+
+    @staticmethod
+    def _parse_cluster_services(input_obj):
+        """
+        Parse the pipe-separated services_init into per-cluster,
+        per-node service lists.
+
+        Format: "kv:n1ql-cbas|kv:index-kv:fts"
+          - '|' separates clusters
+          - '-' separates nodes within a cluster
+          - ':' separates services on a single node
+
+        :param input_obj: TestInput object
+        :returns: list[list[str]] — services per node, grouped by cluster
+                  e.g. [["kv,n1ql", "cbas"], ["kv,index", "kv,fts"]]
+        """
+        raw_services_init = input_obj.param("services_init", None)
+        if not raw_services_init:
+            return []
+
+        clusters_services = []
+        for cluster_svc in str(raw_services_init).split("|"):
+            clusters_services.append(
+                [s.replace(":", ",") for s in cluster_svc.split("-")])
+        return clusters_services
+
+    @staticmethod
+    def get_cluster_topology(input_obj):
+        """
+        Build a consolidated cluster topology from the test input.
+
+        Combines node segregation and service segregation into a single
+        reference object with per-cluster detail.
+
+        :param input_obj: TestInput object (TestInputSingleton.input)
+        :returns: dict with:
+            - num_clusters (int): total number of clusters
+            - clusters (list[dict]): per-cluster info, each containing:
+                - nodes (list[TestInputServer]): server objects
+                  for this cluster (same type as nodes_in_cluster)
+                - services (list[str]): per-node services
+                  e.g. ["kv,n1ql", "cbas"]
+        """
+        clusters_nodes = ClusterUtils._parse_cluster_nodes(input_obj)
+        clusters_services = ClusterUtils._parse_cluster_services(input_obj)
+
+        num_clusters = max(
+            len(clusters_nodes),
+            input_obj.param("num_of_clusters", 1),
+            len(input_obj.clusters) if input_obj.clusters else 1)
+
+        # Build per-cluster topology entries
+        clusters = []
+        for i in range(num_clusters):
+            nodes = clusters_nodes[i] if i < len(clusters_nodes) else []
+            services = clusters_services[i] \
+                if i < len(clusters_services) else []
+            clusters.append({"nodes": nodes, "services": services})
+
+        return {
+            "num_clusters": num_clusters,
+            "clusters": clusters,
+        }
+
+    @staticmethod
+    def rebalance_in_nodes(task, cluster, services=None):
+        """
+        Rebalance non-master nodes into an already-initialized cluster.
+
+        :param task: Task object (self.task from test class)
+        :param cluster: CBCluster object with servers and master set
+        :param services: list[str] services for each non-master node
+                         e.g. ["kv,n1ql", "cbas"]
+                         Pass None to use default (kv)
+        :returns: True if rebalance succeeded or no nodes to add,
+                  False if rebalance failed
+        """
+        if len(cluster.servers) <= 1:
+            return True
+
+        master_ip = cluster.master.ip
+        nodes_to_add = [n for n in cluster.servers
+                        if n.ip != master_ip]
+        result = task.rebalance(cluster, nodes_to_add, [],
+                                services=services)
+        return result
+
+    @staticmethod
+    def generate_random_name(prefix, length=8):
+        random.seed()
+        chars = string.ascii_letters + string.digits
+        suffix = ''.join(random.choice(chars) for _ in range(length))
+        return prefix + suffix
+
+    @staticmethod
+    def create_secret_params(secret_type="cb-server-managed-aes-key-256",
+                             name="Default secret", usage=None,
+                             autoRotation=True, rotationIntervalInDays=60,
+                             rotationIntervalInSeconds=None, keyARN=None,
+                             region=None, useIMDS=None, credentialsFile=None,
+                             configFile=None, profile=None,
+                             caSelection=None, reqTimeoutMs=None,
+                             encryptionApproach=None, encryptWith=None,
+                             encryptWithKeyId=None, activeKey=None,
+                             keyPath=None, certPath=None, keyPassphrase=None,
+                             host=None, port=None):
+        if usage is None:
+            usage = ["bucket-encryption"]
+
+        data = {}
+        if host is None:
+            data = {
+                "autoRotation": autoRotation,
+                "rotationIntervalInDays": rotationIntervalInDays
+            }
+
+            if rotationIntervalInSeconds is not None:
+                data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                    seconds=rotationIntervalInSeconds)).isoformat() + "Z"
+            else:
+                data["nextRotationTime"] = (datetime.utcnow() + timedelta(
+                    days=rotationIntervalInDays)).isoformat() + "Z"
+
+        if keyARN is not None:
+            data["keyARN"] = keyARN
+        if region is not None:
+            data["region"] = region
+        if useIMDS is not None:
+            data["useIMDS"] = useIMDS
+        if credentialsFile is not None:
+            data["credentialsFile"] = credentialsFile
+        if configFile is not None:
+            data["configFile"] = configFile
+        if profile is not None:
+            data["profile"] = profile
+
+        if caSelection is not None:
+            data["caSelection"] = caSelection
+        if reqTimeoutMs is not None:
+            data["reqTimeoutMs"] = reqTimeoutMs
+        if encryptionApproach is not None:
+            data["encryptionApproach"] = encryptionApproach
+        if encryptWith is not None:
+            data["encryptWith"] = encryptWith
+        if encryptWithKeyId is not None:
+            data["encryptWithKeyId"] = encryptWithKeyId
+        if activeKey is not None:
+            data["activeKey"] = activeKey
+        if keyPath is not None:
+            data["keyPath"] = keyPath
+        if certPath is not None:
+            data["certPath"] = certPath
+        if keyPassphrase is not None:
+            data["keyPassphrase"] = keyPassphrase
+        if host is not None:
+            data["host"] = host
+        if port is not None:
+            data["port"] = port
+
+        params = {
+            "type": secret_type,
+            "name": name,
+            "usage": usage,
+            "data": data
+        }
+        return params
 
     @staticmethod
     def flush_network_rules(node):

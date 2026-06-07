@@ -478,6 +478,20 @@ class OnPremBaseTest(CouchbaseBaseTest):
             server.cbas_port = CbServer.ssl_cbas_port
             server.eventing_port = CbServer.ssl_eventing_port
 
+    def enforce_tls_and_set_ports(self, cluster_nodes):
+        """
+        Enforce TLS on the cluster (via master node) and update all
+        server objects to use SSL ports.
+        Intended for additional clusters not covered by enable_tls_on_nodes.
+        """
+        if self.enforce_tls:
+            task = self.node_utils.async_enable_tls(
+                cluster_nodes[0], self.encryption_level)
+            self.task_manager.get_task_result(task)
+        if CbServer.use_https:
+            for node in cluster_nodes:
+                self.set_ports_for_server(node, "ssl")
+
     def enable_tls_on_nodes(self):
         if self.enforce_tls:
             retry_count = self.input.param("tls_retry_count", 3)
