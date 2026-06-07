@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Created on Sep 26, 2017
 
@@ -187,6 +188,126 @@ class ClusterUtils:
             msg = "{0} is false".format(expr)
         if expr:
             raise (Exception(msg))
+
+    @staticmethod
+    def _parse_cluster_node_counts(input_obj):
+        """
+        Determine the number of clusters and node count per cluster
+        from the pipe-separated nodes_init parameter.
+
+        :param input_obj: TestInput object
+        :returns: list[int] — node counts per cluster
+                  e.g. [2, 3] for nodes_init=2|3
+        """
+        raw_nodes_init = input_obj.param("nodes_init", 1)
+        if isinstance(raw_nodes_init, str) and "|" in raw_nodes_init:
+            return [int(x) for x in raw_nodes_init.split("|")]
+        return [int(raw_nodes_init)]
+
+    @staticmethod
+    def _parse_cluster_nodes(input_obj):
+        """
+        Slice input_obj.servers into per-cluster server object lists
+        based on pipe-separated nodes_init.
+
+        :param input_obj: TestInput object
+        :returns: list[list[TestInputServer]] — servers grouped by cluster
+                  e.g. [[server1, server2], [server3, server4]]
+        """
+        node_counts = ClusterUtils._parse_cluster_node_counts(input_obj)
+        all_servers = input_obj.servers
+        clusters_nodes = []
+        offset = 0
+        for count in node_counts:
+            clusters_nodes.append(all_servers[offset:offset + count])
+            offset += count
+        return clusters_nodes
+
+    @staticmethod
+    def _parse_cluster_services(input_obj):
+        """
+        Parse the pipe-separated services_init into per-cluster,
+        per-node service lists.
+
+        Format: "kv:n1ql-cbas|kv:index-kv:fts"
+          - '|' separates clusters
+          - '-' separates nodes within a cluster
+          - ':' separates services on a single node
+
+        :param input_obj: TestInput object
+        :returns: list[list[str]] — services per node, grouped by cluster
+                  e.g. [["kv,n1ql", "cbas"], ["kv,index", "kv,fts"]]
+        """
+        raw_services_init = input_obj.param("services_init", None)
+        if not raw_services_init:
+            return []
+
+        clusters_services = []
+        for cluster_svc in str(raw_services_init).split("|"):
+            clusters_services.append(
+                [s.replace(":", ",") for s in cluster_svc.split("-")])
+        return clusters_services
+
+    @staticmethod
+    def get_cluster_topology(input_obj):
+        """
+        Build a consolidated cluster topology from the test input.
+
+        Combines node segregation and service segregation into a single
+        reference object with per-cluster detail.
+
+        :param input_obj: TestInput object (TestInputSingleton.input)
+        :returns: dict with:
+            - num_clusters (int): total number of clusters
+            - clusters (list[dict]): per-cluster info, each containing:
+                - nodes (list[TestInputServer]): server objects
+                  for this cluster (same type as nodes_in_cluster)
+                - services (list[str]): per-node services
+                  e.g. ["kv,n1ql", "cbas"]
+        """
+        clusters_nodes = ClusterUtils._parse_cluster_nodes(input_obj)
+        clusters_services = ClusterUtils._parse_cluster_services(input_obj)
+
+        num_clusters = max(
+            len(clusters_nodes),
+            input_obj.param("num_of_clusters", 1),
+            len(input_obj.clusters) if input_obj.clusters else 1)
+
+        # Build per-cluster topology entries
+        clusters = []
+        for i in range(num_clusters):
+            nodes = clusters_nodes[i] if i < len(clusters_nodes) else []
+            services = clusters_services[i] \
+                if i < len(clusters_services) else []
+            clusters.append({"nodes": nodes, "services": services})
+
+        return {
+            "num_clusters": num_clusters,
+            "clusters": clusters,
+        }
+
+    @staticmethod
+    def rebalance_in_nodes(task, cluster, services=None):
+        """
+        Rebalance non-master nodes into an already-initialized cluster.
+
+        :param task: Task object (self.task from test class)
+        :param cluster: CBCluster object with servers and master set
+        :param services: list[str] services for each non-master node
+                         e.g. ["kv,n1ql", "cbas"]
+                         Pass None to use default (kv)
+        :returns: True if rebalance succeeded or no nodes to add,
+                  False if rebalance failed
+        """
+        if len(cluster.servers) <= 1:
+            return True
+
+        master_ip = cluster.master.ip
+        nodes_to_add = [n for n in cluster.servers
+                        if n.ip != master_ip]
+        result = task.rebalance(cluster, nodes_to_add, [],
+                                services=services)
+        return result
 
     @staticmethod
     def generate_random_name(prefix, length=8):
