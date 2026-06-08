@@ -1,3 +1,5 @@
+import json
+
 from cb_server_rest_util.connection import CBRestConnection
 
 
@@ -21,11 +23,19 @@ class RbacAuthorization(CBRestConnection):
         status, content, _ = self.request(api, self.GET)
         return status, content
 
-    def check_permissions(self):
+    def check_permissions(self, permissions):
         """
         POST :: /pools/default/checkPermissions
         docs.couchbase.com/server/current/rest-api/rbac.html
+        permissions: list of permission strings, e.g.
+          ["cluster.collection[b:s:c1]!write", "cluster.collection[b:s:c2]!write"]
+        Authenticated as self.username/self.password.
+        Returns (status, dict) mapping permission -> bool.
         """
+        api = self.base_url + "/pools/default/checkPermissions"
+        body = ",".join(permissions)
+        status, content, _ = self.request(api, self.POST, params=body)
+        return status, content
 
     def create_local_user(self, user_name, params):
         """
@@ -74,3 +84,25 @@ class RbacAuthorization(CBRestConnection):
         DELETE :: /settings/rbac/groups/<group_name>
         docs.couchbase.com/server/current/rest-api/rbac.html
         """
+
+    def create_custom_role(self, role_name, display_name, permissions):
+        """
+        PUT :: /settings/rbac/customRoles/<role_name>
+        Requires custom_roles_enabled (provisioned profile).
+        permissions: dict mapping permission key -> "all"|"none"
+          e.g. {"cluster.collection[b:s:.]": "all",
+                "cluster.collection[b:s:col]": "none"}
+        Returns (status, content).
+        """
+        api = self.base_url + f"/settings/rbac/customRoles/{role_name}"
+        body = json.dumps({"name": display_name, "permissions": permissions})
+        headers = self.get_headers_for_content_type_json()
+        status, content, _ = self.request(api, self.PUT, params=body,
+                                          headers=headers)
+        return status, content
+
+    def delete_custom_role(self, role_name):
+        """DELETE :: /settings/rbac/customRoles/<role_name>"""
+        api = self.base_url + f"/settings/rbac/customRoles/{role_name}"
+        status, content, _ = self.request(api, self.DELETE)
+        return status, content

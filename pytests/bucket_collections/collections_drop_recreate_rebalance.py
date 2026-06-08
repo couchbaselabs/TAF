@@ -1,7 +1,8 @@
 import threading
 import time
 
-from cb_constants import CbServer
+from cb_constants import CbServer, DocLoading
+from sdk_client3 import SDKClient
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
@@ -10,6 +11,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.tuq_helper import N1QLHelper
 from shell_util.remote_connection import RemoteMachineShellConnection
 from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
+from rbac_utils.Rbac_ready_functions import RbacUtils
 
 from table_view import TableView
 
@@ -386,6 +388,105 @@ class CollectionsDropRecreateRebalance(CollectionBase):
 
     def test_data_load_collections_with_rebalance_out(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_out")
+        self._verify_rbac_exclusion_with_1k_collections()
+
+    def _verify_rbac_exclusion_with_1k_collections(self):
+        """
+        Appended after the main rebalance flow.
+        At this point the cluster already has 1K collections (10 scopes x 50
+        collections per bucket via buckets_1000_collections spec).
+
+        Creates a custom RBAC role that grants full access to all collections
+        in one scope except one excluded collection, then verifies:
+          - allowed collections  -> access granted
+          - excluded collection  -> access denied
+        """
+        bucket = self.cluster.buckets[0]
+        bucket_name = bucket.name
+
+        # Pick the first non-default scope and its first two collections
+        scope_name = None
+        allowed_col = None
+        excluded_col = None
+        for s_name, scope in bucket.scopes.items():
+            if s_name.startswith("_"):
+                continue
+            cols = list(scope.collections.keys())
+            if len(cols) >= 2:
+                scope_name = s_name
+                allowed_col = cols[0]
+                excluded_col = cols[1]
+                break
+
+        if not scope_name:
+            self.log.warning("No suitable scope found for RBAC exclusion test; skipping")
+            return
+
+        rbac_util = RbacUtils(self.cluster.master)
+        role_name = "excl_role_rebalance"
+        username = "excl_user_rebalance"
+
+        try:
+            self.log.info(
+                "RBAC exclusion test: bucket=%s scope=%s allowed=%s excluded=%s"
+                % (bucket_name, scope_name, allowed_col, excluded_col))
+
+            enable_custom_roles = self.input.param("runtype", "default") == "default"
+            # data_writer[bucket] is added so the SDK can SASL-auth to the bucket;
+            # the custom role's "none" on excluded_col overrides the data_writer grant.
+            created = rbac_util._create_user_with_exclusion_role(
+                username, role_name, bucket_name, scope_name, excluded_col,
+                enable_custom_roles=enable_custom_roles,
+                additional_roles=["data_writer[{b}]".format(b=bucket_name)])
+            if not created:
+                self.log.warning("Custom roles not supported on this cluster; skipping exclusion RBAC check")
+                return
+
+            # Verify collection-level permissions via checkPermissions REST API,
+            # authenticated as the test user.
+            perm_allowed = "cluster.collection[{b}:{s}:{c}]!write".format(
+                b=bucket_name, s=scope_name, c=allowed_col)
+            perm_excluded = "cluster.collection[{b}:{s}:{c}]!write".format(
+                b=bucket_name, s=scope_name, c=excluded_col)
+            status, result = rbac_util._check_user_permissions(
+                username, "password", [perm_allowed, perm_excluded])
+            self.assertTrue(status,
+                "checkPermissions call failed for user '%s': %s" % (username, result))
+            self.assertTrue(result.get(perm_allowed, False),
+                "RBAC exclusion: allowed collection '%s' should be accessible, got: %s"
+                % (allowed_col, result))
+            self.assertFalse(result.get(perm_excluded, True),
+                "RBAC exclusion: excluded collection '%s' should be denied, got: %s"
+                % (excluded_col, result))
+            self.log.info(
+                "RBAC exclusion syntax verified: allowed=%s(%s) excluded=%s(%s)"
+                % (allowed_col, result.get(perm_allowed),
+                   excluded_col, result.get(perm_excluded)))
+
+            # SDK CRUD validation: confirm the exclusion is enforced at the data plane.
+            sdk_allowed = SDKClient(self.cluster, bucket, scope=scope_name,
+                                    collection=allowed_col,
+                                    username=username, password="password")
+            write_result = sdk_allowed.crud(
+                DocLoading.Bucket.DocOps.UPDATE, "rbac_excl_allowed_doc", {"val": 1})
+            sdk_allowed.close()
+            self.assertTrue(write_result.get("status"),
+                "RBAC exclusion: SDK write to allowed collection '%s' failed: %s"
+                % (allowed_col, write_result.get("error")))
+
+            sdk_excluded = SDKClient(self.cluster, bucket, scope=scope_name,
+                                     collection=excluded_col,
+                                     username=username, password="password")
+            write_result = sdk_excluded.crud(
+                DocLoading.Bucket.DocOps.UPDATE, "rbac_excl_excluded_doc", {"val": 1})
+            sdk_excluded.close()
+            self.assertFalse(write_result.get("status"),
+                "RBAC exclusion: SDK write to excluded collection '%s' should be denied"
+                % excluded_col)
+            self.log.info("SDK CRUD validation passed: allowed_col write succeeded,"
+                          " excluded_col write denied")
+        finally:
+            rbac_util._drop_user_and_custom_role(username, role_name)
 
     def test_data_load_collections_with_swap_rebalance(self):
         self.load_collections_with_rebalance(rebalance_operation="swap_rebalance")
