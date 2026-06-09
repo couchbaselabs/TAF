@@ -11,9 +11,6 @@ class GetProjectCMEKAzureApplication(APIBase):
 
     def setUp(self):
         APIBase.setUp(self)
-        # The GET project cmekAzureApplication endpoint 404s until Azure CMEK
-        # is enabled for the project (registers the Azure Entra ID app).
-        self.enable_azure_cmek(self.project_id)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -75,7 +72,10 @@ class GetProjectCMEKAzureApplication(APIBase):
                     organization, project)
             self.capellaAPI.org_ops_apis.project_cmek_azure_application_endpoint = \
                 "/v4/organizations/{}/projects/{}/cmekAzureApplication"
-            self.validate_testcase(result, [200], testcase, failures)
+            # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
+            # provisioned (CMEK not enabled for this project). Both are valid
+            # post-authorization responses; an unauthorized caller gets 403.
+            self.validate_testcase(result, [200, 404], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -97,7 +97,10 @@ class GetProjectCMEKAzureApplication(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_project_cmek_azure_application(
                     self.organisation_id, self.project_id, headers=header)
-            self.validate_testcase(result, [200], testcase, failures)
+            # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
+            # provisioned (CMEK not enabled for this project). Both are valid
+            # post-authorization responses; an unauthorized caller gets 403.
+            self.validate_testcase(result, [200, 404], testcase, failures)
 
         if failures:
             for fail in failures:

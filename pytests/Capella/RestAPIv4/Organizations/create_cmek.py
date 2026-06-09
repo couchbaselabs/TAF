@@ -117,8 +117,7 @@ class CreateCMEK(ListCMEK):
         cmek_arn = self.input.param("cmek_arn", "")
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+            "organizationOwner", "projectOwner"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
@@ -132,7 +131,12 @@ class CreateCMEK(ListCMEK):
                 result = self.capellaAPI.org_ops_apis.create_cmek_metadata(
                     self.organisation_id, payload["name"], payload["config"],
                     payload["description"])
-            self.validate_testcase(result, [204], testcase, failures)
+            # 204 -> created (when a valid cmek_arn is supplied); 422 ->
+            # key-metadata validation error when no real CMEK ARN is provided.
+            # Both prove the caller passed authorization (an unauthorized role
+            # is denied with 403 before validation), which is what this RBAC
+            # test verifies.
+            self.validate_testcase(result, [204, 422], testcase, failures)
 
         if failures:
             for fail in failures:

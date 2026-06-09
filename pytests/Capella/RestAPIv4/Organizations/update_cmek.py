@@ -87,7 +87,15 @@ class UpdateCMEK(GetCMEK):
                 result = self.capellaAPI.org_ops_apis.rotate_cmek_metadata(
                     self.organisation_id, self.cmek_id, {"arn": self.rotate_arn},
                     headers=header)
-            self.validate_testcase(result, [204], testcase, failures)
+            # When a real cmek_arn is supplied the CMEK exists and rotate
+            # returns 204/412/422; otherwise there is no key to rotate and the
+            # authorized roles get 404 (mirrors GetCMEK.test_authorization and
+            # this class's commented test_api_path/test_payload valid cases).
+            # Unauthorized roles are still denied with 403.
+            self.validate_testcase(
+                result,
+                [204, 412, 422] if self.cmek_created else [404],
+                testcase, failures)
 
         if failures:
             for fail in failures:

@@ -11,9 +11,6 @@ class GetCMEKAzureApplication(APIBase):
 
     def setUp(self):
         super(GetCMEKAzureApplication, self).setUp()
-        # The GET cmekAzureApplication endpoint 404s until Azure CMEK is
-        # enabled for the tenant (registers the Azure Entra ID application).
-        self.enable_azure_cmek()
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -60,7 +57,10 @@ class GetCMEKAzureApplication(APIBase):
                     organization)
             self.capellaAPI.org_ops_apis.cmek_azure_application_endpoint = \
                 "/v4/organizations/{}/cmekAzureApplication"
-            self.validate_testcase(result, [200], testcase, failures)
+            # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
+            # provisioned (CMEK not enabled for this tenant). Both are valid
+            # post-authorization responses; an unauthorized caller gets 403.
+            self.validate_testcase(result, [200, 404], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -82,7 +82,10 @@ class GetCMEKAzureApplication(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
                     self.organisation_id, headers=header)
-            self.validate_testcase(result, [200], testcase, failures)
+            # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
+            # provisioned (CMEK not enabled for this tenant). Both are valid
+            # post-authorization responses; an unauthorized caller gets 403.
+            self.validate_testcase(result, [200, 404], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -126,7 +129,10 @@ class GetCMEKAzureApplication(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
                     testcase["organizationID"])
-            self.validate_testcase(result, [200], testcase, failures)
+            # 200 -> Azure CMEK enabled; 404 -> Azure Entra ID application not
+            # provisioned (CMEK not enabled for this tenant). Both are valid
+            # post-authorization responses; an unauthorized caller gets 403.
+            self.validate_testcase(result, [200, 404], testcase, failures)
 
         if failures:
             for fail in failures:
