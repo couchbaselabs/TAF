@@ -117,7 +117,7 @@ class CreateCMEK(ListCMEK):
         cmek_arn = self.input.param("cmek_arn", "")
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner"
+            "organizationOwner"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
