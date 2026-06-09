@@ -187,7 +187,8 @@ class DeleteAppEndpoints(GetAppEndpoints):
                     self.app_service_id,
                     self.expected_res["name"], self.expected_res["deltaSync"],
                     self.expected_res["bucket"], self.expected_res["scopes"],
-                    self.expected_res["userXattrKey"])
+                    self.expected_res["userXattrKey"],
+                    self.expected_res["cors"])
 
         if failures:
             for fail in failures:

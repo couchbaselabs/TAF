@@ -5,13 +5,26 @@ Created on April 17, 2025
 """
 
 from pytests.Capella.RestAPIv4.AppService.get_app_service_admin_users import GetAdminUsers
+from pytests.Capella.RestAPIv4.AppService.get_app_service import GetAppService
 from copy import deepcopy
 
 
 class PostAdminUsers(GetAdminUsers):
 
     def setUp(self, nomenclature="AppService_POST"):
-        GetAdminUsers.setUp(self, nomenclature)
+        # This is the POST (create) test, so do NOT pre-create the "user3"
+        # fixture that GetAdminUsers.setUp creates: the create test cases make
+        # (and clean up) their own users, and a pre-existing "user3" would make
+        # every valid create collide with a 422 "user name already in use".
+        GetAppService.setUp(self, nomenclature)
+        self.user_id = None
+        self.expected_res = {
+            "name": "user3",
+            "password": "passwordD1,",
+            "access": {
+                "accessAllEndpoints": True
+            }
+        }
 
     def tearDown(self):
         super(PostAdminUsers, self).tearDown()
@@ -164,6 +177,9 @@ class PostAdminUsers(GetAdminUsers):
 
     def test_authorization(self):
         failures = list()
+        print(self.v4_RBAC_injection_init([
+             "organizationOwner", "projectOwner", "projectManager"
+        ]))
         for testcase in self.v4_RBAC_injection_init([
              "organizationOwner", "projectOwner", "projectManager"
         ]):
