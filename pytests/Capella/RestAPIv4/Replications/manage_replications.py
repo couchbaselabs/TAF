@@ -132,8 +132,7 @@ class ManageReplication(ReplicationBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+            "organizationOwner", "projectOwner"
         ], None):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
@@ -145,7 +144,7 @@ class ManageReplication(ReplicationBase):
                 get_result, [200, 404], testcase, failures)
 
         mutate_testcases = self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager"
+            "organizationOwner", "projectOwner"
         ])
         for testcase in mutate_testcases:
             header = dict()

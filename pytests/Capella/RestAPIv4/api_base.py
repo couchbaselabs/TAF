@@ -2116,6 +2116,55 @@ class APIBase(CouchbaseBaseTest):
             self.log.error("App Service admin user creation failed: {}".format(res.content))
         return None
 
+    def enable_azure_cmek(self, project_id=None):
+        """Precondition for the Azure CMEK application tests.
+
+        The GET .../cmekAzureApplication endpoint returns 404 ("The Azure
+        Entra ID application could not be found...") until Azure CMEK is
+        enabled, which registers the Azure Entra ID application. Enabling is a
+        one-way, tenant/project-level operation (there is no disable endpoint),
+        so it stays enabled after the run; enabling again just returns 422.
+
+        Pass project_id to enable/verify at the project scope; omit it for the
+        organization scope.
+        """
+        self.update_auth_with_api_token(self.curr_owner_key)
+        if project_id:
+            res = self.capellaAPI.org_ops_apis.enable_project_cmek_provider(
+                self.organisation_id, project_id, "azure")
+        else:
+            res = self.capellaAPI.org_ops_apis.enable_cmek_provider(
+                self.organisation_id, "azure")
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            return self.enable_azure_cmek(project_id)
+        # 204 -> just enabled, 422 -> already enabled by a previous run.
+        if res.status_code not in (204, 422):
+            self.tearDown()
+            self.fail("Couldn't enable the Azure CMEK precondition: {}".format(
+                res.content))
+
+        # The Entra ID application can take a moment to register; poll the GET
+        # so the test cases don't race the enablement.
+        end_time = time.time() + 120
+        while time.time() < end_time:
+            if project_id:
+                res = (self.capellaAPI.org_ops_apis.
+                       fetch_project_cmek_azure_application(
+                        self.organisation_id, project_id))
+            else:
+                res = self.capellaAPI.org_ops_apis.fetch_cmek_azure_application(
+                    self.organisation_id)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                continue
+            if res.status_code == 200:
+                self.log.info("Azure CMEK application is available.")
+                return
+            time.sleep(5)
+        self.log.warning("Azure CMEK application was not available within 2 "
+                         "mins of enabling; the test cases may still fail.")
+
     def fetch_free_tier_cluster(self):
         self.log.debug(
             "Fetching the free tier cluster in Org: {}, "

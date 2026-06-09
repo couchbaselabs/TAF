@@ -11,6 +11,9 @@ class GetCMEKAzureApplication(APIBase):
 
     def setUp(self):
         super(GetCMEKAzureApplication, self).setUp()
+        # The GET cmekAzureApplication endpoint 404s until Azure CMEK is
+        # enabled for the tenant (registers the Azure Entra ID application).
+        self.enable_azure_cmek()
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)

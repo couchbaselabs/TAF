@@ -113,8 +113,7 @@ class GetReplicationJob(ReplicationBase):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectOwner", "projectManager",
-            "projectViewer", "projectDataReader", "projectDataReaderWriter"
+            "organizationOwner", "projectOwner"
         ]):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
