@@ -69,6 +69,7 @@ class hostedOPD(OPD):
                  Bucket.bucketType: bucket_type[i],
                  Bucket.durabilityMinLevel: self.bucket_durability_level,
                  Bucket.flushEnabled: True,
+                 Bucket.numVBuckets: self.input.param("numVBuckets", 128),
                  Bucket.fragmentationPercentage: self.fragmentation})
             self.bucket_params = {
                 "name": bucket.name,
@@ -78,6 +79,7 @@ class hostedOPD(OPD):
                 "replicas": bucket.replicaNumber,
                 "storageBackend": bucket.storageBackend,
                 "durabilityLevel": bucket.durabilityMinLevel,
+                "numVBuckets": bucket.numVBuckets,
                 "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
             }
             CapellaUtils.create_bucket(pod, tenant, cluster, self.bucket_params)
