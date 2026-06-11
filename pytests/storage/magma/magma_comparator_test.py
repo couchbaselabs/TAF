@@ -516,7 +516,7 @@ class MagmaUnsafeWindow(MagmaBaseTest):
         until stop_check_vulnerable is set."""
         self.log.info("Waiting for 2 update iterations before starting vulnerability checks...")
         self.start_check_vulnerable.wait()
-        self.log.info("Starting periodic vulnerability checks")
+        self.log.info("Starting continuous vulnerability checks (no sleep between runs)")
         while not self.stop_check_vulnerable.is_set():
             for node in self.cluster.kv_nodes:
                 self.log.info("check_vulnerable_vbuckets on node: {}".format(node.ip))
@@ -524,8 +524,6 @@ class MagmaUnsafeWindow(MagmaBaseTest):
                 self.log.info("Node {} | status={} | maxSn={} | vulnerable={} | failed_kvstores={}".format(
                     node.ip, result["status"], result["max_sn"],
                     result["vulnerable_kvstores"], result["failed_kvstores"]))
-            self.sleep(check_interval,
-                       "Next check_vulnerable run in {}s".format(check_interval))
 
 
     def run_diagnostic_scripts(self, bucket, assert_vulnerable=True):
