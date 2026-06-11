@@ -75,7 +75,8 @@ class KubectlLib:
         # mint the k8s bearer token via boto3 (works on any arch where botocore
         # imports), then write a static-token kubeconfig that kubectl reads via
         # the KUBECONFIG env var. This avoids depending on a correctly-arch'd
-        # `aws` binary on the runner (an x86 aws on an arm64 agent gives ENOEXEC).
+        # `aws` binary on the runner (an x86 aws on an arm64 agent gives ENOEXEC
+        # -- seen live on a Graviton Jenkins node with an x86_64 aws-cli install).
         self._kubeconfig_path = None
         self._eks_session = None
         self._eks_endpoint = None
@@ -478,7 +479,8 @@ class KubectlLib:
             cmd += ["--context", context]
         if namespace:
             cmd += ["-n", namespace]
-        # Freshly mint the token before the (long-lived) tunnel authenticates.
+        # Freshly mint the token before the (long-lived) tunnel authenticates --
+        # this bypasses _run(), so it needs its own explicit refresh.
         if self._kubeconfig_path:
             self._write_kubeconfig()
         try:
