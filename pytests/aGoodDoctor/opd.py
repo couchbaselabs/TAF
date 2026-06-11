@@ -12,7 +12,7 @@ from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.task_manager import TaskManager
 from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
-from sdk_client3 import SDKClient, SDKClientPool
+from sdk_client3 import SDKClient
 from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 from membase.api.rest_client import RestConnection
@@ -28,8 +28,6 @@ from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from TestInput import TestInputServer
 from gsiLib.gsiHelper import GsiHelper
 from collections import defaultdict
-from memcached.helper.data_helper import MemcachedClientHelper
-from aGoodDoctor.cont_bkrs import DoctorContBKRS
 
 
 class OPD:
