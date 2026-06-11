@@ -264,6 +264,53 @@ class FusionAWSUtil:
 
         return errors_found
 
+    def scan_dp_agent_logs_for_errors_on_cluster_instances(self, cluster_id):
+        """
+        Scan dp-agent logs for ERROR entries on all cluster instances.
+
+        Connects to all instances in the cluster using AWS SSM and greps
+        case-insensitively for ERROR in dp-agent log files.
+
+        :param cluster_id: Cluster identifier to filter instances by couchbase-cloud-cluster-id tag
+        :return: True if any errors are found, False otherwise
+        """
+        errors_found = False
+        instances = self.list_instances(filters=self._cluster_filter(cluster_id))
+
+        def scan_instance(instance):
+            instance_id = instance.get('InstanceId', 'N/A')
+            local_errors_found = False
+
+            try:
+                public_ip = instance.get('PublicIpAddress')
+                if not public_ip:
+                    self.log.warning(f"Instance {instance_id} does not have a Public IP. Skipping dp-agent log scan.")
+                    return False
+
+                self.log.info(f"Scanning dp-agent logs for errors on instance {instance_id} [{public_ip}]...")
+
+                grep_cmd = 'journalctl -u dp-agent --no-pager 2>/dev/null | grep -i ERROR || true'
+                grep_result = self.ec2.run_shell_command(instance_id, grep_cmd)
+                grep_output = grep_result.get('stdout', '').strip()
+                if grep_output:
+                    self.log.critical(f"ERROR found in dp-agent journal on instance {instance_id} [{public_ip}]:\n{grep_output}")
+                    local_errors_found = True
+                else:
+                    self.log.info(f"No dp-agent errors found in journal on instance {instance_id}.")
+
+            except Exception as e:
+                self.log.error(f"Failed to scan dp-agent logs on {instance_id}: {e}")
+
+            return local_errors_found
+
+        if instances:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(instances), 50)) as executor:
+                results = executor.map(scan_instance, instances)
+                if any(results):
+                    errors_found = True
+
+        return errors_found
+
     def list_cluster_fusion_asg(self, cluster_id):
         """
         List Auto Scaling Groups for fusion accelerator instances in a cluster.

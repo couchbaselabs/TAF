@@ -535,6 +535,15 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 ebs_available_thread.start()
                 ebs_available_threads.append(ebs_available_thread)
 
+        all_clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
+        dp_agent_log_thread = threading.Thread(
+            target=self.cp_monitor.scan_dp_agent_logs_for_errors,
+            kwargs={"clusters": all_clusters, "stop_run_event": self.stop_run_event},
+            name="dp-agent-log-scanner",
+            daemon=True
+        )
+        dp_agent_log_thread.start()
+
         self.services = self.input.param("services", "data")
         self.rebl_services = self.input.param("rebl_services", self.services).split("-")
         if h_scaling or vh_scaling:

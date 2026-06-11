@@ -542,6 +542,28 @@ class FusionCPResourceMonitor:
                 errors_found.append(cluster)
         return errors_found
 
+    def scan_dp_agent_logs_for_errors(self, clusters, stop_run_event, interval=300):
+        """
+        Background thread: periodically scan dp-agent logs for ERROR entries on all cluster instances.
+
+        Runs until stop_run_event is set, polling every `interval` seconds.
+
+        :param clusters: List of cluster objects
+        :param stop_run_event: Threading Event to stop monitoring
+        :param interval: Seconds between scans (default: 300)
+        :return: True when monitoring stops
+        """
+        while not stop_run_event.is_set():
+            for cluster in clusters:
+                self.log.info(f"Scanning dp-agent logs for errors on cluster {cluster.id}")
+                result = self.fusion_aws_util.scan_dp_agent_logs_for_errors_on_cluster_instances(cluster.id)
+                if result:
+                    self.log.critical(f"dp-agent ERROR(s) found on cluster {cluster.id}")
+                else:
+                    self.log.info(f"No dp-agent errors found on cluster {cluster.id}")
+            stop_run_event.wait(interval)
+        return True
+
     def parse_accelerator_logs(self, clusters, fusion_rebalances, access_key, secret_key, region):
         """
         Parse accelerator logs for all clusters.
