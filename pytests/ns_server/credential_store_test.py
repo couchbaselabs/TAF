@@ -1,5 +1,8 @@
 import time
 
+import requests
+from membase.api.rest_client import RestConnection
+
 from couchbase_utils.security_utils.credential_store_utils import (
     ERROR_CREDENTIAL_EXPIRED,
     ERROR_INSUFFICIENT_PERMISSIONS,
@@ -835,3 +838,321 @@ class CredentialStoreTest(CredentialStoreBase):
             f"Checkpoint 3 PASSED: expired credential rejected "
             f"(status={status_c3} error={ERROR_CREDENTIAL_EXPIRED})"
         )
+
+    def test_cross_node_credential_consume(self):
+        """S6: Chronicle replication — create/update on Node A, Pattern A consume on Node B (200 then 403)."""
+        self.log.info("Testing cross-node credential consume (Chronicle replication)")
+
+        self._require_cbq_password()
+
+        # Select Node B by IP — avoids false pass when servers[1] is also the master
+        node_b = self._non_master_node()
+        node_b_url = self._node_base_url(node_b)
+        node_b_rest = RestConnection(node_b)
+        node_a_label = getattr(self.cluster.master, "ip", "node-A")
+        node_b_label = getattr(node_b, "ip", "node-B")
+        self.log.info(
+            f"Node A (create/update): {node_a_label}  "
+            f"Node B (consume/poll): {node_b_label} -> {node_b_url}"
+        )
+
+        # The cbauth special password is per-node — Node B has a different token
+        # from the one fetched at setUp (which came from the master/Node A).
+        # Fetch Node B's own token before calling its /_cbauth/ endpoint.
+        node_b_cbq_password = self._fetch_cbq_engine_password_via_diag_eval(rest=node_b_rest)
+        if not node_b_cbq_password:
+            self.fail(
+                f"Could not resolve @cbq-engine cbauth password for Node B ({node_b_label}). "
+                "Ensure diag/eval is enabled and n1ql is running on Node B "
+                "(services_init=kv:n1ql required for both nodes)."
+            )
+        self.log.info(f"[Node B: {node_b_label}] @cbq-engine password resolved via diag/eval")
+
+        cred_id = "p0-s6-c1"
+        known_secret = "S6_CROSS_NODE_SECRET"
+
+        # Phase 1: CREATE propagation
+
+        payload = self.cs_utils.build_aws_payload(
+            access_key_id="AKIAS6EXAMPLE",
+            secret_access_key=known_secret,
+            region="us-east-1",
+            allowed_services=["n1ql"],
+            description="P0 S6 cross-node consistency test",
+        )
+
+        self.log.info(f"[Node A] Creating credential {cred_id} with allowedServices=[n1ql]")
+        status_create, content_create = self._create_tracked_credential(cred_id, payload)
+        self.assertEqual(
+            int(status_create) if status_create else 0, 201,
+            f"[Node A] Create expected 201, got {status_create}. content={content_create}",
+        )
+        self.log.info(f"[Node A] Credential created: status={status_create}")
+
+        # Grant alice consume role on Node A; RBAC replicates via Chronicle too
+        self.log.info(f"[Node A] Granting alice credential_consumer[{cred_id}]")
+        status_grant, _ = self.cs_utils.grant_consume_to_local_user(
+            self.rest, self.ALICE_USER, cred_id
+        )
+        self.assertEqual(
+            int(status_grant) if status_grant else 0, 200,
+            f"[Node A] Grant consume role expected 200, got {status_grant}",
+        )
+        # Pre-check: confirm role persisted on Node A before relying on Node B consume
+        self._verify_user_has_consume_role(self.ALICE_USER, cred_id)
+        self.log.info(f"[Node A] alice credential_consumer[{cred_id}] verified")
+
+        # Poll Node B admin GET until credential is visible (proves data replicated)
+        self.log.info(
+            f"[Node B: {node_b_label}] Polling GET credential until Chronicle replication lands (<=15s)"
+        )
+        self._poll_until(
+            f"credential '{cred_id}' visible via admin GET on Node B ({node_b_label})",
+            lambda: self.cs_utils._is_success_status(
+                self.cs_utils.get_credential(node_b_rest, cred_id)[0]
+            ),
+            timeout_s=15,
+        )
+        self.log.info(
+            f"[Node B: {node_b_label}] GET credential returned 200 — CREATE replicated via Chronicle"
+        )
+
+        # Consume on Node B after replication confirmed
+        self.log.info(f"[Node B: {node_b_label}] Consuming credential (Pattern A) — expect 200")
+        status_b1, body_b1 = self._consume_as_cbq_on_behalf_of_on_node(
+            node_b_url, cred_id, self.ALICE_USER, "local",
+            service_password=node_b_cbq_password,
+        )
+        self._assert_consume_allowed(
+            status_b1, body_b1,
+            context=f"Phase 1 CREATE propagation: Node A -> Node B ({node_b_label})",
+        )
+        self._assert_consume_has_secret(body_b1, cred_id, known_secret)
+        self.log.info(
+            f"[Phase 1 PASSED] Node B ({node_b_label}) consume returned 200 + plaintext secret"
+        )
+
+        # Phase 2: UPDATE propagation (guardrail metadata change)
+
+        self.log.info(
+            f"[Node A] Updating {cred_id} guardrail to allowedServices=[backup] "
+            "(n1ql excluded — Node B consume must return 403 after propagation)"
+        )
+        blocked_payload = self.cs_utils.build_aws_payload(
+            access_key_id="AKIAS6EXAMPLE",
+            secret_access_key=known_secret,
+            region="us-east-1",
+            allowed_services=["backup"],
+            description="P0 S6 guardrail update propagation",
+        )
+        status_update, content_update = self.cs_utils.update_credential(
+            self.rest, cred_id, blocked_payload
+        )
+        self.assertEqual(
+            int(status_update) if status_update else 0, 200,
+            f"[Node A] Guardrail update expected 200, got {status_update}. "
+            f"content={content_update}",
+        )
+        self.log.info(f"[Node A] Guardrail updated to allowedServices=[backup]")
+
+        # Poll Node B admin GET until guardrail metadata reflects the update
+        self.log.info(
+            f"[Node B: {node_b_label}] Polling GET credential until allowedServices=[backup] appears (<=15s)"
+        )
+
+        def _guardrail_updated_on_b():
+            _, content = self.cs_utils.get_credential(node_b_rest, cred_id)
+            parsed = self.cs_utils.parse_content(content)
+            if not isinstance(parsed, dict):
+                return False
+            guardrails = (
+                parsed.get("meta", {}).get("guardrails", {})
+                or parsed.get("guardrails", {})
+            )
+            return guardrails.get("allowedServices") == ["backup"]
+
+        self._poll_until(
+            f"guardrail update (allowedServices=[backup]) replicated to Node B ({node_b_label})",
+            _guardrail_updated_on_b,
+            timeout_s=15,
+        )
+        self.log.info(
+            f"[Node B: {node_b_label}] GET shows allowedServices=[backup] — UPDATE replicated via Chronicle"
+        )
+
+        # Consume on Node B after guardrail update confirmed
+        self.log.info(
+            f"[Node B: {node_b_label}] Consuming after guardrail update — expect 403 SERVICE_GUARDRAIL_BLOCKED"
+        )
+        status_b2, body_b2 = self._consume_as_cbq_on_behalf_of_on_node(
+            node_b_url, cred_id, self.ALICE_USER, "local",
+            service_password=node_b_cbq_password,
+        )
+        self._assert_consume_denied(
+            status_b2, body_b2, ERROR_SERVICE_GUARDRAIL_BLOCKED,
+            context=f"Phase 2 UPDATE propagation: Node A -> Node B ({node_b_label})",
+        )
+        self.log.info(
+            f"[Phase 2 PASSED] Node B ({node_b_label}) returned 403/SERVICE_GUARDRAIL_BLOCKED "
+            "after guardrail update on Node A — Chronicle UPDATE replication confirmed"
+        )
+
+        self.log.info(
+            "Cross-node Chronicle replication verified: "
+            "CREATE and UPDATE (guardrail metadata) both propagated to Node B"
+        )
+
+    def test_node_failure_resilience(self):
+        """S6.2: Node A killed via SSH; Node B must serve GET credential 200 from local Chronicle replica."""
+        self.log.info("Testing node failure resilience (Chronicle local replica)")
+
+        self.assertGreaterEqual(
+            len(self.cluster.servers), 2,
+            "test_node_failure_resilience requires nodes_init>=2 but only "
+            f"{len(self.cluster.servers)} server(s) configured in node.ini.",
+        )
+
+        node_a = self.cluster.master
+        node_b = self._non_master_node()
+        node_b_rest = RestConnection(node_b)
+        node_a_label = getattr(node_a, "ip", "node-A")
+        node_b_label = getattr(node_b, "ip", "node-B")
+        self.log.info(
+            f"Node A (create + kill): {node_a_label}  "
+            f"Node B (resilience read): {node_b_label}"
+        )
+
+        cred_id = "p1-s6-2-c1"
+        known_secret = "S6_2_RESILIENCE_SECRET"
+
+        payload = self.cs_utils.build_aws_payload(
+            access_key_id="AKIAP162EXAMPLE",
+            secret_access_key=known_secret,
+            region="us-east-1",
+            allowed_services=["n1ql"],
+            description="P1 S6.2 node failure resilience test",
+        )
+
+        self.log.info(f"[Node A] Creating credential {cred_id}")
+        status_create, content_create = self._create_tracked_credential(cred_id, payload)
+        self.assertEqual(
+            int(status_create) if status_create else 0, 201,
+            f"[Node A] Create expected 201, got {status_create}. content={content_create}",
+        )
+        self.log.info(f"[Node A] Credential {cred_id} created")
+
+        # Wait for Chronicle replication to Node B before killing Node A
+        self.log.info(
+            f"[Node B: {node_b_label}] Polling GET until Chronicle replication lands (<=15s)"
+        )
+        self._poll_until(
+            f"credential '{cred_id}' visible via admin GET on Node B ({node_b_label})",
+            lambda: self.cs_utils._is_success_status(
+                self.cs_utils.get_credential(node_b_rest, cred_id)[0]
+            ),
+            timeout_s=15,
+        )
+        self.log.info(
+            f"[Node B: {node_b_label}] GET credential 200 — replicated before Node A kill"
+        )
+
+        node_a_stopped = False
+        try:
+            # Kill Node A
+            self._stop_couchbase_on_node(node_a)
+            node_a_stopped = True
+
+            # Confirm Node A's REST port is unreachable before asserting Node B
+            self.log.info(
+                f"[Node A: {node_a_label}] Polling until management port is unreachable (<=20s)"
+            )
+            self._poll_until(
+                f"Node A ({node_a_label}) management port becomes unreachable after stop",
+                lambda: not self._is_node_rest_reachable(node_a),
+                timeout_s=20,
+            )
+            self.log.info(f"[Node A: {node_a_label}] Confirmed down")
+
+            # Read credential from Node B — must return 200 from local Chronicle replica
+            self.log.info(
+                f"[Node B: {node_b_label}] GET credential while Node A is down — expect 200"
+            )
+            status_b, content_b = self.cs_utils.get_credential(node_b_rest, cred_id)
+            self.assertTrue(
+                self.cs_utils._is_success_status(status_b),
+                f"[Node B: {node_b_label}] Expected 200 from local Chronicle replica "
+                f"while Node A is down, got {status_b}. content={content_b}",
+            )
+            parsed = self.cs_utils.parse_content(content_b)
+            self.assertIsInstance(
+                parsed, dict,
+                f"[Node B: {node_b_label}] GET body is not a JSON object: {content_b}",
+            )
+            # Credential ID must match exactly — drop name fallback to avoid masking wrong shape
+            self.assertEqual(
+                parsed.get("id"), cred_id,
+                f"[Node B: {node_b_label}] Response credential ID mismatch. "
+                f"expected={cred_id} body={parsed}",
+            )
+            # Type sanity check
+            self.assertEqual(
+                parsed.get("type"), "aws",
+                f"[Node B: {node_b_label}] Expected type=aws, got {parsed.get('type')!r}. "
+                f"body={parsed}",
+            )
+            # Secret must be redacted in admin GET response
+            self.cs_utils.assert_secrets_redacted(
+                content_b, "aws", known_secret_values=[known_secret]
+            )
+            self.log.info(
+                f"[Node B: {node_b_label}] GET assertions passed: id={cred_id}, "
+                "type=aws, secrets redacted"
+            )
+
+            # Informational: LIST while master is down
+            # In a 2-node cluster the LIST endpoint may return [] because it
+            # requires orchestrator quorum, while GET by ID reads from the local
+            # Chronicle snapshot and succeeds.  Log observed behavior; do not
+            # assert — the test plan only requires the GET path.
+            status_list, content_list = self.cs_utils.list_credentials(node_b_rest)
+            cred_ids_on_b = [
+                c.get("id") for c in (self.cs_utils.parse_content(content_list) or [])
+                if isinstance(c, dict)
+            ]
+            self.log.info(
+                f"[Node B: {node_b_label}] LIST while Node A down: "
+                f"status={status_list} cred_ids={cred_ids_on_b} "
+                f"(empty list is expected in 2-node cluster — orchestrator quorum required for LIST)"
+            )
+
+            self.log.info(
+                f"[PASSED] Node B ({node_b_label}) returned 200 + correct credential "
+                "while Node A was offline — Chronicle local replica confirmed resilient"
+            )
+
+        finally:
+            if node_a_stopped:
+                self.log.info(f"[Node A: {node_a_label}] Restarting couchbase-server")
+                self._start_couchbase_on_node(node_a, timeout_s=120)
+                self.log.info(
+                    f"[Node A: {node_a_label}] Back online — tearDown cleanup will proceed normally"
+                )
+
+    def _is_node_rest_reachable(self, server, connect_timeout=2):
+        """Return True if the node's /pools endpoint responds within connect_timeout seconds."""
+        port = getattr(server, "port", None) or 8091
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            port = 8091
+        ip = getattr(server, "ip", None) or getattr(server, "hostname", None)
+        scheme = "https" if port == 18091 else "http"
+        url = f"{scheme}://{ip}:{port}/pools"
+        try:
+            requests.get(url, timeout=(connect_timeout, connect_timeout), verify=False)
+            return True
+        except Exception as exc:
+            self.log.debug(
+                f"Node {ip} reachability probe failed: {type(exc).__name__}: {exc}"
+            )
+            return False

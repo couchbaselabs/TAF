@@ -1,7 +1,9 @@
 import os
+import time
 
 import urllib3
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -148,9 +150,14 @@ class CredentialStoreBase(ClusterSetup):
         )
         return None
 
-    def _fetch_cbq_engine_password_via_diag_eval(self):
+    def _fetch_cbq_engine_password_via_diag_eval(self, rest=None):
         """
         Read the @cbq-engine cbauth token from ns_config via POST /diag/eval.
+
+        The special cbauth password is PER-NODE — each ns_server generates its
+        own local token.  Pass `rest` to fetch the password for a specific node
+        (e.g. a non-master node in cross-node tests).  Defaults to self.rest
+        (the master) when omitted.
 
         ns_server stores rotating service auth tokens in ns_config.
         We try multiple known key paths (varies by ns_server version) and
@@ -158,6 +165,7 @@ class CredentialStoreBase(ClusterSetup):
 
         diag/eval is already enabled on all nodes by ClusterSetup.setUp().
         """
+        rest = rest or self.rest
         # Each tuple: (description, Erlang expression)
         # Expressions return the password string or the atom 'undefined'.
         erlang_expressions = [
@@ -194,7 +202,7 @@ class CredentialStoreBase(ClusterSetup):
 
         for description, expr in erlang_expressions:
             try:
-                ok, result = self.rest.diag_eval(expr)
+                ok, result = rest.diag_eval(expr)
                 if not ok or not result:
                     continue
                 password = result.strip().strip('"').strip("'")
@@ -314,6 +322,137 @@ class CredentialStoreBase(ClusterSetup):
                 self.log.warning(
                     f"Could not delete service roles for '{service_name}': status={status}"
                 )
+
+    # ── Multi-node helpers ────────────────────────────────────────────────────
+
+    def _node_base_url(self, server):
+        """
+        Build the management base URL for any cluster node.
+
+        Handles explicit-None port the same way setUp does for the master node.
+        Use this to construct base_url values for cross-node consume calls.
+        """
+        ip = getattr(server, "ip", None) or getattr(server, "hostname", None)
+        port = getattr(server, "port", None) or 8091
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            port = 8091
+        scheme = "https" if port == 18091 else "http"
+        return f"{scheme}://{ip}:{port}"
+
+    def _non_master_node(self):
+        """
+        Return the first server in self.cluster.servers that is NOT the master.
+
+        Compares by IP address rather than object identity because TAF can
+        return different ServerInfo instances for the same physical node.
+        Fails the test immediately if no second node is available — the caller
+        should only invoke this when nodes_init>=2 is guaranteed by the conf.
+        """
+        master_ip = getattr(self.cluster.master, "ip", None)
+        for server in self.cluster.servers:
+            if getattr(server, "ip", None) != master_ip:
+                return server
+        self.fail(
+            "Cross-node test requires nodes_init>=2 but no non-master node found. "
+            "Check that node.ini has 2+ servers and nodes_init=2 is set."
+        )
+
+    def _poll_until(self, label, fn, timeout_s=15, interval_s=0.5):
+        """
+        Poll fn() every interval_s until it returns a truthy value or timeout_s elapses.
+
+        Use this before cross-node consume calls to wait for Chronicle replication
+        without introducing a fixed sleep. Fails the test with a clear message if
+        the condition is never satisfied within the timeout.
+
+        Args:
+            label:      Human-readable description logged on timeout.
+            fn:         Zero-argument callable; truthy return = condition met.
+            timeout_s:  Maximum seconds to wait (default 15).
+            interval_s: Polling interval in seconds (default 0.5).
+        """
+        deadline = time.time() + timeout_s
+        last = None
+        while time.time() < deadline:
+            last = fn()
+            if last:
+                return last
+            time.sleep(interval_s)
+        self.fail(
+            f"Timed out after {timeout_s}s waiting for: {label}. last_result={last!r}"
+        )
+
+    # ── Node lifecycle helpers ──
+
+    def _stop_couchbase_on_node(self, server):
+        """
+        Stop the Couchbase service on `server` via SSH.
+
+        Uses systemctl (or the non-root equivalent on the target platform).
+        Always disconnects the SSH session before returning.
+        """
+        shell = RemoteMachineShellConnection(server)
+        try:
+            self.log.info(f"Stopping couchbase-server on {server.ip}")
+            shell.stop_couchbase()
+        finally:
+            shell.disconnect()
+
+    def _start_couchbase_on_node(self, server, timeout_s=120):
+        """
+        Start the Couchbase service on `server` via SSH and wait until healthy.
+
+        Polls cluster_util.is_ns_server_running() up to timeout_s seconds.
+        Fails the test if the node does not come back within that window.
+        """
+        shell = RemoteMachineShellConnection(server)
+        try:
+            self.log.info(f"Starting couchbase-server on {server.ip}")
+            shell.start_couchbase()
+        finally:
+            shell.disconnect()
+        self.log.info(f"Waiting up to {timeout_s}s for {server.ip} to become healthy")
+        if not self.cluster_util.is_ns_server_running(server, timeout_in_seconds=timeout_s):
+            self.fail(
+                f"Node {server.ip} did not return to 'healthy' within {timeout_s}s "
+                "after couchbase-server restart."
+            )
+        self.log.info(f"{server.ip} is healthy")
+
+    def _consume_as_cbq_on_behalf_of_on_node(
+        self, base_url, cred_id, user, domain, service_password=None
+    ):
+        """
+        Pattern A consume targeting a specific node's management URL.
+
+        Use for cross-node tests where consumption must be directed to a
+        non-master node.  Callers must invoke _require_cbq_password() first.
+
+        The cbauth special password is per-node.  Pass `service_password` when
+        calling a non-master node — fetch it via
+        _fetch_cbq_engine_password_via_diag_eval(node_rest).
+        Defaults to self.cbq_engine_password (master) when omitted.
+
+        Args:
+            base_url:         Management URL of the target node
+            cred_id:          Credential ID to consume
+            user:             On-behalf-of user (e.g. ALICE_USER)
+            domain:           Domain of on_behalf_user (e.g. "local")
+            service_password: Node-specific cbauth token; defaults to master's
+
+        Returns:
+            tuple: (status_code, body)
+        """
+        return self.cs_utils.consume_credential(
+            base_url=base_url,
+            cred_id=cred_id,
+            service_name="cbq-engine",
+            service_password=service_password if service_password is not None else self.cbq_engine_password,
+            on_behalf_user=user,
+            on_behalf_domain=domain,
+        )
 
     # ── Consume-path helpers ──────────────────────────────────────────────────
 
