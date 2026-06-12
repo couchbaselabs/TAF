@@ -49,10 +49,13 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 |---|---|---|---|
 | `fusion_accelerator_lifecycle_test.py` | `FusionAcceleratorLifecycleTest` | `test_accelerator_creation_during_rebalance` | ✅ |
 | | | `test_accelerator_termination_after_rebalance` | ✅ |
-| | | `test_accelerator_registration_completion` | ✅ |
-| | | `test_100m_document_scale_validation` | ✅ |
+| | | `test_ebs_guest_volume_full_lifecycle` | ✅ |
+| | | `test_back_to_back_rebalances_no_orphaned_volumes` | ✅ |
+| | | `test_fusion_state_stays_enabled_through_rebalance` | ✅ |
+| | | `test_accelerator_instance_count_matches_data_size` | ✅ |
+| | | `test_accelerator_registration_completion` | ⬜ |
+| | | `test_100m_document_scale_validation` | ⬜ |
 | *(no file yet)* | — | EBS slot limits (>24 vol/node), compute quota limits | ⬜ |
-| *(no file yet)* | — | Back-to-back rebalances, guest volume cleanup | ⬜ |
 | *(no file yet)* | — | Remove node with attached guest volumes | ⬜ |
 | *(no file yet)* | — | Rebalance in low-availability regions | ⬜ |
 | *(no file yet)* | — | Rebalance during each fusion transitional state | ⬜ |
@@ -67,8 +70,8 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
+| `fusion_health_test.py` | `FusionHealthTest` | `test_stop_start_fusion_resumes_s3_upload` | ✅ |
 | *(no file yet)* | — | Pending sync stays <100 GB/node under constant load | ⬜ |
-| *(no file yet)* | — | Stop/Start fusion restarts S3 upload | ⬜ |
 | *(no file yet)* | — | Log file count ≤100/vB (slow-creates, 20 GB/vB) | ⬜ |
 | *(no file yet)* | — | Migration progress visible post-rebalance | ⬜ |
 
@@ -89,10 +92,12 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
+| `fusion_bucket_ops_test.py` | `FusionBucketOpsTest` | `test_bucket_flush_cleans_s3_objects` | ✅ |
+| | | `test_bucket_delete_after_rebalance_cleans_guest_volumes` | ✅ |
+| | | `test_bucket_flush_after_rebalance_no_guest_volumes` | ✅ |
 | *(no file yet)* | — | Drop during CP guest volume deletion | ⬜ |
 | *(no file yet)* | — | Drop during hydration (post-rebalance) | ⬜ |
 | *(no file yet)* | — | Drop & recreate in a loop | ⬜ |
-| *(no file yet)* | — | Flush (must not delete S3 objects) | ⬜ |
 | *(no file yet)* | — | Full compaction | ⬜ |
 | *(no file yet)* | — | Replica change: uploader map unchanged | ⬜ |
 
@@ -102,11 +107,12 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
+| `fusion_cluster_on_off_test.py` | `FusionClusterOnOffTest` | `test_cluster_off_on_with_pending_sync_resumes_upload` | ✅ |
+| | | `test_cluster_off_on_while_guest_volumes_present` | ✅ |
+| | | `test_cluster_off_on_after_guest_volume_detach` | ✅ |
 | *(no file yet)* | — | Turn off during active S3 upload | ⬜ |
 | *(no file yet)* | — | Enable fusion then immediately turn off | ⬜ |
 | *(no file yet)* | — | Turn off during file extent migration | ⬜ |
-| *(no file yet)* | — | Turn off during accelerator download | ⬜ |
-| *(no file yet)* | — | Turn on with pending sync | ⬜ |
 
 ---
 
@@ -114,7 +120,12 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
-| `fusion_accelerator_lifecycle_test.py` | `FusionAcceleratorLifecycleTest` | `test_accelerator_instance_type_validation` | ✅ |
+| `fusion_accelerator_lifecycle_test.py` | `FusionAcceleratorLifecycleTest` | `test_no_public_ip_on_accelerator_nodes` | ✅ |
+| | | `test_guest_volume_properties` | ✅ |
+| | | `test_guest_volume_size_scales_with_data` | 🔲 |
+| | | `test_asg_deleted_after_rebalance_within_5_mins` | ✅ |
+| | | `test_accelerator_node_termination_resilience` | ✅ |
+| | | `test_accelerator_instance_type_validation` | ⬜ |
 | `fusion_fallback_test.py` | `FusionFallbackInstanceTypeTests` | `test_fallback_when_top_n_instance_types_unavailable` | ✅ |
 | | | `test_fallback_exhausts_all_arm_types_falls_back_to_x86` | ✅ |
 | *(no file yet)* | — | Download speed ≥800 MB/s | ⬜ |
