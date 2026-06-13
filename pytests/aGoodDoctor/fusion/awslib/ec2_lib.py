@@ -808,3 +808,37 @@ class EC2Lib(AWSBase):
         except Exception as e:
             self.logger.error(f"Error listing ASGs with filters {filters}: {e}")
             return []
+    def get_instance_iam_profile_name(self, instance_id: str) -> Optional[str]:
+        """
+        Return the IAM instance profile name attached to an EC2 instance.
+
+        Extracts the profile name from the instance's IamInstanceProfile.Arn field.
+        Returns None if the instance has no profile or cannot be found.
+        """
+        instance = self.get_instance_by_id(instance_id)
+        if not instance:
+            return None
+        arn = instance.get("IamInstanceProfile", {}).get("Arn", "")
+        # ARN format: arn:aws:iam::<account-id>:instance-profile/<profile-name>
+        if "/" in arn:
+            return arn.split("/")[-1]
+        return None
+
+    def check_iam_instance_profile_exists(self, profile_name: str) -> bool:
+        """
+        Return True if the named IAM instance profile exists, False if it has been deleted.
+
+        Used after cluster destroy to verify the CP cleaned up the accelerator
+        instance profile. Returns True on unexpected errors (conservative — avoids
+        false-clean assertions when the API call itself fails).
+        """
+        iam = self.create_service_client("iam")
+        try:
+            iam.get_instance_profile(InstanceProfileName=profile_name)
+            return True
+        except iam.exceptions.NoSuchEntityException:
+            return False
+        except Exception as e:
+            self.logger.warning(
+                f"Error checking IAM instance profile {profile_name}: {e}")
+            return True

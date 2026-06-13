@@ -180,10 +180,10 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
-| *(no file yet)* | — | Destroy after prepareRebalance (log files leased) | ⬜ |
-| *(no file yet)* | — | Destroy during accelerator log file download | ⬜ |
-| *(no file yet)* | — | Destroy during file extent migration | ⬜ |
-| *(no file yet)* | — | Destroy in ScaleFailed/RebalanceFailed state with guest volumes attached | ⬜ |
+| `fusion_cluster_destroy_test.py` | `FusionClusterDestroyTest` | `test_destroy_after_prepare_rebalance` | ✅ |
+| | | `test_destroy_during_s3_download` | ✅ |
+| | | `test_destroy_during_file_extent_migration` | ✅ |
+| | | `test_destroy_in_scale_failed_state` | ✅ |
 
 ---
 
