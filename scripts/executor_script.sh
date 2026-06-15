@@ -77,7 +77,7 @@ docker system prune -f
 
 # To kill Orphan Python / magmaloader.jar
 ps -ef | grep 'python testrunner.py' | awk '$3 == 1 {print $2}' | xargs kill -9
-ps -ef | grep 'java -jar' | grep 'magmadocloader' | awk '$3 == 1 {print $2}' | xargs kill -9
+ps -ef | grep 'java -' | grep 'magmadocloader' | awk '$3 == 1 {print $2}' | xargs kill -9
 
 # Reclaim disk space from gradle files
 for i in `ls /tmp/gradle*.bin`; do
