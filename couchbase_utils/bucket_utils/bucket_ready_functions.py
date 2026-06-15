@@ -136,7 +136,7 @@ class JavaDocLoaderUtils(object):
         if not hasattr(bucket, "end"):
             bucket.end = 0
 
-        doc_ops = doc_ops or bucket.loadDefn.get("doc_op_percentages").keys()
+        doc_ops = doc_ops or list(bucket.loadDefn.get("doc_op_percentages").keys())
 
         if "read" in doc_ops:
             bucket.read_start = read_start or 0
@@ -200,8 +200,8 @@ class JavaDocLoaderUtils(object):
         buckets = buckets or cluster.buckets
         for bucket in buckets:
             pattern = overRidePattern or bucket.loadDefn.get("doc_op_percentages", default_pattern)
-            for scope in bucket.scopes.keys():
-                for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+            for scope in list(bucket.scopes.keys()):
+                for i, collection in enumerate(list(bucket.scopes[scope].collections.keys())):
                     workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
                     valType = workloads[i % len(workloads)]["valType"]
                     dim = dim or workloads[i % len(workloads)].get("dim", 128)
@@ -272,10 +272,10 @@ class JavaDocLoaderUtils(object):
                                                      track_failures=track_failures)
         tasks = list()
         for bucket in buckets:
-            for scope in bucket.scopes.keys():
+            for scope in list(bucket.scopes.keys()):
                 if scope == CbServer.system_scope:
                     continue
-                for collection in bucket.scopes[scope].collections.keys():
+                for collection in list(bucket.scopes[scope].collections.keys()):
                     if scope == CbServer.system_scope:
                         continue
                     if collection == "_default" and scope == "_default" and skip_default:
@@ -311,7 +311,7 @@ class JavaDocLoaderUtils(object):
         default_pattern = {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0}
         for bucket in buckets:
             pattern = overRidePattern or bucket.loadDefn.get("doc_op_percentages", default_pattern)
-            for scope in bucket.scopes.keys():
+            for scope in list(bucket.scopes.keys()):
                 if scope == CbServer.system_scope:
                     continue
                 collections = list(bucket.scopes[scope].collections.keys())
