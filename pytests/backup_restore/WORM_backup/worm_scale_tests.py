@@ -2,6 +2,25 @@ from backup_restore.WORM_backup.worm_backup_base import WormBackupBase
 
 
 class WormScaleTest(WormBackupBase):
+    def test_file_descriptor_stress_has_clear_outcome(self):
+        expected_collections = int(self.input.param("expected_collection_count", 10000))
+        fd_limit = int(self.input.param("fd_ulimit", 256))
+        threads = int(self.input.param("backup_threads", 32))
+        self._assert_collection_count_at_least(expected_collections)
+        self._create_worm_repo()
+        self._load_data_and_return_count()
+
+        output, error = self._run_backup_with_shell_prefix(
+            "ulimit -n %d" % fd_limit, threads=threads)
+        if error:
+            self._assert_command_failure(
+                output, error,
+                expected_texts=["file", "descriptor", "ulimit", "too many",
+                                "connection", "limit", "csp", "worm"])
+            return
+        self._assert_command_success(output, error)
+        self._assert_repo_reports_worm()
+
     def test_scale_gsi_restore_metadata_and_high_concurrency_backup(self):
         expected_collections = int(self.input.param("expected_collection_count", 10000))
         threads = int(self.input.param("backup_threads", 32))

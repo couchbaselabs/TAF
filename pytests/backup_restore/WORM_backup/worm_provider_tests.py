@@ -29,6 +29,26 @@ class WormProviderTest(WormBackupBase):
     def test_gcp_retention_lock_is_applied(self):
         self._assert_object_has_retention("gcs")
 
+    def test_gcp_orphaned_composite_parts_are_cleaned_or_ignored(self):
+        helper = self._require_storage_provider(
+            "gcs", "GCP orphaned composite parts validation")
+        self._create_worm_repo()
+        expected_count = self._load_data_and_return_count()
+        self._interrupt_background_backup_after_objects()
+        part_paths_before_resume = helper.find_relative_paths(
+            self.repo_name, contains="part")
+        self.log.info("GCP part-like objects before resume: %s"
+                      % part_paths_before_resume)
+
+        self._run_backup(resume=True)
+        self._assert_repo_reports_worm()
+
+        restore_bucket_name = self._create_restore_bucket("gcp_parts")
+        self._run_restore(map_data="%s=%s" % (self.bucket.name, restore_bucket_name))
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
+        self._verify_doc_count(expected_count, bucket_name=restore_bucket_name)
+
     def test_single_version_storage_and_versioning_disable_contract(self):
         helper = self._require_storage_provider(
             ["aws", "azure", "gcs"], "single-version storage validation")
@@ -58,6 +78,23 @@ class WormProviderTest(WormBackupBase):
         self._assert_command_failure(
             output, error,
             expected_texts=["worm", "lock", "retention", "compliance"])
+
+    def test_retention_delete_locked_versions_fails_safely(self):
+        helper, target_path = self._create_backup_and_select_object()
+        backup_name = self._latest_backup_name()
+        output, error = self.backup_mgr.remove(
+            self.archive_dir, self.repo_name, backup_range=backup_name,
+            obj_versions=True)
+        self._assert_command_failure(
+            output, error,
+            expected_texts=["worm", "lock", "retention", "compliance",
+                            "version", "object"])
+        versions = helper.list_object_versions(self.repo_name, target_path)
+        live_versions = [version for version in versions
+                         if not version.get("delete_marker")]
+        self.assertTrue(
+            live_versions,
+            "Locked object versions were removed despite active WORM retention")
 
     def test_s3_object_lock_disabled_backup_fails(self):
         self._require_storage_provider("aws", "S3 object lock disabled validation")
@@ -108,3 +145,25 @@ class WormProviderTest(WormBackupBase):
         versions_after = helper.list_object_versions(self.repo_name, target_path)
         self.assertFalse(versions_after,
                          "Expected --obj-versions remove to clean all object versions")
+
+    def test_worm_log_versioning_cleanup_limits_non_locked_log_versions(self):
+        helper = self._require_storage_provider(
+            ["aws", "azure", "gcs"], "WORM log versioning cleanup validation")
+        self._create_worm_repo()
+        self._load_data_and_return_count()
+        self._run_backup()
+        self._generate_additional_docs_and_return_count()
+        self._run_backup()
+
+        log_paths = [path for path in helper.find_relative_paths(self.repo_name)
+                     if "log" in path.lower()]
+        if not log_paths:
+            self.skipTest("No archive log objects found for version cleanup validation")
+        for log_path in log_paths:
+            versions = helper.list_object_versions(self.repo_name, log_path)
+            live_versions = [version for version in versions
+                             if not version.get("delete_marker")]
+            self.assertLessEqual(
+                len(live_versions), 1,
+                "Expected at most one live version for log object %s, found %s"
+                % (log_path, live_versions))

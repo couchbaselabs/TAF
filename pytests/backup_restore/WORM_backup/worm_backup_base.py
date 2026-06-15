@@ -1,4 +1,5 @@
 import re
+import shlex
 import time
 
 from backup_restore.continuous_backup.continuous_backup_base import ContinuousBackupBase
@@ -197,6 +198,13 @@ class WormBackupBase(ContinuousBackupBase):
             return command_text
         return command_text
 
+    def _assert_output_contains_any(self, command_text, expected_texts, context):
+        normalised_text = command_text.lower()
+        if any(text.lower() in normalised_text for text in expected_texts):
+            return
+        self.fail("%s did not contain any expected markers %s. Output: %s"
+                  % (context, expected_texts, command_text))
+
     def _assert_tamper_blocked(self, succeeded, detail):
         self.assertFalse(succeeded, "Expected tamper operation to fail: %s" % detail)
         self.assertTrue(any(token in detail.lower() for token in
@@ -222,11 +230,80 @@ class WormBackupBase(ContinuousBackupBase):
         self.log.debug("Executing command: %s" % cmd)
         return self.shell.execute_command(cmd)
 
+    def _cluster_host(self):
+        if CbServer.use_https:
+            return "https://%s:%s" % (self.cluster.master.ip,
+                                      self.backup_mgr.port)
+        return "http://%s:%s" % (self.cluster.master.ip,
+                                 self.backup_mgr.port)
+
+    def _build_backup_command(self, resume=False, purge=False,
+                              no_progress_bar=True, threads=None):
+        cmd = "%s backup --archive %s --repo %s --cluster %s -u %s -p %s" % (
+            self.backup_mgr.cbstatCmd, self.archive_dir, self.repo_name,
+            self._cluster_host(), self.backup_mgr.username,
+            self.backup_mgr.password)
+        if resume:
+            cmd += " --resume"
+        if purge:
+            cmd += " --purge"
+        if threads:
+            cmd += " --threads %d" % threads
+        if no_progress_bar:
+            cmd += " --no-progress-bar"
+        if self.backup_mgr.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.backup_mgr.obj_staging_dir
+        cmd += self.backup_mgr.cli_flags
+        return self.backup_mgr.prepare_command(cmd)
+
+    def _build_worm_command(self, period=None):
+        cmd = "%s worm --archive %s --repo %s --period %s" % (
+            self.backup_mgr.cbstatCmd, self.archive_dir, self.repo_name,
+            period if period is not None else self.worm_period_days)
+        if self.backup_mgr.obj_staging_dir:
+            cmd += " --obj-staging-dir %s" % self.backup_mgr.obj_staging_dir
+        return self.backup_mgr.prepare_command(cmd)
+
+    def _run_backup_with_shell_prefix(self, shell_prefix, resume=False,
+                                      purge=False, no_progress_bar=True,
+                                      threads=None):
+        backup_cmd = self._build_backup_command(
+            resume=resume, purge=purge, no_progress_bar=no_progress_bar,
+            threads=threads)
+        command = "sh -lc %s" % shlex.quote("%s; %s" % (
+            shell_prefix, backup_cmd))
+        self.log.debug("Executing prefixed backup command: %s" % command)
+        return self.shell.execute_command(command)
+
+    def _run_concurrent_worm_enable_commands(self, command_count=2):
+        work_dir = "/tmp/%s_worm_concurrent" % self.repo_name
+        commands = ["rm -rf %s", "mkdir -p %s"]
+        commands = [command % work_dir for command in commands]
+        for index in range(command_count):
+            worm_cmd = self._build_worm_command(self.worm_period_days)
+            commands.append(
+                "(%s > %s/out_%d 2> %s/err_%d; echo $? > %s/exit_%d) &"
+                % (worm_cmd, work_dir, index, work_dir, index, work_dir, index))
+        commands.append("wait || true")
+        for index in range(command_count):
+            commands.append("echo EXIT_%d=$(cat %s/exit_%d 2>/dev/null || echo missing)"
+                            % (index, work_dir, index))
+            commands.append("cat %s/out_%d" % (work_dir, index))
+            commands.append("cat %s/err_%d" % (work_dir, index))
+        output, error = self.shell.execute_command("; ".join(commands))
+        command_text = self._assert_command_success(output, error)
+        success_count = len(re.findall(r"EXIT_\d+=0", command_text))
+        return command_text, success_count
+
     def _run_required_remote_command(self, param_name, reason):
         command = self._require_param(param_name, reason)
         output, error = self.shell.execute_command(command)
         self.log.info("Command '%s' output=%s error=%s" % (param_name, output, error))
         return output, error
+
+    def _run_required_success_command(self, param_name, reason):
+        output, error = self._run_required_remote_command(param_name, reason)
+        return self._assert_command_success(output, error)
 
     def _create_repo(self, worm_period=None, default_retention=None):
         output, error = self.backup_mgr.create_repo(
@@ -399,41 +476,40 @@ class WormBackupBase(ContinuousBackupBase):
             storage=self.bucket_storage)
         return restore_bucket_name
 
-    def _start_backup_in_background(self):
-        if CbServer.use_https:
-            cluster_host = "https://%s:%s" % (self.cluster.master.ip,
-                                              self.backup_mgr.port)
-        else:
-            cluster_host = "http://%s:%s" % (self.cluster.master.ip,
-                                             self.backup_mgr.port)
-        backup_cmd = "%s backup --archive %s --repo %s --cluster %s -u %s -p %s --no-progress-bar%s" % (
-            self.backup_mgr.cbstatCmd, self.archive_dir, self.repo_name,
-            cluster_host, self.backup_mgr.username, self.backup_mgr.password,
-            self.backup_mgr.cli_flags)
-        if self.backup_mgr.obj_staging_dir:
-            backup_cmd += " --obj-staging-dir %s" % self.backup_mgr.obj_staging_dir
-        backup_cmd = self.backup_mgr.prepare_command(backup_cmd)
-        pid_file = "/tmp/%s_cbbackupmgr.pid" % self.repo_name
-        log_file = "/tmp/%s_cbbackupmgr.log" % self.repo_name
-        command = "nohup %s > %s 2>&1 & echo $! > %s" % (
-            backup_cmd, log_file, pid_file)
-        output, error = self.shell.execute_command(command)
-        self._assert_command_success(output, error)
-        return pid_file, log_file
+    def _start_backup_task(self, resume=False, purge=False, threads=None):
+        """Launch cbbackupmgr backup in the background via the TAF task
+        framework.
 
-    def _wait_for_background_process(self, pid_file, timeout=None):
-        if timeout is None:
-            timeout = self.restore_timeout
-        pid_output, pid_error = self.shell.execute_command("cat %s" % pid_file)
-        self._assert_command_success(pid_output, pid_error)
-        pid = pid_output[0].strip()
-        end_time = time.time() + timeout
-        while time.time() < end_time:
-            output, error = self.shell.execute_command("kill -0 %s" % pid)
-            if error:
-                return self._command_text(output, error)
-            time.sleep(10)
-        self.fail("Timed out waiting for background cbbackupmgr process %s" % pid)
+        A dedicated shell/CbBackupMgr is created so the foreground test can keep
+        issuing commands over self.shell while the backup runs on its own
+        paramiko channel (the two cannot share one SSH channel concurrently).
+        Pair with _wait_for_backup_task().
+        """
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        backup_mgr = CbBackupMgr(
+            shell,
+            username=self.cluster.master.rest_username,
+            password=self.cluster.master.rest_password,
+            log=self.log,
+            obj_staging_dir=self.obj_staging_dir,
+            aws_region=self.aws_region)
+        task = FunctionCallTask(backup_mgr.backup, kwds={
+            "archive_dir": self.archive_dir, "repo_name": self.repo_name,
+            "resume": resume, "purge": purge, "threads": threads,
+            "no_progress_bar": True})
+        task.shell = shell
+        self.task_manager.add_new_task(task)
+        return task
+
+    def _wait_for_backup_task(self, task):
+        """Block until a background backup task finishes, then release its
+        dedicated shell. Returns the combined command output text."""
+        try:
+            result = self.task_manager.get_task_result(task)
+        finally:
+            task.shell.disconnect()
+        output, error = result if isinstance(result, tuple) else ([], [])
+        return self._command_text(output, error)
 
     def _interrupt_background_backup_after_objects(self):
         self._require_cloud_helper("interrupted backup archive inspection")
