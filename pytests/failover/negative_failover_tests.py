@@ -6,6 +6,12 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class NegativeFailoverTests(FailoverBaseTest):
+    @staticmethod
+    def _is_rebalance_in_progress_error(content):
+        err_text = str(content)
+        return ("Rebalance running" in err_text or
+                "Cannot failover during rebalance" in err_text)
+
     def setUp(self):
         super(NegativeFailoverTests, self).setUp()
         self.cluster.master = self.servers[0]
@@ -24,7 +30,7 @@ class NegativeFailoverTests(FailoverBaseTest):
         self.assertTrue(status, "Rebalance did not run ")
         status, content = self.rest.perform_graceful_failover(chosen[0].id)
         self.assertFalse(status, "Failover did not fail as expected")
-        self.assertTrue(("Rebalance running" in str(content)),
+        self.assertTrue(self._is_rebalance_in_progress_error(content),
                         f"Unexpected exception {content}")
 
     def graceful_failover_when_graceful_failover_running(self):
@@ -35,7 +41,7 @@ class NegativeFailoverTests(FailoverBaseTest):
         self.assertTrue(status, "Failover failed")
         status, content = self.rest.perform_graceful_failover(chosen[0].id)
         self.assertFalse(status, "Failover did not fail as expected")
-        self.assertTrue(("Rebalance running" in str(content)),
+        self.assertTrue(self._is_rebalance_in_progress_error(content),
                         f"Unexpected exception {content}")
 
     def hard_failover_when_graceful_failover_running(self):
@@ -46,7 +52,7 @@ class NegativeFailoverTests(FailoverBaseTest):
         self.assertTrue(status, "Failover failed")
         status, content = self.rest.perform_hard_failover(chosen[0].id)
         self.assertFalse(status,"Failover did not fail as expected")
-        self.assertTrue(("Rebalance running" in str(content)),
+        self.assertTrue(self._is_rebalance_in_progress_error(content),
                         f"Unexpected exception {content}")
 
     def hard_failover_nonexistant_node(self):

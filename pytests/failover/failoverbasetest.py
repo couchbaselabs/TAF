@@ -161,17 +161,25 @@ class FailoverBaseTest(BaseTestCase):
         self.log.info(
             "=== FailoverBaseTest tearDown started for test #{0} {1} ==="
             .format(self.case_number, self._testMethodName))
-        if hasattr(self, '_resultForDoCleanups') \
-                and len(self._resultForDoCleanups.failures) > 0 \
-                and 'stop-on-failure' in TestInputSingleton.input.test_params \
-                and str(TestInputSingleton.input.test_params['stop-on-failure']).lower() == 'true':
-            # supported starting with python2.7
-            self.log.warn("CLEANUP WAS SKIPPED")
-            self.cluster.shutdown(force=True)
-        else:
-            self.__recover_failed_nodes(self.cluster.servers)
-            self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
-            super(FailoverBaseTest, self).tearDown()
+        try:
+            if hasattr(self, '_resultForDoCleanups') \
+                    and len(self._resultForDoCleanups.failures) > 0 \
+                    and 'stop-on-failure' in TestInputSingleton.input.test_params \
+                    and str(TestInputSingleton.input.test_params['stop-on-failure']).lower() == 'true':
+                # supported starting with python2.7
+                self.log.warn("CLEANUP WAS SKIPPED")
+                self.cluster.shutdown(force=True)
+            else:
+                self.__recover_failed_nodes(self.cluster.servers)
+                self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
+                super(FailoverBaseTest, self).tearDown()
+        finally:
+            # Keep failover test cases isolated when any test disables FBR.
+            try:
+                self.cluster_util.set_file_based_rebalance(
+                    self.cluster.master, enabled=True)
+            except Exception as err:
+                self.log.warning(f"Failed to restore file-based rebalance to default: {err}")
 
     def subsequent_load_gen(self, retry_exceptions=[], ignore_exceptions=[]):
         subsequent_load_gen = doc_generator(self.key,
