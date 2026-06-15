@@ -30,7 +30,7 @@ def run(command, session):
         fu2.close()
         _ssh_client.disconnect()
     except JSchException as e:
-        print("JSch exception on %s: %s" % (server, str(e)))
+        print("JSch exception on %s: %s" % (session.getHost(), str(e)))
     return output, error
 
 
