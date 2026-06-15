@@ -444,6 +444,8 @@ class CollectionBase(ClusterSetup, FusionBase):
                     servers_to_connect, servers_to_connect.rest_username,
                     servers_to_connect.rest_password,
                     bucket.name, req_clients=req_clients)
+                if cluster.sdk_client_pool is None:
+                    cluster.sdk_client_pool = SDKClientPool()
                 cluster.sdk_client_pool.create_clients(
                     cluster, bucket=bucket, servers=[servers_to_connect],
                     req_clients=req_clients,
@@ -794,7 +796,7 @@ class CollectionBase(ClusterSetup, FusionBase):
         for bucket, scope_dict in spec_load_task.loader_spec.items():
             for s_name, collection_dict in scope_dict["scopes"].items():
                 for c_name, crud_spec in collection_dict["collections"].items():
-                    for crud_name, crud_info in crud_spec.items():
+                    for crud_name, crud_info in list(crud_spec.items()):
                         crud_spec[DocLoading.Bucket.DocOps.DELETE] = crud_info
                         crud_info["iterations"] = 1
                         crud_spec.pop(crud_name)
