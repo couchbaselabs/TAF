@@ -172,6 +172,45 @@ class APIBase(CouchbaseBaseTest):
                     "timezone": "GMT"
                 }
             },
+            "AWS_r5_xlarge_eventing": {
+                    "cloudProvider": {
+                        "type": "aws",
+                        "region": self.input.param("region", "us-east-1"),
+                        "cidr": "10.1.0.0/20"
+                    },
+                    "couchbaseServer": {
+                        "version": str(self.input.param("server_version", 7.6))
+                    },
+                    "serviceGroups": [
+                        {
+                            "node": {
+                                "compute": {
+                                    "cpu": self.input.param("cpu", 4),
+                                    "ram": self.input.param("ram", 32)
+                                },
+                                "disk": {
+                                    "storage": 50,
+                                    "type": "gp3",
+                                    "iops": 3000
+                                }
+                            },
+                            "numOfNodes": self.input.param("numOfNodes", 4),
+                            "services": [
+                                "data",
+                                "index",
+                                "query",
+                                "eventing"
+                            ]
+                        }
+                    ],
+                    "availability": {
+                        "type": self.input.param("availabilityType", "multi")
+                    },
+                    "support": {
+                        "plan": self.input.param("supportPlan", "enterprise"),
+                        "timezone": "GMT"
+                    }
+                },
             "AWS_singleNode": {
                 "cloudProvider": {
                     "type": "aws",
