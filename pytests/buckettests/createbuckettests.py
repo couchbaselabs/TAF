@@ -11,6 +11,7 @@ from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from custom_exceptions.exception import BucketCreationException
 from BucketLib.bucket import Bucket
+from cb_tools.cb_cli import CbCli
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 from sdk_client3 import SDKClient
@@ -426,6 +427,32 @@ class CreateBucketTests(ClusterSetup):
         create_bucket(durability_impossible_fallback="Disabled")
         create_bucket(durability_impossible_fallback="fallbacktoactiveack")
         create_bucket(durability_impossible_fallback="None")
+
+    def test_bucket_create_with_throttle_via_cli(self):
+        """Verify bucket-create via CLI supports throttleReserved/throttleHardLimit (MB-72445)."""
+        throttle_reserved = self.input.param("bucket_throttle_reserved", 5000)
+        throttle_hard_limit = self.input.param("bucket_throttle_hard_limit", 10000)
+        cli_bucket_name = "cli_throttle_bucket"
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        bucket_rest = BucketRestApi(self.cluster.master)
+        cb_cli = CbCli(shell)
+        try:
+            cb_cli.create_bucket({
+                Bucket.name: cli_bucket_name,
+                Bucket.ramQuotaMB: 256,
+                Bucket.throttleReserved: throttle_reserved,
+                Bucket.throttleHardLimit: throttle_hard_limit
+            }, wait=True)
+            status, content = bucket_rest.get_bucket_info()
+            bucket_info = next((b for b in content if b['name'] == cli_bucket_name), None)
+            self.assertIsNotNone(bucket_info, f"Bucket {cli_bucket_name} not found after CLI create")
+            self.assertEqual(bucket_info.get('throttleReserved'), throttle_reserved,
+                             f"Expected throttleReserved={throttle_reserved}, got {bucket_info.get('throttleReserved')}")
+            self.assertEqual(bucket_info.get('throttleHardLimit'), throttle_hard_limit,
+                             f"Expected throttleHardLimit={throttle_hard_limit}, got {bucket_info.get('throttleHardLimit')}")
+        finally:
+            cb_cli.delete_bucket(cli_bucket_name)
+            shell.disconnect()
 
     def test_create_collections_validate_history_stat(self):
         """
