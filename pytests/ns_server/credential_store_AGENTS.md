@@ -4,7 +4,11 @@ description: >
   Credential Store P0/P1 tests for Couchbase Server 8.1+ Enterprise.
   Covers admin CRUD, secret redaction, Pattern A/B consume paths, guardrail
   enforcement, prerequisite overrides, credential expiry, Chronicle cross-node
-  replication, and node failure resilience.
+  replication, node failure resilience, all 8 credential type smoke tests,
+  a 12-row consume auth matrix covering every error code and both patterns,
+  a 10-row RBAC grant matrix covering who can grant credential_consumer
+  to users vs services (maps to manual M1–M3 and QA PRD §9.5), and
+  wildcard role boundary tests (T13: db/* slash boundary, *prod/key rejection, * master key).
 model: inherit
 ---
 
@@ -23,8 +27,10 @@ Tests cover: admin CRUD with secret redaction, Pattern A end-user consume via
 `@cbq-engine`, guardrail enforcement (`allowedServices`), Pattern B service-identity
 consume, prerequisite enforcement (n2n encryption / override settings), credential
 expiry (including boundary validation), Chronicle cross-node replication (CREATE +
-UPDATE propagation), and node failure resilience (GET from local Chronicle replica
-while master is offline).
+UPDATE propagation), node failure resilience (GET from local Chronicle replica
+while master is offline), credential type smoke for all 8 types (T08), a 12-row consume auth matrix covering
+all error codes + Pattern A/B (T11), a 10-row RBAC grant matrix (T12), and
+wildcard role boundary tests (T13).
 
 ---
 
@@ -107,6 +113,7 @@ Layer 3 — Test base class (framework helpers, setUp/tearDown)
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  Test users (class-level constants):                                        │
 │    SEC_ADMIN_USER / SEC_ADMIN_PASS   — security_admin role                  │
+│    USER_ADMIN_USER / USER_ADMIN_PASS — user_admin_local role (T12)          │
 │    ALICE_USER / ALICE_PASS           — no initial roles                     │
 │    BOB_USER  / BOB_PASS             — no initial roles                      │
 │                                                                             │
@@ -168,6 +175,26 @@ Layer 3 — Test base class (framework helpers, setUp/tearDown)
 │    _start_couchbase_on_node(server, timeout_s=120)                          │
 │      SSH systemctl start, then polls cluster_util.is_ns_server_running()   │
 │      up to timeout_s; self.fail() if node doesn't return healthy            │
+│                                                                             │
+│  T12/T13 role helpers                                                       │
+│    _get_test_user_password(username)  lookup known password for test user   │
+│    _set_user_roles(username, roles_str)  PUT roles as Full Admin; ""=clear  │
+│      accepts wildcards (credential_consumer[db/*], [*], etc.)               │
+│      used by T13 to set/clear alice's roles between phases                  │
+│    _actor_credentials(actor_name)                                           │
+│      "cs_sec_admin" → (SEC_ADMIN_USER, SEC_ADMIN_PASS)                      │
+│      "cs_user_admin" → (USER_ADMIN_USER, USER_ADMIN_PASS)                   │
+│      "cbq_engine" → ("@cbq-engine", cbq_engine_password)                   │
+│      "Administrator" → (None, None) — uses rest connection default creds   │
+│    _call_grant_api(row)                                                     │
+│      dispatches row["api"]: user_role / service_role /                      │
+│      service_role_delete / credential_create                                │
+│      returns (status_code, content)                                         │
+│    _run_grant_row(row, cred_id)   call → assert → [verify] → teardown      │
+│    _verify_service_has_role(service_name, cred_id)                          │
+│      GET service roles; accepts bracket and separate-field notation         │
+│    _teardown_grant_row(row)   resets alice roles or deletes service roles   │
+│      only on 200 rows; best-effort, warns on failure                        │
 └─────────────────────────────────────────────────────────────────────────────┘
           │  inherits
           ▼
@@ -178,6 +205,22 @@ Layer 4 — Tests only
 │    test_* methods + _is_node_rest_reachable() private helper                │
 │    Imports ERROR_* constants from credential_store_utils for assertions     │
 │    Imports requests for short-timeout reachability probe (S6.2)             │
+│                                                                             │
+│  Module-level constants (defined before class, shared across test methods): │
+│    _TYPE_SMOKE_ROWS — tuple of (cred_type, fields_dict, known_secret,      │
+│      non_sensitive_fields) for all 8 types                                  │
+│    _CONSUME_AUTH_MATRIX — tuple of 12 dicts (T11): id, pattern (A/B),      │
+│      caller, user, domain, guardrail, setup, exp_status, exp_error,        │
+│      and optional use_missing_id / requires_expiry flags                    │
+│    _GRANT_MATRIX — tuple of 10 dicts (T12): id, actor, api, target,        │
+│      role, exp_status, verify, and optional requires_cbq_password flag      │
+│                                                                             │
+│  T11 private helpers (test_consume_auth_matrix only):                       │
+│    _t11_update_guardrail(cred_id, guardrail, known_secret)                  │
+│    _setup_consume_matrix_rbac(row, cred_id)                                 │
+│    _teardown_consume_matrix_rbac(row)                                       │
+│    _assert_consume_matrix_row(row, status, body)                            │
+│    _run_t11_expiry_row(row, known_secret)                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -239,8 +282,9 @@ look for `[WARNINGS-BRANCH: n2n=ON/OFF]` in CI logs.
 
 | User | Password | Roles | Purpose |
 |------|----------|-------|---------|
-| `cs_sec_admin` | `Couchbase@1234` | `security_admin` | RBAC enforcement tests |
-| `cs_alice` | `Alice@1234` | none initially | consume-allowed assertions |
+| `cs_sec_admin` | `Couchbase@1234` | `security_admin` | RBAC enforcement tests (G1, G2, S4) |
+| `cs_user_admin` | `UserAdmin@1234` | `user_admin_local` | T12 grant matrix actor |
+| `cs_alice` | `Alice@1234` | none initially | consume-allowed assertions; T12 grant target |
 | `cs_bob` | `Bob@1234` | none | consume-denied assertions |
 
 Users are provisioned in setUp and deleted in tearDown. Creation failure is a
@@ -295,6 +339,11 @@ nodes_init=1,services_init=kv:n1ql,GROUP=P0 \
 | `test_prerequisites_override_and_expiry` | S5 | P0 | 1 | `kv` | strict settings, n2n override, warnings, DELETE reset, expiresAt <5min=400, 6min=201 |
 | `test_cross_node_credential_consume` | S6 | P1 | 2 | `kv:n1ql` | Chronicle CREATE propagation → Node B 200; guardrail UPDATE → Node B 403 SERVICE_GUARDRAIL_BLOCKED |
 | `test_node_failure_resilience` | S6.2 | P1 | 2 | `kv` | Node A stopped via SSH; Node B must return 200 from local Chronicle replica |
+| `test_credential_type_smoke` | T08 | P1 | 1 | `kv` | POST→GET→assert secrets redacted for all 8 credential types |
+| `test_consume_auth_matrix` | T11 | P1 | 1 | `kv:n1ql` | 12-row matrix: all cbauth error codes, Pattern A (rows A1–A6) and Pattern B (rows B1–B6) |
+| `test_rbac_grant_matrix` | T12 | P1 | 1 | `kv:n1ql` | 10-row matrix: who can grant credential_consumer to users vs services; G6/G7 skip if no cbq password |
+| `test_wildcard_role_boundaries` | T13 | P1 | 1 | `kv:n1ql` | 3-phase: db/* slash boundary (200+403), *prod/key rejected (400), * master key (200+200) |
+| `test_id_validation_matrix` | T14 | P1 | 1 | `kv` | ID validation: 128 chars=201, 129=400, space=400, non-ASCII=400, slashes=201, duplicate=409 |
 
 ### `test_prerequisites_override_and_expiry` branches
 
@@ -340,6 +389,130 @@ Using Node A's token on Node B returns 401.
 5. LIST is informational only — returns `[]` in a 2-node cluster with master down (orchestrator quorum required for LIST, but GET by ID reads from local Chronicle snapshot)
 6. `finally`: `_start_couchbase_on_node(node_a, timeout_s=120)` always runs so tearDown can delete the credential
 
+### `test_credential_type_smoke` flow (T08)
+
+Iterates `_TYPE_SMOKE_ROWS` (8 entries) using `with self.subTest(type=cred_type)`:
+
+1. POST `/settings/credentials/<cred_id>` with type-specific `fields` dict → assert 201
+2. GET `/settings/credentials/<cred_id>` → assert success status
+3. `cs_utils.assert_secrets_redacted(body, cred_type, known_secret_values=[known_secret])` — ensures none of the secret values appear as plaintext in the GET response
+4. `azureManaged` has no secret field (`known_secret=None`) → redaction list is empty, just confirms GET succeeds
+5. Credentials are tracked for tearDown auto-cleanup
+
+### `test_consume_auth_matrix` flow (T11)
+
+Iterates `_CONSUME_AUTH_MATRIX` (12 rows) using `with self.subTest(id=row["id"])`:
+
+**Setup (before loop):**
+- Creates one `aws` credential `p1-t11-c1` with guardrail `allowedServices=["n1ql"]`
+- Grants `cs_alice` consume role (persists for all `alice_role` rows)
+
+**Per-row logic:**
+- Updates guardrail only when `row["guardrail"]` differs from previous row (avoids redundant PUTs)
+- Calls `_setup_consume_matrix_rbac(row, cred_id)` — grants n1ql or backup service role for Pattern B rows; no-op for Pattern A rows
+- `requires_expiry=True` rows (A6): delegated to `_run_t11_expiry_row`; skipped unless `test_expiry_wait=True`
+- `use_missing_id=True` rows (A5, B6): use `p1-t11-missing` (never created) → expect 404
+- B4/B5 rows: Pattern B with `@backup`/`@cbcontbk` service identity
+- `_assert_consume_matrix_row(row, status, body)` dispatches: 200→`_assert_consume_allowed`, 403→`_assert_consume_denied`, 404→`assertEqual`
+- `_teardown_consume_matrix_rbac(row)` revokes service roles (best-effort, warns on failure)
+
+**Matrix rows:**
+
+| Row | Pattern | Caller | User | Guardrail | Setup | Expected |
+|-----|---------|--------|------|-----------|-------|---------|
+| A1 | A | cbq-engine | cs_alice | n1ql | alice_role | 200 |
+| A2 | A | cbq-engine | cs_bob | n1ql | alice_role (bob denied) | 403 INSUFFICIENT_PERMISSIONS |
+| A3 | A | backup | cs_alice | n1ql | alice_role | 403 SERVICE_GUARDRAIL_BLOCKED |
+| A4 | A | cbq-engine | cs_alice | [backup] | alice_role | 403 SERVICE_GUARDRAIL_BLOCKED |
+| A5 | A | cbq-engine | cs_alice | n1ql | alice_role | 403 INSUFFICIENT_PERMISSIONS (missing ID, RBAC before lookup) |
+| A6 | A | cbq-engine | cs_alice | n1ql | alice_role | 403 CREDENTIAL_EXPIRED (slow) |
+| B1 | B | cbq-engine | @cbq-engine | backup | no_service_role | 403 INSUFFICIENT_PERMISSIONS |
+| B2 | B | cbq-engine | @cbq-engine | backup | n1ql_service_role | 200 |
+| B3 | B | cbq-engine | @backup | backup | n1ql_service_role | 403 INSUFFICIENT_PERMISSIONS |
+| B4 | B | backup | @backup | n1ql | backup_service_role | 200 |
+| B5 | B | cbcontbk | @cbcontbk | n1ql | backup_service_role | 200 |
+| B6 | B | backup | @backup | n1ql | no_service_role | 403 INSUFFICIENT_PERMISSIONS (missing ID, RBAC before lookup) |
+
+### `test_rbac_grant_matrix` flow (T12)
+
+Creates credential `p1-rbac-g1` once, then iterates `_GRANT_MATRIX` (10 rows) using
+`with self.subTest(row=row_id)`. G6/G7 are skipped if `cbq_engine_password` is None.
+
+**Per-row logic (`_run_grant_row`):**
+1. `_actor_credentials(row["actor"])` resolves (username, password) for the actor
+2. `_call_grant_api(row)` dispatches the right HTTP call (PUT user / PUT service / DELETE service / POST credential)
+3. `assertEqual(actual, exp_status)` — hard fail on mismatch
+4. On 200 + `row["verify"]`: `_verify_user_has_consume_role` or `_verify_service_has_role`
+5. `finally: _teardown_grant_row(row)` — resets alice roles or deletes service roles (200 rows only)
+
+**Matrix rows:**
+
+| Row | Actor | API | Target | Role | Expected |
+|-----|-------|-----|--------|------|---------|
+| G1 | cs_sec_admin | user_role | cs_alice | `credential_consumer[p1-rbac-g1]` | 403 |
+| G2 | cs_sec_admin | service_role | n1ql | `credential_consumer[p1-rbac-g1]` | 403 |
+| G3 | cs_user_admin | user_role | cs_alice | `credential_consumer[p1-rbac-g1]` | 200 + verify |
+| G4 | cs_user_admin | credential_create | p1-rbac-g2 | — | 403 |
+| G5 | cs_user_admin | service_role | n1ql | `credential_consumer[*]` | 403 |
+| G6 | cbq_engine | service_role | n1ql | `credential_consumer[*]` | 403 (skip if no cbq pwd) |
+| G7 | cbq_engine | service_role_delete | n1ql | — | 403 (skip if no cbq pwd) |
+| G8 | Administrator | service_role | backup | `credential_consumer[p1-rbac-g1]` | 200 + verify |
+| G9 | cs_user_admin | user_role | cs_alice | `credential_consumer[ghost-id]` | 400 (non-existent ID) |
+| G10 | cs_user_admin | user_role | cs_alice | `credential_consumer[no/prefix/*]` | 400 (non-existent prefix) |
+
+**G9/G10 note:** Both rows rely on the server validating credential existence at grant
+time. `credential_consumer[no/prefix/*]` is syntactically valid (suffix wildcard); it
+fails because no credential with prefix `no/prefix/` exists — same existence check as
+G9. If the server uses lazy validation, adjust `exp_status` to 200.
+
+### `test_wildcard_role_boundaries` flow (T13)
+
+Two credentials are created up front: `db/prod/1` (target, inside `db/` namespace)
+and `db_test/1` (spoof, same starting letters but without the `db/` directory prefix).
+Both have `allowedServices=["n1ql"]` so guardrail is not the reason for allow/deny.
+
+**Phase 1 — suffix wildcard:**
+- `_set_user_roles(ALICE_USER, "credential_consumer[db/*]")` → expect 200
+  (server validates at least one credential matches the `db/` prefix at grant time)
+- Consume `db/prod/1` as alice → 200 + plaintext secret (wildcard matches)
+- Consume `db_test/1` as alice → 403 INSUFFICIENT_PERMISSIONS
+  (the Erlang router treats `/` literally: `db_test/` is not a sub-path of `db/`)
+- `_set_user_roles(ALICE_USER, "")` — clear alice's roles before Phase 2
+
+**Phase 2 — prefix asterisk rejected:**
+- `_set_user_roles(ALICE_USER, "credential_consumer[*prod/key]")` → expect 400
+  (wildcard is suffix-only; `*prod/key` is treated as a literal ID lookup; no such credential exists)
+- Error body must mention "undefined", "unknown", or "malformed" in the `errors.roles` field
+
+**Phase 3 — master key:**
+- `_set_user_roles(ALICE_USER, "credential_consumer[*]")` → expect 200
+- Consume `db/prod/1` → 200 + plaintext secret
+- Consume `db_test/1` → 200 + plaintext secret (standalone `*` bypasses all prefix checks)
+
+**Cleanup:** `finally:` block calls `_set_user_roles(ALICE_USER, "")` regardless of phase outcome.
+Tracked credentials (`db/prod/1`, `db_test/1`) are deleted in tearDown via `_cleanup_created_credentials`.
+
+### `test_id_validation_matrix` flow (T14)
+
+Validates `menelaus_web_credentials.erl` ID string constraints. No consume path — `services_init=kv` only.
+
+**Matrix (5 rows, each in `with self.subTest(cred_id=..., context=...)`):**
+
+| ID value | Expected | Reason |
+|----------|---------|--------|
+| `"a" * 128` | 201 | Exact maximum length |
+| `"b" * 129` | 400 | Exceeds 128-char limit |
+| `"my key"` | 400 | Space is not printable-ASCII-without-spaces |
+| `"keyñ"` | 400 | Non-ASCII character |
+| `"valid/folder/key"` | 201 | Hierarchical slash path is valid |
+
+**Tracking note:** `cs_utils.create_credential` (not `_create_tracked_credential`) is used for expected-failure rows so tearDown does not attempt to DELETE IDs that were never created. Successful rows (`201`) are manually appended to `self._created_creds`.
+
+**Duplicate collision (separate assertion after the matrix):**
+- POST `p1-duplicate-id` → 201 via `_create_tracked_credential`
+- POST same ID again → `assertEqual(status, 409)`
+  `menelaus_web_credentials.erl` returns 409 explicitly; confirmed by `credential_store_tests.py` cluster tests.
+
 ---
 
 ## Test Execution
@@ -371,6 +544,24 @@ python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialSt
 
 # S6.2 — Node failure resilience (nodes_init=2, kv only, SSH access required)
 python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_node_failure_resilience,nodes_init=2,services_init=kv -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
+
+# T08 — Credential type smoke (all 8 types; kv only, no n1ql required)
+python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_credential_type_smoke,nodes_init=1,services_init=kv -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
+
+# T11 — Consume auth matrix (12 rows; A6 expiry skipped by default)
+python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_consume_auth_matrix,nodes_init=1,services_init=kv:n1ql,test_expiry_wait=False -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
+
+# T11 nightly — includes A6 expiry row (~6 min wait)
+python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_consume_auth_matrix,nodes_init=1,services_init=kv:n1ql,test_expiry_wait=True -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
+
+# T12 — RBAC grant matrix (10 rows; G6/G7 require n1ql for @cbq-engine password)
+python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_rbac_grant_matrix,nodes_init=1,services_init=kv:n1ql -p skip_cluster_reset=False,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
+
+# T13 — Wildcard role boundaries (3 phases: db/*, *prod/key, *)
+python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_wildcard_role_boundaries,nodes_init=1,services_init=kv:n1ql -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
+
+# T14 — Credential ID validation (max length, character whitelist, duplicate collision; kv only)
+python testrunner.py -i node.ini -t ns_server.credential_store_test.CredentialStoreTest.test_id_validation_matrix,nodes_init=1,services_init=kv -p skip_cluster_reset=True,get-cbcollect-info=False,skip_core_dump_check=True,rerun=False
 ```
 
 ---
@@ -578,6 +769,7 @@ test runner, increase the buffer in `_run_expiry_enforcement_subtest`.
    - `_assert_consume_has_secret(body, cred_id, expected_secret)` — plaintext secret check
    - `_get_credential_guardrails(cred_id)` — GET + extract guardrails dict
    - `_verify_user_has_consume_role(username, cred_id)` — role persistence check
+   - `_set_user_roles(username, roles_str)` — direct role set as Full Admin (wildcards OK; ""=clear)
    - `_grant_service_roles(service, roles)` — PUT + track for tearDown cleanup
    - **Multi-node tests** (`nodes_init>=2`):
      - `_non_master_node()` — returns first non-master server by IP

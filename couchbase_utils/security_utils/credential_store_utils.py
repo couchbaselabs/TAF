@@ -599,11 +599,18 @@ class CredentialStoreUtils:
                     if isinstance(existing_content, str)
                     else existing_content
                 )
-                existing_roles = [
-                    r.get("role", "")
-                    for r in user_data.get("roles", [])
-                    if isinstance(r, dict) and r.get("role")
-                ]
+                existing_roles = []
+                for r in user_data.get("roles", []):
+                    if not isinstance(r, dict) or not r.get("role"):
+                        continue
+                    role = r["role"]
+                    cred_id = r.get("credential_id") or (
+                        r.get("params", {}) or {}
+                    ).get("credential_id")
+                    if role == "credential_consumer" and cred_id:
+                        existing_roles.append(f"credential_consumer[{cred_id}]")
+                    else:
+                        existing_roles.append(role)
             except Exception:
                 pass
         new_role = f"credential_consumer[{cred_id_pattern}]"
