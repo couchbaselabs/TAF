@@ -66,7 +66,7 @@ def download_url_data(url, json_api=False, params=None):
                 full_url = '{0}/api/json'.format(url)
         else:
             full_url = url
-        return requests.get(full_url).text
+        return requests.get(full_url).content
     except Exception as e:
         print("[Error] url unreachable: %s" % url)
         print(e)
