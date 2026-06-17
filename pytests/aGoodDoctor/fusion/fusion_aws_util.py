@@ -289,7 +289,7 @@ class FusionAWSUtil:
 
                 self.log.info(f"Scanning dp-agent logs for errors on instance {instance_id} [{public_ip}]...")
 
-                grep_cmd = 'journalctl -u dp-agent --no-pager 2>/dev/null | grep -i ERROR || true'
+                grep_cmd = 'journalctl -u dp-agent --no-pager 2>/dev/null | grep -i ERROR | grep -i "Main process exited" || true'
                 grep_result = self.ec2.run_shell_command(instance_id, grep_cmd)
                 grep_output = grep_result.get('stdout', '').strip()
                 if grep_output:
