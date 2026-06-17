@@ -298,6 +298,30 @@ class SettingsAndConnectionsAPI(CBRestConnection):
         -d pop_up_alerts=<[alert-name]*>
         enabled=[ true | false ]"""
 
+    def get_stats_settings(self):
+        """
+        GET /settings/stats
+        Returns usage stats configuration (includes sendStats flag).
+        """
+        api = self.base_url + "/settings/stats"
+        headers = self.create_headers(self.username, self.password)
+        status, content, _ = self.request(api, CBRestConnection.GET,
+                                          headers=headers)
+        return status, content
+
+    def set_stats_settings(self, send_stats):
+        """
+        POST /settings/stats
+        Configure usage statistics sharing.
+        CE enforces sendStats=true; attempting false must be rejected.
+        """
+        api = self.base_url + "/settings/stats"
+        params = {"sendStats": "true" if send_stats else "false"}
+        headers = self.create_headers(self.username, self.password)
+        status, content, _ = self.request(api, CBRestConnection.POST,
+                                          params, headers)
+        return status, content
+
     def set_cgroup_overrides(self, service, soft_limit, hard_limit):
         """
         POST :: /settings/cgroups
