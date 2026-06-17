@@ -87,7 +87,7 @@ class OPD:
 
             if cont_bkp_test == "NFS":
                 bucket.continuousBackupEnabled = True
-                bucket.continuousBackupLocation = "/mnt/nfs_data/continuous_backup"
+                bucket.continuousBackupLocation = "/mnt/nfs_data/test_volume"
                 bucket.continuousBackupInterval = self.input.param("continuous_backup_interval", 5)
 
             bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
