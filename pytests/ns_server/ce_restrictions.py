@@ -8,7 +8,12 @@ Validates ns_server enforcement of Community Edition limitations:
 """
 
 from basetestcase import ClusterSetup
+from cb_server_rest_util.cluster_nodes.cluster_init_provision import \
+    ClusterInitializationProvision
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_tools.cb_cli import CbCli
 from ns_server.ce_restrictions_util import CommunityEditionRestrictionsUtil
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CommunityEditionRestrictions(ClusterSetup):
@@ -16,6 +21,7 @@ class CommunityEditionRestrictions(ClusterSetup):
 
     def setUp(self):
         super(CommunityEditionRestrictions, self).setUp()
+        self.rest = ClusterRestAPI(self.cluster.master)
         self.ce_util = CommunityEditionRestrictionsUtil(
             self.cluster, self.cluster_util, self.log, self.sleep)
 
@@ -134,3 +140,240 @@ class CommunityEditionRestrictions(ClusterSetup):
         if not available:
             self.fail("No available nodes. Requires at least 2 nodes in node.ini")
         return available[0]
+
+    def _cli_on(self, node):
+        shell = RemoteMachineShellConnection(node)
+        cb_cli = CbCli(shell, username=node.rest_username,
+                       password=node.rest_password)
+        return shell, cb_cli
+
+    @staticmethod
+    def _combined(output, error):
+        return "\n".join((output or []) + (error or []))
+
+    # ------------------------------------------------------------------
+    # CLI enforcement tests (CBQE-8973)
+    # ------------------------------------------------------------------
+
+    def test_ce_phonehome_enforcement(self):
+        """
+        CE enforcement of sendStats/PhoneHome — REST post-init, CLI init, and
+        REST /clusterInit covered in one test pass.
+
+        Steps:
+        1. REST: POST /settings/stats sendStats=false rejected on running cluster
+        2. Reset master; CLI: cluster-init --update-notifications 0 → rejected
+           or forced true
+        3. If CLI rejected (node still uninitialized): REST /clusterInit
+           sendStats=false → rejected or forced true
+
+        Covers CBQE-8972 + CBQE-8973 CLI cluster-init. Requires nodes_init=1.
+        """
+        # --- Part 1: REST post-init — sendStats=false must be rejected ---
+        status, settings = self.rest.get_stats_settings()
+        self.assertTrue(status,
+                        "GET /settings/stats failed: %s" % settings)
+        current = (settings.get("sendStats", False)
+                   if isinstance(settings, dict) else True)
+        self.assertTrue(current,
+                        "CE must default to sendStats=true. Got: %s" % settings)
+        self.log.info("Confirmed sendStats=true baseline: %s", settings)
+
+        status, content = self.rest.set_stats_settings(send_stats=False)
+        err_msg = content.decode() if isinstance(content, bytes) else str(content)
+        self.assertFalse(
+            status,
+            "CE must reject POST /settings/stats sendStats=false. Got: %s"
+            % err_msg)
+        self.log.info("REST rejected sendStats=false post-init: %s", err_msg)
+
+        status, settings = self.rest.get_stats_settings()
+        self.assertTrue(status)
+        self.assertTrue(
+            settings.get("sendStats", False) if isinstance(settings, dict) else True,
+            "sendStats must remain true after rejected update. Got: %s" % settings)
+
+        # --- Part 2: reset master; CLI cluster-init --update-notifications 0 ---
+        self.rest.reset_node()
+        master = self.cluster.master
+        self.cluster_util.wait_for_ns_servers_or_assert([master])
+
+        shell, cb_cli = self._cli_on(master)
+        output, error = cb_cli.cluster_init(
+            data_ramsize=256,
+            index_ramsize=None,
+            fts_ramsize=None,
+            services="kv",
+            index_storage_mode=None,
+            cluster_name="CE_PhoneHome_Test",
+            cluster_username=master.rest_username,
+            cluster_password=master.rest_password,
+            cluster_port=None,
+            update_notifications=0)
+        shell.disconnect()
+
+        combined = self._combined(output, error)
+        cli_rejected = bool(error or "error" in combined.lower())
+
+        if cli_rejected:
+            self.log.info("CLI rejected --update-notifications 0: %s",
+                          combined[:300])
+            # Node still uninitialized — exercise REST /clusterInit path too
+            init_prov = ClusterInitializationProvision()
+            init_prov.set_server_values(master)
+            init_prov.set_endpoint_urls(master)
+            status, content = init_prov.initialize_cluster(
+                hostname=master.ip,
+                username=master.rest_username,
+                password=master.rest_password,
+                send_stats=False,
+                services="kv",
+                memory_quota=256,
+                cluster_name="CE_PhoneHome_REST_Test",
+            )
+            if not status:
+                err = content.decode() if isinstance(content, bytes) else str(content)
+                self.log.info("REST /clusterInit also rejected sendStats=false: %s",
+                              err)
+            else:
+                rest_init = ClusterRestAPI(master)
+                ok, s = rest_init.get_stats_settings()
+                actual = s.get("sendStats", False) if isinstance(s, dict) else False
+                self.assertTrue(
+                    actual,
+                    "CE must force sendStats=true at /clusterInit. Got: %s" % s)
+                self.log.info("REST /clusterInit forced sendStats=true: %s", s)
+        else:
+            # CLI accepted and initialized — verify sendStats was forced true
+            self.log.info("CLI accepted; verifying CE forced sendStats=true")
+            rest_init = ClusterRestAPI(master)
+            ok, settings = rest_init.get_stats_settings()
+            self.assertTrue(ok, "GET /settings/stats failed after CLI init")
+            actual = (settings.get("sendStats", False)
+                      if isinstance(settings, dict) else False)
+            self.assertTrue(
+                actual,
+                "CE must force sendStats=true with --update-notifications 0. "
+                "Got: %s" % settings)
+            self.log.info("CE forced sendStats=true during CLI cluster-init")
+
+        self.log.info("CE PhoneHome enforcement validated")
+
+    def test_ce_cli_server_add_6th_node_rejected(self):
+        """
+        couchbase-cli server-add adding a 6th node must be rejected on CE.
+
+        CE may enforce this at server-add time (immediate error) or at
+        rebalance time. Both paths are validated.
+        Requires nodes_init=5 and one spare node in node.ini.
+        """
+        if len(self.cluster.servers) < 6:
+            self.fail("Requires 6 servers (5 cluster + 1 spare) in node.ini")
+        if len(self.cluster.nodes_in_cluster) != 5:
+            self.fail("Requires nodes_init=5")
+
+        spare = self.cluster.servers[5]
+        shell, cb_cli = self._cli_on(self.cluster.master)
+
+        try:
+            output = cb_cli.add_node(spare, "kv")
+            output_str = "\n".join(output) if isinstance(output, list) \
+                else str(output)
+            add_failed = False
+        except Exception as exc:
+            output_str = str(exc)
+            add_failed = True
+        finally:
+            shell.disconnect()
+
+        if add_failed or "error" in output_str.lower():
+            lower = output_str.lower()
+            self.assertTrue(
+                "community" in lower or "enterprise" in lower
+                or "5" in lower or "limit" in lower,
+                "Expected CE-specific error. Got: %s" % output_str)
+            self.log.info("CE rejected server-add of 6th node: %s",
+                          output_str[:300])
+            return
+
+        # Node added to pending — verify CLI rebalance is blocked
+        self.log.info("server-add accepted; verifying CLI rebalance blocked")
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        reb_out, reb_err = cb_cli.rebalance()
+        shell.disconnect()
+
+        combined = self._combined(reb_out, reb_err)
+        self.assertTrue(
+            reb_err or "error" in combined.lower(),
+            "CE must reject rebalance with 6 nodes. Got: %s" % combined)
+        self.log.info("CE blocked rebalance with 6 nodes: %s", combined[:300])
+
+    def test_ce_cli_mds_rebalance_rejected(self):
+        """
+        Rebalance-in of a query/index-only (MDS) node must fail on CE.
+
+        CE may reject at server-add time or at rebalance time.
+        Requires nodes_init=1 and one spare node in node.ini.
+        """
+        spare = self._get_available_node()
+        shell, cb_cli = self._cli_on(self.cluster.master)
+
+        try:
+            output = cb_cli.add_node(spare, "query")
+            output_str = "\n".join(output) if isinstance(output, list) \
+                else str(output)
+            add_failed = False
+        except Exception as exc:
+            output_str = str(exc)
+            add_failed = True
+        finally:
+            shell.disconnect()
+
+        if add_failed or "error" in output_str.lower():
+            lower = output_str.lower()
+            self.assertTrue(
+                "community" in lower or "enterprise" in lower
+                or "only supports" in lower,
+                "Expected CE-specific MDS error. Got: %s" % output_str)
+            self.log.info("CE rejected MDS server-add: %s", output_str[:300])
+            return
+
+        # Node in pending — verify CLI rebalance is blocked
+        self.log.info("MDS node in pending; verifying CLI rebalance rejected")
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        reb_out, reb_err = cb_cli.rebalance()
+        shell.disconnect()
+
+        combined = self._combined(reb_out, reb_err)
+        self.assertTrue(
+            reb_err or "error" in combined.lower(),
+            "CE must reject rebalance with MDS topology. Got: %s" % combined)
+        self.log.info("CE blocked MDS rebalance: %s", combined[:300])
+
+    def test_ce_cli_node_init_ee_services_rejected(self):
+        """
+        couchbase-cli node-init --services <ee-service> must fail on CE.
+
+        Tests cbas, eventing, backup — all EE-only services.
+        Requires one spare node in node.ini.
+        Note: --services on node-init requires Couchbase Server 8.1+.
+        """
+        spare = self._get_available_node()
+        ee_services = ["cbas", "eventing", "backup"]
+
+        for svc in ee_services:
+            shell, cb_cli = self._cli_on(spare)
+            output, error = cb_cli.node_init(
+                cluster_url="localhost:8091",
+                username=spare.rest_username,
+                password=spare.rest_password,
+                services=svc)
+            shell.disconnect()
+
+            combined = self._combined(output, error)
+            self.assertTrue(
+                error or "error" in combined.lower(),
+                "CE must reject node-init --services %s. Got: %s"
+                % (svc, combined))
+            self.log.info("CE rejected node-init --services %s: %s",
+                          svc, combined[:200])

@@ -33,6 +33,7 @@ class CbCli(CbCmdBase):
                   node_init_eventing_path=None,
                   node_init_hostname=None,
                   node_init_java_home=None,
+                  services=None,
                   ipv4=None, ipv6=None):
         cmd = f"{self.cbstatCmd} node-init -c {cluster_url} " \
                f"-u {username} -p {password}"
@@ -48,6 +49,8 @@ class CbCli(CbCmdBase):
             cmd += f" --node-init-eventing-path {node_init_eventing_path}"
         if node_init_java_home:
             cmd += f" --node-init-java-home {node_init_java_home}"
+        if services:
+            cmd += f" --services {services}"
 
         if client_cert:
             cmd += f" --client-cert {client_cert}"
@@ -67,7 +70,8 @@ class CbCli(CbCmdBase):
 
     def cluster_init(self, data_ramsize, index_ramsize, fts_ramsize, services,
                      index_storage_mode, cluster_name,
-                     cluster_username, cluster_password, cluster_port):
+                     cluster_username, cluster_password, cluster_port,
+                     update_notifications=None):
         cmd = "%s cluster-init -c localhost:%s -u %s -p %s" \
               % (self.cbstatCmd, self.__get_http_port(),
                  self.username, self.password)
@@ -89,6 +93,8 @@ class CbCli(CbCmdBase):
             cmd += " --cluster-port " + str(cluster_port)
         if services:
             cmd += " --services " + str(services)
+        if update_notifications is not None:
+            cmd += " --update-notifications %s" % update_notifications
         return self._execute_cmd(cmd)
 
     def cluster_settings(self, data_ramsize, index_ramsize, fts_ramsize,
@@ -136,6 +142,19 @@ class CbCli(CbCmdBase):
         if len(error) != 0:
             raise Exception(str(error))
         return output
+
+    def rebalance(self, servers_to_remove=None):
+        """
+        Run couchbase-cli rebalance. Returns (output, error) without raising.
+        :param servers_to_remove: list of "ip:port" strings to eject
+        """
+        cmd = "%s rebalance -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if servers_to_remove:
+            for server in servers_to_remove:
+                cmd += " --server-remove %s" % server
+        return self._execute_cmd(cmd)
 
     def create_bucket(self, bucket_dict, wait=False):
         """
