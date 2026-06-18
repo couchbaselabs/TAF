@@ -7,11 +7,15 @@ Validates ns_server enforcement of Community Edition limitations:
 - CE topology restrictions (no query-only nodes)
 """
 
+import json
+import time
+
 from basetestcase import ClusterSetup
 from cb_server_rest_util.cluster_nodes.cluster_init_provision import \
     ClusterInitializationProvision
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
+from cluster_utils.cluster_ready_functions import ClusterUtils
 from ns_server.ce_restrictions_util import CommunityEditionRestrictionsUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -132,6 +136,78 @@ class CommunityEditionRestrictions(ClusterSetup):
         # Cleanup
         self.ce_util.rebalance_out_node(test_node)
         self.log.info("Cleanup completed")
+
+    # ------------------------------------------------------------------
+    # CE valid-service constants and reset/init helpers (CBQE-8979)
+    # ------------------------------------------------------------------
+
+    _CE_VALID_SERVICES = frozenset(["kv", "index,kv,n1ql", "fts,index,kv,n1ql"])
+
+    def _reset_and_init_master(self, services):
+        """Hard-reset master, wait for it to come back, then initialize
+        with the given services string.  Returns (status, content)."""
+        master = self.cluster.master
+        self.rest.reset_node()
+        self.cluster_util.wait_for_ns_servers_or_assert([master])
+        init_prov = ClusterInitializationProvision()
+        init_prov.set_server_values(master)
+        init_prov.set_endpoint_urls(master)
+        return init_prov.initialize_cluster(
+            hostname=master.ip,
+            username=master.rest_username,
+            password=master.rest_password,
+            services=services,
+            memory_quota=256,
+            index_memory_quota=256,
+            fts_memory_quota=256)
+
+    def _get_otp_nodes(self, inactive_added=False):
+        return ClusterUtils.get_nodes(
+            self.cluster.master, inactive_added=inactive_added)
+
+    def _reb_and_wait(self, timeout=120):
+        """Trigger rebalance with all known nodes and wait for completion.
+        Returns (success, error_msg)."""
+        nodes = self._get_otp_nodes(inactive_added=True)
+        ok, raw = self.rest.rebalance(
+            known_nodes=[n.id for n in nodes], eject_nodes=[])
+        if not ok:
+            return False, raw.decode() if isinstance(raw, bytes) else str(raw)
+        end = time.time() + timeout
+        while time.time() < end:
+            _, prog_raw = self.rest.rebalance_progress()
+            try:
+                data = json.loads(
+                    prog_raw.decode() if isinstance(prog_raw, bytes) else prog_raw)
+            except (ValueError, AttributeError):
+                self.sleep(2, "polling rebalance")
+                continue
+            if data.get("status") == "none":
+                err = data.get("errorMessage", "")
+                return (False, err) if err else (True, "")
+            self.sleep(2, "rebalance running: %s" % data.get("status"))
+        return False, "timeout after %ds" % timeout
+
+    def _eject_rebalance_out(self, node_ip, timeout=120):
+        """Rebalance out an active member by IP and wait for completion."""
+        nodes = self._get_otp_nodes()
+        spare_otp = next((n.id for n in nodes if n.ip == node_ip), None)
+        if not spare_otp:
+            return
+        all_otp = [n.id for n in nodes]
+        self.rest.rebalance(known_nodes=all_otp, eject_nodes=[spare_otp])
+        end = time.time() + timeout
+        while time.time() < end:
+            _, prog_raw = self.rest.rebalance_progress()
+            try:
+                data = json.loads(
+                    prog_raw.decode() if isinstance(prog_raw, bytes) else prog_raw)
+            except (ValueError, AttributeError):
+                self.sleep(2, "polling eject rebalance")
+                continue
+            if data.get("status") == "none":
+                return
+            self.sleep(2, "eject rebalance running")
 
     def _get_available_node(self):
         """Get a node not currently in the cluster."""
@@ -377,3 +453,212 @@ class CommunityEditionRestrictions(ClusterSetup):
                 % (svc, combined))
             self.log.info("CE rejected node-init --services %s: %s",
                           svc, combined[:200])
+
+    # ------------------------------------------------------------------
+    # Service-combination enforcement at init and add-node (CBQE-8979)
+    # Replaces testrunner check_set_services and
+    # check_set_services_when_add_node entries.
+    # ------------------------------------------------------------------
+
+    def test_ce_service_combinations_at_init(self):
+        """CE must accept only valid service combos at /clusterInit.
+
+        Valid: kv | index,kv,n1ql | fts,index,kv,n1ql
+        All other combos (invalid MDS topology or EE-only services) must
+        be rejected.
+
+        Replaces: check_set_services (18 testrunner entries).
+        Requires nodes_init=1.
+        """
+        combos = [
+            # Valid CE service sets
+            "kv",
+            "index,kv,n1ql",
+            "fts,index,kv,n1ql",
+            # Invalid MDS topologies
+            "index,kv",
+            "kv,n1ql",
+            "index,n1ql",
+            "fts,index,kv",
+            "fts,index,n1ql",
+            "fts,kv,n1ql",
+            # EE-only services mixed in
+            "kv,eventing",
+            "kv,index,n1ql,eventing",
+            "fts,index,kv,n1ql,eventing",
+            "kv,index,eventing",
+            "kv,n1ql,eventing",
+            "kv,fts,eventing",
+            "fts,kv,index,eventing",
+            "fts,kv,n1ql,eventing",
+            "analytics,index,kv,n1ql",
+        ]
+        for services in combos:
+            self.log.info("Testing /clusterInit services=%s", services)
+            status, content = self._reset_and_init_master(services)
+            should_succeed = services in self._CE_VALID_SERVICES
+            err = content.decode() if isinstance(content, bytes) else str(content)
+            if should_succeed:
+                self.assertTrue(
+                    status,
+                    "CE must allow services=%s at init. Got: %s" % (services, err))
+                self.log.info("CE allowed services=%s", services)
+            else:
+                self.assertFalse(
+                    status,
+                    "CE must block services=%s at init. Got: %s" % (services, err))
+                self.log.info("CE blocked services=%s: %s", services, err[:120])
+        # Leave master in a valid state for tearDown
+        self._reset_and_init_master("kv")
+
+    def test_ce_service_combinations_add_node(self):
+        """CE must accept/reject node-add based on service combos on both nodes.
+
+        Expected: accept only when both start and add services are CE-valid.
+        CE-valid: kv | index,kv,n1ql | fts,index,kv,n1ql
+
+        Replaces: check_set_services_when_add_node (~69 testrunner entries).
+        Requires nodes_init=1 + 1 spare.
+        """
+        spare = self._get_available_node()
+
+        pairs = [
+            # --- start=kv ---
+            ("kv", "eventing"),
+            ("kv", "kv,eventing"),
+            ("kv", "index,kv,eventing"),
+            ("kv", "fts,index,kv,n1ql,eventing"),
+            ("kv", "kv"),
+            ("kv", "index"),
+            ("kv", "n1ql"),
+            ("kv", "fts"),
+            ("kv", "index,kv"),
+            ("kv", "index,n1ql"),
+            ("kv", "kv,n1ql"),
+            ("kv", "index,kv,n1ql"),
+            ("kv", "fts,index,kv"),
+            ("kv", "fts,index,n1ql"),
+            ("kv", "fts,kv,n1ql"),
+            ("kv", "fts,index,kv,n1ql"),
+            # --- start=index,kv,n1ql ---
+            ("index,kv,n1ql", "kv"),
+            ("index,kv,n1ql", "index"),
+            ("index,kv,n1ql", "n1ql"),
+            ("index,kv,n1ql", "fts"),
+            ("index,kv,n1ql", "index,kv"),
+            ("index,kv,n1ql", "index,n1ql"),
+            ("index,kv,n1ql", "index,fts"),
+            ("index,kv,n1ql", "fts,index,kv,n1ql"),
+            ("index,kv,n1ql", "fts,index,kv"),
+            ("index,kv,n1ql", "fts,index,n1ql"),
+            ("index,kv,n1ql", "fts,n1ql"),
+            ("index,kv,n1ql", "fts,kv,n1ql"),
+            ("index,kv,n1ql", "kv,n1ql"),
+            ("index,kv,n1ql", "kv,fts"),
+            ("index,kv,n1ql", "index,kv,n1ql"),
+            ("index,kv,n1ql", "eventing"),
+            ("index,kv,n1ql", "kv,eventing"),
+            ("index,kv,n1ql", "index,kv,n1ql,eventing"),
+            ("index,kv,n1ql", "fts,index,kv,n1ql,eventing"),
+            ("index,kv,n1ql", "analytics"),
+            # --- start=fts,index,kv,n1ql ---
+            ("fts,index,kv,n1ql", "kv"),
+            ("fts,index,kv,n1ql", "index"),
+            ("fts,index,kv,n1ql", "n1ql"),
+            ("fts,index,kv,n1ql", "fts"),
+            ("fts,index,kv,n1ql", "index,kv"),
+            ("fts,index,kv,n1ql", "index,n1ql"),
+            ("fts,index,kv,n1ql", "index,fts"),
+            ("fts,index,kv,n1ql", "fts,index,kv,n1ql"),
+            ("fts,index,kv,n1ql", "fts,index,kv"),
+            ("fts,index,kv,n1ql", "fts,index,n1ql"),
+            ("fts,index,kv,n1ql", "fts,n1ql"),
+            ("fts,index,kv,n1ql", "fts,kv,n1ql"),
+            ("fts,index,kv,n1ql", "kv,n1ql"),
+            ("fts,index,kv,n1ql", "kv,fts"),
+            ("fts,index,kv,n1ql", "index,kv,n1ql"),
+            ("fts,index,kv,n1ql", "eventing"),
+            ("fts,index,kv,n1ql", "kv,eventing"),
+            ("fts,index,kv,n1ql", "index,kv,n1ql,eventing"),
+            ("fts,index,kv,n1ql", "fts,index,kv,n1ql,eventing"),
+            # --- Invalid start services (CE rejects at init) ---
+            ("index", "kv"),
+            ("index", "fts"),
+            ("n1ql", "index"),
+            ("n1ql", "fts"),
+            ("fts", "kv"),
+            ("fts", "index"),
+            ("fts", "n1ql"),
+            ("index,kv", "n1ql"),
+            ("index,kv", "fts,n1ql"),
+            ("fts,index", "n1ql"),
+            ("fts,index", "fts,n1ql"),
+            ("index,kv", "kv"),
+            ("index,kv", "fts,kv"),
+            ("index,n1ql", "index,kv"),
+            ("index,n1ql", "fts,index,kv"),
+            ("kv,n1ql", "index,n1ql"),
+            ("kv,n1ql", "fts,index,n1ql"),
+        ]
+
+        for start, add in pairs:
+            expected_ok = (start in self._CE_VALID_SERVICES
+                           and add in self._CE_VALID_SERVICES)
+            self.log.info("add-node test: start=%s add=%s expected=%s",
+                          start, add, "ok" if expected_ok else "fail")
+
+            # Reset master and init with start_services
+            init_ok, init_raw = self._reset_and_init_master(start)
+            init_msg = (init_raw.decode() if isinstance(init_raw, bytes)
+                        else str(init_raw))
+            if not init_ok:
+                self.assertFalse(
+                    expected_ok,
+                    "Init with start=%s failed unexpectedly. Got: %s"
+                    % (start, init_msg))
+                self.log.info("CE blocked init start=%s: %s", start, init_msg[:120])
+                continue
+
+            # Try to add spare with add_services
+            add_ok, add_raw = self.rest.add_node(
+                host_name=spare.ip,
+                username=spare.rest_username,
+                password=spare.rest_password,
+                services=add)
+            add_msg = (add_raw.decode() if isinstance(add_raw, bytes)
+                       else str(add_raw))
+            if not add_ok:
+                self.assertFalse(
+                    expected_ok,
+                    "add_node start=%s add=%s failed unexpectedly. Got: %s"
+                    % (start, add, add_msg))
+                self.log.info("CE blocked add_node add=%s: %s", add, add_msg[:120])
+                continue
+
+            # Spare is in pending — trigger rebalance
+            reb_ok, reb_msg = self._reb_and_wait()
+            if expected_ok:
+                self.assertTrue(
+                    reb_ok,
+                    "CE must allow rebalance start=%s add=%s. Got: %s"
+                    % (start, add, reb_msg))
+                self.log.info("CE allowed start=%s add=%s", start, add)
+                # Rebalance out spare before next iteration
+                self._eject_rebalance_out(spare.ip)
+            else:
+                self.assertFalse(
+                    reb_ok,
+                    "CE must block rebalance start=%s add=%s. Got: %s"
+                    % (start, add, reb_msg))
+                self.log.info("CE blocked rebalance start=%s add=%s: %s",
+                              start, add, reb_msg[:120])
+                # Eject spare from pending state
+                pend_nodes = self._get_otp_nodes(inactive_added=True)
+                spare_otp = next(
+                    (n.id for n in pend_nodes if n.ip == spare.ip), None)
+                if spare_otp:
+                    self.rest.eject_node(spare_otp)
+                    self.sleep(3, "wait for spare to stabilize after eject")
+
+        # Leave master in a valid state for tearDown
+        self._reset_and_init_master("kv")
