@@ -54,12 +54,19 @@ test_ldap_groups,cli_test=True
     -> test_ldap_groups_blocked_cli
 test_log_redaction,cli_test=True
     -> test_log_redaction_blocked_cli
+test_ee_only_features,examine=True
+test_ee_only_features,merge=True
+test_ee_only_features,s3=True
+test_ee_only_features,consistency_check=True
+test_ee_only_features,coll_restore=True
+    -> test_backup_ee_features_blocked_cli
 """
 
 from BucketLib.bucket import Bucket
 from basetestcase import ClusterSetup
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
+from cb_tools.cbbackupmgr import CbBackupMgr
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -444,3 +451,58 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
         shell.disconnect()
         combined = self._combined(output, error)
         self._assert_cli_blocked(combined, "log redaction")
+
+    # ------------------------------------------------------------------
+    # cbbackupmgr EE-only features
+    # testrunner: test_ee_only_features (×5 variants)
+    # ------------------------------------------------------------------
+
+    def test_backup_ee_features_blocked_cli(self):
+        """CE must reject EE-only cbbackupmgr features.
+
+        Iterates five EE-only operations in one pass:
+        - examine (document inspection)
+        - merge --all
+        - backup to S3 archive
+        - backup with --consistency-check
+        - restore with --include-data (collection-level restore)
+
+        All five should produce "Enterprise Edition" in output.
+        Replaces: test_ee_only_features (×5 variants).
+        Requires nodes_init=1.
+        """
+        master = self.cluster.master
+        shell = RemoteMachineShellConnection(master)
+        mgr = CbBackupMgr(shell, username=master.rest_username,
+                           password=master.rest_password)
+        archive = "/tmp/ce_ee_backup_test"
+        repo = "ce_ee_repo"
+
+        mgr.create_repo(archive, repo)
+
+        cases = [
+            ("examine", lambda: mgr.examine(
+                archive, repo, key="asdf",
+                collection_string="asdf.asdf.asdf")),
+            ("merge --all", lambda: mgr.merge(
+                archive, repo, start=None, end=None)),
+            ("backup s3://", lambda: mgr.backup(
+                "s3://ce-ee-test-bucket", repo)),
+            ("backup --consistency-check", lambda: mgr.backup(
+                archive, repo, consistency_check=1)),
+            ("restore --include-data", lambda: mgr.restore(
+                archive, repo, include_data="asdf.asdf.asdf")),
+        ]
+
+        try:
+            for label, fn in cases:
+                output, error = fn()
+                combined = self._combined(output, error)
+                self.assertIn(
+                    "enterprise edition", combined.lower(),
+                    "CE must block cbbackupmgr %s. Got: %s"
+                    % (label, combined[:300]))
+                self.log.info("CE blocked cbbackupmgr %s: %s",
+                              label, combined[:120])
+        finally:
+            shell.disconnect()

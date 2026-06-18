@@ -250,7 +250,8 @@ class CbBackupMgr(CbCmdBase):
                 map_gsi_indexes=True, map_ft_indexes=True,
                 map_analytics=True, map_eventing=True,
                 filter_keys=None, filter_values=None,
-                allow_non_worm=False):
+                allow_non_worm=False,
+                include_data=None):
         """
         Execute cbbackupmgr restore command
         """
@@ -296,6 +297,8 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --filter-keys %s" % filter_keys
         if filter_values:
             cmd += " --filter-values %s" % filter_values
+        if include_data:
+            cmd += " --include-data %s" % include_data
 
         if allow_non_worm:
             cmd += " --allow-non-worm"
@@ -401,6 +404,30 @@ class CbBackupMgr(CbCmdBase):
 
         if self.obj_staging_dir:
             cmd += " --obj-staging-dir %s" % self.obj_staging_dir
+
+        self.log.debug(f"Executing command: {cmd}")
+        output, error = self._execute_cmd(cmd)
+        self.log.debug(f"Command output: {output}")
+
+        if not output or error:
+            self.log.error(f"Command failed with error: {error}")
+
+        return output, error
+
+    def examine(self, archive_dir, repo_name, key, collection_string=None):
+        """Execute cbbackupmgr examine to inspect a document by key.
+
+        :param archive_dir str: Backup archive directory.
+        :param repo_name str: Backup repository name.
+        :param key str: Document key to examine.
+        :param collection_string str: Optional collection path
+               (scope.collection.key format).
+        """
+        cmd = "%s examine --archive %s --repo %s -k %s" % (
+            self.cbstatCmd, archive_dir, repo_name, key)
+        if collection_string:
+            cmd += " --collection-string %s" % collection_string
+        cmd += self.cli_flags
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
