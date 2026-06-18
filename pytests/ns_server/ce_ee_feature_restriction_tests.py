@@ -60,6 +60,8 @@ test_ee_only_features,s3=True
 test_ee_only_features,consistency_check=True
 test_ee_only_features,coll_restore=True
     -> test_backup_ee_features_blocked_cli
+test_lww
+    -> test_lww_conflict_resolution_blocked
 check_ent_backup
     -> test_cbbackupmgr_binary_present_on_ce
 check_memory_optimized_storage_mode + check_plasma_storage_mode
@@ -512,6 +514,27 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
                               label, combined[:120])
         finally:
             shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # LWW conflict resolution — CE block
+    # testrunner: test_lww
+    # ------------------------------------------------------------------
+
+    def test_lww_conflict_resolution_blocked(self):
+        """CE must reject bucket creation with LWW conflict resolution.
+
+        Replaces: test_lww (CommunityXDCRTests).
+        Requires nodes_init=1.
+        """
+        status, content = self._make_request(
+            "/pools/default/buckets", "POST",
+            {"name": "lww_test_bucket",
+             "conflictResolutionType": "lww",
+             "ramQuotaMB": 256})
+        self._assert_blocked(status, content, "LWW conflict resolution")
+        self.assertIn(
+            "enterprise edition", content.lower(),
+            "Expected enterprise edition message, got: %s" % content)
 
     # ------------------------------------------------------------------
     # cbbackupmgr binary presence check
