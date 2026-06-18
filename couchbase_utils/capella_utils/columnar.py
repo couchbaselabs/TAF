@@ -401,7 +401,7 @@ class ColumnarUtils:
 
         if not region:
             if provider == "azure":
-                region = random.choice(["eastus"])
+                region = random.choice(["eastus2"])
             else:
                 region = random.choice(["us-east-2"])
 

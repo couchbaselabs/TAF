@@ -88,7 +88,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
             }
         self.region = self.input.param("region", AWS.Region.US_WEST_2).lower()
         self.gcp_region = self.input.param("gcp_region", GCP.Region.US_EAST_1).lower()
-        self.azure_region = self.input.param("azure_region", "eastus").lower()
+        self.azure_region = self.input.param("azure_region", "eastus2").lower()
         storage_type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd" if provider == "gcp" else "P6"
         self.storage_type = self.input.param("type", storage_type).lower()
         if provider == "aws":
