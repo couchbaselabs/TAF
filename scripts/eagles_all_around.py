@@ -122,7 +122,7 @@ def scan_all_slaves():
                         print "".join(o)
                     # Check all logs for panic
                     all_log = "/root/cbcollect*/*"
-                    o, _ = run("grep -i 'panic' {} --exclude='couchbase.log*'".format(all_log), session)
+                    o, _ = run("grep -i 'panic' {} --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(all_log), session)
                     if o:
                         if flag:
                             print "#######################"
@@ -192,7 +192,7 @@ def check_coredump_exist(server):
             break
 
     print(server + " : Looking for panic in logs")
-    panicMessages = run("grep -ri 'panic' {}* --exclude='couchbase.log*'".format(logsDir), session)[0]
+    panicMessages = run("grep -ri 'panic' {}* --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(logsDir), session)[0]
     if panicMessages:
         print(server + " : === panic ===")
         print("".join(panicMessages))
