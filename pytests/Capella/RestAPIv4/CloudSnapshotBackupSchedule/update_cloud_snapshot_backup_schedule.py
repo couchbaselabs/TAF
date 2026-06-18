@@ -163,13 +163,9 @@ class UpdateCloudSnapshotBackupSchedule(GetCloudSnapshotBackupSchedule):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
+                    "hint": "The request was malformed or invalid.",
                     "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "message": "Bad Request. Error: incorrectly formatted time: 2026/06/01 16:00:00 must be in the format 2006-01-02T15:04:05Z07:00."
                 }
             }, {
                 "desc": "Invalid payload type for copyToRegions",
