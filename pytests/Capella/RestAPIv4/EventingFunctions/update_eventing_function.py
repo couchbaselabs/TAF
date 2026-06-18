@@ -91,9 +91,8 @@ class UpdateEventingFunction(EventingFunctionBase):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
-            payload = self.build_payload(
-                function_name=self.function_name,
-                description="Updated description for auth test")
+            payload = self.build_payload(function_name=self.function_name)
+            payload["description"] = "Updated description for auth test"
             result = self.api_call_with_retry(
                 self.capellaAPI.cluster_ops_apis.update_eventing_function_v4,
                 self.organisation_id, self.project_id, self.cluster_id,

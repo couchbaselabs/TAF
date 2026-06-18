@@ -96,6 +96,7 @@ class DeleteEventingFunction(EventingFunctionBase):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
+            self.update_auth_with_api_token(self.curr_owner_key)
             self.ensure_function_exists(self.function_name)
             self.api_call_with_retry(
                 self.capellaAPI.cluster_ops_apis.update_eventing_function_activation_state_v4,
