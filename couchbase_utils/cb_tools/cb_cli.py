@@ -341,7 +341,8 @@ class CbCli(CbCmdBase):
     def auto_failover(self, enable_auto_fo=1,
                       fo_timeout=None, max_failovers=None,
                       disk_fo=None, disk_fo_timeout=None,
-                      can_abort_rebalance=None):
+                      can_abort_rebalance=None,
+                      failover_server_group=None):
         cmd = "%s setting-autofailover -c localhost:%s -u %s -p %s" \
               % (self.cbstatCmd, self.__get_http_port(),
                  self.username, self.password)
@@ -356,10 +357,49 @@ class CbCli(CbCmdBase):
             cmd += " --failover-data-disk-period %s" % disk_fo_timeout
         if can_abort_rebalance:
             cmd += " --can-abort-rebalance %s" % can_abort_rebalance
+        if failover_server_group:
+            cmd += " --enable-failover-of-server-groups %s" % failover_server_group
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
         return output
+
+    def setting_audit(self, audit_enabled=1, log_rotate_interval=604800,
+                      log_path="/opt/couchbase/var/lib/couchbase/logs"):
+        cmd = "%s setting-audit -c localhost:%s -u %s -p %s --set" \
+              " --audit-enabled %s" \
+              " --audit-log-rotate-interval %s" \
+              " --audit-log-path %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password,
+                 audit_enabled, log_rotate_interval, log_path)
+        return self._execute_cmd(cmd)
+
+    def user_manage_set_group(self, group_name, roles,
+                              description=None, ldap_ref=None):
+        cmd = "%s user-manage -c localhost:%s -u %s -p %s" \
+              " --set-group --group-name %s --roles %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password, group_name, roles)
+        if description:
+            cmd += ' --group-description "%s"' % description
+        if ldap_ref:
+            cmd += ' --ldap-ref "%s"' % ldap_ref
+        return self._execute_cmd(cmd)
+
+    def collect_logs_start(self, all_nodes=False, redaction_level=None,
+                           nodes=None):
+        cmd = "%s collect-logs-start -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if all_nodes:
+            cmd += " --all-nodes"
+        elif nodes:
+            for node in nodes:
+                cmd += " --nodes %s" % node
+        if redaction_level:
+            cmd += " --redaction-level %s" % redaction_level
+        return self._execute_cmd(cmd)
 
     def enable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \

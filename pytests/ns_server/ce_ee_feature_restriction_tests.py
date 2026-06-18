@@ -39,10 +39,28 @@ test_network_encryption
     -> test_network_encryption_blocked
 test_n2n_encryption
     -> test_n2n_encryption_blocked
+
+CLI variants (CBQE-8979)
+------------------------
+test_setting_autofailover_enterprise_only,cli_test=True (×4)
+    -> test_autofailover_ee_settings_blocked_cli
+test_set_bucket_compression,cli_test=True (×3)
+    -> test_bucket_compression_blocked_cli
+test_max_ttl_bucket,cli_test=True
+    -> test_max_ttl_bucket_blocked_cli
+test_setting_audit,cli_test=True
+    -> test_setting_audit_blocked_cli
+test_ldap_groups,cli_test=True
+    -> test_ldap_groups_blocked_cli
+test_log_redaction,cli_test=True
+    -> test_log_redaction_blocked_cli
 """
 
+from BucketLib.bucket import Bucket
 from basetestcase import ClusterSetup
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_tools.cb_cli import CbCli
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CeEeFeatureRestrictionTests(ClusterSetup):
@@ -268,3 +286,160 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
              "failoverServerGroup": "true"})
         self._assert_blocked(status, content,
                              "auto-failover server group (EE-only)")
+
+    # ------------------------------------------------------------------
+    # CLI helpers
+    # ------------------------------------------------------------------
+
+    def _cli_on(self, node):
+        shell = RemoteMachineShellConnection(node)
+        cb_cli = CbCli(shell, username=node.rest_username,
+                       password=node.rest_password)
+        return shell, cb_cli
+
+    @staticmethod
+    def _combined(output, error):
+        return "\n".join((output or []) + (error or []))
+
+    def _assert_cli_blocked(self, combined, feature):
+        self.assertIn(
+            "enterprise edition", combined.lower(),
+            "CE must block '%s' via CLI. Got: %s" % (feature, combined[:300]))
+        self.log.info("CE blocked '%s' via CLI: %s", feature, combined[:200])
+
+    # ------------------------------------------------------------------
+    # Auto-failover EE settings — CLI variants
+    # testrunner: test_setting_autofailover_enterprise_only,cli_test=True (×4)
+    # ------------------------------------------------------------------
+
+    def test_autofailover_ee_settings_blocked_cli(self):
+        """CE must reject EE-only autofailover settings via couchbase-cli.
+
+        Params:
+          failover_disk_period=True  — pass --failover-data-disk-period 300
+          failover_server_group=True — pass --enable-failover-of-server-groups 1
+
+        Covers:
+        - cli_test=True
+        - cli_test=True,failover_disk_period=True
+        - cli_test=True,failover_server_group=True
+        - cli_test=True,failover_disk_period=True,failover_server_group=True
+        """
+        disk_period = self.input.param("failover_disk_period", False)
+        server_group = self.input.param("failover_server_group", False)
+
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        combined = ""
+        try:
+            output = cb_cli.auto_failover(
+                enable_auto_fo=1,
+                disk_fo=1,
+                disk_fo_timeout=300 if disk_period else None,
+                failover_server_group=1 if server_group else None)
+            combined = "\n".join(output) if isinstance(output, list) \
+                else str(output)
+        except Exception as exc:
+            combined = str(exc)
+        finally:
+            shell.disconnect()
+
+        self._assert_cli_blocked(combined, "autofailover EE settings")
+
+    # ------------------------------------------------------------------
+    # Bucket compression — CLI variants
+    # testrunner: test_set_bucket_compression,cli_test=True (×3)
+    # ------------------------------------------------------------------
+
+    def test_bucket_compression_blocked_cli(self):
+        """CE must reject bucket compressionMode via couchbase-cli.
+
+        Params: compression_mode=off|passive|active (default: off)
+        """
+        mode = self.input.param("compression_mode", "off")
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        combined = ""
+        try:
+            cb_cli.create_bucket({
+                Bucket.name: "comp_test_bucket",
+                Bucket.bucketType: "couchbase",
+                Bucket.ramQuotaMB: 512,
+                Bucket.replicaNumber: 1,
+                Bucket.compressionMode: mode,
+            })
+            combined = "no error raised"
+        except Exception as exc:
+            combined = str(exc)
+        finally:
+            shell.disconnect()
+
+        self._assert_cli_blocked(
+            combined, "bucket compression mode=%s" % mode)
+
+    # ------------------------------------------------------------------
+    # Max TTL bucket — CLI variant
+    # testrunner: test_max_ttl_bucket,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_max_ttl_bucket_blocked_cli(self):
+        """CE must reject bucket with --max-ttl via couchbase-cli."""
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        combined = ""
+        try:
+            cb_cli.create_bucket({
+                Bucket.name: "ttl_test_bucket",
+                Bucket.bucketType: "couchbase",
+                Bucket.ramQuotaMB: 512,
+                Bucket.replicaNumber: 1,
+                Bucket.maxTTL: 200,
+            })
+            combined = "no error raised"
+        except Exception as exc:
+            combined = str(exc)
+        finally:
+            shell.disconnect()
+
+        self._assert_cli_blocked(combined, "maxTTL bucket")
+
+    # ------------------------------------------------------------------
+    # Audit setting — CLI variant
+    # testrunner: test_setting_audit,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_setting_audit_blocked_cli(self):
+        """CE must reject enabling audit via couchbase-cli setting-audit."""
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.setting_audit()
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self._assert_cli_blocked(combined, "setting-audit")
+
+    # ------------------------------------------------------------------
+    # LDAP groups — CLI variant
+    # testrunner: test_ldap_groups,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_ldap_groups_blocked_cli(self):
+        """CE must reject LDAP group creation via couchbase-cli user-manage."""
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.user_manage_set_group(
+            group_name="admins",
+            roles="admin",
+            description="Couchbase Server Administrators",
+            ldap_ref="uid=cbadmins,ou=groups,dc=example,dc=com")
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self._assert_cli_blocked(combined, "LDAP group creation")
+
+    # ------------------------------------------------------------------
+    # Log redaction — CLI variant
+    # testrunner: test_log_redaction,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_log_redaction_blocked_cli(self):
+        """CE must reject log collection with redaction via couchbase-cli."""
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.collect_logs_start(
+            all_nodes=True, redaction_level="partial")
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self._assert_cli_blocked(combined, "log redaction")
