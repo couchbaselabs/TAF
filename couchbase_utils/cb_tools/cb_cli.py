@@ -451,3 +451,12 @@ class CbCli(CbCmdBase):
             return security_dict["clusterEncryptionLevel"]
         else:
             return None
+
+    def setting_xdcr(self, enable_compression=None):
+        cmd = "%s setting-xdcr -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if enable_compression is not None:
+            cmd += " --enable-compression %d" % enable_compression
+        cmd += self.cli_flags
+        return self._execute_cmd(cmd)

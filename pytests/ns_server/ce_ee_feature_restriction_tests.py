@@ -62,6 +62,10 @@ test_ee_only_features,coll_restore=True
     -> test_backup_ee_features_blocked_cli
 test_lww
     -> test_lww_conflict_resolution_blocked
+test_xdcr_filter + test_xdcr_priority + test_xdcr_compression (Auto + Snappy)
+    -> test_xdcr_ee_features_blocked
+test_xdcr_compression,cli_test=True
+    -> test_xdcr_compression_blocked_cli
 check_ent_backup
     -> test_cbbackupmgr_binary_present_on_ce
 check_memory_optimized_storage_mode + check_plasma_storage_mode
@@ -72,9 +76,12 @@ check_full_backup_only (diff, accu)
 
 from basetestcase import ClusterSetup
 from BucketLib.bucket import Bucket
+from cb_server_rest_util.cluster_nodes.cluster_init_provision import \
+    ClusterInitializationProvision
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbbackupmgr import CbBackupMgr
+from cluster_utils.cluster_ready_functions import CBCluster
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -514,6 +521,114 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
                               label, combined[:120])
         finally:
             shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # XDCR EE-only features — REST
+    # testrunner: test_xdcr_filter, test_xdcr_priority,
+    #             test_xdcr_compression (Auto + Snappy)
+    # ------------------------------------------------------------------
+
+    def test_xdcr_ee_features_blocked(self):
+        """CE must reject EE-only XDCR features via createReplication REST API.
+
+        Uses servers[1] as a standalone remote cluster so the remote
+        cluster reference is valid and CE validates the feature params.
+        Iterates four EE-only params in one pass:
+        - filterExpression (advanced filtering)
+        - priority
+        - compressionType=Auto
+        - compressionType=Snappy
+
+        Replaces: test_xdcr_filter, test_xdcr_priority,
+                  test_xdcr_compression (Auto + Snappy).
+        Requires nodes_init=1 + 1 spare (2-node ini).
+        """
+        spare = self.cluster.servers[1]
+        remote_cluster = CBCluster("C2", servers=[spare])
+        remote_cluster.nodes_in_cluster = [spare]
+
+        # Initialize spare as a standalone single-node cluster
+        init_prov = ClusterInitializationProvision()
+        init_prov.set_server_values(remote_cluster.master)
+        init_prov.set_endpoint_urls(remote_cluster.master)
+        init_prov.initialize_cluster(
+            hostname=remote_cluster.master.ip,
+            username=remote_cluster.master.rest_username,
+            password=remote_cluster.master.rest_password,
+            services="kv",
+            memory_quota=256)
+
+        # Register spare as remote cluster reference "cluster1"
+        self._make_request(
+            "/pools/default/remoteClusters", "POST",
+            {"name": "cluster1",
+             "hostname": "%s:8091" % remote_cluster.master.ip,
+             "username": remote_cluster.master.rest_username,
+             "password": remote_cluster.master.rest_password})
+
+        # Create source bucket for fromBucket param
+        self._make_request(
+            "/pools/default/buckets", "POST",
+            {"name": "default", "ramQuotaMB": 256,
+             "bucketType": "couchbase", "replicaNumber": 0})
+        self.sleep(5, "wait for default bucket to be ready")
+
+        ee_params = [
+            ("filterExpression",
+             {"fromBucket": "default", "toCluster": "cluster1",
+              "toBucket": "default", "replicationType": "continuous",
+              "filterExpression": "some_exp"}),
+            ("priority=Medium",
+             {"fromBucket": "default", "toCluster": "cluster1",
+              "toBucket": "default", "replicationType": "continuous",
+              "priority": "Medium"}),
+            ("compressionType=Auto",
+             {"fromBucket": "default", "toCluster": "cluster1",
+              "toBucket": "default", "replicationType": "continuous",
+              "compressionType": "Auto"}),
+            ("compressionType=Snappy",
+             {"fromBucket": "default", "toCluster": "cluster1",
+              "toBucket": "default", "replicationType": "continuous",
+              "compressionType": "Snappy"}),
+        ]
+
+        try:
+            for feature, params in ee_params:
+                status, content = self._make_request(
+                    "/controller/createReplication", "POST", params)
+                self._assert_blocked(
+                    status, content, "XDCR %s (EE-only)" % feature)
+                self.assertIn(
+                    "enterprise edition", content.lower(),
+                    "Expected enterprise edition message for XDCR %s. "
+                    "Got: %s" % (feature, content[:300]))
+        finally:
+            self._make_request(
+                "/pools/default/remoteClusters/cluster1", "DELETE")
+            spare_rest = ClusterRestAPI(remote_cluster.master)
+            spare_rest.reset_node()
+
+    # ------------------------------------------------------------------
+    # XDCR compression — CLI variant
+    # testrunner: test_xdcr_compression,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_xdcr_compression_blocked_cli(self):
+        """CE must reject enabling XDCR compression via couchbase-cli.
+
+        Replaces: test_xdcr_compression,cli_test=True.
+        Requires nodes_init=1.
+        """
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.setting_xdcr(enable_compression=1)
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self.assertIn(
+            "enterprise edition", combined.lower(),
+            "CE must block XDCR --enable-compression via CLI. Got: %s"
+            % combined[:300])
+        self.log.info("CE blocked XDCR compression via CLI: %s",
+                      combined[:120])
 
     # ------------------------------------------------------------------
     # LWW conflict resolution — CE block
