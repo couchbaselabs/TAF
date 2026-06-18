@@ -11,58 +11,34 @@ class GetAuditLogExports(GetAppService):
 
     def setUp(self, nomenclature="AppServicesAuditLogging_GET"):
         GetAppService.setUp(self, nomenclature)
+        self.start_time = self.get_utc_datetime(-60)
+        self.end_time = self.get_utc_datetime(-20)
         self.expected_res = {
-            # Creation params.
-            "start": self.get_utc_datetime(-60),
-            "end": self.get_utc_datetime(-20),
-
-            # Response params.
-            "data": {
-                "id": "to be changed after creation",
-                "start": None,
-                "end": None,
-                "download_id": None,
-                "download_expires": None,
-                "status": None,
-                "appServiceId": self.app_service_id,
-                "tenantId": self.organisation_id,
-                "clusterId": self.cluster_id,
-                "createdByUserID": None,
-                "upsertedByUserID": None,
+            "id": "to be changed after creation",
+            "download_id": None,  
+            "status": None,
+            "appServiceId": self.app_service_id,
+            "tenantId": self.organisation_id,
+            "clusterId": self.cluster_id,
+            "audit": {
                 "createdAt": None,
-                "upsertedAt": None,
-                "modifiedByUserID": None,
+                "createdBy": None,
                 "modifiedAt": None,
-                "version": None
+                "modifiedBy": None,
+                "version": None,
             },
-            "permissions": {
-                "create": {
-                    "accessible": None
-                },
-                "read": {
-                    "accessible": None
-                },
-                "update": {
-                    "accessible": None
-                },
-                "delete": {
-                    "accessible": None
-                }
-            }
         }
 
         self.log.info("...Creating AppSvc Audit Logging Export...")
         res = self.capellaAPI.cluster_ops_apis.create_app_svc_audit_log_export(
             self.organisation_id, self.project_id, self.cluster_id,
-            self.app_service_id, self.expected_res["start"],
-            self.expected_res["end"])
+            self.app_service_id, self.start_time, self.end_time)
         if res.status_code == 429:
             self.handle_rate_limit(res.headers["Retry-After"])
             res = (self.capellaAPI.cluster_ops_apis.
                    create_app_svc_audit_log_export(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.app_service_id, self.expected_res["start"],
-                    self.expected_res["end"]))
+                    self.app_service_id, self.start_time, self.end_time))
         if res.status_code != 202:
             self.log.error("Error: {}".format(res.content))
             self.tearDown()
@@ -72,7 +48,7 @@ class GetAuditLogExports(GetAppService):
 
         # Set Parameters for the expected res to be validated in GET
         self.auditLogExport_id = res.json()["exportId"]
-        self.expected_res["data"]["id"] = self.auditLogExport_id
+        self.expected_res["id"] = self.auditLogExport_id
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
