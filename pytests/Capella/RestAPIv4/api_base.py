@@ -56,6 +56,7 @@ class APIBase(CouchbaseBaseTest):
                 "id": self.organisation_id,
                 "otherProj": None
             }
+            self.other_project_id = None
             self.create_v2_control_plane_api_key()
 
             # create the first V4 API KEY WITH organizationOwner role, which
