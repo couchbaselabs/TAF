@@ -11,7 +11,7 @@ import time
 
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from membase.api.rest_client import RestConnection
-from .fusion_enable_disable_test import _FusionTestBase
+from .fusion_test_base import _FusionTestBase
 
 
 class FusionHealthTest(_FusionTestBase):

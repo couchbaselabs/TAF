@@ -23,7 +23,7 @@ from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from membase.api.rest_client import RestConnection
 from aGoodDoctor.hostedOnOff import DoctorHostedOnOff
-from .fusion_enable_disable_test import _FusionTestBase
+from .fusion_test_base import _FusionTestBase
 
 
 class FusionClusterOnOffTest(_FusionTestBase):

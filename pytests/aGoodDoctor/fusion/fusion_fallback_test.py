@@ -39,7 +39,7 @@ from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
 from .fusion_aws_util import FusionAWSUtil
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
-from .fusion_enable_disable_test import _FusionTestBase
+from .fusion_test_base import _FusionTestBase
 
 
 # Priority-ordered instance types mirroring unifiedInstanceTypes in
