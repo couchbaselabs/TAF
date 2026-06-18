@@ -123,7 +123,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
 
     def _load_above_threshold(self):
         """Load enough documents to trigger fusion acceleration on next rebalance."""
-        create_end = self.input.param("create_end", 20_000_000)
+        create_end = int(self.input.param("create_end", 20_000_000))
         self._load_data(self.cluster, create_start=0, create_end=create_end)
         self.sleep(120, "Allow initial sync to S3 before triggering rebalance")
 
@@ -170,7 +170,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
 
-        create_end = self.input.param("create_end", 5_000_000)
+        create_end = int(self.input.param("create_end", 5_000_000))
         self._load_data(self.cluster, create_start=0, create_end=create_end)
         self.sleep(30, "Allow partial sync before capturing pending bytes")
 
@@ -494,3 +494,318 @@ class FusionClusterOnOffTest(_FusionTestBase):
             f"Expected 0 guest volumes after full cleanup, "
             f"found {len(final_volumes)}: {final_volumes}")
         self.log.info("All guest volumes cleaned up after cluster on/off cycle")
+
+    # ------------------------------------------------------------------
+    # Test 13: Full functional on/off with 100M items, volume attachment
+    #          verification, and post-turn-on fusion rebalance
+    # ------------------------------------------------------------------
+
+    def test_cluster_on_off_functional(self):
+        """
+        Full functional test: cluster on/off with 100M items.
+
+        Test sequence:
+        1.  Enable fusion; load create_end (default 100 M) documents — well
+            above the fusion threshold so every rebalance uses fusion.
+        2.  Trigger a +1 scale-out rebalance (fusion path expected).
+        3.  Wait for EBS guest volumes to appear (accelerators launched by CP).
+        4.  Verify every attached guest volume is attached to a cluster instance
+            (KV node or accelerator) — not orphaned on a foreign instance.
+        5.  Wait for rebalance to complete; assert accelerators terminated.
+        6.  Assert guest volumes remain attached to KV nodes (NOT cleaned up —
+            volumes persist after rebalance; only accelerators are temporary).
+        7.  Turn the cluster off — CP cleans up guest volumes during turn-off.
+        8.  Turn the cluster back on.
+        9.  Assert fusion state == 'enabled'; assert guest volumes are still
+            attached to KV nodes (EBS volumes persist across stop/start).
+        10. Trigger a second +1 scale-out rebalance; assert fusion path is used
+            (accelerator instances appear).
+        11. Assert accelerator nodes are killed after the second rebalance.
+        12. Assert guest volumes from the second rebalance are attached to KV nodes.
+        13. Assert dp-agent remained healthy throughout the turn-on window.
+        14. Assert no memcached errors after the entire cycle.
+        """
+        self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
+        self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
+
+        create_end = int(self.input.param("create_end", 100_000_000))
+        self.log.info(
+            f"Loading {create_end:,} documents into cluster {self.cluster.id}")
+        self._load_data(self.cluster, create_start=0, create_end=create_end)
+        self.sleep(120, "Allow initial sync to S3 before triggering rebalance")
+
+        turn_off_timeout = self.input.param("turn_off_timeout", 600)
+        turn_on_timeout = self.input.param("turn_on_timeout", 1200)
+        volume_wait_timeout = self.input.param("volume_wait_timeout", 1800)
+
+        # ------------------------------------------------------------------
+        # Phase 1: trigger first scale-out rebalance
+        # ------------------------------------------------------------------
+        self.log.info(
+            f"Triggering first scale-out rebalance on cluster {self.cluster.id}")
+        rebalance_task = self._trigger_scale_out()
+        self.sleep(30, "Wait for rebalance to initialise")
+
+        # ------------------------------------------------------------------
+        # Phase 2: observe guest volumes during the rebalance and verify
+        #          they are attached to cluster instances (not orphaned).
+        #          The rebalance is allowed to run to completion — we do NOT
+        #          interrupt it here.
+        # ------------------------------------------------------------------
+        self.log.info(
+            "Polling for EBS guest volumes while rebalance is in-flight")
+        deadline = time.time() + volume_wait_timeout
+        volumes_observed = False
+        while time.time() < deadline:
+            if rebalance_task.state in self._FAILED_STATES:
+                self.fail(
+                    f"Rebalance failed before guest volumes were observed: "
+                    f"{rebalance_task.state}")
+            if rebalance_task.state == "healthy":
+                break
+
+            volume_ids = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+            if volume_ids:
+                self.log.info(
+                    f"{len(volume_ids)} guest volume(s) detected on cluster "
+                    f"{self.cluster.id}: {volume_ids}")
+                # Verify all attached volumes belong to cluster instances
+                self.find_master(self.tenant, self.cluster)
+                all_attached = \
+                    self.cp_monitor.verify_guest_volumes_attached_to_cluster(
+                        self.cluster)
+                self.assertTrue(
+                    all_attached,
+                    f"One or more EBS guest volumes on cluster {self.cluster.id} "
+                    "are attached to instances that do not belong to this cluster — "
+                    "volumes may be orphaned or misattributed")
+                volumes_observed = True
+                break
+            time.sleep(5)
+
+        self.assertTrue(
+            volumes_observed,
+            "No EBS guest volumes appeared during the rebalance — "
+            "fusion acceleration may not have triggered; check data volume "
+            "vs. fusion threshold")
+
+        # Wait for the first rebalance to complete fully before turning off
+        self.log.info(
+            "Waiting for first rebalance to complete before turning cluster off")
+        self.wait_for_rebalances([rebalance_task])
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id, timeout=600)
+        self.find_master(self.tenant, self.cluster)
+
+        # Accelerators are temporary EC2 instances — they must be terminated
+        # once the rebalance completes.
+        accel_killed = \
+            self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
+                self.cluster)
+        self.assertTrue(accel_killed,
+                        "Accelerator nodes not killed after first rebalance")
+
+        # Guest volumes are NOT cleaned up after a normal rebalance — they
+        # are detached from the accelerators and re-attached to the KV nodes
+        # where CBS uses them directly.  Cleanup only happens on cluster turn-off.
+        self.find_master(self.tenant, self.cluster)
+        post_rebl_volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+        self.assertGreater(
+            len(post_rebl_volumes), 0,
+            "No guest volumes found after first rebalance — volumes should "
+            "remain attached to KV nodes after accelerators are terminated")
+        all_attached = self.cp_monitor.verify_guest_volumes_attached_to_cluster(
+            self.cluster)
+        self.assertTrue(
+            all_attached,
+            "One or more guest volumes are not attached to a cluster instance "
+            "after the first rebalance; expected all volumes on KV nodes")
+        self.log.info(
+            f"First rebalance complete — {len(post_rebl_volumes)} guest volume(s) "
+            "attached to KV nodes; accelerators terminated; cluster is healthy")
+
+        # ------------------------------------------------------------------
+        # Phase 3: turn cluster off (rebalance is done, cluster is healthy)
+        # ------------------------------------------------------------------
+        dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
+        self.log.info(f"Turning cluster {self.cluster.id} off")
+        turned_off = dr_on_off.turn_off_cluster(timeout=turn_off_timeout)
+        self.assertTrue(
+            turned_off,
+            f"Cluster {self.cluster.id} did not reach 'turnedOff' state "
+            f"within {turn_off_timeout}s")
+        self.log.info(f"Cluster {self.cluster.id} is off")
+
+        # ------------------------------------------------------------------
+        # Phase 4: turn cluster back on
+        # dp-agent is checked inside the turn-on polling loop: first check
+        # 60 s after the trigger fires, then every 30 s until healthy.
+        # ------------------------------------------------------------------
+        self.log.info(f"Turning cluster {self.cluster.id} back on")
+        _dp_agent_result = {"healthy": True, "checks": 0}
+
+        def _dp_agent_poll():
+            ok = self.cp_monitor.check_dp_agent_not_crashing(self.cluster)
+            _dp_agent_result["checks"] += 1
+            if not ok:
+                _dp_agent_result["healthy"] = False
+                self.log.critical(
+                    f"dp-agent crash detected on cluster {self.cluster.id} "
+                    "during turn-on polling window")
+
+        turned_on = dr_on_off.turn_on_cluster(
+            timeout=turn_on_timeout,
+            poll_callback=_dp_agent_poll,
+            callback_delay=60,
+            callback_interval=30,
+        )
+        self.assertTrue(
+            turned_on,
+            f"Cluster {self.cluster.id} did not return to 'healthy' after "
+            f"turn-on within {turn_on_timeout}s")
+        self.log.info(
+            f"Cluster {self.cluster.id} is back online — "
+            f"dp-agent checked {_dp_agent_result['checks']} time(s) during turn-on")
+
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id, timeout=600)
+        self.find_master(self.tenant, self.cluster)
+
+        # ------------------------------------------------------------------
+        # Phase 5: assert fusion state is still 'enabled' after turn-on;
+        #          guest volumes must be gone (cleaned up during turn-off)
+        # ------------------------------------------------------------------
+        fusion_status = CapellaAPI.get_fusion_status(
+            self.pod, self.tenant, self.cluster.id)
+        self.assertEqual(
+            fusion_status.get("state"), "enabled",
+            f"Fusion is not 'enabled' after cluster turn-on: {fusion_status}")
+        self.log.info("Fusion state is 'enabled' after cluster turn-on")
+
+        # Guest volumes survive a turn-off/turn-on cycle: EC2 instances are
+        # stopped (not terminated), so attached EBS volumes persist and come
+        # back with the nodes on turn-on.
+        post_on_volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+        self.assertGreater(
+            len(post_on_volumes), 0,
+            "Expected guest volumes to still be attached to KV nodes after "
+            "cluster turn-on — EBS volumes persist across stop/start cycles")
+        all_attached_post_on = self.cp_monitor.verify_guest_volumes_attached_to_cluster(
+            self.cluster)
+        self.assertTrue(
+            all_attached_post_on,
+            "One or more guest volumes are not attached to a cluster instance "
+            "after cluster turn-on; expected all volumes still on KV nodes")
+        self.log.info(
+            f"{len(post_on_volumes)} guest volume(s) confirmed on KV nodes "
+            "after cluster turn-on")
+
+        # ------------------------------------------------------------------
+        # Phase 6: trigger second rebalance; assert it runs through fusion
+        # ------------------------------------------------------------------
+        self.log.info(
+            "Triggering second scale-out rebalance after cluster turn-on — "
+            "expecting fusion acceleration path")
+        second_rebalance_task = self._trigger_scale_out()
+        self.sleep(30, "Wait for second rebalance to initialise")
+
+        second_deadline = time.time() + volume_wait_timeout
+        fusion_confirmed = False
+        while time.time() < second_deadline:
+            if second_rebalance_task.state in self._FAILED_STATES:
+                self.fail(
+                    f"Second rebalance failed: {second_rebalance_task.state}")
+            if second_rebalance_task.state == "healthy":
+                self.log.warning(
+                    "Second rebalance completed before accelerators were "
+                    "observed — treating as success if no failure state")
+                break
+
+            instances = self.fusion_aws_util.list_accelerator_instances(
+                self.fusion_aws_util._cluster_filter(
+                    self.cluster.id,
+                    [{'Name': 'tag:couchbase-cloud-function',
+                      'Values': ['fusion-accelerator']}]
+                ),
+                log="Fusion Accelerator (second rebalance)"
+            )
+            if instances:
+                self.log.info(
+                    f"Second rebalance confirmed on fusion path: "
+                    f"{len(instances)} accelerator instance(s) active")
+                fusion_confirmed = True
+                break
+            time.sleep(10)
+
+        self.assertTrue(
+            fusion_confirmed,
+            "Second rebalance did not use the fusion path — no accelerator "
+            "instances were detected while 100 M items are present; check "
+            "that the fusion-rebalances feature flag is still set after turn-on")
+
+        # Wait for the second rebalance to complete
+        self.log.info("Waiting for second rebalance to complete")
+        self.wait_for_rebalances([second_rebalance_task])
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id, timeout=600)
+        self.find_master(self.tenant, self.cluster)
+
+        # ------------------------------------------------------------------
+        # Phase 7: accelerator nodes must be killed after second rebalance
+        # ------------------------------------------------------------------
+        self.log.info(
+            "Verifying accelerator nodes are terminated "
+            "after the second rebalance")
+        accel_cleaned = \
+            self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
+                self.cluster)
+        self.assertTrue(
+            accel_cleaned,
+            "Fusion accelerator nodes were not terminated after the second "
+            "rebalance completes")
+        self.log.info(
+            "Accelerator nodes terminated successfully after second rebalance")
+
+        # ------------------------------------------------------------------
+        # Phase 8: guest volumes from the second rebalance remain attached
+        #          to KV nodes — accelerators are gone but volumes persist
+        # ------------------------------------------------------------------
+        self.find_master(self.tenant, self.cluster)
+        final_volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+        self.assertGreater(
+            len(final_volumes), 0,
+            "No guest volumes found after second rebalance — volumes should "
+            "remain attached to KV nodes after accelerators are terminated")
+        all_attached_final = self.cp_monitor.verify_guest_volumes_attached_to_cluster(
+            self.cluster)
+        self.assertTrue(
+            all_attached_final,
+            "One or more guest volumes are not attached to a cluster instance "
+            "after the second rebalance; expected all volumes on KV nodes")
+        self.log.info(
+            f"Second rebalance complete — {len(final_volumes)} guest volume(s) "
+            "attached to KV nodes; accelerators terminated")
+
+        # ------------------------------------------------------------------
+        # Phase 9: assert dp-agent stayed healthy throughout turn-on
+        # ------------------------------------------------------------------
+        self.assertTrue(
+            _dp_agent_result["healthy"],
+            f"dp-agent crashed on one or more instances of cluster "
+            f"{self.cluster.id} during the turn-on polling window "
+            f"({_dp_agent_result['checks']} check(s) performed)")
+        self.log.info(
+            f"dp-agent remained stable across all {_dp_agent_result['checks']} "
+            "check(s) during cluster turn-on")
+
+        # ------------------------------------------------------------------
+        # Phase 10: no memcached errors across the entire test cycle
+        # ------------------------------------------------------------------
+        errors_found = self.cp_monitor.scan_memcached_logs_for_errors(
+            [self.cluster], steady_state_workload_sleep=0)
+        self.assertEqual(
+            len(errors_found), 0,
+            f"Memcached errors detected after cluster on/off and rebalance "
+            f"cycle on: {[c.id for c in errors_found]}")
+        self.log.info(
+            "No memcached errors — functional on/off test complete")

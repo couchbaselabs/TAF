@@ -564,6 +564,138 @@ class FusionCPResourceMonitor:
             stop_run_event.wait(interval)
         return True
 
+    def get_current_guest_volume_ids(self, cluster):
+        """
+        Return the list of EBS volume IDs currently tagged as fusion accelerator
+        guest volumes for the given cluster.
+
+        Queries AWS directly; returns an empty list on any error so callers can
+        do a simple truthiness / len() check without extra error handling.
+
+        :param cluster: Cluster object
+        :return: List of volume ID strings (may be empty)
+        """
+        try:
+            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(
+                filters={
+                    'couchbase-cloud-cluster-id': cluster.id,
+                    'couchbase-cloud-function': 'fusion-accelerator',
+                }
+            )
+            return [v.get('VolumeId') for v in volumes if v.get('VolumeId')]
+        except Exception as e:
+            self.log.error(
+                f"Failed to list guest volume IDs for cluster {cluster.id}: {e}"
+            )
+            return []
+
+    def verify_guest_volumes_attached_to_cluster(self, cluster):
+        """
+        Verify every attached EBS guest volume is attached to an instance that
+        belongs to this cluster (either a KV/data node or an accelerator instance).
+
+        Unattached ('available') volumes are ignored — they are in the teardown
+        window between CBS releasing them and CP deleting them, which is valid.
+
+        Logs a PrettyTable summary of all volumes and their attachment state.
+
+        :param cluster: Cluster object
+        :return: True if all attached volumes belong to cluster instances, False otherwise
+        """
+        try:
+            cluster_instances = self.fusion_aws_util.list_instances(
+                self.fusion_aws_util._cluster_filter(cluster.id),
+                log="All Cluster Instances",
+                suppress_log=True,
+            )
+        except Exception as e:
+            self.log.error(
+                f"Failed to list cluster instances for {cluster.id}: {e}"
+            )
+            return False
+
+        cluster_instance_ids = {
+            i.get('InstanceId') for i in cluster_instances if i.get('InstanceId')
+        }
+
+        volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(
+            filters={
+                'couchbase-cloud-cluster-id': cluster.id,
+                'couchbase-cloud-function': 'fusion-accelerator',
+            }
+        )
+
+        table = PrettyTable()
+        table.field_names = [
+            "Volume ID", "State", "Attached Instance", "Is Cluster Instance"
+        ]
+
+        all_correct = True
+        for volume in volumes:
+            vol_id = volume.get('VolumeId', 'N/A')
+            state = volume.get('State', 'N/A')
+            attachments = volume.get('Attachments', [])
+
+            if not attachments:
+                table.add_row([vol_id, state, 'N/A (available)', 'N/A'])
+                continue
+
+            for attachment in attachments:
+                instance_id = attachment.get('InstanceId', 'N/A')
+                in_cluster = instance_id in cluster_instance_ids
+                table.add_row([vol_id, state, instance_id, str(in_cluster)])
+                if not in_cluster:
+                    all_correct = False
+                    self.log.error(
+                        f"Volume {vol_id} is attached to instance {instance_id} "
+                        f"which does NOT belong to cluster {cluster.id}"
+                    )
+
+        self.log.info(
+            f"Guest volume attachment check for cluster {cluster.id}:\n{table}"
+        )
+        return all_correct
+
+    def check_dp_agent_not_crashing(self, cluster, lookback_minutes=10):
+        """
+        Verify dp-agent is running and has not crashed on all cluster instances.
+
+        Intended for point-in-time checks immediately after a cluster turn-on
+        to confirm the dp-agent came back healthy on every node.
+
+        Logs a PrettyTable with per-instance results (state, restart count,
+        and any crash lines found in the journal since the current run started).
+
+        :param cluster: Cluster object
+        :param lookback_minutes: Journal window when service start time is
+            unavailable (default 10 min)
+        :return: True if dp-agent is healthy on all instances, False otherwise
+        """
+        self.log.info(
+            f"Checking dp-agent health on all instances of cluster {cluster.id}")
+        all_healthy, results = \
+            self.fusion_aws_util.check_dp_agent_health_on_cluster_instances(
+                cluster.id, lookback_minutes=lookback_minutes)
+
+        table = PrettyTable()
+        table.field_names = [
+            "Instance ID", "Public IP", "State", "Restarts", "Healthy", "Crash Lines"
+        ]
+        for instance_id, public_ip, state, restarts, crash_lines, healthy in results:
+            # Truncate long crash output so the table stays readable
+            crash_summary = (crash_lines[:120] + '…') if len(crash_lines) > 120 else crash_lines
+            table.add_row([
+                instance_id, public_ip, state, restarts,
+                "YES" if healthy else "NO",
+                crash_summary or "—"
+            ])
+
+        level = self.log.info if all_healthy else self.log.critical
+        level(
+            f"dp-agent health check for cluster {cluster.id}:\n{table}"
+        )
+        return all_healthy
+
     def parse_accelerator_logs(self, clusters, fusion_rebalances, access_key, secret_key, region):
         """
         Parse accelerator logs for all clusters.

@@ -37,13 +37,23 @@ class DoctorHostedOnOff:
         self.log.critical("Failed to turn off cluster: Timeout, Cluster state: {}".format(cluster_state))
         return False
 
-    def turn_on_cluster(self, timeout=300):
+    def turn_on_cluster(self, timeout=300, poll_callback=None,
+                        callback_delay=60, callback_interval=30):
+        """Turn on the cluster and wait for it to reach 'healthy' state.
+
+        poll_callback: optional callable invoked periodically during the wait
+            loop — first call after callback_delay seconds, then every
+            callback_interval seconds. Useful for in-loop health checks
+            (e.g. dp-agent crash detection) without a separate thread.
+        """
         resp = self.capella_api.turn_on_cluster(self.tenant.id, self.tenant.project_id, self.cluster.id)
         if resp.status_code != 202:
             self.log.critical("Failed to turn on cluster: {}".format(resp.content))
             return False
 
         end_time = time.time() + timeout
+        start_time = time.time()
+        last_callback_time = 0.0
         cluster_state = None
         while time.time() < end_time:
             cluster_state = CapellaAPI.get_cluster_state(self.pod, self.tenant, self.cluster.id)
@@ -52,8 +62,15 @@ class DoctorHostedOnOff:
             elif cluster_state == "turningOnFailed":
                 self.log.critical("Failed to turn on cluster: Turning on failed")
                 return False
-            else:
-                self.sleep(5, "Waiting for cluster to turn on")
+
+            if poll_callback is not None:
+                now = time.time()
+                elapsed = now - start_time
+                if elapsed >= callback_delay and (now - last_callback_time) >= callback_interval:
+                    poll_callback()
+                    last_callback_time = time.time()
+
+            self.sleep(5, "Waiting for cluster to turn on")
 
         self.log.critical("Failed to turn on cluster: Timeout, Cluster state: {}".format(cluster_state))
         return False

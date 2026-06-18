@@ -311,6 +311,103 @@ class FusionAWSUtil:
 
         return errors_found
 
+    def check_dp_agent_health_on_cluster_instances(self, cluster_id, lookback_minutes=10):
+        """
+        Check that dp-agent is active and has not crashed on all cluster instances.
+
+        Per instance (concurrently via SSM):
+          1. Checks systemd active state — must be 'active'.
+          2. Reads NRestarts from systemd — logged for visibility.
+          3. Greps the journal for crash indicators (killed, segfault, core dump,
+             non-zero exit status) since the current service run started.
+
+        :param cluster_id: Cluster ID used to filter instances by tag
+        :param lookback_minutes: Fallback journal lookback window when the
+            service start time cannot be determined (default 10 min)
+        :return: True if dp-agent is healthy on every instance, False otherwise
+        """
+        instances = self.list_instances(filters=self._cluster_filter(cluster_id))
+        if not instances:
+            self.log.warning(
+                f"No instances found for cluster {cluster_id} — "
+                "skipping dp-agent health check")
+            return True
+
+        crash_pattern = r"killed|segfault|core.dump|Main process exited.*status=[^0]|status=[1-9][0-9]*$"
+
+        # Single compound shell command — one SSM round-trip per instance.
+        # Returns lines of the form:
+        #   IS_ACTIVE=<active|inactive|...>
+        #   RESTARTS=<N>
+        #   CRASHES=<matching journal lines, if any>
+        cmd = (
+            "IS_ACTIVE=$(systemctl is-active dp-agent 2>/dev/null || echo inactive); "
+            "RESTARTS=$(systemctl show dp-agent --property=NRestarts --value 2>/dev/null || echo unknown); "
+            "SINCE=$(systemctl show dp-agent --property=ActiveEnterTimestamp --value 2>/dev/null || echo ''); "
+            f"if [ -n \"$SINCE\" ]; then "
+            f"  CRASHES=$(journalctl -u dp-agent --since \"$SINCE\" --no-pager 2>/dev/null "
+            f"    | grep -iE '{crash_pattern}' | head -20 || true); "
+            f"else "
+            f"  CRASHES=$(journalctl -u dp-agent --since \"{lookback_minutes} minutes ago\" --no-pager 2>/dev/null "
+            f"    | grep -iE '{crash_pattern}' | head -20 || true); "
+            f"fi; "
+            "echo \"IS_ACTIVE=$IS_ACTIVE\"; "
+            "echo \"RESTARTS=$RESTARTS\"; "
+            "echo \"CRASHES=$CRASHES\""
+        )
+
+        all_healthy = True
+
+        def check_instance(instance):
+            instance_id = instance.get('InstanceId', 'N/A')
+            public_ip = instance.get('PublicIpAddress', 'N/A')
+            try:
+                result = self.ec2.run_shell_command(instance_id, cmd)
+                output = result.get('stdout', '')
+                is_active = 'unknown'
+                restarts = 'unknown'
+                crash_lines = ''
+                for line in output.splitlines():
+                    if line.startswith('IS_ACTIVE='):
+                        is_active = line.split('=', 1)[1].strip()
+                    elif line.startswith('RESTARTS='):
+                        restarts = line.split('=', 1)[1].strip()
+                    elif line.startswith('CRASHES='):
+                        crash_lines = line.split('=', 1)[1].strip()
+                    elif crash_lines:
+                        # Continuation of multi-line CRASHES output
+                        crash_lines += '\n' + line
+
+                healthy = (is_active == 'active') and not crash_lines
+                if not healthy:
+                    if is_active != 'active':
+                        self.log.critical(
+                            f"dp-agent is NOT active on instance {instance_id} "
+                            f"[{public_ip}]: state={is_active} restarts={restarts}")
+                    if crash_lines:
+                        self.log.critical(
+                            f"dp-agent crash indicators on instance {instance_id} "
+                            f"[{public_ip}] (restarts={restarts}):\n{crash_lines}")
+                else:
+                    self.log.info(
+                        f"dp-agent healthy on instance {instance_id} "
+                        f"[{public_ip}]: state={is_active} restarts={restarts}")
+                return instance_id, public_ip, is_active, restarts, crash_lines, healthy
+            except Exception as e:
+                self.log.error(
+                    f"Failed to check dp-agent health on instance {instance_id}: {e}")
+                return instance_id, public_ip, 'error', 'error', str(e), False
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(len(instances), 50)) as executor:
+            results = list(executor.map(check_instance, instances))
+
+        if not all(r[5] for r in results):
+            all_healthy = False
+
+        return all_healthy, results
+
     def list_cluster_fusion_asg(self, cluster_id):
         """
         List Auto Scaling Groups for fusion accelerator instances in a cluster.
