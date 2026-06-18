@@ -202,20 +202,21 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
                       "Expected enterprise edition message, got: %s" % content)
 
     def test_bucket_compression_blocked(self):
-        """Setting bucket compressionMode must be blocked on CE.
+        """Setting bucket compressionMode must be blocked on CE for all modes.
 
-        Params: compression_mode=off|passive|active  (default: off)
+        Iterates off, passive, and active in one pass.
         """
-        mode = self.input.param("compression_mode", "off")
-        status, content = self._make_request(
-            "/pools/default/buckets", "POST",
-            {"name": "comp_test_bucket",
-             "compressionMode": mode,
-             "ramQuotaMB": 256})
-        self._assert_blocked(status, content,
-                             "bucket compression mode=%s" % mode)
-        self.assertIn("enterprise edition", content.lower(),
-                      "Expected enterprise edition message, got: %s" % content)
+        for mode in ("off", "passive", "active"):
+            status, content = self._make_request(
+                "/pools/default/buckets", "POST",
+                {"name": "comp_test_bucket",
+                 "compressionMode": mode,
+                 "ramQuotaMB": 256})
+            self._assert_blocked(status, content,
+                                 "bucket compression mode=%s" % mode)
+            self.assertIn("enterprise edition", content.lower(),
+                          "Expected enterprise edition message, got: %s"
+                          % content)
 
     # ------------------------------------------------------------------
     # Log redaction
@@ -313,37 +314,37 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
     # ------------------------------------------------------------------
 
     def test_autofailover_ee_settings_blocked_cli(self):
-        """CE must reject EE-only autofailover settings via couchbase-cli.
+        """CE must reject all EE-only autofailover setting combinations via CLI.
 
-        Params:
-          failover_disk_period=True  — pass --failover-data-disk-period 300
-          failover_server_group=True — pass --enable-failover-of-server-groups 1
-
-        Covers:
-        - cli_test=True
-        - cli_test=True,failover_disk_period=True
-        - cli_test=True,failover_server_group=True
-        - cli_test=True,failover_disk_period=True,failover_server_group=True
+        Iterates all four disk/server-group combos in one pass:
+        - disk_fo only
+        - disk_fo + disk_fo_timeout
+        - disk_fo + server_group
+        - disk_fo + disk_fo_timeout + server_group
         """
-        disk_period = self.input.param("failover_disk_period", False)
-        server_group = self.input.param("failover_server_group", False)
+        cases = [
+            dict(disk_fo_timeout=None, failover_server_group=None),
+            dict(disk_fo_timeout=300,  failover_server_group=None),
+            dict(disk_fo_timeout=None, failover_server_group=1),
+            dict(disk_fo_timeout=300,  failover_server_group=1),
+        ]
+        for case in cases:
+            label = "disk_period=%s server_group=%s" % (
+                case["disk_fo_timeout"], case["failover_server_group"])
+            shell, cb_cli = self._cli_on(self.cluster.master)
+            combined = ""
+            try:
+                output = cb_cli.auto_failover(
+                    enable_auto_fo=1, disk_fo=1, **case)
+                combined = "\n".join(output) if isinstance(output, list) \
+                    else str(output)
+            except Exception as exc:
+                combined = str(exc)
+            finally:
+                shell.disconnect()
 
-        shell, cb_cli = self._cli_on(self.cluster.master)
-        combined = ""
-        try:
-            output = cb_cli.auto_failover(
-                enable_auto_fo=1,
-                disk_fo=1,
-                disk_fo_timeout=300 if disk_period else None,
-                failover_server_group=1 if server_group else None)
-            combined = "\n".join(output) if isinstance(output, list) \
-                else str(output)
-        except Exception as exc:
-            combined = str(exc)
-        finally:
-            shell.disconnect()
-
-        self._assert_cli_blocked(combined, "autofailover EE settings")
+            self._assert_cli_blocked(
+                combined, "autofailover EE settings (%s)" % label)
 
     # ------------------------------------------------------------------
     # Bucket compression — CLI variants
@@ -351,29 +352,29 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
     # ------------------------------------------------------------------
 
     def test_bucket_compression_blocked_cli(self):
-        """CE must reject bucket compressionMode via couchbase-cli.
+        """CE must reject bucket compressionMode for all modes via couchbase-cli.
 
-        Params: compression_mode=off|passive|active (default: off)
+        Iterates off, passive, and active in one pass.
         """
-        mode = self.input.param("compression_mode", "off")
-        shell, cb_cli = self._cli_on(self.cluster.master)
-        combined = ""
-        try:
-            cb_cli.create_bucket({
-                Bucket.name: "comp_test_bucket",
-                Bucket.bucketType: "couchbase",
-                Bucket.ramQuotaMB: 512,
-                Bucket.replicaNumber: 1,
-                Bucket.compressionMode: mode,
-            })
-            combined = "no error raised"
-        except Exception as exc:
-            combined = str(exc)
-        finally:
-            shell.disconnect()
+        for mode in ("off", "passive", "active"):
+            shell, cb_cli = self._cli_on(self.cluster.master)
+            combined = ""
+            try:
+                cb_cli.create_bucket({
+                    Bucket.name: "comp_test_bucket",
+                    Bucket.bucketType: "couchbase",
+                    Bucket.ramQuotaMB: 512,
+                    Bucket.replicaNumber: 1,
+                    Bucket.compressionMode: mode,
+                })
+                combined = "no error raised"
+            except Exception as exc:
+                combined = str(exc)
+            finally:
+                shell.disconnect()
 
-        self._assert_cli_blocked(
-            combined, "bucket compression mode=%s" % mode)
+            self._assert_cli_blocked(
+                combined, "bucket compression mode=%s" % mode)
 
     # ------------------------------------------------------------------
     # Max TTL bucket — CLI variant
