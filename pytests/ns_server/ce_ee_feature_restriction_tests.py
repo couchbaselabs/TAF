@@ -60,10 +60,16 @@ test_ee_only_features,s3=True
 test_ee_only_features,consistency_check=True
 test_ee_only_features,coll_restore=True
     -> test_backup_ee_features_blocked_cli
+check_ent_backup
+    -> test_cbbackupmgr_binary_present_on_ce
+check_memory_optimized_storage_mode + check_plasma_storage_mode
+    -> test_indexer_storage_mode_blocked
+check_full_backup_only (diff, accu)
+    -> test_cbbackup_full_only_on_ce
 """
 
-from BucketLib.bucket import Bucket
 from basetestcase import ClusterSetup
+from BucketLib.bucket import Bucket
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbbackupmgr import CbBackupMgr
@@ -74,7 +80,7 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
     """EE feature blocks on CE — REST-only, no node reset required."""
 
     def setUp(self):
-        super(CeEeFeatureRestrictionTests, self).setUp()
+        super().setUp()
         self.rest = ClusterRestAPI(self.cluster.master)
 
         if self.cluster_util.is_enterprise_edition(self.cluster):
@@ -84,7 +90,7 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
         self.log.info("CE cluster confirmed. Master: %s", self.cluster.master.ip)
 
     def tearDown(self):
-        super(CeEeFeatureRestrictionTests, self).tearDown()
+        super().tearDown()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -505,4 +511,117 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
                 self.log.info("CE blocked cbbackupmgr %s: %s",
                               label, combined[:120])
         finally:
+            shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # cbbackupmgr binary presence check
+    # testrunner: check_ent_backup
+    # ------------------------------------------------------------------
+
+    def test_cbbackupmgr_binary_present_on_ce(self):
+        """cbbackupmgr binary must be present on CE nodes.
+
+        Replaces: check_ent_backup.
+        Requires nodes_init=1.
+        """
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            exists = shell.file_exists("/opt/couchbase/bin/", "cbbackupmgr")
+            self.assertTrue(
+                exists,
+                "cbbackupmgr binary not found on CE node at "
+                "/opt/couchbase/bin/cbbackupmgr")
+            self.log.info("cbbackupmgr binary confirmed present on CE node")
+        finally:
+            shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # Indexer storage mode EE-only rejection
+    # testrunner: check_memory_optimized_storage_mode + check_plasma_storage_mode
+    # ------------------------------------------------------------------
+
+    def test_indexer_storage_mode_blocked(self):
+        """CE must reject EE-only indexer storage modes via REST.
+
+        Iterates memory_optimized and plasma in one pass.
+        Replaces: check_memory_optimized_storage_mode,
+                  check_plasma_storage_mode.
+        Requires nodes_init=1.
+        """
+        for mode in ("memory_optimized", "plasma"):
+            status, content = self._make_request(
+                "/settings/indexes", "POST", {"storageMode": mode})
+            self._assert_blocked(
+                status, content,
+                "indexer storageMode=%s (EE-only)" % mode)
+
+    # ------------------------------------------------------------------
+    # cbbackup full-only enforcement on CE
+    # testrunner: check_full_backup_only (diff, accu variants)
+    # ------------------------------------------------------------------
+
+    def test_cbbackup_full_only_on_ce(self):
+        """CE forces full backup mode even when diff or accu is requested.
+
+        Loads 1000 docs, runs a full backup, then a diff/accu backup.
+        CE coerces both to full so cbtransfer counts 2000 items total
+        (1000 per backup x 2 backups in archive).
+
+        Iterates diff and accu in one pass.
+        Replaces: check_full_backup_only,backup_option=diff
+                  check_full_backup_only,backup_option=accu
+        Requires nodes_init=1.
+        """
+        master = self.cluster.master
+        bin_path = "/opt/couchbase/bin"
+        host = "http://127.0.0.1:8091"
+        creds = "-u %s -p %s" % (master.rest_username, master.rest_password)
+        archive = "/tmp/ce_cbbackup_full_only_test"
+
+        # Create default bucket for cbworkloadgen
+        self._make_request(
+            "/pools/default/buckets", "POST",
+            {"name": "default", "ramQuotaMB": 256,
+             "bucketType": "couchbase", "replicaNumber": 0})
+        self.sleep(8, "wait for default bucket to be ready")
+
+        shell = RemoteMachineShellConnection(master)
+        try:
+            # Load 1000 docs once; both backup iterations use same data
+            shell.execute_command(
+                "%s/cbworkloadgen -n %s %s -i 1000 -s 100 -j"
+                % (bin_path, host, creds))
+
+            for mode in ("diff", "accu"):
+                # Fresh archive for each iteration
+                shell.execute_command("rm -rf %s" % archive)
+
+                # Baseline full backup — 1000 items
+                shell.execute_command(
+                    "%s/cbbackup %s %s %s -m full -b default"
+                    % (bin_path, host, archive, creds))
+
+                # diff/accu backup — CE must coerce to full (1000 more items)
+                shell.execute_command(
+                    "%s/cbbackup %s %s %s -m %s -b default"
+                    % (bin_path, host, archive, creds, mode))
+
+                # Count all SET operations across the entire archive
+                count_out, _ = shell.execute_command(
+                    "%s/cbtransfer %s/ stdout: 2>/dev/null "
+                    "| grep set | uniq | wc -l" % (bin_path, archive))
+                try:
+                    count = int(count_out[0].strip()) if count_out else 0
+                except (ValueError, IndexError):
+                    count = 0
+
+                self.assertEqual(
+                    count, 2000,
+                    "CE must coerce cbbackup -m %s to full. "
+                    "Expected 2000 items (2 full backups x 1000), got %d"
+                    % (mode, count))
+                self.log.info(
+                    "CE forced full backup for -m %s: %d items", mode, count)
+        finally:
+            shell.execute_command("rm -rf %s" % archive)
             shell.disconnect()

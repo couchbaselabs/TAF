@@ -11,8 +11,7 @@ import json
 import time
 
 from basetestcase import ClusterSetup
-from cb_server_rest_util.cluster_nodes.cluster_init_provision import \
-    ClusterInitializationProvision
+from cb_server_rest_util.cluster_nodes.cluster_init_provision import ClusterInitializationProvision
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
 from cluster_utils.cluster_ready_functions import ClusterUtils
@@ -24,7 +23,7 @@ class CommunityEditionRestrictions(ClusterSetup):
     """Test class for Community Edition restriction enforcement."""
 
     def setUp(self):
-        super(CommunityEditionRestrictions, self).setUp()
+        super().setUp()
         self.rest = ClusterRestAPI(self.cluster.master)
         self.ce_util = CommunityEditionRestrictionsUtil(
             self.cluster, self.cluster_util, self.log, self.sleep)
@@ -37,7 +36,7 @@ class CommunityEditionRestrictions(ClusterSetup):
 
     def tearDown(self):
         self.ce_util.cleanup_pending_nodes()
-        super(CommunityEditionRestrictions, self).tearDown()
+        super().tearDown()
 
     def test_ce_5_node_limit_restart_persistence(self):
         """
@@ -661,4 +660,106 @@ class CommunityEditionRestrictions(ClusterSetup):
                     self.sleep(3, "wait for spare to stabilize after eject")
 
         # Leave master in a valid state for tearDown
+        self._reset_and_init_master("kv")
+
+    # ------------------------------------------------------------------
+    # N1QL EE-only feature rejection via query service (CBQE-8979)
+    # testrunner: check_infer, check_flex_index, check_index_partitioning,
+    #             check_query_window_functions, check_query_cost_based_optimizer,
+    #             check_query_monitoring
+    # ------------------------------------------------------------------
+
+    def test_n1ql_ee_features_blocked(self):
+        """CE must reject EE-only N1QL features via the query service.
+
+        Reinitializes master with fts,index,kv,n1ql services so the
+        query service is running, then exercises each EE-only feature:
+        - INFER
+        - Flex index (USE INDEX ... USING FTS)
+        - Index partitioning (PARTITION BY HASH)
+        - Window functions (CUME_DIST)
+        - Cost-based optimizer (UPDATE STATISTICS)
+        - Query profiling (admin/settings profile=phases)
+
+        The first five must return status=fatal from the query service.
+        The profiling request must fail with an EE-only error message.
+
+        Replaces: check_infer, check_flex_index, check_index_partitioning,
+                  check_query_window_functions,
+                  check_query_cost_based_optimizer, check_query_monitoring.
+        Requires nodes_init=1.
+        """
+        import urllib.parse
+
+        master = self.cluster.master
+
+        # Reinit with all CE-valid services so the query service runs
+        ok, raw = self._reset_and_init_master("fts,index,kv,n1ql")
+        msg = raw.decode() if isinstance(raw, bytes) else str(raw)
+        self.assertTrue(ok,
+                        "Failed to init master with fts,index,kv,n1ql: %s"
+                        % msg)
+        self.sleep(20, "wait for query/index/fts services to start")
+
+        # Create default bucket for queries
+        self.rest.request(
+            self.rest.base_url + "/pools/default/buckets", "POST",
+            {"name": "default", "ramQuotaMB": 256,
+             "bucketType": "couchbase", "replicaNumber": 0})
+        self.sleep(8, "wait for default bucket to be ready")
+
+        q_svc_url = self.rest.query_url + "/query/service"
+
+        # Each statement must return status=fatal on CE
+        ee_stmts = [
+            ("INFER",
+             "infer `default` ;"),
+            ("flex index USE INDEX USING FTS",
+             "SELECT META(d).id FROM `default` AS d "
+             "USE INDEX (USING FTS) WHERE d.f2 = 100;"),
+            ("index partitioning PARTITION BY HASH",
+             "CREATE INDEX idx_part ON `default`(id) "
+             "PARTITION BY HASH(META().id)"),
+            ("window function CUME_DIST",
+             "SELECT d.id, CUME_DIST() OVER "
+             "(PARTITION BY d.type ORDER BY d.id NULLS LAST) "
+             "AS rank FROM `default` AS d LIMIT 7;"),
+            ("UPDATE STATISTICS cost-based optimizer",
+             "UPDATE STATISTICS FOR `default` INDEX ALL;"),
+        ]
+
+        for feature, stmt in ee_stmts:
+            body = urllib.parse.urlencode({"statement": stmt})
+            _, content, _ = self.rest.request(q_svc_url, "POST", body)
+            content_str = (content.decode() if isinstance(content, bytes)
+                           else str(content))
+            try:
+                q_status = json.loads(content_str).get("status", "")
+            except (ValueError, AttributeError):
+                q_status = ""
+            self.assertEqual(
+                q_status, "fatal",
+                "CE must block N1QL %s (expected status=fatal). "
+                "Got status=%s body=%s"
+                % (feature, q_status, content_str[:300]))
+            self.log.info("CE blocked N1QL %s: status=fatal", feature)
+
+        # Query profiling (admin/settings) — must fail with EE-only message
+        admin_url = self.rest.query_url + "/admin/settings"
+        prof_body = json.dumps({"profile": "phases"})
+        status, content, _ = self.rest.request(admin_url, "POST", prof_body)
+        content_str = (content.decode() if isinstance(content, bytes)
+                       else str(content))
+        self.assertFalse(
+            status,
+            "CE must block query profiling. Request succeeded with: %s"
+            % content_str[:300])
+        self.assertIn(
+            "EE only", content_str,
+            "Expected 'EE only' in profiling error. Got: %s"
+            % content_str[:200])
+        self.log.info("CE blocked query profiling (admin/settings): %s",
+                      content_str[:120])
+
+        # Restore to kv-only for tearDown
         self._reset_and_init_master("kv")
