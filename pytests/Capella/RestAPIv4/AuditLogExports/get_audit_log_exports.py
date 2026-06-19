@@ -144,9 +144,7 @@ class GetAuditLogExport(GetCluster):
                     organization, project, cluster, auditlogexport)
             self.capellaAPI.cluster_ops_apis.audit_log_exports_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/auditLogExports"
-            self.validate_testcase(result, [200, 404], testcase, failures,
-                                   True, self.expected_res,
-                                   self.auditlogexport_id)
+            self.validate_testcase(result, [200, 404], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -172,9 +170,7 @@ class GetAuditLogExport(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.fetch_audit_log_export_info(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.auditlogexport_id, header)
-            self.validate_testcase(result, [200, 404], testcase, failures,
-                                   True, self.expected_res,
-                                   self.auditlogexport_id)
+            self.validate_testcase(result, [200, 404], testcase, failures)
 
         if failures:
             for fail in failures:

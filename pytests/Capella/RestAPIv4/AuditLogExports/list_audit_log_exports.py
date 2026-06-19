@@ -11,6 +11,8 @@ class ListAuditLogExport(GetAuditLogExport):
 
     def setUp(self, nomenclature="AuditLogExports_List"):
         GetAuditLogExport.setUp(self, nomenclature)
+        self.expected_res["end"] = None
+        self.expected_res["start"] = None
 
         self.expected_res = {
             "cursor": {
