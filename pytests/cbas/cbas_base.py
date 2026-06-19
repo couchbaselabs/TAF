@@ -717,6 +717,10 @@ class CBASBaseTest(BaseTestCase):
             elif key == "remove_default_collection":
                 bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
                     self.input.param(key)
+            elif key == "create_collections_using_manifest_import":
+                bucket_spec[
+                    MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT] = \
+                    self.input.param(key)
             elif key == "flushEnabled":
                 bucket_spec[Bucket.flushEnabled] = int(self.flush_enabled)
             elif key == "num_buckets":
