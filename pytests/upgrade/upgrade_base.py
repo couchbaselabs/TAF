@@ -29,10 +29,17 @@ import testconstants
 from shell_util.remote_connection import RemoteMachineShellConnection
 from upgrade_lib.couchbase import upgrade_chains
 from upgrade_utils.upgrade_util import CbServerUpgrade
+from TestInput import TestInputSingleton
 
 
 class UpgradeBase(BaseTestCase):
     def setUp(self):
+        # Set enterprise_edition=False before super().setUp() so that
+        # OnPremBaseTest detects CE correctly and skips EE-only service quotas
+        # during node provisioning (cbasMemoryQuota, eventingMemoryQuota).
+        if TestInputSingleton.input.param("community_upgrade", False):
+            CbServer.enterprise_edition = False
+
         super(UpgradeBase, self).setUp()
         self.log.info("=== UpgradeBase setUp started ===")
 
@@ -174,7 +181,16 @@ class UpgradeBase(BaseTestCase):
         if community_upgrade:
             build_type = "community"
             CbServer.enterprise_edition = False
-            self.upgrade_chain[0] = self.upgrade_version
+            self.cluster.edition = "community"
+            self.enforce_tls = False
+            CbServer.use_https = False
+            initial_ce_version = self.input.param("initial_ce_version", None)
+            if initial_ce_version:
+                # CE→CE→EE path: start on an older CE build, upgrade to
+                # upgrade_version CE, then swap to EE in the test.
+                self.upgrade_chain[0] = initial_ce_version
+            else:
+                self.upgrade_chain[0] = self.upgrade_version
         else:
             build_type = "enterprise"
 
@@ -187,12 +203,18 @@ class UpgradeBase(BaseTestCase):
         CbServer.use_https = False
         CbServer.n2n_encryption = False
 
+        # Pass the full version string so populate_build_url can distinguish
+        # GA release builds (X.Y.Z → /builds/releases/) from pre-release builds
+        # (X.Y.Z-NNNN → /builds/latestbuilds/).  The old .split("-")[0] was
+        # correct for GA versions (no effect) but broke pre-release initial
+        # versions by generating a non-existent releases URL.
+        initial_install_version = self.upgrade_chain[0]
         self.PrintStep("Installing initial version {0} on servers"
-                       .format(self.upgrade_chain[0].split("-")[0]))
-        self.cluster.version = self.upgrade_chain[0]
+                       .format(initial_install_version))
+        self.cluster.version = initial_install_version
         self.upgrade_helper.new_install_version_on_all_nodes(
             nodes=self.cluster.servers[0:self.nodes_init],
-            version=self.upgrade_chain[0].split("-")[0],
+            version=initial_install_version,
             edition=build_type)
 
         for node in self.cluster.servers[0:self.nodes_init]:
@@ -254,6 +276,7 @@ class UpgradeBase(BaseTestCase):
                             f"Add node {server.ip} failed: {content}")
 
         self.task.rebalance(self.cluster, [], [])
+        self.cluster.nodes_in_cluster.clear()
         self.cluster.nodes_in_cluster.extend(
             self.cluster.servers[0:self.nodes_init])
         self.cluster_util.print_cluster_stats(self.cluster)

@@ -29,6 +29,8 @@ post-upgrade feature verification.
 | `mem_compression_upgrade.py` | `MemCompressionUpgradeTests` | Memory compression + Plasma GSI index upgrade |
 | `system_event_logs.py` | `SystemEventLogs` | System event log API compatibility across mixed-mode and fully-upgraded cluster |
 | `e2e_upgrade.py` | `E2EUpgrade` | End-to-end multi-service upgrade (KV + 2i + Eventing + N1QL + CBAS) with GSI abort validation |
+| `ce_base.py` | `CEBaseTest` | CE restriction and upgrade base — version guards, online/offline swap helpers, CE node-limit assertion utilities |
+| `ce_upgrade.py` | `CEUpgradeTests` | CE upgrade tests — node-limit enforcement, mixed-mode EE entry, CE→EE restriction removal, 6-node upgrade restriction trigger |
 
 ---
 
