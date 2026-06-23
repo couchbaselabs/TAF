@@ -27,6 +27,8 @@ from membase.api.rest_client import RestConnection
 from .fusion_test_base import _FusionTestBase
 
 
+
+
 class FusionEnableDisableTests(_FusionTestBase):
     """Full lifecycle tests for Fusion enable/disable/stop/override on Capella clusters.
 

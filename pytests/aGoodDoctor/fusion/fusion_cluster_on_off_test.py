@@ -61,6 +61,13 @@ class FusionClusterOnOffTest(_FusionTestBase):
             bucket.bucket_uuid = info.get("uuid", None)
 
     def tearDown(self):
+        # Guard against partial setUp: if tenant/cluster were never assigned
+        # (e.g. setUp raised before reaching those lines), skip cluster-specific
+        # teardown and fall through to the base class.
+        if not hasattr(self, 'tenant') or not hasattr(self, 'cluster'):
+            super().tearDown()
+            return
+
         # Ensure the cluster is on before any teardown operations
         cluster_state = CapellaAPI.get_cluster_state(
             self.pod, self.tenant, self.cluster.id)

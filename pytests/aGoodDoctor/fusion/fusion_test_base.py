@@ -69,6 +69,11 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         _FusionTestBase._last_pod = self.pod
         _FusionTestBase._last_tenants = self.tenants
 
+        # Assign tenant/cluster immediately after BaseTestCase.setUp() so that
+        # tearDown() can always access them even if subsequent setup steps fail.
+        self.tenant = self.tenants[0]
+        self.cluster = self.tenant.clusters[0]
+
         hostedOPD.__init__(self)
 
         self.aws_access_key = self.input.param("aws_access_key", None)
@@ -93,8 +98,6 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
         self.stop_run_event = threading.Event()
 
-        self.tenant = self.tenants[0]
-        self.cluster = self.tenant.clusters[0]
         for bucket in self.cluster.buckets:
             if not hasattr(bucket, "loadDefn") or bucket.loadDefn is None:
                 bucket.loadDefn = self.load_defn[0]

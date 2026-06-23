@@ -202,7 +202,8 @@ class CapellaBaseTest(CouchbaseBaseTest):
         feature_flags_param = self.input.test_params.get("feature_flags", None)
         if feature_flags_param:
             for tenant in self.tenants:
-                for flag_entry in feature_flags_param.split(","):
+                feature_flags_param = feature_flags_param.split(",") if isinstance(feature_flags_param, str) else feature_flags_param
+                for flag_entry in feature_flags_param:
                     ff, raw = flag_entry.split(":", 1)
                     raw = raw.strip()
                     if raw.lower() == "true":
