@@ -128,7 +128,7 @@ def scan_all_slaves():
                             print "#######################"
                             print "checking: %s" % cbcollect_zips.rstrip()
                             print "#######################"
-                        print "=== panic ==="
+                        print "=== panic found ==="
                         print "".join(o)
             except:
                 pass
@@ -194,7 +194,9 @@ def check_coredump_exist(server):
     print(server + " : Looking for panic in logs")
     panicMessages = run("grep -ri 'panic' {}* --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(logsDir), session)[0]
     if panicMessages:
-        print(server + " : === panic ===")
+        version = run("cat /opt/couchbase/VERSION.txt", session)[0]
+        version_str = "".join(version).strip()
+        print(server + " : === panic found in " + version_str + " ===")
         print("".join(panicMessages))
 
     session.disconnect()
