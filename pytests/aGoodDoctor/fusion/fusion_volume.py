@@ -412,10 +412,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
             for tenant in self.tenants:
                 for cluster in tenant.clusters:  
                     drClusterOnOff = DoctorHostedOnOff(self.pod, tenant, cluster)
-                    cluster_off_result = drClusterOnOff.turn_off_cluster()
+                    cluster_off_result = drClusterOnOff.turn_off_cluster(timeout=1200)
                     self.assertTrue(cluster_off_result, "Failed to turn off cluster")
                     self.sleep(200, "Wait before turning cluster on")
-                    cluster_on_result = drClusterOnOff.turn_on_cluster()
+                    cluster_on_result = drClusterOnOff.turn_on_cluster(timeout=1800)
                     self.assertTrue(cluster_on_result, "Failed to turn on cluster")
                     self.sleep(60, "Wait after cluster is turned on")
 
