@@ -20,6 +20,7 @@ from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
 from .awslib.s3_lib import S3Lib
 from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
+from BucketLib.BucketOperations import BucketHelper
 from membase.api.rest_client import RestConnection
 
 
@@ -210,7 +211,7 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         deletion_deadline = time.time() + timeout
         while time.time() < deletion_deadline:
             try:
-                existing_names = [b.name for b in RestConnection(self.cluster.master).get_buckets()]
+                existing_names = [b["name"] for b in BucketHelper(self.cluster.master).get_buckets_json()]
             except Exception as e:
                 self.log.warning(f"Exception while fetching buckets: {e}")
                 existing_names = [bucket.name]
