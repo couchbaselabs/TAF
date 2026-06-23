@@ -64,7 +64,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         # Ensure the cluster is on before any teardown operations
         cluster_state = CapellaAPI.get_cluster_state(
             self.pod, self.tenant, self.cluster.id)
-        if cluster_state == "turnedOff":
+        if cluster_state == "turned_off":
             self.log.warning(
                 f"Cluster {self.cluster.id} is still off in tearDown — turning it on")
             dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
@@ -140,7 +140,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         turned_off = dr_on_off.turn_off_cluster(timeout=turn_off_timeout)
         self.assertTrue(
             turned_off,
-            f"Cluster {self.cluster.id} did not reach 'turnedOff' state "
+            f"Cluster {self.cluster.id} did not reach 'turned_off' state"
             f"within {turn_off_timeout}s")
         self.log.info(f"Cluster {self.cluster.id} is off; turning it back on")
         turned_on = dr_on_off.turn_on_cluster(timeout=turn_on_timeout)
@@ -161,7 +161,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
 
         Validates:
         - Fusion is enabled with unsynced pending data before turn-off
-        - Cluster turns off cleanly (reaches 'turnedOff' state)
+        - Cluster turns off cleanly (reaches 'turned_off' state)
         - Cluster turns on cleanly (reaches 'healthy' state)
         - Fusion state is 'enabled' after turn-on (not reset to disabled)
         - Pending bytes drain to 0 after turn-on (upload resumes)
@@ -417,7 +417,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         turned_off = dr_on_off.turn_off_cluster(timeout=turn_off_timeout)
         self.assertTrue(
             turned_off,
-            f"Cluster {self.cluster.id} did not reach 'turnedOff' state "
+            f"Cluster {self.cluster.id} did not reach 'turned_off' state"
             f"within {turn_off_timeout}s")
         self.log.info(f"Cluster {self.cluster.id} is off")
 
@@ -632,7 +632,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         turned_off = dr_on_off.turn_off_cluster(timeout=turn_off_timeout)
         self.assertTrue(
             turned_off,
-            f"Cluster {self.cluster.id} did not reach 'turnedOff' state "
+            f"Cluster {self.cluster.id} did not reach 'turned_off' state"
             f"within {turn_off_timeout}s")
         self.log.info(f"Cluster {self.cluster.id} is off")
 

@@ -26,13 +26,13 @@ class DoctorHostedOnOff:
         cluster_state = None
         while time.time() < end_time:
             cluster_state = CapellaAPI.get_cluster_state(self.pod, self.tenant, self.cluster.id)
-            if cluster_state == "turnedOff":
+            if cluster_state == "turned_off":
                 return True
-            elif cluster_state == "turningOffFailed":
-                self.log.critical("Failed to turn on cluster: Turning off failed")
+            elif cluster_state == "turning_off_failed":
+                self.log.critical("Failed to turn off cluster: Turning off failed")
                 return False
             else:
-                self.sleep(5, "Waiting for cluster to turn off")
+                self.sleep(5, "Waiting for cluster to turn off, current state: {}".format(cluster_state))
 
         self.log.critical("Failed to turn off cluster: Timeout, Cluster state: {}".format(cluster_state))
         return False
@@ -59,7 +59,7 @@ class DoctorHostedOnOff:
             cluster_state = CapellaAPI.get_cluster_state(self.pod, self.tenant, self.cluster.id)
             if cluster_state == "healthy":
                 return True
-            elif cluster_state == "turningOnFailed":
+            elif cluster_state == "turning_on_failed":
                 self.log.critical("Failed to turn on cluster: Turning on failed")
                 return False
 
@@ -70,7 +70,7 @@ class DoctorHostedOnOff:
                     poll_callback()
                     last_callback_time = time.time()
 
-            self.sleep(5, "Waiting for cluster to turn on")
+            self.sleep(5, "Waiting for cluster to turn on, current state: {}".format(cluster_state))
 
         self.log.critical("Failed to turn on cluster: Timeout, Cluster state: {}".format(cluster_state))
         return False
