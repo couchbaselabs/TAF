@@ -6,6 +6,7 @@ Fusion Monitor Util - Core fusion stats monitoring utilities
 
 import ast
 import json
+import re
 import socket
 import statistics
 import time
@@ -301,18 +302,26 @@ class FusionMonitorUtil():
             for bucket in cluster.buckets:
                 server_vb_map, server_list, num_replica = BucketHelper(cluster.master).get_vbucket_map_and_server_list(bucket.name)
                 cluster.fusion_uploader_dict[bucket.name] = dict()
-                cmd = f"curl -sk -u '{cluster.master.rest_username}:{cluster.master.rest_password}' --data 'ns_bucket:get_fusion_uploaders(\"{cluster.buckets[0].name}\").' https://localhost:18091/diag/eval"
+                cmd = f"curl -sk -u '{cluster.master.rest_username}:{cluster.master.rest_password}' --data 'ns_bucket:get_fusion_uploaders(\"{bucket.name}\").' https://localhost:18091/diag/eval"
                 self.log.info(f"Running command to get fusion uploader map for bucket {bucket.name} on cluster {cluster.id}: {cmd}")
                 result = self.fusion_aws_util.ec2.run_shell_command(instances[0].get('InstanceId'), cmd)
                 stdout = result.get('stdout')
                 if result.get('success') and stdout:
-                    raw_str = stdout.replace("\n", "")
-                    tuple_str = raw_str.replace("{", "(").replace("}", ")").replace("'", '"').replace("undefined", "None")
-                    try:
-                        parsed_list = ast.literal_eval(tuple_str)
-                    except Exception as e:
-                        self.log.error(f"Failed to parse fusion uploader map for bucket {bucket.name}: {e}. Raw: {raw_str}")
+                    raw_str = stdout.strip()
+                    # Use regex to robustly extract {node, term} pairs from Erlang output.
+                    # ast.literal_eval fails on Erlang error tuples, bare atoms, auth error JSON,
+                    # or SSM-truncated output — regex handles all of these gracefully.
+                    entries = re.findall(r"\{(?:'([^']+)'|(undefined)),\s*(\d+)\}", raw_str)
+                    if not entries:
+                        self.log.error(
+                            f"No uploader entries found in response for bucket {bucket.name} "
+                            f"on cluster {cluster.id}. Raw response: {raw_str[:500]}"
+                        )
                         continue
+                    parsed_list = [
+                        (quoted_node if quoted_node else None, int(term))
+                        for quoted_node, _undef, term in entries
+                    ]
                     vb_no = 0
                     for node in parsed_list:
                         if node[0] in cluster.fusion_uploader_dict[bucket.name]:
