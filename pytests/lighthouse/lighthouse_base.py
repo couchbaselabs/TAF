@@ -84,9 +84,6 @@ class LighthouseBase(CollectionBase):
             self.ucp_portal  - LighthousePortal config object
             self.ucp_client  - UnifiedControlPlaneClient instance
         """
-        if not self.input.lh_portal:
-            self.fail("No UCP portal server found. "
-                      "Ensure [LHPortal] section is defined in the ini file.")
         server = self.input.lh_portal[0]
         self.ucp_portal = LighthousePortal.from_server_and_params(
             server, self.input)
@@ -96,21 +93,23 @@ class LighthouseBase(CollectionBase):
     def tearDown(self):
         if hasattr(self, "_original_servers"):
             self.input.servers = self._original_servers
-        extra_clusters = []
         if hasattr(self, "cb_clusters"):
             extra_clusters = [name for name in self.cb_clusters
                               if name != "C1"]
             for name in extra_clusters:
+                cluster = self.cb_clusters[name]
+                for server in cluster.nodes_in_cluster:
+                    try:
+                        rest = ClusterRestAPI(server)
+                        status, content = rest.reset_node()
+                        if not status:
+                            self.log.warning(
+                                "Reset node %s failed: %s"
+                                % (server.ip, content))
+                    except Exception as e:
+                        self.log.warning(
+                            "Failed to reset node %s: %s" % (server.ip, e))
                 del self.cb_clusters[name]
-            try:
-                rest = ClusterRestAPI(server)
-                status, content = rest.reset_node()
-                if not status:
-                    self.log.warning(
-                        "Reset node %s failed: %s" % (server.ip, content))
-            except Exception as e:
-                self.log.warning(
-                    "Failed to reset node %s: %s" % (server.ip, e))
     def _restrict_input_to_primary_cluster(self):
         self._original_servers = list(self.input.servers)
         primary = self._topology["clusters"][0]
