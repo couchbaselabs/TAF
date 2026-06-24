@@ -61,7 +61,8 @@ class CrashTest(CollectionBase):
             verification_dict["sync_write_committed_count"] = \
                 verification_dict["ops_create"]
 
-        # Load initial documents into the buckets
+        _already_loaded = verification_dict["ops_create"] > 0
+
         transaction_gen_create = doc_generator(
             "transaction_key", 0, self.num_items,
             key_size=self.key_size,
@@ -69,7 +70,7 @@ class CrashTest(CollectionBase):
             doc_type=self.doc_type,
             target_vbucket=self.target_vbucket,
             vbuckets=self.cluster.buckets[0].numVBuckets)
-        if self.atomicity:
+        if self.atomicity and not _already_loaded:
             transaction_task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets,
                 transaction_gen_create, DocLoading.Bucket.DocOps.CREATE,
@@ -85,46 +86,45 @@ class CrashTest(CollectionBase):
                 commit=True,
                 sync=self.sync)
             self.task.jython_task_manager.get_task_result(transaction_task)
-        for bucket in self.cluster.buckets:
-            gen_create = doc_generator(
-                self.key, 0, self.num_items,
-                key_size=self.key_size,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                target_vbucket=self.target_vbucket,
-                vbuckets=bucket.numVBuckets)
-            task = self.task.async_load_gen_docs(
-                self.cluster, bucket, gen_create,
-                DocLoading.Bucket.DocOps.CREATE, self.maxttl,
-                persist_to=self.persist_to, replicate_to=self.replicate_to,
-                durability=self.durability_level,
-                batch_size=10, process_concurrency=8,
-                load_using=self.load_docs_using)
-            self.task.jython_task_manager.get_task_result(task)
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
+        if not _already_loaded:
+            for bucket in self.cluster.buckets:
+                gen_create = doc_generator(
+                    self.key, 0, self.num_items,
+                    key_size=self.key_size,
+                    doc_size=self.doc_size,
+                    doc_type=self.doc_type,
+                    target_vbucket=self.target_vbucket,
+                    vbuckets=bucket.numVBuckets)
+                task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, gen_create,
+                    DocLoading.Bucket.DocOps.CREATE, self.maxttl,
+                    persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level,
+                    batch_size=10, process_concurrency=8,
+                    load_using=self.load_docs_using)
+                self.task.jython_task_manager.get_task_result(task)
+                self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                             self.cluster.buckets)
+                self.cluster.buckets[0].scopes[
+                    CbServer.default_scope].collections[
+                    CbServer.default_collection].num_items += self.num_items
+                verification_dict["ops_create"] += self.num_items
+                if self.__is_sync_write_enabled \
+                        and self.durability_level != SDKConstants.DurabilityLevel.NONE:
+                    verification_dict["sync_write_committed_count"] += \
+                        self.num_items
+                stats_failed = self.durability_helper.verify_vbucket_details_stats(
+                    bucket, self.cluster_util.get_kv_nodes(self.cluster),
+                    expected_val=verification_dict)
 
-            self.cluster.buckets[0].scopes[
-                CbServer.default_scope].collections[
-                CbServer.default_collection].num_items += self.num_items
-            verification_dict["ops_create"] += self.num_items
-            if self.__is_sync_write_enabled \
-                    and self.durability_level != SDKConstants.DurabilityLevel.NONE:
-                verification_dict["sync_write_committed_count"] += \
-                    self.num_items
-            # Verify cbstats vbucket-details
-            stats_failed = self.durability_helper.verify_vbucket_details_stats(
-                bucket, self.cluster_util.get_kv_nodes(self.cluster),
-                expected_val=verification_dict)
-
-            if self.atomicity is False:
-                if stats_failed:
-                    self.fail("Cbstats verification failed")
-                self.bucket_util.verify_stats_all_buckets(
-                    self.cluster,
-                    self.cluster.buckets[0].scopes[
-                        CbServer.default_scope].collections[
-                        CbServer.default_collection].num_items)
+                if self.atomicity is False:
+                    if stats_failed:
+                        self.fail("Cbstats verification failed")
+                    self.bucket_util.verify_stats_all_buckets(
+                        self.cluster,
+                        self.cluster.buckets[0].scopes[
+                            CbServer.default_scope].collections[
+                            CbServer.default_collection].num_items)
         self.bucket = self.cluster.buckets[0]
         if self.continuous_backup_enabled:
             self.bucket_util.update_bucket_property(
@@ -224,7 +224,7 @@ class CrashTest(CollectionBase):
             durability=self.durability_level, timeout_secs=self.sdk_timeout,
             scope=scope_name, collection=collection_obj.name,
             skip_read_on_error=True, load_using=self.load_docs_using)
-        collection_obj.num_items += self.new_docs_to_add
+        collection_obj.num_items += self.new_docs_to_add - self.num_items
 
     def test_create_remove_scope_with_node_crash(self):
         """
