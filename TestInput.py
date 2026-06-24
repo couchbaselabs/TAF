@@ -23,6 +23,7 @@ class TestInput(object):
     def __init__(self):
         self.servers = list()
         self.clusters = dict()
+        self.lh_portal = list()
         self.membase_settings = None
         self.test_params = dict()
         self.tuq_client = dict()
@@ -211,6 +212,11 @@ class TestInputParser:
             elif section == 'elastic':
                 t_input.elastic = TestInputParser.get_elastic_config(config,
                                                                      section)
+            elif section.lower() == 'lhportal':
+                lh_ips = TestInputParser.get_server_ips(config, section)
+                for lh_ip in lh_ips:
+                    lh_server = TestInputParser.get_server(lh_ip, config)
+                    t_input.lh_portal.append(lh_server)
             elif result is not None:
                 cluster_list = TestInputParser.get_server_ips(config, section)
                 cluster_ips.extend(cluster_list)
@@ -243,6 +249,12 @@ class TestInputParser:
             servers,
             t_input.membase_settings,
             global_properties)
+
+        if t_input.lh_portal:
+            t_input.lh_portal = TestInputParser.get_server_options(
+                t_input.lh_portal,
+                t_input.membase_settings,
+                global_properties)
 
         # Setting up 'clients' tag
         t_input.clients = client_ips
