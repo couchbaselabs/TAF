@@ -315,9 +315,10 @@ if [ $status -eq 0 ]; then
   fi
 
   # Find free port on this machine to use for this run
-  starting_ports=(49152 49162 49172 49182 49192 49202 49212 49222 49232)
-  num_scripts_running=$(ps -ef | grep '/tmp/jenkins' | grep -v 'grep ' | wc -l)
-  sirius_port=${starting_ports[$num_scripts_running]} ; while [ "$(ss -tulpn | grep LISTEN | grep $sirius_port | wc -l)" -ne 0 ]; do sirius_port=$((sirius_port+1)) ; done
+  sirius_port=49152
+  while [ "$(ss -tulpn | grep LISTEN | grep ":${sirius_port} " | wc -l)" -ne 0 ]; do
+    sirius_port=$((sirius_port+1))
+  done
   set -x
   if [[ "$load_docs_using" == "sirius_go_sdk" ]]; then
     echo "Launching Sirius GO SDK to load documents."
