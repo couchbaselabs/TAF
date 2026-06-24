@@ -76,7 +76,7 @@ class FusionEnableDisableTests(_FusionTestBase):
                     "Wait for healthy state before node reset", timeout=1800)
                 self.wait_for_rebalances([self.task.async_rebalance_capella(
                     self.pod, self.tenant, self.cluster,
-                    self.rebalance_config("data", delta), timeout=self.index_timeout)])
+                    self.rebalance_config("data", delta), timeout=self.rebalance_timeout)])
             except Exception as e:
                 self.log.error(f"Failed to reset KV nodes to {self.initial_kv_nodes}: {e}")
         for bucket in self.cluster.buckets:
@@ -494,7 +494,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info(f"Triggering rebalance on cluster {self.cluster.id}")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         self.sleep(30, "Wait for rebalance to start before checking accelerators")
         start_time = time.time()
@@ -523,7 +523,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
     def test_rebalance_above_threshold_uses_fusion(self):
         """
@@ -553,7 +553,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Triggering rebalance after threshold data is synced")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         deadline = time.time() + 1800
         accelerators_seen = False
@@ -584,12 +584,12 @@ class FusionEnableDisableTests(_FusionTestBase):
             self.pod, self.tenant, self.cluster.id, timeout=600)
 
         result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-            self.cluster)
+            self.cluster, timeout=self.fusion_infra_timeout)
         self.assertTrue(result, "Accelerator nodes not cleaned up after fusion rebalance")
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
     def test_enable_fusion_no_rebalance_use(self):
         """
@@ -618,7 +618,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Triggering rebalance with fusion-rebalances flag disabled")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         self.sleep(30, "Wait for rebalance to start")
         start_time = time.time()
@@ -648,7 +648,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
     def test_new_bucket_inherits_fusion_when_enabled(self):
         """
@@ -906,7 +906,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Starting fusion rebalance")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         deadline = time.time() + 180
         accelerators_seen = False
@@ -936,7 +936,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._wait_for_fusion_state(self.tenant, self.cluster, "stopped")
 
         result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-            self.cluster)
+            self.cluster, timeout=self.fusion_infra_timeout)
         self.assertTrue(result, "Accelerator nodes not cleaned up after stop")
 
         guest_vols = self._get_active_guest_volume_count(self.cluster)
@@ -971,7 +971,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
     def test_stop_vs_disable_s3_retention_difference(self):
         """
@@ -1085,7 +1085,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Triggering rebalance after stop — expecting DCP path")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         self.sleep(30, "Wait for rebalance to start before checking for accelerators")
         deadline = time.time() + 60
@@ -1106,7 +1106,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
         self.log.info("Validating data integrity after DCP rebalance")
         fusion_state = CapellaAPI.get_fusion_status(self.pod, self.tenant, self.cluster.id)
@@ -1286,7 +1286,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Starting rebalance to trigger fusion acceleration")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         deadline = time.time() + 180
         accelerators_seen = False
@@ -1323,13 +1323,13 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
         result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-            self.cluster)
+            self.cluster, timeout=self.fusion_infra_timeout)
         self.assertTrue(result,
                         "Accelerator nodes not cleaned up after rebalance + disable")
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
         self._assert_s3_bucket_empty(bucket_name, timeout=300)
 
@@ -1368,7 +1368,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info(f"Starting fusion rebalance on cluster {self.cluster.id}")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         deadline = time.time() + 180
         accelerators_seen = False
@@ -1398,7 +1398,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             "Wait for healthy state after fusion rebalance", timeout=600)
 
         accelerator_cleanup = \
-            self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(self.cluster)
+            self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(self.cluster, timeout=self.fusion_infra_timeout)
         self.assertTrue(accelerator_cleanup,
                         "Accelerator nodes not cleaned up after rebalance completed")
 
@@ -1464,7 +1464,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
     def test_disable_fusion_during_prepare_rebalance_with_leased_logs(self):
         """
@@ -1495,7 +1495,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             "Starting fusion rebalance to reach prepareRebalance/lease state")
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         deadline = time.time() + 180
         leased = False
@@ -1529,7 +1529,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             self.assertEqual(state_resp.get("state"), "enabled",
                              "Fusion state changed despite reject — unexpected")
             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-                self.cluster)
+                self.cluster, timeout=self.fusion_infra_timeout)
             self.assertTrue(
                 result,
                 "Accelerator nodes not cleaned up after rejected-disable rebalance")
@@ -1540,7 +1540,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-                self.cluster)
+                self.cluster, timeout=self.fusion_infra_timeout)
             self.assertTrue(
                 result,
                 "Accelerator nodes not cleaned up after disable-aborted rebalance")
@@ -1562,7 +1562,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
     def test_reenable_fusion_reuses_s3_bucket(self):
         """
@@ -1761,7 +1761,7 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
         self.sleep(30, "Wait for rebalance to start before checking for accelerators")
         deadline = time.time() + 60
@@ -1782,7 +1782,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
         status = CapellaAPI.get_fusion_status(self.pod, self.tenant, self.cluster.id)
         self.assertEqual(
@@ -1815,7 +1815,7 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
         self.sleep(30, "Wait for rebalance to start")
         instances = self.fusion_aws_util.list_accelerator_instances(
                 self.fusion_aws_util._cluster_filter(self.cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}]),
@@ -1827,7 +1827,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
         # --- Phase 2: override=False → fusion rebalance ---
         self.log.info("Phase 2: clear override and confirm fusion rebalance resumes")
@@ -1836,7 +1836,7 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
         self.sleep(30, "Wait for rebalance to start")
 
         accelerators_seen = False
@@ -1865,7 +1865,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
     def test_override_has_no_effect_when_fusion_disabled(self):
         """
@@ -1889,7 +1889,7 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         config = self.rebalance_config("data", +1)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
         self.sleep(30, "Wait for rebalance to start")
 
         deadline = time.time() + 120
@@ -1912,7 +1912,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.log.info("Scaling cluster back to original node count")
         self.wait_for_rebalances([self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
-            self.rebalance_config("data", -1), timeout=self.index_timeout)])
+            self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
         CapellaAPI.override_fusion_rebalances(self.pod, self.tenant, self.cluster.id, override=False)
         self.log.info("override=False cleared without error on disabled cluster")

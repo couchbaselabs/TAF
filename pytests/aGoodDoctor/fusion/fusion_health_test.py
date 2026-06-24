@@ -51,7 +51,7 @@ class FusionHealthTest(_FusionTestBase):
                     "Wait before node reset", timeout=1800)
                 self.wait_for_rebalances([self.task.async_rebalance_capella(
                     self.pod, self.tenant, self.cluster,
-                    self.rebalance_config("data", delta), timeout=self.index_timeout)])
+                    self.rebalance_config("data", delta), timeout=self.rebalance_timeout)])
             except Exception as e:
                 self.log.error(f"Failed to reset KV nodes: {e}")
         for bucket in list(self.cluster.buckets):

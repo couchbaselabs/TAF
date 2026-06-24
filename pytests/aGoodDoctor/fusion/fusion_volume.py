@@ -79,7 +79,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.val_type = self.input.param("val_type", "SimpleValue")
         self.ops_rate = self.input.param("ops_rate", 10000)
         self.gtm = self.input.param("gtm", False)
-        self.index_timeout = self.input.param("index_timeout", 3600)
+        self.rebalance_timeout = self.input.param("rebalance_timeout", 3600)
+        self.gv_launch_timeout = self.input.param("gv_launch_timeout", 1200)
+        self.hydration_timeout = self.input.param("hydration_timeout", 1800)
+        self.restore_timeout = self.input.param("restore_timeout", 3600)
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)
         self.num_of_datasets = self.input.param("num_datasets", 10)
@@ -182,7 +185,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         # Monitor accelerator instances
         accelerator_thread = threading.Thread(
-            target=lambda res, clus: res.update({"monitor_cluster_accelerator_intances_complete": self.cp_monitor.monitor_cluster_accelerator_instances(clus, rebalance_task, self.fusion_rebalances)}),
+            target=lambda res, clus: res.update({"monitor_cluster_accelerator_intances_complete": self.cp_monitor.monitor_cluster_accelerator_instances(clus, rebalance_task, self.fusion_rebalances, timeout=self.fusion_infra_timeout)}),
             args=(result, cluster))
         accelerator_thread.start()
         accelerator_thread.join()
@@ -197,7 +200,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
             target=lambda res, clus: res.update(
                 {"monitor_fusion_guest_volumes_complete": self.cp_monitor.monitor_fusion_guest_volumes(
                     tenant, clus, rebalance_task, self.fusion_monitor, self.fusion_rebalances,
-                    self.wait_for_hydration_complete, self.hydration_time, self.find_master)}),
+                    self.wait_for_hydration_complete, timeout=self.gv_launch_timeout, find_master_func=self.find_master)}),
             args=(result, cluster))
         thread.start()
         threads.append(thread)
@@ -219,7 +222,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
     def check_ebs_cleanup_for_cluster(self, cluster):
         """Check EBS cleanup for a specific cluster."""
-        return self.cp_monitor.monitor_ebs_cleanup(cluster, self.stop_run_event)
+        return self.cp_monitor.monitor_ebs_cleanup(cluster, self.stop_run_event, timeout=self.hydration_timeout)
 
     def scan_errors_for_clusters(self, clusters):
         """Scan memcached logs for errors on all clusters."""
@@ -433,7 +436,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             self.log.debug("Backup debug info:{}".format(item['data']))
                     CapellaAPI.flush_bucket(self.pod, tenant, cluster, bucket.name)
                     time.sleep(120)
-                    self.drBackupRestore.restore_from_backup(tenant, cluster, bucket, timeout=self.index_timeout)
+                    self.drBackupRestore.restore_from_backup(tenant, cluster, bucket, timeout=self.restore_timeout)
                     time.sleep(60)
                     rest = RestConnection(cluster.master)
                     bucket_info = rest.get_bucket_details(bucket_name=bucket.name)
@@ -567,7 +570,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             for cluster in tenant.clusters:
                                 rebalance_task = self.task.async_rebalance_capella(self.pod, tenant, cluster,
                                                                                 config,
-                                                                                timeout=self.index_timeout)
+                                                                                timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
                         # Start polling thread for each rebalance pass
                         for rebalance_task in rebalance_tasks:
@@ -576,7 +579,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                         self.sleep(60, "Sleep for 60s after rebalance")
                         # Check for fusion accelerator node to be 0
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster)
+                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         self.scan_memcahced_logs_for_errors()
@@ -594,10 +597,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
                         rebalance_tasks = list()
                         config = self.rebalance_config(service, -self.rebl_steps[rebl_step])
                         for tenant in self.tenants:
-                            for cluster in tenant.clusters:  
+                            for cluster in tenant.clusters:
                                 rebalance_task = self.task.async_rebalance_capella(self.pod, tenant, cluster,
                                                                                 config,
-                                                                                timeout=self.index_timeout)
+                                                                                timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
@@ -605,7 +608,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                         self.sleep(60, "Sleep for 60s after rebalance")
                         # Check for fusion accelerator node to be 0
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster)
+                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         self.scan_memcahced_logs_for_errors()
@@ -644,14 +647,14 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             for cluster in tenant.clusters:
                                 rebalance_task = self.task.async_rebalance_capella(self.pod, tenant, cluster,
                                                                                    config,
-                                                                                   timeout=self.index_timeout)
+                                                                                   timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
                             self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster)
+                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         self.scan_memcahced_logs_for_errors()
@@ -685,17 +688,17 @@ class VolumeTest(BaseTestCase, hostedOPD):
                         config = self.rebalance_config()
                         rebalance_tasks = list()
                         for tenant in self.tenants:
-                            for cluster in tenant.clusters:  
+                            for cluster in tenant.clusters:
                                 rebalance_task = self.task.async_rebalance_capella(self.pod, tenant, cluster,
                                                                                    config,
-                                                                                   timeout=self.index_timeout)
+                                                                                   timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
                             self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster)
+                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         self.scan_memcahced_logs_for_errors()
@@ -737,17 +740,17 @@ class VolumeTest(BaseTestCase, hostedOPD):
                         config = self.rebalance_config(service)
                         rebalance_tasks = list()
                         for tenant in self.tenants:
-                            for cluster in tenant.clusters:  
+                            for cluster in tenant.clusters:
                                 rebalance_task = self.task.async_rebalance_capella(self.pod, tenant, cluster,
                                                                                    config,
-                                                                                   timeout=self.index_timeout)
+                                                                                   timeout=self.rebalance_timeout)
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
                             self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster)
+                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         self.scan_memcahced_logs_for_errors()

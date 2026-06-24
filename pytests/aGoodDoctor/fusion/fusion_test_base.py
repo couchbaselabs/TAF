@@ -92,7 +92,10 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         self.fusion_threshold_gib = self.input.param("fusion_threshold_gib", 10)
         self.num_buckets = self.input.param("num_buckets", 1)
         self.fragmentation = int(self.input.param("fragmentation", 50))
-        self.index_timeout = self.input.param("index_timeout", 3600)
+        self.rebalance_timeout = self.input.param("rebalance_timeout", 1800)
+        self.fusion_infra_timeout = self.input.param("fusion_infra_timeout", 1800)
+        self.gv_launch_timeout = self.input.param("gv_launch_timeout", 1200)
+        self.hydration_timeout = self.input.param("hydration_timeout", 1800)
         self.load_defn = [Hotel]
 
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)

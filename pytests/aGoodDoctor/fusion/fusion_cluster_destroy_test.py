@@ -77,7 +77,7 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.sync_wait_timeout = self.input.param("sync_wait_timeout", 1200)
         self.fusion_threshold_gib = self.input.param("fusion_threshold_gib", 10)
         self.num_buckets = self.input.param("num_buckets", 1)
-        self.index_timeout = self.input.param("index_timeout", 7200)
+        self.rebalance_timeout = self.input.param("rebalance_timeout", 7200)
         self.load_defn = [Hotel]
 
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
@@ -124,7 +124,7 @@ class FusionClusterDestroyTest(_FusionTestBase):
     def _trigger_scale_out(self):
         config = self.rebalance_config("data", +1)
         return self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
     def _s3_bucket_still_exists(self, bucket_name):
         try:

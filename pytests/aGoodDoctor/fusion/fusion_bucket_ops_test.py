@@ -54,7 +54,7 @@ class FusionBucketOpsTest(_FusionTestBase):
                     "Wait before node reset", timeout=1800)
                 self.wait_for_rebalances([self.task.async_rebalance_capella(
                     self.pod, self.tenant, self.cluster,
-                    self.rebalance_config("data", delta), timeout=self.index_timeout)])
+                    self.rebalance_config("data", delta), timeout=self.rebalance_timeout)])
             except Exception as e:
                 self.log.error(f"Failed to reset KV nodes: {e}")
         for bucket in list(self.cluster.buckets):
@@ -73,7 +73,7 @@ class FusionBucketOpsTest(_FusionTestBase):
         """Trigger a +1 data-node scale-out rebalance and return the async task."""
         config = self.rebalance_config("data", +1)
         return self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
     # ------------------------------------------------------------------
     # Test 9: Bucket flush must clean up the S3 log-store to < 1 GB

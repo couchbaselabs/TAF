@@ -68,7 +68,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                     "Wait for healthy state before node reset", timeout=1800)
                 self.wait_for_rebalances([self.task.async_rebalance_capella(
                     self.pod, self.tenant, self.cluster,
-                    self.rebalance_config("data", delta), timeout=self.index_timeout)])
+                    self.rebalance_config("data", delta), timeout=self.rebalance_timeout)])
             except Exception as e:
                 self.log.error(f"Failed to reset KV nodes to {self.initial_kv_nodes}: {e}")
         for bucket in list(self.cluster.buckets):
@@ -100,7 +100,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         """Trigger a +1 data-node scale-out rebalance and return the async task."""
         config = self.rebalance_config("data", +1)
         return self.task.async_rebalance_capella(
-            self.pod, self.tenant, self.cluster, config, timeout=self.index_timeout)
+            self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
     def _poll_until_accelerators_appear(self, rebalance_task, timeout=1800):
         """Poll until at least one accelerator instance appears or the rebalance ends.
@@ -186,7 +186,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             self.pod, self.tenant, self.cluster.id, timeout=600)
 
         terminated = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
-            self.cluster)
+            self.cluster, timeout=self.fusion_infra_timeout)
         self.assertTrue(terminated,
                         "Accelerator instances were not terminated after rebalance")
 
@@ -230,7 +230,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             self.tenant, self.cluster, rebalance_task,
             self.fusion_monitor, fusion_rebalances,
             wait_for_hydration_complete=True,
-            timeout=self.DEFAULT_TIMEOUT,
+            timeout=self.gv_launch_timeout,
             find_master_func=self.find_master,
         )
         self.assertTrue(hydration_completed,

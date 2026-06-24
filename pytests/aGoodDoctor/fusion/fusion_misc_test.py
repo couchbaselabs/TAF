@@ -150,7 +150,7 @@ class FusionMiscTest(_FusionTestBase):
         self.wait_for_rebalances([
             self.task.async_rebalance_capella(
                 self.pod, self.tenant, self.cluster, config,
-                timeout=self.index_timeout)
+                timeout=self.rebalance_timeout)
         ])
         CapellaAPI.wait_until_done(
             self.pod, self.tenant, self.cluster.id,
@@ -225,7 +225,7 @@ class FusionMiscTest(_FusionTestBase):
         scale_task = self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster,
             combined_config,
-            timeout=self.index_timeout)
+            timeout=self.rebalance_timeout)
 
         self.wait_for_rebalances([scale_task])
 
