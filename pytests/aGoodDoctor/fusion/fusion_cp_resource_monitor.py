@@ -318,11 +318,28 @@ class FusionCPResourceMonitor:
                     'couchbase-cloud-cluster-id': cluster.id,
                     'couchbase-cloud-function': 'fusion-accelerator'
                 })
+            # Build per-node volume breakdown for logging
+            volumes_by_instance = {}
+            for v in initial_volumes:
+                attachments = v.get('Attachments', [])
+                iid = attachments[0]['InstanceId'] if attachments else 'unattached'
+                volumes_by_instance.setdefault(iid, []).append(v)
+            node_table = PrettyTable()
+            node_table.field_names = ["Instance ID", "# Volumes", "Total Size (GiB)"]
+            for iid, vols in sorted(volumes_by_instance.items()):
+                total_gib = sum(v.get('Size', 0) for v in vols)
+                node_table.add_row([iid, len(vols), total_gib])
+            total_size_gib = sum(v.get('Size', 0) for v in initial_volumes)
+            self.log.info(
+                f"EBS guest volumes for cluster {cluster.id}: "
+                f"{len(initial_volumes)} volumes across {len(volumes_by_instance)} node(s), "
+                f"total size {total_size_gib} GiB\n{node_table}")
             dynamic_timeout = self.compute_ebs_cleanup_timeout(initial_volumes)
             timeout = max(timeout, dynamic_timeout)
             self.log.info(
-                f"EBS cleanup timeout set to {timeout}s for cluster {cluster.id} "
-                f"({len(initial_volumes)} volumes, dynamic={dynamic_timeout}s)")
+                f"EBS cleanup timeout for cluster {cluster.id}: "
+                f"dynamic={dynamic_timeout}s, effective={timeout}s "
+                f"(worst-case node drives {max(sum(v.get('Size', 0) for v in vols) for vols in volumes_by_instance.values())} GiB @ 35 MBps)")
         except (ClientError, ConnectionError) as e:
             self.log.warning(
                 f"Could not compute dynamic EBS cleanup timeout for cluster {cluster.id}: {e}")
