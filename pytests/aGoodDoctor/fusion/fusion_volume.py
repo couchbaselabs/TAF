@@ -179,14 +179,14 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # Wait for rebalance task completion
         thread = threading.Thread(
             target=lambda res, task: res.update({"monitor_rebalance_complete": self.wait_for_rebalances([task])}),
-            args=(result, rebalance_task))
+            args=(result, rebalance_task), daemon=True)
         thread.start()
         threads.append(thread)
 
         # Monitor accelerator instances
         accelerator_thread = threading.Thread(
             target=lambda res, clus: res.update({"monitor_cluster_accelerator_intances_complete": self.cp_monitor.monitor_cluster_accelerator_instances(clus, rebalance_task, self.fusion_rebalances, timeout=self.fusion_infra_timeout)}),
-            args=(result, cluster))
+            args=(result, cluster), daemon=True)
         accelerator_thread.start()
         accelerator_thread.join()
         self.assertTrue(result.get("monitor_cluster_accelerator_intances_complete", False), 
@@ -201,7 +201,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 {"monitor_fusion_guest_volumes_complete": self.cp_monitor.monitor_fusion_guest_volumes(
                     tenant, clus, rebalance_task, self.fusion_monitor, self.fusion_rebalances,
                     self.wait_for_hydration_complete, timeout=self.gv_launch_timeout, find_master_func=self.find_master)}),
-            args=(result, cluster))
+            args=(result, cluster), daemon=True)
         thread.start()
         threads.append(thread)
 
@@ -256,7 +256,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
-                                               kwargs={"cluster": cluster})
+                                               kwargs={"cluster": cluster}, daemon=True)
                 cpu_monitor.start()
 
         if self.val_type == "Hotel":
@@ -390,7 +390,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
             for cluster in tenant.clusters:
                 self.mutations = self.input.param("mutations", True)
                 self.mutation_th = threading.Thread(target=self.normal_mutations,
-                                                    kwargs={"cluster": cluster})
+                                                    kwargs={"cluster": cluster}, daemon=True)
                 self.mutation_th.start()
 
         self.sleep(self.steady_state_workload_sleep, "Sleep for {self.steady_state_workload_sleep} seconds to allow the mutations to complete")
@@ -528,13 +528,15 @@ class VolumeTest(BaseTestCase, hostedOPD):
             for cluster in tenant.clusters:
                 ebs_cleanup_thread = threading.Thread(
                     target=self.cp_monitor.check_ebs_guest_vol_deletion,
-                    kwargs={"tenant": tenant, "cluster": cluster, "fusion_monitor_util": self.fusion_monitor, "stop_run_event": self.stop_run_event, "find_master_func": self.find_master})
+                    kwargs={"tenant": tenant, "cluster": cluster, "fusion_monitor_util": self.fusion_monitor, "stop_run_event": self.stop_run_event, "find_master_func": self.find_master},
+                    daemon=True)
                 ebs_cleanup_thread.start()
                 ebs_cleanup_threads.append(ebs_cleanup_thread)
 
                 ebs_available_thread = threading.Thread(
                     target=self.cp_monitor.monitor_available_volumes_by_fusion_rebalance,
-                    kwargs={"cluster": cluster, "fusion_rebalances": self.fusion_rebalances, "stop_run_event": self.stop_run_event})
+                    kwargs={"cluster": cluster, "fusion_rebalances": self.fusion_rebalances, "stop_run_event": self.stop_run_event},
+                    daemon=True)
                 ebs_available_thread.start()
                 ebs_available_threads.append(ebs_available_thread)
 

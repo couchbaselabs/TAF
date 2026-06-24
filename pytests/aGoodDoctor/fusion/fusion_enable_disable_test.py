@@ -298,7 +298,8 @@ class FusionEnableDisableTests(_FusionTestBase):
             self.log.info(f"Killing memcached on instance {instance_id}")
             t = threading.Thread(
                 target=self.fusion_aws_util.ec2.run_shell_command,
-                args=(instance_id, "sudo kill -9 $(pgrep memcached) || true")
+                args=(instance_id, "sudo kill -9 $(pgrep memcached) || true"),
+                daemon=True,
             )
             t.start()
             kill_threads.append(t)
