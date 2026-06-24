@@ -119,10 +119,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
         if hasattr(self, "_log_store_stop_event"):
             self._log_store_stop_event.set()
         self.stop_run = True
-        
+
         # Get CloudTrail instance if available
         cloudtrail = getattr(self, "cloudtrail", None)
-        
+
         # Wait for CPU monitor threads
         cpu_monitor_threads = getattr(self, "cpu_monitor_threads", [])
         for thread in cpu_monitor_threads:
@@ -130,7 +130,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 thread.join()
             except Exception:
                 pass  # Thread may already be stopped
-        
+
         # Stop loader tasks
         loader_tasks = getattr(self, "loader_tasks", [])
         for task in loader_tasks:
@@ -175,7 +175,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.log.info(f"Rebalance start time (scaling): {rebalance_start_time.strftime('%Y-%m-%d %H:%M:%S')} for cluster {cluster.id}")
         threads = []
         result = {}
-        
+
         # Wait for rebalance task completion
         thread = threading.Thread(
             target=lambda res, task: res.update({"monitor_rebalance_complete": self.wait_for_rebalances([task])}),
@@ -191,7 +191,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         accelerator_thread.join()
         self.assertTrue(result.get("monitor_cluster_accelerator_intances_complete", False), 
                        f"monitor_cluster_accelerator_intances failed for cluster {cluster.id}")
-        
+
         self.wait_for_hydration_complete = self.input.param("wait_for_hydration_complete", True)
         self.hydration_time = self.input.param("hydration_time", 6400)
 
@@ -291,7 +291,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             if bucket.loadDefn.get("collections") > 0:
                                 self.collection_prefix = self.input.param("collection_prefix",
                                                                           "VolumeCollection")
-        
+
                                 for i in range(bucket.loadDefn.get("collections")):
                                     collection_name = self.collection_prefix + str(i)
                                     collection_spec = {"name": collection_name}
@@ -347,7 +347,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 for bucket in cluster.buckets:
                     cluster.fusion_uploader_dict[bucket.name] = dict()
                     cluster.fusion_vb_uploader_map[bucket.name] = dict()
-        
+
         # Get fusion uploader maps for all clusters
         for tenant in self.tenants:
             for cluster in tenant.clusters:
@@ -521,7 +521,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
             computeList = AWS.compute
         elif provider == "azure":
             computeList = AZURE.compute
-        
+
         ebs_cleanup_threads = list()
         ebs_available_threads = list()
         for tenant in self.tenants:
