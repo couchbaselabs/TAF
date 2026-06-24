@@ -236,33 +236,15 @@ class FusionClusterOnOffTest(_FusionTestBase):
 
         rebalance_task = self._trigger_scale_out()
         self.sleep(30, "Wait for rebalance to start")
+        self.wait_for_rebalances([rebalance_task])
 
-        # Wait until guest volumes appear (accelerators have been deployed)
         turn_off_timeout = self.input.param("turn_off_timeout", 600)
         turn_on_timeout = self.input.param("turn_on_timeout", 1200)
-        volume_wait_timeout = self.input.param("volume_wait_timeout", 1800)
 
-        self.log.info("Waiting for guest volumes to appear before turning cluster off")
-        deadline = time.time() + volume_wait_timeout
-        volumes_seen = False
-        while time.time() < deadline:
-            if rebalance_task.state in self._FAILED_STATES:
-                self.fail(f"Rebalance failed before guest volumes appeared: "
-                          f"{rebalance_task.state}")
-            if rebalance_task.state == "healthy":
-                self.skipTest(
-                    "Rebalance completed before guest volumes were detected; "
-                    "adjust cluster/data size to create a wider observation window")
-            volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
-            if volumes:
-                self.log.info(
-                    f"Guest volumes detected ({len(volumes)} volumes): {volumes}")
-                volumes_seen = True
-                break
-            time.sleep(5)
-
-        self.assertTrue(volumes_seen,
-                        "No guest volumes appeared during rebalance — "
+        self.log.info("Check for guest volumes presence before turning cluster off")
+        volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+        self.assertTrue(len(volumes) > 0,
+                        "No guest volumes present after rebalance — "
                         "fusion acceleration may not have triggered")
 
         # Turn the cluster off with live guest volumes present
@@ -336,6 +318,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
 
         rebalance_task = self._trigger_scale_out()
         self.sleep(30, "Wait for rebalance to start")
+        self.wait_for_rebalances([rebalance_task])
 
         turn_off_timeout = self.input.param("turn_off_timeout", 600)
         turn_on_timeout = self.input.param("turn_on_timeout", 1200)
@@ -357,24 +340,11 @@ class FusionClusterOnOffTest(_FusionTestBase):
         deadline = time.time() + detach_wait_timeout
 
         # First wait for CBS to start tracking guest volumes (volumes on KV nodes)
-        volumes_were_active = False
-        while time.time() < deadline:
-            if rebalance_task.state in self._FAILED_STATES:
-                self.fail(f"Rebalance failed before CBS rebalance phase: "
-                          f"{rebalance_task.state}")
-            if rebalance_task.state == "healthy":
-                self.skipTest(
-                    "Rebalance completed before the detach window was observed; "
-                    "adjust cluster/data size to widen the observation window")
-            if self._active_guest_volume_count(self.cluster) > 0:
-                volumes_were_active = True
-                self.log.info(
-                    "CBS is tracking active guest volumes on KV nodes — "
-                    "waiting for CBS rebalance to complete and volumes to be released")
-                break
-            time.sleep(5)
-
-        if not volumes_were_active:
+        if self._active_guest_volume_count(self.cluster) > 0:
+            self.log.info(
+                "CBS is tracking active guest volumes on KV nodes — "
+                "waiting for CBS rebalance to complete and volumes to be released")
+        else:
             self.skipTest(
                 "CBS activeGuestVolumes never went > 0; "
                 "fusion rebalance may not have reached the CBS phase within timeout")
@@ -383,27 +353,18 @@ class FusionClusterOnOffTest(_FusionTestBase):
         # while the volumes still exist in AWS ('available' state)
         available_volumes = []
         while time.time() < deadline:
-            if rebalance_task.state in self._FAILED_STATES:
-                self.fail(f"Rebalance failed during CBS rebalance phase: "
-                          f"{rebalance_task.state}")
-            if rebalance_task.state == "healthy":
-                self.skipTest(
-                    "Rebalance completed before the post-CBS-rebalance detach window; "
-                    "adjust cluster/data size to widen the observation window")
-
-            if self._active_guest_volume_count(self.cluster) == 0:
-                # CBS has released the volumes — check AWS state
-                all_volumes = self._guest_volumes_in_aws(self.cluster)
-                available_volumes = [
-                    v for v in all_volumes if v.get("State") == "available"
-                ]
-                if available_volumes:
-                    volume_ids = [v.get("VolumeId") for v in available_volumes]
-                    self.log.info(
-                        f"Detected {len(available_volumes)} guest volume(s) in AWS "
-                        f"'available' state — detached from CBS/KV instances post-CBS-rebalance, "
-                        f"not yet deleted by CP: {volume_ids}")
-                    break
+            # CBS has released the volumes — check AWS state
+            all_volumes = self._guest_volumes_in_aws(self.cluster)
+            available_volumes = [
+                v for v in all_volumes if v.get("State") == "available"
+            ]
+            if available_volumes:
+                volume_ids = [v.get("VolumeId") for v in available_volumes]
+                self.log.info(
+                    f"Detected {len(available_volumes)} guest volume(s) in AWS "
+                    f"'available' state — detached from CBS/KV instances post-CBS-rebalance, "
+                    f"not yet deleted by CP: {volume_ids}")
+                break
             time.sleep(5)
 
         self.assertGreater(
@@ -443,7 +404,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
                 v.get("VolumeId")
                 for v in self._guest_volumes_in_aws(self.cluster)
             }
-            still_present = orphaned_ids & current_ids
+            still_present = [orphan_id for orphan_id in orphaned_ids if orphan_id in current_ids]
             if not still_present:
                 orphans_deleted = True
                 self.log.info(
