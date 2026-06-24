@@ -178,7 +178,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         # Wait for rebalance task completion
         thread = threading.Thread(
-            target=lambda res, task: res.update({"monitor_rebalance_complete": self.wait_for_rebalances([task])}),
+            target=lambda res, task: res.update({"monitor_rebalance_complete": self.wait_for_rebalances([task], timeout=3600)}),
             args=(result, rebalance_task), daemon=True)
         thread.start()
         threads.append(thread)
@@ -189,7 +189,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
             args=(result, cluster), daemon=True)
         accelerator_thread.start()
         accelerator_thread.join()
-        self.assertTrue(result.get("monitor_cluster_accelerator_intances_complete", False), 
+        self.assertTrue(result.get("monitor_cluster_accelerator_intances_complete", False),
                        f"monitor_cluster_accelerator_intances failed for cluster {cluster.id}")
 
         self.wait_for_hydration_complete = self.input.param("wait_for_hydration_complete", True)
@@ -404,11 +404,11 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 }
             rebalance_tasks = list()
             for tenant in self.tenants:
-                for cluster in tenant.clusters:            
+                for cluster in tenant.clusters:
                     rebalance_task = self.task.async_upgrade_capella_prov(
                         self.pod, tenant, cluster, config, timeout=24*60*60)
                     rebalance_tasks.append(rebalance_task)
-            self.wait_for_rebalances(rebalance_tasks, rebl_poll_interval=10)
+            self.wait_for_rebalances(rebalance_tasks, rebl_poll_interval=10, timeout=3600)
 
     def test_cluster_on_off(self):
         if self.turn_cluster_off:

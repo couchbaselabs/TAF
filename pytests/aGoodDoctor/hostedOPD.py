@@ -293,7 +293,7 @@ class hostedOPD(OPD):
         return specs
 
     def monitor_rebalance(self, tenant, cluster, rebalance_task,
-                          rebl_poll_interval=60, timeout=3600):
+                          rebl_poll_interval=60, timeout=28800):
         self.find_master(tenant, cluster)
         self.rest = RestConnection(cluster.master)
         state = CapellaUtils.get_cluster_state(
@@ -339,7 +339,7 @@ class hostedOPD(OPD):
                         msg="Cluster rebalance failed")
         self.cluster_util.print_cluster_stats(cluster)
 
-    def wait_for_rebalances(self, rebalance_tasks, rebl_poll_interval=60, timeout=3600):
+    def wait_for_rebalances(self, rebalance_tasks, rebl_poll_interval=60, timeout=28800):
         rebl_ths = list()
         for task in rebalance_tasks:
             th = threading.Thread(target=self.monitor_rebalance,
