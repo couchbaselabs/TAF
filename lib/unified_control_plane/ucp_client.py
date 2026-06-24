@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 """
 Unified Control Plane API Client
 Raw HTTP client for hitting UCP endpoints.
@@ -6,7 +6,7 @@ Inherits from TAF's RestConnection to reuse _http_request().
 Returns raw responses without wrapper logic.
 """
 import json
-import urllib.parse
+import urllib
 from Rest_Connection import RestConnection as BaseRestConnection
 from global_vars import logger
 class UnifiedControlPlaneClient(BaseRestConnection):
@@ -112,7 +112,7 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         if enabled is not None:
             params['enabled'] = 'true' if enabled else 'false'
         if params:
-            api += '?' + urllib.parse.urlencode(params)
+            api += '?' + urllib.urlencode(params)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
@@ -129,13 +129,13 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         return status, content, header
     def get_user(self, user_id):
         """GET /api/v1/users/{userId}"""
-        api = self.baseUrl + 'api/v1/users/%s' % urllib.parse.quote(user_id)
+        api = self.baseUrl + 'api/v1/users/%s' % urllib.quote(user_id)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
     def update_user(self, user_id, etag, enabled=None, roles=None):
         """PUT /api/v1/users/{userId}"""
-        api = self.baseUrl + 'api/v1/users/%s' % urllib.parse.quote(user_id)
+        api = self.baseUrl + 'api/v1/users/%s' % urllib.quote(user_id)
         body_dict = {}
         if enabled is not None:
             body_dict['enabled'] = enabled
@@ -149,7 +149,7 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         return status, content, header
     def delete_user(self, user_id):
         """DELETE /api/v1/users/{userId}"""
-        api = self.baseUrl + 'api/v1/users/%s' % urllib.parse.quote(user_id)
+        api = self.baseUrl + 'api/v1/users/%s' % urllib.quote(user_id)
         status, content, header = self._http_request(
             api, 'DELETE', headers=self._json_headers())
         return status, content, header
@@ -179,20 +179,20 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         if limit is not None:
             params['limit'] = limit
         if params:
-            api += '?' + urllib.parse.urlencode(params)
+            api += '?' + urllib.urlencode(params)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
     def get_cluster(self, cluster_uuid):
         """GET /api/v1/clusters/{clusterUuid}"""
-        api = self.baseUrl + 'api/v1/clusters/%s' % urllib.parse.quote(cluster_uuid)
+        api = self.baseUrl + 'api/v1/clusters/%s' % urllib.quote(cluster_uuid)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
     def get_cluster_history(self, cluster_uuid, from_timestamp=None,
                            to_timestamp=None, offset=None, limit=None):
         """GET /api/v1/clusters/{clusterUuid}/history"""
-        api = self.baseUrl + 'api/v1/clusters/%s/history' % urllib.parse.quote(cluster_uuid)
+        api = self.baseUrl + 'api/v1/clusters/%s/history' % urllib.quote(cluster_uuid)
         params = {}
         if from_timestamp is not None:
             params['from'] = from_timestamp
@@ -203,14 +203,14 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         if limit is not None:
             params['limit'] = limit
         if params:
-            api += '?' + urllib.parse.urlencode(params)
+            api += '?' + urllib.urlencode(params)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
     def update_cluster(self, cluster_uuid, etag, classification=None,
                       business_unit=None, name=None, description=None):
         """PUT /api/v1/clusters/{clusterUuid}"""
-        api = self.baseUrl + 'api/v1/clusters/%s' % urllib.parse.quote(cluster_uuid)
+        api = self.baseUrl + 'api/v1/clusters/%s' % urllib.quote(cluster_uuid)
         body_dict = {}
         if classification is not None:
             body_dict['classification'] = classification
@@ -261,7 +261,7 @@ class UnifiedControlPlaneClient(BaseRestConnection):
             'to': to_timestamp,
             'format': format_type
         }
-        api += '?' + urllib.parse.urlencode(params)
+        api += '?' + urllib.urlencode(params)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
@@ -285,13 +285,13 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         if action is not None:
             params['action'] = action
         if params:
-            api += '?' + urllib.parse.urlencode(params)
+            api += '?' + urllib.urlencode(params)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
     def get_audit_event(self, audit_event_id):
         """GET /api/v1/audit/{auditEventId}"""
-        api = self.baseUrl + 'api/v1/audit/%s' % urllib.parse.quote(audit_event_id)
+        api = self.baseUrl + 'api/v1/audit/%s' % urllib.quote(audit_event_id)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
