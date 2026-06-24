@@ -82,6 +82,31 @@ class FusionCPResourceMonitor:
             ])
         self.log.info(f"Fusion Guest Volumes Table:\n{table}")
 
+    @staticmethod
+    def compute_ebs_cleanup_timeout(volumes, throughput_mbps=35):
+        """Compute EBS cleanup timeout from actual volume state.
+
+        Formula: max(sum of volume sizes per node) * 1024 / throughput_MBps
+        Takes the worst-case node (highest total GiB attached) as the driver.
+
+        :param volumes: List of volume dicts from AWS EC2 API
+        :param throughput_mbps: Effective cleanup throughput per guest volume in MBps
+        :return: Timeout in seconds (floor: EBS_CLEANUP_TIMEOUT)
+        """
+        if not volumes:
+            return FusionCPResourceMonitor.EBS_CLEANUP_TIMEOUT
+        volumes_by_instance = {}
+        for v in volumes:
+            attachments = v.get('Attachments', [])
+            iid = attachments[0]['InstanceId'] if attachments else 'unattached'
+            volumes_by_instance.setdefault(iid, []).append(v)
+        max_total_size_gib = max(
+            sum(v.get('Size', 0) for v in vols)
+            for vols in volumes_by_instance.values()
+        )
+        computed = int(max_total_size_gib * 1024 / throughput_mbps)
+        return max(computed, FusionCPResourceMonitor.EBS_CLEANUP_TIMEOUT)
+
     def monitor_fusion_guest_volumes(self, tenant, cluster, rebalance_task, fusion_monitor_util, fusion_rebalances, wait_for_hydration_complete=True, timeout=None, find_master_func=None):
         """
         Monitor fusion guest volumes during rebalance operations with hydration tracking.
@@ -281,11 +306,26 @@ class FusionCPResourceMonitor:
 
         :param cluster: Cluster object
         :param stop_run_event: Threading Event to stop monitoring
-        :param timeout: Timeout in seconds (default: DEFAULT_TIMEOUT)
+        :param timeout: Timeout in seconds (default: DEFAULT_TIMEOUT); dynamically
+            computed from current volume count and size if the computed value is larger
         :return: True if cleanup completed, False otherwise
         """
         if timeout is None:
             timeout = self.DEFAULT_TIMEOUT
+        try:
+            initial_volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(
+                filters={
+                    'couchbase-cloud-cluster-id': cluster.id,
+                    'couchbase-cloud-function': 'fusion-accelerator'
+                })
+            dynamic_timeout = self.compute_ebs_cleanup_timeout(initial_volumes)
+            timeout = max(timeout, dynamic_timeout)
+            self.log.info(
+                f"EBS cleanup timeout set to {timeout}s for cluster {cluster.id} "
+                f"({len(initial_volumes)} volumes, dynamic={dynamic_timeout}s)")
+        except (ClientError, ConnectionError) as e:
+            self.log.warning(
+                f"Could not compute dynamic EBS cleanup timeout for cluster {cluster.id}: {e}")
         self.log.info(f"Checking if CP has cleaned all the guest volumes on cluster {cluster.id}")
         start_time = time.time()
         while time.time() - start_time < timeout and not stop_run_event.is_set():
