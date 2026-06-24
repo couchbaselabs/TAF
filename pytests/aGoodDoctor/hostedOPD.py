@@ -292,11 +292,13 @@ class hostedOPD(OPD):
         pprint.pprint(specs)
         return specs
 
-    def monitor_rebalance(self, tenant, cluster, rebalance_task, rebl_poll_interval=60):
+    def monitor_rebalance(self, tenant, cluster, rebalance_task,
+                          rebl_poll_interval=60, timeout=3600):
         self.find_master(tenant, cluster)
         self.rest = RestConnection(cluster.master)
         state = CapellaUtils.get_cluster_state(
                     self.pod, tenant, cluster.id)
+        start_time = time.time()
         while rebalance_task.state not in ["healthy",
                                                 "upgradeFailed",
                                                 "deploymentFailed",
@@ -304,6 +306,13 @@ class hostedOPD(OPD):
                                                 "rebalanceFailed",
                                                 "scaleFailed"] and \
                 state != "healthy":
+            if time.time() - start_time > timeout:
+                self.log.error(
+                    "monitor_rebalance timed out after {}s for cluster {}"
+                    .format(timeout, cluster.id))
+                self.assertTrue(False,
+                                msg="Rebalance timed out after {}s".format(timeout))
+                return
             try:
                 result = self.rest.newMonitorRebalance(sleep_step=rebl_poll_interval,
                                                        progress_count=1000)
@@ -330,18 +339,26 @@ class hostedOPD(OPD):
                         msg="Cluster rebalance failed")
         self.cluster_util.print_cluster_stats(cluster)
 
-    def wait_for_rebalances(self, rebalance_tasks, rebl_poll_interval=60):
+    def wait_for_rebalances(self, rebalance_tasks, rebl_poll_interval=60, timeout=3600):
         rebl_ths = list()
         for task in rebalance_tasks:
             th = threading.Thread(target=self.monitor_rebalance,
                                   kwargs=dict({"tenant":task.tenant,
                                                "cluster":task.cluster,
                                                "rebalance_task":task,
-                                               "rebl_poll_interval":rebl_poll_interval}))
+                                               "rebl_poll_interval":rebl_poll_interval,
+                                               "timeout":timeout}))
             th.start()
             rebl_ths.append(th)
         for th in rebl_ths:
-            th.join()
+            th.join(timeout=timeout)
+        for th, task in zip(rebl_ths, rebalance_tasks):
+            if th.is_alive():
+                self.log.error(
+                    "Rebalance monitor thread timed out after {}s for cluster {}"
+                    .format(timeout, task.cluster.id))
+                self.stop_run = True
+                self.fail("Rebalance timed out after {}s".format(timeout))
         for task in rebalance_tasks:
             self.task_manager.get_task_result(task)
             if not task.result:
