@@ -10,6 +10,7 @@ mirroring the role that ucp_helper_methods.py plays for UnifiedControlPlaneClien
 Design reference: Lighthouse Collector Design Revision v1.4 (17 Jun 2026)
 """
 import json
+import time
 
 from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
@@ -293,26 +294,30 @@ def parse_response_json(content):
 
 # ==================== Diag/Eval Helpers ====================
 
-def set_lighthouse_interval_via_diag_eval(server, interval_hours):
+def _py_to_erlang(value):
+    """Convert a Python value to its Erlang literal string representation."""
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    elif isinstance(value, str):
+        return '<<"%s">>' % value
+    elif isinstance(value, float):
+        return repr(value)
+    else:
+        return str(value)
+
+
+def set_lighthouse_ns_config_via_diag_eval(server, **kwargs):
     """
-    Bypass the REST API to set the lighthouse reporting interval directly in
-    ns_config via /diag/eval.  Useful in tests that need a sub-1-hour interval
-    (e.g. 1/3600 == ~1 second) so the collector fires quickly without waiting
-    for the 2-hour default.
+    Merge one or more keys into the lighthouse ns_config map via diag/eval.
 
-    Follows the same pattern used in StatsLib/StatsOperations_Rest.py:
-      1. Enable diag/eval on non-local hosts via RemoteMachineShellConnection.
-      2. Send the Erlang expression via RestConnection.diag_eval().
-
-    Design-doc example:
-      ns_config:set(lighthouse,
-          #{reporting_endpoint => <<"127.0.0.1">>,
-            reporting_interval_hours => 1/3600}).
+    Uses maps:merge so only the specified keys change — all other settings
+    are preserved.  Calling ns_config:set(lighthouse, #{k => v}) without
+    maps:merge replaces the entire map, wiping unspecified keys.
 
     Args:
-        server:         TestInputServer pointing at the orchestrator node.
-        interval_hours: float — reporting interval in hours.
-                        Pass 1/3600.0 for a ~1-second interval.
+        server:   TestInputServer pointing at the orchestrator node.
+        **kwargs: Erlang atom key names -> Python values.
+                  e.g. reporting_port=8080, reporting_interval_hours=0.000277
 
     Returns:
         Tuple (status, content)
@@ -320,8 +325,418 @@ def set_lighthouse_interval_via_diag_eval(server, interval_hours):
     shell = RemoteMachineShellConnection(server)
     shell.enable_diag_eval_on_non_local_hosts()
     shell.disconnect()
+    pairs = ', '.join('%s => %s' % (k, _py_to_erlang(v))
+                      for k, v in kwargs.items())
+    # ns_config:search returns false on a fresh cluster before any REST POST
+    # has written the lighthouse key.  Fall back to #{} so maps:merge works.
+    code = ('C = case ns_config:search(lighthouse) of '
+            '{value, V} -> V; false -> #{} end, '
+            'ns_config:set(lighthouse, maps:merge(C, #{%s})).' % pairs)
+    return RestConnection(server).diag_eval(code)
+
+
+def set_lighthouse_interval_via_diag_eval(server, interval_hours):
+    """Convenience wrapper — set only reporting_interval_hours via diag/eval."""
+    return set_lighthouse_ns_config_via_diag_eval(
+        server, reporting_interval_hours=interval_hours)
+
+
+# ==================== Constants ====================
+
+LIGHTHOUSE_DEFAULT_PORTAL_PORT = 8080
+
+# Maps Couchbase internal service names to the names used in portal telemetry.
+CB_TO_PORTAL_SERVICE_MAP = {
+    'kv': 'data',
+    'n1ql': 'query',
+    'index': 'index',
+    'fts': 'search',
+    'cbas': 'analytics',
+    'eventing': 'eventing',
+    'backup': 'backup',
+}
+
+
+# ==================== Telemetry Accuracy Helpers ====================
+
+def get_cb_cluster_uuid(server):
+    """
+    Return the cluster UUID from /pools.
+
+    The cluster UUID is exposed as the top-level "uuid" field in /pools,
+    not in /pools/default (where the uuid query param in bucket URIs is
+    the bucket UUID, not the cluster UUID).
+
+    Args:
+        server: TestInputServer pointing at the master node.
+
+    Returns:
+        str cluster UUID, or None if not found.
+    """
+    raw = RestConnection(server).get_pools_info().get('uuid')
+    if not raw:
+        return None
+    # /pools returns UUID without hyphens; portal stores in hyphenated format.
+    u = raw.replace('-', '')
+    return '%s-%s-%s-%s-%s' % (u[0:8], u[8:12], u[12:16], u[16:20], u[20:32])
+
+
+def get_cb_cluster_node_count(server):
+    """
+    Return the count of active nodes in the cluster.
+
+    Uses RestConnection.get_cluster_size() which queries /pools/default.
+
+    Args:
+        server: TestInputServer pointing at the master node.
+
+    Returns:
+        int node count.
+    """
     rest = RestConnection(server)
-    code = ('ns_config:set(lighthouse, '
-            '#{reporting_interval_hours => %s}).' % interval_hours)
-    return rest.diag_eval(code)
+    return rest.get_cluster_size()
+
+
+def get_cb_cluster_nodes_services(server):
+    """
+    Return a mapping of hostname -> sorted services list for every
+    active node in the cluster.
+
+    Uses RestConnection.get_nodes() which queries /pools/default.
+    Services are sorted so callers can do direct equality comparisons
+    without worrying about order.
+
+    Args:
+        server: TestInputServer pointing at the master node.
+
+    Returns:
+        dict {hostname (str): sorted services list (list[str])}
+        e.g. {"10.0.0.1:8091": ["index", "kv", "n1ql"]}
+    """
+    rest = RestConnection(server)
+    nodes = rest.get_nodes()
+    return {node.hostname: sorted(node.services) for node in nodes}
+
+
+def get_portal_cluster(ucp_client, cluster_uuid):
+    """
+    Fetch a single cluster record from the portal by UUID.
+
+    Args:
+        ucp_client:   Authenticated UnifiedControlPlaneClient instance.
+        cluster_uuid: str — the cluster UUID (from get_cb_cluster_uuid).
+
+    Returns:
+        dict of the parsed cluster object, or None on failure.
+    """
+    status, content, _ = ucp_client.get_cluster(cluster_uuid)
+    if not status:
+        return None
+    return json.loads(content)
+
+
+def get_portal_cluster_nodes(ucp_client, cluster_uuid):
+    """
+    Return the nodes[] list from the portal's cluster record.
+
+    Args:
+        ucp_client:   Authenticated UnifiedControlPlaneClient instance.
+        cluster_uuid: str cluster UUID.
+
+    Returns:
+        list of node dicts, or None on failure.
+    """
+    cluster = get_portal_cluster(ucp_client, cluster_uuid)
+    if cluster is None:
+        return None
+    return cluster.get('nodes', [])
+
+
+def _uuid_in_clusters_response(data, cluster_uuid):
+    """
+    Check whether a cluster UUID appears in a parsed list_clusters() response.
+
+    Handles both list responses and paginated object responses that wrap
+    items under 'items' or 'clusters'. Accepts both 'uuid' and 'clusterUuid'
+    key names to cover API variations.
+
+    Args:
+        data:         Parsed JSON from list_clusters() (list or dict).
+        cluster_uuid: str — UUID to search for.
+
+    Returns:
+        True if found, False otherwise.
+    """
+    items = data if isinstance(data, list) else data.get(
+        'items', data.get('clusters', []))
+    for cluster in items:
+        if (cluster.get('uuid') == cluster_uuid
+                or cluster.get('clusterUuid') == cluster_uuid):
+            return True
+    return False
+
+
+def wait_for_cluster_on_portal(ucp_client, cluster_uuid,
+                                timeout=60, poll_interval=5):
+    """
+    Poll GET /api/v1/clusters until the given cluster UUID appears,
+    or until timeout is exceeded.
+
+    A POST to /internal/settings/lighthouse triggers an immediate report,
+    so 60 s is normally more than enough for the portal to receive it.
+
+    Args:
+        ucp_client:    Authenticated UnifiedControlPlaneClient instance.
+        cluster_uuid:  str — UUID to wait for.
+        timeout:       int — max seconds to wait (default 60).
+        poll_interval: int — seconds between polls (default 5).
+
+    Returns:
+        True if the cluster appeared within timeout, False otherwise.
+    """
+    elapsed = 0
+    while elapsed < timeout:
+        status, content, _ = ucp_client.list_clusters()
+        if status and content:
+            if _uuid_in_clusters_response(json.loads(content), cluster_uuid):
+                return True
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+    return False
+
+
+# ==================== Hardware Aggregate Helpers ====================
+
+def _parse_cb_version(version_str):
+    """
+    Parse a raw CB version string into (major_minor, edition).
+
+    Args:
+        version_str: str — e.g. "8.0.0-1234-enterprise"
+
+    Returns:
+        Tuple (version: str, edition: str) — e.g. ("8.0", "enterprise").
+    """
+    dash_parts = version_str.split('-')
+    version = '.'.join(dash_parts[0].split('.')[:2])
+    edition = dash_parts[-1] if len(dash_parts) >= 2 else 'enterprise'
+    return version, edition
+
+
+def _read_physical_cores(shell):
+    """
+    Read physical CPU core count from an open shell connection.
+
+    Counts unique (physical_id, core_id) pairs in /proc/cpuinfo.
+    Falls back to nproc on VMs/containers where physical topology is not
+    exposed (e.g. all processors share the same physical id).
+
+    Args:
+        shell: Open RemoteMachineShellConnection instance.
+
+    Returns:
+        int — physical core count (>= 1).
+    """
+    out, _ = shell.execute_command(
+        "awk '/^physical id/{p=$NF} /^core id/{k=p\",\"$NF;"
+        " if(!a[k]++) c++} END{print c+0}' /proc/cpuinfo")
+    count_str = out[0].strip() if out else '0'
+    count = int(count_str) if count_str.isdigit() else 0
+    if count > 0:
+        return count
+    # Fallback: nproc when physical topology is not visible
+    out, _ = shell.execute_command('nproc')
+    nproc_str = out[0].strip() if out else '0'
+    return int(nproc_str) if nproc_str.isdigit() else 0
+
+
+def _read_ram_kb(shell):
+    """
+    Read RAM total and available from an open shell connection via
+    /proc/meminfo.
+
+    Uses MemAvailable (not MemFree) to match ns_server's definition of
+    free memory, which excludes reclaimable page cache/buffers and gives
+    the same ramBytesUsed the collector reports to the portal.
+
+    Args:
+        shell: Open RemoteMachineShellConnection instance.
+
+    Returns:
+        Tuple (mem_total_kb: int, mem_avail_kb: int).
+        Both are 0 on parse failure.
+    """
+    out, _ = shell.execute_command(
+        "awk '/^MemTotal/{t=$2} /^MemAvailable/{a=$2}"
+        " END{print t, a}' /proc/meminfo")
+    parts = out[0].strip().split() if out else []
+    try:
+        return int(parts[0]), int(parts[1])
+    except (IndexError, ValueError):
+        return 0, 0
+
+
+def get_cb_node_shell_metrics(server):
+    """
+    Get CPU physical cores and RAM metrics for a node via a single shell
+    connection.
+
+    Delegates to _read_physical_cores() and _read_ram_kb() to keep each
+    concern separate while reusing one connection.
+
+    Args:
+        server: TestInputServer pointing at the node.
+
+    Returns:
+        dict with keys:
+            cpu_physical_cores: int
+            ram_bytes_total:    int  (MemTotal in bytes)
+            ram_bytes_used:     int  (MemTotal - MemAvailable in bytes; volatile)
+        or None on failure.
+    """
+    shell = RemoteMachineShellConnection(server)
+    try:
+        physical = _read_physical_cores(shell)
+        mem_total_kb, mem_avail_kb = _read_ram_kb(shell)
+        return {
+            'cpu_physical_cores': physical,
+            'ram_bytes_total': mem_total_kb * 1024,
+            'ram_bytes_used': (mem_total_kb - mem_avail_kb) * 1024,
+        }
+    except Exception:
+        return None
+    finally:
+        shell.disconnect()
+
+
+def get_cb_node_hardware_via_rest(server):
+    """
+    Get per-node storage metrics and version info from the CB REST API
+    (/nodes/self).
+
+    Storage comes from storageTotals.hdd which is the same source
+    ns_server uses when building the collector report.
+    RAM and CPU physical cores are obtained via shell (get_cb_node_shell_metrics).
+
+    Args:
+        server: TestInputServer pointing at the node.
+
+    Returns:
+        dict with keys:
+            cpu_logical_cores:   int  (/nodes/self cpuCount)
+            storage_bytes_total: int  (storageTotals.hdd.total)
+            storage_bytes_used:  int  (storageTotals.hdd.used; volatile)
+            version:             str  (raw version, e.g. "8.0.0-1234-enterprise")
+        or None on failure.
+    """
+    rest = RestConnection(server)
+    try:
+        raw = rest.get_nodes_self_unparsed()
+    except Exception:
+        return None
+
+    hdd = raw.get('storageTotals', {}).get('hdd', {})
+
+    return {
+        'cpu_logical_cores': raw.get('cpuCount', 0),
+        'storage_bytes_total': hdd.get('total', 0),
+        'storage_bytes_used': hdd.get('used', 0),
+        'version': raw.get('version', ''),
+    }
+
+
+def get_cb_cluster_aggregate_hardware(cluster):
+    """
+    Aggregate hardware metrics across all active nodes in a cluster.
+
+    CPU physical cores and RAM come from shell (/proc/cpuinfo, /proc/meminfo)
+    via a single connection per node.  CPU logical cores, storage, and version
+    come from /nodes/self (CB REST API).
+
+    Args:
+        cluster: CBCluster instance (must have .nodes_in_cluster populated).
+
+    Returns:
+        dict:
+            cpu_physical_cores:  int (sum across nodes)
+            cpu_logical_cores:   int (sum across nodes)
+            ram_bytes_total:     int (sum across nodes; ~2% tolerance vs portal)
+            ram_bytes_used:      int (sum across nodes; volatile)
+            storage_bytes_total: int (sum across nodes)
+            storage_bytes_used:  int (sum across nodes; volatile)
+            version:             str (major.minor from first node, e.g. "8.0")
+            edition:             str (e.g. "enterprise")
+        or None if any per-node call fails.
+    """
+    totals = {
+        'cpu_physical_cores': 0,
+        'cpu_logical_cores': 0,
+        'ram_bytes_total': 0,
+        'ram_bytes_used': 0,
+        'storage_bytes_total': 0,
+        'storage_bytes_used': 0,
+        'version': '',
+        'edition': '',
+    }
+    for server in cluster.nodes_in_cluster:
+        shell_hw = get_cb_node_shell_metrics(server)
+        if shell_hw is None:
+            return None
+        rest_hw = get_cb_node_hardware_via_rest(server)
+        if rest_hw is None:
+            return None
+
+        totals['cpu_physical_cores'] += shell_hw['cpu_physical_cores']
+        totals['ram_bytes_total'] += shell_hw['ram_bytes_total']
+        totals['ram_bytes_used'] += shell_hw['ram_bytes_used']
+        totals['cpu_logical_cores'] += rest_hw['cpu_logical_cores']
+        totals['storage_bytes_total'] += rest_hw['storage_bytes_total']
+        totals['storage_bytes_used'] += rest_hw['storage_bytes_used']
+        if not totals['version'] and rest_hw['version']:
+            totals['version'], totals['edition'] = \
+                _parse_cb_version(rest_hw['version'])
+    return totals
+
+
+def assert_within_tolerance(test_case, actual, expected, tolerance_pct, label=''):
+    """
+    Assert that actual is within tolerance_pct% of expected.
+
+    Args:
+        test_case:     unittest.TestCase instance (provides assert methods).
+        actual:        int/float — value from the portal.
+        expected:      int/float — ground truth value.
+        tolerance_pct: numeric — allowed percentage deviation.
+        label:         str — prefix for the failure message.
+    """
+    if expected == 0:
+        test_case.assertEqual(
+            actual, 0,
+            "%s: expected 0, got %d" % (label, actual))
+        return
+    diff_pct = abs(actual - expected) / float(expected) * 100
+    test_case.assertLessEqual(
+        diff_pct, tolerance_pct,
+        "%s: actual=%d, expected~%d, diff=%.2f%% (tolerance %d%%)"
+        % (label, actual, expected, diff_pct, tolerance_pct))
+
+
+def get_cb_cluster_services_union(cluster):
+    """
+    Return the sorted union of portal-mapped service names across all nodes.
+
+    Mirrors the 'services' field at the cluster level in portal telemetry,
+    which aggregates and deduplicates per-node services.
+
+    Args:
+        cluster: CBCluster instance (has .master attribute).
+
+    Returns:
+        list[str] — sorted unique portal service names (e.g. ["data", "query"]).
+    """
+    all_services = set()
+    for services_list in get_cb_cluster_nodes_services(cluster.master).values():
+        for svc in services_list:
+            all_services.add(CB_TO_PORTAL_SERVICE_MAP.get(svc, svc))
+    return sorted(all_services)
 
