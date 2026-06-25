@@ -283,29 +283,34 @@ class CapellaUtils(object):
         return resp
 
     @staticmethod
-    def create_bucket(pod, tenant, cluster, bucket_params):
-        while True:
-            state = CapellaUtils.get_cluster_state(
-                pod, tenant, cluster.id)
+    def create_bucket(pod, tenant, cluster, bucket_params, retries=5, retry_wait=60):
+        deadline = time.time() + 600
+        while time.time() < deadline:
+            state = CapellaUtils.get_cluster_state(pod, tenant, cluster.id)
             if state == "healthy":
                 break
             CapellaUtils.log.info(f"Cluster {cluster.id} is not healthy hence cannot create bucket, waiting for 10 seconds..")
             time.sleep(10)
+        else:
+            raise Exception(f"Cluster {cluster.id} did not reach healthy state within 600s")
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.create_bucket(tenant.id,
-                                         tenant.projects[0],
-                                         cluster.id, bucket_params)
-        if resp.status_code in [200, 201, 202]:
-            CapellaUtils.log.info("Bucket {} create successfully on cluster {}!".format(
-                bucket_params.get("name"), cluster.id))
-        else:
-            CapellaUtils.log.critical("Bucket creation failed: {}, {}".
-                                      format(resp.status_code, resp.content))
-            raise Exception("Bucket creation failed")
+        for attempt in range(1, retries + 1):
+            resp = capella_api.create_bucket(tenant.id,
+                                             tenant.projects[0],
+                                             cluster.id, bucket_params)
+            if resp.status_code in [200, 201, 202]:
+                CapellaUtils.log.info("Bucket {} created successfully on cluster {}!".format(
+                    bucket_params.get("name"), cluster.id))
+                return
+            CapellaUtils.log.critical("Bucket creation failed (attempt {}/{}): {}, {}".format(
+                attempt, retries, resp.status_code, resp.content))
+            if attempt < retries:
+                time.sleep(retry_wait)
+        raise Exception("Bucket creation failed")
 
     @staticmethod
     def get_bucket_id(pod, tenant, cluster, name):
@@ -358,6 +363,7 @@ class CapellaUtils(object):
                                              bucket_id)
             if resp.status_code == 204:
                 CapellaUtils.log.info("Bucket deleted successfully!")
+                cluster.buckets.remove([bucket for bucket in cluster.buckets if bucket.name == name])
             else:
                 CapellaUtils.log.critical(resp.content)
                 raise Exception("Bucket {} cannot be deleted".format(name))

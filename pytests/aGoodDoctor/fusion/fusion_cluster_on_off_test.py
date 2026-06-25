@@ -49,6 +49,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         self.initial_kv_nodes = self.input.param("kv_nodes", 3)
         for bucket in self.cluster.buckets:
             try:
+                self.log.info(f"Setup: Cleaning up bucket {bucket.name}")
                 self._delete_bucket_with_s3_cleanup(bucket)
             except Exception:
                 pass
@@ -89,6 +90,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
             except Exception as e:
                 self.log.error(f"Failed to reset KV nodes: {e}")
         for bucket in list(self.cluster.buckets):
+            self.log.info(f"Teardown: Cleaning up bucket {bucket.name}")
             try:
                 self._delete_bucket_with_s3_cleanup(bucket)
             except Exception:

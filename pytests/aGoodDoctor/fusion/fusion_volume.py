@@ -82,6 +82,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.rebalance_timeout = self.input.param("rebalance_timeout", 3600)
         self.gv_launch_timeout = self.input.param("gv_launch_timeout", 1200)
         self.hydration_timeout = self.input.param("hydration_timeout", 1800)
+        self.fusion_infra_timeout = self.input.param("fusion_infra_timeout", 1800)
         self.restore_timeout = self.input.param("restore_timeout", 3600)
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)

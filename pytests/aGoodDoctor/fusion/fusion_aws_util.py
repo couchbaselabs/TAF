@@ -331,7 +331,7 @@ class FusionAWSUtil:
             self.log.warning(
                 f"No instances found for cluster {cluster_id} — "
                 "skipping dp-agent health check")
-            return True
+            return True, []
 
         crash_pattern = r"killed|segfault|core.dump|Main process exited.*status=[^0]|status=[1-9][0-9]*$"
 

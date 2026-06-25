@@ -10,6 +10,7 @@ import time
 from prettytable import PrettyTable
 from botocore.exceptions import ClientError, ConnectionError
 from .fusion_monitor_util import FusionMonitorUtil
+from global_vars import logger as global_logger
 
 
 class FusionCPResourceMonitor:
@@ -37,7 +38,7 @@ class FusionCPResourceMonitor:
         :param logger: Logger instance for monitoring operations
         :param fusion_aws_util: FusionAWSUtil instance for AWS client operations
         """
-        self.log = logger
+        self.log = global_logger.get("test")
         self.fusion_aws_util = fusion_aws_util
 
     @staticmethod
@@ -354,7 +355,8 @@ class FusionCPResourceMonitor:
                         })
                 instances = self.fusion_aws_util.list_instances(
                     self.fusion_aws_util._cluster_filter(cluster.id),
-                    log="EBS Guest Volumes Attached to Cluster"
+                    log="EBS Guest Volumes Attached to Cluster",
+                    suppress_log=True
                 )
             except (ClientError, ConnectionError) as e:
                 self.log.error(f"Failed to list volumes/instances for cluster {cluster.id}: {e}")
