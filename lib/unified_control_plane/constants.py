@@ -25,6 +25,34 @@ AUDIT = API_V1 + '/audit'
 CONFIG = API_V1 + '/config'
 # Health Endpoints
 HEALTH = API_V1 + '/health'
+
+# ---- Lighthouse Collector (ns_server) endpoints ----
+# These are on the Couchbase Server node (port 8091), NOT the UCP portal.
+
+# Config endpoint – GET to read, POST to update (and force a report).
+# Permission: cluster.admin.settings.lighthouse!read (GET)
+#             cluster.admin.settings.lighthouse!write (POST)
+#             mobile_sync_gateway role has read access.
+COLLECTOR_SETTINGS = 'internal/settings/lighthouse'
+
+# External telemetry ingest endpoint.
+# Append ?product_name=<name>&instance_id=<id> as query params.
+# Permission: cluster.lighthouse_telemetry!write
+#             (granted only to mobile_sync_gateway)
+COLLECTOR_INGEST = '_lighthouseCollector/ingest'
+
+# Default collector configuration values (from design doc v1.4)
+COLLECTOR_DEFAULT_ENABLED = True
+COLLECTOR_DEFAULT_ENDPOINT = 'lighthouse.couchbase.internal'
+COLLECTOR_DEFAULT_PORT = 433
+COLLECTOR_DEFAULT_REPORT_INTERVAL_HOURS = 2
+COLLECTOR_DEFAULT_REPORT_TIMEOUT_SECONDS = 1
+COLLECTOR_DEFAULT_EXTERNAL_NODES_MAX_PAYLOAD_BYTES = 10240
+COLLECTOR_DEFAULT_EXTERNAL_NODES_MAX_COUNT = 100
+
+# Collector metrics labels
+COLLECTOR_METRIC_RESULT_SUCCESS = 'success'
+COLLECTOR_METRIC_RESULT_FAILURE = 'failure'
 # Cluster Classifications
 CLASSIFICATION_PRODUCTION = 'production'
 CLASSIFICATION_BACKUP = 'backup'
