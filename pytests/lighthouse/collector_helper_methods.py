@@ -11,6 +11,9 @@ Design reference: Lighthouse Collector Design Revision v1.4 (17 Jun 2026)
 """
 import json
 
+from membase.api.rest_client import RestConnection
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
+
 # ==================== Settings Helper Methods ====================
 
 def get_collector_settings(client):
@@ -286,4 +289,39 @@ def parse_response_json(content):
         return json.loads(content)
     except ValueError:
         return None
+
+
+# ==================== Diag/Eval Helpers ====================
+
+def set_lighthouse_interval_via_diag_eval(server, interval_hours):
+    """
+    Bypass the REST API to set the lighthouse reporting interval directly in
+    ns_config via /diag/eval.  Useful in tests that need a sub-1-hour interval
+    (e.g. 1/3600 == ~1 second) so the collector fires quickly without waiting
+    for the 2-hour default.
+
+    Follows the same pattern used in StatsLib/StatsOperations_Rest.py:
+      1. Enable diag/eval on non-local hosts via RemoteMachineShellConnection.
+      2. Send the Erlang expression via RestConnection.diag_eval().
+
+    Design-doc example:
+      ns_config:set(lighthouse,
+          #{reporting_endpoint => <<"127.0.0.1">>,
+            reporting_interval_hours => 1/3600}).
+
+    Args:
+        server:         TestInputServer pointing at the orchestrator node.
+        interval_hours: float — reporting interval in hours.
+                        Pass 1/3600.0 for a ~1-second interval.
+
+    Returns:
+        Tuple (status, content)
+    """
+    shell = RemoteMachineShellConnection(server)
+    shell.enable_diag_eval_on_non_local_hosts()
+    shell.disconnect()
+    rest = RestConnection(server)
+    code = ('ns_config:set(lighthouse, '
+            '#{reporting_interval_hours => %s}).' % interval_hours)
+    return rest.diag_eval(code)
 
