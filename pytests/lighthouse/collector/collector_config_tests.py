@@ -87,21 +87,23 @@ class CollectorConfigTests(LighthouseBase):
                     settings[key], default_val,
                     "Cluster %d: '%s' expected %r, got %r"
                     % (i, key, default_val, settings[key]))
-            self.log.info("Cluster %d: PASS -- all defaults correct" % i)
+            self.log.info("Cluster %d: PASS - all defaults correct" % i)
 
     def test_set_collector_endpoint_port_8080_and_interval_2hrs(self):
         """
         Verify POST /internal/settings/lighthouse sets the endpoint to
-        the portal IP and reportIntervalHours to 2 on every cluster.
+        lighthouse.couchbase.internal and reportIntervalHours to 2 on
+        every cluster.
 
-        The endpoint field accepts only a hostname or IP (no port).
+        The endpoint field accepts only a hostname or domain (no port).
+        Port 433 is used internally by ns_server for the https connection.
 
         Steps (repeated per cluster):
-        1. POST endpoint=<portal_ip> and reportIntervalHours=2
+        1. POST endpoint=lighthouse.couchbase.internal and
+           reportIntervalHours=2
         2. GET settings and assert both values are persisted
         """
-        portal_ip = self.ucp_portal.ip
-        new_endpoint = portal_ip
+        new_endpoint = "lighthouse.couchbase.internal"
         new_interval = 2
 
         for i, client in enumerate(self.collector_clients):
@@ -130,5 +132,5 @@ class CollectorConfigTests(LighthouseBase):
                 "Cluster %d: reportIntervalHours expected %r, got %r"
                 % (i, new_interval, settings.get('reportIntervalHours')))
             self.log.info(
-                "Cluster %d: PASS -- endpoint='%s', reportIntervalHours=%d"
+                "Cluster %d: PASS - endpoint='%s', reportIntervalHours=%d"
                 % (i, new_endpoint, new_interval))
