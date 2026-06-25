@@ -8,6 +8,7 @@ reproduced deterministically without shared-cluster contamination.
 
 Tests:
   1. test_concurrent_node_scale_down_and_disk_scale_up  — AV-134300
+  2. test_concurrent_node_and_disk_scale_up
 """
 
 import time
@@ -270,3 +271,112 @@ class FusionMiscTest(_FusionTestBase):
         self.log.info(
             "AV-134300 regression test passed: CP reached healthy state with "
             f"{len(data_nodes)} nodes at {actual_disk_gb} GB disk")
+
+    # ------------------------------------------------------------------ #
+    # Test 2: concurrent node scale-up + disk scale-up                    #
+    # ------------------------------------------------------------------ #
+
+    def test_concurrent_node_and_disk_scale_up(self):
+        """Concurrent scale-up of both node count and disk size with fusion enabled.
+
+        Scenario
+        --------
+        Start with initial_kv_nodes data nodes at initial_disk_gb GB disk.
+        Enable fusion and load 500 M documents.  Then submit a single CP
+        spec update that simultaneously:
+          - adds nodes from initial_kv_nodes → target_kv_nodes
+          - grows disk from initial_disk_gb → target_disk_gb
+
+        This exercises the CP/dp-agent interaction path for combined
+        horizontal and vertical scale-up under a live fusion dataset,
+        complementing AV-134300 which covers the node-down + disk-up path.
+
+        Assertions
+        ----------
+        1. CP reaches "healthy" state after the combined operation.
+        2. Disk size reported by CP matches target_disk_gb.
+        3. Node count reported by CP matches target_kv_nodes.
+
+        Parameters
+        ----------
+        initial_kv_nodes  (int, default  3) — node count before the op
+        target_kv_nodes   (int, default  6) — node count after the op
+        initial_disk_gb   (int, default 200) — disk size before the op
+        target_disk_gb    (int, default 400) — disk size after the op
+        """
+        initial_nodes = self.input.param("initial_kv_nodes", 3)
+        target_nodes = self.input.param("target_kv_nodes", 6)
+        initial_disk_gb = self.input.param("initial_disk_gb", 200)
+        target_disk_gb = self.input.param("target_disk_gb", 400)
+
+        self.log.info(
+            f"Concurrent scale-up: initial={initial_nodes} nodes/{initial_disk_gb} GB  "
+            f"target={target_nodes} nodes/{target_disk_gb} GB  dataset=500M docs")
+
+        # ── Phase 1: reach initial cluster configuration ──────────────── #
+        self._scale_to_initial_config(initial_nodes, initial_disk_gb)
+
+        # ── Phase 2: enable fusion ────────────────────────────────────── #
+        self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
+        self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
+
+        # ── Phase 3: load 500 M documents ────────────────────────────── #
+        self._load_data(self.cluster, create_start=0, create_end=500_000_000)
+        self.sleep(120, "Allow initial S3 sync before triggering scaling op")
+
+        # ── Phase 4: submit simultaneous node scale-up + disk grow ────── #
+        self.log.info(
+            f"Submitting concurrent spec update: "
+            f"{initial_nodes}→{target_nodes} nodes, "
+            f"{initial_disk_gb}→{target_disk_gb} GB disk")
+        self.disk["data"] = target_disk_gb
+        delta = target_nodes - self.num_nodes["data"]
+        combined_config = self.rebalance_config("data", delta)
+
+        scale_task = self.task.async_rebalance_capella(
+            self.pod, self.tenant, self.cluster,
+            combined_config,
+            timeout=self.rebalance_timeout)
+
+        self.wait_for_rebalances([scale_task])
+
+        # ── Phase 5: assert CP reached healthy state ──────────────────── #
+        final_state = CapellaAPI.get_cluster_state(
+            self.pod, self.tenant, self.cluster.id)
+
+        self.assertNotIn(
+            final_state, self._FAILED_STATES,
+            f"CP stuck in '{final_state}' after concurrent node scale-up + "
+            f"disk grow")
+        self.assertEqual(
+            final_state, "healthy",
+            f"Expected cluster state 'healthy' after combined scale-up, "
+            f"got '{final_state}'")
+
+        # ── Phase 6: verify disk size reported by CP ─────────────────── #
+        actual_disk_gb = self._get_cluster_disk_gb("kv")
+        self.log.info(
+            f"CP reports disk size after combined scale: {actual_disk_gb} GB "
+            f"(expected {target_disk_gb} GB)")
+        self.assertEqual(
+            actual_disk_gb, target_disk_gb,
+            f"Disk size mismatch after combined scale-up: "
+            f"expected {target_disk_gb} GB, CP reports {actual_disk_gb} GB")
+
+        # ── Phase 7: verify node count reported by CP ─────────────────── #
+        nodes = CapellaAPI.get_nodes(self.pod, self.tenant, self.cluster.id)
+        data_nodes = [
+            n for n in nodes
+            if "Data" in (n.get("services") or [])
+        ]
+        self.log.info(
+            f"CP reports {len(data_nodes)} data nodes after combined scale "
+            f"(expected {target_nodes})")
+        self.assertEqual(
+            len(data_nodes), target_nodes,
+            f"Node count mismatch after combined scale-up: "
+            f"expected {target_nodes}, CP reports {len(data_nodes)}")
+
+        self.log.info(
+            "Concurrent node+disk scale-up test passed: CP reached healthy "
+            f"state with {len(data_nodes)} nodes at {actual_disk_gb} GB disk")
