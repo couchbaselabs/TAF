@@ -10,7 +10,6 @@ import time
 from prettytable import PrettyTable
 from botocore.exceptions import ClientError, ConnectionError
 from .fusion_monitor_util import FusionMonitorUtil
-from global_vars import logger as global_logger
 
 
 class FusionCPResourceMonitor:
@@ -38,7 +37,7 @@ class FusionCPResourceMonitor:
         :param logger: Logger instance for monitoring operations
         :param fusion_aws_util: FusionAWSUtil instance for AWS client operations
         """
-        self.log = global_logger.get("test")
+        self.log = logger
         self.fusion_aws_util = fusion_aws_util
 
     @staticmethod

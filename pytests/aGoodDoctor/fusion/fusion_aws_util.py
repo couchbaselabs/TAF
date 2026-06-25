@@ -13,7 +13,7 @@ from .awslib.secrets_manager_lib import SecretsManagerLib
 import time, datetime
 import concurrent.futures
 from prettytable import PrettyTable
-import logging
+from global_vars import logger as global_logger
 
 class FusionAWSUtil:
 
@@ -34,8 +34,7 @@ class FusionAWSUtil:
         self.fis = FISLib(access_key, secret_key, region=region)
         self.s3 = S3Lib(access_key, secret_key, region=region)
         self.secrets = SecretsManagerLib(access_key, secret_key, region=region)
-        self.log = logging.getLogger(__name__)
-        self.log.setLevel(logging.INFO)
+        self.log = global_logger.get("infra")
 
     def _cluster_filter(self, cluster_id, extra_tags=None):
         """Return an EC2 filter list scoped to a single cluster, with optional extra tag filters."""

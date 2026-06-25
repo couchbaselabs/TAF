@@ -9,14 +9,14 @@ Created on Aug 10, 2022
 # -*- coding: utf-8 -*-
 # Generic/Built-in
 import json
-import logging
 import time
 
 from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
+from global_vars import logger as global_logger
 
 
 class CapellaUtils:
-    log = logging.getLogger(__name__)
+    log = global_logger.get("infra")
     is_prod_env = False
 
     def __init__(self, cluster, tenant=None):
