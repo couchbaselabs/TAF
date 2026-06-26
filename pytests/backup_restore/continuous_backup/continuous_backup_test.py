@@ -49,32 +49,45 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         return doc_loading_task
 
+    def _assert_restore_succeeded(self, output, error, timestamp):
+        """CbContBk.restore only logs failures and returns (output, error),
+        so unchecked calls let a failed/partial restore surface much later
+        as a doc-count mismatch. Fail here with the cbcontbk output instead."""
+        error_lines = [line for line in (output or [])
+                       if line.strip().lower().startswith("error")]
+        if error or not output or error_lines:
+            self.fail(f"cbcontbk restore to timestamp {timestamp} failed. "
+                      f"stdout: {output}, stderr: {error}")
+
+    def _wait_for_history_upload(self, timestamp_desc="the captured timestamp"):
+        """Continuous backup uploads history every continuousBackupInterval.
+        A restore to a timestamp younger than one interval reads the backup
+        location before the covering upload completes, producing a partial
+        or empty restore. Wait one full interval (plus slack) so history up
+        to the timestamp is on the backup location before restoring."""
+        self.sleep(self.continuous_backup_interval * 60 + 30,
+                   f"Waiting one continuous backup interval so history up to "
+                   f"{timestamp_desc} is uploaded before restoring")
+
     def _perform_continuous_restore(self, timestamp=None, restore_to_new_bucket=False):
         self.log.info(f"Performing continuous backup restore with timestamp: {timestamp}")
-        for scope_name, scope in self.bucket.scopes.items():
-            if scope_name.startswith("_system"):
-                continue
-            for collection_name, collection in scope.collections.items():
-                include_data = f"{self.bucket.name}.{scope_name}.{collection_name}"
-                if restore_to_new_bucket:
-                    map_data = f"{self.bucket.name}.{scope_name}.{collection_name}={self.restore_bucket_name}.{scope_name}.{collection_name}"
-                else:
-                    map_data = f"{self.bucket.name}.{scope_name}.{collection_name}={self.bucket.name}.{scope_name}.{collection_name}"
-                self.cont_bk_mgr.restore(
-                    self.backup_archive_dir, self.backup_repo_name,
-                    location=self.continuous_backup_location,
-                    temp_dir="/tmp",
-                    timestamp=timestamp,
-                    include_data=include_data,
-                    map_data=map_data
-                )
+        target_bucket = self.restore_bucket_name if restore_to_new_bucket else self.bucket.name
+        map_data = f"{self.bucket.name}={target_bucket}"
+        output, error = self.cont_bk_mgr.restore(
+            self.backup_archive_dir, self.backup_repo_name,
+            location=self.continuous_backup_location,
+            temp_dir="/tmp",
+            timestamp=timestamp,
+            map_data=map_data
+        )
+        self._assert_restore_succeeded(output, error, timestamp)
         self.log.info("Continuous backup restore completed")
 
     def _restore_entire_bucket(self, timestamp, target_bucket_name, include_data=None, map_data=None):
         self.log.info(f"Restoring entire bucket to {target_bucket_name} at timestamp {timestamp}")
         if map_data is None:
             map_data = f"{self.bucket.name}={target_bucket_name}"
-        self.cont_bk_mgr.restore(
+        output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
             temp_dir="/tmp",
@@ -82,6 +95,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             include_data=include_data,
             map_data=map_data
         )
+        self._assert_restore_succeeded(output, error, timestamp)
         self.log.info("Entire bucket restore completed")
 
     def _create_backup_intervals(self, num_intervals=5):
@@ -91,18 +105,39 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.log.info(f"Loading data for interval {i+1}")
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-            item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
+            # Each load_data_from_spec_file call doubles the current doc count
+            # (CREATE_PERCENTAGE_PER_COLLECTION=100 adds 100% of existing items).
+            # The REST item count lags behind — especially at high volumes (1.6M+ docs).
+            # Use the deterministic formula instead of a stale REST poll.
+            item_counts.append(self._get_total_docs() * (2 ** (i + 1)))
             self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
             timestamp = self.cont_bk_mgr.get_cluster_timestamp()
             timestamps.append(timestamp)
             self.log.info(f"Timestamp after interval {i+1}: {timestamp}")
+        # Callers restore the last timestamp almost immediately; make sure
+        # the upload covering it has landed on the backup location first.
+        self._wait_for_history_upload(f"interval {num_intervals}'s timestamp")
         return timestamps, item_counts
 
     def _reset_bucket_and_restore_from_backup(self, expected_item_count):
         self.log.info("Deleting bucket for restore: %s" % self.bucket.name)
-        self.bucket_util.delete_bucket(self.cluster, self.bucket)
+        if not self.bucket_util.delete_bucket(self.cluster, self.bucket):
+            self.fail(f"Deletion of bucket {self.bucket.name} did not complete")
         self.log.info("Creating bucket: %s" % self.bucket.name)
-        self.bucket_util.create_bucket(self.cluster, self.bucket)
+        # Even after the bucket disappears from the bucket list, ns_server can
+        # briefly hold the name while the deletion finishes internally, failing
+        # an immediate create with "Bucket with given name still exists".
+        end_time = time.time() + 300
+        while True:
+            try:
+                self.bucket_util.create_bucket(self.cluster, self.bucket)
+                break
+            except Exception as e:
+                if time.time() >= end_time:
+                    self.fail(f"Re-creation of bucket {self.bucket.name} "
+                              f"kept failing: {e}")
+                self.sleep(10, "Bucket create failed; previous delete may "
+                               "still be completing server-side. Retrying")
         self.log.info("Restoring from backup")
         self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
@@ -127,12 +162,15 @@ class ContinuousBackupTest(ContinuousBackupBase):
     def _create_restore_bucket(self, restore_bucket_name):
         self.log.info("Creating new bucket for restore: %s" % restore_bucket_name)
         ram_quota = self.input.param("bucket_size", 100)
+        # Flush-enabled so tests can reset the bucket between restores
+        # via flush instead of delete + recreate.
         self.bucket_util.create_default_bucket(self.cluster,
                                                bucket_name=restore_bucket_name,
                                                bucket_type=self.bucket_type,
                                                ram_quota=ram_quota,
                                                replica=self.num_replicas,
-                                               storage=self.bucket_storage)
+                                               storage=self.bucket_storage,
+                                               flush_enabled=Bucket.FlushBucket.ENABLED)
 
     def _verify_continuous_backup_params(self):
         self.log.info("Getting continuous backup params from bucket: %s" % self.bucket.name)
@@ -182,7 +220,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+        # setUp already loaded _get_total_docs() and took a backup; this call adds
+        # another _get_total_docs(). Using the REST item-count here risks capturing
+        # a stale value while docs are still draining, so derive it from the spec.
+        item_count = self._get_total_docs() * 2
 
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
@@ -203,11 +244,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
         timestamp = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"Timestamp after second load: {timestamp}")
-        
+        self.log.info(f"Timestamp after first cont backup: {timestamp}")
+        # item_count must be captured AT this timestamp (setUp load + first test load),
+        # before the second load, so it matches what the PITR restore will recover.
+        item_count = self._get_total_docs() * 2
+
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
@@ -295,7 +338,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # 1. Load initial data and take a backup
         doc_loading_task = self._load_data_and_get_task(self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        initial_item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+        # Use spec-derived count — REST item count can lag behind actual committed docs.
+        initial_item_count = self._get_total_docs()
         self.log.info("Creating backup repository")
         self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
         self.log.info("Performing initial backup")
@@ -331,7 +375,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # 1. Load initial data and take a backup
         self._load_data_and_get_task(self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        initial_item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+        # Use spec-derived count — REST item count can lag behind actual committed docs.
+        initial_item_count = self._get_total_docs()
         self.log.info("Creating backup repository")
         self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
         self.log.info("Performing initial backup")
@@ -372,6 +417,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(item_counts[0], bucket_name=self.restore_bucket_name)
 
+        # Flush the restore bucket so the next PITR starts from an empty state.
+        # cbcontbk restore on a non-empty bucket does not produce the full expected
+        # count — it only replays the delta, leaving partial/stale data.
+        self._flush_restore_bucket(self.restore_bucket_name)
+
         # Restore between 2nd and 3rd backup
         self._restore_entire_bucket(timestamps[1], self.restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
@@ -394,6 +444,9 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._restore_entire_bucket(timestamps[1], self.restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(item_counts[1], bucket_name=self.restore_bucket_name)
+
+        # Flush before next restore so cbcontbk starts from an empty state.
+        self._flush_restore_bucket(self.restore_bucket_name)
 
         # Restore after 3rd backup
         self._restore_entire_bucket(timestamps[2], self.restore_bucket_name)
@@ -423,21 +476,30 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # 2. Second incremental backup and timestamp
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the (merged) base, and restore
+        # fails with "traditional backup has the same or newer data than the
+        # log backup". Update-only mutations keep the item count intact while
+        # giving the log backup data newer than the traditional base.
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
         self.sleep(self.continuous_backup_interval * 60)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
         timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
+        self._wait_for_history_upload("the second PITR timestamp")
 
         # 3. Merge the first two backups
         self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=2)
 
         # 4. Restore and verify using timestamps
         for i, (ts, count) in enumerate(zip(timestamps, item_counts)):
-            self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
-                                     location=self.continuous_backup_location,
-                                     temp_dir="/tmp", # Added temp_dir
-                                     timestamp=ts,
-                                     map_data=f"{self.bucket.name}={restore_bucket_name}")
+            if i > 0:
+                # Flush before each subsequent restore so cbcontbk starts from
+                # an empty state — restoring onto existing data produces wrong counts.
+                self._flush_restore_bucket(restore_bucket_name)
+            self._restore_entire_bucket(ts, restore_bucket_name)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             self._verify_doc_count(count, bucket_name=restore_bucket_name)
 
@@ -666,59 +728,58 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Load initial data
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         
-        # Get count before deletions
+        # Get count before deletions — setUp + this load = 2 * _get_total_docs().
+        # REST item count can lag; use the deterministic spec-derived value.
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        initial_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+        initial_count = self._get_total_docs() * 2
         self.sleep(self.continuous_backup_interval * 60)
         ts_before_delete = self.cont_bk_mgr.get_cluster_timestamp()
 
-        # Update spec for deletions
+        # Update spec for deletions. DocCrud percentages live under the
+        # "doc_crud" sub-dict of the spec (see collection_ops_specs/initial_load.py);
+        # setting them on the top-level dict is silently ignored and the
+        # template's default CREATE=100 re-upserts the same keys instead.
         delete_spec = self.bucket_util.get_crud_template_from_package(self.data_spec_name)
-        delete_spec[MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 20  # Delete 20%
-        delete_spec[MetaCrudParams.DOC_TTL] = 20  # Expire 20% (TTL) using a 20s TTL for touch/update operations
-        delete_spec[MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION] = 20 
-        delete_spec[MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
-        delete_spec[MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 0
+        delete_spec[MetaCrudParams.DOC_TTL] = 20  # 20s TTL for the touch operations below
+        delete_spec["doc_crud"][MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION] = 20  # Delete 20%
+        delete_spec["doc_crud"][MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION] = 20   # Expire 20% via TTL
+        delete_spec["doc_crud"][MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
+        delete_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 0
         CollectionBase.over_ride_doc_loading_template_params(self, delete_spec)
         
-        self.bucket_util.run_scenario_from_spec(
+        delete_task = self.bucket_util.run_scenario_from_spec(
             self.task, self.cluster, self.cluster.buckets, delete_spec, mutation_num=1,
             batch_size=self.batch_size, process_concurrency=self.process_concurrency)
+        if delete_task.result is False:
+            self.fail("Delete/TTL doc_loading scenario failed")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        
+
         # Wait for TTL to expire and for continuous backup to capture changes
         self.sleep(max(60, 2 * self.continuous_backup_interval * 60))
         self.bucket_util._expiry_pager(self.cluster, val=1)
         self.sleep(30, "Wait for items to get purged")
-        
+
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         final_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+        if final_count >= initial_count:
+            self.fail(f"Deletions/TTL did not reduce the source item count: "
+                      f"initial {initial_count}, after delete/TTL {final_count}")
         ts_after_delete = self.cont_bk_mgr.get_cluster_timestamp()
+        self._wait_for_history_upload("the post-deletion timestamp")
 
         restore_bucket_name = f"restore_bucket_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
 
         # 1. Restore to before deletions -> Should have initial count
-        self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
-                                 location=self.continuous_backup_location,
-                                 temp_dir="/tmp",
-                                 timestamp=ts_before_delete,
-                                 map_data=f"{self.bucket.name}={restore_bucket_name}")
+        self._restore_entire_bucket(ts_before_delete, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(initial_count, bucket_name=restore_bucket_name)
-        
-        # Delete restore bucket and recreate for next test
-        restore_bucket_obj = self.bucket_util.get_bucket_obj(self.cluster.buckets, restore_bucket_name)
-        if restore_bucket_obj:
-            self.bucket_util.delete_bucket(self.cluster, restore_bucket_obj)
-        self._create_restore_bucket(restore_bucket_name)
+
+        # Flush the restore bucket so the next restore starts from an empty state
+        self._flush_restore_bucket(restore_bucket_name)
 
         # 2. Restore to after deletions -> Should have final count
-        self.cont_bk_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
-                                 location=self.continuous_backup_location,
-                                 temp_dir="/tmp",
-                                 timestamp=ts_after_delete,
-                                 map_data=f"{self.bucket.name}={restore_bucket_name}")
+        self._restore_entire_bucket(ts_after_delete, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(final_count, bucket_name=restore_bucket_name)
 
@@ -784,6 +845,9 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # Flush bucket
         self.log.info(f"Flushing bucket: {self.bucket.name}")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            flush_enabled=Bucket.FlushBucket.ENABLED)
         self.bucket_util.flush_bucket(self.cluster, self.bucket)
         
         # Wait for continuous backup to capture flush
@@ -892,6 +956,14 @@ class ContinuousBackupTest(ContinuousBackupBase):
                     target_bucket_obj = self.bucket_util.get_bucket_obj(self.cluster.buckets, restore_bucket_name)
                     if target_bucket_obj:
                         self.log.info(f"Creating target scope and collection: {first_scope}.{target_collection_name}")
+                        if first_scope not in target_bucket_obj.scopes:
+                            self.bucket_util.create_scope(
+                                self.cluster.master, target_bucket_obj,
+                                scope_spec={"name": first_scope})
+                        self.bucket_util.create_collection(
+                            self.cluster.master, target_bucket_obj,
+                            scope_name=first_scope,
+                            collection_spec={"name": target_collection_name})
                     test_case["map_data"] = f"{self.bucket.name}.{first_scope}.{first_collection}={restore_bucket_name}.{first_scope}.{target_collection_name}"
                     self.log.info(f"Mapping from {self.bucket.name}.{first_scope}.{first_collection} to {restore_bucket_name}.{first_scope}.{target_collection_name}")
                 elif test_case["map_data"] is None:
@@ -996,13 +1068,19 @@ class ContinuousBackupTest(ContinuousBackupBase):
                 return scope_name, coll_name
         self.fail("No non-system scope/collection found in bucket")
 
-    def _delete_and_recreate_restore_bucket(self, restore_bucket_name):
-        """Delete a restore bucket and create a fresh empty one."""
+    def _flush_restore_bucket(self, restore_bucket_name):
+        """Flush the restore bucket back to an empty state and verify it.
+
+        Flush matches how users reset a restore target (they don't delete
+        and recreate buckets between restores), and cbcontbk restore needs
+        an empty bucket to produce the full expected count."""
         restore_bucket_obj = self.bucket_util.get_bucket_obj(
             self.cluster.buckets, restore_bucket_name)
-        if restore_bucket_obj:
-            self.bucket_util.delete_bucket(self.cluster, restore_bucket_obj)
-        self._create_restore_bucket(restore_bucket_name)
+        if restore_bucket_obj is None:
+            self.fail(f"Restore bucket '{restore_bucket_name}' not found for flush")
+        if not self.bucket_util.flush_bucket(self.cluster, restore_bucket_obj):
+            self.fail(f"Flush of restore bucket '{restore_bucket_name}' failed")
+        self._verify_doc_count(0, bucket_name=restore_bucket_name)
 
     def test_pitr_before_collection_drop(self):
         """
@@ -1024,8 +1102,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         """
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        count_t1 = self.bucket_util.get_buckets_item_count(
-            self.cluster, self.bucket.name)
+        # setUp + this load = 2 * _get_total_docs(). REST count lags at this scale.
+        count_t1 = self._get_total_docs() * 2
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before collection drop")
@@ -1063,7 +1141,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
         self.log.info(f"T1 restore verified: {count_t1} items (collection recovered)")
 
-        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
 
         # PITR to T2: collection must still be absent
         self.log.info("PITR restore to T2 (after collection drop) — collection must remain absent")
@@ -1135,7 +1213,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
         self.log.info(f"T1 restore verified: {count_t1} items (scope recovered)")
 
-        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
 
         self.log.info("PITR restore to T2 (after scope drop) — scope must remain absent")
         self._restore_entire_bucket(ts_t2, restore_bucket_name)
@@ -1212,7 +1290,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
         self.log.info(f"T1 restore verified: {count_t1} items")
 
-        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
 
         # PITR to T3: recreated collection with new maxTTL and fresh data
         self.log.info(
@@ -1258,10 +1336,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
         self.log.info("Restore within retention window succeeded as expected")
 
-        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
 
-        # Shrink the retention window so T1 falls outside it
-        short_retention = 60  # seconds
+        # Shrink the retention window so T1 falls outside it. The server enforces
+        # historyRetentionSeconds >= 15 minutes AND >= 2x continuousBackupInterval,
+        # so the shortest valid window depends on the configured backup interval.
+        short_retention = max(900, 2 * self.continuous_backup_interval * 60) + 60  # seconds
         self.log.info(
             f"Shrinking historyRetentionSeconds to {short_retention}s "
             f"so T1 falls outside the window")
@@ -1353,7 +1433,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
 
-        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
 
         self.log.info("PITR to T2 (captured after retention change) — must succeed")
         self._restore_entire_bucket(ts_t2, restore_bucket_name)
@@ -1400,6 +1480,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.fail("Data load into bucket1 failed")
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_b1_t1 = self.bucket_util.get_buckets_item_count(
             self.cluster, bucket1.name)
         count_b2_t1 = self.bucket_util.get_buckets_item_count(
@@ -1425,6 +1506,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.fail("Data load into bucket2 failed")
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_b1_t2 = self.bucket_util.get_buckets_item_count(
             self.cluster, bucket1.name)
         count_b2_t2 = self.bucket_util.get_buckets_item_count(
@@ -1496,7 +1578,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.cluster.master, bucket2,
             continuous_backup_interval=short_interval,
             continuous_backup_location=self.continuous_backup_location)
-        self.sleep(10, "Waiting for interval settings to apply")
+        # bucket1 shares this same continuous_backup_location, so changing
+        # bucket2's interval can restart the backup stream for the shared
+        # location. Wait a full bucket1 interval so bucket1's own stream
+        # re-establishes a valid restore baseline before we rely on it.
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for shared-location backup stream to settle "
+                   "after bucket2 interval change")
 
         # Load data into bucket1, wait one bucket1 interval
         doc_spec = self.bucket_util.get_crud_template_from_package(self.data_spec_name)
@@ -1508,6 +1596,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             process_concurrency=self.process_concurrency,
             load_using=self.load_docs_using)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_b1 = self.bucket_util.get_buckets_item_count(self.cluster, bucket1.name)
 
         self.sleep(self.continuous_backup_interval * 60,
@@ -1525,6 +1614,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             process_concurrency=self.process_concurrency,
             load_using=self.load_docs_using)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_b2 = self.bucket_util.get_buckets_item_count(self.cluster, bucket2.name)
 
         self.sleep(short_interval * 60,
@@ -1620,7 +1710,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
                 self.cluster, self.cluster.buckets)
             self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
 
-            self._delete_and_recreate_restore_bucket(restore_bucket_name)
+            self._flush_restore_bucket(restore_bucket_name)
 
             self.log.info("PITR restore to T2 (post second MAJORITY load)")
             self._restore_entire_bucket(ts_t2, restore_bucket_name)
@@ -1688,7 +1778,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
                 self.cluster, self.cluster.buckets)
             self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
 
-            self._delete_and_recreate_restore_bucket(restore_bucket_name)
+            self._flush_restore_bucket(restore_bucket_name)
 
             self.log.info("PITR restore to T2")
             self._restore_entire_bucket(ts_t2, restore_bucket_name)
@@ -1798,7 +1888,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
 
-        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
 
         self.log.info("PITR restore to T2 (post-subdoc-mutations — same count expected)")
         self._restore_entire_bucket(ts_t2, restore_bucket_name)
@@ -1963,7 +2053,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
 
-        self._delete_and_recreate_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
 
         self.log.info("PITR restore to T2 (ACTIVE compression bucket)")
         self._restore_entire_bucket(ts_t2, restore_bucket_name)

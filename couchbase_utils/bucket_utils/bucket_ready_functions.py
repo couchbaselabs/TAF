@@ -900,6 +900,12 @@ class DocLoaderUtils(object):
         # Fetch client for retry operations
         client = cluster.sdk_client_pool.get_client_for_bucket(
             bucket, scope_name, collection_name)
+        if client is None:
+            DocLoaderUtils.log.warning(
+                "No SDK client available in pool for bucket '%s' - "
+                "skipping retry validation for %s.%s"
+                % (bucket.name, scope_name, collection_name))
+            return
         doc_data = dict()
         subdoc_data = dict()
         for op_type, op_data in c_data.items():
@@ -1829,6 +1835,19 @@ class CollectionUtils(DocLoaderUtils):
                                                                scope_name,
                                                                collection_name,
                                                                session=session)
+        # ns_server can return a transient 503 when busy (e.g. heavy DGM
+        # teardown); the request is not processed, so it is safe to retry.
+        retries = 5
+        while (status is False and retries > 0
+               and "temporarily unavailable" in str(content).lower()):
+            CollectionUtils.log.warning(
+                "Collection '%s:%s:%s' delete hit transient server busy, "
+                "retrying in 10s: %s"
+                % (bucket.name, scope_name, collection_name, content))
+            time.sleep(10)
+            status, content = BucketHelper(node).delete_collection(
+                bucket.name, scope_name, collection_name, session=session)
+            retries -= 1
         if status is False:
             CollectionUtils.log.error(
                 "Collection '%s:%s:%s' delete failed: %s"

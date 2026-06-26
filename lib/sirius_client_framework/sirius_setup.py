@@ -3,7 +3,7 @@ import os
 import requests
 import yaml
 from signal import SIGTERM
-from subprocess import Popen
+from subprocess import Popen, TimeoutExpired
 
 from common_lib import sleep
 from sirius_client_framework.sirius_constants import DB_MGMT_PATH, SiriusCodes
@@ -78,12 +78,21 @@ class SiriusSetup(object):
         SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 
     @staticmethod
-    def terminate_sirius():
+    def terminate_sirius(timeout=60):
         if SiriusSetup.__running_process:
             pid = SiriusSetup.__running_process.pid
             print(f"Killing Sirius pid '{pid}'")
             os.kill(pid, SIGTERM)
-            SiriusSetup.__running_process.communicate()
+            try:
+                # SIGTERM triggers a graceful shutdown; the loader can hang
+                # in it (e.g. SDK connections to deleted buckets). Never
+                # wait unbounded — escalate to SIGKILL.
+                SiriusSetup.__running_process.wait(timeout=timeout)
+            except TimeoutExpired:
+                print(f"Sirius pid '{pid}' did not exit within {timeout}s "
+                      f"after SIGTERM; sending SIGKILL")
+                SiriusSetup.__running_process.kill()
+                SiriusSetup.__running_process.wait()
         SiriusSetup.__running_process = None
 
     @staticmethod

@@ -186,6 +186,8 @@ class SDKClientPool(object):
         :param client: Instance of SDKClient object
         :return None:
         """
+        if client is None:
+            return
         bucket = client.bucket
         if bucket.name not in self.clients:
             return

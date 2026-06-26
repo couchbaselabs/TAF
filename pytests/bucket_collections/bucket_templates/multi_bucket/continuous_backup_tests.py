@@ -17,7 +17,7 @@ from collections_helper.collections_spec_constants import MetaConstants
 
 spec = {
     # Topology
-    MetaConstants.USE_SIMPLE_NAMES: True,
+    MetaConstants.USE_SIMPLE_NAMES: False,
     MetaConstants.NUM_BUCKETS: 2,
     MetaConstants.NUM_SCOPES_PER_BUCKET: 5,
     MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 5,

@@ -1,3 +1,4 @@
+import threading
 import time
 
 from cb_tools.cb_tools_base import CbCmdBase
@@ -6,6 +7,12 @@ from cb_constants import CbServer
 
 
 class CbContBk(CbCmdBase):
+    # Hard wall-clock ceiling for any cbcontbk command. The largest restores
+    # in the suite complete well under a minute; the ceiling only exists so
+    # a dead SSH connection or hung cbcontbk process fails the test instead
+    # of blocking the run indefinitely.
+    CMD_TIMEOUT = 900
+
     def __init__(self, shell_conn, username="Administrator",
                  password="password", log=None):
         CbCmdBase.__init__(self, shell_conn, "cbcontbk",
@@ -15,6 +22,31 @@ class CbContBk(CbCmdBase):
             self.log = log
         else:
             self.log = logging.getLogger("test")
+
+    def _execute_cmd(self, cmd):
+        """Run the command with a hard timeout via a daemon thread.
+
+        Scoped to cbcontbk so the shared shell library stays untouched:
+        some paramiko internals have no timeout of their own, and an
+        abandoned daemon thread (unlike a ThreadPoolExecutor worker) can
+        never block interpreter exit."""
+        result = dict()
+
+        def _run():
+            try:
+                result["value"] = CbCmdBase._execute_cmd(self, cmd)
+            except Exception as e:
+                result["exception"] = e
+
+        runner = threading.Thread(target=_run, daemon=True)
+        runner.start()
+        runner.join(timeout=self.CMD_TIMEOUT)
+        if runner.is_alive():
+            raise Exception(f"cbcontbk command timed out after "
+                            f"{self.CMD_TIMEOUT}s: {cmd}")
+        if "exception" in result:
+            raise result["exception"]
+        return result["value"]
 
     def get_cluster_timestamp(self):
         """

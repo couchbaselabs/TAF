@@ -19,7 +19,6 @@ class ContinuousBackupBase(CollectionBase):
         self.bucket_name = self.bucket.name
         self.shell = RemoteMachineShellConnection(self.cluster.master)
 
-
     def tearDown(self):
 
         # Delete the shell connection if exists

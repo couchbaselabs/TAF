@@ -240,7 +240,10 @@ class CollectionBase(ClusterSetup, FusionBase):
                 shell = RemoteMachineShellConnection(self.cluster.master)
                 try:
                     self.log.info("Removing continuous backup folder: %s" % self.continuous_backup_location)
-                    output, error = shell.execute_command(f"rm -rf {self.continuous_backup_location}")
+                    # 300s: large tests leave a lot of backup data, and the
+                    # delete goes through the NFS client, not the server
+                    output, error = shell.execute_command(
+                        f"rm -rf {self.continuous_backup_location}", timeout=300)
                     if error:
                         self.log.warning("Error removing continuous backup folder: %s" % error)
                 except Exception as e:
@@ -248,9 +251,11 @@ class CollectionBase(ClusterSetup, FusionBase):
 
                 # Clean up backup folders
                 try:
-                    if hasattr(self, 'repo_name') and self.repo_name:
+                    if getattr(self, 'backup_repo_name', None):
                         self.log.info("Removing backup repository")
-                        shell.execute_command(f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}")
+                        shell.execute_command(
+                            f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}",
+                            timeout=300)
                 except Exception as e:
                     self.log.warning(f"Exception during cleanup: {e}")
 

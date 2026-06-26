@@ -1,4 +1,5 @@
 import itertools
+import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -89,9 +90,18 @@ class TaskManager(object):
 
     def shutdown(self, timeout=5):
         self.log.info("Running TaskManager shutdown")
-        self.pool.shutdown()
-        time.sleep(5)
-        self.pool.shutdown(wait=True)
+        # pool.shutdown(wait=True) can block indefinitely if any running task
+        # is stuck on network I/O (e.g. SDK reads against a bucket that was
+        # deleted and recreated mid-test). Run it in a daemon thread with a
+        # hard 30s ceiling.
+        shutdown_thread = threading.Thread(
+            target=lambda: self.pool.shutdown(wait=True), daemon=True)
+        shutdown_thread.start()
+        shutdown_thread.join(timeout=30)
+        if shutdown_thread.is_alive():
+            self.log.warning(
+                "TaskManager pool shutdown did not complete within 30s "
+                "— orphaned workers will be abandoned")
 
     def print_tasks_in_pool(self):
         for task_name, future in self.futures.items():
