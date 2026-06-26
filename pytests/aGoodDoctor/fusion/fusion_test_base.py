@@ -84,7 +84,9 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
 
         self.fusion_aws_util = FusionAWSUtil(
             self.aws_access_key, self.aws_secret_key, region=self.aws_region)
-        self.fusion_monitor = FusionMonitorUtil(self.log, self.fusion_aws_util)
+        num_vbuckets = self.input.param("numVBuckets", None)
+        self.fusion_monitor = FusionMonitorUtil(self.log, self.fusion_aws_util,
+                                                num_vbuckets=num_vbuckets)
         self.cp_monitor = FusionCPResourceMonitor(self.log, self.fusion_aws_util)
         self.s3 = S3Lib(self.aws_access_key, self.aws_secret_key, region=self.aws_region)
 

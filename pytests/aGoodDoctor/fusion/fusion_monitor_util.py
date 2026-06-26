@@ -21,18 +21,20 @@ from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 class FusionMonitorUtil():
     """Utility class for monitoring core fusion stats and status."""
 
-    VBUCKET_COUNT = 128
+    DEFAULT_VBUCKET_COUNT = 128
     DEFAULT_TIMEOUT = 1800
 
-    def __init__(self, logger, fusion_aws_util):
+    def __init__(self, logger, fusion_aws_util, num_vbuckets=None):
         """
         Initialize Fusion Monitor Util.
 
         :param logger: Logger instance for logging
         :param fusion_aws_util: FusionAWSUtil instance for AWS operations
+        :param num_vbuckets: Number of vbuckets per bucket (default 128)
         """
         self.log = logger
         self.fusion_aws_util = fusion_aws_util
+        self.VBUCKET_COUNT = num_vbuckets if num_vbuckets is not None else self.DEFAULT_VBUCKET_COUNT
         # hostedOPD.__init__(self)
 
     def set_admin_credentials(self, cluster):
@@ -379,7 +381,7 @@ class FusionMonitorUtil():
                 vb_table.add_row([bucket_name, vb_no, details.get("node"), details.get("term")])
             self.log.info(f"Fusion VB Uploader Map for bucket {bucket_name}:\n{vb_table}")
             if vb_count != self.VBUCKET_COUNT:
-                self.log.critical(f"VB Uploader Count: {vb_count} is not equal to number of vBuckets: 128")
+                self.log.critical(f"VB Uploader Count: {vb_count} is not equal to number of vBuckets: {self.VBUCKET_COUNT}")
 
     def get_fusion_uploader_map(self, tenant, cluster, find_master_func=None):
         """
@@ -401,7 +403,7 @@ class FusionMonitorUtil():
                 final_count = sum(nodes.values())
                 if final_count != self.VBUCKET_COUNT:
                     all_correct = False
-                    self.log.warning(f"Retry {retry + 1}/{max_retries}: Final Uploader Count: {final_count} is not equal to number of vBuckets: 128")
+                    self.log.warning(f"Retry {retry + 1}/{max_retries}: Final Uploader Count: {final_count} is not equal to number of vBuckets: {self.VBUCKET_COUNT}")
                     break
 
             if all_correct:
