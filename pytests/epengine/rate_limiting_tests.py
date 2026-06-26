@@ -41,9 +41,10 @@ class KVRateLimitingTests(ClusterSetup):
 
         # Apply per-bucket throttle limits so hard-limit rejections and SDK
         # AmbiguousTimeoutExceptions are actually triggered during burst tests
+        # CE does not support throttle params — skip silently
         throttle_reserved = self.input.param("bucket_throttle_reserved", 0)
         throttle_hard_limit = self.input.param("bucket_throttle_hard_limit", 0)
-        if throttle_reserved or throttle_hard_limit:
+        if self.cluster_util.is_enterprise_edition(self.cluster) and (throttle_reserved or throttle_hard_limit):
             edit_params = {}
             if throttle_reserved:
                 edit_params[Bucket.throttleReserved] = throttle_reserved

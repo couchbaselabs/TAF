@@ -1955,11 +1955,12 @@ class ClusterSetup(OnPremBaseTest):
         if self.bucket_num_vb is not None:
             create_bucket_params["vbuckets"] = self.bucket_num_vb
 
-        # Rate limiting feature values
-        if self.bucket_throttle_reserved is not None:
-            create_bucket_params["throttle_reserved"] = self.bucket_throttle_reserved
-        if self.bucket_throttle_hard_limit is not None:
-            create_bucket_params["throttle_hard_limit"] = self.bucket_throttle_hard_limit
+        # Rate limiting feature values (EE-only; CE rejects these at creation)
+        if CbServer.enterprise_edition:
+            if self.bucket_throttle_reserved is not None:
+                create_bucket_params["throttle_reserved"] = self.bucket_throttle_reserved
+            if self.bucket_throttle_hard_limit is not None:
+                create_bucket_params["throttle_hard_limit"] = self.bucket_throttle_hard_limit
 
         # This is needed because server will throw the error saying,
         # "Support for variable number of vbuckets is not enabled"
