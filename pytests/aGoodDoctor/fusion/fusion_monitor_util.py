@@ -304,7 +304,8 @@ class FusionMonitorUtil():
                 cluster.fusion_uploader_dict[bucket.name] = dict()
                 cmd = f"curl -sk -u '{cluster.master.rest_username}:{cluster.master.rest_password}' --data 'ns_bucket:get_fusion_uploaders(\"{bucket.name}\").' https://localhost:18091/diag/eval"
                 self.log.info(f"Running command to get fusion uploader map for bucket {bucket.name} on cluster {cluster.id}: {cmd}")
-                result = self.fusion_aws_util.ec2.run_shell_command(instances[0].get('InstanceId'), cmd)
+                result = self.fusion_aws_util.ec2.run_shell_command_large_output(
+                    instances[0].get('InstanceId'), cmd)
                 stdout = result.get('stdout')
                 if result.get('success') and stdout:
                     raw_str = stdout.strip()

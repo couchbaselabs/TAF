@@ -394,7 +394,91 @@ class EC2Lib(AWSBase):
                 
         return result
 
-    def run_multiple_commands(self, instance_id: str, commands: List[str], 
+    # SSM caps StandardOutputContent at ~24 000 chars; anything larger is
+    # returned truncated with "--output truncated--" appended.
+    _SSM_OUTPUT_LIMIT = 20000  # conservative threshold — stay well under the cap
+
+    def run_shell_command_large_output(self, instance_id: str, command: str,
+                                       timeout: int = 60) -> Dict[str, Any]:
+        """
+        Run a shell command whose output may exceed the SSM StandardOutputContent
+        cap (~24 KB).  The command is executed with stdout redirected to a temp
+        file on the instance; the file is then read back in _SSM_OUTPUT_LIMIT-byte
+        chunks via ``dd`` and reassembled on the caller side.
+
+        :param instance_id: EC2 instance to run on
+        :param command:     Shell command to execute
+        :param timeout:     Timeout in seconds for the initial command execution
+        :return:            Same dict shape as run_shell_command
+                            (stdout, stderr, return_code, success)
+        """
+        tmpfile = "/tmp/_ssm_large_out.txt"
+        result = {'stdout': '', 'stderr': '', 'return_code': -1, 'success': False}
+
+        # SSM-ready check once; skip it on subsequent calls.
+        if not self.is_instance_ssm_ready(instance_id):
+            result['stderr'] = (
+                f"Instance {instance_id} is not SSM-ready")
+            self.logger.error(result['stderr'])
+            return result
+
+        # Step 1: execute and redirect to tmpfile.
+        write_r = self.run_shell_command(
+            instance_id,
+            f"({command}) > {tmpfile} 2>&1",
+            timeout=timeout,
+            check_ssm_ready=False,
+        )
+        if not write_r['success']:
+            result['stderr'] = write_r.get('stderr', 'write step failed')
+            return result
+
+        # Step 2: get the byte-count of the file.
+        size_r = self.run_shell_command(
+            instance_id,
+            f"wc -c < {tmpfile}",
+            timeout=15,
+            check_ssm_ready=False,
+        )
+        if not size_r['success']:
+            result['stderr'] = 'wc -c failed: ' + size_r.get('stderr', '')
+            return result
+
+        try:
+            total_size = int(size_r['stdout'].strip())
+        except ValueError:
+            result['stderr'] = f"Unexpected wc output: {size_r['stdout']!r}"
+            return result
+
+        self.logger.info(
+            f"run_shell_command_large_output: {instance_id} — "
+            f"output file is {total_size} bytes; reading in "
+            f"{self._SSM_OUTPUT_LIMIT}-byte chunks")
+
+        # Step 3: read in chunks.  dd uses block-based seek so each read is O(1).
+        assembled = []
+        chunk_num = 0
+        while chunk_num * self._SSM_OUTPUT_LIMIT < total_size:
+            chunk_r = self.run_shell_command(
+                instance_id,
+                f"dd if={tmpfile} bs={self._SSM_OUTPUT_LIMIT} "
+                f"skip={chunk_num} count=1 2>/dev/null",
+                timeout=30,
+                check_ssm_ready=False,
+            )
+            if not chunk_r['success']:
+                result['stderr'] = (
+                    f"chunk {chunk_num} read failed: {chunk_r.get('stderr', '')}")
+                return result
+            assembled.append(chunk_r['stdout'])
+            chunk_num += 1
+
+        result['stdout'] = ''.join(assembled)
+        result['return_code'] = 0
+        result['success'] = True
+        return result
+
+    def run_multiple_commands(self, instance_id: str, commands: List[str],
                             timeout: int = 30, document_name: str = 'AWS-RunShellScript',
                             check_ssm_ready: bool = True) -> List[Dict[str, Any]]:
         """
