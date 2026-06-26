@@ -815,6 +815,16 @@ class FusionClusterOnOffTest(_FusionTestBase):
         # ------------------------------------------------------------------
         # Phase 1: scale-out rebalance so guest volumes land on KV nodes
         # ------------------------------------------------------------------
+        cluster_state = CapellaAPI.get_cluster_state(
+            self.pod, self.tenant, self.cluster.id)
+        if cluster_state == "restoring":
+            self.log.info(
+                f"Cluster {self.cluster.id} is still restoring; "
+                "waiting for it to finish before scaling")
+            CapellaAPI.wait_until_done(
+                self.pod, self.tenant, self.cluster.id,
+                "Wait for restore before scale-out", timeout=1800)
+
         self.PrintStep(
             f"Triggering scale-out rebalance on {self.cluster.id} "
             "to create EBS guest volumes")
