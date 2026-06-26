@@ -437,7 +437,7 @@ class EC2Lib(AWSBase):
         size_r = self.run_shell_command(
             instance_id,
             f"wc -c < {tmpfile}",
-            timeout=15,
+            timeout=30,
             check_ssm_ready=False,
         )
         if not size_r['success']:
