@@ -66,9 +66,21 @@ class VBucketAwareMemcached(object):
         self.reset(rest)
         self.collections = collections
 
+    def _server_info(self):
+        # BucketHelper / ClusterRestAPI require a server object with .ip etc.
+        # self.info may be a dict (legacy) or already a server object.
+        if hasattr(self.info, 'ip'):
+            return self.info
+        server = TestInputServer()
+        server.ip = self.info['ip']
+        server.port = self.info.get('port', 8091)
+        server.rest_username = self.info.get('username', 'Administrator')
+        server.rest_password = self.info.get('password', 'password')
+        return server
+
     def reset(self, rest=None):
         if not rest:
-            self.rest = ClusterRestAPI(self.info)
+            self.rest = ClusterRestAPI(self._server_info())
         m, v, r = self.request_map(self.rest, self.bucket)
         self.memcacheds = m
         self.vBucketMap = v
@@ -78,10 +90,10 @@ class VBucketAwareMemcached(object):
         memcacheds = {}
         vb_map = {}
         vb_map_replica = {}
-        vb_ready = BucketHelper(self.info).vbucket_map_ready(bucket, 60)
+        vb_ready = BucketHelper(self._server_info()).vbucket_map_ready(bucket, 60)
         if not vb_ready:
             raise Exception("vbucket map is not ready for bucket %s" % bucket)
-        vbs = BucketHelper(self.info).get_vbuckets(bucket)
+        vbs = BucketHelper(self._server_info()).get_vbuckets(bucket)
         for vBucket in vbs:
             vb_map[vBucket.id] = vBucket.master
             self.add_memcached(vBucket.master, memcacheds, rest, bucket)
@@ -96,7 +108,7 @@ class VBucketAwareMemcached(object):
         if server_str not in memcacheds:
             server_ip = server_str.rsplit(":", 1)[0]
             server_port = int(server_str.rsplit(":", 1)[1])
-            nodes = global_vars.cluster_util.get_nodes(self.info)
+            nodes = global_vars.cluster_util.get_nodes(self._server_info())
 
             server = TestInputServer()
             server.ip = server_ip
