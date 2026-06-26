@@ -274,7 +274,7 @@ class FusionAWSUtil:
         :return: True if any errors are found, False otherwise
         """
         errors_found = False
-        instances = self.list_instances(filters=self._cluster_filter(cluster_id))
+        instances = self.list_instances(filters=self._cluster_filter(cluster_id), suppress_log=True)
 
         def scan_instance(instance):
             instance_id = instance.get('InstanceId', 'N/A')
