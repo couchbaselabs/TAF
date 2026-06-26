@@ -779,3 +779,190 @@ class FusionClusterOnOffTest(_FusionTestBase):
             f"cycle on: {[c.id for c in errors_found]}")
         self.log.info(
             "No memcached errors — functional on/off test complete")
+
+    # ------------------------------------------------------------------
+    # Test 14: Cluster off/on with guest volumes attached, then cloud
+    #          snapshot backup + in-place restore to the same cluster
+    # ------------------------------------------------------------------
+
+    def test_cluster_off_on_snapshot_backup_restore_same_cluster(self):
+        """
+        Functional test: guest volumes persist across cluster turn-off/turn-on,
+        then a cloud snapshot backup is taken and restored in-place.
+
+        Validates:
+        1.  Fusion rebalance runs; EBS guest volumes appear on KV nodes.
+        2.  After rebalance, accelerator nodes are terminated; volumes stay on KV.
+        3.  Cluster turns off (EC2 stop — NOT terminate); EBS volumes are NOT lost.
+        4.  Cluster turns back on; guest volumes are still attached to KV nodes.
+        5.  Cloud snapshot backup completes; EBS guest-volume snapshots are tagged.
+        6.  In-place restore completes; cluster returns to healthy.
+        7.  Fusion S3 log-store bucket is empty after restore (cleanFusionBucket ran).
+        8.  Item count per bucket is non-zero after restore.
+        """
+        self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
+        self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
+        self._load_above_threshold()
+
+        turn_off_timeout = self.input.param("turn_off_timeout", 600)
+        turn_on_timeout = self.input.param("turn_on_timeout", 1200)
+        verify_snapshots = self.input.param("verify_snapshots", True)
+        verify_fusion_bucket_clean = self.input.param(
+            "verify_fusion_bucket_clean", True)
+
+        project_id = self.tenant.projects[0]
+
+        # ------------------------------------------------------------------
+        # Phase 1: scale-out rebalance so guest volumes land on KV nodes
+        # ------------------------------------------------------------------
+        self.PrintStep(
+            f"Triggering scale-out rebalance on {self.cluster.id} "
+            "to create EBS guest volumes")
+        rebalance_task = self._trigger_scale_out()
+        self.wait_for_rebalances([rebalance_task])
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id, timeout=600)
+        self.find_master(self.tenant, self.cluster)
+
+        accel_killed = \
+            self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
+                self.cluster, timeout=self.fusion_infra_timeout)
+        self.assertTrue(
+            accel_killed,
+            "Accelerator nodes not terminated after scale-out rebalance")
+
+        guest_volumes_before_off = \
+            self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+        self.assertGreater(
+            len(guest_volumes_before_off), 0,
+            "No EBS guest volumes found on KV nodes after rebalance — "
+            "fusion acceleration may not have triggered")
+        self.log.info(
+            f"{len(guest_volumes_before_off)} guest volume(s) on KV nodes "
+            f"before cluster turn-off: {guest_volumes_before_off}")
+
+        # ------------------------------------------------------------------
+        # Phase 2: turn cluster off then back on
+        # ------------------------------------------------------------------
+        self.PrintStep(f"Turning cluster {self.cluster.id} off and on")
+        self._do_cluster_off_on(
+            turn_off_timeout=turn_off_timeout,
+            turn_on_timeout=turn_on_timeout)
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id, timeout=600)
+        self.find_master(self.tenant, self.cluster)
+
+        fusion_state = CapellaAPI.get_fusion_status(
+            self.pod, self.tenant, self.cluster.id)
+        self.assertEqual(
+            fusion_state.get("state"), "enabled",
+            f"Fusion must remain 'enabled' after cluster turn-on; "
+            f"got: {fusion_state.get('state')}")
+
+        # EBS volumes survive an EC2 stop/start — guest volumes must still
+        # be attached to KV nodes after the cluster comes back online.
+        guest_volumes_after_on = \
+            self.cp_monitor.get_current_guest_volume_ids(self.cluster)
+        self.assertGreater(
+            len(guest_volumes_after_on), 0,
+            "Expected EBS guest volumes to persist on KV nodes after cluster "
+            "turn-on — EBS volumes survive EC2 stop/start")
+        self.log.info(
+            f"{len(guest_volumes_after_on)} guest volume(s) confirmed on KV "
+            f"nodes after turn-on: {guest_volumes_after_on}")
+
+        # ------------------------------------------------------------------
+        # Phase 3: cloud snapshot backup with guest volumes attached
+        # ------------------------------------------------------------------
+        self.PrintStep(
+            f"Taking EBS cloud snapshot backup on {self.cluster.id}")
+        num_guest_volumes = len(guest_volumes_after_on)
+
+        result = CapellaAPI.create_cloud_snapshot_backup(
+            self.pod, self.tenant, project_id, self.cluster.id)
+        self.assertIsNotNone(
+            result, "create_cloud_snapshot_backup returned None — backup request failed")
+        backup_id = result.get("id")
+        self.assertIsNotNone(backup_id, "Backup response has no 'id' field")
+        self.log.info(f"Cloud snapshot backup triggered — backup_id={backup_id}")
+
+        ok = CapellaAPI.wait_for_cloud_snapshot_backup_to_complete(
+            self.pod, self.tenant, project_id, self.cluster.id, backup_id)
+        self.assertTrue(ok, f"Cloud snapshot backup {backup_id} did not complete")
+        self.log.info(f"Cloud snapshot backup {backup_id} completed")
+
+        if verify_snapshots:
+            snaps_ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
+                self.cluster, backup_id, num_guest_volumes)
+            self.assertTrue(
+                snaps_ok,
+                f"Guest-volume EBS snapshot verification failed for backup "
+                f"{backup_id} — expected {num_guest_volumes} snapshot(s)")
+            self.log.info(
+                f"Guest-volume EBS snapshots verified for backup {backup_id}")
+
+        # ------------------------------------------------------------------
+        # Phase 4: in-place restore to the same cluster
+        # ------------------------------------------------------------------
+        self.PrintStep(
+            f"Restoring backup {backup_id} in-place to {self.cluster.id}")
+
+        restore_result = CapellaAPI.restore_cloud_snapshot_backup(
+            self.pod, self.tenant, project_id, self.cluster.id, backup_id)
+        self.assertIsNotNone(
+            restore_result,
+            "restore_cloud_snapshot_backup returned None — restore request failed")
+        restore_id = restore_result.get("id")
+        self.assertIsNotNone(restore_id, "Restore response has no 'id' field")
+        self.log.info(
+            f"In-place restore triggered — restore_id={restore_id}")
+
+        restore_ok = CapellaAPI.wait_for_cloud_snapshot_restore_to_complete(
+            self.pod, self.tenant, project_id, self.cluster.id, restore_id)
+        self.assertTrue(
+            restore_ok, f"Cloud snapshot restore {restore_id} did not complete")
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id, timeout=600)
+        self.find_master(self.tenant, self.cluster)
+        self.log.info(f"In-place restore {restore_id} completed")
+
+        # ------------------------------------------------------------------
+        # Phase 5: verify item count per bucket
+        # ------------------------------------------------------------------
+        self.PrintStep("Verifying item count after in-place restore")
+        rest = RestConnection(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            deadline = time.time() + self.index_timeout
+            while time.time() < deadline:
+                info = rest.get_bucket_details(bucket_name=bucket.name)
+                actual = (
+                    info.get("basicStats", {}).get("itemCount", 0) if info else 0)
+                if actual > 0:
+                    self.log.info(
+                        f"Post-restore item count on "
+                        f"{self.cluster.id}/{bucket.name}: {actual}")
+                    break
+                self.sleep(30, f"Polling item count on {bucket.name} after restore")
+            else:
+                self.fail(
+                    f"No items on {self.cluster.id}/{bucket.name} after "
+                    f"in-place restore timeout")
+
+        # ------------------------------------------------------------------
+        # Phase 6: verify fusion S3 log-store bucket was purged on restore
+        # ------------------------------------------------------------------
+        if verify_fusion_bucket_clean:
+            for bucket in self.cluster.buckets:
+                clean = self.fusion_monitor.verify_fusion_bucket_empty_after_restore(
+                    self.cluster, bucket.name)
+                self.assertTrue(
+                    clean,
+                    f"Fusion S3 bucket not empty after in-place restore on "
+                    f"{self.cluster.id}/{bucket.name} — cleanFusionBucket must "
+                    f"have run")
+                self.log.info(
+                    f"Fusion S3 bucket confirmed empty on "
+                    f"{self.cluster.id}/{bucket.name} after restore")
+
+        self.log.info(
+            "test_cluster_off_on_snapshot_backup_restore_same_cluster complete")
