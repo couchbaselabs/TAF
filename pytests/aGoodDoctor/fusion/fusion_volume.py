@@ -104,7 +104,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
             raise ValueError("AWS credentials (aws_access_key, aws_secret_key) are required parameters")
         self.aws_region = self.input.param("region", "us-east-1")
         self.fusion_aws_util = FusionAWSUtil(self.aws_access_key, self.aws_secret_key, region=self.aws_region)
-        self.fusion_monitor = FusionMonitorUtil(self.log, self.fusion_aws_util)
+        self.fusion_monitor = FusionMonitorUtil(self.log, self.fusion_aws_util,
+                                                num_vbuckets=self.input.param("numVBuckets", 128))
         self.cp_monitor = FusionCPResourceMonitor(self.log, self.fusion_aws_util)
         self.steady_state_workload_sleep = self.input.param("steady_state_workload_sleep", 1800)
         self.cloudtrail = None

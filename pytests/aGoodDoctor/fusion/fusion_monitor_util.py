@@ -24,7 +24,7 @@ class FusionMonitorUtil():
     DEFAULT_VBUCKET_COUNT = 128
     DEFAULT_TIMEOUT = 1800
 
-    def __init__(self, logger, fusion_aws_util, num_vbuckets=None):
+    def __init__(self, logger, fusion_aws_util, num_vbuckets=128):
         """
         Initialize Fusion Monitor Util.
 
@@ -34,13 +34,13 @@ class FusionMonitorUtil():
         """
         self.log = logger
         self.fusion_aws_util = fusion_aws_util
-        self.VBUCKET_COUNT = num_vbuckets if num_vbuckets is not None else self.DEFAULT_VBUCKET_COUNT
+        self.VBUCKET_COUNT = int(num_vbuckets)
         # hostedOPD.__init__(self)
 
     def set_admin_credentials(self, cluster):
         """Set admin credentials for the cluster."""
         fusion_aws_util = self.fusion_aws_util
-        if hasattr(cluster, 'rest_username') and cluster.rest_username:
+        if getattr(cluster, 'rest_username', None) == 'couchbase-cloud-admin':
             cluster.master.rest_username = cluster.rest_username
             cluster.master.rest_password = cluster.rest_password
             cluster.master.username = cluster.rest_username
