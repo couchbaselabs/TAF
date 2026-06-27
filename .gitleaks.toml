@@ -1,0 +1,74 @@
+# TAF gitleaks configuration
+# Extends the built-in ruleset with Capella/alert-integration-specific patterns.
+# Slack bot tokens and Slack webhook URLs are already caught by the default rules.
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Custom detection rules
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "teams-power-automate-webhook"
+description = "Microsoft Teams Power Automate webhook URL with signing key"
+regex = '''https://[a-z0-9]+\.[\w.]+\.api\.powerplatform\.com[^\s'"]*sig=[A-Za-z0-9%_=-]{10,}'''
+tags = ["webhook", "teams", "microsoft"]
+severity = "high"
+
+[[rules]]
+id = "slack-webhook-url"
+description = "Slack incoming webhook URL"
+regex = '''https://hooks\.slack\.com/services/[A-Z0-9]{10,}/[A-Z0-9]{10,}/[A-Za-z0-9]{20,}'''
+tags = ["webhook", "slack"]
+severity = "high"
+
+[[rules]]
+id = "webhook-basic-auth-password"
+description = "High-entropy password in webhook basicAuth config"
+regex = '''(?i)["\']password["\']\s*:\s*["\']([^"']{20,})["\']'''
+secretGroup = 1
+entropy = 3.5
+tags = ["webhook", "password", "basicauth"]
+severity = "high"
+
+# ---------------------------------------------------------------------------
+# Global allowlist
+# ---------------------------------------------------------------------------
+
+[allowlist]
+description = "TAF allowlist — test fixtures, docs, and cluster config files"
+paths = [
+  '''node\.ini''',
+  '''conf/.*\.ini''',
+  '''docs/.*''',
+  '''.*\.md''',
+  # Capella alert test fixtures — webhook passwords are test credentials for dev endpoints
+  '''pytests/Capella/RestAPIv4/Alerts/.*''',
+  # SSO test fixtures — private key is generated test key, not production
+  '''pytests/security/onCloud/sso_utils\.py''',
+  '''pytests/security/onCloud/sso_tests\.py''',
+  # Eventing handler JS files — contain static Postman-Token UUID trace IDs
+  '''pytests/eventing/handler_code/.*''',
+]
+regexes = [
+  # f-string variable references — not real credentials (matched against secret value)
+  '''\.(rest_username|rest_password)''',
+  # f-string tuple auth reference — e.g. curl -u '{self.auth[0]}:{self.auth[1]}'
+  '''self\.auth\[''',
+  # Deliberately malformed JWT (2 segments, no signature) — jwt_token_test.py tamper fixture
+  '''eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiJqd3RfdXNlciJ9''',
+]
+stopwords = [
+  "your-api-key-here",
+  "changeme",
+  "example",
+  "dummy",
+  "fake",
+  "test-token",
+  "test-secret-key",       # deliberate weak HMAC keys in JWT tamper tests
+  "diag/eval",             # Couchbase REST debug endpoint path, not a credential
+  "end_key=",              # CBAS query parameter matched by generic-api-key rule
+  "Administrator:welcome", # Couchbase default dev credentials used in docstring examples
+  "Administrator:password",
+]
