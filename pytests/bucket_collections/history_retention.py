@@ -125,6 +125,7 @@ class DocHistoryRetention(ClusterSetup):
             iterations=iterations, scope=scope, collection=collection,
             load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
+        bucket.scopes[scope].collections[collection].num_items += num_items
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, [bucket], check_ep_items_remaining=True)
         # Wait for DCP replication to stabilize before collecting stats
