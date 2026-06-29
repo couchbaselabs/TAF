@@ -180,10 +180,10 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             f"restore_cloud_snapshot_backup returned None for backup {backup_id} "
             f"→ target {target_cluster.id}",
         )
-        restore_id = result.get("id")
+        restore_id = result.get("restoreId")
         self.assertIsNotNone(
             restore_id,
-            f"No 'id' in restore_cloud_snapshot_backup response: {result}",
+            f"No 'restoreId' in restore_cloud_snapshot_backup response: {result}",
         )
         self.log.info(f"Restore job triggered: {restore_id}")
 

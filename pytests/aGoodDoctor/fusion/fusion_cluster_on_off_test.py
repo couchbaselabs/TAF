@@ -922,8 +922,8 @@ class FusionClusterOnOffTest(_FusionTestBase):
         self.assertIsNotNone(
             restore_result,
             "restore_cloud_snapshot_backup returned None — restore request failed")
-        restore_id = restore_result.get("id")
-        self.assertIsNotNone(restore_id, "Restore response has no 'id' field")
+        restore_id = restore_result.get("restoreId")
+        self.assertIsNotNone(restore_id, "Restore response has no 'restoreId' field")
         self.log.info(
             f"In-place restore triggered — restore_id={restore_id}")
 
