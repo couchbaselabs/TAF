@@ -40,7 +40,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
         self.pod_table = TableView(self.log.info)
         self.pod_table.set_headers(["Tenant", "Creds", "Cluster", "SRV"])
 
-        self.wait_timeout = self.input.param("wait_timeout", 120)
+        self.deploy_timeout = self.input.param("deploy_timeout", 600)
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
         self.ipv4_only = self.input.param("ipv4_only", False)
@@ -260,7 +260,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                                 cluster_name)
                         deploy_task = DeployCloud(self.pod, tenant, self.capella_cluster_config[name],
                                                   self.capella_cluster_config,
-                                                  timeout=self.wait_timeout)
+                                                  timeout=self.deploy_timeout)
                         self.task_manager.add_new_task(deploy_task)
                         tasks.append(deploy_task)
                         cluster_index += 1
@@ -277,7 +277,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                         self.log.info(capella_config)
                         deploy_task = DeployCloud(self.pod, tenant, capella_config['name'],
                                                   capella_config,
-                                                  timeout=self.wait_timeout)
+                                                  timeout=self.deploy_timeout)
                         self.task_manager.add_new_task(deploy_task)
                         tasks.append(deploy_task)
                         self.sleep(5)
