@@ -100,17 +100,31 @@ def main():
     if options.launch_java_doc_loader:
         SiriusSetup.unique_name = \
             f"java_loader_{random.randint(100000, 999999)}"
-        max_retry = 5
+        max_retry = 15
+        tried_ports = set()
+        url_parts = options.sirius_url.split(":")
+        base_url = ":".join(url_parts[:-1])
+        initial_port = int(url_parts[-1])
+        tried_ports.add(initial_port)
         for i in range(max_retry):
+            print(f"Attempt {i + 1}/{max_retry}: "
+                  f"Launching Sirius Java client on port "
+                  f"'{options.sirius_url.split(':')[-1]}'")
+            if i > 0:
+                SiriusSetup.terminate_sirius()
             HelperLib.launch_sirius_client(
                 taf_path, options.sirius_url,
                 process_type="standalone_Java_loader")
+            time.sleep(3)
             if SiriusSetup.is_sirius_online(options.sirius_url):
+                print(f"Sirius Java client online at "
+                      f"{options.sirius_url}")
                 break
             else:
-                url_parts = options.sirius_url.split(":")
-                base_url = ":".join(url_parts[:-1])
-                new_port = int(url_parts[-1]) + 1
+                new_port = random.randint(49152, 65535)
+                while new_port in tried_ports:
+                    new_port = random.randint(49152, 65535)
+                tried_ports.add(new_port)
                 options.sirius_url = f"{base_url}:{new_port}"
         else:
             raise Exception("Failed to launch Sirius")

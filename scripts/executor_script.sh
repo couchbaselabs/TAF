@@ -315,10 +315,22 @@ if [ $status -eq 0 ]; then
   fi
 
   # Find free port on this machine to use for this run
-  sirius_port=49152
+  # Use a random starting point in the ephemeral range (49152-65535) to reduce
+  # collisions with concurrent Jenkins jobs on the same executor.
+  sirius_port=$(( 49152 + RANDOM % (65535 - 49152) ))
+  port_iterations=0
   while [ "$(ss -tulpn | grep LISTEN | grep ":${sirius_port} " | wc -l)" -ne 0 ]; do
     sirius_port=$((sirius_port+1))
+    if [ "$sirius_port" -gt 65535 ]; then
+      sirius_port=49152
+    fi
+    port_iterations=$((port_iterations+1))
+    if [ "$port_iterations" -gt $((65535 - 49152)) ]; then
+      echo "ERROR: No free ports available in ephemeral range"
+      exit 1
+    fi
   done
+  echo "Selected Sirius port: ${sirius_port}"
   set -x
   if [[ "$load_docs_using" == "sirius_go_sdk" ]]; then
     echo "Launching Sirius GO SDK to load documents."
