@@ -78,12 +78,15 @@ class CollectionsQuorumLoss(CollectionBase):
         retry_exceptions = SDKException.AmbiguousTimeoutException \
             + SDKException.TimeoutException \
             + SDKException.RequestCanceledException \
-            + SDKException.DocumentNotFoundException \
             + SDKException.ServerOutOfMemoryException
         if self.durability_level:
             retry_exceptions += SDKException.DurabilityAmbiguousException
             retry_exceptions += SDKException.DurabilityImpossibleException
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
+        # Unsafe failover causes permanent data loss; deleting a doc that no
+        # longer exists is the expected outcome, not a failure.
+        doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = \
+            SDKException.DocumentNotFoundException
 
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
