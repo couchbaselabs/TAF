@@ -7855,7 +7855,7 @@ class FailoverTask(Task):
         self.all_at_once = all_at_once
         self.network_delay_between_nodes = network_delay_between_nodes
         self.otp_nodes_to_fo = list()
-        self.rest = ClusterRestAPI(self.servers[0])
+        self.rest = ClusterRestAPI(self.cluster.master)
         self.cluster_util = global_vars.cluster_util
 
     def call(self):
@@ -7869,7 +7869,7 @@ class FailoverTask(Task):
                 self.network_delay_between_nodes, "enable")
 
         for server in self.to_failover:
-            for node in self.cluster_util.get_nodes(self.servers[0]):
+            for node in self.cluster_util.get_nodes(self.cluster.master):
                 if (server.hostname if self.use_hostnames else server.ip) == node.ip \
                         and int(server.port) == int(node.port):
                     self.otp_nodes_to_fo.append(node.id)
@@ -7877,7 +7877,7 @@ class FailoverTask(Task):
                             .format(self.otp_nodes_to_fo, self.graceful))
         try:
             self._failover_nodes()
-            rest = ClusterRestAPI(self.servers[0])
+            rest = ClusterRestAPI(self.cluster.master)
             timeout = 300
             all_nodes_foed = False
             while timeout > 0 and all_nodes_foed is False:
