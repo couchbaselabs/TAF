@@ -21,6 +21,7 @@ from lighthouse.collector_helper_methods import (
     get_portal_cluster,
     get_portal_cluster_nodes,
     wait_for_cluster_on_portal,
+    wait_for_portal_node_count,
     set_lighthouse_ns_config_via_diag_eval,
     set_lighthouse_interval_via_diag_eval,
     get_cb_cluster_aggregate_hardware,
@@ -536,6 +537,281 @@ class CollectorTests(LighthouseBase):
                 self.log.info(
                     "Cluster %d: PASS - all aggregate telemetry fields "
                     "verified" % i)
+
+        finally:
+            self.ucp_client.session_logout()
+            self.log.info("Portal logout complete")
+
+    def test_node_rebalance_reflected_on_portal(self):
+        """
+        Verify that rebalancing a node out of the primary cluster is reflected
+        on the portal, that adding it back is also reflected, and that the
+        other clusters' telemetry is unaffected throughout.
+
+        Requires nodes_init >= 3 for the primary cluster so a non-master
+        node is available to rebalance out while keeping the cluster viable.
+
+        Params:
+            master_node (bool, default False): when True the current
+                orchestrator is the node removed and added back; when False
+                a non-master node is used instead.
+
+        Steps:
+        1.  Login to portal.
+        2.  Trigger an initial report for every cluster (1-second interval via
+            diag/eval), sleep 10 s, restore to 2 h, and confirm all cluster
+            UUIDs appear on the portal.
+        3.  Record the initial portal node count for every cluster.
+        4.  Pick the node to remove: the current orchestrator if master_node
+            is True, otherwise the last non-master node. Capture its CB
+            service list for use during the rebalance-in.
+        5.  Rebalance the node out of the primary cluster and wait for
+            completion. If the orchestrator was removed, resolve the new
+            orchestrator via find_orchestrator before proceeding.
+        6.  Trigger a fresh report from the primary cluster (same diag/eval
+            pattern as step 2).
+        7.  Poll the portal until primary node count reaches N-1 (max 120 s).
+        8.  Assert primary portal node count == N-1.
+        9.  Assert all other clusters' portal node counts are unchanged.
+        10. Rebalance the node back into the primary cluster and wait for
+            completion.
+        11. Trigger a fresh report from the primary cluster.
+        12. Poll the portal until primary node count returns to N (max 120 s).
+        13. Assert primary portal node count == N.
+        14. Assert all other clusters' portal node counts are still unchanged.
+        """
+        portal_domain = 'lighthouse.couchbase.internal'
+        primary = self.cluster
+
+        status, content, _ = self.ucp_client.session_login(
+            self.ucp_portal.username, self.ucp_portal.password)
+        self.assertTrue(status, "Portal login failed: %s" % content)
+        self.log.info("Portal login successful")
+
+        try:
+            # --- Steps 2-3: initial reports + record baseline node counts ---
+            cluster_uuids = []
+            for i, cluster in enumerate(self.clusters):
+                uuid = get_cb_cluster_uuid(cluster.master)
+                self.assertIsNotNone(
+                    uuid,
+                    "Cluster %d: could not retrieve UUID from /pools" % i)
+                cluster_uuids.append(uuid)
+                self.log.info("Cluster %d UUID: %s" % (i, uuid))
+
+                diag_status, diag_content = \
+                    set_lighthouse_ns_config_via_diag_eval(
+                        cluster.master,
+                        reporting_endpoint=portal_domain,
+                        reporting_port=LIGHTHOUSE_DEFAULT_PORTAL_PORT,
+                        reporting_interval_hours=1 / 3600.0)
+                self.assertTrue(
+                    diag_status,
+                    "Cluster %d: diag/eval for initial report failed: %s"
+                    % (i, diag_content))
+
+            self.sleep(10, "waiting for initial reports to fire on all clusters")
+
+            for i, (cluster, uuid) in enumerate(
+                    zip(self.clusters, cluster_uuids)):
+                restore_status, restore_content = \
+                    set_lighthouse_interval_via_diag_eval(cluster.master, 2)
+                self.assertTrue(
+                    restore_status,
+                    "Cluster %d: failed to restore interval to 2 h: %s"
+                    % (i, restore_content))
+                appeared = wait_for_cluster_on_portal(
+                    self.ucp_client, uuid, timeout=60, poll_interval=5)
+                self.assertTrue(
+                    appeared,
+                    "Cluster %d UUID '%s' did not appear on portal within "
+                    "60 s after initial report trigger" % (i, uuid))
+                self.log.info("Cluster %d: confirmed on portal" % i)
+
+            initial_portal_counts = []
+            for i, uuid in enumerate(cluster_uuids):
+                portal_cluster = get_portal_cluster(self.ucp_client, uuid)
+                self.assertIsNotNone(
+                    portal_cluster,
+                    "Cluster %d: could not fetch cluster record from portal"
+                    % i)
+                count = len(
+                    portal_cluster.get('telemetry', {}).get('nodes', []))
+                initial_portal_counts.append(count)
+                self.log.info(
+                    "Cluster %d: initial portal node count = %d" % (i, count))
+
+            # --- Step 4: pick the node to remove ---
+            remove_master = self.input.param("master_node", False)
+            if remove_master:
+                node_to_remove = primary.master
+                self.log.info(
+                    "master_node=True: removing orchestrator node %s"
+                    % node_to_remove.ip)
+            else:
+                non_master_nodes = [
+                    n for n in primary.nodes_in_cluster
+                    if n.ip != primary.master.ip]
+                self.assertTrue(
+                    non_master_nodes,
+                    "Primary cluster has no non-master node available; "
+                    "conf requires nodes_init >= 3 for this test")
+                node_to_remove = non_master_nodes[-1]
+                self.log.info(
+                    "master_node=False: removing non-master node %s"
+                    % node_to_remove.ip)
+
+            # Capture services before the node leaves the cluster
+            cb_nodes_services = get_cb_cluster_nodes_services(primary.master)
+            node_key = "%s:8091" % node_to_remove.ip
+            node_services = (cb_nodes_services.get(node_key)
+                             or cb_nodes_services.get(node_to_remove.ip)
+                             or [])
+            self.log.info(
+                "Node selected for removal: %s (services: %s)"
+                % (node_to_remove.ip, node_services))
+
+            # ===== Phase 1: Rebalance out =====================================
+
+            self.log.info(
+                "Phase 1: rebalancing out node %s" % node_to_remove.ip)
+            rebalance_task = self.task.async_rebalance(
+                primary, to_add=[], to_remove=[node_to_remove])
+            self.task_manager.get_task_result(rebalance_task)
+            self.assertTrue(
+                rebalance_task.result,
+                "Rebalance-out of %s failed" % node_to_remove.ip)
+            self.log.info("Rebalance-out complete")
+
+            if remove_master:
+                remaining = [n for n in primary.nodes_in_cluster
+                             if n.ip != node_to_remove.ip]
+                self.cluster_util.find_orchestrator(primary, remaining[0])
+                self.log.info(
+                    "New orchestrator after rebalance-out: %s"
+                    % primary.master.ip)
+
+            # Trigger report from primary after topology change
+            diag_status, diag_content = set_lighthouse_ns_config_via_diag_eval(
+                primary.master,
+                reporting_endpoint=portal_domain,
+                reporting_port=LIGHTHOUSE_DEFAULT_PORTAL_PORT,
+                reporting_interval_hours=1 / 3600.0)
+            self.assertTrue(
+                diag_status,
+                "Primary: diag/eval failed after rebalance-out: %s"
+                % diag_content)
+
+            self.sleep(10, "waiting for post-rebalance-out report to fire")
+
+            restore_status, restore_content = \
+                set_lighthouse_interval_via_diag_eval(primary.master, 2)
+            self.assertTrue(
+                restore_status,
+                "Primary: failed to restore interval to 2 h after "
+                "rebalance-out: %s" % restore_content)
+
+            # Wait for portal to reflect removal
+            expected_after_removal = initial_portal_counts[0] - 1
+            reflected = wait_for_portal_node_count(
+                self.ucp_client, cluster_uuids[0], expected_after_removal,
+                timeout=120, poll_interval=5)
+            self.assertTrue(
+                reflected,
+                "Primary cluster portal did not drop to %d node(s) within "
+                "120 s after rebalance-out" % expected_after_removal)
+
+            # Verify primary count
+            portal_cluster = get_portal_cluster(
+                self.ucp_client, cluster_uuids[0])
+            portal_nodes = portal_cluster.get('telemetry', {}).get('nodes', [])
+            self.assertEqual(
+                len(portal_nodes), expected_after_removal,
+                "Primary: portal reports %d node(s) after rebalance-out, "
+                "expected %d"
+                % (len(portal_nodes), expected_after_removal))
+            self.log.info(
+                "PASS - primary portal node count after rebalance-out: %d"
+                % expected_after_removal)
+
+            # Verify other clusters are unchanged
+            for i, uuid in enumerate(cluster_uuids[1:], start=1):
+                portal_cluster = get_portal_cluster(self.ucp_client, uuid)
+                portal_nodes = portal_cluster.get(
+                    'telemetry', {}).get('nodes', [])
+                self.assertEqual(
+                    len(portal_nodes), initial_portal_counts[i],
+                    "Cluster %d: portal node count changed unexpectedly during "
+                    "primary rebalance-out: expected %d, got %d"
+                    % (i, initial_portal_counts[i], len(portal_nodes)))
+                self.log.info(
+                    "PASS - cluster %d portal node count unchanged after "
+                    "primary rebalance-out: %d" % (i, initial_portal_counts[i]))
+
+            # ===== Phase 2: Rebalance in ======================================
+
+            self.log.info(
+                "Phase 2: adding node %s back" % node_to_remove.ip)
+            self.cluster_util.add_node(
+                primary, node_to_remove,
+                services=node_services if node_services else None)
+            self.log.info("Rebalance-in complete")
+
+            # Trigger report from primary after add-back
+            diag_status, diag_content = set_lighthouse_ns_config_via_diag_eval(
+                primary.master,
+                reporting_endpoint=portal_domain,
+                reporting_port=LIGHTHOUSE_DEFAULT_PORTAL_PORT,
+                reporting_interval_hours=1 / 3600.0)
+            self.assertTrue(
+                diag_status,
+                "Primary: diag/eval failed after rebalance-in: %s"
+                % diag_content)
+
+            self.sleep(10, "waiting for post-rebalance-in report to fire")
+
+            restore_status, restore_content = \
+                set_lighthouse_interval_via_diag_eval(primary.master, 2)
+            self.assertTrue(
+                restore_status,
+                "Primary: failed to restore interval to 2 h after "
+                "rebalance-in: %s" % restore_content)
+
+            # Wait for portal to reflect the add-back
+            reflected = wait_for_portal_node_count(
+                self.ucp_client, cluster_uuids[0], initial_portal_counts[0],
+                timeout=120, poll_interval=5)
+            self.assertTrue(
+                reflected,
+                "Primary cluster portal did not return to %d node(s) within "
+                "120 s after rebalance-in" % initial_portal_counts[0])
+
+            # Verify primary count restored
+            portal_cluster = get_portal_cluster(
+                self.ucp_client, cluster_uuids[0])
+            portal_nodes = portal_cluster.get('telemetry', {}).get('nodes', [])
+            self.assertEqual(
+                len(portal_nodes), initial_portal_counts[0],
+                "Primary: portal reports %d node(s) after rebalance-in, "
+                "expected %d"
+                % (len(portal_nodes), initial_portal_counts[0]))
+            self.log.info(
+                "PASS - primary portal node count after rebalance-in: %d"
+                % initial_portal_counts[0])
+
+            # Verify other clusters still unchanged
+            for i, uuid in enumerate(cluster_uuids[1:], start=1):
+                portal_cluster = get_portal_cluster(self.ucp_client, uuid)
+                portal_nodes = portal_cluster.get(
+                    'telemetry', {}).get('nodes', [])
+                self.assertEqual(
+                    len(portal_nodes), initial_portal_counts[i],
+                    "Cluster %d: portal node count changed unexpectedly after "
+                    "primary rebalance-in: expected %d, got %d"
+                    % (i, initial_portal_counts[i], len(portal_nodes)))
+                self.log.info(
+                    "PASS - cluster %d portal node count unchanged after "
+                    "primary rebalance-in: %d" % (i, initial_portal_counts[i]))
 
         finally:
             self.ucp_client.session_logout()
