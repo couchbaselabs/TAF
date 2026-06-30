@@ -249,9 +249,16 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 self.__get_existing_cluster_details(self.tenants, cluster_ids)
             else:
                 tasks = list()
+                conf_file = self.input.param("conf_file", "")
+                conf_label = conf_file.split("/")[-1].rsplit(".", 1)[0] if conf_file else ""
                 for tenant in self.tenants:
                     for _ in range(self.num_clusters):
-                        cluster_name = self.cluster_name_format % cluster_index
+                        if conf_label:
+                            cluster_name = "%s_%s" % (conf_label, cluster_index)
+                        elif self._testMethodName:
+                            cluster_name = "%s_%s" % (self._testMethodName, cluster_index)
+                        else:
+                            cluster_name = self.cluster_name_format % cluster_index
                         name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
                         self.capella_cluster_config[name] = \
                             "%s%s_%s_%s" % (
