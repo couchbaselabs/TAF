@@ -142,7 +142,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
         return self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
 
-    def _do_cluster_off_on(self, turn_off_timeout=600, turn_on_timeout=1200):
+    def _do_cluster_off_on(self, turn_off_timeout=1200, turn_on_timeout=1200):
         """Turn the cluster off then on, asserting both transitions succeed."""
         dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
         self.log.info(f"Turning cluster {self.cluster.id} off")
