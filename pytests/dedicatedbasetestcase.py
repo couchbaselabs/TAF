@@ -383,8 +383,17 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
 
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1
+        if len(tenants) != len(cluster_ids):
+            tenants = [tenants[0]] * len(cluster_ids)
+        conf_file = self.input.param("conf_file", "")
+        conf_label = conf_file.split("/")[-1].rsplit(".", 1)[0] if conf_file else ""
         for i, cluster_id in enumerate(cluster_ids):
-            cluster_name = self.cluster_name_format % cluster_index
+            if conf_label:
+                cluster_name = "%s_%s" % (conf_label, cluster_index)
+            elif self._testMethodName:
+                cluster_name = "%s_%s" % (self._testMethodName, cluster_index)
+            else:
+                cluster_name = self.cluster_name_format % cluster_index
             self.log.info("Fetching cluster details for: %s" % cluster_id)
             # CapellaUtils.wait_until_done(self.pod, self.tenant, cluster_id,
             #                              "Cluster not healthy")

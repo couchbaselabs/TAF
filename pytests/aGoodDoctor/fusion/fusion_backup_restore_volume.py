@@ -21,34 +21,32 @@ Setup flow (initial_setup)
 Test loop (test_backup_restore_volume)
 --------------------------------------
 For each scaling cycle on primary:
-  - [optional] take snapshot backup before scaling
   - scale-up primary (h_scaling iterations)
-  - take snapshot backup + restore to target
+      → after every step: take snapshot backup + restore to target
   - scale-down primary (h_scaling iterations)
-  - take snapshot backup + restore to target
+      → after every step: take snapshot backup + restore to target
+  - v_scaling (disk + compute iterations)
+      → after every step: take snapshot backup + restore to target
 
 Cross-cluster restore verification
 ------------------------------------
 When restoring to secondary:
   1. Snapshot secondary's current guest-volume IDs (pre-restore).
   2. Restore primary EBS snapshot backup onto secondary.
-  3. Trigger a fusion rebalance on secondary so new guest volumes are created
-     to match primary's restored topology.
-  4. Monitor the rebalance: verify new guest volumes come up.
-  5. Verify old (pre-restore) guest volumes are deleted.
-  6. Verify fusion state remains "enabled" on secondary.
-  7. Verify fusion S3 bucket is purged (cleanFusionBucket ran on restore).
+  3. Verify old guest volumes deleted by the restore reset.
+  4. Verify EBS snapshot count matches guest volume count on target.
+  5. Verify fusion S3 bucket is purged (cleanFusionBucket ran on restore).
+  6. Trigger post-restore rebalances on secondary to verify cluster health.
+  7. Verify fusion state remains "enabled" on secondary.
 
 Key parameters
 --------------
 restore_to                : "same" (default) | "secondary"
 secondary_fusion_enabled  : True (default)  | False
-backup_before_scaling     : False (default)
-backup_after_scaling      : True  (default)
 verify_snapshots          : True  (default)
 verify_fusion_bucket_clean: True  (default)
 secondary_rebalance_delta : +1 (default)  — node delta used when triggering
-                            rebalances on secondary to establish/refresh guest volumes
+                            rebalances on secondary to verify health after restore
 h_scaling / v_scaling     : same as fusion_volume.py
 iterations, rebl_steps    : same as fusion_volume.py
 '''
@@ -62,7 +60,6 @@ from aGoodDoctor.workloads import default
 from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
-from .awslib.cloudtrail_delete_setup import CloudTrailSetup
 from py_constants.cb_constants.CBServer import CbServer
 
 
@@ -86,8 +83,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         self.restore_to = self.input.param("restore_to", "same")
         self.secondary_fusion_enabled = self.input.param("secondary_fusion_enabled", True)
-        self.backup_before_scaling = self.input.param("backup_before_scaling", True)
-        self.backup_after_scaling = self.input.param("backup_after_scaling", True)
         self.verify_snapshots = self.input.param("verify_snapshots", True)
         self.verify_fusion_bucket_clean = self.input.param("verify_fusion_bucket_clean", True)
         # Node delta for rebalances triggered on secondary to build/refresh guest volumes
@@ -249,7 +244,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 bucket.loadDefn.get("num_items", 0)
                 * bucket.loadDefn.get("collections", 1)
             )
-            deadline = time.time() + self.index_timeout
+            deadline = time.time() + self.restore_timeout
             while time.time() < deadline:
                 info = rest.get_bucket_details(bucket_name=bucket.name)
                 actual = info.get("basicStats", {}).get("itemCount", 0) if info else 0
@@ -277,7 +272,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.PrintStep(f"{label}: delta={delta:+d} on secondary {secondary.id}")
         config = self.rebalance_config("data", delta)
         rebalance_task = self.task.async_rebalance_capella(
-            self.pod, tenant, secondary, config, timeout=self.index_timeout
+            self.pod, tenant, secondary, config, timeout=self.rebalance_timeout
         )
         self.monitor_cluster_status(tenant, secondary, rebalance_task)
         self.fusion_monitor.get_fusion_uploader_map(tenant, secondary, self.find_master)
@@ -404,44 +399,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                                     CollectionUtils.create_collection_object(bucket, scope, collection_spec)
 
 
-        # CloudTrail for primary buckets
-        try:
-            self.cloudtrail = CloudTrailSetup(
-                self.aws_access_key, self.aws_secret_key, region=self.aws_region
-            )
-        except Exception as e:
-            self.cloudtrail = None
-            self.log.warning(f"CloudTrail init failed; continuing without it: {e}")
-
-        if self.cloudtrail:
-            for bucket in primary.buckets:
-                try:
-                    uri = self.fusion_monitor.get_fusion_s3_uri(primary, bucket.name)
-                    if not uri:
-                        continue
-                    uri_clean = uri.split("?")[0].replace("s3://", "")
-                    s3_bucket = uri_clean.split("/")[0]
-                    if not s3_bucket:
-                        continue
-                    trail_name = f"fusion_bkrs_{primary.id}_{bucket.name}"
-                    log_prefix = f"s3-object-deletes/{primary.id}/{bucket.name}"
-                    self.cloudtrail.setup_cloudtrail_delete_obj_s3_logging(
-                        source_bucket=s3_bucket,
-                        target_bucket="fusion-accesslogs-ritesh-agarwal",
-                        trail_name=trail_name,
-                        log_prefix=log_prefix,
-                    )
-                    self.cloudtrail_targets.append((trail_name, log_prefix))
-                except Exception as e:
-                    self.log.warning(
-                        f"CloudTrail setup failed for {primary.id}/{bucket.name}: {e}"
-                    )
-
-        # Fusion uploader map for primary
-        primary.fusion_uploader_dict = {b.name: {} for b in primary.buckets}
-        primary.fusion_vb_uploader_map = {b.name: {} for b in primary.buckets}
-        self.fusion_monitor.get_fusion_uploader_map(tenant, primary, self.find_master)
-
         # Initial data load on primary
         self.PrintStep("Initial data load on primary cluster")
         self.skip_read_on_error = True
@@ -478,10 +435,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         guest-volume snapshot tags, and return the backup ID.
         """
         primary = self.primary_cluster
-        num_snapshots_expected = len(self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
-                    'couchbase-cloud-cluster-id': primary.id,
-                    'couchbase-cloud-function': 'fusion-accelerator'
-                    }))
+        num_snapshots_expected = len(self.cp_monitor.get_current_guest_volume_ids(primary))
         self.PrintStep(f"Taking EBS snapshot backup on primary {primary.id}")
         backup_id = self._create_snapshot_backup(primary)
         if self.verify_snapshots:
@@ -501,10 +455,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         Restore primary EBS snapshot backup to the target cluster and verify:
           - item count on target > 0 per bucket
           - if target is fusion-enabled:
-              * new guest volumes come up (via post-restore rebalance + monitoring)
-              * pre-restore guest volumes are deleted
-              * fusion state remains "enabled"
+              * pre-restore guest volumes are deleted (by the restore reset)
+              * EBS snapshot count matches guest volume count on target
               * fusion S3 bucket is empty (cleanFusionBucket ran)
+              * post-restore rebalances complete successfully (cluster healthy)
+              * fusion state remains "enabled"
         """
         primary = self.primary_cluster
         target = self._target_cluster()
@@ -525,10 +480,17 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
 
         if is_same:
-            # Stop mutations — the cluster data will be replaced entirely
+            # Stop mutations and drain in-flight loader tasks before the restore
+            # replaces all cluster data
             self.mutations = False
             if hasattr(self, "mutation_th") and self.mutation_th.is_alive():
                 self.mutation_th.join(timeout=120)
+            for task in list(self.loader_tasks):
+                try:
+                    self.task_manager.stop_task(task)
+                except Exception:
+                    pass
+            self.loader_tasks.clear()
 
         self._restore_snapshot_backup(backup_id, primary, target)
 
@@ -541,7 +503,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 bucket.loadDefn.get("num_items", 0)
                 * bucket.loadDefn.get("collections", 1)
             )
-            deadline = time.time() + self.index_timeout
+            deadline = time.time() + self.restore_timeout
             while time.time() < deadline:
                 info = rest.get_bucket_details(bucket_name=bucket.name)
                 actual = info.get("basicStats", {}).get("itemCount", 0) if info else 0
@@ -572,6 +534,21 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     f"Fusion S3 bucket empty verified on {target.id}/{bucket.name}"
                 )
 
+        # Verify old guest volumes were deleted by the restore reset — this happens
+        # during the restore itself, before any post-restore rebalance
+        if not is_same and target_fusion and pre_restore_gv_ids:
+            ok = self.cp_monitor.verify_old_guest_volumes_deleted(
+                target, pre_restore_gv_ids, timeout=600
+            )
+            self.assertTrue(
+                ok,
+                f"Pre-restore guest volumes still present on secondary {target.id} "
+                f"after restore reset — expected them deleted by the restore operation",
+            )
+            self.log.info(
+                f"Pre-restore guest volumes confirmed deleted on {target.id}"
+            )
+
         # Verify guest volume count == EBS snapshot count for this backup
         if target_fusion and self.verify_snapshots:
             gv_ids = self.cp_monitor.get_current_guest_volume_ids(target)
@@ -588,11 +565,12 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"expected {num_gvs} snapshots for backup {backup_id}",
             )
 
-        # Post-restore rebalance on secondary to refresh guest volumes
+        # Post-restore rebalance on secondary to verify the cluster is healthy
+        # and rebalances complete successfully after the restore reset
         if not is_same and target_fusion:
             self.PrintStep(
                 f"Post-restore rebalance on secondary {target.id} "
-                f"to establish new guest volumes"
+                f"to verify rebalance completes after restore"
             )
             self._trigger_rebalance_on_secondary(
                 self.secondary_rebalance_delta,
@@ -601,19 +579,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             self._trigger_rebalance_on_secondary(
                 -self.secondary_rebalance_delta,
                 label="post-restore scale-down on secondary",
-            )
-
-            # Verify old guest volumes (pre-restore) are gone
-            ok = self.cp_monitor.verify_old_guest_volumes_deleted(
-                target, pre_restore_gv_ids, timeout=600
-            )
-            self.assertTrue(
-                ok,
-                f"Pre-restore guest volumes still present on secondary {target.id} "
-                f"after post-restore rebalance",
-            )
-            self.log.info(
-                f"Pre-restore guest volumes confirmed deleted on {target.id}"
             )
 
         # Verify fusion state on target
@@ -654,7 +619,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         for service in self.rebl_services:
             config = self.rebalance_config(service, direction * step)
             rebalance_task = self.task.async_rebalance_capella(
-                self.pod, tenant, primary, config, timeout=self.index_timeout
+                self.pod, tenant, primary, config, timeout=self.rebalance_timeout
             )
             self.monitor_cluster_status(tenant, primary, rebalance_task)
             self.fusion_monitor.get_fusion_uploader_map(tenant, primary, self.find_master)
@@ -747,10 +712,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             while self.loop < self.cycles:
                 self.loop += 1
 
-                if self.backup_before_scaling:
-                    backup_id = self._take_backup_and_verify()
-                    self._restore_and_verify(backup_id)
-
                 # Scale-up iterations on primary
                 for rebl_step in range(self.iterations):
                     self.log_fusion_log_store_data_size()
@@ -758,7 +719,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     self.PrintStep(f"Cycle {self.loop}: Scale UP step {rebl_step}")
                     self._primary_scaling_pass(direction=+1, rebl_step_idx=rebl_step)
 
-                if self.backup_after_scaling:
                     backup_id = self._take_backup_and_verify()
                     self._restore_and_verify(backup_id)
 
@@ -769,7 +729,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     self.PrintStep(f"Cycle {self.loop}: Scale DOWN step {rebl_step}")
                     self._primary_scaling_pass(direction=-1, rebl_step_idx=rebl_step)
 
-                if self.backup_after_scaling:
                     backup_id = self._take_backup_and_verify()
                     self._restore_and_verify(backup_id)
 
@@ -802,7 +761,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                             self.disk[service] = self.disk[service] + disk_increment
                     config = self.rebalance_config(service)
                     rebalance_task = self.task.async_rebalance_capella(
-                        self.pod, tenant, primary, config, timeout=self.index_timeout
+                        self.pod, tenant, primary, config, timeout=self.rebalance_timeout
                     )
                     self.monitor_cluster_status(tenant, primary, rebalance_task)
                     self.fusion_monitor.get_fusion_uploader_map(
@@ -821,9 +780,8 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 disk_increment *= -1
                 disk_change *= -1
 
-                if self.backup_after_scaling:
-                    backup_id = self._take_backup_and_verify()
-                    self._restore_and_verify(backup_id)
+                backup_id = self._take_backup_and_verify()
+                self._restore_and_verify(backup_id)
 
             # Compute rebalances
             self.loop = 0
@@ -840,7 +798,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                         self.compute[service] = compute_list[new_comp]
                     config = self.rebalance_config()
                     rebalance_task = self.task.async_rebalance_capella(
-                        self.pod, tenant, primary, config, timeout=self.index_timeout
+                        self.pod, tenant, primary, config, timeout=self.rebalance_timeout
                     )
                     self.monitor_cluster_status(tenant, primary, rebalance_task)
                     self.fusion_monitor.get_fusion_uploader_map(
@@ -860,9 +818,8 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
                 compute_change *= -1
 
-                if self.backup_after_scaling:
-                    backup_id = self._take_backup_and_verify()
-                    self._restore_and_verify(backup_id)
+                backup_id = self._take_backup_and_verify()
+                self._restore_and_verify(backup_id)
 
         # ------------------------------------------------------------------ EBS cleanup
         self.stop_run_event.set()

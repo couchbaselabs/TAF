@@ -953,7 +953,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
                     self.sleep(30 * retry, "Retrying allow_my_ip after restore")
                 else:
                     raise
-
+        self.sleep(120, "Need to wait for allowed IP propogation")
         self.find_master(self.tenant, self.cluster)
         self.log.info(f"In-place restore {restore_id} completed")
 
