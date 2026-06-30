@@ -14,6 +14,8 @@ class GetAuditLogExports(GetAppService):
         self.start_time = self.get_utc_datetime(-60)
         self.end_time = self.get_utc_datetime(-20)
         self.expected_res = {
+            "start": self.get_utc_datetime(-60),
+            "end": self.get_utc_datetime(-20),
             "id": "to be changed after creation",
             "download_id": None,  
             "status": None,
