@@ -934,6 +934,26 @@ class FusionClusterOnOffTest(_FusionTestBase):
             restore_ok, f"Cloud snapshot restore {restore_id} did not complete")
         CapellaAPI.wait_until_done(
             self.pod, self.tenant, self.cluster.id, timeout=600)
+
+        # Re-add 0.0.0.0/0 allow-all IP — restore flushes the allowlist
+        retry = 0
+        while retry < 5:
+            try:
+                CapellaAPI.allow_my_ip(self.pod, self.tenant, self.cluster.id, True)
+                self.log.info(
+                    f"Re-added 0.0.0.0/0 to allowlist on {self.cluster.id} after restore"
+                )
+                break
+            except Exception as err:
+                retry += 1
+                self.log.warning(
+                    f"allow_my_ip attempt {retry}/5 failed on {self.cluster.id}: {err}"
+                )
+                if retry < 5:
+                    self.sleep(30 * retry, "Retrying allow_my_ip after restore")
+                else:
+                    raise
+
         self.find_master(self.tenant, self.cluster)
         self.log.info(f"In-place restore {restore_id} completed")
 

@@ -203,6 +203,25 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
         self.log.info(f"Target cluster {target_cluster.id} healthy after restore")
 
+        # Re-add 0.0.0.0/0 allow-all IP — restore flushes the allowlist
+        retry = 0
+        while retry < 5:
+            try:
+                CapellaAPI.allow_my_ip(self.pod, tenant, target_cluster.id, True)
+                self.log.info(
+                    f"Re-added 0.0.0.0/0 to allowlist on {target_cluster.id} after restore"
+                )
+                break
+            except Exception as err:
+                retry += 1
+                self.log.warning(
+                    f"allow_my_ip attempt {retry}/5 failed on {target_cluster.id}: {err}"
+                )
+                if retry < 5:
+                    self.sleep(30 * retry, "Retrying allow_my_ip after restore")
+                else:
+                    raise
+
     # ------------------------------------------------ secondary cluster setup
 
     def _initial_data_sync_to_secondary(self):
@@ -439,8 +458,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # Background mutation thread on primary
         self.mutations = self.input.param("mutations", True)
         self.mutation_th = threading.Thread(
-            target=self.normal_mutations, kwargs={"cluster": primary,
-                                                  "wait_for_completion": False}
+            target=self.normal_mutations, kwargs={"cluster": primary}
         )
         self.mutation_th.start()
 
