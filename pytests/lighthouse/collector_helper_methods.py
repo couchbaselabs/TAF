@@ -505,6 +505,37 @@ def wait_for_cluster_on_portal(ucp_client, cluster_uuid,
     return False
 
 
+def wait_for_portal_node_count(ucp_client, cluster_uuid, expected_count,
+                               timeout=120, poll_interval=5):
+    """
+    Poll the portal until telemetry.nodes for the given cluster UUID
+    reaches expected_count, or until timeout is exceeded.
+
+    Use after triggering a collector report so the portal receives the
+    updated topology before asserting on node count.
+
+    Args:
+        ucp_client:     Authenticated UnifiedControlPlaneClient instance.
+        cluster_uuid:   str — the cluster UUID to poll.
+        expected_count: int — expected number of nodes in telemetry.nodes.
+        timeout:        int — max seconds to wait (default 120).
+        poll_interval:  int — seconds between polls (default 5).
+
+    Returns:
+        True if the count matched within timeout, False otherwise.
+    """
+    elapsed = 0
+    while elapsed < timeout:
+        cluster = get_portal_cluster(ucp_client, cluster_uuid)
+        if cluster:
+            nodes = cluster.get('telemetry', {}).get('nodes', [])
+            if len(nodes) == expected_count:
+                return True
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+    return False
+
+
 # ==================== Hardware Aggregate Helpers ====================
 
 def _parse_cb_version(version_str):
