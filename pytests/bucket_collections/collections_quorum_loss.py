@@ -326,7 +326,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
-        self.data_validation_collection()
+        if not self.skip_validations:
+            self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
 
@@ -348,7 +349,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
-        self.data_validation_collection()
+        if not self.skip_validations:
+            self.data_validation_collection()
 
     def test_quorum_loss_failover_with_already_failed_over_node(self):
         """
@@ -409,7 +411,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
-        self.data_validation_collection()
+        if not self.skip_validations:
+            self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
 
@@ -431,7 +434,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
-        self.data_validation_collection()
+        if not self.skip_validations:
+            self.data_validation_collection()
 
     def test_quorum_loss_failover_more_than_failed_nodes(self):
         """
@@ -481,7 +485,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
-        self.data_validation_collection()
+        if not self.skip_validations:
+            self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
 
@@ -502,7 +507,8 @@ class CollectionsQuorumLoss(CollectionBase):
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(
             self, cont_load_task)
-        self.data_validation_collection()
+        if not self.skip_validations:
+            self.data_validation_collection()
 
     def test_multiple_quorum_failovers(self):
         """
@@ -552,7 +558,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.wait_for_async_data_load_to_complete(tasks)
             CollectionBase.wait_for_cont_doc_load_to_complete(
                 self, cont_load_task)
-            self.data_validation_collection()
+            if not self.skip_validations:
+                self.data_validation_collection()
 
             # update the nodes in cluster
             self.nodes_in_cluster = \
@@ -581,7 +588,8 @@ class CollectionsQuorumLoss(CollectionBase):
             self.monitor_active_guest_volumes()
         self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
-        self.data_validation_collection()
+        if not self.skip_validations:
+            self.data_validation_collection()
 
     def test_negative_unsafe_failover_orchestrator(self):
         """
