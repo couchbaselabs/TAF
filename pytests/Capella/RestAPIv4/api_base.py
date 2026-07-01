@@ -1565,6 +1565,9 @@ class APIBase(CouchbaseBaseTest):
                         elif "name" in actual_res[key][i] and \
                                 actual_res[key][i]["name"] != id:
                             continue
+                        elif "auditLogExportId" in actual_res[key][i] and \
+                                actual_res[key][i]["auditLogExportId"] != id:
+                            continue
                     if len(expected_res[key]) > 1:
                         j = i
                     if not self.validate_api_response(
