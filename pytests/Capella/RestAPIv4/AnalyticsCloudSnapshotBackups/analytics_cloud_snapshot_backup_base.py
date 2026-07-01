@@ -24,17 +24,7 @@ class AnalyticsCloudSnapshotBackupBase(GetAnalyticsClusters):
     def api_call_with_retry(self, method, *args, **kwargs):
         max_retries = 3
         for attempt in range(max_retries):
-            try:
-                result = method(*args, **kwargs)
-            except SystemExit as e:
-                if attempt < max_retries - 1:
-                    self.log.warning(
-                        "Connection error on attempt {}/{}, retrying in 5s:"
-                        " {}".format(attempt + 1, max_retries, str(e)))
-                    time.sleep(5)
-                    continue
-                self.fail("API call failed after {} attempts: {}".format(
-                    max_retries, str(e)))
+            result = method(*args, **kwargs)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 continue
