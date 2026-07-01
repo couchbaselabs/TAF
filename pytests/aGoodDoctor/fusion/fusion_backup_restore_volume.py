@@ -51,6 +51,7 @@ h_scaling / v_scaling     : same as fusion_volume.py
 iterations, rebl_steps    : same as fusion_volume.py
 '''
 
+import socket
 import threading
 import time
 
@@ -231,11 +232,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         for node in nodes:
             while True:
                 try:
-                    rest = RestConnection(node)
-                    rest.check_if_couchbase_is_active(rest, max_retry=1)
-                    self.log.info(f"Node {node.ip} is reachable via REST")
+                    with socket.create_connection((node.ip, 18091), timeout=10):
+                        pass
+                    self.log.info(f"Node {node.ip}:18091 is reachable")
                     break
-                except Exception as e:
+                except OSError as e:
                     remaining = int(deadline - time.time())
                     if remaining <= 0:
                         self.fail(
@@ -244,7 +245,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                             f"restore: {e}"
                         )
                     self.log.warning(
-                        f"Node {node.ip} not yet reachable ({e}); "
+                        f"Node {node.ip}:18091 not yet reachable ({e}); "
                         f"retrying in {poll_interval}s ({remaining}s remaining)"
                     )
                     time.sleep(poll_interval)
