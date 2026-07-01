@@ -332,7 +332,7 @@ class CapellaUtils(object):
 
     @staticmethod
     def flush_bucket(pod, tenant, cluster, name):
-        bucket_id = CapellaUtils.get_bucket_id(pod, cluster, name)
+        bucket_id = CapellaUtils.get_bucket_id(pod, tenant, cluster, name)
         if bucket_id:
             capella_api = CapellaAPI(pod.url_public,
                                      tenant.api_secret_key,

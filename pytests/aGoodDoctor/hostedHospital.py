@@ -371,7 +371,7 @@ class Murphy(BaseTestCase, hostedOPD):
                         for count, item in enumerate(backups_on_bucket):
                             self.log.debug("========= Backup number {} ==========".format(count))
                             self.log.debug("Backup debug info:{}".format(item['data']))
-                    CapellaAPI.flush_bucket(self.pod, cluster, bucket.name)
+                    CapellaAPI.flush_bucket(self.pod, tenant, cluster, bucket.name)
                     time.sleep(120)
                     self.drBackupRestore.restore_from_backup(tenant, cluster, bucket, timeout=self.index_timeout)
                     time.sleep(60)
