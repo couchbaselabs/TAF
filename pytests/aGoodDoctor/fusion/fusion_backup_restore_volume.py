@@ -218,6 +218,37 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 else:
                     raise
 
+        # Poll until every node responds to REST — the allowlist rule can take
+        # several minutes to propagate even after allow_my_ip returns successfully.
+        reachability_timeout = 900  # 15 minutes
+        poll_interval = 15
+        deadline = time.time() + reachability_timeout
+        nodes = target_cluster.nodes_in_cluster or [target_cluster.master]
+        self.log.info(
+            f"Polling {len(nodes)} node(s) on {target_cluster.id} for REST reachability "
+            f"(up to {reachability_timeout}s)"
+        )
+        for node in nodes:
+            while True:
+                try:
+                    rest = RestConnection(node)
+                    rest.check_if_couchbase_is_active(rest, max_retry=1)
+                    self.log.info(f"Node {node.ip} is reachable via REST")
+                    break
+                except Exception as e:
+                    remaining = int(deadline - time.time())
+                    if remaining <= 0:
+                        self.fail(
+                            f"Node {node.ip} on {target_cluster.id} did not become "
+                            f"reachable within {reachability_timeout}s after IP allowlist "
+                            f"restore: {e}"
+                        )
+                    self.log.warning(
+                        f"Node {node.ip} not yet reachable ({e}); "
+                        f"retrying in {poll_interval}s ({remaining}s remaining)"
+                    )
+                    time.sleep(poll_interval)
+
     # ------------------------------------------------ secondary cluster setup
 
     def _initial_data_sync_to_secondary(self):
