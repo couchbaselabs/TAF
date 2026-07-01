@@ -206,6 +206,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 self.log.info(
                     f"Re-added 0.0.0.0/0 to allowlist on {target_cluster.id} after restore"
                 )
+                self.sleep(60, "Wait for allow-all IP rule to propagate after restore")
                 break
             except Exception as err:
                 retry += 1
@@ -234,10 +235,10 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         backup_id = self._create_snapshot_backup(primary)
         self._restore_snapshot_backup(backup_id, primary, secondary)
-
-        self.sleep(30, "Wait after initial snapshot restore to secondary")
+        self.sleep(60, "Wait after initial snapshot restore to secondary")
 
         # Verify secondary has data in each of primary's buckets
+        self.fusion_monitor.set_admin_credentials(secondary)
         rest = RestConnection(secondary.master)
         for bucket in primary.buckets:
             expected = (
@@ -268,6 +269,9 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         """
         secondary = self.secondary_cluster
         tenant = self.primary_tenant
+        sync_timeout = self.input.param("sync_wait_timeout", 7200)
+        self.log.info("Waiting for pending bytes to drain to 0 after restore on Secondary")
+        self.fusion_monitor.wait_for_fusion_pending_byte_zero(self.secondary_cluster, timeout=sync_timeout)
 
         self.PrintStep(f"{label}: delta={delta:+d} on secondary {secondary.id}")
         config = self.rebalance_config("data", delta)
