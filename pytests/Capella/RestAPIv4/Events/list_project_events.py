@@ -108,7 +108,7 @@ class ListProjectEvents(GetProject):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-            "organizationOwner", "projectCreator", "projectOwner",
+            "organizationOwner", "projectOwner",
             "projectManager", "projectViewer", "projectDataReader",
             "projectDataReaderWriter"
         ], None):

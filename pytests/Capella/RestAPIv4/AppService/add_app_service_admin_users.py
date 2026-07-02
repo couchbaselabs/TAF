@@ -177,11 +177,8 @@ class PostAdminUsers(GetAdminUsers):
 
     def test_authorization(self):
         failures = list()
-        print(self.v4_RBAC_injection_init([
-             "organizationOwner", "projectOwner", "projectManager"
-        ]))
         for testcase in self.v4_RBAC_injection_init([
-             "organizationOwner", "projectOwner", "projectManager"
+             "organizationOwner", "projectOwner"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()

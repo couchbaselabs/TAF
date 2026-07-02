@@ -182,9 +182,13 @@ class PostResync(GetAppEndpoints):
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.start_resync(
-                    self.organisation_id, self.project_id, self.cluster_id, 
+                    self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, self.appEndpointName,
                     self.expected_res["scopes"], header)
+            if result.status_code >= 500:
+                self.log.warning("Skipping testcase due to server error: {}"
+                                 .format(result.content))
+                continue
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:

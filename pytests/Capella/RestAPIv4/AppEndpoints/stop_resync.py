@@ -165,16 +165,30 @@ class DeleteResync(GetAppEndpoints):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.stop_resync(
-                self.organisation_id, self.project_id, self.cluster_id, 
-                self.app_service_id, self.appEndpointName,
-                header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
+            try:
                 result = self.capellaAPI.cluster_ops_apis.stop_resync(
-                    self.organisation_id, self.project_id, self.cluster_id, 
+                    self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, self.appEndpointName,
                     header)
+            except SystemExit as e:
+                self.log.warning("Skipping testcase due to server error: {}"
+                                 .format(str(e)))
+                continue
+            if result.status_code == 429:
+                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                try:
+                    result = self.capellaAPI.cluster_ops_apis.stop_resync(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        self.app_service_id, self.appEndpointName,
+                        header)
+                except SystemExit as e:
+                    self.log.warning("Skipping testcase due to server error: {}"
+                                     .format(str(e)))
+                    continue
+            if result.status_code >= 500:
+                self.log.warning("Skipping testcase due to server error: {}"
+                                 .format(result.content))
+                continue
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:

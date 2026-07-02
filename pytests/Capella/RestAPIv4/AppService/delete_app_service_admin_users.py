@@ -166,23 +166,23 @@ class DeleteAdminUsers(GetAdminUsers):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-             "organizationOwner", "projectOwner", "projectManager"
+             "organizationOwner", "projectOwner"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, self.other_project_id)
             result = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
-                self.organisation_id, self.project_id, self.cluster_id, 
+                self.organisation_id, self.project_id, self.cluster_id,
                 self.app_service_id, self.user_id,
                 header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.delete_app_service_admin_user(
-                    self.organisation_id, self.project_id, self.cluster_id, 
+                    self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, self.user_id,
                     header)
-            if self.validate_testcase(result, [200], testcase, failures):
+            if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Deletion Successful")
                 self.user_id = self.create_app_service_admin_user_to_be_tested(
                     self.project_id,

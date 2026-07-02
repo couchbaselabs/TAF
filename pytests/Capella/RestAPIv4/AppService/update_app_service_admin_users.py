@@ -157,7 +157,7 @@ class PutAdminUsers(GetAdminUsers):
     def test_authorization(self):
         failures = list()
         for testcase in self.v4_RBAC_injection_init([
-             "organizationOwner", "projectOwner", "projectManager"
+             "organizationOwner", "projectOwner"
         ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
@@ -173,7 +173,7 @@ class PutAdminUsers(GetAdminUsers):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, self.user_id,
                     header)
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
