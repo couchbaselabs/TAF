@@ -963,7 +963,10 @@ class CollectionsRebalance(CollectionBase):
 
         if wait_for_rebalance_to_start:
             end_time = time.time() + 60
-            while (self.rest._rebalance_progress_status() != "running") and (time.time() < end_time):
+            while time.time() < end_time:
+                _, progress = self.rest.rebalance_progress()
+                if isinstance(progress, dict) and progress.get("status") == "running":
+                    break
                 self.sleep(2, "wait for rebalance to start")
         create_collections_using_manifest_import()
         self.sleep(10, "wait before dropping collections using bulk api")
