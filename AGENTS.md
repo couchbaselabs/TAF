@@ -234,7 +234,7 @@ agents/
   skills/    – general-purpose utility skills (e.g., source-attribution)
 ```
 
-`.factory/droids/` and `.factory/skills/` contain `@`-reference files pointing into `agents/` — do not edit files there directly.
+`.factory/droids/`, `.factory/skills/`, and `.claude/skills/` contain `@`-reference files pointing into `agents/` — do not edit files there directly.
 
 ### Adding a new agent
 1. Create `agents/<name>.md` with YAML frontmatter:
@@ -256,8 +256,9 @@ agents/
    ---
    ```
 2. Register in `.claude/settings.json` under `skills`
-3. Create `.factory/skills/<name>/SKILL.md` containing: `@agents/skills/<name>.md`
-4. Add an entry to `agents/skills/AGENTS.md`
+3. Create `.claude/skills/<name>/SKILL.md` containing: `@agents/skills/<name>.md` (this is what makes the skill discoverable by the Skill tool / `/skills`)
+4. Create `.factory/skills/<name>/SKILL.md` containing: `@agents/skills/<name>.md`
+5. Add an entry to `agents/skills/AGENTS.md`
 
 ### Available agents & skills
 See [agents/AGENTS.md](agents/AGENTS.md) for the full list of agents and skills.

@@ -4,7 +4,7 @@
 
 All skills live in `agents/skills/`. Each skill has a `.md` file with YAML frontmatter and is registered in `.claude/settings.json`.
 
-`.factory/skills/` contains `@`-reference files pointing into this directory — do not edit files there directly.
+`.claude/skills/` and `.factory/skills/` contain `@`-reference files pointing into this directory — do not edit files there directly.
 
 ## Available Skills
 
@@ -77,6 +77,21 @@ Structured code review process for TAF changes. Produces prioritized BLOCKER/MAJ
 
 ---
 
+### upgrade-path-maintenance
+Runbook for wiring up a new Couchbase Server release's supported upgrade paths across TAF's upgrade test infrastructure.
+
+**Usage:** When a new target release ships and its official "Upgrade Paths" diagram needs to be reflected in TAF — new base versions, new/changed hop requirements, or a component's upgrade support being dropped.
+
+**Key features:**
+- Checklist covering the 4 places that must stay in sync: `lib/upgrade_lib/couchbase.py`, `conf/upgrade/*.conf`, `docs/agent-context/upgrade/upgrade-lib.md`, and the `QE-Test-Suites` dispatcher DB
+- Chain-key naming convention (single-hop vs multi-hop) and cross-check against `testconstants.CB_RELEASE_BUILDS`
+- DB sync steps for `maxVersion`/`implementedIn` fields — never delete, confirm before writing, revert-log first
+- Known pitfalls from real incidents (silent conf breakage from key renames, MCP write restrictions)
+
+**File:** `agents/skills/upgrade-path-maintenance.md`
+
+---
+
 ## Adding a New Skill
 
 1. Create `agents/skills/<name>.md` with YAML frontmatter:
@@ -87,5 +102,6 @@ Structured code review process for TAF changes. Produces prioritized BLOCKER/MAJ
    ---
    ```
 2. Register in `.claude/settings.json` under `skills`
-3. Create `.factory/skills/<name>/SKILL.md` containing: `@agents/skills/<name>.md`
-4. Add an entry to this index file
+3. Create `.claude/skills/<name>/SKILL.md` containing: `@agents/skills/<name>.md` (this is what makes the skill discoverable by the Skill tool / `/skills`)
+4. Create `.factory/skills/<name>/SKILL.md` containing: `@agents/skills/<name>.md`
+5. Add an entry to this index file

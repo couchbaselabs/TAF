@@ -14,6 +14,11 @@
       "name": "review-guidelines",
       "description": "Structured code review process for TAF changes. Use when asked to review a PR, diff, branch, or set of changed files — covers correctness, TAF pattern compliance, configuration validity, security, and produces prioritized BLOCKER/MAJOR/MINOR/NIT comments.",
       "path": "agents/skills/review-guidelines/SKILL.md"
+    },
+    {
+      "name": "upgrade-path-maintenance",
+      "description": "Runbook for wiring up a new Couchbase Server release's supported upgrade paths across lib/upgrade_lib/couchbase.py, conf/upgrade/*.conf, docs/agent-context/upgrade/upgrade-lib.md, and the QE-Test-Suites dispatcher DB. Use when a new target release's official upgrade-path diagram needs to be reflected in TAF.",
+      "path": "agents/skills/upgrade-path-maintenance.md"
     }
   ]
 }
