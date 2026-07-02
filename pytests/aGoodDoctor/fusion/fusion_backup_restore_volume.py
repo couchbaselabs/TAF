@@ -110,6 +110,12 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
     def _target_is_fusion(self):
         return True if self.restore_to == "same" else self.secondary_fusion_enabled
 
+    def _cluster_label(self, cluster):
+        """Return '[primary]' or '[secondary]' for use as a log prefix."""
+        if self.secondary_cluster and cluster.id == self.secondary_cluster.id:
+            return "[secondary]"
+        return "[primary]"
+
     # -------------------------------------------- log helpers (primary only)
 
     def log_fusion_log_store_data_size(self):
@@ -130,7 +136,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         tenant = self.primary_tenant
         project_id = tenant.projects[0]
 
-        self.log.info(f"Creating EBS snapshot backup on cluster {cluster.id}")
+        self.log.info(f"{self._cluster_label(cluster)} Creating EBS snapshot backup on cluster {cluster.id}")
         result = CapellaAPI.create_cloud_snapshot_backup(
             self.pod, tenant, project_id, cluster.id
         )
@@ -143,7 +149,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             backup_id,
             f"No 'id' in create_cloud_snapshot_backup response: {result}",
         )
-        self.log.info(f"Snapshot backup triggered: {backup_id}")
+        self.log.info(f"{self._cluster_label(cluster)} Snapshot backup triggered: {backup_id}")
 
         ok = CapellaAPI.wait_for_cloud_snapshot_backup_to_complete(
             self.pod, tenant, project_id, cluster.id, backup_id
@@ -152,7 +158,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             ok,
             f"Snapshot backup {backup_id} did not complete on cluster {cluster.id}",
         )
-        self.log.info(f"Snapshot backup {backup_id} complete on {cluster.id}")
+        self.log.info(f"{self._cluster_label(cluster)} Snapshot backup {backup_id} complete on {cluster.id}")
         return backup_id
 
     def _restore_snapshot_backup(self, backup_id, source_cluster, target_cluster):
@@ -164,9 +170,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         tenant = self.primary_tenant
         project_id = tenant.projects[0]
 
+        src_label = self._cluster_label(source_cluster)
+        tgt_label = self._cluster_label(target_cluster)
         self.log.info(
-            f"Restoring snapshot backup {backup_id} from {source_cluster.id} "
-            f"→ {target_cluster.id}"
+            f"{tgt_label} Restoring snapshot backup {backup_id} "
+            f"from {src_label} {source_cluster.id} → {tgt_label} {target_cluster.id}"
         )
         result = CapellaAPI.restore_cloud_snapshot_backup(
             self.pod, tenant, project_id, target_cluster.id, backup_id
@@ -181,7 +189,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             restore_id,
             f"No 'restoreId' in restore_cloud_snapshot_backup response: {result}",
         )
-        self.log.info(f"Restore job triggered: {restore_id}")
+        self.log.info(f"{tgt_label} Restore job triggered: {restore_id}")
 
         ok = CapellaAPI.wait_for_cloud_snapshot_restore_to_complete(
             self.pod, tenant, project_id, target_cluster.id, restore_id
@@ -190,14 +198,14 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             ok,
             f"Snapshot restore {restore_id} did not complete on target {target_cluster.id}",
         )
-        self.log.info(f"Snapshot restore {restore_id} complete on {target_cluster.id}")
+        self.log.info(f"{tgt_label} Snapshot restore {restore_id} complete on {target_cluster.id}")
 
         # Wait for target cluster to reach healthy state after restore
         CapellaAPI.wait_until_done(
             self.pod, tenant, target_cluster.id,
-            msg=f"Wait for healthy state after snapshot restore on {target_cluster.id}",
+            msg=f"{tgt_label} Wait for healthy state after snapshot restore on {target_cluster.id}",
         )
-        self.log.info(f"Target cluster {target_cluster.id} healthy after restore")
+        self.log.info(f"{tgt_label} Target cluster {target_cluster.id} healthy after restore")
 
         # Re-add 0.0.0.0/0 allow-all IP — restore flushes the allowlist
         retry = 0
@@ -205,17 +213,17 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             try:
                 CapellaAPI.allow_my_ip(self.pod, tenant, target_cluster.id, True)
                 self.log.info(
-                    f"Re-added 0.0.0.0/0 to allowlist on {target_cluster.id} after restore"
+                    f"{tgt_label} Re-added 0.0.0.0/0 to allowlist on {target_cluster.id} after restore"
                 )
-                self.sleep(60, "Wait for allow-all IP rule to propagate after restore")
+                self.sleep(60, f"{tgt_label} Wait for allow-all IP rule to propagate after restore")
                 break
             except Exception as err:
                 retry += 1
                 self.log.warning(
-                    f"allow_my_ip attempt {retry}/5 failed on {target_cluster.id}: {err}"
+                    f"{tgt_label} allow_my_ip attempt {retry}/5 failed on {target_cluster.id}: {err}"
                 )
                 if retry < 5:
-                    self.sleep(30 * retry, "Retrying allow_my_ip after restore")
+                    self.sleep(30 * retry, f"{tgt_label} Retrying allow_my_ip after restore")
                 else:
                     raise
 
@@ -226,7 +234,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         deadline = time.time() + reachability_timeout
         nodes = target_cluster.nodes_in_cluster or [target_cluster.master]
         self.log.info(
-            f"Polling {len(nodes)} node(s) on {target_cluster.id} for REST reachability "
+            f"{tgt_label} Polling {len(nodes)} node(s) on {target_cluster.id} for REST reachability "
             f"(up to {reachability_timeout}s)"
         )
         for node in nodes:
@@ -234,18 +242,18 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 try:
                     with socket.create_connection((node.ip, 18091), timeout=10):
                         pass
-                    self.log.info(f"Node {node.ip}:18091 is reachable")
+                    self.log.info(f"{tgt_label} Node {node.ip}:18091 is reachable")
                     break
                 except OSError as e:
                     remaining = int(deadline - time.time())
                     if remaining <= 0:
                         self.fail(
-                            f"Node {node.ip} on {target_cluster.id} did not become "
+                            f"{tgt_label} Node {node.ip} on {target_cluster.id} did not become "
                             f"reachable within {reachability_timeout}s after IP allowlist "
                             f"restore: {e}"
                         )
                     self.log.warning(
-                        f"Node {node.ip}:18091 not yet reachable ({e}); "
+                        f"{tgt_label} Node {node.ip}:18091 not yet reachable ({e}); "
                         f"retrying in {poll_interval}s ({remaining}s remaining)"
                     )
                     time.sleep(poll_interval)
@@ -499,6 +507,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         """
         primary = self.primary_cluster
         target = self._target_cluster()
+        tgt_label = self._cluster_label(target)
         tenant = self.primary_tenant
         is_same = primary.id == target.id
         target_fusion = self._target_is_fusion()
@@ -508,11 +517,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         if not is_same and target_fusion:
             pre_restore_gv_ids = self.cp_monitor.get_current_guest_volume_ids(target)
             self.log.info(
-                f"Pre-restore guest volumes on secondary {target.id}: {pre_restore_gv_ids}"
+                f"{tgt_label} Pre-restore guest volumes on {target.id}: {pre_restore_gv_ids}"
             )
 
         self.PrintStep(
-            f"Restoring EBS snapshot {backup_id}: {primary.id} → {target.id}"
+            f"{tgt_label} Restoring EBS snapshot {backup_id}: {primary.id} → {target.id}"
         )
 
         if is_same:
@@ -530,7 +539,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         self._restore_snapshot_backup(backup_id, primary, target)
 
-        self.sleep(30, "Wait after snapshot restore before verifying items")
+        self.sleep(30, f"{tgt_label} Wait after snapshot restore before verifying items")
 
         # Verify item count in each of primary's buckets on the target
         rest = RestConnection(target.master)
@@ -545,14 +554,14 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 actual = info.get("basicStats", {}).get("itemCount", 0) if info else 0
                 if actual > 0:
                     self.log.info(
-                        f"Post-restore item count on {target.id}/{bucket.name}: {actual} "
+                        f"{tgt_label} Post-restore item count on {target.id}/{bucket.name}: {actual} "
                         f"(expected ~{expected})"
                     )
                     break
-                self.sleep(30, f"Polling item count on {target.id}/{bucket.name} after restore")
+                self.sleep(30, f"{tgt_label} Polling item count on {target.id}/{bucket.name} after restore")
             else:
                 self.fail(
-                    f"No items on target {target.id}/{bucket.name} after restore timeout"
+                    f"{tgt_label} No items on target {target.id}/{bucket.name} after restore timeout"
                 )
 
         # Verify fusion S3 bucket was cleaned up by cleanFusionBucket
@@ -563,11 +572,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 )
                 self.assertTrue(
                     ok,
-                    f"Fusion S3 bucket not empty after restore on "
+                    f"{tgt_label} Fusion S3 bucket not empty after restore on "
                     f"{target.id}/{bucket.name}",
                 )
                 self.log.info(
-                    f"Fusion S3 bucket empty verified on {target.id}/{bucket.name}"
+                    f"{tgt_label} Fusion S3 bucket empty verified on {target.id}/{bucket.name}"
                 )
 
         # Verify old guest volumes were deleted by the restore reset — this happens
@@ -578,11 +587,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             )
             self.assertTrue(
                 ok,
-                f"Pre-restore guest volumes still present on secondary {target.id} "
+                f"{tgt_label} Pre-restore guest volumes still present on {target.id} "
                 f"after restore reset — expected them deleted by the restore operation",
             )
             self.log.info(
-                f"Pre-restore guest volumes confirmed deleted on {target.id}"
+                f"{tgt_label} Pre-restore guest volumes confirmed deleted on {target.id}"
             )
 
         # Verify guest volume count == EBS snapshot count for this backup
@@ -590,7 +599,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             gv_ids = self.cp_monitor.get_current_guest_volume_ids(target)
             num_gvs = len(gv_ids)
             self.log.info(
-                f"Target {target.id}: {num_gvs} guest volumes attached: {gv_ids}"
+                f"{tgt_label} {target.id}: {num_gvs} guest volumes attached: {gv_ids}"
             )
             snap_ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
                 primary, backup_id, num_gvs
@@ -627,7 +636,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"got: {fusion_state.get('state')}",
             )
             self.log.info(
-                f"Fusion state on {target.id} post-restore: {fusion_state.get('state')}"
+                f"{tgt_label} Fusion state on {target.id} post-restore: {fusion_state.get('state')}"
             )
 
         # Restart mutation thread if same-cluster restore paused it
