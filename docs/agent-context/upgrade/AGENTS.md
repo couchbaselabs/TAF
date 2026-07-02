@@ -47,6 +47,12 @@ Cluster is upgraded through each intermediate version in order. See [upgrade-lib
 | 8.0 | `durability_impossible_fallback` |
 | 8.1 | `file_based_rebalance`, `10K_collections`, `fusion`, `rate_limiting`, `jwt_auth`, `pitr` |
 
+**Supported upgrade paths to 8.1**
+- Direct: 8.0.x → 8.1, 7.6.x → 8.1, 7.2.9 → 8.1
+- 3-hop: 7.1.x / 7.0.x / 6.6.x → 7.2.3 → 7.2.9 → 8.1
+- 4-hop: 6.5.x → 6.6.5 → 7.2.3 → 7.2.9 → 8.1
+- NOT supported direct to 8.1: 7.1.x single-hop, 7.2.0–7.2.8 single-hop
+
 Source: `lib/upgrade_lib/couchbase.py` → `features` dict (cumulative — 7.2 cluster has all 6.5–7.2 features).
 
 **7.6 boundary**: crossing from < 7.6 to ≥ 7.6 triggers `add_system_scope_to_all_buckets()` — adds `_system` scope (`_query`, `_mobile` collections) to all local bucket objects for downstream collection-count validation.
@@ -64,7 +70,7 @@ Source: `lib/upgrade_lib/couchbase.py` → `features` dict (cumulative — 7.2 c
 | `pytests/upgrade/ce_base.py` / `ce_upgrade.py` | CE restriction tests; node-limit enforcement, CE→EE swap |
 | `lib/upgrade_lib/couchbase.py` | `upgrade_chains` dict + `features` dict — single source for version registry |
 | `couchbase_utils/upgrade_utils/upgrade_util.py` | `CbServerUpgrade`: fetch build URLs, install on nodes, `get_supported_features()` |
-| `conf/upgrade/` | Test suite conf files — one per test class (durability, cbas, kv, luks, offline, magma, system_event_logs) |
+| `conf/upgrade/` | Test suite conf files — one per test class (durability, cbas, kv, offline, magma, system_event_logs) |
 
 ---
 
