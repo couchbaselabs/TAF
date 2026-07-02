@@ -365,10 +365,12 @@ class CapellaUtils(object):
                                              bucket_id)
             if resp.status_code == 204:
                 CapellaUtils.log.info("Bucket deleted successfully!")
-                cluster.buckets.remove([bucket for bucket in cluster.buckets if bucket.name == name])
+                cluster.buckets = [b for b in cluster.buckets if b.name != name]
             else:
                 CapellaUtils.log.critical(resp.content)
-                raise Exception("Bucket {} cannot be deleted".format(name))
+                raise Exception(
+                    "Bucket {} cannot be deleted: HTTP {} — {}".format(
+                        name, resp.status_code, resp.content))
         else:
             CapellaUtils.log.info("Bucket not found.")
 

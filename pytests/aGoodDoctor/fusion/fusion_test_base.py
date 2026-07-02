@@ -209,7 +209,26 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
                 self.log.warning(
                     f"Could not fetch UUID for bucket {bucket.name}: {e}")
 
-        CapellaAPI.delete_bucket(self.pod, self.tenant, self.cluster, bucket.name)
+        # Ensure cluster is healthy before attempting delete — Capella rejects
+        # bucket deletes when the cluster is still in a post-rebalance transition.
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id,
+            msg=f"Wait for healthy cluster before deleting bucket {bucket.name}",
+            timeout=600)
+
+        # Retry the delete up to 5 times with backoff — the API can transiently
+        # return non-204 even after wait_until_done if the CP is still settling.
+        for attempt in range(1, 6):
+            try:
+                CapellaAPI.delete_bucket(self.pod, self.tenant, self.cluster, bucket.name)
+                break
+            except Exception as e:
+                if attempt == 5:
+                    raise
+                self.log.warning(
+                    f"delete_bucket attempt {attempt}/5 failed for "
+                    f"'{bucket.name}': {e} — retrying in {10 * attempt}s")
+                time.sleep(10 * attempt)
 
         # Wait for ns_server to finish the deletion before returning.
         # Capella reports "healthy" before ns_server completes the removal, and
