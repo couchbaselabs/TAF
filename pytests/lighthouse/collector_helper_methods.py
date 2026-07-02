@@ -14,6 +14,7 @@ import time
 
 from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from StatsLib.StatsOperations_Rest import StatsHelper
 
 # ==================== Settings Helper Methods ====================
 
@@ -770,4 +771,84 @@ def get_cb_cluster_services_union(cluster):
         for svc in services_list:
             all_services.add(CB_TO_PORTAL_SERVICE_MAP.get(svc, svc))
     return sorted(all_services)
+
+
+def get_collector_metrics(server):
+    """
+    Return a dict of Lighthouse Collector Prometheus metrics from ns_server's
+    /_prometheusMetricsHigh endpoint.
+
+    cm_lighthouse_telemetry_sends_total is a high-cardinality counter so it
+    lives at /_prometheusMetricsHigh, not /_prometheusMetrics.
+
+    Currently exposed metrics:
+        telemetry_sends_success  -- cm_lighthouse_telemetry_sends_total{result="success"}
+        telemetry_sends_failure  -- cm_lighthouse_telemetry_sends_total{result="failure"}
+
+    New cm_lighthouse_* metrics can be added here as the design evolves without
+    changing the call signature.
+
+    Args:
+        server: TestInputServer pointing at the node to query.
+
+    Returns:
+        dict with keys:
+            'telemetry_sends_success': int
+            'telemetry_sends_failure': int
+    """
+    lines = StatsHelper(server).get_prometheus_metrics_high(component="ns_server")
+    result = {
+        'telemetry_sends_success': 0,
+        'telemetry_sends_failure': 0,
+    }
+    for line in lines:
+        if not line or line.startswith('#'):
+            continue
+        if 'cm_lighthouse_telemetry_sends_total' not in line:
+            continue
+        # e.g. cm_lighthouse_telemetry_sends_total{result="success"} 5
+        try:
+            value = int(float(line.split()[-1]))
+        except (ValueError, IndexError):
+            continue
+        if 'result="success"' in line:
+            result['telemetry_sends_success'] = value
+        elif 'result="failure"' in line:
+            result['telemetry_sends_failure'] = value
+    return result
+
+
+def get_lighthouse_failure_reason_from_logs(server):
+    """
+    Return the most recent lighthouse report failure reason from debug.log.
+
+    Uses diag_eval to resolve the actual log directory path (handles
+    cluster_run and non-standard installs), then greps for the line
+    emitted by lighthouse_reporter on send failure and extracts the
+    reason string after 'Error: '.
+
+    Args:
+        server: TestInputServer pointing at the node to query.
+
+    Returns:
+        str reason from the most recent failure log line, or None if not found.
+    """
+    _, log_dir = RestConnection(server).diag_eval(
+        'filename:absname(element(2, application:get_env('
+        'ns_server,error_logger_mf_dir))).')
+    log_file = '%s/debug.log' % str(log_dir).strip()
+    shell = RemoteMachineShellConnection(server)
+    try:
+        output, _ = shell.execute_command(
+            "grep 'lighthouse report failed' %s | tail -1" % log_file)
+    finally:
+        shell.disconnect()
+    if not output or not output[0].strip():
+        return None
+    line = output[0]
+    marker = 'Error: '
+    idx = line.find(marker)
+    if idx == -1:
+        return None
+    return line[idx + len(marker):].strip()
 
