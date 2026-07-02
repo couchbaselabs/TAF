@@ -27,8 +27,13 @@ from lighthouse.collector_helper_methods import (
     get_cb_cluster_aggregate_hardware,
     get_cb_cluster_services_union,
     assert_within_tolerance,
+    get_collector_metrics,
+    get_lighthouse_failure_reason_from_logs,
 )
 from unified_control_plane import LighthouseCollectorClient
+
+# RFC 5737 TEST-NET-1 — documentation-reserved block, guaranteed unreachable
+_UNREACHABLE_HOST = '192.0.2.1'
 
 
 class CollectorTests(LighthouseBase):
@@ -816,3 +821,178 @@ class CollectorTests(LighthouseBase):
         finally:
             self.ucp_client.session_logout()
             self.log.info("Portal logout complete")
+
+    # ==================== Metrics tests ====================
+
+    def test_telemetry_metrics_reflect_success_and_failure_counts(self):
+        """
+        Verify cm_telemetry_sends_count{result="success"} and
+        cm_telemetry_sends_count{result="failure"} Prometheus metrics increment
+        correctly, and that the reporting interval is respected.
+
+        Part 1 — Success path (30 s interval, 2 min window):
+            Set reporting_interval_hours = 30 s via diag/eval so the interval
+            timer fires ~4 times in 2 minutes.  Assert the success counter grew
+            by >= 3 and the failure counter is unchanged.
+            diag/eval is used (not REST POST) so no extra immediate report fires
+            — only the periodic timer drives the count.
+
+        Part 2 — Failure path + interval validation (60 s interval, 2 min window):
+            Switch to an unreachable endpoint (192.0.2.1, RFC 5737 TEST-NET-1)
+            and set interval to 60 s.  With the default reportTimeoutSeconds=1,
+            each attempt fails within ~1 s.  After 2 minutes, assert the failure
+            counter grew by 1–3 (≈ 2 expected at 60 s cadence).  The upper bound
+            of 3 distinguishes a 60 s interval from a 30 s interval, which would
+            produce ~4 failures — validating that the changed interval is respected.
+            Assert success counter unchanged.
+
+        RULE: domain is restored to lighthouse.couchbase.internal before exit.
+        """
+        portal_domain = 'lighthouse.couchbase.internal'
+        server = self.cluster.master
+
+        try:
+            # ===== Part 1: Success (30 s interval, 2 min) ====================
+
+            self.log.info(
+                "Part 1: setting 30s reporting interval to %s" % portal_domain)
+
+            baseline = get_collector_metrics(server)
+            self.log.info(
+                "Part 1 baseline: success=%d failure=%d"
+                % (baseline['telemetry_sends_success'],
+                   baseline['telemetry_sends_failure']))
+
+            diag_status, diag_content = set_lighthouse_ns_config_via_diag_eval(
+                server,
+                reporting_endpoint=portal_domain,
+                reporting_port=LIGHTHOUSE_DEFAULT_PORTAL_PORT,
+                reporting_interval_hours=30 / 3600.0)
+            self.assertTrue(
+                diag_status,
+                "Part 1: diag/eval failed: %s" % diag_content)
+
+            self.sleep(120,
+                       "Part 1: waiting 2 min for ~4 reports at 30s interval")
+
+            restore_status, restore_content = \
+                set_lighthouse_interval_via_diag_eval(server, 2)
+            self.assertTrue(
+                restore_status,
+                "Part 1: failed to restore interval to 2h: %s" % restore_content)
+
+            after1 = get_collector_metrics(server)
+            success_delta_1 = (after1['telemetry_sends_success']
+                               - baseline['telemetry_sends_success'])
+            failure_delta_1 = (after1['telemetry_sends_failure']
+                               - baseline['telemetry_sends_failure'])
+            self.log.info(
+                "Part 1 result: success_delta=%d failure_delta=%d"
+                % (success_delta_1, failure_delta_1))
+
+            # 30s interval over 2 min → ~4 reports; require at least 3
+            self.assertGreaterEqual(
+                success_delta_1, 3,
+                "Part 1: expected >= 3 successes at 30s interval over 2 min, "
+                "got %d" % success_delta_1)
+            self.assertEqual(
+                failure_delta_1, 0,
+                "Part 1: expected 0 failures on valid endpoint, got %d"
+                % failure_delta_1)
+            self.log.info(
+                "PASS Part 1: success counter +%d" % success_delta_1)
+
+            # ===== Part 2: Failure + interval validation (60 s, 2 min) =======
+
+            self.log.info(
+                "Part 2: setting 60s interval with unreachable endpoint %s"
+                % _UNREACHABLE_HOST)
+
+            # Set bad domain + 60s interval via diag/eval.
+            # diag/eval does NOT trigger an immediate report, so only the
+            # periodic timer drives the count — making the delta a clean
+            # measure of how many intervals fit in the window.
+            diag_status, diag_content = set_lighthouse_ns_config_via_diag_eval(
+                server,
+                reporting_endpoint=_UNREACHABLE_HOST,
+                reporting_port=LIGHTHOUSE_DEFAULT_PORTAL_PORT,
+                reporting_interval_hours=60 / 3600.0)
+            self.assertTrue(
+                diag_status,
+                "Part 2: diag/eval failed: %s" % diag_content)
+
+            # Baseline after config change, before any failures fire
+            baseline2 = get_collector_metrics(server)
+            self.log.info(
+                "Part 2 baseline: success=%d failure=%d"
+                % (baseline2['telemetry_sends_success'],
+                   baseline2['telemetry_sends_failure']))
+
+            self.sleep(120,
+                       "Part 2: waiting 2 min for ~2 failures at 60s interval")
+
+            # Restore domain to lighthouse.couchbase.internal before assertions
+            restore_status, restore_content = \
+                set_lighthouse_ns_config_via_diag_eval(
+                    server,
+                    reporting_endpoint=portal_domain,
+                    reporting_interval_hours=2)
+            self.assertTrue(
+                restore_status,
+                "Part 2: failed to restore domain/interval: %s"
+                % restore_content)
+
+            after2 = get_collector_metrics(server)
+            success_delta_2 = (after2['telemetry_sends_success']
+                               - baseline2['telemetry_sends_success'])
+            failure_delta_2 = (after2['telemetry_sends_failure']
+                               - baseline2['telemetry_sends_failure'])
+            self.log.info(
+                "Part 2 result: success_delta=%d failure_delta=%d"
+                % (success_delta_2, failure_delta_2))
+
+            # 60s interval over 2 min → ~2 failures; [1, 3] tolerates jitter.
+            # Upper bound of 3 distinguishes from 30s interval (~4 failures)
+            # — this is the interval-respected assertion.
+            self.assertGreaterEqual(
+                failure_delta_2, 1,
+                "Part 2: expected >= 1 failure against unreachable endpoint, "
+                "got %d" % failure_delta_2)
+            self.assertLessEqual(
+                failure_delta_2, 3,
+                "Part 2: expected <= 3 failures at 60s interval over 2 min "
+                "(> 3 would indicate interval < 60s is not respected), "
+                "got %d" % failure_delta_2)
+            self.assertEqual(
+                success_delta_2, 0,
+                "Part 2: expected 0 successes on unreachable endpoint, got %d"
+                % success_delta_2)
+            self.log.info(
+                "PASS Part 2: failure counter +%d (interval validated)"
+                % failure_delta_2)
+
+            # ---- Log verification: confirm failure reason was logged ----------
+            failure_reason = get_lighthouse_failure_reason_from_logs(server)
+            self.assertIsNotNone(
+                failure_reason,
+                "Part 2: expected a failure reason in debug.log, found none")
+            self.log.info(
+                "Part 2: failure reason from debug.log: %s" % failure_reason)
+            self.log.info(
+                "PASS Part 2: failure reason confirmed in logs")
+
+        finally:
+            # Always restore domain to lighthouse.couchbase.internal and
+            # interval to 2h — tearDown handles the REST API settings,
+            # this covers the diag/eval ns_config layer.
+            try:
+                set_lighthouse_ns_config_via_diag_eval(
+                    server,
+                    reporting_endpoint=portal_domain,
+                    reporting_interval_hours=2)
+                self.log.info(
+                    "Finally: domain restored to %s, interval to 2h"
+                    % portal_domain)
+            except Exception as e:
+                self.log.warning(
+                    "Finally: could not restore settings: %s" % e)
