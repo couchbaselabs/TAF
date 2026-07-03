@@ -6,7 +6,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
 from BucketLib.bucket import Collection, Scope
 from cb_tools.cbstats import Cbstats
-from membase.api.rest_client import RestConnection
+from membase.api.rest_client import RestConnection, ServerUnavailableException
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
@@ -16,6 +16,18 @@ import testconstants
 from upgrade_lib.couchbase import upgrade_chains
 from upgrade_lib.upgrade_helper import CbServerUpgrade
 import threading
+from lighthouse.collector_helper_methods import (
+    set_lighthouse_ns_config_via_diag_eval,
+    set_lighthouse_interval_via_diag_eval,
+    get_cb_cluster_uuid,
+    get_cb_cluster_node_count,
+    get_portal_cluster,
+    wait_for_cluster_on_portal,
+    LIGHTHOUSE_DEFAULT_PORTAL_PORT,
+    _parse_cb_version,
+)
+from lighthouse.lighthouse_portal import LighthousePortal
+from unified_control_plane import UnifiedControlPlaneClient
 
 
 class UpgradeBase(BaseTestCase):
@@ -74,6 +86,12 @@ class UpgradeBase(BaseTestCase):
         self.test_guardrail_upgrade = self.input.param("test_guardrail_upgrade", False)
         self.guardrail_type = self.input.param("guardrail_type", "resident_ratio")
         self.breach_guardrail = self.input.param("breach_guardrail", False)
+
+        # Lighthouse / UCP portal - optional, skipped if ucp_ip not provided.
+        self.ucp_ip = self.input.param("ucp_ip", testconstants.LIGHTHOUSE_PORTAL_IP)
+        self.ucp_port = self.input.param("ucp_port", testconstants.LIGHTHOUSE_PORTAL_PORT)
+        self.ucp_username = self.input.param("ucp_username", "admin")
+        self.ucp_password = self.input.param("ucp_password", "AdminPass123!")
 
         self.cluster_profile = self.input.param("cluster_profile", None)
 
@@ -1088,6 +1106,130 @@ class UpgradeBase(BaseTestCase):
         self.log.info("Number of failed queries = {}".format(total_queries - success_query_count))
         self.log.info("Failed queries = {}".format(failed_queries))
 
+
+    def validate_lighthouse_telemetry(self, phase):
+        """
+        Validate Lighthouse collector telemetry on the UCP portal.
+
+        Called from test_upgrade at two points:
+          phase='mixed'    - after the first node is upgraded.  Cluster is in
+                             mixed mode.  Assert cluster UUID appears on the
+                             portal and telemetry contains at least one node.
+          phase='complete' - all nodes upgraded.  Assert portal node count
+                             matches the active CB cluster node count exactly.
+
+        Sets a 10-second reporting interval via diag/eval so reports land
+        quickly without triggering the extra immediate report that a REST POST
+        would cause (keeps the delta clean).  Restores endpoint and interval
+        in the finally block regardless of outcome.
+
+        Skipped silently if self.ucp_ip is not set.
+        """
+        if not self.ucp_ip:
+            self.log.info(
+                "Lighthouse %s: ucp_ip not configured, skipping" % phase)
+            return
+
+        server = self.cluster.master
+        portal_domain = 'lighthouse.couchbase.internal'
+        try:
+            set_lighthouse_ns_config_via_diag_eval(
+                server,
+                reporting_endpoint=self.ucp_ip,
+                reporting_port=self.ucp_port,
+                reporting_interval_hours=10 / 3600.0)
+            self.sleep(
+                30,
+                "Lighthouse %s: waiting for reports at 10s interval" % phase)
+            set_lighthouse_interval_via_diag_eval(server, 2)
+
+            try:
+                portal = LighthousePortal(ip=self.ucp_ip, port=self.ucp_port,
+                                          username=self.ucp_username,
+                                          password=self.ucp_password)
+                ucp_client = UnifiedControlPlaneClient(portal, timeout=15)
+                status, content, _ = ucp_client.session_login(
+                    self.ucp_username, self.ucp_password)
+                if not status:
+                    self.log.warning(
+                        "Lighthouse %s: portal login failed: %s"
+                        % (phase, content))
+                    return
+                try:
+                    cluster_uuid = get_cb_cluster_uuid(server)
+                    self.assertIsNotNone(
+                        cluster_uuid,
+                        "Lighthouse %s: could not resolve cluster UUID" % phase)
+
+                    appeared = wait_for_cluster_on_portal(
+                        ucp_client, cluster_uuid, timeout=60, poll_interval=5)
+                    self.assertTrue(
+                        appeared,
+                        "Lighthouse %s: cluster UUID '%s' not on portal within "
+                        "60s" % (phase, cluster_uuid))
+                    self.log.info(
+                        "Lighthouse %s: cluster UUID '%s' confirmed on portal"
+                        % (phase, cluster_uuid))
+
+                    portal_cluster = get_portal_cluster(ucp_client, cluster_uuid)
+                    telemetry = (portal_cluster.get('telemetry', {})
+                                 if portal_cluster else {})
+                    portal_nodes = telemetry.get('nodes', [])
+                    self.assertTrue(
+                        portal_nodes,
+                        "Lighthouse %s: portal telemetry has no nodes" % phase)
+
+                    product = telemetry.get('product', {})
+                    portal_version = product.get('version', '')
+                    portal_edition = product.get('edition', '')
+                    self.log.info(
+                        "Lighthouse %s: telemetry present - %d node(s), "
+                        "version=%s edition=%s"
+                        % (phase, len(portal_nodes),
+                           portal_version, portal_edition))
+
+                    if phase == 'complete':
+                        cb_node_count = get_cb_cluster_node_count(server)
+                        self.assertEqual(
+                            len(portal_nodes), cb_node_count,
+                            "Lighthouse complete: portal node count %d != CB "
+                            "node count %d"
+                            % (len(portal_nodes), cb_node_count))
+                        self.log.info(
+                            "Lighthouse complete: PASS - all %d nodes reflected "
+                            "on portal" % cb_node_count)
+
+                        cb_raw = RestConnection(server).get_nodes_self_unparsed(
+                            ).get('version', '')
+                        expected_version, expected_edition = _parse_cb_version(
+                            cb_raw)
+                        self.assertEqual(
+                            portal_version, expected_version,
+                            "Lighthouse complete: portal version '%s' != "
+                            "CB version '%s'"
+                            % (portal_version, expected_version))
+                        self.assertEqual(
+                            portal_edition, expected_edition,
+                            "Lighthouse complete: portal edition '%s' != "
+                            "CB edition '%s'"
+                            % (portal_edition, expected_edition))
+                        self.log.info(
+                            "Lighthouse complete: PASS - version=%s edition=%s "
+                            "matches CB" % (portal_version, portal_edition))
+                finally:
+                    ucp_client.session_logout()
+            except ServerUnavailableException as e:
+                self.log.warning(
+                    "Lighthouse %s: portal unreachable at %s:%s - %s"
+                    % (phase, self.ucp_ip, self.ucp_port, e))
+        finally:
+            set_lighthouse_ns_config_via_diag_eval(
+                server,
+                reporting_endpoint=portal_domain,
+                reporting_interval_hours=2)
+            self.log.info(
+                "Lighthouse %s: endpoint restored to %s, interval to 2h"
+                % (phase, portal_domain))
 
     def PrintStep(self, msg=None):
         print "\n"
