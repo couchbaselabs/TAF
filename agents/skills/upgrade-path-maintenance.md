@@ -55,3 +55,13 @@ Grep all `*.md` docs for the bare filename and strip references to it — but on
 - Renaming `6.6.4_7.2.3` → `6.6.4_7.2.3_7.2.9` in the registry silently broke `conf/plasma/plasma_upgrade.conf`, which still referenced the old key — caught only by grepping every conf for the old key name before finalizing.
 - `testconstants.CB_RELEASE_BUILDS` entries with build `"0000"` are real, manifest-listed releases with an unscraped build number — not placeholders to skip.
 - The `qe-db` MCP server has no write tool for `QE-Test-Suites` by design (safety guard in `db_utils.py`). Don't try to work around it with `cb_run_query`; use a direct SDK script with the same read-only-server's credentials instead.
+
+## After finishing this runbook
+
+Once the new target release's upgrade paths are wired up, the conf files
+touched in step 3 (and any older base-version lines that just got pushed
+further into maintenance by this change) are good candidates for job
+consolidation. Ask the user whether they also want to run the
+`upgrade-group-consolidation` skill against the conf file(s) just edited,
+to minimize the number of tests/jobs kept around for versions now in
+maintenance mode.

@@ -92,6 +92,20 @@ Runbook for wiring up a new Couchbase Server release's supported upgrade paths a
 
 ---
 
+### upgrade-group-consolidation
+Audit and consolidate `GROUP=` tags in `conf/upgrade/*.conf` files so regression jobs can be collapsed into a small, fixed set of category- or version-based jobs while still covering the maximum number of distinct base versions.
+
+**Usage:** When asked to reduce/aggregate upgrade jobs, audit an upgrade `.conf` file against `lib/upgrade_lib/couchbase.py`, or minimize test count for a maintenance-phase upgrade suite. Also suggested as a follow-up after running `upgrade-path-maintenance`.
+
+**Key features:**
+- Three modes: Audit (read-only correctness/consistency check), Consolidate (rewrite `GROUP=` tokens for job dispatch, never touches test params), Minimize (opt-in round-robin or registry-sampling rewrite that cuts test count while preserving scenario and version coverage)
+- Six audit checks: chain-key validity, comment/chain consistency, GROUP scheme dimensionality, redundant coverage, min/max version alignment against the registry, full cross-product redundancy detection
+- Two Minimize variants (round-robin vs. registry-range sampling) with worked examples from real conf files (`durability_upgrade.conf`, `system_event_logs.conf`, `cbas_upgrade.conf`)
+
+**File:** `agents/skills/upgrade-group-consolidation.md`
+
+---
+
 ## Adding a New Skill
 
 1. Create `agents/skills/<name>.md` with YAML frontmatter:

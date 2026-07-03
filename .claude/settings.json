@@ -19,6 +19,11 @@
       "name": "upgrade-path-maintenance",
       "description": "Runbook for wiring up a new Couchbase Server release's supported upgrade paths across lib/upgrade_lib/couchbase.py, conf/upgrade/*.conf, docs/agent-context/upgrade/upgrade-lib.md, and the QE-Test-Suites dispatcher DB. Use when a new target release's official upgrade-path diagram needs to be reflected in TAF.",
       "path": "agents/skills/upgrade-path-maintenance.md"
+    },
+    {
+      "name": "upgrade-group-consolidation",
+      "description": "Audit and consolidate GROUP= tags in conf/upgrade/*.conf files so regression jobs can be collapsed into a small, fixed set of category- or version-based jobs while still covering the maximum number of distinct base versions. Use whenever the user asks to reduce/aggregate upgrade jobs, audit an upgrade .conf file against lib/upgrade_lib/couchbase.py, or wants fewer jobs with more base-version coverage for a maintenance-phase upgrade suite.",
+      "path": "agents/skills/upgrade-group-consolidation.md"
     }
   ]
 }
