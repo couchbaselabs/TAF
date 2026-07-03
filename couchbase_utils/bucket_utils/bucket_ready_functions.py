@@ -3985,7 +3985,15 @@ class BucketUtils(ScopeUtils):
         for node in kv_nodes:
             cbstat = Cbstats(node)
             for bucket in buckets:
-                val = cbstat.all_stats(bucket.name)["ep_dcp_oso_backfill"]
+                stats = cbstat.all_stats(bucket.name)
+                val = stats.get("ep_dcp_oso_backfill")
+                if val is None:
+                    result = False
+                    self.log.critical(
+                        "ep_dcp_oso_backfill missing in cbstats output "
+                        "for bucket '{}' on node {}. Full stats: {}"
+                        .format(bucket.name, node.ip, stats))
+                    continue
                 if val != expected_val:
                     result = False
                     self.log.critical("Bucket {}, oso_dcp_backfill mismatch."
