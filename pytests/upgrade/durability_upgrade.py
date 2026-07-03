@@ -383,6 +383,13 @@ class UpgradeTests(UpgradeBase):
                     range_scan_started = True
                     CollectionBase.range_scan_load_setup(self)
 
+                # Lighthouse mid-upgrade validation: run once after the first
+                # node is upgraded so the cluster is in mixed mode.
+                if itr == 0:
+                    self.PrintStep(
+                        "Lighthouse telemetry check - mixed-mode cluster")
+                    self.validate_lighthouse_telemetry(phase='mixed')
+
                 # Halt further upgrade if test has failed during current upgrade
                 if self.test_failure is not None:
                     break
@@ -399,6 +406,11 @@ class UpgradeTests(UpgradeBase):
         self.cluster_util.print_cluster_stats(self.cluster)
         self.PrintStep("Upgrade of the whole cluster to {0} complete".format(
                                                             self.upgrade_version))
+
+        # Lighthouse post-upgrade validation: all nodes upgraded, assert full
+        # cluster topology is reflected on the portal.
+        self.PrintStep("Lighthouse telemetry check - fully upgraded cluster")
+        self.validate_lighthouse_telemetry(phase='complete')
 
         if self.test_server_group_info_in_bucket_CCCP:
             self.verify_server_groups_for_zones(initial_spare_node)
