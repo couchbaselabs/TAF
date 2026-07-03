@@ -537,6 +537,9 @@ class Cbstats(CbCmdBase):
             if line.strip() == '':
                 continue
             match_result = regexp.match(line)
+            if match_result is None:
+                self.log.warning("vbucket_details: unmatched line: %s" % line)
+                continue
             vb_num = match_result.group(1)
             stat_name = match_result.group(2)
             stat_value = match_result.group(3)
@@ -666,6 +669,9 @@ class Cbstats(CbCmdBase):
         for line in output:
             # Match the regexp to the line and populate the values
             match_result = regexp.match(line)
+            if match_result is None:
+                self.log.warning("failover_stats: unmatched line: %s" % line)
+                continue
             vb_num = match_result.group(1)
             stat_name = match_result.group(2)
             stat_value = match_result.group(3)
