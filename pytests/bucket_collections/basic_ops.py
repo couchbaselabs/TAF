@@ -198,7 +198,9 @@ class BasicOps(CollectionBase):
             if result["status"] is True:
                 self.log_failure("CRUD succeeded on deleted collection")
             elif SDKException.RetryReason.KV_COLLECTION_OUTDATED \
-                    not in result["error"]:
+                    not in result["error"] \
+                    and not any(e in result["error"]
+                                for e in SDKException.CollectionNotFoundException):
                 self.log_failure("Invalid error '%s'" % result["error"])
             client.close()
         except Exception as e:
