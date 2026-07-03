@@ -155,13 +155,13 @@ class CollectionsRebalance(CollectionBase):
             self.retry_n1qltxn = False
             self.sleep(5, "wait for rebalance to start")
             self.n1ql_fun = N1qlBase()
-            # N1qlBase is a CollectionBase TestCase constructed here without
-            # setUp(), so attributes normally initialised in setUp (log,
-            # cluster) are missing. full_execute_query/process_value_for_verification
-            # rely on them, so wire them in from the parent test to avoid
-            # AttributeError: 'N1qlBase' object has no attribute 'log'.
+            # N1qlBase() is instantiated directly (not via the test runner),
+            # so its setUp() never runs and attributes it would normally
+            # initialize (e.g. self.log) are missing. Calling setUp() here
+            # is not an option since it re-provisions the cluster. Wire up
+            # only what full_execute_query() and its helpers actually touch.
             self.n1ql_fun.log = self.log
-            self.n1ql_fun.cluster = self.cluster
+            self.n1ql_fun.failure = False
             try:
                 query_params = self.n1ql_helper.create_txn(server=self.server, txtimeout=2)
                 self.collection_savepoint, self.savepoints, self.queries, rerun = \
