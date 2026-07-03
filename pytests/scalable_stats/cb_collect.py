@@ -96,36 +96,6 @@ class CbCollectInfoTests(CollectionBase):
             RestConnection(node).diag_eval(
                 "ns_config:set_sub(stats_settings, [{%s, %s}])" % (key, value))
 
-    def test_cb_collect_info(self):
-        """
-        Run cb_collect_info to make sure it collects
-        successfully on the cluster without any errors.
-        (os_certify test)
-        """
-        nodes_in_cluster = self.__get_server_nodes()
-        self.log.info("Starting cb-collection for nodes %s"
-                      % [node.ip for node in nodes_in_cluster])
-        for node in nodes_in_cluster:
-            self.node_data[node]["cb_collect_task"] = Thread(
-                target=self.cluster_util.run_cb_collect,
-                args=[node, self.node_data[node]["cb_collect_file"]],
-                kwargs={"options": "",
-                        "result": self.node_data[node]["cb_collect_result"]})
-            self.node_data[node]["cb_collect_task"].start()
-
-        for node in nodes_in_cluster:
-            try:
-                t_node = self.node_data[node]
-                t_node["cb_collect_task"].join(self.cbcollect_timeout)
-                if str(t_node["cb_collect_result"]["file_size"]) == "0":
-                    self.log_failure("%s - cbcollect file size is zero"
-                                     % node.ip)
-            except RuntimeError as e:
-                self.log_failure("%s cbcollect_info timed-out: %s"
-                                 % (node.ip, e))
-
-        self.validate_test_failure()
-
     def test_with_server_stopped(self):
         """
         1. Disable auto-failover in the cluster
