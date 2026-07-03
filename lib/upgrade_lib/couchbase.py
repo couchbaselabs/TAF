@@ -27,6 +27,7 @@ upgrade_chains = {
     "7.2.6": ["7.2.6-" + CB_RELEASE_BUILDS["7.2.6"]],
     "7.2.7": ["7.2.7-" + CB_RELEASE_BUILDS["7.2.7"]],
     "7.2.8": ["7.2.8-" + CB_RELEASE_BUILDS["7.2.8"]],
+    "7.2.9": ["7.2.9-" + CB_RELEASE_BUILDS["7.2.9"]],
 
     "7.6.0": ["7.6.0-" + CB_RELEASE_BUILDS["7.6.0"]],
     "7.6.1": ["7.6.1-" + CB_RELEASE_BUILDS["7.6.1"]],
@@ -36,6 +37,11 @@ upgrade_chains = {
     "7.6.5": ["7.6.5-" + CB_RELEASE_BUILDS["7.6.5"]],
     "7.6.6": ["7.6.6-" + CB_RELEASE_BUILDS["7.6.6"]],
     "7.6.7": ["7.6.7-" + CB_RELEASE_BUILDS["7.6.7"]],
+    "7.6.8": ["7.6.8-" + CB_RELEASE_BUILDS["7.6.8"]],
+    "7.6.9": ["7.6.9-" + CB_RELEASE_BUILDS["7.6.9"]],
+    "7.6.10": ["7.6.10-" + CB_RELEASE_BUILDS["7.6.10"]],
+    "7.6.11": ["7.6.11-" + CB_RELEASE_BUILDS["7.6.11"]],
+    "7.6.12": ["7.6.12-" + CB_RELEASE_BUILDS["7.6.12"]],
 
     # Ref: https://docs.couchbase.com/server/current/install/upgrade.html
     "6.6.4_7.2.3": ["6.6.4-" + CB_RELEASE_BUILDS["6.6.4"],
