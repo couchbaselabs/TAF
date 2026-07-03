@@ -539,15 +539,28 @@ class N1qlBase(CollectionBase):
                                      collection_savepoint, savepoint):
         dict_to_verify = {}
         count = 0
-        error_msg = result["errors"][0]["cause"]["cause"]
-        if isinstance(error_msg, dict):
-            error_msg = error_msg["error_description"]
-        self.log.info("cause is %s"%result["errors"][0]["cause"])
+        # Query transaction errors have appeared in two shapes across server
+        # versions: a legacy nested form {"cause": {"cause": ...}} and a flat
+        # form {"code": ..., "msg": ...} (8.1.0+). Extract defensively so a
+        # missing "cause" key does not raise KeyError and get mis-reported as
+        # an unexpected thread failure (masking an expected conflict such as a
+        # duplicate-key commit).
+        err = result["errors"][0]
+        if "cause" in err:
+            error_msg = err["cause"]
+            if isinstance(error_msg, dict):
+                error_msg = error_msg.get("cause", error_msg)
+            if isinstance(error_msg, dict):
+                error_msg = error_msg.get("error_description", error_msg)
+        else:
+            error_msg = err.get("msg", "")
+        self.log.info("cause is %s" % error_msg)
         if N1qlException.CasMismatchException \
             in str(error_msg):
             return True
-        elif N1qlException.DocumentExistsException \
-            in str(error_msg):
+        elif N1qlException.DocumentExistsException in str(error_msg) \
+                or N1qlException.DocumentAlreadyExistsException \
+                in str(error_msg):
             for key in savepoint:
                 for index in list(collection_savepoint[key].keys()):
                     keys = list(collection_savepoint[key][index]["INSERT"].keys())
