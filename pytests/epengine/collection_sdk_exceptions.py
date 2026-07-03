@@ -140,7 +140,7 @@ class SDKExceptionTests(CollectionBase):
             elif (not SDKException.check_if_exception_exists(
                     SDKException.AmbiguousTimeoutException, result["error"])
                     and not SDKException.check_if_exception_exists(
-                        SDKException.RequestCanceledException, result["error"]))
+                        SDKException.RequestCanceledException, result["error"])
                   or (retry_reason.COLLECTION_NOT_FOUND
                       not in str(result["error"])
                       and (retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
