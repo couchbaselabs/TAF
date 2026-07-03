@@ -201,22 +201,19 @@ class CollectionBase(ClusterSetup, FusionBase):
 
         cbstat_obj = Cbstats(self.cluster.kv_nodes[0])
         for bucket in self.cluster.buckets:
-            retry = 0
-            while True:
-                try:
-                    result = cbstat_obj.all_stats(bucket.name)
-                    self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
-                                  % (bucket.name,
-                                     result["vb_active_perc_mem_resident"]))
-                    self.log.info("Bucket: %s, Replica Resident ratio(DGM): %s%%"
-                                  % (bucket.name,
-                                     result["vb_replica_perc_mem_resident"]))
-                    break
-                except KeyError as e:
-                    if retry == 5:
-                        raise e
-                    retry += 1
-                    self.sleep(5, "Retrying due to %s" % e)
+            result = cbstat_obj.all_stats(bucket.name)
+            active = result.get("vb_active_perc_mem_resident")
+            replica = result.get("vb_replica_perc_mem_resident")
+            if active is not None and replica is not None:
+                self.log.info("Bucket: %s, Active Resident ratio(DGM): %s%%"
+                              % (bucket.name, active))
+                self.log.info("Bucket: %s, Replica Resident ratio(DGM): %s%%"
+                              % (bucket.name, replica))
+            else:
+                self.log.warning(
+                    "DGM stats missing for bucket '%s' on node %s. "
+                    "Full stats: %s"
+                    % (bucket.name, self.cluster.kv_nodes[0].ip, result))
 
             if not self.skip_collections_cleanup:
                 self.bucket_util.remove_scope_collections_for_bucket(
