@@ -347,28 +347,20 @@ class MagmaCrashTests(MagmaBaseTest):
 
         self.compute_docs_ranges()
 
-        tasks_info = dict()
-        for collection in self.collections:
-            self.generate_docs(doc_ops=self.doc_ops, target_vbucket=None)
-            tem_tasks_info = self.loadgen_docs(
-                self.retry_exceptions,
-                self.ignore_exceptions,
-                scope=CbServer.default_scope,
-                collection=collection,
-                suppress_error_table=True,
-                skip_read_on_error=True,
-                _sync=False,
-                doc_ops=self.doc_ops,
-                track_failures=False,
-                sdk_retry_strategy=self.sdk_retry_strategy)
-            tasks_info.update(tem_tasks_info.items())
+        tasks, print_ops_tasks = self.java_doc_loader(
+            doc_ops=self.doc_ops,
+            scopes=[CbServer.default_scope],
+            collections=self.collections,
+            wait=False)
 
         self.crash_th = threading.Thread(target=self.crash,
                                          kwargs=dict(graceful=self.graceful,
                                                      wait=wait_warmup))
         self.crash_th.start()
-        for task in tasks_info:
-            self.task_manager.get_task_result(task)
+        for task in tasks:
+            self.doc_loading_tm.get_task_result(task)
+        for task in print_ops_tasks:
+            task.end_task()
 
         self.stop_crash = True
         self.crash_th.join()
