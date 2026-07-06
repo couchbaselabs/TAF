@@ -462,7 +462,7 @@ class SDKClient(object):
         return result
 
     @staticmethod
-    def __translate_upsert_multi_results(data):
+    def __translate_upsert_multi_results(data, docs=None):
         success = dict()
         fail = dict()
         for key, mutation_result in data.results.items():
@@ -472,6 +472,8 @@ class SDKClient(object):
             fail[key] = dict()
             fail[key]["cas"] = 0
             fail[key]['error'] = result_exception
+            if docs is not None:
+                fail[key]["value"] = docs[key]
         return success, fail
 
     @staticmethod
@@ -485,6 +487,7 @@ class SDKClient(object):
             fail[key] = dict()
             fail[key]["cas"] = 0
             fail[key]['error'] = result_exception
+            fail[key]["value"] = dict()
         return success, fail
 
     @staticmethod
@@ -1074,7 +1077,7 @@ class SDKClient(object):
         elif doc_type.lower() == "string":
             raise NotImplementedError()
         result = self.collection.insert_multi(items, options)
-        return self.__translate_upsert_multi_results(result)
+        return self.__translate_upsert_multi_results(result, docs=items)
 
     def upsert_multi(self, docs,
                      exp=0, exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1092,7 +1095,7 @@ class SDKClient(object):
         elif doc_type.lower() == "string":
             raise NotImplementedError()
         result = self.collection.upsert_multi(docs, options)
-        return self.__translate_upsert_multi_results(result)
+        return self.__translate_upsert_multi_results(result, docs=docs)
 
     def replace_multi(self, docs,
                       exp=0, exp_unit=SDKConstants.TimeUnit.SECONDS,
@@ -1111,7 +1114,7 @@ class SDKClient(object):
         elif doc_type.lower() == "string":
             raise NotImplementedError()
         result = self.collection.replace_multi(docs, options)
-        return self.__translate_upsert_multi_results(result)
+        return self.__translate_upsert_multi_results(result, docs=docs)
 
     def get_multi(self, keys,
                   timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,

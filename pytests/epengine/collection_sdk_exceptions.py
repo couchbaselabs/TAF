@@ -3,6 +3,10 @@ from random import sample
 
 import time
 
+from couchbase.exceptions import CouchbaseException, \
+    CollectionAlreadyExistsException, ScopeNotFoundException, \
+    CollectionNotFoundException
+
 from cb_constants import CbServer
 from cb_constants.DocLoading import Bucket as Bucket_Op
 from bucket_collections.collections_base import CollectionBase
@@ -137,14 +141,23 @@ class SDKExceptionTests(CollectionBase):
             elif result["status"] is True:
                 self.log_failure("Create didn't fail as expected for key: %s"
                                  % key)
-            elif (not SDKException.check_if_exception_exists(
-                    SDKException.AmbiguousTimeoutException, result["error"])
-                    and not SDKException.check_if_exception_exists(
-                        SDKException.RequestCanceledException, result["error"])
-                  or (retry_reason.COLLECTION_NOT_FOUND
-                      not in str(result["error"])
-                      and (retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
-                           not in str(result["error"])))):
+            elif not (SDKException.check_if_exception_exists(
+                    SDKException.ScopeNotFoundException, result["error"])
+                    or SDKException.check_if_exception_exists(
+                        SDKException.CollectionNotFoundException,
+                        result["error"])
+                    or ((SDKException.check_if_exception_exists(
+                            SDKException.AmbiguousTimeoutException,
+                            result["error"])
+                         or SDKException.check_if_exception_exists(
+                             SDKException.RequestCanceledException,
+                             result["error"]))
+                        and (retry_reason.COLLECTION_NOT_FOUND
+                             in str(result["error"])
+                             or retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
+                             in str(result["error"])
+                             or retry_reason.KV_COLLECTION_OUTDATED
+                             in str(result["error"])))):
                 self.log_failure("Invalid exception for key %s: %s"
                                  % (key, result["error"]))
 
@@ -270,7 +283,7 @@ class SDKExceptionTests(CollectionBase):
         # Create collection with same name
         try:
             client.create_collection(col_name, scope=scope_name)
-        except CollectionExistsException:
+        except CollectionAlreadyExistsException:
             pass
 
         # Create scope under invalid scope
@@ -692,8 +705,9 @@ class SDKExceptionTests(CollectionBase):
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.bucket.numVBuckets)
-                    if SDKException.DurabilityAmbiguousException \
-                            not in str(crud_result["error"]):
+                    if not SDKException.check_if_exception_exists(
+                           SDKException.DurabilityAmbiguousException,
+                           crud_result["error"]):
                         self.log_failure(
                             "Invalid exception for doc %s, vb %s: %s"
                             % (doc_id, vb_num, crud_result))
@@ -766,8 +780,9 @@ class SDKExceptionTests(CollectionBase):
                 vb_for_key = self.bucket_util.get_vbucket_num_for_key(
                     doc_key, self.bucket.numVBuckets)
 
-                if SDKException.DurabilityAmbiguousException \
-                        not in str(doc_info["error"]):
+                if not SDKException.check_if_exception_exists(
+                        SDKException.DurabilityAmbiguousException,
+                        doc_info["error"]):
                     table_view.add_row([doc_key, vb_for_key,
                                         doc_info["error"]])
 

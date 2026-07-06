@@ -340,7 +340,7 @@ class BasicOps(CollectionBase):
                 scope_name,
                 create_collection_with_scope_name=collection_with_scope_name)
 
-        load_gen = doc_generator(self.key, 0, self.num_items)
+        load_gen = doc_generator(self.key, self.num_items, self.num_items*2)
         task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, load_gen, "create", self.maxttl,
             batch_size=1, process_concurrency=1,
