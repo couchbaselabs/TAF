@@ -6,6 +6,10 @@ cleanup_dir_before_exit() {
 
 setup_test_infra_repo_for_installation() {
   git clone https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbaselabs/test_infra_runner --depth 1
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to clone test_infra_runner"
+    exit 1
+  fi
   cd test_infra_runner/
   git submodule update --init --force --remote
   pyenv local $PYENV_VERSION
@@ -69,34 +73,6 @@ ulimit -x unlimited
 echo "########## ulimit values ###########"
 ulimit -a
 echo "####################################"
-
-echo "###########################################"
-echo "  Populating env file for downstream jobs"
-echo "1/4 Extracting is_dynamic_vms value"
-export is_dynamic_vms=`echo $dispatcher_params| sed -n 's/.*"use_dynamic_vms": *\([^,]*\).*/\1/p' | tr -d ' '`
-echo "is_dynamic_vms value: $is_dynamic_vms"
-
-echo "2/4 Creating file: cleanup_job_params"
-echo "descriptor=$descriptor" > cleanup_job_params
-echo "UPSTREAM_BUILD_NUMBER=${BUILD_NUMBER}" >> cleanup_job_params
-echo "addPoolServers=$addPoolServers" >> cleanup_job_params
-echo "version_number=$version_number" >> cleanup_job_params
-echo "is_dynamic_vms=$is_dynamic_vms" >> cleanup_job_params
-
-echo "3/4 Creating file: savejoblogs_job_params"
-echo "test_job_url=${JOB_URL}" > savejoblogs_job_params
-echo "test_job_build=${BUILD_NUMBER}" >> savejoblogs_job_params
-echo "test_name=${descriptor}" >> savejoblogs_job_params
-echo "addPoolServers=$addPoolServers" >> savejoblogs_job_params
-echo "version_number=$version_number" >> savejoblogs_job_params
-echo "is_dynamic_vms=$is_dynamic_vms" >> savejoblogs_job_params
-
-echo "4/4 Creating file: aws_cleanup_job_params"
-echo "servers=${servers}" > aws_cleanup_job_params
-echo "###########################################"
-
-# To clean any available space from docker
-docker system prune -f
 
 # To kill Orphan Python / magmaloader.jar
 ps -ef | grep 'python testrunner.py' | awk '$3 == 1 {print $2}' | xargs kill -9
