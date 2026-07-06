@@ -1,5 +1,36 @@
 #!/bin/bash
 
+set +x
+echo "Setting ulimit values for this session"
+# Set data seg size
+ulimit -d unlimited
+# Set file size
+ulimit -f unlimited
+# Set pending signals
+ulimit -i 127868
+# Set max locked memory
+ulimit -l 3075360
+# Set max memory size
+ulimit -m unlimited
+# Set open files
+ulimit -n 204200
+# Set POSIX message queues
+ulimit -q 819200
+# Set stack size
+ulimit -s 8192
+# Set cpu time
+ulimit -t unlimited
+# Set max user processes
+ulimit -u 127868
+# Set virtual memory
+ulimit -v unlimited
+# Set file locks
+ulimit -x unlimited
+
+echo "########## ulimit values ###########"
+ulimit -a
+echo "####################################"
+
 # To kill Orphan Python / magmaloader.jar
 ps -ef | grep 'python testrunner.py' | awk '$3 == 1 {print $2}' | xargs kill -9
 ps -ef | grep 'java -jar' | grep 'magmadocloader' | awk '$3 == 1 {print $2}' | xargs kill -9
