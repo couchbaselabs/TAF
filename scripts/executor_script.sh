@@ -46,6 +46,33 @@ check_and_build_testrunner_install_docker() {
   fi
 }
 
+NATIVE_TEST_INFRA_DIR="$WORKSPACE/test_infra_runner"
+NATIVE_PYENV_VERSION="3.10.14"
+use_native_testrunner=false
+if [[ "$NODE_LABELS" == *"deb12_jython_slave"* ]]; then
+  use_native_testrunner=true
+fi
+
+setup_native_testrunner() {
+  export PYENV_VERSION="$NATIVE_PYENV_VERSION"
+  export PYENV_ROOT="$HOME/.pyenv"
+  export PATH="$PYENV_ROOT/bin:$PATH"
+  eval "$(pyenv init -)"
+  if [ ! -d "$NATIVE_TEST_INFRA_DIR/.git" ]; then
+    git clone --depth 1 --no-tags https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/couchbaselabs/test_infra_runner.git "$NATIVE_TEST_INFRA_DIR"
+    if [ $? -ne 0 ]; then
+      echo "ERROR: Failed to clone test_infra_runner into $NATIVE_TEST_INFRA_DIR"
+      exit 1
+    fi
+  fi
+  (
+    cd "$NATIVE_TEST_INFRA_DIR"
+    git submodule init
+    git submodule update --init --force --remote
+    pyenv local $NATIVE_PYENV_VERSION
+  )
+}
+
 set +x
 echo "Setting ulimit values for this session"
 # Set data seg size
@@ -76,31 +103,6 @@ ulimit -x unlimited
 echo "########## ulimit values ###########"
 ulimit -a
 echo "####################################"
-
-echo "###########################################"
-echo "  Populating env file for downstream jobs"
-echo "1/4 Extracting is_dynamic_vms value"
-export is_dynamic_vms=`echo $dispatcher_params| sed -n 's/.*"use_dynamic_vms": *\([^,]*\).*/\1/p' | tr -d ' '`
-echo "is_dynamic_vms value: $is_dynamic_vms"
-
-echo "2/4 Creating file: cleanup_job_params"
-echo "descriptor=$descriptor" > cleanup_job_params
-echo "UPSTREAM_BUILD_NUMBER=${BUILD_NUMBER}" >> cleanup_job_params
-echo "addPoolServers=$addPoolServers" >> cleanup_job_params
-echo "version_number=$version_number" >> cleanup_job_params
-echo "is_dynamic_vms=$is_dynamic_vms" >> cleanup_job_params
-
-echo "3/4 Creating file: savejoblogs_job_params"
-echo "test_job_url=${JOB_URL}" > savejoblogs_job_params
-echo "test_job_build=${BUILD_NUMBER}" >> savejoblogs_job_params
-echo "test_name=${descriptor}" >> savejoblogs_job_params
-echo "addPoolServers=$addPoolServers" >> savejoblogs_job_params
-echo "version_number=$version_number" >> savejoblogs_job_params
-echo "is_dynamic_vms=$is_dynamic_vms" >> savejoblogs_job_params
-
-echo "4/4 Creating file: aws_cleanup_job_params"
-echo "servers=${servers}" > aws_cleanup_job_params
-echo "###########################################"
 
 echo "###### Checking Docker status ######"
 systemctl status docker > /dev/null
@@ -237,27 +239,56 @@ else
   $jython_pip install requests futures
 
   # run_populate_ini_script $py_executable
-  check_and_build_testrunner_install_docker
+  if [ "$use_native_testrunner" = true ]; then
+    echo "NODE_LABELS contains 'deb12_jython_slave' - running test_infra_runner natively instead of via docker"
+    setup_native_testrunner
+  else
+    check_and_build_testrunner_install_docker
+  fi
   touch $WORKSPACE/testexec.$$.ini
-  docker run --rm \
-    -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini:Z \
-    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z  \
-    testrunner:install python3 scripts/populateIni.py $skip_mem_info \
-    -s ${servers} $internal_servers_param \
-    -d ${addPoolServerId} \
-    -a ${addPoolServers} \
-    -i testexec_reformat.$$.ini \
-    -p ${os} \
-    -o testexec.$$.ini \
-    -k '{'${UPDATE_INI_VALUES}'}'
+  if [ "$use_native_testrunner" = true ]; then
+    (
+      cd "$NATIVE_TEST_INFRA_DIR"
+      python scripts/populateIni.py $skip_mem_info \
+        -s ${servers} $internal_servers_param \
+        -d ${addPoolServerId} \
+        -a ${addPoolServers} \
+        -i $WORKSPACE/testexec_reformat.$$.ini \
+        -p ${os} \
+        -o $WORKSPACE/testexec.$$.ini \
+        -k '{'${UPDATE_INI_VALUES}'}'
+    )
+  else
+    docker run --rm \
+      -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini:Z \
+      -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z  \
+      testrunner:install python3 scripts/populateIni.py $skip_mem_info \
+      -s ${servers} $internal_servers_param \
+      -d ${addPoolServerId} \
+      -a ${addPoolServers} \
+      -i testexec_reformat.$$.ini \
+      -p ${os} \
+      -o testexec.$$.ini \
+      -k '{'${UPDATE_INI_VALUES}'}'
+  fi
   if [ "$server_type" != "CAPELLA_LOCAL" ]; then
     if [ "$os" = "windows" ] ; then
-      docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z \
-        testrunner:install python3 scripts/new_install.py \
-        -i testexec.$$.ini \
-        -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
-      status=$?
+      if [ "$use_native_testrunner" = true ]; then
+        (
+          cd "$NATIVE_TEST_INFRA_DIR"
+          python scripts/new_install.py \
+            -i $WORKSPACE/testexec.$$.ini \
+            -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
+        )
+        status=$?
+      else
+        docker run --rm \
+          -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z \
+          testrunner:install python3 scripts/new_install.py \
+          -i testexec.$$.ini \
+          -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
+        status=$?
+      fi
     else
       # To handle nonroot user
       echo sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
@@ -285,12 +316,22 @@ else
       # Install requirements for this venv
       echo "Starting server installation"
       set -x
-      docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z \
-        testrunner:install python3 scripts/new_install.py \
-        -i testexec.$$.ini \
-        -p $new_install_params
-      status=$?
+      if [ "$use_native_testrunner" = true ]; then
+        (
+          cd "$NATIVE_TEST_INFRA_DIR"
+          python scripts/new_install.py \
+            -i $WORKSPACE/testexec.$$.ini \
+            -p $new_install_params
+        )
+        status=$?
+      else
+        docker run --rm \
+          -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini:Z \
+          testrunner:install python3 scripts/new_install.py \
+          -i testexec.$$.ini \
+          -p $new_install_params
+        status=$?
+      fi
       set +x
     fi
   fi
