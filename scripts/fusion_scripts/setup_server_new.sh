@@ -18,6 +18,16 @@ fi
 
 mkdir -p "$BASE_DIR"
 
+# Serialize concurrent runs on this NFS server. Multiple Fusion jobs can call
+# this script against the same server at once; without a lock they would race
+# on (a) share-number selection -> both pick the same share, and (b) the
+# read-modify-write of /etc/exports below -> one run's mv clobbers the other's
+# export line, and `exportfs -ra` then unexports a live share. Holding this
+# lock across the whole critical section (share selection through exportfs)
+# makes each run see the previous run's committed state. Released on exit.
+exec 9>/var/lock/nfs_setup.lock
+flock 9
+
 # Get existing share directories
 existing_shares=( $(ls -d ${BASE_DIR}/share* 2>/dev/null | sort -V) )
 
@@ -52,6 +62,17 @@ chmod 777 "$SHARE_DIR"
 
 # Add export rule
 echo "${SHARE_DIR} ${NFS_CLIENT_CIDR}(rw,sync,no_root_squash,no_subtree_check)" >> "$EXPORTS_FILE"
+
+# Reconcile /etc/exports with reality before exporting. On these slaves the
+# share directories under /data/nfs can be wiped while /etc/exports survives,
+# which leaves the file with (a) duplicate lines and (b) stale entries pointing
+# at directories that no longer exist. Both make `exportfs -ra` abort:
+#   - duplicates            -> "duplicated export entries"
+#   - missing directories   -> "Failed to stat ...: No such file or directory"
+# Keep only the first occurrence of each line whose share directory ($1) still
+# exists on disk. The share we just created above always survives this filter.
+awk '!seen[$0]++ && system("test -d " $1) == 0' "$EXPORTS_FILE" > "${EXPORTS_FILE}.tmp"
+mv "${EXPORTS_FILE}.tmp" "$EXPORTS_FILE"
 
 # Apply new exports
 exportfs -ra

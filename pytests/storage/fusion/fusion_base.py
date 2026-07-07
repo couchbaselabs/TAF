@@ -282,7 +282,7 @@ class FusionBase(BaseTestCase):
         run_cmd = f"chmod +x {self.nfs_scripts_dir}/setup_server_new.sh; bash {self.nfs_scripts_dir}/setup_server_new.sh"
         self.log.info(f"Server Setup CMD: {run_cmd}")
         o, e = shell.execute_command(run_cmd)
-        shell.log_command_output(o, e)
+        self.log.info(f"Output = {o}, Error = {e}")
 
         self.sleep(20, "Wait after setting up NFS server")
 
@@ -675,7 +675,7 @@ class FusionBase(BaseTestCase):
                       wait_for_rebalance_to_complete=True, force_sync_during_sleep=False, stop_before_rebalance=False,
                       min_storage_size=None, skip_add_nodes=False, manifest_parts = 20,
                       add_nodes=[], remove_nodes=[], log_store="nfs",
-                      guest_storage_dest_path=None):
+                      guest_storage_dest_path=None, log_store_uri=None):
 
         # Populate spare nodes list
         self.spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
@@ -853,8 +853,13 @@ class FusionBase(BaseTestCase):
             commands = commands.rstrip() + " --skip-add-nodes"
         if guest_storage_dest_path is not None:
             commands = commands.rstrip() + f" --guest-storage-dest-path {guest_storage_dest_path}"
-        if log_store == "s3":
-            commands = commands.rstrip() + f" --log-store-uri {self.fusion_log_store_uri}"
+        # An explicit override (e.g. a cloned cluster pointed at a new log
+        # store) wins; otherwise fall back to the configured URI for s3.
+        effective_log_store_uri = log_store_uri
+        if effective_log_store_uri is None and log_store == "s3":
+            effective_log_store_uri = self.fusion_log_store_uri
+        if effective_log_store_uri is not None:
+            commands = commands.rstrip() + f" --log-store-uri {effective_log_store_uri}"
 
         ssh = RemoteMachineShellConnection(self.cluster.master)
         self.log.info(f"Running fusion rebalance: {commands}")
@@ -2495,13 +2500,18 @@ class FusionBase(BaseTestCase):
                     self.cluster.master
                 )
                 for hostname, node_stats in cluster_stats.items():
+                    # cpu_utilization_rate is reported as a % of the machine's
+                    # total capacity (all cores). Multiply by the core count to
+                    # express it as a % of a single core (0-100*num_cores).
                     cpu = node_stats.get("cpu_utilization", 0) or 0
+                    num_cores = node_stats.get("cpu_count") or 1
+                    cpu = cpu * num_cores
                     sample["cpu"][hostname] = {
                         "cpu_utilization_pct": round(cpu, 2),
                     }
                     self.log.info(
                         f"[resource_monitor] tick={tick} ts={ts} "
-                        f"node={hostname} cpu={cpu:.1f}%"
+                        f"node={hostname} cores={num_cores} cpu={cpu:.1f}%"
                     )
             except Exception as exc:
                 self.log.warning(

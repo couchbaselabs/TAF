@@ -1155,6 +1155,68 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             count += 1
             time.sleep(5)
 
+    def run_monitored_rebalance(self, rebalance_type, iteration, reb_op="swap"):
+        """Perform a single rebalance for the resource-monitoring loop.
+
+        rebalance_type : "fusion" (via run_rebalance) or "dcp" (via
+                         self.task.rebalance).
+        reb_op         : "swap" keeps the cluster size constant (needs a spare
+                         node); "out"/"in" scale the cluster down/up by a node.
+
+        Both RebalanceTask (dcp) and run_rebalance (fusion) update
+        self.cluster.nodes_in_cluster, so the loop can re-derive spare / in
+        cluster nodes on every iteration.  Returns the list of nodes to
+        monitor for extent migration (fusion only).
+        """
+        spare_nodes = [n for n in self.cluster.servers
+                       if n not in self.cluster.nodes_in_cluster]
+        non_master_nodes = [n for n in self.cluster.nodes_in_cluster
+                            if n.ip != self.cluster.master.ip]
+
+        # Auto-fallback: swap needs a spare node, else scale out/in
+        if reb_op == "swap" and not spare_nodes:
+            reb_op = "in" if not non_master_nodes else "out"
+            self.log.info(f"[resource_monitor] No spare node for swap, "
+                          f"falling back to '{reb_op}' rebalance")
+
+        # Reset counts consumed by run_rebalance()
+        self.num_nodes_to_rebalance_in = 0
+        self.num_nodes_to_rebalance_out = 0
+        self.num_nodes_to_swap_rebalance = 0
+
+        add, remove = [], []
+        if reb_op == "swap":
+            add, remove = spare_nodes[:1], non_master_nodes[:1]
+            self.num_nodes_to_swap_rebalance = 1
+        elif reb_op == "in":
+            add = spare_nodes[:1]
+            self.num_nodes_to_rebalance_in = 1
+        elif reb_op == "out":
+            remove = non_master_nodes[:1]
+            self.num_nodes_to_rebalance_out = 1
+
+        self.log.info(
+            f"[resource_monitor] Iteration {iteration}: {rebalance_type} "
+            f"'{reb_op}' rebalance — add: {[n.ip for n in add]}, "
+            f"remove: {[n.ip for n in remove]}")
+
+        nodes_to_monitor = []
+        if rebalance_type == "fusion":
+            nodes_to_monitor = self.run_rebalance(
+                output_dir=self.fusion_output_dir,
+                rebalance_count=iteration,
+                rebalance_master=self.rebalance_master)
+        else:  # dcp
+            result = self.task.rebalance(
+                self.cluster, add, remove,
+                check_vbucket_shuffling=False,
+                retry_get_process_num=self.retry_get_process_num)
+            self.assertTrue(
+                result,
+                f"DCP '{reb_op}' rebalance failed on iteration {iteration}")
+
+        return nodes_to_monitor
+
     def test_fusion_resource_monitoring(self):
         """
         Monitors CPU utilisation and Magma memory usage across all cluster
@@ -1175,16 +1237,41 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         in-memory list.  When the load finishes the full sample list is
         written to a plain-text report file.
 
+        After the initial load the test drives a sequence of rebalances while
+        the monitors keep running:
+          1. load data (initial_load below)
+          2. perform a rebalance (fusion or dcp, chosen via rebalance_type)
+          3. wait for extent migration to drain (fusion rebalances only)
+          4. repeat steps 2-3 for num_rebalance_iterations
+          5. run a background workload throughout steps 2-3
+
         Parameters (test params):
-          monitor_interval_sec  : polling interval in seconds (default: 30)
-          output_file           : absolute path for the report file
-                                  (default: <fusion_output_dir>/resource_monitor_<ts>.log)
-          num_bucket_batch_size : batch size for the data load (default: 1)
+          monitor_interval_sec    : polling interval in seconds (default: 30)
+          output_file             : absolute path for the report file
+                                    (default: <fusion_output_dir>/resource_monitor_<ts>.log)
+          num_bucket_batch_size   : batch size for the data load (default: 1)
+          rebalance_type          : "fusion" or "dcp" (default: "fusion")
+          num_rebalance_iterations: rebalance loop iterations (default: 3)
+          rebalance_op            : "swap"/"in"/"out" per iteration (default: "swap")
+          workload_doc_op         : doc op for the concurrent workload
+                                    (default: "update")
         """
         monitor_interval_sec = self.input.param("monitor_interval_sec", 30)
         num_bucket_batch_size = self.input.param("num_bucket_batch_size", 1)
         monitor_ops = self.input.param("monitor_ops", False)
-        sync_stats_interval = self.input.param("sync_stats_interval", self.fusion_upload_interval)
+        rebalance_type = self.input.param("rebalance_type", "fusion")
+        num_rebalance_iterations = self.input.param("num_rebalance_iterations", 3)
+        rebalance_op = self.input.param("rebalance_op", "swap")
+        workload_doc_op = self.input.param("workload_doc_op", "update")
+
+        # When fusion is disabled (fusion_enable=False) there is no fusion
+        # rebalance / extent migration to exercise, so fall back to dcp
+        # rebalances and skip the fusion-only monitoring.
+        if not self.fusion_enable and rebalance_type == "fusion":
+            self.log.info("[resource_monitor] Fusion disabled - forcing "
+                          "rebalance_type=dcp")
+            rebalance_type = "dcp"
+
         ts_tag = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_output = os.path.join(
             self.fusion_output_dir, f"resource_monitor_{ts_tag}.log"
@@ -1206,11 +1293,6 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             f"(interval={monitor_interval_sec}s, output={output_file})"
         )
 
-        # Start Monitoring Fusion Sync Stats
-        self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously,
-                                              args=[172800, sync_stats_interval])
-        self.sync_stats_th.start()
-
         # ---- Async data load ----
         self.log.info("[resource_monitor] Starting async data load")
         for i in range(0, len(self.cluster.buckets), num_bucket_batch_size):
@@ -1225,14 +1307,44 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             )
             self.sleep(10, "Wait between bucket batches")
 
-        self.log.info("[resource_monitor] Data load complete - stopping monitor")
+        # Sleep so the initial load is uploaded to the log store before rebalancing
+        self.sleep(120 + self.fusion_upload_interval + 30,
+                   "Sleep after initial data load")
+
+        # ---- Rebalance loop with a concurrent workload ----
+        self.log.info(
+            f"[resource_monitor] Starting {num_rebalance_iterations} "
+            f"'{rebalance_type}' rebalance iteration(s) (op={rebalance_op})")
+        for iteration in range(1, num_rebalance_iterations + 1):
+            self.log.info(f"[resource_monitor] === Rebalance iteration "
+                          f"{iteration}/{num_rebalance_iterations} ===")
+
+            # Step 5: run a background workload during the rebalance / migration
+            workload_tasks = self.perform_workload(
+                0, self.num_items, doc_op=workload_doc_op,
+                ops_rate=self.ops_rate, wait=False)
+
+            # Step 2: perform the rebalance
+            nodes_to_monitor = self.run_monitored_rebalance(
+                rebalance_type, iteration, reb_op=rebalance_op)
+
+            # Step 3: wait for extent migration to drain (fusion only)
+            if rebalance_type == "fusion":
+                self.log.info("[resource_monitor] Waiting for extent migration "
+                              "(guest volumes) to drain")
+                self.monitor_active_guest_volumes()
+
+            # Join the background workload for this iteration
+            for task in workload_tasks:
+                self.doc_loading_tm.get_task_result(task)
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+
+        self.log.info("[resource_monitor] Rebalance loop complete - stopping monitor")
 
         # ---- Stop monitor and flush samples to file ----
         stop_monitor.set()
         monitor_th.join()
-
-        self.monitor_sync_stats = False
-        self.sync_stats_th.join()
 
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         with open(output_file, "w") as fh:

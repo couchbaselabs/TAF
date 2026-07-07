@@ -379,6 +379,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
 
         api_endpoint = "doc_load"
         data = {
+            "server_ip": self.ip,
+            "server_port": self.port,
             "bucket_name": self.bucket.name,
             "scope_name": self.scope,
             "collection_name": self.collection,

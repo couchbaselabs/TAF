@@ -138,7 +138,10 @@ class RebalanceAutomation:
 
         cmd = f"{self.config['accelerator_cli']} split-manifest -manifest {REBALANCE_PLAN_FILE} -output-dir {MANIFEST_OUTPUT_DIR} -parts {self.manifest_part} -min-storage-size {self.min_storage_size}"
         if self.log_store == "nfs":
-            cmd += f" -base-uri {self.config['base_uri']}"
+            # An explicit override (e.g. a cloned cluster on a new log store)
+            # wins; otherwise use the base_uri from config.json.
+            base_uri = self.log_store_uri if self.log_store_uri else self.config['base_uri']
+            cmd += f" -base-uri {base_uri}"
         elif self.log_store == "s3":
             cmd += f" -base-uri {self.log_store_uri}"
         self._execute_command(cmd, "Splitting rebalance manifest")
