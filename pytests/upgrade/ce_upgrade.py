@@ -89,6 +89,89 @@ class CEUpgradeTests(CEBaseTest):
         self.bucket_util.validate_docs_per_collections_all_buckets(self.cluster)
         self.log.info("Data integrity validated after CE restriction recovery")
 
+   
+    def test_ce_swap_rebalance_with_spare_ce_node(self):
+        """
+        Swap rebalance on a compliant 5-node CE cluster must succeed when
+        a 6th CE node is added and one original CE node is ejected in the
+        same rebalance call, keeping KeepNodes at exactly 5.
+
+        The CE node-limit check counts only KeepNodes, not all pending
+        nodes. Add-6th + eject-1 in one rebalance → KeepNodes=5 → allowed.
+        Contrast with test_ce_node_limit_rebalance_in_blocked where no
+        eject is supplied → KeepNodes=6 → rejected.
+
+        Validates:
+        1. Version guard — skip on pre-8.1 builds
+        2. 6th CE node accepted in pending state
+        3. Swap rebalance (add + eject) succeeds without CE error
+        4. Cluster settles at 5 active nodes
+        5. Data integrity is intact after the swap
+        """
+        self._require_enforced_ce_version()
+
+        self.assertEqual(len(self.cluster.nodes_in_cluster), self.CE_NODE_LIMIT,
+                         "Requires exactly 5-node CE cluster, found %d"
+                         % len(self.cluster.nodes_in_cluster))
+        self.assertGreater(len(self.cluster.servers), self.CE_NODE_LIMIT,
+                           "Requires at least 6 servers in node.ini")
+
+        # Step 1: install CE on the spare
+        self._install_on_spare(edition="community")
+
+        rest = ClusterRestAPI(self.cluster.master)
+
+        # Step 2: add 6th CE node without rebalancing
+        self.log.info("Adding 6th CE node %s without rebalance",
+                      self.spare_node.ip)
+        status, content = rest.add_node(
+            host_name=self.spare_node.ip,
+            username=self.spare_node.rest_username,
+            password=self.spare_node.rest_password,
+            services="kv")
+        self.assertTrue(status, "add_node failed: %s" % content)
+
+        nodes = ClusterUtils.get_nodes(self.cluster.master, inactive_added=True)
+        pending = [n for n in nodes if n.ip == self.spare_node.ip]
+        self.assertTrue(pending,
+                        "Spare node %s not in pending state after addNode"
+                        % self.spare_node.ip)
+
+        # Step 3: pick a non-master original node to eject
+        eject_node = next(
+            n for n in nodes
+            if n.ip != self.cluster.master.ip
+            and n.ip != self.spare_node.ip)
+        self.log.info("Swap: add %s, eject %s — KeepNodes will be 5, "
+                      "CE restriction must not fire",
+                      self.spare_node.ip, eject_node.ip)
+
+        known_nodes = [n.id for n in nodes]
+        eject_nodes = [eject_node.id]
+
+        # Step 4: rebalance must succeed — KeepNodes = 5
+        status, content = rest.rebalance(known_nodes=known_nodes,
+                                         eject_nodes=eject_nodes)
+        self.assertTrue(status,
+                        "Rebalance call rejected unexpectedly: %s" % content)
+
+        rebalance_passed = RebalanceUtil(self.cluster).monitor_rebalance()
+        self.assertTrue(rebalance_passed,
+                        "Swap rebalance failed — CE restriction may have "
+                        "incorrectly blocked a KeepNodes=5 rebalance")
+
+        # Step 5: cluster must settle at exactly 5 active nodes
+        final_count = len(ClusterUtils.get_nodes(self.cluster.master))
+        self.assertEqual(final_count, self.CE_NODE_LIMIT,
+                         "Expected %d active nodes after swap, found %d"
+                         % (self.CE_NODE_LIMIT, final_count))
+        self.log.info("Cluster settled at %d nodes after CE swap rebalance",
+                      final_count)
+
+        # Step 6: data integrity
+        self.bucket_util.validate_docs_per_collections_all_buckets(self.cluster)
+        self.log.info("Data integrity validated after CE swap rebalance")
+
     # ------------------------------------------------------------------ #
     # Gap 3: CE→EE upgrade — mixed-mode and restriction removal           #
     # ------------------------------------------------------------------ #
@@ -206,15 +289,20 @@ class CEUpgradeTests(CEBaseTest):
         # Step 2: install EE on spare (ejected last during swaps)
         self._install_on_spare(edition="enterprise")
 
-        # Step 3: rebalance-in the 6th EE node — must succeed
+        # Step 3: rebalance-in the 6th EE node with kv,n1ql services.
+        # Adding a node with a different service set from the existing kv-only
+        # nodes proves both that the 5-node cap is gone AND that the CE MDS
+        # block is lifted — CE forces uniform services and blocks separation.
+        # kv,n1ql avoids the need to pre-configure an index quota.
         rest = ClusterRestAPI(self.cluster.master)
-        self.log.info("Adding 6th EE node %s — CE restriction should be lifted",
+        self.log.info("Adding 6th EE node %s with kv,n1ql (MDS) — "
+                      "both node-count and MDS restrictions should be lifted",
                       self.spare_node.ip)
         status, content = rest.add_node(
             host_name=self.spare_node.ip,
             username=self.spare_node.rest_username,
             password=self.spare_node.rest_password,
-            services="kv")
+            services="kv,n1ql")
         self.assertTrue(status, "add_node failed: %s" % content)
 
         nodes = ClusterUtils.get_nodes(self.cluster.master, inactive_added=True)
