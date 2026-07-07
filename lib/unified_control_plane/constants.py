@@ -28,22 +28,25 @@ HEALTH = API_V1 + '/health'
 
 # ---- Lighthouse Collector (ns_server) endpoints ----
 # These are on the Couchbase Server node (port 8091), NOT the UCP portal.
+# NOTE (MB-72631): ns_server renamed 'lighthouse' -> 'telemetry' internally
+# and the default reporting endpoint -> 'couchbase.fleetmanager.internal'.
+# Paths/values below reflect the renamed server API.
 
 # Config endpoint – GET to read, POST to update (and force a report).
-# Permission: cluster.admin.settings.lighthouse!read (GET)
-#             cluster.admin.settings.lighthouse!write (POST)
+# Permission: cluster.admin.settings.telemetry!read (GET)
+#             cluster.admin.settings.telemetry!write (POST)
 #             mobile_sync_gateway role has read access.
-COLLECTOR_SETTINGS = 'internal/settings/lighthouse'
+COLLECTOR_SETTINGS = 'internal/settings/telemetry'
 
 # External telemetry ingest endpoint.
 # Append ?product_name=<name>&instance_id=<id> as query params.
-# Permission: cluster.lighthouse_telemetry!write
+# Permission: cluster.telemetry!write
 #             (granted only to mobile_sync_gateway)
-COLLECTOR_INGEST = '_lighthouseCollector/ingest'
+COLLECTOR_INGEST = '_telemetryCollector/ingest'
 
 # Default collector configuration values (from design doc v1.4)
 COLLECTOR_DEFAULT_ENABLED = True
-COLLECTOR_DEFAULT_ENDPOINT = 'lighthouse.couchbase.internal'
+COLLECTOR_DEFAULT_ENDPOINT = 'couchbase.fleetmanager.internal'
 COLLECTOR_DEFAULT_PORT = 433
 COLLECTOR_DEFAULT_REPORT_INTERVAL_HOURS = 2
 COLLECTOR_DEFAULT_REPORT_TIMEOUT_SECONDS = 1

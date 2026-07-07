@@ -7,9 +7,12 @@ Inherits from TAF's RestConnection to reuse _http_request() with Basic auth.
 Targets the Couchbase Server node (default port 8091) — NOT the UCP portal.
 
 Relevant endpoints (all on the CB Server node):
-  GET  /internal/settings/lighthouse
-  POST /internal/settings/lighthouse
-  POST /_lighthouseCollector/ingest?product_name=<name>&instance_id=<id>
+  GET  /internal/settings/telemetry
+  POST /internal/settings/telemetry
+  POST /_telemetryCollector/ingest?product_name=<name>&instance_id=<id>
+
+NOTE (MB-72631): ns_server renamed 'lighthouse' -> 'telemetry'/'fleet manager'.
+Paths and defaults below reflect the renamed server API.
 
 Returns raw (status, content, response) tuples — no wrapper logic.
 
@@ -52,19 +55,19 @@ class LighthouseCollectorClient(BaseRestConnection):
                                                         timeout=timeout)
 
     # ------------------------------------------------------------------
-    # /internal/settings/lighthouse
+    # /internal/settings/telemetry
     # ------------------------------------------------------------------
 
     def get_lighthouse_settings(self):
         """
-        GET /internal/settings/lighthouse
+        GET /internal/settings/telemetry
 
         Returns the current Lighthouse Collector configuration.
 
         Expected response body (example):
             {
                 "enabled": true,
-                "endpoint": "lighthouse.couchbase.internal",
+                "endpoint": "couchbase.fleetmanager.internal",
                 "reportIntervalHours": 2,
                 "reportTimeoutSeconds": 1,
                 "externalNodesMaxPayloadBytes": 10240,
@@ -74,7 +77,7 @@ class LighthouseCollectorClient(BaseRestConnection):
         Returns:
             (status, content, header) tuple
         """
-        api = self.baseUrl + 'internal/settings/lighthouse'
+        api = self.baseUrl + 'internal/settings/telemetry'
         status, content, header = self._http_request(
             api, 'GET', headers=self._create_capi_headers(),
             timeout=self._default_timeout)
@@ -86,7 +89,7 @@ class LighthouseCollectorClient(BaseRestConnection):
                                    external_nodes_max_payload_bytes=None,
                                    external_nodes_max_count=None):
         """
-        POST /internal/settings/lighthouse
+        POST /internal/settings/telemetry
 
         Update one or more Lighthouse Collector configuration values.
         Omitted parameters are not sent, leaving existing values unchanged.
@@ -112,7 +115,7 @@ class LighthouseCollectorClient(BaseRestConnection):
         Returns:
             (status, content, header) tuple
         """
-        api = self.baseUrl + 'internal/settings/lighthouse'
+        api = self.baseUrl + 'internal/settings/telemetry'
         body_dict = {}
         if enabled is not None:
             body_dict['enabled'] = enabled
@@ -134,12 +137,12 @@ class LighthouseCollectorClient(BaseRestConnection):
         return status, content, header
 
     # ------------------------------------------------------------------
-    # /_lighthouseCollector/ingest
+    # /_telemetryCollector/ingest
     # ------------------------------------------------------------------
 
     def ingest_external_telemetry(self, product_name, instance_id, payload):
         """
-        POST /_lighthouseCollector/ingest?product_name=<name>&instance_id=<id>
+        POST /_telemetryCollector/ingest?product_name=<name>&instance_id=<id>
 
         Submit telemetry from an external component (e.g. Sync Gateway) to
         the ns_server collector.  ns_server stores the latest payload per
@@ -186,7 +189,7 @@ class LighthouseCollectorClient(BaseRestConnection):
             'product_name': product_name,
             'instance_id': instance_id
         })
-        api = self.baseUrl + '_lighthouseCollector/ingest?' + params
+        api = self.baseUrl + '_telemetryCollector/ingest?' + params
         body = json.dumps(payload)
         status, content, header = self._http_request(
             api, 'POST', body, headers=self._create_capi_headers(),

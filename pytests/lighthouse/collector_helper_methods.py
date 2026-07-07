@@ -30,7 +30,7 @@ def get_collector_settings(client):
         Example:
             {
                 "enabled": true,
-                "endpoint": "lighthouse.couchbase.internal",
+                "endpoint": "couchbase.fleetmanager.internal",
                 "reportIntervalHours": 2,
                 "reportTimeoutSeconds": 1,
                 "externalNodesMaxPayloadBytes": 10240,
@@ -82,7 +82,7 @@ def set_collector_endpoint(client, endpoint):
 
     Args:
         client:   LighthouseCollectorClient instance
-        endpoint: str — e.g. "lighthouse.couchbase.internal"
+        endpoint: str — e.g. "couchbase.fleetmanager.internal"
 
     Returns:
         Tuple (status, content, header)
@@ -142,7 +142,7 @@ def force_report(client):
     """
     Force an immediate telemetry report attempt to the lighthouse portal.
 
-    Any POST to /internal/settings/lighthouse — even a no-op — triggers
+    Any POST to /internal/settings/telemetry — even a no-op — triggers
     an immediate report attempt.  This is the designed way to verify
     connectivity without waiting for the report interval.
 
@@ -260,7 +260,7 @@ def build_sgw_payload(instance_id, cpu_cores, ram_bytes_total,
 
 
 def build_collector_settings_payload(enabled=True,
-                                     endpoint='lighthouse.couchbase.internal',
+                                     endpoint='couchbase.fleetmanager.internal',
                                      report_interval_hours=2,
                                      report_timeout_seconds=1,
                                      external_nodes_max_payload_bytes=10240,
@@ -309,11 +309,14 @@ def _py_to_erlang(value):
 
 def set_lighthouse_ns_config_via_diag_eval(server, **kwargs):
     """
-    Merge one or more keys into the lighthouse ns_config map via diag/eval.
+    Merge one or more keys into the telemetry ns_config map via diag/eval.
 
     Uses maps:merge so only the specified keys change — all other settings
-    are preserved.  Calling ns_config:set(lighthouse, #{k => v}) without
+    are preserved.  Calling ns_config:set(telemetry, #{k => v}) without
     maps:merge replaces the entire map, wiping unspecified keys.
+
+    NOTE (MB-72631): ns_server renamed the ns_config key from 'lighthouse'
+    to 'telemetry'.
 
     Args:
         server:   TestInputServer pointing at the orchestrator node.
@@ -329,10 +332,10 @@ def set_lighthouse_ns_config_via_diag_eval(server, **kwargs):
     pairs = ', '.join('%s => %s' % (k, _py_to_erlang(v))
                       for k, v in kwargs.items())
     # ns_config:search returns false on a fresh cluster before any REST POST
-    # has written the lighthouse key.  Fall back to #{} so maps:merge works.
-    code = ('C = case ns_config:search(lighthouse) of '
+    # has written the telemetry key.  Fall back to #{} so maps:merge works.
+    code = ('C = case ns_config:search(telemetry) of '
             '{value, V} -> V; false -> #{} end, '
-            'ns_config:set(lighthouse, maps:merge(C, #{%s})).' % pairs)
+            'ns_config:set(telemetry, maps:merge(C, #{%s})).' % pairs)
     return RestConnection(server).diag_eval(code)
 
 
@@ -483,7 +486,7 @@ def wait_for_cluster_on_portal(ucp_client, cluster_uuid,
     Poll GET /api/v1/clusters until the given cluster UUID appears,
     or until timeout is exceeded.
 
-    A POST to /internal/settings/lighthouse triggers an immediate report,
+    A POST to /internal/settings/telemetry triggers an immediate report,
     so 60 s is normally more than enough for the portal to receive it.
 
     Args:
@@ -778,14 +781,15 @@ def get_collector_metrics(server):
     Return a dict of Lighthouse Collector Prometheus metrics from ns_server's
     /_prometheusMetricsHigh endpoint.
 
-    cm_lighthouse_telemetry_sends_total is a high-cardinality counter so it
+    cm_telemetry_sends_total is a high-cardinality counter so it
     lives at /_prometheusMetricsHigh, not /_prometheusMetrics.
+    NOTE (MB-72631): metric renamed from cm_lighthouse_telemetry_sends_total.
 
     Currently exposed metrics:
-        telemetry_sends_success  -- cm_lighthouse_telemetry_sends_total{result="success"}
-        telemetry_sends_failure  -- cm_lighthouse_telemetry_sends_total{result="failure"}
+        telemetry_sends_success  -- cm_telemetry_sends_total{result="success"}
+        telemetry_sends_failure  -- cm_telemetry_sends_total{result="failure"}
 
-    New cm_lighthouse_* metrics can be added here as the design evolves without
+    New cm_telemetry_* metrics can be added here as the design evolves without
     changing the call signature.
 
     Args:
@@ -804,9 +808,9 @@ def get_collector_metrics(server):
     for line in lines:
         if not line or line.startswith('#'):
             continue
-        if 'cm_lighthouse_telemetry_sends_total' not in line:
+        if 'cm_telemetry_sends_total' not in line:
             continue
-        # e.g. cm_lighthouse_telemetry_sends_total{result="success"} 5
+        # e.g. cm_telemetry_sends_total{result="success"} 5
         try:
             value = int(float(line.split()[-1]))
         except (ValueError, IndexError):
@@ -824,8 +828,12 @@ def get_lighthouse_failure_reason_from_logs(server):
 
     Uses diag_eval to resolve the actual log directory path (handles
     cluster_run and non-standard installs), then greps for the line
-    emitted by lighthouse_reporter on send failure and extracts the
+    emitted by telemetry_reporter on send failure and extracts the
     reason string after 'Error: '.
+
+    NOTE (MB-72631): ns_server renamed the lighthouse_reporter module to
+    telemetry_reporter, and its failure log line from "Sending lighthouse
+    report failed" to "Sending telemetry report failed".
 
     Args:
         server: TestInputServer pointing at the node to query.
@@ -840,7 +848,7 @@ def get_lighthouse_failure_reason_from_logs(server):
     shell = RemoteMachineShellConnection(server)
     try:
         output, _ = shell.execute_command(
-            "grep 'lighthouse report failed' %s | tail -1" % log_file)
+            "grep 'telemetry report failed' %s | tail -1" % log_file)
     finally:
         shell.disconnect()
     if not output or not output[0].strip():

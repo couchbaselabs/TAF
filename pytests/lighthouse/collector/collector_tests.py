@@ -2,7 +2,7 @@
 """
 Collector Tests
 Validates the Lighthouse Collector configuration API on the Couchbase
-Server node (/internal/settings/lighthouse).
+Server node (/internal/settings/telemetry).
 
 Inherits from LighthouseBase for cluster/test infrastructure.
 
@@ -73,7 +73,7 @@ class CollectorTests(LighthouseBase):
 
     def test_get_collector_settings_returns_defaults(self):
         """
-        Verify GET /internal/settings/lighthouse on every cluster returns
+        Verify GET /internal/settings/telemetry on every cluster returns
         all expected keys with the correct default values from the design doc.
 
         Steps (repeated per cluster):
@@ -83,7 +83,7 @@ class CollectorTests(LighthouseBase):
         """
         expected_defaults = {
             'enabled': True,
-            'endpoint': 'lighthouse.couchbase.internal',
+            'endpoint': 'couchbase.fleetmanager.internal',
             'reportIntervalHours': 2,
             'reportTimeoutSeconds': 1,
             'externalNodesMaxPayloadBytes': 10240,
@@ -95,7 +95,7 @@ class CollectorTests(LighthouseBase):
             settings = get_collector_settings(client)
             self.assertIsNotNone(
                 settings,
-                "Cluster %d: GET /internal/settings/lighthouse returned None"
+                "Cluster %d: GET /internal/settings/telemetry returned None"
                 % i)
             for key, default_val in expected_defaults.items():
                 self.assertIn(
@@ -110,7 +110,7 @@ class CollectorTests(LighthouseBase):
 
     def test_verify_setting_of_configs(self):
         """
-        Verify POST /internal/settings/lighthouse accepts minimum boundary
+        Verify POST /internal/settings/telemetry accepts minimum boundary
         values and rejects invalid (zero/negative) values.
 
         Minimum config: all fields set to their lowest documented valid values.
@@ -209,9 +209,9 @@ class CollectorTests(LighthouseBase):
         1. Login to portal with admin credentials.
         2. Record ground truth from CB: cluster UUID, node count,
            {hostname: services} map.
-        3. Ensure collector endpoint is lighthouse.couchbase.internal and
+        3. Ensure collector endpoint is couchbase.fleetmanager.internal and
            trigger an immediate report (any POST to
-           /internal/settings/lighthouse fires one).
+           /internal/settings/telemetry fires one).
         4. Poll portal until the cluster UUID appears (up to 60 s).
         5. Fetch nodes[] from the portal cluster record.
         6. Assert node count matches.
@@ -219,7 +219,7 @@ class CollectorTests(LighthouseBase):
            with an IP-only fallback for format differences.
         8. Logout from portal.
         """
-        portal_domain = 'lighthouse.couchbase.internal'
+        portal_domain = 'couchbase.fleetmanager.internal'
 
         status, content, _ = self.ucp_client.session_login(
             self.ucp_portal.username, self.ucp_portal.password)
@@ -368,7 +368,7 @@ class CollectorTests(LighthouseBase):
         4. Fetch cluster telemetry from portal.
         5. Assert each field against ground truth using the tolerances above.
         """
-        portal_domain = 'lighthouse.couchbase.internal'
+        portal_domain = 'couchbase.fleetmanager.internal'
 
         status, content, _ = self.ucp_client.session_login(
             self.ucp_portal.username, self.ucp_portal.password)
@@ -585,7 +585,7 @@ class CollectorTests(LighthouseBase):
         13. Assert primary portal node count == N.
         14. Assert all other clusters' portal node counts are still unchanged.
         """
-        portal_domain = 'lighthouse.couchbase.internal'
+        portal_domain = 'couchbase.fleetmanager.internal'
         primary = self.cluster
 
         status, content, _ = self.ucp_client.session_login(
@@ -846,9 +846,9 @@ class CollectorTests(LighthouseBase):
             produce ~4 failures — validating that the changed interval is respected.
             Assert success counter unchanged.
 
-        RULE: domain is restored to lighthouse.couchbase.internal before exit.
+        RULE: domain is restored to couchbase.fleetmanager.internal before exit.
         """
-        portal_domain = 'lighthouse.couchbase.internal'
+        portal_domain = 'couchbase.fleetmanager.internal'
         server = self.cluster.master
 
         try:
@@ -931,7 +931,7 @@ class CollectorTests(LighthouseBase):
             self.sleep(120,
                        "Part 2: waiting 2 min for ~2 failures at 60s interval")
 
-            # Restore domain to lighthouse.couchbase.internal before assertions
+            # Restore domain to couchbase.fleetmanager.internal before assertions
             restore_status, restore_content = \
                 set_lighthouse_ns_config_via_diag_eval(
                     server,
@@ -982,7 +982,7 @@ class CollectorTests(LighthouseBase):
                 "PASS Part 2: failure reason confirmed in logs")
 
         finally:
-            # Always restore domain to lighthouse.couchbase.internal and
+            # Always restore domain to couchbase.fleetmanager.internal and
             # interval to 2h — tearDown handles the REST API settings,
             # this covers the diag/eval ns_config layer.
             try:
