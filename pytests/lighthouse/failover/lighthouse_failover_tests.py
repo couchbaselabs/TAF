@@ -234,7 +234,7 @@ class LighthouseFailoverTests(LighthouseBase):
         # behaviour while the node is degraded but still in the cluster.
         induce_pre_failure = not trigger_failover
 
-        portal_domain = 'lighthouse.couchbase.internal'
+        portal_domain = 'couchbase.fleetmanager.internal'
         primary = self.cluster
         rest = RestConnection(primary.master)
 
@@ -542,7 +542,7 @@ class LighthouseFailoverTests(LighthouseBase):
         remove_master = self.input.param("master_node", False)
         afo_timeout = self.input.param("timeout", 30)
 
-        portal_domain = 'lighthouse.couchbase.internal'
+        portal_domain = 'couchbase.fleetmanager.internal'
         primary = self.cluster
         rest = RestConnection(primary.master)
 

@@ -2,7 +2,7 @@
 """
 Collector Configuration Tests
 Validates the Lighthouse Collector configuration API on the Couchbase
-Server node (/internal/settings/lighthouse).
+Server node (/internal/settings/telemetry).
 
 Inherits from LighthouseBase for cluster/test infrastructure.
 
@@ -54,7 +54,7 @@ class CollectorConfigTests(LighthouseBase):
 
     def test_get_collector_settings_returns_defaults(self):
         """
-        Verify GET /internal/settings/lighthouse on every cluster returns
+        Verify GET /internal/settings/telemetry on every cluster returns
         all expected keys with the correct default values from the design doc.
 
         Steps (repeated per cluster):
@@ -64,7 +64,7 @@ class CollectorConfigTests(LighthouseBase):
         """
         expected_defaults = {
             'enabled': True,
-            'endpoint': 'lighthouse.couchbase.internal',
+            'endpoint': 'couchbase.fleetmanager.internal',
             'reportIntervalHours': 2,
             'reportTimeoutSeconds': 1,
             'externalNodesMaxPayloadBytes': 10240,
@@ -76,7 +76,7 @@ class CollectorConfigTests(LighthouseBase):
             settings = get_collector_settings(client)
             self.assertIsNotNone(
                 settings,
-                "Cluster %d: GET /internal/settings/lighthouse returned None"
+                "Cluster %d: GET /internal/settings/telemetry returned None"
                 % i)
             for key, default_val in expected_defaults.items():
                 self.assertIn(
@@ -91,7 +91,7 @@ class CollectorConfigTests(LighthouseBase):
 
     def test_set_collector_endpoint_port_8080_and_interval_2hrs(self):
         """
-        Verify POST /internal/settings/lighthouse sets the endpoint to
+        Verify POST /internal/settings/telemetry sets the endpoint to
         the portal IP and reportIntervalHours to 2 on every cluster.
 
         The endpoint field accepts only a hostname or IP (no port).
@@ -114,7 +114,7 @@ class CollectorConfigTests(LighthouseBase):
                 report_interval_hours=new_interval)
             self.assertTrue(
                 status,
-                "Cluster %d: POST /internal/settings/lighthouse failed: %s"
+                "Cluster %d: POST /internal/settings/telemetry failed: %s"
                 % (i, content))
 
             settings = get_collector_settings(client)
