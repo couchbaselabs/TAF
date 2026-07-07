@@ -709,8 +709,33 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             target=_log_store_monitor, name="log-store-monitor", daemon=True
         )
         self._log_store_thread.start()
+
+        self._init_ops_stop_event = threading.Event()
+
+        def _init_ops_rate_monitor():
+            while not self._init_ops_stop_event.is_set():
+                for cluster in [self.primary_cluster]:
+                    try:
+                        rest = RestConnection(cluster.master)
+                        for bucket in cluster.buckets:
+                            info = rest.get_bucket_details(bucket_name=bucket.name)
+                            ops = info.get("basicStats", {}).get("opsPerSec", 0) if info else 0
+                            self.log.info(
+                                f"[init-load] cluster={cluster.id} "
+                                f"bucket={bucket.name} ops/s={ops:.1f}"
+                            )
+                    except Exception as e:
+                        self.log.warning(f"[init-load] ops rate fetch failed: {e}")
+                self._init_ops_stop_event.wait(60)
+
+        self._init_ops_thread = threading.Thread(
+            target=_init_ops_rate_monitor, name="init-ops-rate-monitor", daemon=True
+        )
+        self._init_ops_thread.start()
+
         self.initial_setup()
         self._log_store_stop_event.set()
+        self._init_ops_stop_event.set()
 
         primary = self.primary_cluster
         tenant = self.primary_tenant
