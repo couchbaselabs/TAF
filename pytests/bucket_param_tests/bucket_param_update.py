@@ -648,7 +648,11 @@ class BucketParamTest(ClusterSetup):
             self.bucket_durability_level, self.durability_level)
 
         # Test persistent_metadata_purge_age if configured
-        if self.persistent_metadata_purge_age:
+        # Skip for ephemeral buckets: ep_persistent_metadata_purge_age is
+        # always 0 on ephemeral (no persistent storage), so cbepctl set has
+        # no effect and the assertion always fails.
+        if self.persistent_metadata_purge_age \
+                and self.def_bucket.bucketType != "ephemeral":
             self.log.info("Testing persistent_metadata_purge_age values")
             self.set_persistent_metadata_purge_age_values()
 

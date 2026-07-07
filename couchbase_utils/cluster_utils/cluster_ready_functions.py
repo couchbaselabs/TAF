@@ -991,14 +991,19 @@ class ClusterUtils:
                     rest = ClusterRestAPI(removed)
                 start = time.time()
                 while time.time() - start < 30:
-                    if len(rest.cluster_info()[1]["pools"]) == 0:
+                    status, content = rest.cluster_info()
+                    pools = content.get("pools", [None]) \
+                        if isinstance(content, dict) else [None]
+                    if status and len(pools) == 0:
                         success_cleaned.append(removed)
                         break
                     sleep(1)
                 if time.time() - start > 10:
+                    _, _content = rest.cluster_info()
+                    _pools = _content.get("pools", "N/A") \
+                        if isinstance(_content, dict) else "N/A"
                     self.log.error("'pools' on node {0}:{1} - {2}"
-                                   .format(removed.ip, removed.port,
-                                           rest.cluster_info()[1]["pools"]))
+                                   .format(removed.ip, removed.port, _pools))
             for node in set([node for node in nodes
                              if (node.id != master_id)])-set(success_cleaned):
                 self.log.error("Node {0}:{1} was not cleaned after "
