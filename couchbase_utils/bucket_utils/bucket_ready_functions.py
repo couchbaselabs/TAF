@@ -897,9 +897,6 @@ class DocLoaderUtils(object):
 
         exception_patterns = [".*(com\.[a-zA-Z0-9\.]+)", "([a-zA-Z0-9]+)"]
 
-        if load_using != "default_loader":
-            return
-
         # Fetch client for retry operations
         client = cluster.sdk_client_pool.get_client_for_bucket(
             bucket, scope_name, collection_name)
