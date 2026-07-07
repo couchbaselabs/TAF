@@ -943,7 +943,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util._run_compaction(self.cluster, timeout=self.compaction_timeout)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("tombstone count after compaction  {}".format(ts))
-        expected_ts = self.vbuckets * (self.num_replicas+1) * int(self.num_collections)//2
+        expected_ts = self.bucket_num_vb * (self.num_replicas+1) * int(self.num_collections)//2
         self.log.info("expected_ts {}".format(expected_ts))
         self.assertEqual(ts, expected_ts, "Incorrect number of tombstones found.")
 
@@ -985,7 +985,7 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.bucket_util._run_compaction(self.cluster, timeout=self.compaction_timeout)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("tombstone count after compaction is {}".format(ts))
-        expected_ts = self.vbuckets * (self.num_replicas+1) * int(self.num_collections)//2
+        expected_ts = self.bucket_num_vb * (self.num_replicas+1) * int(self.num_collections)//2
         self.log.info("expected_ts {}".format(expected_ts))
         self.assertEqual(ts, expected_ts, "Incorrect number of tombstones found.")
 
