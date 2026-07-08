@@ -32,7 +32,7 @@ HEALTH = API_V1 + '/health'
 # and the default reporting endpoint -> 'couchbase.fleetmanager.internal'.
 # Paths/values below reflect the renamed server API.
 
-# Config endpoint – GET to read, POST to update (and force a report).
+# Config endpoint - GET to read, POST to update (and force a report).
 # Permission: cluster.admin.settings.telemetry!read (GET)
 #             cluster.admin.settings.telemetry!write (POST)
 #             mobile_sync_gateway role has read access.
