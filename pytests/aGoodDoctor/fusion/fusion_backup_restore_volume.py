@@ -28,6 +28,11 @@ For each scaling cycle on primary:
   - v_scaling (disk + compute iterations)
       → after every step: take snapshot backup + restore to target
 
+The mutation workload is stopped for the duration of every snapshot backup
+(quiesced dataset) and resumed after the backup completes — or, for
+same-cluster restores, after the restore completes (the restore replaces
+all cluster data, so resuming earlier would be pointless).
+
 Cross-cluster restore verification
 ------------------------------------
 When restoring to secondary:
@@ -115,6 +120,36 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         if self.secondary_cluster and cluster.id == self.secondary_cluster.id:
             return "[secondary]"
         return "[primary]"
+
+    # ------------------------------------------- workload stop/resume helpers
+
+    def _stop_workload(self):
+        """
+        Stop the background mutation workload on primary and drain in-flight
+        loader tasks.  Idempotent — safe to call when already stopped.
+        """
+        self.mutations = False
+        if hasattr(self, "mutation_th") and self.mutation_th.is_alive():
+            self.log.info("[primary] Stopping mutation workload")
+            self.mutation_th.join(timeout=120)
+        for task in list(getattr(self, "loader_tasks", [])):
+            try:
+                self.task_manager.stop_task(task)
+            except Exception:
+                pass
+        if hasattr(self, "loader_tasks"):
+            self.loader_tasks.clear()
+
+    def _resume_workload(self):
+        """Restart the background mutation workload on primary."""
+        if not self.input.param("mutations", True):
+            return
+        self.mutations = True
+        self.mutation_th = threading.Thread(
+            target=self.normal_mutations, kwargs={"cluster": self.primary_cluster}
+        )
+        self.mutation_th.start()
+        self.log.info("[primary] Mutation workload resumed")
 
     # -------------------------------------------- log helpers (primary only)
 
@@ -273,7 +308,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             f"→ restore to secondary {secondary.id}"
         )
 
+        # Quiesce the workload while the initial sync backup runs; primary is
+        # not touched by the restore to secondary, so resume right after.
+        self._stop_workload()
         backup_id = self._create_snapshot_backup(primary)
+        self._resume_workload()
         self._restore_snapshot_backup(backup_id, primary, secondary)
         self.sleep(60, "Wait after initial snapshot restore to secondary")
 
@@ -481,6 +520,10 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         primary = self.primary_cluster
         num_snapshots_expected = len(self.cp_monitor.get_current_guest_volume_ids(primary))
         self.PrintStep(f"Taking EBS snapshot backup on primary {primary.id}")
+
+        # Stop the mutation workload for the duration of the backup so the
+        # snapshot captures a quiesced dataset
+        self._stop_workload()
         backup_id = self._create_snapshot_backup(primary)
         if self.verify_snapshots:
             ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
@@ -491,6 +534,12 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"Guest-volume EBS snapshot verification failed for backup {backup_id}",
             )
             self.log.info(f"Guest-volume snapshots verified for backup {backup_id}")
+
+        # For same-cluster restore the workload must stay stopped — the restore
+        # that follows replaces all cluster data and resumes it afterwards.
+        # For secondary restore, primary is untouched, so resume immediately.
+        if self.restore_to == "secondary":
+            self._resume_workload()
 
         return backup_id
 
@@ -525,17 +574,9 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
 
         if is_same:
-            # Stop mutations and drain in-flight loader tasks before the restore
-            # replaces all cluster data
-            self.mutations = False
-            if hasattr(self, "mutation_th") and self.mutation_th.is_alive():
-                self.mutation_th.join(timeout=120)
-            for task in list(self.loader_tasks):
-                try:
-                    self.task_manager.stop_task(task)
-                except Exception:
-                    pass
-            self.loader_tasks.clear()
+            # Workload is already stopped by _take_backup_and_verify; this is
+            # an idempotent safety net in case of a direct call
+            self._stop_workload()
 
         self._restore_snapshot_backup(backup_id, primary, target)
 
@@ -639,14 +680,9 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"{tgt_label} Fusion state on {target.id} post-restore: {fusion_state.get('state')}"
             )
 
-        # Restart mutation thread if same-cluster restore paused it
+        # Restart mutation thread if same-cluster restore kept it stopped
         if is_same:
-            self.mutations = True
-            self.mutation_th = threading.Thread(
-                target=self.normal_mutations,
-                kwargs={"cluster": primary},
-            )
-            self.mutation_th.start()
+            self._resume_workload()
 
     # ------------------------------------------- primary scaling pass helper
 
