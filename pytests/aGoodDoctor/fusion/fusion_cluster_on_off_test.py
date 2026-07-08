@@ -17,6 +17,7 @@ Tests in this file:
         off, then verify full cleanup after turn-on.
 """
 
+import socket
 import time
 
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
@@ -953,7 +954,34 @@ class FusionClusterOnOffTest(_FusionTestBase):
                     self.sleep(30 * retry, "Retrying allow_my_ip after restore")
                 else:
                     raise
-        self.sleep(120, "Need to wait for allowed IP propogation")
+        # Poll until every node responds on the REST port — the allowlist rule
+        # can take several minutes to propagate even after allow_my_ip returns
+        # successfully.
+        reachability_timeout = 900  # 15 minutes
+        poll_interval = 15
+        deadline = time.time() + reachability_timeout
+        nodes = self.cluster.nodes_in_cluster or [self.cluster.master]
+        self.log.info(
+            f"Polling {len(nodes)} node(s) on {self.cluster.id} for REST "
+            f"reachability (up to {reachability_timeout}s)")
+        for node in nodes:
+            while True:
+                try:
+                    with socket.create_connection((node.ip, 18091), timeout=10):
+                        pass
+                    self.log.info(f"Node {node.ip}:18091 is reachable")
+                    break
+                except OSError as e:
+                    remaining = int(deadline - time.time())
+                    if remaining <= 0:
+                        self.fail(
+                            f"Node {node.ip} on {self.cluster.id} did not become "
+                            f"reachable within {reachability_timeout}s after IP "
+                            f"allowlist restore: {e}")
+                    self.log.warning(
+                        f"Node {node.ip}:18091 not yet reachable ({e}); "
+                        f"retrying in {poll_interval}s ({remaining}s remaining)")
+                    time.sleep(poll_interval)
         self.find_master(self.tenant, self.cluster)
         self.log.info(f"In-place restore {restore_id} completed")
 
