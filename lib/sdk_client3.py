@@ -836,10 +836,10 @@ class SDKClient(object):
 
     def get_from_all_replicas(self, key):
         result = list()
-        get_results = self.collection.get_all_replicas(
-            key, GetAllReplicasOptions(
-                timeout=SDKOptions.get_duration(60, "seconds")))
         try:
+            get_results = self.collection.get_all_replicas(
+                key, GetAllReplicasOptions(
+                    timeout=SDKOptions.get_duration(60, "seconds")))
             for get_result in get_results:
                 result.append({"key": get_result.key,
                                "value": get_result.content_as[dict],
@@ -1463,8 +1463,7 @@ class SDKClient(object):
     def run_query(self, query, timeout=None,
                   timeunit=SDKConstants.TimeUnit.SECONDS):
         if timeout is not None:
-            options = QueryOptions.queryOptions()
-            options = options.timeout(SDKOptions.get_duration(timeout,
-                                                              timeunit))
+            options = QueryOptions(
+                timeout=SDKOptions.get_duration(timeout, timeunit))
             return self.cluster.query(query, options)
         return self.cluster.query(query)

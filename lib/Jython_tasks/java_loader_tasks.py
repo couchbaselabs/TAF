@@ -16,6 +16,7 @@ class SiriusJavaDocGen(object):
         self.itr = 0
         self.name = key_prefix
         self.keys_len = end - start
+        self.doc_type = "json"
         self.doc_size = doc_size
         self.key_size = key_size
         self.key_prefix = key_prefix
@@ -111,7 +112,7 @@ class BaseSiriusLoader:
             json_response = response.json()
         return response.ok, json_response
 
-    def _make_task_request(self, task_ids, api_endpoint, timeout=10):
+    def _make_task_request(self, task_ids, api_endpoint, timeout=30):
         """Common method to make requests for multiple task IDs"""
         ok = True
         response = None
@@ -479,16 +480,16 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         return success, json_response
 
     def start_task(self):
-        return self._make_task_request(self.task_ids, "submit_task", 10)[0]
+        return self._make_task_request(self.task_ids, "submit_task")[0]
 
     def end_task(self):
         self.completed = True
         # Graceful way of stopping a task
-        return self._make_task_request(self.task_ids, "stop_task", 10)
+        return self._make_task_request(self.task_ids, "stop_task")
 
     def cancel_task(self):
         self.completed = True
-        return self._make_task_request(self.task_ids, "cancel_task", 10)
+        return self._make_task_request(self.task_ids, "cancel_task")
 
     def get_task_result(self):
         ok = True
@@ -660,8 +661,7 @@ class SiriusJavaMongoLoader(BaseSiriusLoader):
         return success, json_response
 
     def start_task(self):
-        return self._make_task_request(self.task_ids, "submit_task_mongo",
-                                      10)[0]
+        return self._make_task_request(self.task_ids, "submit_task_mongo")[0]
 
     def get_task_result(self):
         ok = True
@@ -683,7 +683,7 @@ class SiriusJavaMongoLoader(BaseSiriusLoader):
         return ok
 
     def end_task(self):
-        return self._make_task_request(self.task_ids, "stop_task", 10)
+        return self._make_task_request(self.task_ids, "stop_task")
 
     def cancel_task(self):
-        return self._make_task_request(self.task_ids, "cancel_task", 10)
+        return self._make_task_request(self.task_ids, "cancel_task")

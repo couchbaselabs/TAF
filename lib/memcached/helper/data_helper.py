@@ -101,6 +101,7 @@ class VBucketAwareMemcached(object):
             server = TestInputServer()
             server.ip = server_ip
             server.port = rest.port
+            server.memcached_port = server_port
             server.rest_username = rest.username
             server.rest_password = rest.password
             try:

@@ -12,6 +12,7 @@ import random
 import socket
 import ssl
 import struct
+import time
 import zlib
 
 from cb_constants import CbServer
@@ -84,22 +85,34 @@ class MemcachedClient(KeepRefs):
         self.collections_supported = False
 
     def _createConn(self):
-        try:
-            # IPv4
-            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self.s.settimeout(self.timeout)
-            if CbServer.use_https and not ClusterRun.is_enabled:
-                context = ssl._create_unverified_context(ssl.PROTOCOL_TLSv1)
-                self.s = context.wrap_socket(self.s, server_hostname=self.host)
-            return self.s.connect_ex((self.host, self.port))
-        except:
-            # IPv6
-            self.host = self.host.replace('[', '').replace(']', '')
-            self.s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-            self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self.s.settimeout(self.timeout)
-            return self.s.connect_ex((self.host, self.port, 0, 0))
+        # Enabling TLS on a node (or a freshly provisioned node still
+        # finishing setup) makes memcached restart and rebind its SSL
+        # listener, which can lag behind ns_server reporting the setting
+        # applied. Retry the handshake to ride out that window.
+        ssl_handshake_attempts = \
+            30 if (CbServer.use_https and not ClusterRun.is_enabled) else 1
+        for attempt in range(1, ssl_handshake_attempts + 1):
+            try:
+                # IPv4
+                self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.s.settimeout(self.timeout)
+                if CbServer.use_https and not ClusterRun.is_enabled:
+                    context = ssl._create_unverified_context()
+                    self.s = context.wrap_socket(self.s,
+                                                server_hostname=self.host)
+                return self.s.connect_ex((self.host, self.port))
+            except socket.gaierror:
+                # IPv6
+                self.host = self.host.replace('[', '').replace(']', '')
+                self.s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+                self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.s.settimeout(self.timeout)
+                return self.s.connect_ex((self.host, self.port, 0, 0))
+            except ssl.SSLError:
+                if attempt == ssl_handshake_attempts:
+                    raise
+                time.sleep(2)
 
     def reconnect(self):
         self.s.close()

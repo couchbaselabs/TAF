@@ -1,6 +1,7 @@
 import time
 import urllib
 import uuid
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from random import choice, randint
 from threading import Thread
 
@@ -8,6 +9,7 @@ from couchbase.durability import PersistTo
 from couchbase.options import IncrementOptions
 from couchbase.exceptions import CouchbaseException, AmbiguousTimeoutException
 from couchbase.logic.options import DeltaValueBase
+from couchbase.transcoder import RawJSONTranscoder
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
@@ -1144,7 +1146,13 @@ class basic_ops(ClusterSetup):
                 suppress_error_table=True,
                 batch_size=1, process_concurrency=1,
                 load_using=self.load_docs_using)
-            self.task_manager.get_task_result(doc_op_task)
+            try:
+                self.task_manager.get_task_result(doc_op_task,
+                                                  timeout=doc_op_timeout)
+            except FutureTimeoutError:
+                self.fail(
+                    "%s op did not complete within %ss - load task "
+                    "appears stalled" % (op_type, doc_op_timeout))
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
             if op_type == DocLoading.Bucket.DocOps.CREATE:
@@ -1171,6 +1179,10 @@ class basic_ops(ClusterSetup):
         self.num_items = 0
         self.del_items = 0
         load_batch = 20
+        doc_op_timeout = self.input.param("doc_op_timeout", 120)
+        # Failsafe timeout (secs) to avoid hanging forever waiting for a
+        # watermark to be reached (job getting aborted instead of failing)
+        wm_wait_timeout = self.input.param("wm_wait_timeout", 1800)
         # To provide little 'headroom' while loading/deleting docs in batches
         mem_buffer_gap = 10000
         low_wm_reached = False
@@ -1196,7 +1208,13 @@ class basic_ops(ClusterSetup):
         cbepctl = Cbepctl(nodes_data[target_node]["shell"])
 
         self.log.info("Loading till low_water_mark is reached")
+        loop_start_time = time.time()
         while not low_wm_reached:
+            if time.time() - loop_start_time > wm_wait_timeout:
+                self.fail(
+                    "Failed to reach low_water_mark within %ss "
+                    "(loaded %s docs so far)"
+                    % (wm_wait_timeout, self.num_items))
             perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
             if int(stats["mem_used"]) > int(stats["ep_mem_low_wat"]):
@@ -1213,7 +1231,13 @@ class basic_ops(ClusterSetup):
 
         load_batch = 1
         self.log.info("Loading docs till high_water_mark is reached")
+        loop_start_time = time.time()
         while not high_wm_reached:
+            if time.time() - loop_start_time > wm_wait_timeout:
+                self.fail(
+                    "Failed to reach high_water_mark within %ss "
+                    "(loaded %s docs so far)"
+                    % (wm_wait_timeout, self.num_items))
             perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
             if int(stats["mem_used"]) > int(stats["ep_mem_high_wat"]):
@@ -1251,7 +1275,13 @@ class basic_ops(ClusterSetup):
 
         self.log.info("Loading docs till high_water_mark is reached")
         high_wm_reached = False
+        loop_start_time = time.time()
         while not high_wm_reached:
+            if time.time() - loop_start_time > wm_wait_timeout:
+                self.fail(
+                    "Failed to reach high_water_mark within %ss "
+                    "(loaded %s docs so far)"
+                    % (wm_wait_timeout, self.num_items))
             perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
             if int(stats["mem_used"]) > (int(stats["ep_mem_high_wat"])
@@ -1321,7 +1351,8 @@ class basic_ops(ClusterSetup):
 
         # Get doc to make sure we see not_found exception
         result = client_1.crud(DocLoading.Bucket.DocOps.READ, self.key)
-        if SDKException.DocumentNotFoundException not in str(result["error"]):
+        if not self.bucket_util.check_if_exception_exists(
+                sdk_err, SDKException.DocumentNotFoundException):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with deleted_doc: %s"
                              % result["error"])
@@ -1337,7 +1368,8 @@ class basic_ops(ClusterSetup):
 
         # Doc read should return not_found
         result = client_2.crud(DocLoading.Bucket.DocOps.READ, self.key)
-        if SDKException.DocumentNotFoundException not in str(result["error"]):
+        if not self.bucket_util.check_if_exception_exists(
+                sdk_err, SDKException.DocumentNotFoundException):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with prepared doc: %s"
                              % result["error"])
@@ -1389,7 +1421,7 @@ class basic_ops(ClusterSetup):
         small_bucket = self.cluster.buckets[1]
 
         # Big bucket docs generation
-        doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=10,
+        doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=100,
                                 load_using=self.load_docs_using)
         load_task = self.task.async_load_gen_docs(
             self.cluster, big_bucket, doc_gen,
@@ -1406,7 +1438,7 @@ class basic_ops(ClusterSetup):
         self.task_manager.get_task_result(load_task)
 
         # Small bucket docs generation
-        doc_gen_small = doc_generator(self.key, 0, 500, doc_size=10,
+        doc_gen_small = doc_generator(self.key, 0, 500, doc_size=100,
                                       load_using=self.load_docs_using)
         load_task_2 = self.task.async_load_gen_docs(
             self.cluster, small_bucket, doc_gen_small,
@@ -1441,10 +1473,10 @@ class basic_ops(ClusterSetup):
         error_sim[target_nodes.ip].create(CouchbaseError.KILL_MEMCACHED,
                                           bucket_name=big_bucket.name)
         self.assertTrue(
-            self.bucket_util._wait_warmup_completed([target_nodes],
-                                                    small_bucket)
+            self.bucket_util._wait_warmup_completed(small_bucket,
+                                                    [target_nodes])
             and (not self.bucket_util._wait_warmup_completed(
-                 [target_nodes], big_bucket, self.warmup_timeout)),
+                 big_bucket, [target_nodes], self.warmup_timeout)),
             "Bucket with less data not accessible "
             "when other bucket getting warmed up.")
         # Disconnecting shell_connections
@@ -1490,7 +1522,7 @@ class basic_ops(ClusterSetup):
         active_vbs = cb_stat.vbucket_list(bucket.name,
                                           vbucket_type="active")
         doc_gen = doc_generator(self.key, 0, 10000,
-                                doc_size=1, vbuckets=bucket.numVBuckets,
+                                doc_size=100, vbuckets=bucket.numVBuckets,
                                 target_vbucket=active_vbs,
                                 load_using=self.load_docs_using)
 
@@ -1650,7 +1682,7 @@ class basic_ops(ClusterSetup):
             output, _ = shell.execute_command(hash_dump_cmd)
             if not output:
                 is_resident = False
-            start_index = doc_gen.key_counter
+            start_index = doc_gen.itr
             num_items += batch_size
 
         # Close the shell connections
@@ -1685,11 +1717,11 @@ class basic_ops(ClusterSetup):
         self.log.info("Starting XDCR replication")
         xdcr_cluster = CBCluster("C2", servers=[in_node])
         xdcr_cluster.nodes_in_cluster = [in_node]
-        xdcr_rest = RestConnection(xdcr_cluster.master)
+        xdcr_rest = MembaseRestConnection(xdcr_cluster.master)
         xdcr_rest.init_node()
         xdcr_rest.set_internalSetting("magmaMinMemoryQuota", 256)
         self.create_bucket(xdcr_cluster)
-        rest = RestConnection(self.cluster.master)
+        rest = MembaseRestConnection(self.cluster.master)
         rest.add_remote_cluster(xdcr_cluster.master.ip,
                                 xdcr_cluster.master.port,
                                 xdcr_cluster.master.rest_username,
@@ -1881,12 +1913,26 @@ class basic_ops(ClusterSetup):
             self.log.info("Wait for warmup to complete")
             self.bucket_util.is_warmup_complete(self.cluster.buckets)
 
-            warmup_stats = cbstat.all_stats(bucket.name,
-                                            "warmup")
-            for key in ["ep_warmup_estimated_key_count",
-                        "ep_warmup_estimated_value_count",
-                        "ep_warmup_key_count",
-                        "ep_warmup_value_count"]:
+            warmup_stat_keys = ["ep_warmup_estimated_key_count",
+                                "ep_warmup_estimated_value_count",
+                                "ep_warmup_key_count",
+                                "ep_warmup_value_count"]
+            # Warmup stats can briefly report 'unknown' right after
+            # is_warmup_complete() returns, so poll until they settle
+            # into numeric values instead of failing with a ValueError.
+            warmup_stats = cbstat.all_stats(bucket.name, "warmup")
+            retry_count = 0
+            while retry_count < 10 and any(
+                    not warmup_stats[key].isdigit()
+                    for key in warmup_stat_keys):
+                retry_count += 1
+                self.sleep(1, "Waiting for warmup stats to settle")
+                warmup_stats = cbstat.all_stats(bucket.name, "warmup")
+
+            for key in warmup_stat_keys:
+                self.assertTrue(warmup_stats[key].isdigit(),
+                                "%s never settled to a numeric value: %s"
+                                % (key, warmup_stats[key]))
                 self.assertFalse(int(warmup_stats[key]) != total_docs,
                                  "Value mismatch. %s = %s"
                                  % (key, warmup_stats[key]))
@@ -2054,7 +2100,7 @@ class basic_ops(ClusterSetup):
         rolelist = [{'id': user, 'name': user, 'roles': 'data_reader[*]'}]
         try:
             rbac_util.remove_user_role([user],
-                                       RestConnection(self.cluster.master))
+                                       MembaseRestConnection(self.cluster.master))
         except Exception as e:
             if "User was not found." not in str(e):
                 raise e
@@ -2062,16 +2108,16 @@ class basic_ops(ClusterSetup):
         self.log.info("Creating user '%s' with data_reader persmission" % user)
         rbac_util.create_user_source(testuser, 'builtin', self.cluster.master)
         status = rbac_util.add_user_role(
-            rolelist, RestConnection(self.cluster.master), 'builtin')
+            rolelist, MembaseRestConnection(self.cluster.master), 'builtin')
         self.assertEqual(status[0]["id"], user, "User create failed")
 
         key = "test"
         bucket = self.cluster.buckets[0]
         client = SDKClient(self.cluster, bucket)
         insert_option = SDKOptions.get_insert_options()
+        insert_option["transcoder"] = RawJSONTranscoder()
 
-        client.collection.insert(key, "null", insert_option.transcoder(
-            RawJsonTranscoder.INSTANCE))
+        client.collection.insert(key, "null", insert_option)
         client.crud(DocLoading.Bucket.SubDocOps.INSERT, key,
                     ["_xattr", "test_val"], xattr=True)
         client.close()
@@ -2241,14 +2287,14 @@ class basic_ops(ClusterSetup):
         doc_gen = doc_generator(self.key, 0, self.num_items)
         bucket = self.cluster.buckets[0]
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cb_stats = Cbstats(shell)
+        cb_stats = Cbstats(self.cluster.master)
 
         non_ttl_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen,
             DocLoading.Bucket.DocOps.CREATE, batch_size=1000,
             process_concurrency=2, print_ops_rate=False,
             skip_read_on_error=True, suppress_error_table=True,
-            sdk_client_pool=self.sdk_client_pool, iterations=-1,
+            iterations=-1,
             load_using=self.load_docs_using)
 
         self.log.info("Loading ttl docs for 50 iterations")
@@ -2262,7 +2308,7 @@ class basic_ops(ClusterSetup):
                     DocLoading.Bucket.DocOps.UPDATE, exp=10, batch_size=2000,
                     process_concurrency=3, print_ops_rate=False,
                     skip_read_on_error=True, suppress_error_table=True,
-                    sdk_client_pool=self.sdk_client_pool, iterations=3,
+                    iterations=3,
                     load_using=self.load_docs_using)
                 self.task_manager.get_task_result(l_task)
 
@@ -2319,7 +2365,7 @@ class basic_ops(ClusterSetup):
 
         oso_backfill_enabled = self.input.param("oso_backfill_enabled", None)
         bucket = self.cluster.buckets[0]
-        rest = RestConnection(self.cluster.master)
+        rest = MembaseRestConnection(self.cluster.master)
         self.log.info("Setting index mem. quota=256M")
         rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA: 256})
         self.log.info("Setting indexerThreads=1 for creating DCP pause/resume")
@@ -2373,7 +2419,16 @@ class basic_ops(ClusterSetup):
             "CREATE INDEX `c1` ON `{}`.`_default`.`c1`(body) USING GSI"
             .format(bucket.name), timeout=300)
         query = "SELECT state FROM system:indexes WHERE name='c1'"
-        state = list(client.cluster.query(query))[0].get("state")
+        state = None
+        retry = 0
+        while retry < 30:
+            rows = list(client.cluster.query(query))
+            if rows:
+                state = rows[0].get("state")
+                if state == "online":
+                    break
+            retry += 1
+            self.sleep(2, "Waiting for index 'c1' to come online")
         client.close()
         if state != "online":
             self.fail("Create index timed out")
@@ -2586,7 +2641,10 @@ class basic_ops(ClusterSetup):
         active_vbs = None
         key = "test_key"
         bucket = self.cluster.buckets[0]
-        client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
+        if self.cluster.sdk_client_pool:
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
+        else:
+            client = SDKClient(self.cluster, bucket)
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(
             key, bucket.numVBuckets)
 
@@ -2628,7 +2686,10 @@ class basic_ops(ClusterSetup):
         self.log.info("Starting data load to tigger eviction")
         self.task_manager.add_new_task(load_task)
         self.task_manager.get_task_result(load_task)
-        self.cluster.sdk_client_pool.release_client(client)
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.release_client(client)
+        else:
+            client.close()
         self.log.info("Reverting error condition")
         cb_err.revert(CouchbaseError.STOP_MEMCACHED)
         cbstat.shellConn.disconnect()
@@ -2681,8 +2742,8 @@ class basic_ops(ClusterSetup):
             node_info[node.ip]["shell"] = RemoteMachineShellConnection(node)
             node_info[node.ip]["cbstat"] = Cbstats(node)
             stats = node_info[node.ip]["cbstat"].all_stats(bucket.name)
-            active_rr_perc = int(stats["vb_active_perc_mem_resident"])
-            replica_rr_perc = int(stats["vb_replica_perc_mem_resident"])
+            active_rr_perc = float(stats["vb_active_perc_mem_resident"])
+            replica_rr_perc = float(stats["vb_replica_perc_mem_resident"])
             self.log.info("{} - vb_active_perc_mem_resident: {}, "
                           "vb_replica_perc_mem_resident: {}"
                           .format(node.ip, active_rr_perc, replica_rr_perc))
@@ -2697,8 +2758,8 @@ class basic_ops(ClusterSetup):
         self.sleep(5, "Wait for memcached to complete warmup")
         for ip, n_info in node_info.items():
             stats = n_info["cbstat"].all_stats(bucket.name)
-            active_rr_perc = int(stats["vb_active_perc_mem_resident"])
-            replica_rr_perc = int(stats["vb_replica_perc_mem_resident"])
+            active_rr_perc = float(stats["vb_active_perc_mem_resident"])
+            replica_rr_perc = float(stats["vb_replica_perc_mem_resident"])
             self.log.info("{} - vb_active_perc_mem_resident: {}, "
                           "vb_replica_perc_mem_resident: {}"
                           .format(ip, active_rr_perc, replica_rr_perc))
@@ -2721,7 +2782,7 @@ class basic_ops(ClusterSetup):
         def validate_item_count():
             retry = 10
             while retry > 0:
-                b_info = b_rest.get_bucket_info(bucket.name)
+                _, b_info = b_rest.get_bucket_info(bucket.name)
                 if self.num_items == int(b_info["basicStats"]["itemCount"]):
                     break
                 retry -= 1
@@ -2737,7 +2798,7 @@ class basic_ops(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, load_gen, DocLoading.Bucket.DocOps.CREATE,
             batch_size=200, process_concurrency=4, print_ops_rate=False,
-            skip_read_on_error=True, sdk_client_pool=self.sdk_client_pool)
+            skip_read_on_error=True)
         self.task_manager.get_task_result(load_task)
 
         self.log.info("Validation doc_count")

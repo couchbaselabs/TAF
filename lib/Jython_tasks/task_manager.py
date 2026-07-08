@@ -1,6 +1,7 @@
 import itertools
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader, SiriusJavaMongoLoader
 from common_lib import sleep
@@ -26,7 +27,7 @@ class TaskManager(object):
         self.futures[task.thread_name] = future
         self.log.info("Added new task: %s" % task.thread_name)
 
-    def get_task_result(self, task):
+    def get_task_result(self, task, timeout=None):
         self.log.debug("Getting task result for %s" % task.thread_name)
         if isinstance(task, SiriusCouchbaseLoader) or isinstance(task, SiriusJavaMongoLoader):
             okay = task.get_task_result()
@@ -38,10 +39,15 @@ class TaskManager(object):
         future = self.futures[task.thread_name]
         result = False
         try:
-            result = future.result()
+            result = future.result(timeout=timeout)
             exception = future.exception()
             if exception:
                 self.log.critical(f"Exception in {task.thread_name}: {exception}")
+        except FutureTimeoutError:
+            self.log.critical(
+                "Task %s did not complete within %ss"
+                % (task.thread_name, timeout))
+            raise
         except Exception:
             self.log.warning("%s is already cancelled" % task.thread_name)
 
