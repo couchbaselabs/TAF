@@ -139,7 +139,7 @@ Two-tier system:
 |------|-------|-------------|
 | `collector/collector_tests.py` | `CollectorTests` | Settings, telemetry accuracy, aggregate telemetry, node rebalance |
 | `failover/lighthouse_failover_tests.py` | `LighthouseFailoverTests` | Node failure, manual failover, autofailover reflected on portal |
-| `sessions/session_timeout_tests.py` | `CollectorConfigTests` | Session timeout tests |
+| `sessions/session_tests.py` | `CollectorConfigTests` | Collector config + portal session tests (login, logout, session-ID rotation) |
 
 ### Config Files (`conf/lighthouse/`)
 | File | Purpose |
