@@ -23,7 +23,7 @@ default = {
     "2iQPS": _input.param("2iQPS", 10),
     "ftsQPS": _input.param("ftsQPS", 10),
     "cbasQPS": _input.param("cbasQPS", 10),
-    "process_concurrency": _input.param("process_concurrency", 10),
+    "process_concurrency": _input.param("pc", 10),
     "collections_defn": [
         {
             "valType": "SimpleValue",
@@ -80,7 +80,7 @@ Hotel = {
     "2iQPS": _input.param("2iQPS", 300),
     "ftsQPS": _input.param("ftsQPS", 100),
     "cbasQPS": _input.param("cbasQPS", 100),
-    "process_concurrency": _input.param("process_concurrency", 10),
+    "process_concurrency": _input.param("pc", 10),
     "collections_defn": [
         {
             "valType": "Hotel",
@@ -154,7 +154,7 @@ nimbus = {
     "2iQPS": _input.param("2iQPS", 300),
     "ftsQPS": _input.param("ftsQPS", 100),
     "cbasQPS": _input.param("cbasQPS", 100),
-    "process_concurrency": _input.param("process_concurrency", 10),
+    "process_concurrency": _input.param("pc", 10),
     "collections_defn": [
         {
             "valType": "NimbusP",
@@ -219,7 +219,7 @@ siftBigANN = {
     "2iQPS": _input.param("2iQPS", 50),
     "ftsQPS": _input.param("ftsQPS", 10),
     "cbasQPS": _input.param("cbasQPS", 10),
-    "process_concurrency": _input.param("process_concurrency", 10),
+    "process_concurrency": _input.param("pc", 10),
     "collections_defn": [
         {
             "collection_id": "1M",

@@ -264,7 +264,7 @@ class JavaDocLoaderUtils(object):
                      validate_data=False, overRidePattern=None, skip_default=True,
                      wait_for_stats=True, mutate=0,
                      suppress_error_table=False,
-                     track_failures=True, process_concurrency=10):
+                     track_failures=True, process_concurrency=None):
         loader_map = JavaDocLoaderUtils._loader_dict(
             cluster, buckets, overRidePattern,
             skip_default=skip_default,
