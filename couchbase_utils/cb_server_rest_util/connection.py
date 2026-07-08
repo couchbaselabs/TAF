@@ -145,11 +145,13 @@ class CBRestConnection(object):
                     rest.log.warning(f"{api} with status {status}: {content}")
             except ValueError as e:
                 rest.log.critical(e)
-            if not success and type(content) in [bytes, str]\
-                    and (content.find(node_unknown_msg) > -1
-                         or content.find(unexpected_server_err_msg) > -1):
+            content_str = content.decode('utf-8', errors='ignore') \
+                if isinstance(content, bytes) else content
+            if not success and isinstance(content_str, str)\
+                    and (content_str.find(node_unknown_msg) > -1
+                         or content_str.find(unexpected_server_err_msg) > -1):
                 rest.log.error("Error {0}, 5 seconds sleep before retry"
-                               .format(content))
+                               .format(content_str))
                 time.sleep(5)
                 if iteration == 2:
                     rest.log.error("Node {0}:{1} is in a broken state!"
