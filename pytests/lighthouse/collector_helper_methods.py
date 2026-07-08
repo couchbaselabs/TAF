@@ -4,7 +4,7 @@ Collector Helper Methods
 Helper functions for interacting with the ns_server Lighthouse Collector APIs.
 
 These helpers call the raw LighthouseCollectorClient methods and handle
-JSON parsing, payload building, and common validation patterns — exactly
+JSON parsing, payload building, and common validation patterns - exactly
 mirroring the role that ucp_helper_methods.py plays for UnifiedControlPlaneClient.
 
 Design reference: Lighthouse Collector Design Revision v1.4 (17 Jun 2026)
@@ -65,7 +65,7 @@ def set_collector_enabled(client, enabled):
 
     Args:
         client:  LighthouseCollectorClient instance
-        enabled: bool — True to enable, False to disable
+        enabled: bool - True to enable, False to disable
 
     Returns:
         Tuple (status, content, header)
@@ -82,7 +82,7 @@ def set_collector_endpoint(client, endpoint):
 
     Args:
         client:   LighthouseCollectorClient instance
-        endpoint: str — e.g. "couchbase.fleetmanager.internal"
+        endpoint: str - e.g. "couchbase.fleetmanager.internal"
 
     Returns:
         Tuple (status, content, header)
@@ -96,7 +96,7 @@ def set_collector_report_interval(client, hours):
 
     Args:
         client: LighthouseCollectorClient instance
-        hours:  int — reporting interval in hours (default 2)
+        hours:  int - reporting interval in hours (default 2)
 
     Returns:
         Tuple (status, content, header)
@@ -110,7 +110,7 @@ def set_collector_timeout(client, seconds):
 
     Args:
         client:  LighthouseCollectorClient instance
-        seconds: int — connection timeout in seconds (default 1)
+        seconds: int - connection timeout in seconds (default 1)
 
     Returns:
         Tuple (status, content, header)
@@ -125,9 +125,9 @@ def set_collector_external_node_limits(client, max_payload_bytes=None,
 
     Args:
         client:            LighthouseCollectorClient instance
-        max_payload_bytes: int — max bytes for a single external payload
+        max_payload_bytes: int - max bytes for a single external payload
                            (default 10240)
-        max_count:         int — max number of tracked external nodes
+        max_count:         int - max number of tracked external nodes
                            (default 100)
 
     Returns:
@@ -142,7 +142,7 @@ def force_report(client):
     """
     Force an immediate telemetry report attempt to the lighthouse portal.
 
-    Any POST to /internal/settings/telemetry — even a no-op — triggers
+    Any POST to /internal/settings/telemetry - even a no-op - triggers
     an immediate report attempt.  This is the designed way to verify
     connectivity without waiting for the report interval.
 
@@ -155,7 +155,7 @@ def force_report(client):
     # Fetch current settings so we can POST them back unchanged (no-op).
     settings = get_collector_settings(client)
     if settings is None:
-        # If GET failed, send an empty POST body — server will use defaults.
+        # If GET failed, send an empty POST body - server will use defaults.
         return client.update_lighthouse_settings()
     return client.update_lighthouse_settings(
         enabled=settings.get('enabled'),
@@ -201,13 +201,13 @@ def ingest_sgw_telemetry(client, product_name, instance_id, payload):
 
     Args:
         client:       LighthouseCollectorClient instance
-        product_name: str — stable opaque product identifier
+        product_name: str - stable opaque product identifier
                       (e.g. "sync_gateway").  All nodes sharing the same
                       name are grouped under the same key in
                       externalNodes.<product_name>.
-        instance_id:  str — stable unique identifier for this specific
+        instance_id:  str - stable unique identifier for this specific
                       external node instance.  Used for deduplication.
-        payload:      dict — telemetry body (must be JSON-serialisable).
+        payload:      dict - telemetry body (must be JSON-serialisable).
 
     Returns:
         Tuple (status, content, header)
@@ -229,16 +229,16 @@ def build_sgw_payload(instance_id, cpu_cores, ram_bytes_total,
     inspection beyond confirming it is valid JSON.
 
     Args:
-        instance_id:     str — stable unique SGW instance identifier
-        cpu_cores:       int — number of CPU cores
-        ram_bytes_total: int — total RAM in bytes
-        ram_bytes_used:  int — used RAM in bytes
-        edition:         str — e.g. "enterprise" or "community"
-        version:         str — e.g. "3.2.0"
-        name:            str — product name, e.g. "Sync Gateway"
-        os_version:      str — OS description string
-        hostname:        str — SGW node hostname
-        uptime_seconds:  int — node uptime in seconds
+        instance_id:     str - stable unique SGW instance identifier
+        cpu_cores:       int - number of CPU cores
+        ram_bytes_total: int - total RAM in bytes
+        ram_bytes_used:  int - used RAM in bytes
+        edition:         str - e.g. "enterprise" or "community"
+        version:         str - e.g. "3.2.0"
+        name:            str - product name, e.g. "Sync Gateway"
+        os_version:      str - OS description string
+        hostname:        str - SGW node hostname
+        uptime_seconds:  int - node uptime in seconds
 
     Returns:
         dict ready to pass to ingest_sgw_telemetry()
@@ -311,7 +311,7 @@ def set_lighthouse_ns_config_via_diag_eval(server, **kwargs):
     """
     Merge one or more keys into the telemetry ns_config map via diag/eval.
 
-    Uses maps:merge so only the specified keys change — all other settings
+    Uses maps:merge so only the specified keys change - all other settings
     are preserved.  Calling ns_config:set(telemetry, #{k => v}) without
     maps:merge replaces the entire map, wiping unspecified keys.
 
@@ -340,7 +340,7 @@ def set_lighthouse_ns_config_via_diag_eval(server, **kwargs):
 
 
 def set_lighthouse_interval_via_diag_eval(server, interval_hours):
-    """Convenience wrapper — set only reporting_interval_hours via diag/eval."""
+    """Convenience wrapper - set only reporting_interval_hours via diag/eval."""
     return set_lighthouse_ns_config_via_diag_eval(
         server, reporting_interval_hours=interval_hours)
 
@@ -428,7 +428,7 @@ def get_portal_cluster(ucp_client, cluster_uuid):
 
     Args:
         ucp_client:   Authenticated UnifiedControlPlaneClient instance.
-        cluster_uuid: str — the cluster UUID (from get_cb_cluster_uuid).
+        cluster_uuid: str - the cluster UUID (from get_cb_cluster_uuid).
 
     Returns:
         dict of the parsed cluster object, or None on failure.
@@ -466,7 +466,7 @@ def _uuid_in_clusters_response(data, cluster_uuid):
 
     Args:
         data:         Parsed JSON from list_clusters() (list or dict).
-        cluster_uuid: str — UUID to search for.
+        cluster_uuid: str - UUID to search for.
 
     Returns:
         True if found, False otherwise.
@@ -491,9 +491,9 @@ def wait_for_cluster_on_portal(ucp_client, cluster_uuid,
 
     Args:
         ucp_client:    Authenticated UnifiedControlPlaneClient instance.
-        cluster_uuid:  str — UUID to wait for.
-        timeout:       int — max seconds to wait (default 60).
-        poll_interval: int — seconds between polls (default 5).
+        cluster_uuid:  str - UUID to wait for.
+        timeout:       int - max seconds to wait (default 60).
+        poll_interval: int - seconds between polls (default 5).
 
     Returns:
         True if the cluster appeared within timeout, False otherwise.
@@ -520,10 +520,10 @@ def wait_for_portal_node_count(ucp_client, cluster_uuid, expected_count,
 
     Args:
         ucp_client:     Authenticated UnifiedControlPlaneClient instance.
-        cluster_uuid:   str — the cluster UUID to poll.
-        expected_count: int — expected number of nodes in telemetry.nodes.
-        timeout:        int — max seconds to wait (default 120).
-        poll_interval:  int — seconds between polls (default 5).
+        cluster_uuid:   str - the cluster UUID to poll.
+        expected_count: int - expected number of nodes in telemetry.nodes.
+        timeout:        int - max seconds to wait (default 120).
+        poll_interval:  int - seconds between polls (default 5).
 
     Returns:
         True if the count matched within timeout, False otherwise.
@@ -547,10 +547,10 @@ def _parse_cb_version(version_str):
     Parse a raw CB version string into (major_minor, edition).
 
     Args:
-        version_str: str — e.g. "8.0.0-1234-enterprise"
+        version_str: str - e.g. "8.0.0-1234-enterprise"
 
     Returns:
-        Tuple (version: str, edition: str) — e.g. ("8.0", "enterprise").
+        Tuple (version: str, edition: str) - e.g. ("8.0", "enterprise").
     """
     dash_parts = version_str.split('-')
     version = '.'.join(dash_parts[0].split('.')[:2])
@@ -570,7 +570,7 @@ def _read_physical_cores(shell):
         shell: Open RemoteMachineShellConnection instance.
 
     Returns:
-        int — physical core count (>= 1).
+        int - physical core count (>= 1).
     """
     out, _ = shell.execute_command(
         "awk '/^physical id/{p=$NF} /^core id/{k=p\",\"$NF;"
@@ -739,10 +739,10 @@ def assert_within_tolerance(test_case, actual, expected, tolerance_pct, label=''
 
     Args:
         test_case:     unittest.TestCase instance (provides assert methods).
-        actual:        int/float — value from the portal.
-        expected:      int/float — ground truth value.
-        tolerance_pct: numeric — allowed percentage deviation.
-        label:         str — prefix for the failure message.
+        actual:        int/float - value from the portal.
+        expected:      int/float - ground truth value.
+        tolerance_pct: numeric - allowed percentage deviation.
+        label:         str - prefix for the failure message.
     """
     if expected == 0:
         test_case.assertEqual(
@@ -767,7 +767,7 @@ def get_cb_cluster_services_union(cluster):
         cluster: CBCluster instance (has .master attribute).
 
     Returns:
-        list[str] — sorted unique portal service names (e.g. ["data", "query"]).
+        list[str] - sorted unique portal service names (e.g. ["data", "query"]).
     """
     all_services = set()
     for services_list in get_cb_cluster_nodes_services(cluster.master).values():

@@ -83,6 +83,59 @@ def keep_session_alive(client):
     """
     status, content, header = client.session_me()
     return status
+
+def get_session_cookie(client):
+    """
+    Return the session cookie string ("name=value") the client is
+    currently holding, or None if no session cookie is held.
+    Args:
+        client: UnifiedControlPlaneClient instance
+    Returns:
+        Cookie string or None
+    """
+    return client._session_cookie
+
+def set_session_cookie(client, cookie):
+    """
+    Inject a session cookie into the client (pass None to clear it).
+    Used to replay a previously saved cookie, e.g. to prove the
+    portal rejects a logged-out session's cookie.
+    Args:
+        client: UnifiedControlPlaneClient instance
+        cookie: Cookie string ("name=value") or None
+    """
+    client._session_cookie = cookie
+
+def extract_session_id(cookie):
+    """
+    Extract the session ID (the cookie value) from a "name=value"
+    session cookie string.
+    Args:
+        cookie: Cookie string as stored by the client
+    Returns:
+        Session ID string, or None if the cookie is empty/malformed
+    """
+    if not cookie or '=' not in cookie:
+        return None
+    return cookie.split('=', 1)[1]
+
+# ==================== User Helper Methods ====================
+def get_user_with_etag(client, user_id):
+    """
+    Fetch a user record together with its ETag (needed for any
+    PUT /users/{userId} call).
+    Args:
+        client: UnifiedControlPlaneClient instance (authenticated)
+        user_id: userId of the user to fetch
+    Returns:
+        Tuple (user_dict, etag) -- (None, None) on failure
+    """
+    status, content, header = client.get_user(user_id)
+    if not status:
+        return None, None
+    user = json.loads(content)
+    etag = header.headers.get('ETag') if header is not None else None
+    return user, etag
 # ==================== Timestamp Helpers ====================
 
 def parse_iso8601_timestamp(timestamp_str):
