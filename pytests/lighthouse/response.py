@@ -1,13 +1,14 @@
 
 """
 Response and Error utilities for UCP API Client
+NOTE: must stay Jython/Python-2 compatible -- no type annotations,
+no f-strings, no json.JSONDecodeError (Py3-only).
 """
 import json
-from typing import Dict, Any, Optional, List
 
-class UCPResponse:
+class UCPResponse(object):
     """Helper class to parse UCP API responses."""
-    def __init__(self, status: bool, content: str, response: Any):
+    def __init__(self, status, content, response):
         """
         Initialize response wrapper.
         Args:
@@ -26,38 +27,44 @@ class UCPResponse:
         if self.content:
             try:
                 self._json_data = json.loads(self.content)
-            except json.JSONDecodeError:
+            except ValueError:
                 self._json_data = None
 
     @property
-    def json(self) -> Optional[Dict[str, Any]]:
+    def json(self):
         """Get parsed JSON data."""
         return self._json_data
+
     @property
-    def status_code(self) -> int:
+    def status_code(self):
         """Get HTTP status code."""
-        return self.response.status_code if self.response else None
+        return self.response.status_code if self.response is not None else None
+
     @property
-    def headers(self) -> Dict[str, str]:
+    def headers(self):
         """Get response headers."""
-        return dict(self.response.headers) if self.response else {}
+        return dict(self.response.headers) if self.response is not None else {}
+
     @property
-    def etag(self) -> Optional[str]:
+    def etag(self):
         """Get ETag header if present."""
         return self.headers.get('ETag') or self.headers.get('etag')
+
     @property
-    def x_request_id(self) -> Optional[str]:
+    def x_request_id(self):
         """Get X-Request-Id header if present."""
-        return self.headers.get('X-Request-Id') or self.headers.get('x-request-id')
-    def is_success(self) -> bool:
+        return (self.headers.get('X-Request-Id')
+                or self.headers.get('x-request-id'))
+
+    def is_success(self):
         """Check if response is successful."""
         return self.status
 
-    def is_error(self) -> bool:
+    def is_error(self):
         """Check if response is an error."""
         return not self.status
 
-    def get_error_message(self) -> Optional[str]:
+    def get_error_message(self):
         """Extract error message from response."""
         if self._json_data and isinstance(self._json_data, dict):
             if 'detail' in self._json_data:
@@ -68,27 +75,28 @@ class UCPResponse:
                 return self._json_data['message']
         return None
 
-    def get_error_code(self) -> Optional[str]:
+    def get_error_code(self):
         """Extract error code from response."""
         if self._json_data and isinstance(self._json_data, dict):
             return self._json_data.get('code')
         return None
 
-    def get_validation_errors(self) -> Optional[List[Dict[str, Any]]]:
+    def get_validation_errors(self):
         """Extract validation errors array if present."""
         if self._json_data and isinstance(self._json_data, dict):
             return self._json_data.get('errors')
         return None
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         """String representation."""
-        return (f"UCPResponse(status={self.status}, status_code={self.status_code}, "
-                f"etag={self.etag}, x_request_id={self.x_request_id})")
+        return ("UCPResponse(status=%s, status_code=%s, "
+                "etag=%s, x_request_id=%s)"
+                % (self.status, self.status_code,
+                   self.etag, self.x_request_id))
 
 class UCPError(Exception):
     """Base exception for UCP API errors."""
-    def __init__(self, message: str, status_code: Optional[int] = None,
-                 error_code: Optional[str] = None):
+    def __init__(self, message, status_code=None, error_code=None):
         """
         Initialize UCP error.
         Args:
@@ -99,7 +107,7 @@ class UCPError(Exception):
         self.message = message
         self.status_code = status_code
         self.error_code = error_code
-        super().__init__(message)
+        super(UCPError, self).__init__(message)
 
 class ValidationError(UCPError):
     """Validation error (422)."""
@@ -123,7 +131,7 @@ class InternalError(UCPError):
     """Internal error (500)."""
     pass
 
-def raise_for_status(response: UCPResponse) -> None:
+def raise_for_status(response):
     """
     Raise appropriate exception based on response status.
     Args:
@@ -135,7 +143,7 @@ def raise_for_status(response: UCPResponse) -> None:
         return
     status_code = response.status_code
     error_code = response.get_error_code()
-    error_msg = response.get_error_message() or f"HTTP {status_code}"
+    error_msg = response.get_error_message() or "HTTP %s" % status_code
     if status_code == 422:
         raise ValidationError(error_msg, status_code, error_code)
     elif status_code == 401:
