@@ -576,22 +576,30 @@ class DocHistoryRetention(ClusterSetup):
                                  "Unexpected time output: %s" % byte_result)
                 self.log.info("CDC enabling succeeded")
             else:
-                err_line = \
+                # Server appends env-specific details to the error, e.g.
+                # "- requires backend=magma (current value: couchdb),
+                #  requires bucket_type=persistent (current value: ephemeral)"
+                # so match on the stable prefix instead of the full string.
+                err_prefix = \
                     'Error: EINVAL : Invalid packet : {"error":' \
-                    '{"context":"Cannot sethistory_retention_%s : ' \
-                    'requirements not met"}}'
-                expected_bytes_err = [
-                    'setting param: history_retention_bytes %s'
-                    % bucket_dedup_retention_bytes,
-                    err_line % "bytes"]
-                expected_time_err = [
-                    'setting param: history_retention_seconds %s'
-                    % bucket_dedup_retention_seconds,
-                    err_line % "seconds"]
-                self.assertEqual(byte_result, expected_bytes_err,
+                    '{"context":"Cannot set history_retention_%s: ' \
+                    'requirements not met'
+                expected_bytes_param = \
+                    'setting param: history_retention_bytes %s' \
+                    % bucket_dedup_retention_bytes
+                expected_time_param = \
+                    'setting param: history_retention_seconds %s' \
+                    % bucket_dedup_retention_seconds
+                self.assertEqual(byte_result[0], expected_bytes_param,
                                  "Unexpected size_err msg: %s" % byte_result)
-                self.assertEqual(time_result, expected_time_err,
+                self.assertTrue(
+                    byte_result[1].startswith(err_prefix % "bytes"),
+                    "Unexpected size_err msg: %s" % byte_result)
+                self.assertEqual(time_result[0], expected_time_param,
                                  "Unexpected time_err msg: %s" % time_result)
+                self.assertTrue(
+                    time_result[1].startswith(err_prefix % "seconds"),
+                    "Unexpected time_err msg: %s" % time_result)
                 self.log.info("CDC enabling failed as expected")
 
         col = choice(self.bucket_util.get_active_collections(
