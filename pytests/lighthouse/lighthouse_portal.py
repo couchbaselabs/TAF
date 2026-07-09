@@ -6,14 +6,19 @@ Separate from TestInputServer because the portal is NOT a
 Couchbase Server node - it has its own port, credentials,
 and service-specific settings.
 """
+from testconstants import (
+    LIGHTHOUSE_PORTAL_USERNAME,
+    LIGHTHOUSE_PORTAL_PASSWORD,
+)
+
 class LighthousePortal(object):
     """
     Configuration object for a Lighthouse/UCP portal instance.
     Created from ini [LHPortal] server + test params.
     Passed to UnifiedControlPlaneClient for connection.
     """
-    def __init__(self, ip, port=8080, username='Administrator',
-                 password='password'):
+    def __init__(self, ip, port=8080, username=LIGHTHOUSE_PORTAL_USERNAME,
+                 password=LIGHTHOUSE_PORTAL_PASSWORD):
         """
         Args:
             ip: Portal IP address
@@ -33,8 +38,8 @@ class LighthousePortal(object):
         The IP comes from the server (ini [LHPortal] section).
         Port, username, password can be overridden via test params:
             - ucp_port (default: 8080)
-            - ucp_username (default: server.rest_username)
-            - ucp_password (default: server.rest_password)
+            - ucp_username (default: testconstants.LIGHTHOUSE_PORTAL_USERNAME)
+            - ucp_password (default: testconstants.LIGHTHOUSE_PORTAL_PASSWORD)
         Args:
             server: TestInputServer from input.lh_portal
             test_input: TestInput object for reading params
@@ -43,8 +48,10 @@ class LighthousePortal(object):
         """
         ip = server.ip
         port = test_input.param("ucp_port", 8080)
-        username = test_input.param("ucp_username", "admin")
-        password = test_input.param("ucp_password", "password")
+        username = test_input.param("ucp_username",
+                                    LIGHTHOUSE_PORTAL_USERNAME)
+        password = test_input.param("ucp_password",
+                                    LIGHTHOUSE_PORTAL_PASSWORD)
         return LighthousePortal(ip=ip, port=port,
                                 username=username, password=password)
     def __str__(self):
