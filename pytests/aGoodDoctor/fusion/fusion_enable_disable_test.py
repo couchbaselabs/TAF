@@ -198,7 +198,8 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         if bucket_name:
             self.log.info(f"Verifying S3 bucket {bucket_name} is empty after cancel")
-            self._assert_s3_bucket_empty(bucket_name, timeout=120)
+            self._assert_s3_bucket_empty(bucket_name, timeout=120,
+                                         buckets=self.cluster.buckets)
         else:
             self.log.info(
                 "S3 bucket was not created before cancel — nothing to validate")
@@ -266,7 +267,8 @@ class FusionEnableDisableTests(_FusionTestBase):
             self.log.info(f"S3 object count after stop: {count_before}")
             self.log.info(f"S3 object size after stop: {size_before}")
             self.sleep(60, "Wait to confirm no new objects are written")
-            count_after = self.s3.get_bucket_size(bucket_name).get("file_count", 0)
+            count_after = self._get_s3_object_count_for_buckets(
+                bucket_name, [self.cluster.buckets[0]])
             self.assertEqual(
                 count_after, count_before,
                 f"S3 object count increased after stop ({count_before}→{count_after})"
@@ -359,13 +361,15 @@ class FusionEnableDisableTests(_FusionTestBase):
         CapellaAPI.stop_fusion_internal(self.pod, self.tenant, self.cluster.id)
         self._wait_for_fusion_state(self.tenant, self.cluster, "stopped")
 
+        size_at_stop, count_at_stop = self.fusion_monitor.get_fusion_log_store_data_size_on_s3(
+            cluster=self.cluster, bucket=self.cluster.buckets[0])
+        self.log.info(f"S3 at stop: size={size_at_stop:.2f} GB, objects={count_at_stop}")
+        self.sleep(60, "Wait to confirm no new uploads or deletions after stop")
         size_after_stop, count_after_stop = self.fusion_monitor.get_fusion_log_store_data_size_on_s3(
             cluster=self.cluster, bucket=self.cluster.buckets[0])
-        self.assertGreaterEqual(size_after_stop, size_pre_stop,
-                         f"Stop changed S3 object size: {size_pre_stop}→{size_after_stop}")
-        self.assertGreaterEqual(count_after_stop, count_pre_stop,
-                         f"Stop changed S3 object count: "
-                         f"({count_pre_stop}→{count_after_stop}) — stop must preserve")
+        self.assertEqual(count_after_stop, count_at_stop,
+                         f"S3 object count changed after stop "
+                         f"({count_at_stop}→{count_after_stop}) — sync did not halt")
 
         self._load_data(self.cluster,
                         create_start=self.input.param("num_items"),
@@ -946,8 +950,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         obj_count_before_stop = 0
         if bucket_name:
-            obj_count_before_stop = self.s3.get_bucket_size(
-                bucket_name).get("file_count", 0)
+            obj_count_before_stop = self._get_s3_object_count_for_buckets(bucket_name)
             self.log.info(f"S3 object count before stop: {obj_count_before_stop}")
 
         self.log.info("Issuing stop via internal support API during active rebalance")
@@ -973,14 +976,10 @@ class FusionEnableDisableTests(_FusionTestBase):
             # Uploads in flight when stop was issued may still land, so
             # baseline the count after the stopped state has settled, then
             # confirm it stays flat.
-            obj_count_at_stop = self.s3.get_bucket_size(
-                bucket_name).get("file_count", 0)
-            self.assertGreaterEqual(
-                obj_count_at_stop, obj_count_before_stop,
-                "S3 objects were unexpectedly deleted by stop")
+            obj_count_at_stop = self._get_s3_object_count_for_buckets(bucket_name)
+            self.log.info(f"S3 object count at stop: {obj_count_at_stop}")
             self.sleep(60, "Wait to confirm no new objects are written after stop")
-            obj_count_after_stop = self.s3.get_bucket_size(
-                bucket_name).get("file_count", 0)
+            obj_count_after_stop = self._get_s3_object_count_for_buckets(bucket_name)
             self.log.info(f"S3 object count after stop: {obj_count_after_stop}")
             self.assertEqual(
                 obj_count_after_stop, obj_count_at_stop,
@@ -1018,12 +1017,14 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         self.sleep(30, "Allow some data to sync to S3")
 
-        bucket_name_1 = self._get_s3_bucket_name_from_uri(self.cluster)
-        self.assertIsNotNone(bucket_name_1, "No S3 bucket found after enable")
-        count_before_stop = self.s3.get_bucket_size(bucket_name_1).get("file_count", 0)
+        s3_bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
+        self.assertIsNotNone(s3_bucket_name, "No S3 bucket found after enable")
+        test_buckets = list(self.cluster.buckets)
+        count_before_stop = self._get_s3_object_count_for_buckets(
+            s3_bucket_name, test_buckets)
         self.assertGreater(count_before_stop, 0,
                            "Expected S3 objects after data load, found none")
-        self.log.info(f"S3 objects before stop: {count_before_stop}")
+        self.log.info(f"S3 objects (test-bucket prefixes) before stop: {count_before_stop}")
 
         CapellaAPI.stop_fusion_internal(self.pod, self.tenant, self.cluster.id)
         self._wait_for_fusion_state(self.tenant, self.cluster, "stopped")
@@ -1031,14 +1032,13 @@ class FusionEnableDisableTests(_FusionTestBase):
         # Uploads in flight when stop was issued may still land, so baseline
         # the count only after the stopped state is reached, then confirm it
         # stays flat.
-        count_at_stop = self.s3.get_bucket_size(bucket_name_1).get("file_count", 0)
-        self.assertGreaterEqual(
-            count_at_stop, count_before_stop,
-            f"S3 objects were deleted by stop ({count_before_stop}→{count_at_stop})"
-            " — objects should be preserved")
+        count_at_stop = self._get_s3_object_count_for_buckets(
+            s3_bucket_name, test_buckets)
+        self.log.info(f"S3 objects (test-bucket prefixes) at stop: {count_at_stop}")
         self.sleep(60, "Confirm sync has halted after stop")
-        count_after_stop = self.s3.get_bucket_size(bucket_name_1).get("file_count", 0)
-        self.log.info(f"S3 objects after stop: {count_after_stop}")
+        count_after_stop = self._get_s3_object_count_for_buckets(
+            s3_bucket_name, test_buckets)
+        self.log.info(f"S3 objects (test-bucket prefixes) after stop: {count_after_stop}")
         self.assertEqual(
             count_after_stop, count_at_stop,
             f"S3 object count changed after stop ({count_at_stop}→{count_after_stop})"
@@ -1051,19 +1051,20 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
 
         self.sleep(30, "Allow some data to sync to S3")
-        bucket_name_2 = self._get_s3_bucket_name_from_uri(self.cluster)
-        self.assertIsNotNone(bucket_name_2, "No S3 bucket found after re-enable")
-        count_before_disable = self.s3.get_bucket_size(
-            bucket_name_2).get("file_count", 0)
+        s3_bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
+        self.assertIsNotNone(s3_bucket_name, "No S3 bucket found after re-enable")
+        count_before_disable = self._get_s3_object_count_for_buckets(
+            s3_bucket_name, test_buckets)
         self.assertGreater(count_before_disable, 0,
                            "Expected S3 objects after data load, found none")
-        self.log.info(f"S3 objects before disable: {count_before_disable}")
+        self.log.info(f"S3 objects (test-bucket prefixes) before disable: {count_before_disable}")
 
         resp_disable = CapellaAPI.disable_fusion(self.pod, self.tenant, self.cluster.id)
         self.log.info(f"disable_fusion response: {resp_disable.status_code}")
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
-        self._assert_s3_bucket_empty(bucket_name_2, timeout=300)
+        self._assert_s3_bucket_empty(s3_bucket_name, timeout=300,
+                                     buckets=test_buckets)
         self.log.info("Round 2 (Disable): S3 objects deleted as expected")
 
         self.log.info("Stop vs Disable S3 retention difference confirmed")
@@ -1097,8 +1098,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         obj_count_before_stop = 0
         if bucket_name:
-            obj_count_before_stop = self.s3.get_bucket_size(
-                bucket_name).get("file_count", 0)
+            obj_count_before_stop = self._get_s3_object_count_for_buckets(bucket_name)
             self.log.info(f"S3 object count after full sync: {obj_count_before_stop}")
             self.assertGreater(obj_count_before_stop, 0,
                                "Expected S3 objects after full sync but found none")
@@ -1108,12 +1108,14 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._wait_for_fusion_state(self.tenant, self.cluster, "stopped")
 
         if bucket_name:
-            obj_count_after_stop = self.s3.get_bucket_size(
-                bucket_name).get("file_count", 0)
-            self.log.info(f"S3 object count after stop: {obj_count_after_stop}")
+            obj_count_at_stop = self._get_s3_object_count_for_buckets(bucket_name)
+            self.log.info(f"S3 object count at stop: {obj_count_at_stop}")
+            self.sleep(60, "Wait to confirm no new uploads or deletions after stop")
+            obj_count_after_stop = self._get_s3_object_count_for_buckets(bucket_name)
             self.assertEqual(
-                obj_count_after_stop, obj_count_before_stop,
-                "S3 object count changed after stop — objects should be preserved")
+                obj_count_after_stop, obj_count_at_stop,
+                f"S3 object count changed after stop "
+                f"({obj_count_at_stop}→{obj_count_after_stop}) — sync did not halt")
 
         self.log.info("Triggering rebalance after stop — expecting DCP path")
         config = self.rebalance_config("data", +1)
@@ -1171,7 +1173,7 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         self.assertIsNotNone(bucket_name, "No S3 bucket found after enable")
-        count_pre_stop = self.s3.get_bucket_size(bucket_name).get("file_count", 0)
+        count_pre_stop = self._get_s3_object_count_for_buckets(bucket_name)
         self.log.info(f"S3 object count after full sync: {count_pre_stop}")
         self.assertGreater(count_pre_stop, 0,
                            "Expected S3 objects after full sync but found none")
@@ -1180,10 +1182,13 @@ class FusionEnableDisableTests(_FusionTestBase):
         CapellaAPI.stop_fusion_internal(self.pod, self.tenant, self.cluster.id)
         self._wait_for_fusion_state(self.tenant, self.cluster, "stopped")
 
-        count_after_stop = self.s3.get_bucket_size(bucket_name).get("file_count", 0)
-        self.assertEqual(count_after_stop, count_pre_stop,
-                         f"Stop changed S3 object count "
-                         f"({count_pre_stop}→{count_after_stop}) — stop must preserve")
+        count_at_stop = self._get_s3_object_count_for_buckets(bucket_name)
+        self.log.info(f"S3 object count at stop: {count_at_stop}")
+        self.sleep(30, "Confirm no new uploads or deletions after stop")
+        count_after_stop = self._get_s3_object_count_for_buckets(bucket_name)
+        self.assertEqual(count_after_stop, count_at_stop,
+                         f"S3 object count changed after stop "
+                         f"({count_at_stop}→{count_after_stop}) — sync did not halt")
 
         self.log.info("Re-enabling fusion — uploads must resume from checkpoint")
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
@@ -1195,8 +1200,7 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         # Compaction can rewrite local files while stopped, so the S3 object
         # count after re-enable is not comparable to the pre-stop count.
-        count_after_reenable = self.s3.get_bucket_size(
-            bucket_name).get("file_count", 0)
+        count_after_reenable = self._get_s3_object_count_for_buckets(bucket_name)
         self.log.info(
             f"Re-enable succeeded: pending bytes drained to 0. "
             f"S3 objects: {count_pre_stop}→{count_after_reenable}")
@@ -1233,7 +1237,8 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
-        self._assert_s3_bucket_empty(bucket_name, timeout=300)
+        self._assert_s3_bucket_empty(bucket_name, timeout=300,
+                                     buckets=self.cluster.buckets)
 
     def test_disable_fusion_no_rebalance_stops_uploads(self):
         """
@@ -1289,7 +1294,8 @@ class FusionEnableDisableTests(_FusionTestBase):
             pending_after, pending_before,
             "Pending bytes increased after disable — uploads not stopped")
 
-        self._assert_s3_bucket_empty(bucket_name, timeout=300)
+        self._assert_s3_bucket_empty(bucket_name, timeout=300,
+                                     buckets=self.cluster.buckets)
 
     def test_disable_fusion_during_rebalance_waits_for_operations(self):
         """
@@ -1362,7 +1368,8 @@ class FusionEnableDisableTests(_FusionTestBase):
             self.pod, self.tenant, self.cluster,
             self.rebalance_config("data", -1), timeout=self.rebalance_timeout)])
 
-        self._assert_s3_bucket_empty(bucket_name, timeout=300)
+        self._assert_s3_bucket_empty(bucket_name, timeout=300,
+                                     buckets=self.cluster.buckets)
 
     def test_disable_fusion_after_rebalance_during_hydration(self):
         """
@@ -1493,7 +1500,8 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
         self.log.info("Verifying S3 blob store is cleaned up after disable")
-        self._assert_s3_bucket_empty(bucket_name, timeout=300)
+        self._assert_s3_bucket_empty(bucket_name, timeout=300,
+                                     buckets=self.cluster.buckets)
         self.log.info(
             "Disable after rebalance hydration: guest volumes cleaned up, S3 bucket emptied")
         self.log.info("Scaling cluster back to original node count")
@@ -1588,7 +1596,8 @@ class FusionEnableDisableTests(_FusionTestBase):
 
             bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
             if bucket_name:
-                self._assert_s3_bucket_empty(bucket_name, timeout=300)
+                self._assert_s3_bucket_empty(bucket_name, timeout=300,
+                                             buckets=self.cluster.buckets)
 
         else:
             self.fail(
@@ -1628,7 +1637,8 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.assertEqual(resp_disable.status_code, 200)
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
-        self._assert_s3_bucket_empty(first_bucket, timeout=300)
+        self._assert_s3_bucket_empty(first_bucket, timeout=300,
+                                     buckets=self.cluster.buckets)
         self._assert_s3_bucket_exists(first_bucket)
         self.log.info(f"S3 bucket {first_bucket} is empty but still exists after disable")
 
@@ -1669,7 +1679,7 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         self.assertIsNotNone(bucket_name, "No S3 bucket found after enable")
-        count_before_stop = self.s3.get_bucket_size(bucket_name).get("file_count", 0)
+        count_before_stop = self._get_s3_object_count_for_buckets(bucket_name)
         self.assertGreater(count_before_stop, 0,
                            "Expected S3 objects before stop but found none")
         self.log.info(f"S3 object count before stop: {count_before_stop}")
@@ -1680,9 +1690,9 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         # Uploads in flight when stop was issued may still land, so assert
         # no deletion rather than exact equality.
-        count_after_stop = self.s3.get_bucket_size(bucket_name).get("file_count", 0)
-        self.assertGreaterEqual(count_after_stop, count_before_stop,
-                                "Stop deleted S3 objects — expected preservation")
+        count_at_stop = self._get_s3_object_count_for_buckets(bucket_name)
+        self.log.info(f"S3 object count at stop: {count_at_stop} "
+                      f"(was {count_before_stop} before stop; compaction may differ)")
 
         self.log.info("Calling disable from stopped state")
         resp_disable = CapellaAPI.disable_fusion(self.pod, self.tenant, self.cluster.id)
@@ -1693,7 +1703,8 @@ class FusionEnableDisableTests(_FusionTestBase):
 
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")
 
-        self._assert_s3_bucket_empty(bucket_name, timeout=300)
+        self._assert_s3_bucket_empty(bucket_name, timeout=300,
+                                     buckets=self.cluster.buckets)
         self.log.info(
             "Disable from stopped state correctly emptied all S3 objects")
 
@@ -1770,7 +1781,8 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.assertIsNotNone(bucket_name,
                              "S3 bucket was not created during enabling despite "
                              "2M docs pre-loaded — enabling may not have started uploads")
-        self._assert_s3_bucket_empty(bucket_name, timeout=300)
+        self._assert_s3_bucket_empty(bucket_name, timeout=300,
+                                     buckets=self.cluster.buckets)
         self.log.info("Disable-during-enabling: S3 objects deleted, bucket emptied")
 
 

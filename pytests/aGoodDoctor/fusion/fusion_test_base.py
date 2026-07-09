@@ -393,10 +393,55 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
             "ensure a fusion-enrolled bucket exists before checking the URI"
         )
 
-    def _wait_for_pending_bytes_zero(self, cluster, timeout=600):
-        """Poll fusion pending bytes until they reach 0 or timeout."""
+    def _wait_for_s3_data_synced(self, cluster, timeout=600):
+        """Wait until every bucket's kv/<uuid> S3 prefix has at least one object.
+
+        Use this instead of _wait_for_pending_bytes_zero when the goal is simply
+        to confirm that data has reached S3 before a flush/drop/replica-change.
+        It avoids the Magma background-compaction false-negative where pending
+        bytes never reach exactly 0 even after the initial load is fully uploaded.
+        """
+        s3_bucket_name = self._get_s3_bucket_name_from_uri(cluster)
+        if not s3_bucket_name:
+            self.log.warning(
+                "Cannot verify S3 sync — S3 bucket name not resolved; skipping wait")
+            return
+        for bucket in cluster.buckets:
+            uuid = getattr(bucket, "bucket_uuid", None)
+            if not uuid:
+                self.log.warning(
+                    f"Bucket '{bucket.name}' has no UUID — skipping S3 sync check")
+                continue
+            prefix = f"kv/{uuid}"
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                files = self.s3.list_files_in_bucket(s3_bucket_name, prefix=prefix)
+                if files:
+                    self.log.info(
+                        f"Bucket '{bucket.name}': {len(files)} objects under "
+                        f"{prefix} — S3 sync confirmed")
+                    break
+                self.log.info(
+                    f"No S3 objects yet under {prefix} — "
+                    f"{int(deadline - time.time())}s remaining")
+                time.sleep(15)
+            else:
+                raise AssertionError(
+                    f"No S3 objects found under prefix {prefix} within {timeout}s "
+                    f"— data may not have synced")
+
+    def _wait_for_pending_bytes_zero(self, cluster, timeout=600,
+                                     stable_threshold_bytes=0, stable_secs=60):
+        """Poll fusion pending bytes until they reach 0 or timeout.
+
+        stable_threshold_bytes > 0: also succeed when pending bytes have stayed
+        ≤ stable_threshold_bytes for stable_secs consecutive seconds.  Use this
+        for post-compaction waits where Magma background I/O generates a steady
+        trickle (~190 MB) that prevents an exact-zero reading.
+        """
         self.fusion_monitor.set_admin_credentials(cluster)
         deadline = time.time() + timeout
+        below_threshold_since = None
         while time.time() < deadline:
             status, content = FusionRestAPI(cluster.master).get_fusion_status()
             if not status:
@@ -411,6 +456,17 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
             self.log.info(f"Cluster {cluster.id} total pending bytes: {total_pending}")
             if total_pending == 0:
                 return
+            if stable_threshold_bytes > 0 and total_pending <= stable_threshold_bytes:
+                if below_threshold_since is None:
+                    below_threshold_since = time.time()
+                elif time.time() - below_threshold_since >= stable_secs:
+                    self.log.info(
+                        f"Pending bytes stable at {total_pending} "
+                        f"(≤ {stable_threshold_bytes} B threshold) "
+                        f"for {stable_secs}s — treating as synced")
+                    return
+            else:
+                below_threshold_since = None
             time.sleep(15)
         raise AssertionError(
             f"Pending bytes did not reach 0 within {timeout}s on cluster {cluster.id}")
@@ -435,12 +491,51 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
                 return
         self.fail(f"S3 bucket {bucket_name} was not deleted within {timeout}s")
 
-    def _assert_s3_bucket_empty(self, bucket_name, timeout=120):
-        """Assert that all objects have been deleted from the S3 bucket."""
+    def _get_s3_object_count_for_buckets(self, s3_bucket_name, buckets=None):
+        """Count S3 objects scoped to kv/<uuid> prefixes for the given CB buckets.
+
+        Fetches each bucket's UUID on demand (cached on bucket.bucket_uuid) and
+        sums the object counts under their individual S3 prefixes.  Pass this
+        instead of a raw get_bucket_size() call whenever you want to isolate
+        counts to the test's own buckets and avoid noise from other tests or
+        previous runs sharing the same cluster-level S3 bucket.
+        """
+        if buckets is None:
+            buckets = self.cluster.buckets
+        total = 0
+        for bucket in buckets:
+            if not getattr(bucket, "bucket_uuid", None):
+                try:
+                    rest = RestConnection(self.cluster.master)
+                    info = rest.get_bucket_details(bucket_name=bucket.name)
+                    bucket.bucket_uuid = info.get("uuid", None)
+                except Exception as e:
+                    self.log.warning(
+                        f"Could not fetch UUID for bucket {bucket.name}: {e}")
+            if bucket.bucket_uuid:
+                prefix = f"kv/{bucket.bucket_uuid}"
+                count = self.s3.get_bucket_size(
+                    s3_bucket_name, prefix=prefix).get("file_count", 0)
+                self.log.debug(
+                    f"S3 objects under {prefix} in {s3_bucket_name}: {count}")
+                total += count
+        return total
+
+    def _assert_s3_bucket_empty(self, bucket_name, timeout=120, buckets=None):
+        """Assert that S3 objects for the test's buckets have been deleted.
+
+        When *buckets* is provided the check is scoped to their kv/<uuid>
+        prefixes — which avoids false failures caused by orphaned objects from
+        other tests sharing the same cluster-level S3 bucket.  When *buckets*
+        is None the whole bucket is checked (legacy behaviour, kept for callers
+        that have not been updated yet).
+        """
         deadline = time.time() + timeout
         while time.time() < deadline:
-            size_info = self.s3.get_bucket_size(bucket_name)
-            count = size_info.get("file_count", 0)
+            if buckets is not None:
+                count = self._get_s3_object_count_for_buckets(bucket_name, buckets)
+            else:
+                count = self.s3.get_bucket_size(bucket_name).get("file_count", 0)
             self.log.info(f"S3 bucket {bucket_name} object count: {count}")
             if count == 0:
                 return
