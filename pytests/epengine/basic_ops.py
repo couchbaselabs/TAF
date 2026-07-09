@@ -730,7 +730,7 @@ class basic_ops(ClusterSetup):
         max_gets = 2500000000
         bucket = self.cluster.buckets[0]
         doc_gen = doc_generator(self.key, 0, self.num_items,
-                                doc_size=1,
+                                doc_size=0,
                                 load_using=self.load_docs_using)
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
