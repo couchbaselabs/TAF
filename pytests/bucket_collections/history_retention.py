@@ -1544,7 +1544,7 @@ class DocHistoryRetention(ClusterSetup):
         self.sleep(15, "Wait for new values to get reflected")
         self.validate_retention_settings_on_all_nodes()
 
-        load_spec = self.get_loader_spec(update_percent=5, update_itr=100)
+        load_spec = self.get_loader_spec(update_percent=10, update_itr=100)
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, [b1], load_spec,
