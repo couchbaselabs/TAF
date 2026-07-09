@@ -21,9 +21,10 @@ class SiriusJavaDocGen(object):
         self.key_prefix = key_prefix
         self.start = start
         self.end = end
-        self.keys = SiriusCouchbaseLoader.get_keys_from_sirius(
-            self.key_prefix, self.key_size, "RandomKey",
-            self.start, self.end, mutate)
+        self.mutate = mutate
+        # Fetch keys lazily on first iteration; range-based loaders never
+        # iterate, so the full range is not materialized in memory for them.
+        self.keys = None
 
     def has_next(self):
         return self.itr < self.keys_len
@@ -31,6 +32,10 @@ class SiriusJavaDocGen(object):
     def next(self):
         if not self.has_next():
             raise StopIteration
+        if self.keys is None:
+            self.keys = SiriusCouchbaseLoader.get_keys_from_sirius(
+                self.key_prefix, self.key_size, "RandomKey",
+                self.start, self.end, self.mutate)
         key = self.keys[self.itr]
         self.itr += 1
         # Returning (k,v) format to align with in-built doc_loader return type
