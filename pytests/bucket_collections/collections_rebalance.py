@@ -162,6 +162,7 @@ class CollectionsRebalance(CollectionBase):
             # only what full_execute_query() and its helpers actually touch.
             self.n1ql_fun.log = self.log
             self.n1ql_fun.failure = False
+            self.n1ql_fun.cluster = self.cluster
             try:
                 query_params = self.n1ql_helper.create_txn(server=self.server, txtimeout=2)
                 self.collection_savepoint, self.savepoints, self.queries, rerun = \
