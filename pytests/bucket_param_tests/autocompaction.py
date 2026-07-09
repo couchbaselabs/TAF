@@ -187,7 +187,7 @@ class AutoCompactionTests(CollectionBase):
             self.log.info("Update {0}K keys with smaller value {1} bytes/key"
                           .format(items, int(update_item_size)))
             generator_update = doc_generator(self.key, 0, (items*1000),
-                                             doc_size=int(update_item_size))
+                                             doc_size=max(0, int(update_item_size)))
             if self.during_ops:
                 if self.during_ops == "change_port":
                     self.cluster_util.change_port(self.cluster,

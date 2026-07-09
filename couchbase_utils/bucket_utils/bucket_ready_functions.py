@@ -923,6 +923,7 @@ class DocLoaderUtils(object):
                     keys_to_remove = []
                     for key, failed_doc in op_data["fail"].items():
                         is_key_to_ignore = False
+                        initial_exception = ""
                         exception = failed_doc["error"]
                         for exception_pattern in exception_patterns:
                             pattern_match = re.match(exception_pattern,
