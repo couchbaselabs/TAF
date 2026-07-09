@@ -43,7 +43,7 @@ class FusionAWSUtil:
             filters.extend(extra_tags)
         return filters
 
-    def list_instances(self, filters: list[dict[str, str]], log="Fusion Accelerator", suppress_log=False) -> list:
+    def list_instances(self, filters: list[dict[str, str]], log="Couchbase Cluster", suppress_log=False) -> list:
         """
         List EC2 instances with detailed volume and fusion rebalance information.
 
@@ -125,6 +125,9 @@ class FusionAWSUtil:
         :return: List of fusion accelerator instances (IOPS == FUSION_ACCELERATOR_IOPS)
         """
         log = f"{log} Instances"
+        accelerator_tag = {'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}
+        if accelerator_tag not in filters:
+            filters = list(filters) + [accelerator_tag]
         instances = self.ec2.list_instances(filters=filters)
 
         # Create detailed table with instance and volume information
@@ -178,8 +181,7 @@ class FusionAWSUtil:
                             temp['VolumeCreateTime'].strftime('%Y-%m-%d %H:%M:%S') if temp['VolumeCreateTime'] else 'N/A',
                             str(datetime.datetime.now(datetime.timezone.utc) - temp['InstanceCreateTime']) if temp['InstanceCreateTime'] else 'N/A',
                             temp['FusionRebalance'] if temp['FusionRebalance'] else 'N/A'])
-                        # Filter and return only fusion accelerator instances (16K IOPS)
-                        if temp["IOPS"] == self.FUSION_ACCELERATOR_IOPS:
+                        if temp["IOPS"] == self.FUSION_ACCELERATOR_IOPS and instance not in return_instances:
                             return_instances.append(instance)
 
         # Log accelerator instance details with count

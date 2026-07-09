@@ -121,9 +121,17 @@ class FusionMonitorUtil():
         import time
         start_time = time.time()
         while time.time() - start_time < timeout:
-            status, content = FusionRestAPI(cluster.master).get_fusion_status()
+            # The master may be briefly unreachable (e.g. ns_server restart
+            # injected by a test) — retry instead of crashing on the response.
+            try:
+                status, content = FusionRestAPI(cluster.master).get_fusion_status()
+            except Exception as e:
+                self.log.warning(f"Fusion status call failed on cluster "
+                                 f"{cluster.id}: {e} — retrying")
+                time.sleep(10)
+                continue
             self.log.info(f"Status = {status}, Content = {content}")
-            if content['state'] == state:
+            if status and isinstance(content, dict) and content.get('state') == state:
                 time.sleep(5)
                 return
             time.sleep(10)

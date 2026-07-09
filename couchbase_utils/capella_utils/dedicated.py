@@ -728,10 +728,10 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.enable_fusion(tenant.id, tenant.projects[0], cluster_id)
         if resp.status_code != 200:
+            # Return the response so callers can assert on expected rejections
+            # (e.g. enable from enabled state).
             CapellaUtils.log.critical("Enabling Fusion failed for cluster {}:{}".
                                       format(cluster_id, resp.status_code))
-            raise Exception("Enabling Fusion failed: {}".
-                            format(resp.content))
         return resp
 
     @staticmethod
@@ -743,10 +743,10 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.disable_fusion(tenant.id, tenant.projects[0], cluster_id)
         if resp.status_code != 200:
+            # Return the response so callers can assert on expected rejections
+            # (e.g. disable during a leased/rebalancing window).
             CapellaUtils.log.critical("Disabling Fusion failed for cluster {}:{}".
                                       format(cluster_id, resp.status_code))
-            raise Exception("Disabling Fusion failed: {}".
-                            format(resp.content))
         return resp
 
     @staticmethod
@@ -834,33 +834,6 @@ class CapellaUtils(object):
         return
     
     @staticmethod
-    def create_tenant_feature_flag(pod, tenant, ff, value):
-        capella_api = CapellaAPI(pod.url_public,
-                                 tenant.api_secret_key,
-                                 tenant.api_access_key,
-                                 tenant.user,
-                                 tenant.pwd,
-                                 pod.TOKEN)
-        resp = capella_api.create_tenant_feature_flag(tenant.id, ff, {"value": value})
-        if resp.status_code not in [200, 201, 204]:
-            try:
-                error = json.loads(resp.content)
-            except Exception:
-                error = {}
-            if error.get("errorType") == "FeatureFlagAlreadyExists":
-                CapellaUtils.log.info(f"Tenant feature flag {ff} already exists, updating instead")
-                resp = capella_api.update_tenant_feature_flag(tenant.id, ff, {"value": value})
-                if resp.status_code not in [200, 204]:
-                    CapellaUtils.log.critical(f"Updating tenant feature flag {ff} failed: {resp.status_code}")
-                    raise Exception("Updating tenant feature flag failed: {}".format(resp.content))
-                CapellaUtils.log.info(f"Updated tenant feature flag {ff} for tenant {tenant.id} successfully")
-                return
-            CapellaUtils.log.critical(f"Creating tenant feature flag {ff} failed: {resp.status_code}")
-            raise Exception("Creating tenant feature flag failed: {}".format(resp.content))
-        CapellaUtils.log.info(f"Created tenant feature flag {ff} for tenant {tenant.id} successfully")
-        return
-    
-    @staticmethod
     def create_cluster_feature_flag(pod, tenant, cluster_id, ff, value):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
@@ -890,6 +863,37 @@ class CapellaUtils(object):
                 f"Creating cluster feature flag {ff} failed: {resp.status_code}")
             raise Exception("Creating cluster feature flag failed: {}".format(resp.content))
         CapellaUtils.log.info(f"Set cluster feature flag {ff}={value} for cluster {cluster_id}")
+
+    @staticmethod
+    def create_tenant_feature_flag(pod, tenant, ff, value):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.create_tenant_feature_flag(tenant.id, ff, {"value": value})
+        if resp.status_code not in [200, 201, 204]:
+            try:
+                error = json.loads(resp.content)
+            except Exception:
+                error = {}
+            if error.get("errorType") == "FeatureFlagAlreadyExists":
+                CapellaUtils.log.info(
+                    f"Tenant feature flag {ff} already exists for tenant {tenant.id}, updating")
+                resp = capella_api.update_tenant_feature_flag(
+                    tenant.id, ff, {"value": value})
+                if resp.status_code not in [200, 204]:
+                    CapellaUtils.log.critical(
+                        f"Updating tenant feature flag {ff} failed: {resp.status_code}")
+                    raise Exception("Updating tenant feature flag failed: {}".format(resp.content))
+                CapellaUtils.log.info(
+                    f"Updated tenant feature flag {ff}={value} for tenant {tenant.id}")
+                return
+            CapellaUtils.log.critical(
+                f"Creating tenant feature flag {ff} failed: {resp.status_code}")
+            raise Exception("Creating tenant feature flag failed: {}".format(resp.content))
+        CapellaUtils.log.info(f"Set tenant feature flag {ff}={value} for tenant {tenant.id}")
 
     # ---------------------------------------------------------------------------
     # Cloud snapshot backup methods (v2 internal API)

@@ -85,10 +85,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
 
     def _accelerator_filter(self):
         """Return EC2 filters scoped to fusion accelerators on this cluster."""
-        return self.fusion_aws_util._cluster_filter(
-            self.cluster.id,
-            [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}],
-        )
+        return self.fusion_aws_util._cluster_filter(self.cluster.id)
 
     def _load_above_threshold(self):
         """Load enough documents to push data above the fusion rebalance threshold."""

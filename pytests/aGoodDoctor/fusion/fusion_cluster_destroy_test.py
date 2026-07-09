@@ -112,10 +112,7 @@ class FusionClusterDestroyTest(_FusionTestBase):
         return self._accelerator_filter_for(self.cluster.id)
 
     def _accelerator_filter_for(self, cluster_id):
-        return self.fusion_aws_util._cluster_filter(
-            cluster_id,
-            [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}],
-        )
+        return self.fusion_aws_util._cluster_filter(cluster_id)
 
     def _load_above_threshold(self):
         create_end = self.input.param("create_end", 20_000_000)

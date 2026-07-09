@@ -693,11 +693,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
                 break
 
             instances = self.fusion_aws_util.list_accelerator_instances(
-                self.fusion_aws_util._cluster_filter(
-                    self.cluster.id,
-                    [{'Name': 'tag:couchbase-cloud-function',
-                      'Values': ['fusion-accelerator']}]
-                ),
+                self.fusion_aws_util._cluster_filter(self.cluster.id),
                 log="Fusion Accelerator (second rebalance)"
             )
             if instances:

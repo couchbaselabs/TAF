@@ -320,11 +320,14 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
             wait_for_stats=False
         )
 
-    def _enable_fusion_feature_flags(self, tenant, cluster_id):
-        CapellaAPI.create_cluster_feature_flag(
-            self.pod, tenant, cluster_id, "fusion-rebalances", True)
-        CapellaAPI.create_cluster_feature_flag(
-            self.pod, tenant, cluster_id, "fusion-fallback-replace", True)
+    def _enable_fusion_feature_flags(self, tenant, cluster_id=None):
+        # Fusion feature flags are honored at the TENANT level, not the
+        # cluster level (AV-136926, closed as designed) — set them on the
+        # tenant. cluster_id is kept for caller compatibility and unused.
+        CapellaAPI.create_tenant_feature_flag(
+            self.pod, tenant, "fusion-rebalances", True)
+        CapellaAPI.create_tenant_feature_flag(
+            self.pod, tenant, "fusion-fallback-replace", True)
 
     def _ensure_fusion_state(self, tenant, cluster, target):
         """Idempotently transition fusion to target state ('enabled' or 'disabled').
@@ -332,7 +335,9 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         Waits for any in-progress transition to settle first, then transitions
         only if the current state differs from target.
         """
-        deadline = time.time() + 120
+        # A disabling transition purges the whole S3 log store, which can take
+        # well over 2 minutes — give in-flight transitions room to settle.
+        deadline = time.time() + 600
         current = "unknown"
         while time.time() < deadline:
             status = CapellaAPI.get_fusion_status(self.pod, tenant, cluster.id)
@@ -349,10 +354,16 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
 
         self.log.info(f"Transitioning cluster {cluster.id}: {current} → {target}")
         if target == "enabled":
-            CapellaAPI.enable_fusion(self.pod, tenant, cluster.id)
+            resp = CapellaAPI.enable_fusion(self.pod, tenant, cluster.id)
+            self.assertEqual(resp.status_code, 200,
+                             f"enable_fusion during _ensure_fusion_state "
+                             f"returned {resp.status_code}: {resp.content}")
             self._wait_for_fusion_state(tenant, cluster, "enabled")
         elif target == "disabled":
-            CapellaAPI.disable_fusion(self.pod, tenant, cluster.id)
+            resp = CapellaAPI.disable_fusion(self.pod, tenant, cluster.id)
+            self.assertEqual(resp.status_code, 200,
+                             f"disable_fusion during _ensure_fusion_state "
+                             f"returned {resp.status_code}: {resp.content}")
             self._wait_for_fusion_state(tenant, cluster, "disabled")
 
     def _get_s3_bucket_name_from_uri(self, cluster):
@@ -456,6 +467,9 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
     def _get_active_guest_volume_count(self, cluster):
         self.fusion_monitor.set_admin_credentials(cluster)
         status, content = FusionRestAPI(cluster.master).get_active_guest_volumes()
-        if not status:
-            return 0
+        self.assertTrue(status,
+                        f"Failed to fetch active guest volumes: {content}")
+        # Response is a dict keyed by node, each value a list of guest volumes
+        if isinstance(content, dict):
+            return sum(len(vols or []) for vols in content.values())
         return len(content) if isinstance(content, list) else 0

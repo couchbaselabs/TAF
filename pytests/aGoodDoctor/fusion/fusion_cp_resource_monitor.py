@@ -506,7 +506,7 @@ class FusionCPResourceMonitor:
                 return instances_count == 0
             try:
                 instances = self.fusion_aws_util.list_accelerator_instances(
-                    self.fusion_aws_util._cluster_filter(cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}]),
+                    self.fusion_aws_util._cluster_filter(cluster.id),
                     log="Fusion Accelerator"
                 )
                 instances_count = len(instances)
