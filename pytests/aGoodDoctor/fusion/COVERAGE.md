@@ -53,8 +53,6 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | | | `test_back_to_back_rebalances_no_orphaned_volumes` | ✅ |
 | | | `test_fusion_state_stays_enabled_through_rebalance` | ✅ |
 | | | `test_accelerator_instance_count_matches_data_size` | ✅ |
-| | | `test_accelerator_registration_completion` | ⬜ |
-| | | `test_100m_document_scale_validation` | ⬜ |
 | *(no file yet)* | — | EBS slot limits (>24 vol/node), compute quota limits | ⬜ |
 | *(no file yet)* | — | Remove node with attached guest volumes | ⬜ |
 | *(no file yet)* | — | Rebalance in low-availability regions | ⬜ |
@@ -130,7 +128,6 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | | | `test_accelerator_instance_type_validation` | ⬜ |
 | `fusion_fallback_test.py` | `FusionFallbackInstanceTypeTests` | `test_fallback_when_top_n_instance_types_unavailable` | ✅ |
 | | | `test_fallback_exhausts_all_arm_types_falls_back_to_x86` | ✅ |
-| *(no file yet)* | — | Download speed ≥800 MB/s | ⬜ |
 | *(no file yet)* | — | No public IP on accelerator nodes | ⬜ |
 | *(no file yet)* | — | Log file variants: large count (slow mutations) | ⬜ |
 | *(no file yet)* | — | Log file variants: large size (post log cleaning) | ⬜ |
@@ -222,7 +219,7 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 | Target | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|---|
-| Volume 1 (100TB) | `fusion_accelerator_lifecycle_test.py` | `FusionAcceleratorLifecycleTest` | `test_100m_document_scale_validation` | ✅ (partial — 100M docs) |
+| Volume 1 (100TB) | *(no file yet)* | — | Full Volume 1 steps (3→12→27 nodes, backup, on/off) | ⬜ |
 | Volume 1 full (30TB/node) | *(no file yet)* | — | Full Volume 1 steps (3→12→27 nodes, backup, on/off) | ⬜ |
 | Volume 2 (30×2TB) | *(no file yet)* | — | 30 buckets × 2TB, <30 min SLA | ⬜ |
 
