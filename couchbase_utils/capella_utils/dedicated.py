@@ -827,6 +827,122 @@ class CapellaUtils(object):
         return json.loads(resp.content) if resp.content else {}
 
     @staticmethod
+    def get_fusion_config(pod, tenant, resource_id):
+        """GET /internal/support/configs/{resource_id}/fusion.
+
+        resource_id can be a tenant ID, cluster ID, or node ID.
+        Returns the parsed JSON config dict, or {} if none is set.
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.get_fusion_config(resource_id=resource_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical(
+                "Getting fusion config failed for resource {}: {}".format(
+                    resource_id, resp.status_code))
+            raise Exception("Getting fusion config failed: {}".format(resp.content))
+        return json.loads(resp.content) if resp.content else {}
+
+    @staticmethod
+    def _build_fusion_config(min_split_size=None, max_slots=None,
+                             iops=None, throughput=None):
+        config = {}
+        if min_split_size is not None or max_slots is not None:
+            config["manifest"] = {}
+            if min_split_size is not None:
+                config["manifest"]["minSplitSize"] = min_split_size
+            if max_slots is not None:
+                config["manifest"]["maxSlots"] = max_slots
+        if iops is not None or throughput is not None:
+            config["accelerator"] = {"guestVolumes": {}}
+            if iops is not None:
+                config["accelerator"]["guestVolumes"]["iops"] = iops
+            if throughput is not None:
+                config["accelerator"]["guestVolumes"]["throughput"] = throughput
+        return config
+
+    @staticmethod
+    def set_fusion_config(pod, tenant, resource_id, min_split_size=None,
+                          max_slots=None, iops=None, throughput=None):
+        """PUT /internal/support/configs/{resource_id}/fusion.
+
+        Replaces the entire fusion config for the resource.
+        resource_id can be a tenant ID, cluster ID, or node ID.
+        min_split_size: minimum shard size in bytes (default 50 GB).
+        max_slots: maximum accelerator nodes per cluster node (default 22).
+        iops: EBS volume IOPS (default 3000).
+        throughput: EBS volume throughput in MB/s (default 125).
+        """
+        config = CapellaUtils._build_fusion_config(
+            min_split_size=min_split_size, max_slots=max_slots,
+            iops=iops, throughput=throughput)
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.set_fusion_config(resource_id=resource_id, config=config)
+        if resp.status_code != 204:
+            CapellaUtils.log.critical(
+                "Setting fusion config failed for resource {}: {}".format(
+                    resource_id, resp.status_code))
+            raise Exception("Setting fusion config failed: {}".format(resp.content))
+
+    @staticmethod
+    def patch_fusion_config(pod, tenant, resource_id, min_split_size=None,
+                            max_slots=None, iops=None, throughput=None):
+        """PATCH /internal/support/configs/{resource_id}/fusion.
+
+        Merges the provided fields into the existing fusion config.
+        Only supplied (non-None) fields are sent; unset fields are unchanged.
+        Prefer this over set_fusion_config to avoid overwriting unrelated fields.
+        resource_id can be a tenant ID, cluster ID, or node ID.
+        min_split_size: minimum shard size in bytes (default 50 GB).
+        max_slots: maximum accelerator nodes per cluster node (default 22).
+        iops: EBS volume IOPS (default 3000).
+        throughput: EBS volume throughput in MB/s (default 125).
+        """
+        config = CapellaUtils._build_fusion_config(
+            min_split_size=min_split_size, max_slots=max_slots,
+            iops=iops, throughput=throughput)
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.patch_fusion_config(resource_id=resource_id, config=config)
+        if resp.status_code != 204:
+            CapellaUtils.log.critical(
+                "Patching fusion config failed for resource {}: {}".format(
+                    resource_id, resp.status_code))
+            raise Exception("Patching fusion config failed: {}".format(resp.content))
+
+    @staticmethod
+    def delete_fusion_config(pod, tenant, resource_id):
+        """DELETE /internal/support/configs/{resource_id}/fusion.
+
+        Removes the fusion config for the resource, reverting to system defaults.
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.delete_fusion_config(resource_id=resource_id)
+        if resp.status_code != 204:
+            CapellaUtils.log.critical(
+                "Deleting fusion config failed for resource {}: {}".format(
+                    resource_id, resp.status_code))
+            raise Exception("Deleting fusion config failed: {}".format(resp.content))
+
+    @staticmethod
     def update_feature_flag_globally(pod, tenant, ff, value):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
