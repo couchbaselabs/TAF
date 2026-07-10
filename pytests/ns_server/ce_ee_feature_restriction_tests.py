@@ -70,8 +70,11 @@ check_ent_backup
     -> test_cbbackupmgr_binary_present_on_ce
 check_memory_optimized_storage_mode + check_plasma_storage_mode
     -> test_indexer_storage_mode_blocked
-check_full_backup_only (diff, accu)
-    -> test_cbbackup_full_only_on_ce
+
+Note: check_full_backup_only (legacy cbbackup -m diff/accu full-only
+coercion) was dropped — cbbackup was removed from the product (verified
+absent on 8.1.0-2377); cbworkloadgen/cbtransfer remain but there is no
+equivalent tool left to exercise this restriction against.
 """
 
 from basetestcase import ClusterSetup
@@ -325,8 +328,11 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
         return "\n".join((output or []) + (error or []))
 
     def _assert_cli_blocked(self, combined, feature):
-        self.assertIn(
-            "enterprise edition", combined.lower(),
+        combined_lower = combined.lower()
+        blocked = "enterprise edition" in combined_lower or \
+            "unrecognized arguments" in combined_lower
+        self.assertTrue(
+            blocked,
             "CE must block '%s' via CLI. Got: %s" % (feature, combined[:300]))
         self.log.info("CE blocked '%s' via CLI: %s", feature, combined[:200])
 
@@ -354,7 +360,6 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
             label = "disk_period=%s server_group=%s" % (
                 case["disk_fo_timeout"], case["failover_server_group"])
             shell, cb_cli = self._cli_on(self.cluster.master)
-            combined = ""
             try:
                 output = cb_cli.auto_failover(
                     enable_auto_fo=1, disk_fo=1, **case)
@@ -378,25 +383,21 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
 
         Iterates off, passive, and active in one pass.
         """
+        exp_err = "ERROR: Compression mode can only be configured on enterprise edition"
         for mode in ("off", "passive", "active"):
             shell, cb_cli = self._cli_on(self.cluster.master)
-            combined = ""
             try:
-                cb_cli.create_bucket({
+                output = cb_cli.create_bucket({
                     Bucket.name: "comp_test_bucket",
                     Bucket.bucketType: "couchbase",
                     Bucket.ramQuotaMB: 512,
                     Bucket.replicaNumber: 1,
                     Bucket.compressionMode: mode,
                 })
-                combined = "no error raised"
-            except Exception as exc:
-                combined = str(exc)
+                self.assertTrue(exp_err in output,
+                                f"Compression mode={mode}, Unexpected msg: {output}")
             finally:
                 shell.disconnect()
-
-            self._assert_cli_blocked(
-                combined, "bucket compression mode=%s" % mode)
 
     # ------------------------------------------------------------------
     # Max TTL bucket — CLI variant
@@ -405,23 +406,20 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
 
     def test_max_ttl_bucket_blocked_cli(self):
         """CE must reject bucket with --max-ttl via couchbase-cli."""
+        exp_err = "ERROR: Maximum TTL can only be configured on enterprise edition"
         shell, cb_cli = self._cli_on(self.cluster.master)
-        combined = ""
         try:
-            cb_cli.create_bucket({
+            output = cb_cli.create_bucket({
                 Bucket.name: "ttl_test_bucket",
                 Bucket.bucketType: "couchbase",
                 Bucket.ramQuotaMB: 512,
                 Bucket.replicaNumber: 1,
                 Bucket.maxTTL: 200,
             })
-            combined = "no error raised"
-        except Exception as exc:
-            combined = str(exc)
+            self.assertTrue(exp_err in output,
+                            f"Unexpected error: {output}")
         finally:
             shell.disconnect()
-
-        self._assert_cli_blocked(combined, "maxTTL bucket")
 
     # ------------------------------------------------------------------
     # Audit setting — CLI variant
@@ -460,12 +458,13 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
 
     def test_log_redaction_blocked_cli(self):
         """CE must reject log collection with redaction via couchbase-cli."""
+        exp_err = "ERROR: {'logRedactionLevel': 'log redaction is an enterprise only feature'}"
         shell, cb_cli = self._cli_on(self.cluster.master)
         output, error = cb_cli.collect_logs_start(
             all_nodes=True, redaction_level="partial")
         shell.disconnect()
-        combined = self._combined(output, error)
-        self._assert_cli_blocked(combined, "log redaction")
+        self.assertTrue(exp_err in output,
+                        f"Unexpected error: {output}")
 
     # ------------------------------------------------------------------
     # cbbackupmgr EE-only features
@@ -477,14 +476,20 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
 
         Iterates five EE-only operations in one pass:
         - examine (document inspection)
-        - merge --all
+        - merge
         - backup to S3 archive
         - backup with --consistency-check
-        - restore with --include-data (collection-level restore)
+        - config --include-data (scope/collection-level backup filtering)
 
         All five should produce "Enterprise Edition" in output.
         Replaces: test_ee_only_features (×5 variants).
         Requires nodes_init=1.
+
+        Note: restore --include-data (collection-level restore) is NOT
+        EE-restricted on CE and was verified to succeed manually; only
+        scope/collection-level filtering at repo config time is EE-only
+        per docs.couchbase.com/server/current/backup-restore/
+        cbbackupmgr-config.html#optional.
         """
         master = self.cluster.master
         shell = RemoteMachineShellConnection(master)
@@ -499,22 +504,26 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
             ("examine", lambda: mgr.examine(
                 archive, repo, key="asdf",
                 collection_string="asdf.asdf.asdf")),
-            ("merge --all", lambda: mgr.merge(
+            ("merge", lambda: mgr.merge(
                 archive, repo, start=None, end=None)),
             ("backup s3://", lambda: mgr.backup(
                 "s3://ce-ee-test-bucket", repo)),
             ("backup --consistency-check", lambda: mgr.backup(
                 archive, repo, consistency_check=1)),
-            ("restore --include-data", lambda: mgr.restore(
-                archive, repo, include_data="asdf.asdf.asdf")),
+            ("config --include-data", lambda: mgr.create_repo(
+                archive + "_include_data", repo + "_include_data",
+                include=["asdf.asdf"])),
         ]
 
         try:
             for label, fn in cases:
                 output, error = fn()
                 combined = self._combined(output, error)
-                self.assertIn(
-                    "enterprise edition", combined.lower(),
+                combined_lower = combined.lower()
+                blocked = "enterprise edition" in combined_lower or \
+                    "ee only" in combined_lower
+                self.assertTrue(
+                    blocked,
                     "CE must block cbbackupmgr %s. Got: %s"
                     % (label, combined[:300]))
                 self.log.info("CE blocked cbbackupmgr %s: %s",
@@ -561,10 +570,11 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
         # Register spare as remote cluster reference "cluster1"
         self._make_request(
             "/pools/default/remoteClusters", "POST",
-            {"name": "cluster1",
-             "hostname": "%s:8091" % remote_cluster.master.ip,
-             "username": remote_cluster.master.rest_username,
-             "password": remote_cluster.master.rest_password})
+            {
+                "name": "cluster1",
+                "hostname": "%s:8091" % remote_cluster.master.ip,
+                "username": remote_cluster.master.rest_username,
+                "password": remote_cluster.master.rest_password})
 
         # Create source bucket for fromBucket param
         self._make_request(
@@ -577,7 +587,8 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
             ("filterExpression",
              {"fromBucket": "default", "toCluster": "cluster1",
               "toBucket": "default", "replicationType": "continuous",
-              "filterExpression": "some_exp"}),
+              "filterExpression":
+                  'REGEXP_CONTAINS(META().id, "some_exp")'}),
             ("priority=Medium",
              {"fromBucket": "default", "toCluster": "cluster1",
               "toBucket": "default", "replicationType": "continuous",
@@ -692,74 +703,3 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
             self._assert_blocked(
                 status, content,
                 "indexer storageMode=%s (EE-only)" % mode)
-
-    # ------------------------------------------------------------------
-    # cbbackup full-only enforcement on CE
-    # testrunner: check_full_backup_only (diff, accu variants)
-    # ------------------------------------------------------------------
-
-    def test_cbbackup_full_only_on_ce(self):
-        """CE forces full backup mode even when diff or accu is requested.
-
-        Loads 1000 docs, runs a full backup, then a diff/accu backup.
-        CE coerces both to full so cbtransfer counts 2000 items total
-        (1000 per backup x 2 backups in archive).
-
-        Iterates diff and accu in one pass.
-        Replaces: check_full_backup_only,backup_option=diff
-                  check_full_backup_only,backup_option=accu
-        Requires nodes_init=1.
-        """
-        master = self.cluster.master
-        bin_path = "/opt/couchbase/bin"
-        host = "http://127.0.0.1:8091"
-        creds = "-u %s -p %s" % (master.rest_username, master.rest_password)
-        archive = "/tmp/ce_cbbackup_full_only_test"
-
-        # Create default bucket for cbworkloadgen
-        self._make_request(
-            "/pools/default/buckets", "POST",
-            {"name": "default", "ramQuotaMB": 256,
-             "bucketType": "couchbase", "replicaNumber": 0})
-        self.sleep(8, "wait for default bucket to be ready")
-
-        shell = RemoteMachineShellConnection(master)
-        try:
-            # Load 1000 docs once; both backup iterations use same data
-            shell.execute_command(
-                "%s/cbworkloadgen -n %s %s -i 1000 -s 100 -j"
-                % (bin_path, host, creds))
-
-            for mode in ("diff", "accu"):
-                # Fresh archive for each iteration
-                shell.execute_command("rm -rf %s" % archive)
-
-                # Baseline full backup — 1000 items
-                shell.execute_command(
-                    "%s/cbbackup %s %s %s -m full -b default"
-                    % (bin_path, host, archive, creds))
-
-                # diff/accu backup — CE must coerce to full (1000 more items)
-                shell.execute_command(
-                    "%s/cbbackup %s %s %s -m %s -b default"
-                    % (bin_path, host, archive, creds, mode))
-
-                # Count all SET operations across the entire archive
-                count_out, _ = shell.execute_command(
-                    "%s/cbtransfer %s/ stdout: 2>/dev/null "
-                    "| grep set | uniq | wc -l" % (bin_path, archive))
-                try:
-                    count = int(count_out[0].strip()) if count_out else 0
-                except (ValueError, IndexError):
-                    count = 0
-
-                self.assertEqual(
-                    count, 2000,
-                    "CE must coerce cbbackup -m %s to full. "
-                    "Expected 2000 items (2 full backups x 1000), got %d"
-                    % (mode, count))
-                self.log.info(
-                    "CE forced full backup for -m %s: %d items", mode, count)
-        finally:
-            shell.execute_command("rm -rf %s" % archive)
-            shell.disconnect()

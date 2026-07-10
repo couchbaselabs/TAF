@@ -164,6 +164,18 @@ class CommunityEditionRestrictions(ClusterSetup):
         return ClusterUtils.get_nodes(
             self.cluster.master, inactive_added=inactive_added)
 
+    @staticmethod
+    def _as_json(raw):
+        """CBRestConnection.request() already calls response.json() when the
+        body parses as JSON, so raw is usually a dict/list already; only
+        bytes/str responses (non-JSON or parse failures upstream) need
+        json.loads. Raises (TypeError, ValueError) on bad input."""
+        if isinstance(raw, (dict, list)):
+            return raw
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        return json.loads(raw)
+
     def _reb_and_wait(self, timeout=120):
         """Trigger rebalance with all known nodes and wait for completion.
         Returns (success, error_msg)."""
@@ -176,9 +188,8 @@ class CommunityEditionRestrictions(ClusterSetup):
         while time.time() < end:
             _, prog_raw = self.rest.rebalance_progress()
             try:
-                data = json.loads(
-                    prog_raw.decode() if isinstance(prog_raw, bytes) else prog_raw)
-            except (ValueError, AttributeError):
+                data = self._as_json(prog_raw)
+            except (TypeError, ValueError, AttributeError):
                 self.sleep(2, "polling rebalance")
                 continue
             if data.get("status") == "none":
@@ -199,9 +210,8 @@ class CommunityEditionRestrictions(ClusterSetup):
         while time.time() < end:
             _, prog_raw = self.rest.rebalance_progress()
             try:
-                data = json.loads(
-                    prog_raw.decode() if isinstance(prog_raw, bytes) else prog_raw)
-            except (ValueError, AttributeError):
+                data = self._as_json(prog_raw)
+            except (TypeError, ValueError, AttributeError):
                 self.sleep(2, "polling eject rebalance")
                 continue
             if data.get("status") == "none":
@@ -734,8 +744,8 @@ class CommunityEditionRestrictions(ClusterSetup):
             content_str = (content.decode() if isinstance(content, bytes)
                            else str(content))
             try:
-                q_status = json.loads(content_str).get("status", "")
-            except (ValueError, AttributeError):
+                q_status = self._as_json(content).get("status", "")
+            except (TypeError, ValueError, AttributeError):
                 q_status = ""
             self.assertEqual(
                 q_status, "fatal",

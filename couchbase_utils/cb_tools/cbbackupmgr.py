@@ -395,9 +395,9 @@ class CbBackupMgr(CbCmdBase):
         """
 
         if start is None and end is None:
-            extra_flags = "--all"
+            extra_flags = ""
         else:
-            extra_flags = "--start %s --end %s"
+            extra_flags = "--start %s --end %s" % (start, end)
 
         cmd = "%s merge --archive %s --repo %s %s" % (
             self.cbstatCmd, archive_dir, repo_name, extra_flags)
