@@ -15,6 +15,10 @@ Tests in this file:
         Turn off after volumes are detached from CBS/KV nodes post-CBS-rebalance but
         before CP deletes them; verify CP cleans up orphaned volumes while cluster is
         off, then verify full cleanup after turn-on.
+  15. test_enable_fusion_then_immediately_turn_off_cluster
+        Trigger fusion enable then immediately turn the cluster off while fusion is
+        still in the 'enabling' state; verify fusion settles to a deterministic final
+        state after turn-on.
 """
 
 import socket
@@ -1021,3 +1025,122 @@ class FusionClusterOnOffTest(_FusionTestBase):
 
         self.log.info(
             "test_cluster_off_on_snapshot_backup_restore_same_cluster complete")
+
+    # ------------------------------------------------------------------
+    # Test 15: Enable fusion then immediately turn the cluster off
+    # ------------------------------------------------------------------
+
+    def test_enable_fusion_then_immediately_turn_off_cluster(self):
+        """
+        Trigger a fusion enable, then immediately turn the cluster off while
+        fusion is still in the 'enabling' transitional state.
+
+        This validates that the CP handles an interrupted enable-fusion sequence
+        without leaving the cluster or S3 resources in an inconsistent state.
+
+        Test sequence:
+        1.  Ensure fusion is 'disabled' (clean baseline).
+        2.  Call enable_fusion API (async — state transitions to 'enabling').
+        3.  Wait until fusion enters the 'enabling' state, then immediately
+            issue a cluster turn-off.
+        4.  Wait for cluster to reach 'turned_off'.
+        5.  Turn the cluster back on; wait for 'healthy'.
+        6.  Wait for fusion to settle to a final stable state.
+        7.  Assert fusion is in a deterministic final state ('enabled' or 'disabled')
+            — never stuck in 'enabling'.
+        8.  Assert no memcached errors throughout.
+
+        Validates:
+        - enable_fusion API returns 200 OK on a healthy disabled cluster
+        - Cluster can be turned off while fusion is in 'enabling' state
+        - Cluster returns to 'healthy' after turn-on
+        - Fusion settles to 'enabled' or 'disabled' (never stuck)
+        - No memcached errors throughout the interrupted-enable cycle
+        """
+        self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
+        self._ensure_fusion_state(self.tenant, self.cluster, "disabled")
+
+        turn_off_timeout = self.input.param("turn_off_timeout", 600)
+        turn_on_timeout = self.input.param("turn_on_timeout", 1200)
+        enabling_wait_timeout = self.input.param("enabling_wait_timeout", 120)
+        fusion_settle_timeout = self.input.param("fusion_settle_timeout", 1200)
+
+        # Trigger fusion enable (asynchronous — state transitions to 'enabling')
+        self.log.info(f"Triggering fusion enable on cluster {self.cluster.id}")
+        resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
+        self.assertEqual(
+            resp.status_code, 200,
+            f"enable_fusion returned unexpected status "
+            f"{resp.status_code}: {resp.content}")
+
+        # Wait until fusion enters the 'enabling' transitional state before
+        # turning off. If it completes faster than expected, proceed anyway.
+        deadline = time.time() + enabling_wait_timeout
+        fusion_state_at_turnoff = "unknown"
+        while time.time() < deadline:
+            status = CapellaAPI.get_fusion_status(
+                self.pod, self.tenant, self.cluster.id)
+            fusion_state_at_turnoff = status.get("state", "unknown")
+            self.log.info(
+                f"Fusion state while waiting to turn off: {fusion_state_at_turnoff}")
+            if fusion_state_at_turnoff in ("enabling", "enabled"):
+                break
+            time.sleep(5)
+
+        self.log.info(
+            f"Issuing cluster turn-off — fusion state at turn-off: "
+            f"{fusion_state_at_turnoff}")
+
+        dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
+        turned_off = dr_on_off.turn_off_cluster(timeout=turn_off_timeout)
+        self.assertTrue(
+            turned_off,
+            f"Cluster {self.cluster.id} did not reach 'turned_off' state "
+            f"within {turn_off_timeout}s after enable-then-turn-off")
+
+        self.log.info(
+            f"Cluster {self.cluster.id} is off; turning it back on")
+        turned_on = dr_on_off.turn_on_cluster(timeout=turn_on_timeout)
+        self.assertTrue(
+            turned_on,
+            f"Cluster {self.cluster.id} did not return to 'healthy' after "
+            f"turn-on within {turn_on_timeout}s")
+        self.log.info(f"Cluster {self.cluster.id} is back online")
+
+        CapellaAPI.wait_until_done(
+            self.pod, self.tenant, self.cluster.id, timeout=600)
+        self.find_master(self.tenant, self.cluster)
+
+        # Wait for fusion to settle to a deterministic final state after turn-on.
+        # The CP may resume the interrupted enable or roll it back — both are valid.
+        deadline = time.time() + fusion_settle_timeout
+        final_state = "unknown"
+        while time.time() < deadline:
+            status = CapellaAPI.get_fusion_status(
+                self.pod, self.tenant, self.cluster.id)
+            final_state = status.get("state", "unknown")
+            if final_state in self._fusion_final_states:
+                break
+            self.log.info(
+                f"Waiting for fusion to settle after turn-on "
+                f"(current: {final_state})")
+            time.sleep(15)
+
+        self.assertIn(
+            final_state, self._fusion_final_states,
+            f"Fusion did not reach a stable final state within {fusion_settle_timeout}s "
+            f"after cluster turn-on following interrupted enable "
+            f"(last state: {final_state})")
+        self.log.info(
+            f"Fusion settled to '{final_state}' after interrupted enable + "
+            f"cluster turn-off/turn-on cycle")
+
+        errors_found = self.cp_monitor.scan_memcached_logs_for_errors(
+            [self.cluster], steady_state_workload_sleep=0)
+        self.assertEqual(
+            len(errors_found), 0,
+            f"Memcached errors detected after enable-then-immediately-turn-off "
+            f"cycle on: {[c.id for c in errors_found]}")
+        self.log.info(
+            f"No memcached errors — enable-then-immediately-turn-off-cluster "
+            f"test complete (fusion final state: '{final_state}')")

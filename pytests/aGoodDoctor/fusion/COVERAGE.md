@@ -102,7 +102,6 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | | | `test_flush_during_active_s3_upload` | ✅ |
 | | | `test_multi_bucket_flush_cleans_all_s3_prefixes` | ✅ |
 | | | `test_bucket_delete_no_prior_rebalance_s3_prefix_cleaned` | ✅ |
-| *(no file yet)* | — | Drop during hydration (post-rebalance) | ⬜ |
 
 ---
 
@@ -115,8 +114,7 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | | | `test_cluster_off_on_after_guest_volume_detach` | ✅ |
 | | | `test_cluster_on_off_functional` | ✅ |
 | | | `test_cluster_off_on_snapshot_backup_restore_same_cluster` | ✅ |
-| *(no file yet)* | — | Enable fusion then immediately turn off | ⬜ |
-| *(no file yet)* | — | Turn off during file extent migration | ⬜ |
+| | | `test_enable_fusion_then_immediately_turn_off_cluster` | ✅ |
 
 ---
 
