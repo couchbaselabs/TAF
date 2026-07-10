@@ -1227,25 +1227,25 @@ class FusionSync(MagmaBaseTest, FusionBase):
         enable_thread = threading.Thread(target=self.enable_fusion)
         enable_thread.start()
 
-        # Monitor for "enabling" state, then perform flush immediately
-        self.log.info("Monitoring for Fusion 'enabling' state")
+        # Monitor for "enabled" state, then perform flush immediately
+        self.log.info("Monitoring for Fusion 'enabled' state")
         fusion_client = FusionRestAPI(self.cluster.master)
-        end_time = time.time() + 60  # 60 seconds to reach enabling state
+        end_time = time.time() + 60  # 60 seconds to reach enabled state
         start_time = time.time()
         fusion_enabled = False
 
         while time.time() < end_time:
             status, content = fusion_client.get_fusion_status()
             self.log.info(f"Fusion Status = {content}")
-            if content['state'] == "enabling":
+            if content['state'] == "enabled":
                 elapsed = time.time() - start_time
-                self.log.info(f"Fusion reached 'enabling' state after {elapsed:.2f} seconds")
+                self.log.info(f"Fusion reached 'enabled' state after {elapsed:.2f} seconds")
                 fusion_enabled = True
                 break
             time.sleep(2)
 
         if not fusion_enabled:
-            self.fail("Fusion did not reach 'enabling' state within 60 seconds")
+            self.fail("Fusion did not reach 'enabled' state within 60 seconds")
 
         self.log.info("Triggering flush operation during Fusion enabling")
         for bucket in self.cluster.buckets:
