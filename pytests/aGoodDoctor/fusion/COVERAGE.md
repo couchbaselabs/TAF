@@ -95,11 +95,14 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | `fusion_bucket_ops_test.py` | `FusionBucketOpsTest` | `test_bucket_flush_cleans_s3_objects` | ✅ |
 | | | `test_bucket_delete_after_rebalance_cleans_guest_volumes` | ✅ |
 | | | `test_bucket_flush_after_rebalance_no_guest_volumes` | ✅ |
-| *(no file yet)* | — | Drop during CP guest volume deletion | ⬜ |
+| | | `test_bucket_drop_during_guest_volume_deletion` | ✅ |
+| | | `test_bucket_drop_and_recreate_loop` | ✅ |
+| | | `test_full_compaction_with_fusion_enabled` | ✅ |
+| | | `test_replica_change_uploader_map_unchanged` | ✅ |
+| | | `test_flush_during_active_s3_upload` | ✅ |
+| | | `test_multi_bucket_flush_cleans_all_s3_prefixes` | ✅ |
+| | | `test_bucket_delete_no_prior_rebalance_s3_prefix_cleaned` | ✅ |
 | *(no file yet)* | — | Drop during hydration (post-rebalance) | ⬜ |
-| *(no file yet)* | — | Drop & recreate in a loop | ⬜ |
-| *(no file yet)* | — | Full compaction | ⬜ |
-| *(no file yet)* | — | Replica change: uploader map unchanged | ⬜ |
 
 ---
 
@@ -110,7 +113,8 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | `fusion_cluster_on_off_test.py` | `FusionClusterOnOffTest` | `test_cluster_off_on_with_pending_sync_resumes_upload` | ✅ |
 | | | `test_cluster_off_on_while_guest_volumes_present` | ✅ |
 | | | `test_cluster_off_on_after_guest_volume_detach` | ✅ |
-| *(no file yet)* | — | Turn off during active S3 upload | ⬜ |
+| | | `test_cluster_on_off_functional` | ✅ |
+| | | `test_cluster_off_on_snapshot_backup_restore_same_cluster` | ✅ |
 | *(no file yet)* | — | Enable fusion then immediately turn off | ⬜ |
 | *(no file yet)* | — | Turn off during file extent migration | ⬜ |
 
