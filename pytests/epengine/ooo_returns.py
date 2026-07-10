@@ -140,7 +140,7 @@ class OutOfOrderReturns(ClusterSetup):
                                collection=self.collection_name)
 
         # Fetch evicted doc keys
-        dgm_gen = doc_generator(self.key, 0, self.num_items, doc_size=1)
+        dgm_gen = doc_generator(self.key, 0, self.num_items, doc_size=0)
         while len(evicted_doc_keys) != req_docs_to_test:
             if not dgm_gen.has_next():
                 end_i = self.num_items + 10000
@@ -157,7 +157,8 @@ class OutOfOrderReturns(ClusterSetup):
                     if stat["is_resident"] == "false":
                         evicted_doc_keys.append(doc_key)
 
-        dgm_gen = doc_generator(self.key, -(self.num_items-1), 0, doc_size=1)
+        dgm_gen = doc_generator(self.key, -(self.num_items-1), 0,
+                                doc_size=0)
         while len(non_evicted_doc_keys) != req_docs_to_test:
             doc_key, _ = dgm_gen.next()
             vb_for_key = self.bucket_util.get_vbucket_num_for_key(
