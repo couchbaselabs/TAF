@@ -367,10 +367,20 @@ class CapellaUtils(object):
                 CapellaUtils.log.info("Bucket deleted successfully!")
                 cluster.buckets = [b for b in cluster.buckets if b.name != name]
             else:
-                CapellaUtils.log.critical(resp.content)
-                raise Exception(
-                    "Bucket {} cannot be deleted: HTTP {} — {}".format(
-                        name, resp.status_code, resp.content))
+                try:
+                    error_type = resp.json().get("errorType", "")
+                except Exception:
+                    error_type = ""
+                if error_type == "BucketNotFound":
+                    CapellaUtils.log.info(
+                        "Bucket {} already gone (BucketNotFound) — "
+                        "treating delete as success".format(name))
+                    cluster.buckets = [b for b in cluster.buckets if b.name != name]
+                else:
+                    CapellaUtils.log.critical(resp.content)
+                    raise Exception(
+                        "Bucket {} cannot be deleted: HTTP {} — {}".format(
+                            name, resp.status_code, resp.content))
         else:
             CapellaUtils.log.info("Bucket not found.")
 
