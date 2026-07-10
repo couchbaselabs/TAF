@@ -50,7 +50,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
             mutation_num=0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            async_load=async_load)
+            async_load=async_load,
+            load_using=self.load_docs_using)
         return tasks
 
     def data_validation_collection(self):

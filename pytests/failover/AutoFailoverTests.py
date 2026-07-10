@@ -87,7 +87,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             async_load=async_load,
-            validate_task=self.skip_validations)
+            validate_task=self.skip_validations,
+            load_using=self.load_docs_using)
         return [tasks, cont_doc_load]
 
     def data_validation_collection(self):

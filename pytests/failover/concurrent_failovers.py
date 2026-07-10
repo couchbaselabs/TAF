@@ -340,7 +340,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 mutation_num=0,
                 async_load=(not validate_num_items),
                 batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
+                process_concurrency=self.process_concurrency,
+                load_using=self.load_docs_using)
 
         if doc_loading_task.result is False:
             self.fail("Collection CRUDs failure")

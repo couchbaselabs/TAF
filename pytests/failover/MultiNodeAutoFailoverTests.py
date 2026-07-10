@@ -314,7 +314,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                 mutation_num=0,
                 async_load=async_load,
                 batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
+                process_concurrency=self.process_concurrency,
+                load_using=self.load_docs_using)
         return [tasks, cont_doc_load]
 
     def wait_for_async_data_load_to_complete(self, tasks):
