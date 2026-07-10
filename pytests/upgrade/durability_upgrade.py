@@ -352,7 +352,7 @@ class UpgradeTests(UpgradeBase):
                     ops_rate=self.ops_rate)
 
                 if sync_write_task.result is False:
-                    self.log_failure("SyncWrite failed during upgrade")
+                    self.log.error("SyncWrite failed during upgrade")
 
                 self.PrintStep("Upgrade of node {0} done".format(itr+1))
 
@@ -774,7 +774,7 @@ class UpgradeTests(UpgradeBase):
             if sync_write_task.result is True:
                 self.log.info("SyncWrite and CollectionOps task succeeded")
             else:
-                self.log_failure("SyncWrite failed during upgrade")
+                self.log.error("SyncWrite failed during upgrade")
 
             ### Fetching the next node to upgrade ###
             node_to_upgrade = self.fetch_node_to_upgrade()
@@ -855,7 +855,7 @@ class UpgradeTests(UpgradeBase):
                 self.log.info("SyncWrite task succeeded")
                 self.bucket_util.print_bucket_stats(self.cluster)
             else:
-                self.log_failure("SyncWrite failed in mixed mode cluster state")
+                self.log.error("SyncWrite failed in mixed mode cluster state")
 
             count += 1
 
@@ -892,7 +892,7 @@ class UpgradeTests(UpgradeBase):
                 self.log.info("SyncWrite task succeeded")
                 self.bucket_util.print_bucket_stats(self.cluster)
             else:
-                self.log_failure("SyncWrite failed in mixed mode cluster state")
+                self.log.error("SyncWrite failed in mixed mode cluster state")
 
         self.PrintStep("Downgrade of the cluster complete")
 
@@ -2061,7 +2061,7 @@ class UpgradeTests(UpgradeBase):
         if sync_write_task.result is True:
             self.log.info("SyncWrite and collectionOps task succeeded during migration")
         else:
-            self.log_failure("SyncWrite/collectionOps failed during migration")
+            self.log.error("SyncWrite/collectionOps failed during migration")
 
     def migrate_node_random(self, node, method):
         self.log.info("Procedure selected for migration of {0} : {1}".format(node.ip, method))
