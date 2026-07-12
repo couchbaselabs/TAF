@@ -36,12 +36,12 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         self.username = portal.username
         self.password = portal.password
         self.type = "columnar"
-        # Build baseUrl directly — do NOT let RestConnection
+        # Build baseUrl directly - do NOT let RestConnection
         # mangle the port with CB TLS logic.
         # UCP has its own port that is independent of Couchbase.
         scheme = "https"
         self.baseUrl = "{0}://{1}:{2}/".format(scheme, self.ip, self.port)
-        # Session cookie storage — UCP uses cookie-based sessions
+        # Session cookie storage - UCP uses cookie-based sessions
         self._session_cookie = None
 
     def _http_request(self, api, method='GET', params='', headers=None,
@@ -63,7 +63,7 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         Return headers for UCP API requests.
         - Always: Content-Type: application/json
         - If session cookie exists: Cookie header
-        - NO Basic auth — UCP uses session-based auth only.
+        - NO Basic auth - UCP uses session-based auth only.
         """
         headers = {
             'Content-Type': 'application/json',
@@ -100,6 +100,24 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
+    def change_password(self, username, current_password, new_password):
+        """POST /api/v1/session/change-password
+
+        Session-less call (identifies the user by username in the body),
+        used to swap an admin-set temporary password for a usable one.
+        An admin-set password (create or reset) is temporary and logging
+        in with it returns 401 password_expired -- this must be called
+        before the first real login.
+        """
+        api = self.baseUrl + 'api/v1/session/change-password'
+        body = json.dumps({
+            'username': username,
+            'currentPassword': current_password,
+            'newPassword': new_password
+        })
+        status, content, header = self._http_request(
+            api, 'POST', body, headers=self._json_headers())
+        return status, content, header
     # ==================== User APIs ====================
     def list_users(self, offset=None, limit=None, enabled=None):
         """GET /api/v1/users"""
@@ -116,14 +134,24 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
         return status, content, header
-    def create_user(self, user_id, roles, enabled=True):
-        """POST /api/v1/users"""
+    def create_user(self, user_id, roles, enabled=None,
+                    auth_type=None, password=None):
+        """POST /api/v1/users
+
+        For a local user pass auth_type='local' plus a (temporary) password;
+        the portal auto-provisions the backing CBS local user. The password
+        set here is TEMPORARY -- a login with it returns 401 password_expired,
+        so it must be swapped via change_password() before first login.
+        """
         api = self.baseUrl + 'api/v1/users'
-        body = json.dumps({
-            'userId': user_id,
-            'enabled': enabled,
-            'roles': roles
-        })
+        body_dict = {'userId': user_id, 'roles': roles}
+        if auth_type is not None:
+            body_dict['authType'] = auth_type
+        if password is not None:
+            body_dict['password'] = password
+        if enabled is not None:
+            body_dict['enabled'] = enabled
+        body = json.dumps(body_dict)
         status, content, header = self._http_request(
             api, 'POST', body, headers=self._json_headers())
         return status, content, header
