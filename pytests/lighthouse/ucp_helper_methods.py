@@ -6,6 +6,8 @@ and constructing request bodies for Unified Control Plane tests.
 """
 import json
 from datetime import datetime
+
+from unified_control_plane import UnifiedControlPlaneClient
 # ==================== Session Helper Methods ====================
 def create_session(client, username, password):
     """
@@ -119,6 +121,49 @@ def extract_session_id(cookie):
         return None
     return cookie.split('=', 1)[1]
 
+# ==================== User Provisioning Helpers ====================
+def open_local_user_session(portal, admin_client, user_id, temp_password,
+                            new_password, roles):
+    """
+    Provision a local UCP user and return a NEW client already logged in
+    as that user.
+
+    An admin-set password is temporary (a login with it returns 401
+    password_expired), so a usable session requires three steps:
+      1. admin POST /users  {authType:local, password:temp}   -> 201
+      2. POST /session/change-password (currentPassword=temp)  -> 204
+      3. POST /session/login with the new password             -> 204
+    authType:local auto-provisions the backing CBS local user, so no
+    separate CBS user creation is needed.
+
+    Args:
+        portal:        LighthousePortal config (used to build the new client)
+        admin_client:  an already-logged-in admin UnifiedControlPlaneClient
+        user_id:       userId to create (keep to clean chars: spaces and
+                       ,;<>{} currently return 500 -- CT-BUG-026)
+        temp_password: temporary password set at creation
+        new_password:  final password (must satisfy CBS password policy;
+                       a weak password currently returns 500)
+        roles:         list of UCP roles, e.g. [ROLE_SYSTEM_VIEWER]
+
+    Returns:
+        Tuple (user_client, error). On success error is None and
+        user_client is a logged-in UnifiedControlPlaneClient. On failure
+        user_client is None and error is a human-readable string.
+    """
+    status, content, _ = admin_client.create_user(
+        user_id, roles=roles, auth_type='local', password=temp_password)
+    if not status:
+        return None, "create_user failed: %s" % content
+    user_client = UnifiedControlPlaneClient(portal)
+    status, content, _ = user_client.change_password(
+        user_id, temp_password, new_password)
+    if not status:
+        return None, "change_password failed: %s" % content
+    status, content, _ = user_client.session_login(user_id, new_password)
+    if not status:
+        return None, "login as new user failed: %s" % content
+    return user_client, None
 # ==================== User Helper Methods ====================
 def get_user_with_etag(client, user_id):
     """
