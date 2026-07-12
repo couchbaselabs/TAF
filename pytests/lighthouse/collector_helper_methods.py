@@ -15,6 +15,7 @@ import time
 from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from StatsLib.StatsOperations_Rest import StatsHelper
+from testconstants import LIGHTHOUSE_PORTAL_PORT
 
 # ==================== Settings Helper Methods ====================
 
@@ -321,7 +322,7 @@ def set_lighthouse_ns_config_via_diag_eval(server, **kwargs):
     Args:
         server:   TestInputServer pointing at the orchestrator node.
         **kwargs: Erlang atom key names -> Python values.
-                  e.g. reporting_port=8080, reporting_interval_hours=0.000277
+                  e.g. reporting_port=443, reporting_interval_hours=0.000277
 
     Returns:
         Tuple (status, content)
@@ -347,7 +348,7 @@ def set_lighthouse_interval_via_diag_eval(server, interval_hours):
 
 # ==================== Constants ====================
 
-LIGHTHOUSE_DEFAULT_PORTAL_PORT = 8080
+LIGHTHOUSE_DEFAULT_PORTAL_PORT = LIGHTHOUSE_PORTAL_PORT
 
 # Maps Couchbase internal service names to the names used in portal telemetry.
 CB_TO_PORTAL_SERVICE_MAP = {

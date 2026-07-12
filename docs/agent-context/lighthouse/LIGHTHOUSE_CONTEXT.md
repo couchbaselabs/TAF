@@ -109,7 +109,7 @@ Two-tier system:
 | Tier | Host | Port | Auth | Purpose |
 |------|------|------|------|---------|
 | **Collector** | CB Server (ns_server) | 8091 | Basic | Collects node telemetry + external component data, reports to Portal |
-| **Portal (UCP)** | Standalone UCP service | 8080 | Cookie/session | Receives telemetry, manages clusters, sessions, audit |
+| **Portal (UCP)** | Standalone UCP service | 443 | Cookie/session | Receives telemetry, manages clusters, sessions, audit |
 
 **Data flow**: Collector reads `/pools` → maps service names → collects external payloads from ingest endpoint → POSTs report to Portal → Portal stores at `/api/v1/clusters/{uuid}`.
 
@@ -123,7 +123,7 @@ Two-tier system:
 | `__init__.py` | Exports `LighthouseCollectorClient`, `UnifiedControlPlaneClient` |
 | `constants.py` | All API endpoints, defaults |
 | `collector_client.py` | `LighthouseCollectorClient` — targets port 8091 |
-| `ucp_client.py` | `UnifiedControlPlaneClient` — targets port 8080 |
+| `ucp_client.py` | `UnifiedControlPlaneClient` — targets port 443 |
 
 ### Test Infrastructure (`pytests/lighthouse/`)
 | File | Purpose |
@@ -185,7 +185,7 @@ client.ingest_external_telemetry(product_name, instance_id, payload)
 }
 ```
 
-### `UnifiedControlPlaneClient` (port 8080, cookie-based)
+### `UnifiedControlPlaneClient` (port 443, cookie-based)
 
 ```python
 client = UnifiedControlPlaneClient(ucp_portal)
@@ -229,7 +229,7 @@ set_lighthouse_ns_config_via_diag_eval(server, reporting_endpoint, reporting_por
 set_lighthouse_interval_via_diag_eval(server, interval_hours)
 
 # Constants
-LIGHTHOUSE_DEFAULT_PORTAL_PORT = 8080
+LIGHTHOUSE_DEFAULT_PORTAL_PORT = 443
 CB_TO_PORTAL_SERVICE_MAP = {
     'kv': 'data', 'n1ql': 'query', 'index': 'index',
     'fts': 'search', 'cbas': 'analytics', 'eventing': 'eventing', 'backup': 'backup',
@@ -332,7 +332,7 @@ class MyNewTests(LighthouseBase):
 
 ### Conf entry format
 ```
-package.module.ClassName.test_name,nodes_init=2|2,num_of_clusters=2,ucp_port=8080[,extra_params]
+package.module.ClassName.test_name,nodes_init=2|2,num_of_clusters=2,ucp_port=443[,extra_params]
 ```
 
 ---
