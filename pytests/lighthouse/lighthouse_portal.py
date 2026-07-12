@@ -7,6 +7,7 @@ Couchbase Server node - it has its own port, credentials,
 and service-specific settings.
 """
 from testconstants import (
+    LIGHTHOUSE_PORTAL_PORT,
     LIGHTHOUSE_PORTAL_USERNAME,
     LIGHTHOUSE_PORTAL_PASSWORD,
 )
@@ -17,7 +18,8 @@ class LighthousePortal(object):
     Created from ini [LHPortal] server + test params.
     Passed to UnifiedControlPlaneClient for connection.
     """
-    def __init__(self, ip, port=8080, username=LIGHTHOUSE_PORTAL_USERNAME,
+    def __init__(self, ip, port=LIGHTHOUSE_PORTAL_PORT,
+                 username=LIGHTHOUSE_PORTAL_USERNAME,
                  password=LIGHTHOUSE_PORTAL_PASSWORD):
         """
         Args:
@@ -37,7 +39,7 @@ class LighthousePortal(object):
         and test params.
         The IP comes from the server (ini [LHPortal] section).
         Port, username, password can be overridden via test params:
-            - ucp_port (default: 8080)
+            - ucp_port (default: 443)
             - ucp_username (default: testconstants.LIGHTHOUSE_PORTAL_USERNAME)
             - ucp_password (default: testconstants.LIGHTHOUSE_PORTAL_PASSWORD)
         Args:
@@ -47,7 +49,7 @@ class LighthousePortal(object):
             LighthousePortal instance
         """
         ip = server.ip
-        port = test_input.param("ucp_port", 8080)
+        port = test_input.param("ucp_port", LIGHTHOUSE_PORTAL_PORT)
         username = test_input.param("ucp_username",
                                     LIGHTHOUSE_PORTAL_USERNAME)
         password = test_input.param("ucp_password",

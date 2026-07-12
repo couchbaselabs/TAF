@@ -79,7 +79,7 @@ class LighthouseBase(CollectionBase):
         build a LighthousePortal config object.
         The IP comes from [LHPortal] ini section.
         Port and credentials can be overridden via test params:
-            - ucp_port (default 8080)
+            - ucp_port (default 443)
             - ucp_username (default from [membase] rest_username)
             - ucp_password (default from [membase] rest_password)
         Exposes:
