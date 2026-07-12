@@ -120,6 +120,10 @@ class OutOfOrderReturns(ClusterSetup):
 
         dgm_gen = doc_generator(self.key, initial_load , initial_load + 1,
                                 doc_size=self.doc_size)
+        # dgm_check_on="active" since this test requires evicted docs in
+        # active vbuckets. Replica items get evicted first, so the default
+        # "any" check can end the load with active residency still at 100%,
+        # making the evicted-key scan below loop over the entire keyspace
         dgm_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, dgm_gen, "create", exp=0,
             persist_to=self.persist_to,
@@ -127,7 +131,8 @@ class OutOfOrderReturns(ClusterSetup):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             batch_size=10, process_concurrency=4,
-            active_resident_threshold=self.active_resident_threshold)
+            active_resident_threshold=self.active_resident_threshold,
+            dgm_check_on="active")
         self.task_manager.get_task_result(dgm_task)
         self.num_items = dgm_task.doc_index
 
@@ -143,10 +148,13 @@ class OutOfOrderReturns(ClusterSetup):
         dgm_gen = doc_generator(self.key, 0, self.num_items, doc_size=0)
         while len(evicted_doc_keys) != req_docs_to_test:
             if not dgm_gen.has_next():
-                end_i = self.num_items + 10000
-                dgm_gen = doc_generator(self.key, self.num_items, end_i,
-                                        doc_size=1)
-                self.num_items = end_i
+                # Fail-fast instead of scanning forever. Keys past
+                # num_items were never loaded, so extending the scan
+                # beyond the loaded keyspace can never find evicted docs
+                self.fail("Scanned all %s loaded keys but found only %s/%s"
+                          " evicted docs. Bucket not in active DGM"
+                          % (self.num_items, len(evicted_doc_keys),
+                             req_docs_to_test))
             doc_key, _ = dgm_gen.next()
             vb_for_key = self.bucket_util.get_vbucket_num_for_key(
                 doc_key, self.bucket.numVBuckets)
@@ -157,9 +165,16 @@ class OutOfOrderReturns(ClusterSetup):
                     if stat["is_resident"] == "false":
                         evicted_doc_keys.append(doc_key)
 
+        # Negative range walks the same keys in reverse (key names use
+        # abs(index)), i.e. most recently loaded (likely resident) first
         dgm_gen = doc_generator(self.key, -(self.num_items-1), 0,
                                 doc_size=0)
         while len(non_evicted_doc_keys) != req_docs_to_test:
+            if not dgm_gen.has_next():
+                self.fail("Scanned all %s loaded keys but found only %s/%s"
+                          " resident docs"
+                          % (self.num_items, len(non_evicted_doc_keys),
+                             req_docs_to_test))
             doc_key, _ = dgm_gen.next()
             vb_for_key = self.bucket_util.get_vbucket_num_for_key(
                 doc_key, self.bucket.numVBuckets)

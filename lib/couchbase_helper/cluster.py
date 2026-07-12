@@ -178,7 +178,8 @@ class ServerTasks(object):
                             iterations=1,
                             ignore_exceptions=[],
                             retry_exception=[],
-                            load_using="default_loader"):
+                            load_using="default_loader",
+                            dgm_check_on="any"):
         clients = list()
         if active_resident_threshold == 100:
             if not ryow:
@@ -306,7 +307,8 @@ class ServerTasks(object):
                 suppress_error_table=suppress_error_table,
                 track_failures=track_failures,
                 sdk_retry_strategy=sdk_retry_strategy,
-                load_using=load_using)
+                load_using=load_using,
+                dgm_check_on=dgm_check_on)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task

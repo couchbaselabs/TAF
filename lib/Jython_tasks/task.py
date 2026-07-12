@@ -2956,7 +2956,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  track_failures=True,
                  task_identifier="",
                  sdk_retry_strategy=None,
-                 load_using="default_loader"):
+                 load_using="default_loader",
+                 dgm_check_on="any"):
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
             "create", exp,
@@ -2978,6 +2979,11 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.buckets = None
         self.print_ops_rate = print_ops_rate
         self.active_resident_threshold = active_resident_threshold
+        # "any": stop when active_rr or replica_rr hits the threshold.
+        # "active": stop only on active_rr - replica items get evicted
+        # first under memory pressure, so "any" can declare DGM with
+        # active_rr still at 100% (no active doc evicted)
+        self.dgm_check_on = dgm_check_on
         self.dgm_batch = dgm_batch
         self.task_identifier = task_identifier
         self.skip_read_on_error = skip_read_on_error
@@ -3069,14 +3075,16 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
 
     def _load_bucket_into_dgm(self, bucket):
         """
-        Load bucket into dgm until either active_rr or replica_rr
-        goes below self.active_resident_threshold
+        Load bucket into dgm until active_rr (and replica_rr if
+        dgm_check_on == "any") goes below self.active_resident_threshold
         """
         active_dgm_value, replica_dgm_value = self._get_bucket_dgm(bucket)
-        self.test_log.info("DGM doc loading for '%s' to atleast %s%%"
-                           % (bucket.name, self.active_resident_threshold))
+        self.test_log.info("DGM doc loading for '%s' to atleast %s%% (on %s)"
+                           % (bucket.name, self.active_resident_threshold,
+                              self.dgm_check_on))
         while active_dgm_value > self.active_resident_threshold and \
-                replica_dgm_value > self.active_resident_threshold:
+                (self.dgm_check_on == "active" or
+                 replica_dgm_value > self.active_resident_threshold):
             self.test_log.info("Active_resident_items_ratio for {0} is {1}"
                                .format(bucket.name, active_dgm_value))
             self.test_log.info("Replica_resident_items_ratio for {0} is {1}"
