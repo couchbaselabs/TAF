@@ -36,6 +36,36 @@ class UCPResponse(object):
         return self._json_data
 
     @property
+    def items(self):
+        """
+        List of records from a list-endpoint body. Handles a bare list or
+        an envelope keyed by items/data/users/clusters/results.
+        """
+        data = self._json_data
+        if data is None:
+            return []
+        if isinstance(data, list):
+            return data
+        for key in ('items', 'data', 'users', 'clusters', 'results'):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+        return []
+
+    @property
+    def total(self):
+        """
+        Reported total count from a list-endpoint body, or None if the body
+        carries no total field.
+        """
+        data = self._json_data
+        if isinstance(data, dict):
+            for key in ('total', 'totalCount', 'totalItems', 'count'):
+                if key in data:
+                    return data[key]
+        return None
+
+    @property
     def status_code(self):
         """Get HTTP status code."""
         return self.response.status_code if self.response is not None else None
