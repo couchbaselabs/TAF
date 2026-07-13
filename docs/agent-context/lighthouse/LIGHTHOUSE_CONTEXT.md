@@ -100,6 +100,25 @@ purely through conf variation.
 tearDown must never raise.  Wrap every restore call in `try/except`.  Log
 warnings on failure — do not fail the test in tearDown for a restore error.
 
+### Test Classes Hold Only Test Methods
+A test class contains `setUp`, `tearDown`, and `test_*` methods -- nothing
+else. Everything a test *uses* lives in the right layer:
+
+- HTTP request plumbing (building URLs, raw GET/POST with arbitrary params)
+  -> a function in `ucp_helper_methods.py` (e.g. `get_raw`,
+  `open_local_user_session`, `safe_delete_user`) or a method on the client
+  in `ucp_client.py`.
+- Response parsing / field extraction (items, total, etag, error message)
+  -> a property/method on `UCPResponse` in `response.py` (e.g. `.items`,
+  `.total`).
+- Setup / cleanup orchestration -> a helper function.
+
+Do NOT add `_raw_get`, `_parse`, `_extract_*` or similar private utilities to
+a test class. Assertions stay inline in the test method (they need
+`self.assert*`); factor the *data* they assert on into the response class,
+not the assertion itself. This has been flagged in review more than once --
+put plumbing in the helper/response layer the first time.
+
 ---
 
 ## Architecture Overview
@@ -364,3 +383,5 @@ Recovery after failover: `rest.add_back_node()` + `rest.set_recovery_type("delta
 10. **`stop_memcached` uses SIGSTOP/SIGCONT** — the process is frozen, not killed. Revert: `kill -18 $(pgrep memcached)`.
 11. **MB-7282**: `update_autofailover_settings` fails when the autofailover event count is non-zero. Always POST `/settings/autoFailover/resetCount` before calling `update_autofailover_settings` in tearDown.
 12. **Save `afo.maxCount`, not `afo.count`**: `afo.count` is the current event count (0 at setUp). `afo.maxCount` is the max allowed (typically 1). tearDown must restore the latter.
+13. **Non-admin users need a 3-step provisioning flow**: an admin-set password (create OR reset) is TEMPORARY -- logging in with it returns `401 password_expired`. Use `open_local_user_session()`: `create_user(authType='local', password=temp)` -> `change_password(temp, new)` -> `session_login(new)`. `authType='local'` auto-provisions the backing CBS user, so no separate CBS user creation is needed.
+14. **Passwords must meet the CBS password policy; a too-weak one returns `500` (not 400)** from `POST /users` -- a real product defect. Confirmed 2026-07-12: `Temp#2026x` (10 chars) -> 500, `Viewer#2026xyz` (14 chars) -> 201 with the same userId. Use long, mixed-class passwords for test users (defaults: temp `TempView#2026xyz`, final `Viewer#2026xyz`). Also keep userIds to clean chars -- spaces and `,;<>{}` -> 500 (CT-BUG-026).

@@ -16,6 +16,8 @@ for cluster/portal infrastructure.
 
 All portal connection details (IP, port, credentials) come from the
 [LHPortal] ini section plus ucp_* test params -- nothing is hard-coded here.
+User provisioning / cleanup live in ucp_helper_methods; this class holds test
+methods only.
 """
 from lighthouse.lighthouse_base import LighthouseBase
 from lighthouse.response import UCPResponse
@@ -23,6 +25,7 @@ from lighthouse.ucp_helper_methods import (
     create_session,
     get_session_cookie,
     open_local_user_session,
+    safe_delete_user,
 )
 from unified_control_plane.constants import ROLE_SYSTEM_VIEWER
 
@@ -50,8 +53,8 @@ class SystemViewerRbacTests(LighthouseBase):
             self.ucp_portal.password)
         self.assertTrue(status, "Admin login failed: %s" % content)
         # Remove any stale users left behind by a previous aborted run.
-        self._safe_delete_user(self.viewer_id)
-        self._safe_delete_user(self.probe_user_id)
+        safe_delete_user(self.ucp_client, self.viewer_id)
+        safe_delete_user(self.ucp_client, self.probe_user_id)
         # Provision the viewer and log in as it.
         viewer_client, err = open_local_user_session(
             self.ucp_portal, self.ucp_client, self.viewer_id,
@@ -68,8 +71,8 @@ class SystemViewerRbacTests(LighthouseBase):
             if not get_session_cookie(self.ucp_client):
                 create_session(self.ucp_client, self.ucp_portal.username,
                                self.ucp_portal.password)
-            self._safe_delete_user(self.viewer_id)
-            self._safe_delete_user(self.probe_user_id)
+            safe_delete_user(self.ucp_client, self.viewer_id)
+            safe_delete_user(self.ucp_client, self.probe_user_id)
         except Exception as e:
             self.log.warning("tearDown: viewer cleanup failed: %s" % e)
         for client in (self.viewer_client, self.ucp_client):
@@ -80,33 +83,6 @@ class SystemViewerRbacTests(LighthouseBase):
                 self.log.warning("tearDown: logout failed: %s" % e)
         super(SystemViewerRbacTests, self).tearDown()
 
-    def _safe_delete_user(self, user_id):
-        """Best-effort delete of a user via the admin session."""
-        try:
-            self.ucp_client.delete_user(user_id)
-        except Exception as e:
-            self.log.warning("delete_user(%s) failed: %s" % (user_id, e))
-
-    def _assert_forbidden(self, status, content, header, what):
-        response = UCPResponse(status, content, header)
-        self.assertFalse(
-            status,
-            "%s: expected 403 for system_viewer but call succeeded" % what)
-        self.assertEqual(
-            response.status_code, 403,
-            "%s: expected HTTP 403, got %s: %s"
-            % (what, response.status_code, content))
-
-    def _assert_allowed(self, status, content, header, what):
-        response = UCPResponse(status, content, header)
-        self.assertTrue(
-            status,
-            "%s: expected 200 for system_viewer, got HTTP %s: %s"
-            % (what, response.status_code, content))
-        self.assertEqual(
-            response.status_code, 200,
-            "%s: expected HTTP 200, got %s" % (what, response.status_code))
-
     def test_system_viewer_forbidden_on_user_management(self):
         """
         Case 75: a system_viewer cannot access user-management endpoints.
@@ -115,18 +91,36 @@ class SystemViewerRbacTests(LighthouseBase):
         return 403.
         """
         status, content, header = self.viewer_client.list_users()
-        self._assert_forbidden(status, content, header, "GET /users")
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "GET /users: expected 403 but the call succeeded")
+        self.assertEqual(
+            response.status_code, 403,
+            "GET /users: expected HTTP 403, got %s: %s"
+            % (response.status_code, content))
 
         status, content, header = self.viewer_client.create_user(
             self.probe_user_id, roles=[ROLE_SYSTEM_VIEWER],
             auth_type='local', password=self.viewer_temp_password)
-        self._assert_forbidden(status, content, header, "POST /users")
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "POST /users: expected 403 but the call succeeded")
+        self.assertEqual(
+            response.status_code, 403,
+            "POST /users: expected HTTP 403, got %s: %s"
+            % (response.status_code, content))
         self.log.info("PASS -- system_viewer blocked from user management")
 
     def test_system_viewer_forbidden_on_audit(self):
         """Case 78: a system_viewer cannot read audit logs -> 403."""
         status, content, header = self.viewer_client.list_audit_events()
-        self._assert_forbidden(status, content, header, "GET /audit")
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "GET /audit: expected 403 but the call succeeded")
+        self.assertEqual(
+            response.status_code, 403,
+            "GET /audit: expected HTTP 403, got %s: %s"
+            % (response.status_code, content))
         self.log.info("PASS -- system_viewer blocked from audit logs")
 
     def test_system_viewer_forbidden_on_config(self):
@@ -138,18 +132,29 @@ class SystemViewerRbacTests(LighthouseBase):
         would otherwise let the server answer 400/412 instead of 403).
         """
         status, content, header = self.viewer_client.get_config()
-        self._assert_forbidden(status, content, header, "GET /config")
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "GET /config: expected 403 but the call succeeded")
+        self.assertEqual(
+            response.status_code, 403,
+            "GET /config: expected HTTP 403, got %s: %s"
+            % (response.status_code, content))
 
         admin_status, admin_content, admin_header = self.ucp_client.get_config()
         admin_config = UCPResponse(admin_status, admin_content, admin_header)
         self.assertTrue(
             admin_status,
             "Admin could not read config to obtain ETag: %s" % admin_content)
-        etag = admin_config.etag
 
         status, content, header = self.viewer_client.update_config(
-            etag=etag, telemetry_retention_days=30)
-        self._assert_forbidden(status, content, header, "PUT /config")
+            etag=admin_config.etag, telemetry_retention_days=30)
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "PUT /config: expected 403 but the call succeeded")
+        self.assertEqual(
+            response.status_code, 403,
+            "PUT /config: expected HTTP 403, got %s: %s"
+            % (response.status_code, content))
         self.log.info("PASS -- system_viewer blocked from config read/update")
 
     def test_system_viewer_allowed_reads(self):
@@ -168,5 +173,12 @@ class SystemViewerRbacTests(LighthouseBase):
         ]
         for what, call in checks:
             status, content, header = call()
-            self._assert_allowed(status, content, header, what)
+            response = UCPResponse(status, content, header)
+            self.assertTrue(
+                status,
+                "%s: expected 200 for system_viewer, got HTTP %s: %s"
+                % (what, response.status_code, content))
+            self.assertEqual(
+                response.status_code, 200,
+                "%s: expected HTTP 200, got %s" % (what, response.status_code))
         self.log.info("PASS -- system_viewer allowed reads all returned 200")
