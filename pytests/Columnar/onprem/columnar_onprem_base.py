@@ -194,6 +194,11 @@ class ColumnarOnPremBase(CBASBaseTest):
                     "sessionToken": self.aws_session_token,
                     "serviceEndpoint": self.aws_endpoint
                 }]
+                if getattr(self, "storage_provider", None) in ["oci", "netapp"]:
+                    columnar_spec["external_link"]["properties"][0][
+                        "checksumBehavior"] = "when_required"
+                    columnar_spec["external_link"]["properties"][0][
+                        "pathStyleAddressing"] = True
 
         # Updating Kafka Links Spec
         columnar_spec["kafka_link"]["no_of_kafka_links"] = self.input.param(

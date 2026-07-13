@@ -435,6 +435,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.runtype = self.input.param("runtype", "default")
         self.storage_provider = self.input.param("storage_provider", "aws")
         self.aws_endpoint = self.input.param("aws_endpoint", None)
+        self.blob_storage_checksum_behavior = None
 
         if self.runtype == "onprem-columnar":
             if self.storage_provider == "aws":
@@ -451,6 +452,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.aws_session_token = None
                 self.aws_endpoint = self.aws_endpoint = "https://iduq5swp7nui.compat.objectstorage.us-ashburn-1.oraclecloud.com"
                 self.aws_region = self.input.param("aws_region", "us-ashburn-1")
+                self.blob_storage_checksum_behavior = "when_required"
 
             elif self.storage_provider == "netapp":
                 self.aws_access_key = os.getenv("NETAPP_ACCESS_KEY_ID", None)
@@ -458,6 +460,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.aws_session_token = None
                 self.aws_endpoint = self.input.param("aws_endpoint", "http://172.23.105.108:10444")
                 self.aws_region = self.input.param("aws_region", "us-east-1")
+                self.blob_storage_checksum_behavior = "when_required"
 
             elif self.storage_provider == "azure":
                 self.aws_access_key = os.getenv("AZURE_BLOB_ACCESS_KEY_ID", None)
@@ -750,7 +753,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.columnar_s3_obj = S3(self.columnar_aws_access_key, self.columnar_aws_secret_key,
                              session_token=self.columnar_aws_session_token,
                              region=self.columnar_aws_region,
-                             endpoint_url=self.columnar_aws_endpoint)
+                             endpoint_url=self.columnar_aws_endpoint,
+                             checksum_behavior=self.blob_storage_checksum_behavior)
             self.columnar_azure_bucket_created = False
             self.columnar_gs_bucket_created = False
 
@@ -1828,7 +1832,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             blob_storage_list_eventually_consistent=\
                 self.input.param("eventually_consistentcy", False),
             blob_storage_force_path_style=\
-                self.input.param("force_path_style", False))
+                self.input.param("force_path_style", False),
+            blob_storage_checksum_behavior=self.blob_storage_checksum_behavior)
         if not status:
             self.log.error(f"Failed to set aws bucket config to analytics: {status} {str(content)}")
             return False

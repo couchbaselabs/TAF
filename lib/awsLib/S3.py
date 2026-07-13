@@ -2,6 +2,7 @@ import time
 from random import randint
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from boto3.s3.transfer import TransferConfig
 import argparse
@@ -11,13 +12,23 @@ import json
 class AWSBase(object):
 
     def __init__(self, access_key, secret_key, session_token=None,
-                 endpoint_url=None):
+                 endpoint_url=None, checksum_behavior=None):
         import logging
         logging.basicConfig()
         logging.getLogger('boto3').setLevel(logging.ERROR)
         logging.getLogger('botocore').setLevel(logging.ERROR)
         self.logger = logging.getLogger("AWS_Util")
         self.endpoint_url = endpoint_url
+        self.checksum_behavior = checksum_behavior
+        self.client_config = None
+        if self.checksum_behavior:
+            # Some S3-compatible storage providers (e.g. OCI, Netapp) do not
+            # support the checksum/chunked-encoding behavior that newer
+            # versions of botocore enable by default, so it needs to be
+            # relaxed to "when_required".
+            self.client_config = Config(
+                request_checksum_calculation=self.checksum_behavior,
+                response_checksum_validation=self.checksum_behavior)
         self.create_session(access_key, secret_key, session_token)
 
     def create_session(self, access_key, secret_key, session_token):
@@ -54,11 +65,14 @@ class AWSBase(object):
         """
         try:
             if region is None:
-                return self.aws_session.client(service_name, endpoint_url=self.endpoint_url)
+                return self.aws_session.client(
+                    service_name, endpoint_url=self.endpoint_url,
+                    config=self.client_config)
             else:
                 return self.aws_session.client(
                     service_name, region_name=region,
-                    endpoint_url=self.endpoint_url)
+                    endpoint_url=self.endpoint_url,
+                    config=self.client_config)
         except ClientError as e:
             self.logger.error(e)
 
@@ -69,9 +83,14 @@ class AWSBase(object):
         """
         try:
             if region is None:
-                return self.aws_session.resource(resource_name, endpoint_url=self.endpoint_url)
+                return self.aws_session.resource(
+                    resource_name, endpoint_url=self.endpoint_url,
+                    config=self.client_config)
             else:
-                return self.aws_session.resource(resource_name, region_name=region, endpoint_url=self.endpoint_url)
+                return self.aws_session.resource(
+                    resource_name, region_name=region,
+                    endpoint_url=self.endpoint_url,
+                    config=self.client_config)
         except Exception as e:
             self.logger.error(e)
 
@@ -89,8 +108,9 @@ class AWSBase(object):
 class S3(AWSBase):
 
     def __init__(self, access_key, secret_key, session_token=None,
-                 region=None, endpoint_url=None):
-        super(S3, self).__init__(access_key, secret_key, session_token, endpoint_url)
+                 region=None, endpoint_url=None, checksum_behavior=None):
+        super(S3, self).__init__(access_key, secret_key, session_token,
+                                  endpoint_url, checksum_behavior)
         self.s3_client = self.create_service_client(
             service_name="s3", region=region)
         self.s3_resource = self.create_service_resource(resource_name="s3", region=region)

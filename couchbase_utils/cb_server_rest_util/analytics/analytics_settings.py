@@ -56,7 +56,8 @@ class AnalyticsSettingsAPI(CBRestConnection):
             blob_storage_prefix=None, blob_storage_bucket=None,
             blob_storage_scheme=None, profile=None,
             endpoint_url=None, blob_storage_list_eventually_consistent=False,
-            blob_storage_force_path_style=False):
+            blob_storage_force_path_style=False,
+            blob_storage_checksum_behavior=None):
         """
         POST /settings/analytics
         https://docs.couchbase.com/server/current/analytics/rest-settings.html
@@ -87,6 +88,9 @@ class AnalyticsSettingsAPI(CBRestConnection):
             params["blobStorageListEventuallyConsistent"] = "true"
         if blob_storage_force_path_style:
             params["blobStoragePathStyleAddressing"] = "true"
+        if blob_storage_checksum_behavior:
+            params["blobStorageChecksumBehavior"] = \
+                blob_storage_checksum_behavior
         self.log.info(f"Updating analytics settings with params: {params}")
         status, content, _ = self.request(api, self.POST, params=params)
         return status, content

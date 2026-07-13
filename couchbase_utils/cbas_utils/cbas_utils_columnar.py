@@ -1897,7 +1897,7 @@ class ExternalLink_Util(RemoteLink_Util):
     def create_external_link_obj(
             self, cluster, accessKeyId=None, secretAccessKey=None, sessionToken=None, regions=[],
             serviceEndpoint=None, link_type="s3", no_of_objs=1, name_length=30,
-            fixed_length=False, link_perm=False):
+            fixed_length=False, link_perm=False, storage_provider=None):
         """
         Generates External Link objects.
         """
@@ -1906,15 +1906,22 @@ class ExternalLink_Util(RemoteLink_Util):
         while count < no_of_objs:
 
             if link_type.lower() == "s3":
+                link_properties = {"type": "s3", "accessKeyId": accessKeyId,
+                                    "secretAccessKey": secretAccessKey,
+                                    "sessionToken": sessionToken,
+                                    "region": random.choice(regions),
+                                    "serviceEndpoint": serviceEndpoint}
+                if storage_provider == "oci":
+                    link_properties["checksumBehavior"] = "when_required"
+                    link_properties["pathStyleAddressing"] = True
+                elif storage_provider == "netapp":
+                    link_properties["checksumBehavior"] = "when_required"
+                    link_properties["pathStyleAddressing"] = True
                 link = External_Link(
                     name=self.generate_name(
                         name_cardinality=1, max_length=name_length,
                         fixed_length=fixed_length),
-                    properties={"type": "s3", "accessKeyId": accessKeyId,
-                                "secretAccessKey": secretAccessKey,
-                                "sessionToken": sessionToken,
-                                "region": random.choice(regions),
-                                "serviceEndpoint": serviceEndpoint})
+                    properties=link_properties)
             elif link_type.lower() == "azureblob":
                 if not link_perm:
                     link = External_Link(
