@@ -6,6 +6,30 @@ from upgrade.upgrade_base import UpgradeBase
 
 class SecurityUpgradeTests(UpgradeBase):
 
+    # Roles that implied UI access pre-8.1 (totoro). On upgrade, ns_server
+    # backfills 'ui_access' onto any existing local user holding at least one
+    # of these, since each of them now explicitly denies UI ({[ui], none}) in
+    # 8.1+ and previously didn't need a separate grant.
+    # Ref: ns_server menelaus_old_roles:pre_totoro_ui_roles/0
+    # and menelaus_users:maybe_add_ui_access_role/1
+    PRE_TOTORO_UI_ROLES = {
+        "ro_admin", "security_admin", "ro_security_admin", "user_admin_local",
+        "user_admin_external", "cluster_admin", "eventing_admin",
+        "backup_admin", "bucket_admin", "views_admin", "replication_admin",
+        "fts_admin", "fts_searcher", "query_select", "query_update",
+        "query_insert", "query_delete", "query_manage_index",
+        "query_list_index", "query_system_catalog", "query_external_access",
+        "query_manage_global_functions", "query_execute_global_functions",
+        "query_manage_functions", "query_execute_functions",
+        "query_manage_global_external_functions",
+        "query_execute_global_external_functions",
+        "query_manage_external_functions", "query_execute_external_functions",
+        "query_manage_sequences", "query_use_sequences",
+        "query_manage_system_catalog", "analytics_manager",
+        "analytics_reader", "analytics_select", "analytics_admin",
+        "eventing_manage_functions",
+    }
+
     def setUp(self):
         super(SecurityUpgradeTests, self).setUp()
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
@@ -75,7 +99,8 @@ class SecurityUpgradeTests(UpgradeBase):
         self.users[user]['deleted'] = True
 
     def _validate_rbac(self):
-        resp = self.rest.retrieve_user_roles()
+        status, resp = self.rbac_util.security_rest.list_current_users_and_roles()
+        self.assertTrue(status, msg="Failed to fetch user roles: {}".format(resp))
 
         # Validating if all users are created/updated/deleted properly
         for user in self.users:
@@ -120,7 +145,7 @@ class SecurityUpgradeTests(UpgradeBase):
                 continue
             self.log.info("Validating user permissions for user {} and role {}".format(user, self.users[user]['roles']))
             if upgrade_complete:
-                if "ro_admin" in self.users[user]['roles'] and "ro_security_admin" in self.users[user]['roles'] and len(self.users[user]['roles']) == 2:
+                if "ro_admin" in self.users[user]['roles'] and "ro_security_admin" in self.users[user]['roles'] and "ui_access" in self.users[user]['roles'] and len(self.users[user]['roles']) == 3:
                     resp = self._check_permissions_for_user(user)
                     if not resp['cluster.admin.security!read'] or not resp['cluster.admin.users!read'] or resp['cluster.admin.users!all'] or resp['cluster.admin.security!all']:
                         self.fail("Permission incorrect for read only admin and security read only admin after upgrade. Error: {}".format(resp))
@@ -198,6 +223,12 @@ class SecurityUpgradeTests(UpgradeBase):
                 self.log.info("Selected node for upgrade: {}".format(node_to_upgrade.ip))
 
                 ### Based on the type of upgrade, the upgrade function is called ###
+                # online_swap ejects node_to_upgrade and swaps in whatever
+                # node is currently self.spare_node -- capture that node
+                # before the call, since it's the only node we're sure stays
+                # in the cluster (node_to_upgrade may have been the master).
+                pre_swap_spare_node = self.spare_node \
+                    if self.upgrade_type == "online_swap" else None
                 if self.upgrade_type in ["failover_delta_recovery",
                                             "failover_full_recovery"]:
                     if "kv" not in node_to_upgrade.services.lower():
@@ -206,7 +237,7 @@ class SecurityUpgradeTests(UpgradeBase):
                     else:
                         self.upgrade_function[self.upgrade_type](node_to_upgrade)
                 elif self.upgrade_type == "full_offline":
-                    self.upgrade_function[self.upgrade_type](self.cluster.nodes_in_cluster, self.upgrade_version)
+                    self.upgrade_function[self.upgrade_type](self.cluster.nodes_in_cluster)
                 else:
                     self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                             self.upgrade_version)
@@ -218,6 +249,21 @@ class SecurityUpgradeTests(UpgradeBase):
                     self.fail("Test failed during upgrade")
 
                 self.log.info("Upgrade of node {0} : {1} complete".format(itr, node_to_upgrade.ip))
+
+                # upgrade_base.py's online_swap() doesn't track master rotation
+                # itself, so if node_to_upgrade was the master, self.cluster.master
+                # is left pointing at an ejected (and therefore config-reset) node.
+                # Refresh it from pre_swap_spare_node, which we know is still in
+                # the cluster, rather than relying on a possibly-stale self.cluster.master.
+                if pre_swap_spare_node is not None:
+                    self.cluster_util.find_orchestrator(self.cluster,
+                                                        node=pre_swap_spare_node)
+
+                # self.rbac_util was bound to the original master in setUp();
+                # swap-style upgrades may eject that node and rotate the
+                # master, so rebind it to avoid RBAC REST calls hitting an
+                # ejected (and therefore config-reset) node.
+                self.rbac_util = RbacUtils(self.cluster.master)
 
                 ### Fetching the next node to upgrade ##
                 node_to_upgrade = self.fetch_node_to_upgrade()
@@ -243,6 +289,12 @@ class SecurityUpgradeTests(UpgradeBase):
         # Update all ro_admin users to have ro_security_admin role
         # Update all security_admin_local roles to security_admin and user_admin_local roles
         for user in self.users:
+            if self.users[user].get('deleted'):
+                continue
+            user_roles = self.users[user]['roles']
+            if any(role.split("[")[0] in self.PRE_TOTORO_UI_ROLES
+                   for role in user_roles):
+                user_roles.append("ui_access")
             if "ro_admin" in self.users[user]['roles']:
                 self.users[user]['roles'].append("ro_security_admin")
             if "security_admin_local" in self.users[user]['roles']:
@@ -264,6 +316,8 @@ class SecurityUpgradeTests(UpgradeBase):
         # Create a user with ro_security_admin role and validate permissions
         self.log.info("Creating user: ro_security_admin with ro_security_admin role")
         self.rbac_util._create_user_and_grant_role("ro_security_admin", "ro_security_admin")
+        self.users["ro_security_admin"] = {'name': 'ro_security_admin', 'password': 'password',
+                                           'roles': ['ro_security_admin']}
         self._validate_rbac()
         self._validate_ro_admin_permissions(upgrade_complete=True)
 
