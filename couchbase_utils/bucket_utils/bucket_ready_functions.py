@@ -2573,9 +2573,9 @@ class BucketUtils(ScopeUtils):
                        .format(bucket, cluster.master))
         bucket_rest = BucketRestApi(cluster.master)
         if self.bucket_exists(cluster, bucket):
-            status, _ = bucket_rest.delete_bucket(bucket.name)
+            status, content = bucket_rest.delete_bucket(bucket.name)
             if not status:
-                self.log.critical("Delete bucket failed")
+                self.log.critical(f"Delete bucket failed, Content = {content}")
             else:
                 # Pop bucket object from cluster.buckets
                 for index, t_bucket in enumerate(cluster.buckets):
@@ -2686,7 +2686,6 @@ class BucketUtils(ScopeUtils):
             vbuckets=None, weight=None, width=None,
             durability_impossible_fallback=None,
             warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
-            fusion_log_store_uri=None,
             enable_encryption_at_rest=False,
             encryption_at_rest_key_id=None,
             encryption_at_rest_dek_rotation_interval=None,
@@ -2737,9 +2736,6 @@ class BucketUtils(ScopeUtils):
              Bucket.weight: weight,
              Bucket.durabilityImpossibleFallback: durability_impossible_fallback,
              Bucket.warmupBehavior: warmup_behavior})
-
-        if fusion_log_store_uri is not None:
-            bucket_obj.fusionLogstoreURI = fusion_log_store_uri
 
         if throttle_enabled is not None:
             bucket_obj.throttleEnabled = throttle_enabled
@@ -3139,8 +3135,6 @@ class BucketUtils(ScopeUtils):
                     b_obj.numVBuckets = bucket_spec[Bucket.numVBuckets]
                 if Bucket.warmupBehavior in bucket_spec:
                     b_obj.warmupBehavior = bucket_spec[Bucket.warmupBehavior]
-                if Bucket.fusionLogstoreURI in bucket_spec:
-                    b_obj.fusionLogstoreURI = bucket_spec[Bucket.fusionLogstoreURI]
                 task = self.async_create_database(cluster, b_obj,
                                                   timeout=timeout,
                                                   dataplane_id=dataplane_id)
@@ -3466,7 +3460,6 @@ class BucketUtils(ScopeUtils):
             history_retention_bytes=0,
             history_retention_seconds=0,
             warmup_behavior=Bucket.WarmupBehavior.BACKGROUND,
-            fusion_log_store_uri=None,
             enable_encryption_at_rest=False,
             encryption_at_rest_key_id=None,
             encryption_at_rest_dek_rotation_interval=None,
@@ -3517,8 +3510,7 @@ class BucketUtils(ScopeUtils):
                         Bucket.historyRetentionCollectionDefault: history_retention_collection_default,
                         Bucket.historyRetentionSeconds: history_retention_seconds,
                         Bucket.historyRetentionBytes: history_retention_bytes,
-                        Bucket.warmupBehavior: warmup_behavior,
-                        Bucket.fusionLogstoreURI: fusion_log_store_uri})
+                        Bucket.warmupBehavior: warmup_behavior})
 
                     if vbuckets is not None and key == Bucket.StorageBackend.magma:
                         bucket.numVBuckets = vbuckets
@@ -5567,9 +5559,6 @@ class BucketUtils(ScopeUtils):
 
             if Bucket.warmupBehavior in parsed:
                 bucket.warmupBehavior = parsed[Bucket.warmupBehavior]
-
-            if Bucket.fusionLogstoreURI in parsed:
-                bucket.fusionLogstoreURI = parsed[Bucket.fusionLogstoreURI]
 
             bucket.bucketType = parsed[Bucket.bucketType]
             if Bucket.maxTTL in parsed:

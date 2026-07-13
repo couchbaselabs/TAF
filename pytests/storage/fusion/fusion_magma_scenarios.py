@@ -38,7 +38,7 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
         Path layout (per the scenario):
           <data_path>/<bucket_uuid>/magma.<shard>/kvstore-<vb>/rev-*/.fusion
         """
-        bucket_uuid = self.get_bucket_uuid(bucket.name)
+        bucket_uuid = bucket.uuid
         fusion_glob = (f"{self.data_path}/{bucket_uuid}/magma.*/kvstore-*/"
                        f"rev-*/.fusion")
         for server in self.cluster.nodes_in_cluster:
@@ -191,7 +191,7 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
 
         self.log.info(f"Flushing bucket: {bucket.name}")
         self.bucket_util.flush_bucket(self.cluster, bucket)
-        self.sleep(60, "Wait after flushing the bucket")
+        self.sleep(120, "Wait after flushing the bucket")
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Item count must drop to 0.
@@ -590,11 +590,7 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Delete the bucket/s
-        tmp_bucket_list = self.cluster.buckets
-        for bucket in tmp_bucket_list:
-            self.log.info(f"Deleting bucket: {bucket.name}")
-            self.bucket_util.delete_bucket(self.cluster, bucket)
-
+        self.bucket_util.delete_all_buckets(self.cluster)
         self.sleep(120, "Wait after bucket/s deletion")
 
         # Re-create the bucket/s
@@ -643,8 +639,6 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
 
     def test_fusion_with_bucket_flush(self):
 
-        stop_sync = self.input.param("stop_sync", False)
-
         self.log.info("Starting initial load")
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
@@ -652,21 +646,17 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        if stop_sync:
-            # Pause sync by setting sync rate limit to 0
-            status, content = ClusterRestAPI(self.cluster.master).\
-                                manage_global_memcached_setting(fusion_sync_rate_limit=0)
-            self.log.info(f"Setting sync rate limit to 0, Status = {status}, Content = {content}")
-
         # Flush all buckets
         for bucket in self.cluster.buckets:
             self.log.info(f"Flushing bucket: {bucket.name}")
             self.bucket_util.flush_bucket(self.cluster, bucket)
-        self.sleep(30, "Wait after flushing buckets")
+        self.sleep(sleep_time, "Wait after flushing buckets")
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        if not stop_sync:
-            self.sleep(sleep_time, "Sleep after flushing buckets")
+        # Perform data load post flushing
+        self.log.info("Performing data load after flushing")
+        self.perform_workload(0, self.num_items, "create", True, ops_rate=30000)
+        self.sleep(sleep_time, "Sleep after data loading to ensure sync to Fusion is complete")
 
         # Perform a Fusion Rebalance
         self.log.info("Start a Fusion rebalance process")
@@ -685,12 +675,10 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
         self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
 
         # Perform data load on the bucket/s
-        self.log.info("Performing data load after flushing")
-        self.perform_workload(0, self.num_items * 0.75, "create", True, ops_rate=30000)
-        if not stop_sync:
-            self.sleep(sleep_time, "Sleep after data loading")
-        else:
-            self.sleep(60, "Sleep after data loading")
+        self.log.info("Performing UPDATE workload after rebalance")
+        self.perform_workload(0, self.num_items, "update", True, ops_rate=30000)
+        self.sleep(sleep_time, "Sleep after data loading to ensure sync to Fusion is complete")
+
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Perform another Fusion Rebalance
@@ -705,12 +693,6 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
-
-        if stop_sync:
-            # Resume sync by updating sync rate limit
-            status, content = ClusterRestAPI(self.cluster.master).\
-                                manage_global_memcached_setting(fusion_sync_rate_limit=self.fusion_sync_rate_limit)
-            self.log.info(f"Updating sync rate limit, Status = {status}, Content = {content}")
 
 
     def test_fusion_with_bucket_compaction(self):

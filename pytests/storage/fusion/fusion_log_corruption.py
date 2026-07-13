@@ -96,7 +96,8 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=1,
                                               rebalance_sleep_time=300,
-                                              skip_file_linking=self.skip_file_linking)
+                                              skip_file_linking=self.skip_file_linking,
+                                              expect_rebalance_failure=True)
 
         corrupt_th.join()
 
@@ -242,7 +243,7 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
 
             for kvstore in random_kvstores:
                 if include_manifest:
-                    random_log_file_list = [self.kvstore_log_dict[bucket.uuid][kvstore[0]]]
+                    random_log_file_list = [self.kvstore_log_dict[bucket.uuid][kvstore][0]]
                     random_log_file_list += random.sample(self.kvstore_log_dict[bucket.uuid][kvstore][1:], min(num_log_files-1, len(self.kvstore_log_dict[bucket.uuid][kvstore])))
                 else:
                     random_log_file_list = random.sample(self.kvstore_log_dict[bucket.uuid][kvstore][1:], min(num_log_files, len(self.kvstore_log_dict[bucket.uuid][kvstore])))

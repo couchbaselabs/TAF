@@ -525,6 +525,7 @@ class FusionBackupRestore(MagmaBaseTest, FusionBase):
         self.log.info(f"manage_fusion_settings status={status}, content={content}")
         self.assertTrue(status,
                         f"Failed to set fresh log store URI on destination: {content}")
+        self.fusion_log_store_uri = fresh_uri
 
     def wait_for_guest_volume_api(self, timeout=900, interval=10):
         """The /fusion/activeGuestVolumes API fails until every memcached

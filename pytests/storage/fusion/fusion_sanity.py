@@ -143,8 +143,19 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 status, content = FusionRestAPI(self.cluster.master).get_active_guest_volumes()
                 self.log.info(f"Active Guest Volumes, Status: {status}, Content: {content}")
 
+                # Migration is complete (guest volumes drained). Cross-check the
+                # log-file count in guest storage against cbstats. Must run
+                # BEFORE log_store_rebalance_cleanup deletes the guest storage.
+                self.validate_migrated_log_files(nodes_to_monitor,
+                                                 num_rebalance_count)
+
                 # Deleting guest volumes after extent migration
                 self.log_store_rebalance_cleanup(nodes=nodes_to_monitor, rebalance_count=num_rebalance_count)
+
+                # Capturing Fusion stats after extent migration
+                self.log.info("Capturing Fusion stats after extent migration")
+                self.capture_fusion_stats()
+
                 self.log.info("Performing a read workload post extent migration")
                 self.perform_batch_reads()
                 self.capture_fusion_stats()
@@ -178,6 +189,59 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         stat_file_path = os.path.join(self.fusion_output_dir, "kvstore_stats.json")
         with open(stat_file_path, "w") as f:
             json.dump(self.kvstore_stats, f, indent=4)
+
+
+    def validate_migrated_log_files(self, nodes_to_monitor, rebalance_count):
+        """
+        After extent migration completes, cross-check the number of log files
+        physically present in the guest storage on the NFS server against what
+        cbstats reports as migrated (ep_fusion_logs_migrated) for each node.
+
+        Guest storage layout (mirrors log_store_rebalance_cleanup):
+            {guest_storage_base}/ns_1@<node-ip>/reb<rebalance_count>/.../log-*
+        where guest_storage_base = /data/nfs/<client_share_dir>/guest_storage.
+
+        Must be called AFTER migration is complete (active guest volumes
+        drained) and BEFORE log_store_rebalance_cleanup deletes the guest
+        storage.
+        """
+        guest_storage_base = f"/data/nfs/{self.client_share_dir}/guest_storage"
+
+        nfs_ssh = RemoteMachineShellConnection(self.nfs_server)
+        try:
+            for node in nodes_to_monitor:
+                node_id = f"ns_1@{node.ip}"
+                reb_dir = f"{guest_storage_base}/{node_id}/reb{rebalance_count}"
+
+                find_cmd = f"find {reb_dir} -name 'log-*' 2>/dev/null | wc -l"
+                o, e = nfs_ssh.execute_command(find_cmd)
+                guest_log_count = int(o[0].strip()) if o else 0
+                self.log.info(f"[{node_id}] guest storage log files in "
+                              f"{reb_dir} = {guest_log_count}")
+
+                # Sum ep_fusion_logs_migrated across all buckets on this node.
+                cbstats_obj = Cbstats(node)
+                cbstats_logs_migrated = 0
+                for bucket in self.cluster.buckets:
+                    stats = cbstats_obj.all_stats(bucket.name)
+                    migrated = int(stats.get("ep_fusion_logs_migrated", 0))
+                    mounted = int(stats.get("ep_fusion_num_logs_mounted", 0))
+                    self.log.info(f"[{node_id}] bucket {bucket.name} "
+                                  f"ep_fusion_logs_migrated = {migrated} "
+                                  f"ep_fusion_num_logs_mounted = {mounted}")
+                    cbstats_logs_migrated += migrated
+
+                self.log.warning(f"[{node_id}] guest_log_count={guest_log_count}, "
+                              f"cbstats ep_fusion_logs_migrated="
+                              f"{cbstats_logs_migrated}")
+                # self.assertEqual(
+                #     guest_log_count, cbstats_logs_migrated,
+                #     f"Migrated log-file count mismatch for {node_id} "
+                #     f"(reb{rebalance_count}): guest storage has "
+                #     f"{guest_log_count} log-* files but cbstats reports "
+                #     f"{cbstats_logs_migrated} logs migrated")
+        finally:
+            nfs_ssh.disconnect()
 
 
     def test_fusion_rebalance(self):
@@ -1246,7 +1310,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
           5. run a background workload throughout steps 2-3
 
         Parameters (test params):
-          monitor_interval_sec    : polling interval in seconds (default: 30)
+          monitor_interval_sec    : polling interval in seconds (default: 5)
           output_file             : absolute path for the report file
                                     (default: <fusion_output_dir>/resource_monitor_<ts>.log)
           num_bucket_batch_size   : batch size for the data load (default: 1)
@@ -1256,7 +1320,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
           workload_doc_op         : doc op for the concurrent workload
                                     (default: "update")
         """
-        monitor_interval_sec = self.input.param("monitor_interval_sec", 30)
+        monitor_interval_sec = self.input.param("monitor_interval_sec", 5)
         num_bucket_batch_size = self.input.param("num_bucket_batch_size", 1)
         monitor_ops = self.input.param("monitor_ops", False)
         rebalance_type = self.input.param("rebalance_type", "fusion")

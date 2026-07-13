@@ -35,7 +35,7 @@ class FusionAcceleratorCLI(MagmaBaseTest, FusionBase):
             min_size_gb = self.min_storage_size / (1024 * 1024 * 1024)
             
             # Construct guest_storage path on NFS server
-            guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
+            guest_storage_base = f"/data/nfs/{self.client_share_dir}/guest_storage"
             
             # List all node directories in guest_storage
             list_nodes_cmd = f"ls -1 {guest_storage_base} 2>/dev/null"

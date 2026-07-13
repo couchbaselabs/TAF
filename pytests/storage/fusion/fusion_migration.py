@@ -68,7 +68,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
     def toggle_guest_volume_permissions(self, interval, nodes_to_monitor, rebalance_count):
         """Toggle guest volume permissions between read-only and no-access"""
         toggle_count = 0
-        guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
+        guest_storage_base = f"/data/nfs/{self.client_share_dir}/guest_storage"
 
         while not self.rate_limit_toggle_stop:
             allow_read = toggle_count % 2 == 0
@@ -810,7 +810,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
             self.rate_limit_toggle_stop = True
             self.sleep(5)
 
-            guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
+            guest_storage_base = f"/data/nfs/{self.client_share_dir}/guest_storage"
             ssh = RemoteMachineShellConnection(self.nfs_server)
             for node in nodes_to_monitor:
                 node_id = "ns_1@{0}".format(node.ip)
@@ -1034,7 +1034,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.log.info(f"Deleting {num_volumes_to_delete} guest volumes from NFS")
 
-        guest_storage_base = os.path.join(os.path.dirname(self.nfs_server_path), "guest_storage")
+        guest_storage_base = f"/data/nfs/{self.client_share_dir}/guest_storage"
 
         ssh = RemoteMachineShellConnection(self.nfs_server)
         for node in nodes_to_monitor:

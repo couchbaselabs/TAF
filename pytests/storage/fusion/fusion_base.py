@@ -675,7 +675,8 @@ class FusionBase(BaseTestCase):
                       wait_for_rebalance_to_complete=True, force_sync_during_sleep=False, stop_before_rebalance=False,
                       min_storage_size=None, skip_add_nodes=False, manifest_parts = 20,
                       add_nodes=[], remove_nodes=[], log_store="nfs",
-                      guest_storage_dest_path=None, log_store_uri=None):
+                      guest_storage_dest_path=None, log_store_uri=None,
+                      expect_rebalance_failure=False):
 
         # Populate spare nodes list
         self.spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
@@ -907,12 +908,28 @@ class FusionBase(BaseTestCase):
                 self.log.error(f"Fusion Rebalance failed: {ex}")
                 fusion_rebalance_result = False
 
-        # Parse Fusion error logs to look for any failures/issues
-        # Exclude known patterns like "Temporary failure in name resolution"
+        # Parse Fusion error logs to look for any failures/issues.
+        # Exclude known benign noise: transient DNS blips and pip/venv bootstrap
+        # network retries (pip prints WARNING/ConnectTimeoutError lines while
+        # retrying, then succeeds via cache). A terminal pip failure (e.g.
+        # "ERROR: Could not install packages" / "No matching distribution")
+        # does NOT match these and is still flagged.
         self.log.info("Parsing Fusion Error logs to look for issues/failures")
+        ignore_patterns = [
+            "Temporary failure in name resolution",
+            "unable to resolve host",
+            "warning",
+            # pip / venv bootstrap network retries (later succeed via cache)
+            r"Retrying \(Retry",
+            "ConnectTimeoutError",
+            "ReadTimeoutError",
+            "Connection to pypi.org timed out",
+            "connection broken by",
+        ]
+        ignore_regex = "|".join(ignore_patterns)
         grep_cmd = (
             f"grep -iE 'error|failed|exception|traceback|fatal|panic' {self.fusion_rebalance_error} "
-            f"| grep -viE 'Temporary failure in name resolution|unable to resolve host|warning'"
+            f"| grep -viE '{ignore_regex}'"
         )
         result = subprocess.run(grep_cmd, shell=True, executable="/bin/bash", capture_output=True, text=True)
         output = result.stdout.strip()
@@ -945,10 +962,28 @@ class FusionBase(BaseTestCase):
         self.log.info(f"Copy CMD: {copy_cmd}")
         subprocess.run(copy_cmd, shell=True, executable="/bin/bash")
 
-        if not fusion_rebalance_setup:
-            self.fail("Error during Fusion Rebalance setup")
-        if not fusion_rebalance_result and not stop_before_rebalance:
-            self.fail("Error during Fusion Rebalance")
+        rebalance_failed_or_errored = (not fusion_rebalance_setup) or \
+            (not fusion_rebalance_result and not stop_before_rebalance)
+
+        if expect_rebalance_failure:
+            # The caller intentionally induced a failure (e.g. log corruption).
+            # A failure / ERROR logs ARE the expected outcome, so they pass;
+            # but a clean rebalance means the corruption was NOT caught, which
+            # is itself a bug -> fail.
+            if rebalance_failed_or_errored:
+                self.log.info("Fusion rebalance failed / reported ERROR logs "
+                              "as expected (expect_rebalance_failure=True) -- "
+                              "not failing the test")
+            else:
+                self.fail("Expected the Fusion rebalance to fail/error (e.g. "
+                          "due to intentional log corruption) but it completed "
+                          "cleanly with no ERROR logs -- the failure was not "
+                          "caught")
+        else:
+            if not fusion_rebalance_setup:
+                self.fail("Error during Fusion Rebalance setup")
+            if not fusion_rebalance_result and not stop_before_rebalance:
+                self.fail("Error during Fusion Rebalance")
 
         # Updating nodes_in_cluster after rebalance
         self.cluster.nodes_in_cluster = list()
