@@ -164,6 +164,35 @@ def open_local_user_session(portal, admin_client, user_id, temp_password,
     if not status:
         return None, "login as new user failed: %s" % content
     return user_client, None
+
+def safe_delete_user(client, user_id):
+    """
+    Best-effort DELETE of a user; never raises (for setUp/tearDown cleanup).
+    Returns True if the delete call succeeded, False otherwise.
+    """
+    try:
+        status, _, _ = client.delete_user(user_id)
+        return status
+    except Exception:
+        return False
+# ==================== Raw Request Helpers ====================
+def get_raw(client, path, query=None):
+    """
+    Issue a GET against an arbitrary UCP path (optionally with a raw query
+    string), reusing the client's session cookie. For exercising endpoints
+    with parameters the typed client methods do not model (e.g. an unknown
+    query parameter).
+    Args:
+        client: UnifiedControlPlaneClient instance (authenticated)
+        path:   path below baseUrl, e.g. "api/v1/users"
+        query:  raw query string without the leading '?', or None
+    Returns:
+        Tuple (status, content, header) from the request.
+    """
+    api = client.baseUrl + path
+    if query:
+        api += '?' + query
+    return client._http_request(api, 'GET')
 # ==================== User Helper Methods ====================
 def get_user_with_etag(client, user_id):
     """
