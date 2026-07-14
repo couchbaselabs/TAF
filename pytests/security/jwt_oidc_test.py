@@ -442,6 +442,7 @@ class JWTOIDCTest(JWTOIDCBase):
                     "enabled": True,
                     "issuers": [{
                         "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
                         "publicKeySource": "invalid_source",
                     }]
                 },
@@ -452,6 +453,7 @@ class JWTOIDCTest(JWTOIDCBase):
                     "enabled": True,
                     "issuers": [{
                         "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
                         "publicKeySource": "jwks_uri",
                         "audiences": [],
                         "oidcSettings": {
@@ -467,6 +469,7 @@ class JWTOIDCTest(JWTOIDCBase):
                     "enabled": True,
                     "issuers": [{
                         "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
                         "publicKeySource": "jwks_uri",
                         "oidcSettings": {
                             "clientId": self.keycloak_client_id,
@@ -481,6 +484,7 @@ class JWTOIDCTest(JWTOIDCBase):
                     "enabled": True,
                     "issuers": [{
                         "name": self.issuer_url,
+                        "displayName": self.keycloak_realm,
                         "publicKeySource": "jwks_uri",
                         "oidcSettings": {
                             "clientId": self.keycloak_client_id,

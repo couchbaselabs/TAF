@@ -1698,6 +1698,7 @@ class JWTUtils:
         scopes=None,
         use_https=True,
         expiry_leeway_s=None,
+        display_name=None,
     ):
         """
         Build JWT configuration with OIDC settings for Keycloak integration.
@@ -1726,6 +1727,8 @@ class JWTUtils:
             scopes: List of OIDC scopes (default: ["openid", "profile", "email"])
             use_https: Use HTTPS for Keycloak (default: True)
             expiry_leeway_s: Token expiry leeway in seconds (default: None uses server default 15s)
+            display_name: Human-readable name shown in the UI (required by server for OIDC issuers;
+                defaults to keycloak_realm if not provided)
 
         Returns:
             dict: JWT configuration with OIDC settings
@@ -1738,11 +1741,15 @@ class JWTUtils:
         if scopes is None:
             scopes = ["openid", "profile", "email"]
 
+        if display_name is None:
+            display_name = keycloak_realm
+
         # Note: Do NOT set jwksUri when using oidcDiscoveryUri
         # OIDC discovery provides the JWKS URI automatically
         # Disable TLS verification for self-signed certs in test automation
         issuer = {
             "name": issuer_name,
+            "displayName": display_name,
             "signingAlgorithm": algorithm,
             "publicKeySource": "jwks_uri",
             "jwksUriTlsVerifyPeer": tls_verify_peer,

@@ -318,6 +318,7 @@ class JWTOIDCBase(ClusterSetup):
             nonce_validation=overrides.get("nonce_validation", self.nonce_validation),
             use_https=overrides.get("use_https", self.keycloak_use_https),
             expiry_leeway_s=overrides.get("expiry_leeway_s"),
+            display_name=overrides.get("display_name"),
         )
 
     def _enable_oidc_config(self, sleep_seconds=10, **overrides):
