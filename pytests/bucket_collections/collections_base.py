@@ -17,7 +17,13 @@ from BucketLib.bucket import Bucket
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_tools.cbstats import Cbstats
+from couchbase_utils.cloud_provider_utils.aws_provider import AWSProvider
+from couchbase_utils.cloud_provider_utils.azure_provider import AzureProvider
+from couchbase_utils.cloud_provider_utils.gcp_provider import GCPProvider
+from couchbase_utils.cloud_provider_utils.localstack_provider import LocalstackProvider
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
+from couchbase_utils.security_utils.credential_store_utils import CredentialStoreUtils
+from lib.membase.api.rest_client import RestConnection
 from lib.testconstants import PITR_NFS_SERVER
 from platform_utils.ssh_util.install_util.test_input import TestInputServer
 from sdk_client3 import SDKClient, SDKClientPool
@@ -32,6 +38,41 @@ from couchbase.exceptions import InvalidIndexException, \
 
 
 class CollectionBase(ClusterSetup, FusionBase):
+    # cbbackup_test/cont_bkp_test cloud provider dispatch tables.
+    CLOUD_PROVIDER_CLASSES = {
+        "AWS": AWSProvider,
+        "Azure": AzureProvider,
+        "GCP": GCPProvider,
+        "localstack": LocalstackProvider,
+    }
+    # AWS/Azure/GCP share one pre-provisioned bucket ("test_backup_TAF") and
+    # rely on cleanup_for_bkrs() to prefix-delete a unique subdir per test.
+    # localstack's cleanup_for_bkrs() instead creates/deletes the whole
+    # bucket, so it needs a unique bucket name per test, not a shared one.
+    BACKUP_URL_TEMPLATES = {
+        "AWS": "s3://test_backup_TAF/backups/{uid}",
+        "Azure": "az://test_backup_TAF/backups/{uid}",
+        "GCP": "gs://test_backup_TAF/backups/{uid}",
+        "localstack": "s3://{uid}",
+    }
+    CONT_BKP_URL_TEMPLATES = {
+        "AWS": "s3://test_backup_TAF/cont_bkp/{uid}",
+        "Azure": "az://test_backup_TAF/cont_bkp/{uid}",
+        "GCP": "gs://test_backup_TAF/cont_bkp/{uid}",
+        "localstack": "s3://{uid}",
+    }
+
+    def _create_remote_dir(self, shell, path, description):
+        """mkdir -p + chmod 777 `path` on `shell`; fails the test on error."""
+        _, error = shell.execute_command(f"mkdir -p {path}")
+        if error:
+            self.fail(f"Error creating {description}: {error}")
+        self.log.info(f"Created {description}: {path}")
+        _, error = shell.execute_command(f"chmod 777 {path}")
+        if error:
+            self.fail(f"Error setting permissions on {description}: {error}")
+        self.log.info(f"Set permissions on {description}")
+
     def setUp(self):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
@@ -97,61 +138,81 @@ class CollectionBase(ClusterSetup, FusionBase):
         if self.fusion_test and self.fusion_enable:
             self.configure_fusion()
             self.enable_fusion()
+        
+        shell = RemoteMachineShellConnection(self.cluster.master)
 
-        if self.cont_bkp_test == "NFS":
-                """
-                    NFS setup requirements:
-                    - Server: /data directory exported with appropriate permissions
-                    - Client: Mount NFS export at /mnt/nfs_data
-                    - Validation: Ensure server export and client mount are working
-                    - Cleanup: Unique subdirectory created under mount point and removed after test
-                    Scipts to setup NFS Server : https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
-                """
-                self.nfs_server = TestInputServer()
-                self.nfs_server.ip = self.input.param(
-                    "pitr_nfs_server", PITR_NFS_SERVER)
-                self.nfs_server.ssh_username = self.input.param(
-                    "pitr_nfs_username", "root")
-                self.nfs_server.ssh_password = self.input.param(
-                    "pitr_nfs_password", "couchbase")
+        if self.cbbackup_test == "NFS" or self.cont_bkp_test == "NFS":
+            self.nfs_server = TestInputServer()
+            self.nfs_server.ip = self.input.param(
+                "pitr_nfs_server", PITR_NFS_SERVER)
+            self.nfs_server.ssh_username = self.input.param(
+                "pitr_nfs_username", "root")
+            self.nfs_server.ssh_password = self.input.param(
+                "pitr_nfs_password", "couchbase")
 
-                self.nfs_util = NfsUtil(self.nfs_server)
+            self.nfs_util = NfsUtil(self.nfs_server)
 
-                self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
-                self.nfs_util.validate_nfs_server()
+            self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
+            self.nfs_util.validate_nfs_server()
 
-                for node in self.servers:
-                    self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
-                    try:
-                        self.nfs_util.validate_nfs_client(node)
-                    except Exception as e:
-                        self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
-                        self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
-                        self.nfs_util.validate_nfs_client(node)
+            for node in self.servers:
+                self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
+                try:
+                    self.nfs_util.validate_nfs_client(node)
+                except Exception as e:
+                    self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
+                    self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
+                    self.nfs_util.validate_nfs_client(node)
 
-                shell = RemoteMachineShellConnection(self.cluster.master)
-                # Create continuous backup folder on NFS server
+            if self.cbbackup_test == "NFS":
+                self.backup_archive_dir = f"/mnt/nfs_data/test_{uuid.uuid4()}"
+                self.backup_repo_name = self.input.param("repo_name", f"test_{uuid.uuid4()}")
+                self._create_remote_dir(shell, self.backup_archive_dir,
+                                        "backup archive folder")
+
+            if self.cont_bkp_test == "NFS":
                 self.continuous_backup_location = f"/mnt/nfs_data/test_{uuid.uuid4()}"
-                output, error = shell.execute_command(f"mkdir -p {self.continuous_backup_location}")
-                if error:
-                    self.fail("Error creating continuous backup folder: %s" % error)
-                else:
-                    self.log.info("Created continuous backup folder: %s" % self.continuous_backup_location)
-                    # Set permissions for couchbase user
-                    output, error = shell.execute_command(f"chmod 777 {self.continuous_backup_location}")
-                    if error:
-                        self.fail("Error setting permissions on continuous backup folder: %s" % error)
-                    else:
-                        self.log.info("Set permissions on continuous backup folder")
+                self._create_remote_dir(shell, self.continuous_backup_location,
+                                        "continuous backup folder")
 
-                self.backup_mgr = CbBackupMgr(shell,
-                                              username=self.cluster.master.rest_username,
-                                              password=self.cluster.master.rest_password,
-                                              log=self.log)
-                self.cont_bk_mgr = CbContBk(shell,
-                                            username=self.cluster.master.rest_username,
-                                            password=self.cluster.master.rest_password,
-                                            log=self.log)
+        self.backup_cloud_provider = None
+        if self.cbbackup_test in self.CLOUD_PROVIDER_CLASSES:
+            self.backup_archive_dir = self.BACKUP_URL_TEMPLATES[self.cbbackup_test].format(
+                uid=f"test_{uuid.uuid4()}")
+            self.backup_repo_name = self.input.param("repo_name", f"test_{uuid.uuid4()}")
+            self.backup_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cbbackup_test]()
+
+        if self.backup_cloud_provider:
+            self.backup_cloud_provider.cleanup_for_bkrs(self.backup_archive_dir)
+
+        self.backup_mgr = CbBackupMgr(shell,
+                                      username=self.cluster.master.rest_username,
+                                      password=self.cluster.master.rest_password,
+                                      log=self.log,
+                                      cloud_provider=self.backup_cloud_provider)
+
+        self.contbk_cloud_provider = None
+        if self.cont_bkp_test in self.CLOUD_PROVIDER_CLASSES:
+            self.continuous_backup_location = self.CONT_BKP_URL_TEMPLATES[self.cont_bkp_test].format(
+                uid=f"test_{uuid.uuid4()}")
+            self.contbk_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cont_bkp_test]()
+
+        if self.contbk_cloud_provider:
+            self.contbk_cloud_provider.cleanup_for_bkrs(self.continuous_backup_location)
+            rest = RestConnection(self.cluster.master)
+            self.contbk_cloud_provider.create_credential_store(
+                rest, cred_id="cont_bkp_cred",
+                description="Credential store for continuous backup tests")
+            CredentialStoreUtils().put_service_roles(
+                rest, service_name="backup",
+                roles=["credential_consumer[cont_bkp_cred]"])
+
+        if self.cont_bkp_test:
+            self.cont_bk_mgr = CbContBk(shell,
+                                        username=self.cluster.master.rest_username,
+                                        password=self.cluster.master.rest_password,
+                                        log=self.log,
+                                        cloud_provider=self.contbk_cloud_provider)
 
         try:
             self.collection_setup()
@@ -191,6 +252,62 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.cluster_util.set_file_based_rebalance(
                 cluster_node, enabled=False)
 
+    def _cleanup_backup_location(self, test_mode, cloud_provider, location,
+                                 label, cleanup_repo=False,
+                                 collect_logs_on_failure=False):
+        """
+        Shared NFS/single_node-vs-cloud-provider cleanup for a backup
+        location in tearDown().
+
+        :param test_mode: self.cbbackup_test or self.cont_bkp_test
+        :param cloud_provider: self.backup_cloud_provider or
+                               self.contbk_cloud_provider
+        :param location: folder/archive path being cleaned up
+        :param label: human-readable name for log messages, e.g.
+                     "backup archive" / "continuous backup"
+        :param cleanup_repo: also remove the backup repo dir under
+                             `location` (NFS/single_node only)
+        :param collect_logs_on_failure: collect cbbackupmgr/cbcontbk logs
+                                        if the test failed
+        """
+        is_local = test_mode in ("NFS", "single_node")
+        if not is_local and test_mode not in self.CLOUD_PROVIDER_CLASSES:
+            return
+
+        if self.is_test_failed():
+            self.log.warning(
+                "Test failed, skipping cleanup of %s folder to preserve "
+                "data for investigation: %s" % (label, location))
+            if collect_logs_on_failure and self.get_cbcollect_info:
+                self._collect_backup_logs_on_failure()
+            return
+
+        if is_local:
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            try:
+                self.log.info("Removing %s folder: %s" % (label, location))
+                _, error = shell.execute_command(f"rm -rf {location}",
+                                                 timeout=300)
+                if error:
+                    self.log.warning("Error removing %s folder: %s" % (label, error))
+            except Exception as e:
+                self.log.warning("Exception during cleanup: %s" % str(e))
+
+            if cleanup_repo and self.backup_repo_name:
+                try:
+                    self.log.info("Removing backup repository")
+                    shell.execute_command(
+                        f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}",
+                        timeout=300)
+                except Exception as e:
+                    self.log.warning(f"Exception during cleanup: {e}")
+        elif cloud_provider:
+            try:
+                self.log.info("Cleaning up %s folder: %s" % (label, location))
+                cloud_provider.cleanup_for_bkrs(location)
+            except Exception as e:
+                self.log.warning("Exception during cloud provider cleanup: %s" % str(e))
+
     def tearDown(self):
         if self.range_scan_task is not None:
             self.range_scan_task.stop_task = True
@@ -228,36 +345,15 @@ class CollectionBase(ClusterSetup, FusionBase):
                                         num_writer_threads="default",
                                         num_reader_threads="default",
                                         num_storage_threads="default")
+            
+        self._cleanup_backup_location(
+            self.cbbackup_test, self.backup_cloud_provider,
+            self.backup_archive_dir, "backup archive")
 
-        # Clean up continuous backup folder
-        if self.cont_bkp_test == "NFS":
-
-            if self.is_test_failed():
-                self.log.warning("Test failed, skipping cleanup of continuous backup folder to preserve data for investigation: %s" % self.continuous_backup_location)
-                if self.get_cbcollect_info:
-                    self._collect_backup_logs_on_failure()
-            else:
-                shell = RemoteMachineShellConnection(self.cluster.master)
-                try:
-                    self.log.info("Removing continuous backup folder: %s" % self.continuous_backup_location)
-                    # 300s: large tests leave a lot of backup data, and the
-                    # delete goes through the NFS client, not the server
-                    output, error = shell.execute_command(
-                        f"rm -rf {self.continuous_backup_location}", timeout=300)
-                    if error:
-                        self.log.warning("Error removing continuous backup folder: %s" % error)
-                except Exception as e:
-                    self.log.warning("Exception during cleanup: %s" % str(e))
-
-                # Clean up backup folders
-                try:
-                    if getattr(self, 'backup_repo_name', None):
-                        self.log.info("Removing backup repository")
-                        shell.execute_command(
-                            f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}",
-                            timeout=300)
-                except Exception as e:
-                    self.log.warning(f"Exception during cleanup: {e}")
+        self._cleanup_backup_location(
+            self.cont_bkp_test, self.contbk_cloud_provider,
+            self.continuous_backup_location, "continuous backup",
+            cleanup_repo=True, collect_logs_on_failure=True)
 
         super(CollectionBase, self).tearDown()
 
@@ -273,10 +369,12 @@ class CollectionBase(ClusterSetup, FusionBase):
         collectors = [
             ("cbbackupmgr", self.backup_mgr,
              lambda mgr, tmp: mgr.collect_logs(archive_dir=self.backup_archive_dir,
-                                               output_dir=tmp)),
+                                               output_dir=tmp,
+                                               obj_staging_dir=self.obj_staging_dir_cbbackup)),
             ("cbcontbk", self.cont_bk_mgr,
              lambda mgr, tmp: mgr.collect_logs(location=self.continuous_backup_location,
-                                               temp_dir=tmp)),
+                                               temp_dir=tmp,
+                                               obj_staging_dir=self.obj_staging_dir_cont_bkp)),
         ]
 
         for name, mgr, collect_fn in collectors:

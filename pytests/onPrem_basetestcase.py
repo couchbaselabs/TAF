@@ -189,13 +189,29 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.encryption_at_rest_dek_lifetime = self.input.param(
             "encryption_at_rest_dek_lifetime", CbServer.encryption_at_rest_dek_lifetime_interval)
 
+        # Backup params
+        self.cbbackup_test = self.input.param("cbbackup_test", None) # ["None", "NFS", "AWS", "Azure", "GCP", "localstack"]
+        expected_cbbackup_test_values = [None, "NFS", "AWS", "Azure", "GCP", "localstack"]
+        if str(self.cbbackup_test).lower() == 'none':
+            self.cbbackup_test = None
+        if self.cbbackup_test not in expected_cbbackup_test_values:
+            self.fail(f"Invalid value for cbbackup_test. Expected: {expected_cbbackup_test_values}. Got: {self.cbbackup_test}")
+        if self.cbbackup_test in ["AWS", "Azure", "GCP", "localstack"]:
+            self.obj_staging_dir_cbbackup = self.input.param("obj_staging_dir_cbbackup", "/data/staging_backup")
+        else:
+            self.obj_staging_dir_cbbackup = None
+
         # Continuous backup params
-        self.cont_bkp_test = self.input.param("cont_bkp_test", None) # ["None","single_node","NFS"]
-        expected_cont_bkp_test_values = [None, "single_node", "NFS"]
+        self.cont_bkp_test = self.input.param("cont_bkp_test", None) # ["None","single_node","NFS","AWS", "Azure", "GCP", "localstack"]
+        expected_cont_bkp_test_values = [None, "single_node", "NFS", "AWS", "Azure", "GCP", "localstack"]
         if str(self.cont_bkp_test).lower() == 'none':
             self.cont_bkp_test = None
         if self.cont_bkp_test not in expected_cont_bkp_test_values:
             self.fail(f"Invalid value for cont_bkp_test. Expected: {expected_cont_bkp_test_values}. Got: {self.cont_bkp_test}")
+        if self.cont_bkp_test in ["AWS", "Azure", "GCP", "localstack"]:
+            self.obj_staging_dir_cont_bkp = self.input.param("obj_staging_dir_cont_bkp", "/data/staging_cont_bkp")
+        else:
+            self.obj_staging_dir_cont_bkp = None
         self.retention_test = self.input.param("retention_test", False)
         self.retention_check_mins = self.input.param("retention_check_mins", 5)
         self.retention_period_unsafe = self.input.param("retention_period_unsafe", "5m")
