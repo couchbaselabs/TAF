@@ -278,6 +278,94 @@ class CredentialStoreUtils:
         return payload
 
     @staticmethod
+    def build_azure_payload(
+        account_name,
+        account_key,
+        endpoint,
+        *,
+        description=None,
+        allowed_services=None,
+        expires_at_ms=None,
+    ):
+        """
+        Build an 'azureShared' credential POST/PUT payload.
+
+        Args:
+            account_name: Azure storage account name (non-sensitive)
+            account_key: Azure storage account key (sensitive)
+            endpoint: Azure Blob service endpoint
+            description: Optional free-text description
+            allowed_services: Optional list of service names for guardrails
+            expires_at_ms: Optional int, ms since epoch (must be >= now + 5 minutes)
+
+        Returns:
+            dict suitable for POST /settings/credentials/:id
+        """
+        fields = {
+            "accountName": account_name,
+            "accountKey": account_key,
+            "endpoint": endpoint,
+        }
+
+        payload = {"type": "azureShared", "fields": fields}
+
+        if description:
+            payload["description"] = description
+        if expires_at_ms is not None:
+            payload["expiresAt"] = expires_at_ms
+        if allowed_services is not None:
+            payload["guardrails"] = {"allowedServices": allowed_services}
+
+        return payload
+
+    @staticmethod
+    def build_gcp_service_account_payload(
+        json_credentials,
+        region,
+        *,
+        description=None,
+        allowed_services=None,
+        expires_at_ms=None,
+    ):
+        """
+        Build a 'gcp' credential POST/PUT payload from a GCP service-account key.
+
+        Mirrors:
+            curl -X POST localhost:8091/settings/credentials/<id> \\
+                -u user:pass --json \\
+                "$(jq -Rs '{type:"gcp",fields:{jsonCredentials:.,region:"us"}}' \\
+                file_for_gcp_creds)"
+
+        Args:
+            json_credentials: Raw contents of the GCP service-account key
+                JSON file, as a string (sensitive) — same as `jq -Rs`
+                slurping the key file raw; read the file yourself and pass
+                its full text here.
+            region: GCP region (e.g. 'us')
+            description: Optional free-text description
+            allowed_services: Optional list of service names for guardrails
+            expires_at_ms: Optional int, ms since epoch (must be >= now + 5 minutes)
+
+        Returns:
+            dict suitable for POST /settings/credentials/:id
+        """
+        fields = {
+            "jsonCredentials": json_credentials,
+            "region": region,
+        }
+
+        payload = {"type": "gcp", "fields": fields}
+
+        if description:
+            payload["description"] = description
+        if expires_at_ms is not None:
+            payload["expiresAt"] = expires_at_ms
+        if allowed_services is not None:
+            payload["guardrails"] = {"allowedServices": allowed_services}
+
+        return payload
+
+    @staticmethod
     def expires_at_ms(seconds_from_now):
         """Return an expiresAt value (ms epoch) at least `seconds_from_now` in the future."""
         return int((time.time() + seconds_from_now) * 1000)
