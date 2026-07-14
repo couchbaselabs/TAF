@@ -266,7 +266,8 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
             cluster_host=cluster_host,
             location=self.continuous_backup_location,
             temp_dir="/tmp",
-            timestamp=t_after_backup)
+            timestamp=t_after_backup,
+            obj_staging_dir=self.obj_staging_dir_cont_bkp)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_with_new_docs)
         self.log.info(f"Restore at T_after_backup verified: {count_with_new_docs} docs")
@@ -283,7 +284,8 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
             cluster_host=cluster_host,
             location=self.continuous_backup_location,
             temp_dir="/tmp",
-            timestamp=t_before_add)
+            timestamp=t_before_add,
+            obj_staging_dir=self.obj_staging_dir_cont_bkp)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(original_count)
         self.log.info(f"Restore at T_before_add verified: {original_count} docs (new docs absent)")

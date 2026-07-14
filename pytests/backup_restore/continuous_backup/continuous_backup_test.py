@@ -97,7 +97,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
             location=self.continuous_backup_location,
             temp_dir="/tmp",
             timestamp=timestamp,
-            map_data=map_data
+            map_data=map_data,
+            obj_staging_dir=self.obj_staging_dir_cont_bkp
         )
         self._assert_restore_succeeded(output, error, timestamp)
         self.log.info("Continuous backup restore completed")
@@ -112,7 +113,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
             temp_dir="/tmp",
             timestamp=timestamp,
             include_data=include_data,
-            map_data=map_data
+            map_data=map_data,
+            obj_staging_dir=self.obj_staging_dir_cont_bkp
         )
         self._assert_restore_succeeded(output, error, timestamp)
         self.log.info("Entire bucket restore completed")
@@ -157,7 +159,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for continuous backup to capture the flush")
         self.log.info("Restoring from backup")
-        self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
+                                obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(expected_item_count)
 
@@ -173,7 +176,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
                                                storage=self.bucket_storage)
         self.log.info("Restoring from backup to new bucket")
         self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
-                                map_data=f"{self.bucket.name}={self.restore_bucket_name}")
+                                map_data=f"{self.bucket.name}={self.restore_bucket_name}",
+                                obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(expected_item_count, bucket_name=self.restore_bucket_name)
 
@@ -359,9 +363,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Use spec-derived count — REST item count can lag behind actual committed docs.
         initial_item_count = self._get_total_docs()
         self.log.info("Creating backup repository")
-        self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name,
+                                    obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.log.info("Performing initial backup")
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         # 2. Wait for a backup interval and capture timestamp
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
@@ -396,9 +402,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Use spec-derived count — REST item count can lag behind actual committed docs.
         initial_item_count = self._get_total_docs()
         self.log.info("Creating backup repository")
-        self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name,
+                                    obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.log.info("Performing initial backup")
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
         # 2. Mutate a subset of documents and capture the task
@@ -485,7 +493,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # 1. First incremental backup and timestamp
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.sleep(self.continuous_backup_interval * 60)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
@@ -493,7 +502,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # 2. Second incremental backup and timestamp
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
         # cbcontbk restore uses the newest traditional backup <= timestamp as
         # its base and replays log data past it. With no mutations after this
         # backup the log has nothing newer than the (merged) base, and restore
@@ -535,7 +545,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         for i in range(5):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             if i<4:
-                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                                       obj_staging_dir=self.obj_staging_dir_cbbackup)
             self.sleep(self.continuous_backup_interval * 60)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
@@ -566,7 +577,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         for i in range(7):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             if i<6:
-                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0))
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0),
+                                       obj_staging_dir=self.obj_staging_dir_cbbackup)
             self.sleep(self.continuous_backup_interval * 60)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
@@ -576,7 +588,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=3)
 
         # 3. Merge backups 4-6
-        # When we merged 1-3, backup #1 is now the merged backup representing state 1-3. 
+        # When we merged 1-3, backup #1 is now the merged backup representing state 1-3.
         # The remaining backups (#4, #5, #6) are now shifted in the sequence to #2, #3, #4.
         # So we merge indices 2-4 instead of 4-6
         self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=2, end=4)
@@ -604,7 +616,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         for i in range(5):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             if i<4:
-                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0 or i == 2))
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0 or i == 2),
+                                       obj_staging_dir=self.obj_staging_dir_cbbackup)
             self.sleep(self.continuous_backup_interval * 60)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
@@ -632,7 +645,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         for i in range(4):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             if i<3:
-                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0))
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0),
+                                       obj_staging_dir=self.obj_staging_dir_cbbackup)
             self.sleep(self.continuous_backup_interval * 60)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
@@ -659,7 +673,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         for i in range(4):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             if i<3:
-                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0))
+                self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0),
+                                       obj_staging_dir=self.obj_staging_dir_cbbackup)
             self.sleep(self.continuous_backup_interval * 60)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
@@ -690,18 +705,20 @@ class ContinuousBackupTest(ContinuousBackupBase):
         Tests PITR functionality after removing a specific range of backups.
         """
         item_counts, timestamps = [], []
-        
+
         # Take 5 backups
         for i in range(5):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
-            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0))
+            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name, full_backup=(i == 0),
+                                   obj_staging_dir=self.obj_staging_dir_cbbackup)
             self.sleep(self.continuous_backup_interval * 60)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             item_counts.append(self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name))
             timestamps.append(self.cont_bk_mgr.get_cluster_timestamp())
 
         # Remove backups 2 and 3
-        self.backup_mgr.remove(self.backup_archive_dir, self.backup_repo_name, backup_range="2-3")
+        self.backup_mgr.remove(self.backup_archive_dir, self.backup_repo_name, backup_range="2-3",
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_bucket_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -724,7 +741,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         """
         # Load initial data
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
-        
+
         # Get count before deletions — setUp + this load = 2 * _get_total_docs().
         # REST item count can lag; use the deterministic spec-derived value.
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
@@ -743,7 +760,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         delete_spec["doc_crud"][MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         delete_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 0
         CollectionBase.over_ride_doc_loading_template_params(self, delete_spec)
-        
+
         delete_task = self.bucket_util.run_scenario_from_spec(
             self.task, self.cluster, self.cluster.buckets, delete_spec, mutation_num=1,
             batch_size=self.batch_size, process_concurrency=self.process_concurrency)
@@ -787,9 +804,10 @@ class ContinuousBackupTest(ContinuousBackupBase):
         Attempt a PITR restore while a cbbackupmgr backup operation is actively running.
         """
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.sleep(self.continuous_backup_interval * 60)
-        
+
         ts_valid = self.cont_bk_mgr.get_cluster_timestamp()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         count_valid = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
@@ -811,17 +829,19 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # Execute backup and restore concurrently
         with ThreadPoolExecutor(max_workers=2) as executor:
-            backup_future = executor.submit(self.backup_mgr.backup, self.backup_archive_dir, self.backup_repo_name)
-            
+            backup_future = executor.submit(self.backup_mgr.backup, self.backup_archive_dir, self.backup_repo_name,
+                                            obj_staging_dir=self.obj_staging_dir_cbbackup)
+
             # small sleep to ensure backup has started
-            self.sleep(2) 
-            
+            self.sleep(2)
+
             restore_future = executor.submit(
                 self.cont_bk_mgr.restore, self.backup_archive_dir, self.backup_repo_name,
                 location=self.continuous_backup_location, temp_dir="/tmp",
-                timestamp=ts_valid, map_data=f"{self.bucket.name}={restore_bucket_name}"
+                timestamp=ts_valid, map_data=f"{self.bucket.name}={restore_bucket_name}",
+                obj_staging_dir=self.obj_staging_dir_cont_bkp
             )
-            
+
             # Wait for both to finish
             backup_future.result()
             restore_output, restore_error = restore_future.result()
@@ -850,11 +870,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.cluster.master, self.bucket,
             flush_enabled=Bucket.FlushBucket.ENABLED)
         self.bucket_util.flush_bucket(self.cluster, self.bucket)
-        
+
         # Wait for continuous backup to capture flush
         self.sleep(self.continuous_backup_interval * 60)
         ts_after_flush = self.cont_bk_mgr.get_cluster_timestamp()
-        
+
         # Load some new data
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.sleep(self.continuous_backup_interval * 60)
@@ -895,18 +915,18 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Load data with multiple scopes/collections from spec
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        
+
         # Get total document count across all scopes/collections
         total_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"Total document count before filtering: {total_count}")
-        
+
         # Get scope and collection information from the bucket
         num_scopes = self.spec.get(MetaConstants.NUM_SCOPES_PER_BUCKET, 1)
         num_collections = self.spec.get(MetaConstants.NUM_COLLECTIONS_PER_SCOPE, 1)
         num_items = self.spec.get(MetaConstants.NUM_ITEMS_PER_COLLECTION, 0)
         expected_scope_count = num_scopes * num_collections * num_items
         self.log.info(f"Expected per-scope count (if evenly distributed): {expected_scope_count}")
-        
+
         self.sleep(self.continuous_backup_interval * 60)
         ts_valid = self.cont_bk_mgr.get_cluster_timestamp()
         # Ensure history up to ts_valid is uploaded before restoring, otherwise
@@ -937,7 +957,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
                     "map_data": None  # Will be set inside loop
                 }
             ]
-            
+
             for i, test_case in enumerate(test_cases, 1):
                 restore_bucket_name = f"restore_bucket_{int(time.time())}"
                 self._create_restore_bucket(restore_bucket_name)
@@ -1038,7 +1058,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._load_data_tolerating_stat_validation()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         count_after_interval_change = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
-        
+
         self.log.info(f"Waiting for new interval of {new_interval} minutes...")
         self.sleep(new_interval * 60)
         ts_after_interval_change = self.cont_bk_mgr.get_cluster_timestamp()
@@ -1125,7 +1145,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(f"T2 (post-drop): {ts_t2}, count: {count_t2}")
 
         # Anchor the post-drop state in a traditional backup
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_bucket_coll_drop_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1198,7 +1219,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-scope-drop): {ts_t2}, count: {count_t2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_bucket_scope_drop_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1278,7 +1300,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(
             f"T3 (post-recreate+load): {ts_t3}, count: {count_after_recreate}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_bucket_recreate_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1362,7 +1385,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
             location=self.continuous_backup_location,
             temp_dir="/tmp",
             timestamp=ts_t1,
-            map_data=f"{self.bucket.name}={restore_bucket_name}")
+            map_data=f"{self.bucket.name}={restore_bucket_name}",
+            obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
         combined = " ".join((output or []) + (error or [])).lower()
         self.log.info(f"PITR to expired timestamp — output: {combined[:300]}")
@@ -1424,7 +1448,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(
             f"T2 (post-retention-change): {ts_t2}, count: {count_t2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_bucket_ret_change_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1519,7 +1544,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(
             f"T2: {ts_t2} | {bucket1.name}={count_b1_t2}, {bucket2.name}={count_b2_t2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         # Restore buckets sequentially to avoid RAM exhaustion on small clusters.
         # Creating both at once alongside the two source buckets exceeds quota.
@@ -1625,7 +1651,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # archive whose count plateaus below count_b2.
         self._wait_for_history_upload("ts_b2 (both buckets)")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_b1_name = f"restore_b1_intv_{int(time.time())}"
         # Restore buckets sequentially to avoid RAM exhaustion on small clusters.
@@ -1698,7 +1725,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
             ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
             self.log.info(f"T2 (second MAJORITY load): {ts_t2}, count: {count_t2}")
 
-            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                                   obj_staging_dir=self.obj_staging_dir_cbbackup)
 
             restore_bucket_name = f"restore_majority_{int(time.time())}"
             self._create_restore_bucket(restore_bucket_name)
@@ -1770,7 +1798,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
             ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
             self.log.info(f"T2: {ts_t2}, count: {count_t2}")
 
-            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+            self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                                   obj_staging_dir=self.obj_staging_dir_cbbackup)
 
             restore_bucket_name = f"restore_persist_maj_{int(time.time())}"
             self._create_restore_bucket(restore_bucket_name)
@@ -1882,7 +1911,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-subdoc): {ts_t2}, count: {count_after_subdoc}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_subdoc_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1923,7 +1953,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
 
         self.sleep(self.continuous_backup_interval * 60, "Waiting for backup interval")
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_invalid_ts_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1935,7 +1966,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
                 location=self.continuous_backup_location,
                 temp_dir="/tmp",
                 timestamp=ts_value,
-                map_data=f"{self.bucket.name}={restore_bucket_name}")
+                map_data=f"{self.bucket.name}={restore_bucket_name}",
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
             combined = " ".join((output or []) + (error or [])).lower()
             self.log.info(f"  [{label}] output: {combined[:300]}")
             signalled_error = any(
@@ -1995,7 +2027,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         ts_recent = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"Recent timestamp: {ts_recent}, count: {count_recent}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_bytes_limit_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -2050,7 +2083,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (ACTIVE compression): {ts_t2}, count: {count_t2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_bucket_name = f"restore_active_comp_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)

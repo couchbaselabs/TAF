@@ -111,7 +111,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
             location=self.continuous_backup_location,
             temp_dir="/tmp",
             timestamp=timestamp,
-            map_data=f"{self.bucket.name}={restore_bucket_name}")
+            map_data=f"{self.bucket.name}={restore_bucket_name}",
+            obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
     def _load_data_and_get_count(self, mutation_num=0):
         """Load data from spec and return the resulting item count."""
@@ -182,7 +183,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-rebalance-in): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_name = f"restore_rbl_in_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -232,7 +234,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-rebalance-out): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_name = f"restore_rbl_out_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -283,7 +286,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-swap): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_name = f"restore_swap_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -341,7 +345,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-failover): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_name = f"restore_graceful_fo_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -400,7 +405,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-hard-failover): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_name = f"restore_hard_fo_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -480,7 +486,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-quorum-loss): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_name = f"restore_quorum_loss_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -553,7 +560,8 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T2 (post-KV-restart): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         restore_name = f"restore_kv_restart_{int(time.time())}"
         self._create_restore_bucket(restore_name)
