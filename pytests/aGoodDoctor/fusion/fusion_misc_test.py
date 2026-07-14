@@ -9,6 +9,7 @@ reproduced deterministically without shared-cluster contamination.
 Tests:
   1. test_concurrent_node_scale_down_and_disk_scale_up  — AV-134300
   2. test_concurrent_node_and_disk_scale_up
+  3. test_hydration_fills_disk_triggers_disk_auto_scaling — AV-137329
 """
 
 import time
@@ -38,6 +39,11 @@ class FusionMiscTest(_FusionTestBase):
         "deployment_failed", "deploymentFailed", "redeploymentFailed",
         "rebalance_failed", "rebalanceFailed", "scaleFailed",
     ])
+
+    # Main-volume usage percent at which we consider diskAutoScaling to have
+    # unambiguously failed to react (AV-137329: volume observed pinned at
+    # 100% used / 20K free with zero resize attempts across all nodes).
+    _DISK_AUTOSCALE_FAIL_PCT = 97
 
     # ------------------------------------------------------------------ #
     # setUp / tearDown                                                     #
@@ -380,3 +386,129 @@ class FusionMiscTest(_FusionTestBase):
         self.log.info(
             "Concurrent node+disk scale-up test passed: CP reached healthy "
             f"state with {len(data_nodes)} nodes at {actual_disk_gb} GB disk")
+
+    # ------------------------------------------------------------------ #
+    # Test 3: AV-137329 — hydration fills disk, diskAutoScaling must react #
+    # ------------------------------------------------------------------ #
+
+    def test_hydration_fills_disk_triggers_disk_auto_scaling(self):
+        """Regression for AV-137329.
+
+        Scenario
+        --------
+        Deploy a small cluster with diskAutoScaling enabled (the default,
+        see hostedOPD.rebalance_config) but a deliberately small main disk
+        (initial_disk_gb). Enable fusion and fire off a data load sized to
+        exceed initial_disk_gb of local hydration well before it finishes,
+        then poll both:
+          - the actual OS-level disk usage % on every node's main
+            persistent-data volume (/opt/couchbase/var/lib/couchbase)
+          - the disk size CP reports for the cluster
+
+        Bug
+        ---
+        With the bug present (AV-137329), Capella's control plane never
+        grows the main EBS/LVM volume despite diskAutoScaling.enabled=true:
+        local disk usage climbs to 100% on every node with zero resize
+        attempts, and the cluster suffers cluster-wide ENOSPC failures
+        (ns_server bootstrap, goxdcr, event/ns log, KV logger all fail)
+        instead of the volume being grown ahead of time.
+
+        Assertions
+        ----------
+        Fail as soon as any node's main-volume usage reaches
+        _DISK_AUTOSCALE_FAIL_PCT while CP's reported disk size is still
+        initial_disk_gb — this is the AV-137329 signature. Pass as soon as
+        CP's reported disk size grows above initial_disk_gb first.
+
+        Parameters
+        ----------
+        initial_kv_nodes   (int, default 3)           — node count
+        initial_disk_gb    (int, default 100)          — deliberately small
+                            main disk (smallest AWS gp3 tier) so hydration
+                            can outpace it within the test timeout
+        num_items          (int, default 150_000_000)  — sized so local
+                            hydration volume exceeds initial_disk_gb well
+                            before the load itself completes
+        poll_interval_secs (int, default 60)
+        disk_fill_timeout  (int, default 7200)         — max time to wait
+                            for either an autoscale or the fail threshold
+        """
+        initial_nodes = self.input.param("initial_kv_nodes", 3)
+        initial_disk_gb = self.input.param("initial_disk_gb", 100)
+        num_items = self.input.param("num_items", 150_000_000)
+        poll_interval_secs = self.input.param("poll_interval_secs", 60)
+        disk_fill_timeout = self.input.param("disk_fill_timeout", 7200)
+
+        self.log.info(
+            f"AV-137329: {initial_nodes} nodes / {initial_disk_gb} GB disk, "
+            f"loading {num_items} docs to force hydration past capacity")
+
+        # ── Phase 1: reach initial cluster configuration ──────────────── #
+        # diskAutoScaling is enabled by default (self.diskAutoScaling, see
+        # hostedOPD.rebalance_config) and is included in every spec update.
+        self._scale_to_initial_config(initial_nodes, initial_disk_gb)
+        self.assertTrue(
+            self.diskAutoScaling,
+            f"Test requires diskAutoScaling enabled, got {self.diskAutoScaling}")
+
+        # ── Phase 2: enable fusion ─────────────────────────────────────── #
+        self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
+        self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
+
+        # ── Phase 3: fire off a load sized to outpace the small disk ──── #
+        # wait_for_load=False: if the bug reproduces, nodes never finish
+        # loading because the disk fills up, so we must not block on it —
+        # poll disk usage / CP disk size independently instead.
+        self._load_data(
+            self.cluster, create_start=0, create_end=num_items,
+            wait_for_load=False)
+
+        # ── Phase 4: poll OS-level disk usage vs CP-reported disk size ── #
+        baseline_disk_gb = self._get_cluster_disk_gb("kv")
+        self.assertEqual(
+            baseline_disk_gb, initial_disk_gb,
+            f"Expected CP to report {initial_disk_gb} GB before load, got "
+            f"{baseline_disk_gb} GB")
+
+        deadline = time.time() + disk_fill_timeout
+        autoscaled = False
+        max_usage_seen = 0
+        current_disk_gb = baseline_disk_gb
+        while time.time() < deadline:
+            current_disk_gb = self._get_cluster_disk_gb("kv")
+            if current_disk_gb and current_disk_gb > initial_disk_gb:
+                self.log.info(
+                    f"CP grew main disk {initial_disk_gb} -> {current_disk_gb} GB "
+                    "— diskAutoScaling triggered as expected")
+                autoscaled = True
+                break
+
+            usage = self.cp_monitor.get_main_volume_disk_usage_percent(self.cluster)
+            node_max = max(
+                [v for v in usage.values() if v is not None], default=0)
+            max_usage_seen = max(max_usage_seen, node_max)
+            self.log.info(
+                f"Main volume usage: max={node_max}% across nodes "
+                f"(CP disk size still {current_disk_gb} GB)")
+
+            if node_max >= self._DISK_AUTOSCALE_FAIL_PCT:
+                break
+
+            time.sleep(poll_interval_secs)
+
+        # ── Phase 5: assert autoscaling kicked in before the disk filled ── #
+        final_disk_gb = self._get_cluster_disk_gb("kv")
+        self.assertTrue(
+            autoscaled or (final_disk_gb is not None
+                           and final_disk_gb > initial_disk_gb),
+            f"AV-137329 regression: main EBS volume usage reached "
+            f"{max_usage_seen}% while CP-reported disk size stayed at "
+            f"{initial_disk_gb} GB for up to {disk_fill_timeout}s — "
+            "diskAutoScaling.enabled=true never triggered a resize before "
+            "the volume filled up.")
+
+        self.log.info(
+            "AV-137329 regression test passed: CP grew disk to "
+            f"{final_disk_gb} GB before main volume usage became critical "
+            f"(max observed {max_usage_seen}%)")

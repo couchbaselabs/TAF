@@ -600,6 +600,65 @@ class FusionCPResourceMonitor:
                 errors_found.append(cluster)
         return errors_found
 
+    def get_main_volume_disk_usage_percent(self, cluster):
+        """
+        Poll each cluster instance's main persistent-data EBS/LVM volume disk
+        usage percent via SSM ``df``.
+
+        This is the ``/opt/couchbase/var/lib/couchbase`` mount
+        (``VG_CB-LV_persistent_data``) — the volume Capella's diskAutoScaling
+        is expected to grow before it fills up (AV-137329: hydration filled
+        this volume to 100% on every node with no resize ever attempted).
+
+        :param cluster: Cluster object
+        :return: dict mapping instance ID -> usage percent (int), or None
+                 for any instance whose check failed
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        instances = self.fusion_aws_util.list_instances(
+            self.fusion_aws_util._cluster_filter(cluster.id),
+            log="Couchbase Cluster Instances", suppress_log=True)
+
+        cmd = (
+            "df -h /opt/couchbase/var/lib/couchbase "
+            "--output=pcent 2>/dev/null | tail -1 | tr -d '% '"
+        )
+
+        def check_instance(instance):
+            instance_id = instance.get('InstanceId', 'N/A')
+            try:
+                result = self.fusion_aws_util.ec2.run_shell_command(instance_id, cmd)
+                stdout = result.get('stdout', '').strip()
+                if result.get('success') and stdout.isdigit():
+                    return instance_id, int(stdout)
+                self.log.warning(
+                    f"Could not parse main volume disk usage on {instance_id}: "
+                    f"stdout={stdout!r} stderr={result.get('stderr')}")
+            except Exception as e:
+                self.log.error(
+                    f"Failed to check main volume disk usage on {instance_id}: {e}")
+            return instance_id, None
+
+        usage = {}
+        if instances:
+            with ThreadPoolExecutor(max_workers=min(len(instances), 50)) as executor:
+                futures = {
+                    executor.submit(check_instance, inst): inst for inst in instances
+                }
+                for future in as_completed(futures):
+                    instance_id, pct = future.result()
+                    usage[instance_id] = pct
+
+        table = PrettyTable()
+        table.field_names = ["Instance ID", "Main Volume Disk Usage %"]
+        for instance_id, pct in usage.items():
+            table.add_row([instance_id, pct if pct is not None else "N/A"])
+        self.log.info(
+            f"Main volume disk usage for cluster {cluster.id}:\n{table}")
+
+        return usage
+
     def scan_dp_agent_logs_for_errors(self, clusters, stop_run_event, interval=300):
         """
         Background thread: periodically scan dp-agent logs for ERROR entries on all cluster instances.
