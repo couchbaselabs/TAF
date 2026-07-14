@@ -137,7 +137,9 @@ class CrashTest(CollectionBase):
                 self.shell,
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,
-                log=self.log)
+                log=self.log,
+                backupmgr_cloud_provider=self.backup_cloud_provider,
+                contbk_cloud_provider=self.contbk_cloud_provider)
 
         if self.N1qltxn:
             self.n1ql_server = self.cluster_util.get_nodes_from_services_map(
@@ -338,7 +340,8 @@ class CrashTest(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
     def test_create_remove_collection_with_node_crash(self):
         """

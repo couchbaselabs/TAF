@@ -20,7 +20,9 @@ class FlushTests(CollectionBase):
                 self.shell,
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,
-                log=self.log)
+                log=self.log,
+                backupmgr_cloud_provider=self.backup_cloud_provider,
+                contbk_cloud_provider=self.contbk_cloud_provider)
 
     def tearDown(self):
         # Cleanup shell connection if continuous backup was enabled
@@ -186,7 +188,8 @@ class FlushTests(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
     def test_flush_bucket_during_mutations(self):
         """
@@ -307,7 +310,8 @@ class FlushTests(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
         # Fails test case in case of any detected failure
         self.validate_test_failure()

@@ -35,7 +35,9 @@ class CollectionsNetworkSplit(CollectionBase):
                 self.shell,
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,
-                log=self.log)
+                log=self.log,
+                backupmgr_cloud_provider=self.backup_cloud_provider,
+                contbk_cloud_provider=self.contbk_cloud_provider)
 
     def tearDown(self):
         # We are not bringing in new nodes, so init nodes should be enough to
@@ -381,7 +383,8 @@ class CollectionsNetworkSplit(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
     def test_quorum_loss_with_network_split(self):
         """
@@ -429,4 +432,5 @@ class CollectionsNetworkSplit(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)

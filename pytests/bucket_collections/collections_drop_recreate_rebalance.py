@@ -69,7 +69,9 @@ class CollectionsDropRecreateRebalance(CollectionBase):
                 self.shell,
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,
-                log=self.log)
+                log=self.log,
+                backupmgr_cloud_provider=self.backup_cloud_provider,
+                contbk_cloud_provider=self.contbk_cloud_provider)
 
     def tearDown(self):
         self.cluster_util.set_rebalance_moves_per_nodes(
@@ -309,7 +311,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
     def load_collections_with_failover(self, rebalance_operation):
         self.pick_nodes_for_failover(rebalance_operation)
@@ -381,7 +384,8 @@ class CollectionsDropRecreateRebalance(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")

@@ -108,7 +108,9 @@ class CollectionsRebalance(CollectionBase):
                 self.shell,
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,
-                log=self.log)
+                log=self.log,
+                backupmgr_cloud_provider=self.backup_cloud_provider,
+                contbk_cloud_provider=self.contbk_cloud_provider)
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -1313,7 +1315,8 @@ class CollectionsRebalance(CollectionBase):
                 backup_archive_dir=self.backup_archive_dir,
                 backup_repo_name=self.backup_repo_name,
                 continuous_backup_location=self.continuous_backup_location,
-                continuous_backup_interval=self.continuous_backup_interval)
+                continuous_backup_interval=self.continuous_backup_interval,
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
         if self.num_zone > 1:
             self.check_balanced_attribute()
             if self.add_zone > 0:
