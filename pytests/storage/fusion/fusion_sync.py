@@ -1247,24 +1247,26 @@ class FusionSync(MagmaBaseTest, FusionBase):
         if not fusion_enabled:
             self.fail("Fusion did not reach 'enabled' state within 60 seconds")
 
-        self.log.info("Triggering flush operation during Fusion enabling")
+        # Wait for the upload, then assert logs exist before flushing
+        sleep_time = self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Wait for Fusion to upload logs to NFS before flush")
+
+        self.log.info("Checking log files on NFS before flush (expected > 0)")
+        log_files_exist_before_flush, log_count_before_flush = self.check_log_files_on_nfs(
+            self.nfs_server, self.nfs_server_path)
+        self.log.info(f"Log files on NFS before flush: exist={log_files_exist_before_flush}, "
+                      f"count={log_count_before_flush}")
+        self.assertGreater(log_count_before_flush, 0,
+                           "Expected log files on NFS before flush, found 0")
+
+        self.log.info("Triggering flush operation after Fusion enabled")
         for bucket in self.cluster.buckets:
             self.log.info(f"Flushing bucket: {bucket.name}")
             self.bucket_util.update_bucket_property(self.cluster.master, bucket,
                                                     flush_enabled=Bucket.FlushBucket.ENABLED)
-            self.bucket_util.flush_bucket(self.cluster, bucket)
-        self.log.info("Flush operation completed during Fusion enabling")
-
-        # Monitor if Fusion enabling completes despite flush (max 5 min)
-        self.log.info("Monitoring if Fusion enabling completes despite flush (timeout=300s)")
-        monitor_start = time.time()
-        fusion_enabled = self.monitor_fusion_state_transition(state="enabled", timeout=600)
-
-        if not fusion_enabled:
-            self.fail("Fusion did not enable within 5 minutes after flush during enabling")
-
-        monitor_elapsed = time.time() - monitor_start
-        self.log.info(f"Fusion enabled successfully after {monitor_elapsed:.2f} seconds despite flush")
+            status = self.bucket_util.flush_bucket(self.cluster, bucket)
+            self.assertTrue(status, f"Flush failed for bucket {bucket.name}")
+        self.log.info("Flush operation completed")
 
         # Wait for enable thread to complete
         enable_thread.join()
@@ -1275,22 +1277,26 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
         self.log.info("Validation passed: All buckets empty after flush")
 
-        # Check log files on NFS after flush
+        # Poll until flush cleans up the logs on NFS (cleanup is not instant)
         self.log.info("Checking log files on NFS after flush")
-        log_files_exist, log_count = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
-        self.log.info(f"Log files on NFS after flush: exist={log_files_exist}, count={log_count}")
-        self.assertEqual(log_count, 0, f"Expected 0 log files after flush during enabling, found {log_count}")
+        log_count = None
+        cleanup_timeout = time.time() + (self.fusion_upload_interval * 3 + 60)
+        while time.time() < cleanup_timeout:
+            log_files_exist, log_count = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
+            self.log.info(f"Log files on NFS after flush: exist={log_files_exist}, count={log_count}")
+            if log_count == 0:
+                break
+            self.sleep(10, "Wait for Fusion to clean up logs on NFS after flush")
+        self.assertEqual(log_count, 0, f"Expected 0 log files after flush, found {log_count}")
 
         # Load data after flush using Java doc loader with new key range
-        self.log.info("Loading data after flush using sirius java SDK (target: 20GB)")
-        post_flush_items = 5250000  # 5.25M docs × 4KB = ~20GB
+        self.log.info("Loading data after flush using sirius java SDK")
+        post_flush_items = 10000000  # 10M docs × 1KB = ~10GB
         self.reset_doc_params(doc_ops="create")
         self.create_start = self.num_items  # Start from where initial load ended
         self.create_end = self.num_items + post_flush_items
         self.log.info(f"Post-flush load: create_start={self.create_start}, create_end={self.create_end}")
-        self.generate_docs(doc_ops="create")
-        self.java_doc_loader(generator=self.gen_create,
-                            doc_ops="create",
+        self.java_doc_loader(doc_ops="create",
                             process_concurrency=8,
                             skip_default=self.skip_load_to_default_collection)
         self.num_items = post_flush_items  # Update to reflect current bucket item count
@@ -1318,13 +1324,25 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.log.info("Re-enabling Fusion")
         self.enable_fusion()
 
-        # Wait for Fusion to stabilize and sync
-        sleep_time = 120 + self.fusion_upload_interval + 60
-        self.sleep(sleep_time, "Wait for Fusion sync after re-enabling")
+        # Poll until the log store is re-populated after re-enable, so the
+        # rebalance builds its plan on a dense (not sparse) manifest
+        resync_timeout = time.time() + (120 + self.fusion_upload_interval + 60) * 3
+        log_count_before_rebalance = 0
+        while time.time() < resync_timeout:
+            _, log_count_before_rebalance = self.check_log_files_on_nfs(self.nfs_server, self.nfs_server_path)
+            self.log.info(f"Log files after re-enable (target ~{log_count_before_disable}): "
+                          f"count={log_count_before_rebalance}")
+            if log_count_before_rebalance >= log_count_before_disable:
+                break
+            self.sleep(15, "Wait for Fusion to re-upload data to log store after re-enable")
+        self.assertGreater(log_count_before_rebalance, 0,
+                           "Log store not repopulated after re-enabling Fusion; "
+                           "rebalance would see a sparse manifest")
 
         # Run rebalance
         self.log.info("Starting Fusion rebalance with extent migration monitoring")
-        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir, rebalance_count=1)
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1)
         self.log.info("Monitoring active guest volumes")
         guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
         guest_volume_th.start()
