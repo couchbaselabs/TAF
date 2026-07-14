@@ -246,6 +246,7 @@ agents/
    ---
    ```
 2. Create `.factory/droids/<name>.md` containing: `@agents/<name>.md`
+3. Create `.claude/agents/<name>.md` containing: `@agents/<name>.md` — this is what makes the agent invokable as a Claude Code subagent
 
 ### Adding a new skill
 1. Create `agents/skills/<name>.md` with YAML frontmatter:
