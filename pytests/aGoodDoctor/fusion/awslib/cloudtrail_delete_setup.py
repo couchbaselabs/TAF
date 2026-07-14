@@ -25,10 +25,19 @@ logger = logging.getLogger("cloudtrail_delete_setup")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 class CloudTrailSetup(AWSBase):
-    def __init__(self, aws_access_key: Optional[str] = None, aws_secret_key: Optional[str] = None, session: Optional[boto3.Session] = None,
-                 region=None, endpoint_url=None):
-
-        super(CloudTrailSetup, self).__init__(aws_access_key, aws_secret_key, session, endpoint_url)
+    def __init__(self, aws_access_key: Optional[str] = None, aws_secret_key: Optional[str] = None, session: Optional[str] = None,
+                 region=None, endpoint_url=None, boto3_session: Optional[boto3.Session] = None):
+        """
+        :param session: AWS session token (despite the name, this is a token
+                         string forwarded to AWSBase's session_token param, not
+                         a boto3.Session object — kept as-is for compatibility)
+        :param boto3_session: Pre-built boto3.Session to use as-is instead of
+                               building one from aws_access_key/aws_secret_key/session
+                               (e.g. an auto-refreshing session from
+                               IAMLib.get_boto3_session()). Optional.
+        """
+        super(CloudTrailSetup, self).__init__(aws_access_key, aws_secret_key, session, endpoint_url,
+                                              boto3_session=boto3_session)
         self.region = region or 'us-east-1'
         self.sts = self.aws_session.client("sts", region_name="us-east-1")
         self.account_id = self.sts.get_caller_identity()["Account"]

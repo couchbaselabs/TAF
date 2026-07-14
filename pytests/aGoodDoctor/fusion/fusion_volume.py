@@ -12,7 +12,7 @@ from datetime import datetime
 
 from membase.api.rest_client import RestConnection
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
-from .fusion_aws_util import FusionAWSUtil
+from .fusion_aws_util import FusionAWSUtil, resolve_fusion_aws_credentials
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
 from .awslib.cloudtrail_delete_setup import CloudTrailSetup
@@ -98,12 +98,18 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.loader_tasks = list()
 
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
-        self.aws_access_key = self.input.param("aws_access_key", None)
-        self.aws_secret_key = self.input.param("aws_secret_key", None)
-        if not self.aws_access_key or not self.aws_secret_key:
-            raise ValueError("AWS credentials (aws_access_key, aws_secret_key) are required parameters")
         self.aws_region = self.input.param("region", "us-east-1")
-        self.fusion_aws_util = FusionAWSUtil(self.aws_access_key, self.aws_secret_key, region=self.aws_region)
+        self.aws_access_key, self.aws_secret_key, self.aws_session_token, self.aws_iam = \
+            resolve_fusion_aws_credentials(self.input, region=self.aws_region)
+        # Assumed-role credentials expire mid-test — a single auto-refreshing
+        # boto3.Session (built once here) keeps every AWS client below working
+        # for the life of the run instead of failing with ExpiredToken.
+        self.aws_boto3_session = self.aws_iam.get_boto3_session(region=self.aws_region) \
+            if self.aws_iam else None
+        self.fusion_aws_util = FusionAWSUtil(
+            self.aws_access_key, self.aws_secret_key,
+            session_token=self.aws_session_token, region=self.aws_region,
+            boto3_session=self.aws_boto3_session)
         self.fusion_monitor = FusionMonitorUtil(self.log, self.fusion_aws_util,
                                                 num_vbuckets=self.input.param("numVBuckets", 128))
         self.cp_monitor = FusionCPResourceMonitor(self.log, self.fusion_aws_util)
@@ -233,9 +239,19 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
     def parse_accelerator_logs_for_clusters(self, clusters):
         """Parse accelerator logs for all clusters."""
-        self.cp_monitor.parse_accelerator_logs(clusters, self.fusion_rebalances, 
-                                              self.aws_access_key, self.aws_secret_key, 
-                                              self.aws_region)
+        # This shells out to a script rather than using a boto3 client, so it
+        # can't benefit from the auto-refreshing boto3.Session — fetch fresh
+        # (refreshed-if-expiring) creds right before use instead, in case the
+        # ones cached at setUp time have since expired.
+        access_key, secret_key, session_token = (
+            self.aws_access_key, self.aws_secret_key, self.aws_session_token)
+        if self.aws_iam:
+            creds = self.aws_iam.get_credentials()
+            access_key, secret_key, session_token = (
+                creds["AccessKeyId"], creds["SecretAccessKey"], creds["SessionToken"])
+        self.cp_monitor.parse_accelerator_logs(clusters, self.fusion_rebalances,
+                                              access_key, secret_key,
+                                              self.aws_region, session_token=session_token)
 
     def initial_setup(self):
         # Enable fusion using Capella API
@@ -308,7 +324,9 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         try:
             self.cloudtrail = CloudTrailSetup(self.aws_access_key, self.aws_secret_key,
-                                              region=self.aws_region)
+                                              session=self.aws_session_token,
+                                              region=self.aws_region,
+                                              boto3_session=self.aws_boto3_session)
         except Exception as e:
             self.cloudtrail = None
             self.log.warning(f"CloudTrail client initialization failed; continuing without CloudTrail checks: {e}")

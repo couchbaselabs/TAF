@@ -813,7 +813,7 @@ class FusionCPResourceMonitor:
         )
         return all_healthy
 
-    def parse_accelerator_logs(self, clusters, fusion_rebalances, access_key, secret_key, region):
+    def parse_accelerator_logs(self, clusters, fusion_rebalances, access_key, secret_key, region, session_token=None):
         """
         Parse accelerator logs for all clusters.
 
@@ -822,9 +822,17 @@ class FusionCPResourceMonitor:
         :param access_key: AWS access key
         :param secret_key: AWS secret key
         :param region: AWS region
+        :param session_token: AWS session token (required when access_key/secret_key
+                               are temporary assumed-role credentials)
         """
         import subprocess
         import os
+
+        env = os.environ.copy()
+        if session_token:
+            env["AWS_SESSION_TOKEN"] = session_token
+        else:
+            env.pop("AWS_SESSION_TOKEN", None)
 
         for cluster in clusters:
             bucket_name = f"cbc-storage-{str(cluster.id)[-6:]}"
@@ -844,6 +852,7 @@ class FusionCPResourceMonitor:
                     check=False,
                     capture_output=True,
                     text=True,
+                    env=env,
                 )
                 self.log.info(
                     f"download_accelerator_logs.sh returned {result.returncode} for cluster {cluster.id}.\n"

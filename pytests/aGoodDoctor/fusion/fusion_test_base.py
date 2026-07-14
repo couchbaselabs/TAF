@@ -15,7 +15,7 @@ from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from pytests.basetestcase import BaseTestCase
 from aGoodDoctor.hostedOPD import hostedOPD
-from .fusion_aws_util import FusionAWSUtil
+from .fusion_aws_util import FusionAWSUtil, resolve_fusion_aws_credentials
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
 from .awslib.s3_lib import S3Lib
@@ -76,19 +76,26 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
 
         hostedOPD.__init__(self)
 
-        self.aws_access_key = self.input.param("aws_access_key", None)
-        self.aws_secret_key = self.input.param("aws_secret_key", None)
-        if not self.aws_access_key or not self.aws_secret_key:
-            raise ValueError("aws_access_key and aws_secret_key are required parameters")
         self.aws_region = self.input.param("region", "us-east-1")
+        self.aws_access_key, self.aws_secret_key, self.aws_session_token, self.aws_iam = \
+            resolve_fusion_aws_credentials(self.input, region=self.aws_region)
+        # Assumed-role credentials expire mid-test — a single auto-refreshing
+        # boto3.Session (built once here) keeps every AWS client below working
+        # for the life of the run instead of failing with ExpiredToken.
+        self.aws_boto3_session = self.aws_iam.get_boto3_session(region=self.aws_region) \
+            if self.aws_iam else None
 
         self.fusion_aws_util = FusionAWSUtil(
-            self.aws_access_key, self.aws_secret_key, region=self.aws_region)
+            self.aws_access_key, self.aws_secret_key,
+            session_token=self.aws_session_token, region=self.aws_region,
+            boto3_session=self.aws_boto3_session)
         self.fusion_monitor = FusionMonitorUtil(
             self.log, self.fusion_aws_util,
             num_vbuckets=self.input.param("numVBuckets", 128))
         self.cp_monitor = FusionCPResourceMonitor(self.log, self.fusion_aws_util)
-        self.s3 = S3Lib(self.aws_access_key, self.aws_secret_key, region=self.aws_region)
+        self.s3 = S3Lib(self.aws_access_key, self.aws_secret_key,
+                         session_token=self.aws_session_token, region=self.aws_region,
+                         boto3_session=self.aws_boto3_session)
 
         self.sync_wait_timeout = self.input.param("sync_wait_timeout", 1200)
         self.fusion_threshold_gib = self.input.param("fusion_threshold_gib", 10)

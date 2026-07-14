@@ -16,15 +16,20 @@ class S3Lib:
     file operations, and size management.
     """
 
-    def __init__(self, access_key, secret_key, session_token=None, region=None, endpoint_url=None):
+    def __init__(self, access_key, secret_key, session_token=None, region=None, endpoint_url=None, boto3_session=None):
         """
         Initialize S3 client.
-        
+
         :param access_key: AWS access key
         :param secret_key: AWS secret key
         :param session_token: AWS session token (optional)
         :param region: AWS region (optional, defaults to us-east-1)
         :param endpoint_url: Custom endpoint URL (optional)
+        :param boto3_session: Pre-built boto3.Session to use as-is instead of
+                               building one from access_key/secret_key/session_token
+                               (e.g. an auto-refreshing session from
+                               IAMLib.get_boto3_session(), for assumed-role
+                               credentials that expire mid-test). Optional.
         """
         logging.basicConfig()
         logging.getLogger('boto3').setLevel(logging.ERROR)
@@ -32,9 +37,11 @@ class S3Lib:
         self.logger = logging.getLogger("AWS_S3_Util")
         self.region = region or 'us-east-1'
         self.endpoint_url = endpoint_url
-        
+
         # Create AWS session
-        if session_token:
+        if boto3_session is not None:
+            self.aws_session = boto3_session
+        elif session_token:
             self.aws_session = boto3.Session(
                 aws_access_key_id=access_key,
                 aws_secret_access_key=secret_key,
@@ -43,7 +50,7 @@ class S3Lib:
             self.aws_session = boto3.Session(
                 aws_access_key_id=access_key,
                 aws_secret_access_key=secret_key)
-        
+
         # Create S3 client and resource
         self.s3_client = self.aws_session.client(
             's3', 

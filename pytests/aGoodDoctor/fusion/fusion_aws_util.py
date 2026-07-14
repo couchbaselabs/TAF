@@ -8,6 +8,7 @@ like instance discovery, accelerator management, and error scanning.
 
 from .awslib.ec2_lib import EC2Lib
 from .awslib.fis_lib import FISLib
+from .awslib.iam_lib import IAMLib
 from .awslib.s3_lib import S3Lib
 from .awslib.secrets_manager_lib import SecretsManagerLib
 import time, datetime
@@ -15,12 +16,70 @@ import concurrent.futures
 from prettytable import PrettyTable
 from global_vars import logger as global_logger
 
+
+FUSION_ASSUME_ROLE_NAME = "jenkins-cp-cli"
+
+
+def resolve_fusion_aws_credentials(test_input, region='us-east-1'):
+    """
+    Resolve the AWS credentials fusion tests should use for EC2/S3/Secrets
+    Manager/FIS access.
+
+    If aws_access_key/aws_secret_key test params are explicitly given, they're
+    used as-is (long-lived override, e.g. for local runs). Otherwise, a role is
+    assumed via STS using the AWS_ACCESS_KEY_ID_004/AWS_SECRET_ACCESS_KEY_004
+    env vars as the base/source credentials (see IAMLib), and the resulting
+    temporary credentials are returned instead.
+
+    The role ARN defaults to arn:aws:iam::{account_id}:role/jenkins-cp-cli,
+    where account_id is read from the [capella] ini section (same
+    self.input.capella.get("account_id") convention used elsewhere in the
+    framework, e.g. dedicatedbasetestcase.py). Pass aws_assume_role_arn as a
+    test param to override this default (e.g. for a differently-named role).
+
+    :param test_input: TestInputSingleton.input (or equivalent) — needs
+                        .param(name, default) and .capella.get("account_id")
+    :param region: AWS region to assume the role in
+    :return: (access_key, secret_key, session_token, iam) tuple. session_token
+             and iam are None when explicit long-lived aws_access_key/aws_secret_key
+             were used. Otherwise iam is the IAMLib instance that assumed the
+             role — pass it to FusionAWSUtil/S3Lib/etc. (via get_boto3_session())
+             so their AWS clients auto-refresh once the assumed credentials expire,
+             and use iam.get_credentials() to fetch fresh creds for subprocess/CLI
+             calls that can't consume a boto3.Session directly.
+    """
+    access_key = test_input.param("aws_access_key", None)
+    secret_key = test_input.param("aws_secret_key", None)
+    if access_key and secret_key:
+        return access_key, secret_key, None, None
+
+    role_arn = test_input.param("aws_assume_role_arn", None)
+    if not role_arn:
+        account_id = test_input.capella.get("account_id")
+        if not account_id:
+            raise ValueError(
+                "Either aws_access_key/aws_secret_key, or aws_assume_role_arn, "
+                "or an account_id under the [capella] ini section (to derive "
+                f"arn:aws:iam::<account_id>:role/{FUSION_ASSUME_ROLE_NAME}), "
+                "is required")
+        role_arn = f"arn:aws:iam::{account_id}:role/{FUSION_ASSUME_ROLE_NAME}"
+    external_id = test_input.param("jenkins_cpcli_role_external_id", "f7bdb290-7b15-4ab7-afbf-28f3464a6144")
+    duration_seconds = test_input.param("aws_assume_role_duration_seconds", None)
+
+    iam = IAMLib(region=region)
+    if not iam.assume_role(role_arn, external_id=external_id,
+                            duration_seconds=duration_seconds):
+        raise ValueError(f"Failed to assume role {role_arn} for fusion AWS access")
+    creds = iam.get_credentials()
+    return creds["AccessKeyId"], creds["SecretAccessKey"], creds["SessionToken"], iam
+
+
 class FusionAWSUtil:
 
     # Fusion accelerator instances have 16000 IOPS as per fusion architecture
     FUSION_ACCELERATOR_IOPS = 16000
 
-    def __init__(self, access_key, secret_key, region='us-east-1'):
+    def __init__(self, access_key, secret_key, session_token=None, region='us-east-1', boto3_session=None):
         """
         Initialize Fusion AWS utility with AWS credentials.
 
@@ -28,12 +87,20 @@ class FusionAWSUtil:
 
         :param access_key: AWS access key ID
         :param secret_key: AWS secret access key
+        :param session_token: AWS session token (required when access_key/secret_key
+                               are temporary assumed-role credentials)
         :param region: AWS region (default: us-east-1)
+        :param boto3_session: Pre-built boto3.Session to use as-is for every
+                               underlying client instead of access_key/secret_key/
+                               session_token (e.g. an auto-refreshing session from
+                               IAMLib.get_boto3_session(), so EC2/FIS/S3/Secrets
+                               Manager calls keep working after the assumed-role
+                               credentials expire mid-test). Optional.
         """
-        self.ec2 = EC2Lib(access_key, secret_key, region=region)
-        self.fis = FISLib(access_key, secret_key, region=region)
-        self.s3 = S3Lib(access_key, secret_key, region=region)
-        self.secrets = SecretsManagerLib(access_key, secret_key, region=region)
+        self.ec2 = EC2Lib(access_key, secret_key, session_token=session_token, region=region, boto3_session=boto3_session)
+        self.fis = FISLib(access_key, secret_key, session_token=session_token, region=region, boto3_session=boto3_session)
+        self.s3 = S3Lib(access_key, secret_key, session_token=session_token, region=region, boto3_session=boto3_session)
+        self.secrets = SecretsManagerLib(access_key, secret_key, session_token=session_token, region=region, boto3_session=boto3_session)
         self.log = global_logger.get("infra")
 
     def _cluster_filter(self, cluster_id, extra_tags=None):

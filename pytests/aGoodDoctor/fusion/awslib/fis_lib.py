@@ -40,19 +40,27 @@ class FISLib:
     fallback logic and EBS mount failure scenarios.
     """
 
-    def __init__(self, access_key: str, secret_key: str, session_token: str = None, 
-                 region: Optional[str] = None, endpoint_url: Optional[str] = None):
+    def __init__(self, access_key: str, secret_key: str, session_token: str = None,
+                 region: Optional[str] = None, endpoint_url: Optional[str] = None,
+                 boto3_session: Optional[boto3.Session] = None):
         """
         Initialize FIS client.
-        
+
         :param access_key: AWS access key
         :param secret_key: AWS secret key
         :param session_token: AWS session token (optional)
         :param region: AWS region (optional, defaults to us-east-1)
         :param endpoint_url: Custom endpoint URL (optional)
+        :param boto3_session: Pre-built boto3.Session to use as-is instead of
+                               building one from access_key/secret_key/session_token
+                               (e.g. an auto-refreshing session from
+                               IAMLib.get_boto3_session(), for assumed-role
+                               credentials that expire mid-test). Optional.
         """
         try:
-            if session_token:
+            if boto3_session is not None:
+                self.aws_session = boto3_session
+            elif session_token:
                 self.aws_session = boto3.Session(
                     aws_access_key_id=access_key,
                     aws_secret_access_key=secret_key,

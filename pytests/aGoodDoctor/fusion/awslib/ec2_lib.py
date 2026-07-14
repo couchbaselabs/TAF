@@ -13,21 +13,29 @@ import logging
 class AWSBase:
     """Base class for AWS services with common functionality."""
 
-    def __init__(self, access_key, secret_key, session_token=None, endpoint_url=None):
+    def __init__(self, access_key, secret_key, session_token=None, endpoint_url=None, boto3_session=None):
         """
         Initialize AWS base client.
-        
+
         :param access_key: AWS access key
         :param secret_key: AWS secret key
         :param session_token: AWS session token (optional)
         :param endpoint_url: Custom endpoint URL (optional)
+        :param boto3_session: Pre-built boto3.Session to use as-is instead of
+                               building one from access_key/secret_key/session_token
+                               (e.g. an auto-refreshing session from
+                               IAMLib.get_boto3_session(), for assumed-role
+                               credentials that expire mid-test). Optional.
         """
         logging.basicConfig()
         logging.getLogger('boto3').setLevel(logging.ERROR)
         logging.getLogger('botocore').setLevel(logging.ERROR)
         self.logger = logging.getLogger("AWS_EC2_Util")
         self.endpoint_url = endpoint_url
-        self.create_session(access_key, secret_key, session_token)
+        if boto3_session is not None:
+            self.aws_session = boto3_session
+        else:
+            self.create_session(access_key, secret_key, session_token)
 
     def create_session(self, access_key, secret_key, session_token):
         """Create a session to AWS using the credentials provided."""
@@ -73,17 +81,18 @@ class EC2Lib(AWSBase):
     SSH connections, and running shell commands.
     """
 
-    def __init__(self, access_key, secret_key, session_token=None, region=None, endpoint_url=None):
+    def __init__(self, access_key, secret_key, session_token=None, region=None, endpoint_url=None, boto3_session=None):
         """
         Initialize EC2 client.
-        
+
         :param access_key: AWS access key
         :param secret_key: AWS secret key
         :param session_token: AWS session token (optional)
         :param region: AWS region (optional, defaults to us-east-1)
         :param endpoint_url: Custom endpoint URL (optional)
+        :param boto3_session: Pre-built boto3.Session to use as-is (see AWSBase). Optional.
         """
-        super(EC2Lib, self).__init__(access_key, secret_key, session_token, endpoint_url)
+        super(EC2Lib, self).__init__(access_key, secret_key, session_token, endpoint_url, boto3_session=boto3_session)
         self.region = region or 'us-east-1'
         self.ec2_client = self.create_service_client(service_name="ec2", region=self.region)
         self.ec2_resource = self.create_service_resource(resource_name="ec2", region=self.region)
