@@ -14,10 +14,11 @@ class CbContBk(CbCmdBase):
     CMD_TIMEOUT = 900
 
     def __init__(self, shell_conn, username="Administrator",
-                 password="password", log=None):
+                 password="password", log=None, cloud_provider=None):
         CbCmdBase.__init__(self, shell_conn, "cbcontbk",
                            username=username, password=password)
         self.cli_flags = ""
+        self.cloud_provider = cloud_provider
         if log:
             self.log = log
         else:
@@ -68,7 +69,7 @@ class CbContBk(CbCmdBase):
 
     def restore(self, archive_path, repo_name,
                 location, temp_dir, cluster_host=None, threads=8, timestamp=None,
-                include_data=None, map_data=None):
+                include_data=None, map_data=None, obj_staging_dir=None):
         """
         Restores a continuous backup to a specified point in time.
         :param archive_path: Path to the traditional backup location
@@ -81,6 +82,9 @@ class CbContBk(CbCmdBase):
                           If not provided, defaults to the current UTC time from the cluster.
         :param include_data: Specific collection to include
         :param map_data: Mapping for the data restore
+        :param obj_staging_dir: Object staging dir, appended as
+                                --obj-staging-dir when a cloud_provider is
+                                injected
         """
         if cluster_host is None:
             cluster_host = f"http://{self.shellConn.server.ip}:8091"
@@ -106,6 +110,11 @@ class CbContBk(CbCmdBase):
 
         cmd += self.cli_flags
 
+        if self.cloud_provider is not None:
+            cmd += f" {self.cloud_provider.get_cbconbk_flags()}"
+            if obj_staging_dir:
+                cmd += f" --obj-staging-dir {obj_staging_dir}"
+
         self.log.debug(f"Executing command: {cmd}")
 
         output, error = self._execute_cmd(cmd)
@@ -119,16 +128,24 @@ class CbContBk(CbCmdBase):
 
         return output, error
 
-    def collect_logs(self, location, temp_dir):
+    def collect_logs(self, location, temp_dir, obj_staging_dir=None):
         """
         Collects logs for a continuous backup.
         :param location: Location of the continuous backup
         :param temp_dir: Temporary directory for log collection
+        :param obj_staging_dir: Object staging dir, appended as
+                                --obj-staging-dir when a cloud_provider is
+                                injected
         """
         cmd = (f"{self.cbstatCmd} collect-logs -l {location} "
                f"-d {temp_dir}")
 
         cmd += self.cli_flags
+
+        if self.cloud_provider is not None:
+            cmd += f" {self.cloud_provider.get_cbconbk_flags()}"
+            if obj_staging_dir:
+                cmd += f" --obj-staging-dir {obj_staging_dir}"
 
         self.log.debug(f"Executing command: {cmd}")
 
