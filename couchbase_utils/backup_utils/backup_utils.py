@@ -11,22 +11,26 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class ContinuousBackupUtil(object):
-    def __init__(self, shell_conn, username, password, log=None):
+    def __init__(self, shell_conn, username, password, log=None,
+                 backupmgr_cloud_provider=None, contbk_cloud_provider=None):
         self.shell_conn = shell_conn
         self.username = username
         self.password = password
         self.log = log if log else logger.get("test")
+        self.contbk_cloud_provider = contbk_cloud_provider
 
         self.backup_mgr = CbBackupMgr(shell_conn,
                                       username=username,
                                       password=password,
-                                      log=self.log)
+                                      log=self.log,
+                                      cloud_provider=backupmgr_cloud_provider)
         self.cont_bk_mgr = CbContBk(shell_conn,
                                     username=username,
                                     password=password,
-                                    log=self.log)
+                                    log=self.log,
+                                    cloud_provider=contbk_cloud_provider)
 
-    def enable_continuous_backup(self, bucket_util, cluster, buckets, continuous_backup_location="/tmp/cont_bkp", continuous_backup_interval=5):
+    def enable_continuous_backup(self, bucket_util, cluster, buckets, continuous_backup_location="/tmp/cont_bkp", continuous_backup_interval=5, continuous_backup_cloud_storage_cred_id=None):
         """Enable continuous backup on all buckets in the cluster
         Args:
             bucket_util: BucketUtil instance for bucket operations
@@ -34,6 +38,8 @@ class ContinuousBackupUtil(object):
             buckets: List of Bucket objects to enable CB on
             continuous_backup_location: Location for continuous backup files
             continuous_backup_interval: Continuous backup interval in minutes
+            continuous_backup_cloud_storage_cred_id: Credential Store cred_id
+                for continuous backup's cloud object-store access
         """
         self.log.info("Enabling continuous backup on all buckets")
         for bucket in buckets:
@@ -41,7 +47,8 @@ class ContinuousBackupUtil(object):
                 cluster.master, bucket,
                 continuous_backup_enabled=True,
                 continuous_backup_location=continuous_backup_location,
-                continuous_backup_interval=continuous_backup_interval)
+                continuous_backup_interval=continuous_backup_interval,
+                continuous_backup_cloud_storage_cred_id=continuous_backup_cloud_storage_cred_id)
         self.log.info(f"Waiting 10 seconds for continuous backup to be enabled")
         time.sleep(10)
 
@@ -60,7 +67,7 @@ class ContinuousBackupUtil(object):
 
     def verify_backup_and_restore(self, bucket_util, cluster, buckets, backup_archive_dir="/tmp/archive",
                                    backup_repo_name="repo1", continuous_backup_location="/tmp/cont_bkp",
-                                   continuous_backup_interval=5):
+                                   continuous_backup_interval=5, obj_staging_dir=None):
         """
         Verify traditional restore and continuous restore (PITR) after rebalance
 
@@ -85,7 +92,9 @@ class ContinuousBackupUtil(object):
         deadline = time.time() + continuous_backup_interval * 120
         backed_up = False
         while time.time() < deadline:
-            output, _ = self.backup_mgr.list_backups(backup_archive_dir, backup_repo_name)
+            output, _ = self.backup_mgr.list_backups(
+                backup_archive_dir, backup_repo_name,
+                obj_staging_dir=obj_staging_dir)
             if output and any(line.strip() for line in output):
                 self.log.info("Backup data detected in repository")
                 backed_up = True
@@ -125,7 +134,8 @@ class ContinuousBackupUtil(object):
                     location=continuous_backup_location,
                     temp_dir="/tmp",
                     timestamp=timestamp_before_restore,
-                    map_data=f"{bucket.name}={restore_bucket_name}")
+                    map_data=f"{bucket.name}={restore_bucket_name}",
+                    obj_staging_dir=obj_staging_dir)
 
                 combined_output = (output or []) + (error or [])
                 skip_messages = [
@@ -195,7 +205,7 @@ class ContinuousBackupUtil(object):
     def trigger_restore(self, cluster, archive='/data/backups', repo='magma',
                         cont_backup_location='/mnt/nfs_data/continuous_backup',
                         staging_dir='/data/tmp', timestamp=None,
-                        threads=8):
+                        threads=8, obj_staging_dir=None):
 
         self.log.info('Restore backup using cbcontbk')
         return self.cont_bk_mgr.restore(archive_path=archive,
@@ -204,9 +214,11 @@ class ContinuousBackupUtil(object):
                                         temp_dir=staging_dir,
                                         timestamp=timestamp,
                                         threads=threads,
-                                        cluster_host=f"http://{cluster.master.ip}:8091")
+                                        cluster_host=f"http://{cluster.master.ip}:8091",
+                                        obj_staging_dir=obj_staging_dir)
 
-    def collect_continuous_backup_logs_on_failure(self, backup_location='/data/continuous_backups'):
+    def collect_continuous_backup_logs_on_failure(self, backup_location='/data/continuous_backups',
+                                                   obj_staging_dir=None):
         """
         Collects cbcontbk logs on test failure.
         Only runs on Linux nodes. Logs are collected to /data/tmp on the remote
@@ -224,7 +236,8 @@ class ContinuousBackupUtil(object):
             self.log.info(f"Collecting cbcontbk logs for investigation")
             self.shell_conn.execute_command(f"mkdir -p {remote_tmp_dir}")
             self.cont_bk_mgr.collect_logs(location=backup_location,
-                                          temp_dir=remote_tmp_dir)
+                                          temp_dir=remote_tmp_dir,
+                                          obj_staging_dir=obj_staging_dir)
 
             output, _ = self.shell_conn.execute_command(f"ls {remote_tmp_dir}/*.zip 2>/dev/null")
             for log_file in output:
@@ -238,39 +251,59 @@ class ContinuousBackupUtil(object):
     def cleanup_continuous_backup(self, backup_location='/data/continuous_backups'):
         """
         Cleans up continuous backup files from the backup location.
-        Only runs on Linux nodes. Uses rm -rf to clean up the backup location.
+        If a cloud provider is configured for continuous backup, delegates
+        cleanup to the provider's cleanup_for_bkrs() instead. Otherwise,
+        only runs on Linux nodes and uses rm -rf to clean up the backup
+        location.
         """
-        try:
-            os_info = self.shell_conn.extract_remote_info()
-            if os_info.type.lower() != "linux":
-                self.log.info(f"Skipping continuous backup cleanup: OS is not Linux")
-                return
+        if self.contbk_cloud_provider is not None:
+            self.log.info(f"Cleaning up continuous backup location via cloud provider: {backup_location}")
+            try:
+                self.contbk_cloud_provider.cleanup_for_bkrs(backup_location)
+            except Exception as e:
+                self.log.error(f"Exception during cloud provider continuous backup cleanup: {e}")
+        else:
+            try:
+                os_info = self.shell_conn.extract_remote_info()
+                if os_info.type.lower() != "linux":
+                    self.log.info(f"Skipping continuous backup cleanup: OS is not Linux")
+                    return
 
-            self.log.info(f"Cleaning up continuous backup files at {backup_location}")
-            cleanup_cmd = f"rm -rf {backup_location}/*"
-            self.log.info(f"Executing cleanup command: {cleanup_cmd}")
-            self.shell_conn.execute_command(cleanup_cmd)
-        except Exception as e:
-            self.log.error(f"Exception during continuous backup cleanup: {e}")
+                self.log.info(f"Cleaning up continuous backup files at {backup_location}")
+                cleanup_cmd = f"rm -rf {backup_location}/*"
+                self.log.info(f"Executing cleanup command: {cleanup_cmd}")
+                self.shell_conn.execute_command(cleanup_cmd)
+            except Exception as e:
+                self.log.error(f"Exception during continuous backup cleanup: {e}")
 
 class BackupMgrUtil(CbBackupMgr):
-    def __init__(self, cb_node):
+    def __init__(self, cb_node, cloud_provider=None):
         self.cb_node = cb_node
         shell_conn = RemoteMachineShellConnection(cb_node)
         super().__init__(shell_conn, username=cb_node.rest_username,
                          password=cb_node.rest_password,
-                         no_ssl_verify=None, log=None)
+                         no_ssl_verify=None, log=None,
+                         cloud_provider=cloud_provider)
 
-    def configure_backup(self, archive, repo, exclude=None, include=None):
+    def configure_backup(self, archive, repo, exclude=None, include=None,
+                         obj_staging_dir=None):
         """Delete previous archive dir, then create backup repo."""
         if not archive or archive == "/":
             raise ValueError("archive must be a non-empty, non-root path")
-        self.log.info("Deleting previous backup archive: %s" % archive)
-        self.shellConn.execute_command(f"rm -rf -- {archive}")
+        if self.cloud_provider is not None:
+            self.log.info(
+                "Cleaning up previous backup archive via cloud provider: %s"
+                % archive)
+            self.cloud_provider.cleanup_for_bkrs(archive)
+        else:
+            self.log.info("Deleting previous backup archive: %s" % archive)
+            self.shellConn.execute_command(f"rm -rf -- {archive}")
         stdout, stderr = super().create_repo(archive, repo,
-                                             exclude=exclude, include=include)
-        self.shellConn.execute_command(
-            f"chown -R couchbase:couchbase {archive}")
+                                             exclude=exclude, include=include,
+                                             obj_staging_dir=obj_staging_dir)
+        if self.cloud_provider is None:
+            self.shellConn.execute_command(
+                f"chown -R couchbase:couchbase {archive}")
         return stdout, stderr
 
     def monitor_restore(self, bucket_util, cluster, bucket_name, items,
@@ -291,7 +324,8 @@ class BackupMgrUtil(CbBackupMgr):
                       f"seconds: Actual:{curr_items}, Expected:{items}")
         return False
 
-    def collect_backup_logs_on_failure(self, archive='/data/backups', log_path='/tmp'):
+    def collect_backup_logs_on_failure(self, archive='/data/backups', log_path='/tmp',
+                                       obj_staging_dir=None):
         """
         Collects cbbackupmgr logs on test failure.
         Only runs on Linux nodes. Logs are collected to /data/tmp on the remote
@@ -307,7 +341,8 @@ class BackupMgrUtil(CbBackupMgr):
 
             self.log.info("Collecting cbbackupmgr logs for investigation")
             self.shellConn.execute_command(f"mkdir -p {remote_tmp_dir}")
-            self.collect_logs(archive_dir=archive, output_dir=remote_tmp_dir)
+            self.collect_logs(archive_dir=archive, output_dir=remote_tmp_dir,
+                              obj_staging_dir=obj_staging_dir)
 
             output, _ = self.shellConn.execute_command(f"ls {remote_tmp_dir}/*.zip 2>/dev/null")
             for log_file in output:
@@ -342,9 +377,18 @@ class BackupMgrUtil(CbBackupMgr):
 
     def cleanup_archive(self, archive='/data/backups'):
         """
-        Finds all repos in the archive and cleans them using cbbackupmgr remove
-        followed by manual rm -rf as fallback.
+        Cleans up the backup archive.
+        If a cloud provider is configured, delegates cleanup to the
+        provider's cleanup_for_bkrs(). Otherwise finds all repos in the
+        archive and cleans them using cbbackupmgr remove, followed by a
+        manual rm -rf as fallback.
         """
+        if self.cloud_provider is not None:
+            self.log.info(
+                "Cleaning up archive via cloud provider: {}".format(archive))
+            self.cloud_provider.cleanup_for_bkrs(archive)
+            return
+
         # List all directories in the archive (each directory is a repo)
         find_repos_cmd = "find {0} -maxdepth 1 -mindepth 1 -type d -exec basename {{}} \\;".format(archive)
         output, error = self.shellConn.execute_command(find_repos_cmd)
@@ -363,7 +407,6 @@ class BackupMgrUtil(CbBackupMgr):
         cleanup_cmd = "rm -rf {0}/".format(archive)
         self.log.info("Manual cleanup with command: {}".format(cleanup_cmd))
         self.shellConn.execute_command(cleanup_cmd)
-
 
 class BackupServiceUtil(object):
     def __init__(self, cluster, backup_node=None):
