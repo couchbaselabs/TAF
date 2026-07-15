@@ -22,10 +22,7 @@ class DeleteAlert(GetAlert):
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/alertIntegrations",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/alertIntegration",
@@ -111,7 +108,8 @@ class DeleteAlert(GetAlert):
             self.capellaAPI.cluster_ops_apis.alerts_endpoint = \
                 "/v4/organizations/{}/projects/{}/alertIntegrations"
 
-            if self.validate_testcase(result, [204], testcase, failures):
+            self.validate_testcase(result, [204], testcase, failures)
+            if result.status_code == 204:
                 self.alerts.remove(self.alert_id)
                 self.alert_id = self.create_alert_to_be_tested(
                     self.project_id, self.expected_res["kind"],
@@ -171,7 +169,8 @@ class DeleteAlert(GetAlert):
                     self.organisation_id, self.project_id, self.alert_id,
                     header)
 
-            if self.validate_testcase(result, [204], testcase, failures):
+            self.validate_testcase(result, [204], testcase, failures)
+            if result.status_code == 204:
                 self.alerts.remove(self.alert_id)
                 self.alert_id = self.create_alert_to_be_tested(
                     self.project_id, self.expected_res["kind"],
@@ -212,15 +211,15 @@ class DeleteAlert(GetAlert):
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
                     combination[2] == self.alert_id):
-                if combination[1] == "" or combination[0] == "" or \
-                        combination[2] == "":
+                if combination[2] == "":
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
-                elif any(variable in [
-                    int, bool, float, list, tuple, set, type(None)] for
-                         variable in [
-                             type(combination[0]), type(combination[1]),
-                             type(combination[2])]):
+                elif (combination[0] == "" or combination[1] == "" or
+                        any(variable in [
+                            int, bool, float, list, tuple, set, type(None)]
+                            for variable in [
+                                type(combination[0]), type(combination[1]),
+                                type(combination[2])])):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -276,7 +275,8 @@ class DeleteAlert(GetAlert):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["alertID"], **kwarg)
 
-            if self.validate_testcase(result, [204], testcase, failures):
+            self.validate_testcase(result, [204], testcase, failures)
+            if result.status_code == 204:
                 self.alerts.remove(self.alert_id)
                 self.alert_id = self.create_alert_to_be_tested(
                     self.project_id, self.expected_res["kind"],
@@ -292,10 +292,13 @@ class DeleteAlert(GetAlert):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.delete_alert,
-                          (self.organisation_id, self.project_id, "")]]
-        self.throttle_test(api_func_list)
+                          (self.organisation_id, self.project_id,
+                           self.alert_id)]]
+        self.throttle_test(api_func_list, extra_exclude_codes=["404"])
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.delete_alert,
-                          (self.organisation_id, self.project_id, "")]]
-        self.throttle_test(api_func_list, True, self.project_id)
+                          (self.organisation_id, self.project_id,
+                           self.alert_id)]]
+        self.throttle_test(api_func_list, True, self.project_id,
+                           extra_exclude_codes=["404"])

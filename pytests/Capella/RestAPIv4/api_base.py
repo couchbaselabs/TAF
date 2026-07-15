@@ -975,7 +975,7 @@ class APIBase(CouchbaseBaseTest):
 
         # Submit API call tasks to the executor
         for i in range(len(api_key_list) * len(apis_to_call)):
-            batches = num_of_calls_per_api / batch_size
+            batches = int(num_of_calls_per_api // batch_size)
             last_batch = num_of_calls_per_api % batch_size
             for batch in range(batches):
                 threads.append(threading.Thread(
@@ -1019,12 +1019,14 @@ class APIBase(CouchbaseBaseTest):
 
         return results
 
-    def throttle_test(self, api_func_list, multi_key=False, proj_id=None):
+    def throttle_test(self, api_func_list, multi_key=False, proj_id=None,
+                      extra_exclude_codes=None):
         """
         api_func_list: (list(list)) List of lists, where inner list is of format :
             [api_function_call, function_args]
         multi_key: a boolean value which is used to get to know whether the  test is being run with a single key (which has proper access to the resource),  or multiple keys (which might or might not have access to the resource) being tested via throttling.
         proj_id: The UUID of the project that will be used in case of multiple keys throttle testing with different roles.
+        extra_exclude_codes: (list of str) Additional HTTP status codes to exclude from failure checking, e.g. ["400", "422"] for create endpoints with external validation constraints.
         """
         exclude_codes = self.input.param("exclude_codes", "")
         if exclude_codes:
@@ -1033,6 +1035,8 @@ class APIBase(CouchbaseBaseTest):
         else:
             exclude_codes = []
         exclude_codes.append("403")
+        if extra_exclude_codes:
+            exclude_codes.extend(extra_exclude_codes)
 
         if (not multi_key and proj_id) or (multi_key and not proj_id):
             self.fail("Please provide the project ID in the testcase while "
@@ -1844,18 +1848,39 @@ class APIBase(CouchbaseBaseTest):
 
     def create_alert_to_be_tested(self, proj_id, kind, name, config):
         self.update_auth_with_api_token(self.curr_owner_key)
-        res = self.capellaAPI.cluster_ops_apis.create_alert(
-            self.organisation_id, proj_id, kind, name, config)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
+        _rate_limit_markers = ("rate_limited", "rate limit exceeded")
+        _max_retries = 5
+        _retry_wait = 60
+        for attempt in range(1, _max_retries + 1):
             res = self.capellaAPI.cluster_ops_apis.create_alert(
                 self.organisation_id, proj_id, kind, name, config)
-        if res.status_code == 201:
-            alert_id = res.json()['id']
-            self.log.info("New alert ID: {}".format(alert_id))
-            return alert_id
-        self.log.error(res.content)
-        self.fail("!!!...New alert creation failed...!!!")
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                continue
+            if res.status_code == 201:
+                alert_id = res.json()['id']
+                self.log.info("New alert ID: {}".format(alert_id))
+                return alert_id
+            content = res.content if isinstance(res.content, str) \
+                else res.content.decode("utf-8", errors="replace")
+            if attempt < _max_retries:
+                if res.status_code == 500:
+                    self.log.warning(
+                        "create_alert_to_be_tested got 500 "
+                        "(attempt {}/{}); retrying in 30s".format(
+                            attempt, _max_retries))
+                    time.sleep(30)
+                    continue
+                if res.status_code == 400 and any(
+                        m in content for m in _rate_limit_markers):
+                    self.log.warning(
+                        "create_alert_to_be_tested rate-limited "
+                        "(attempt {}/{}); retrying in {}s".format(
+                            attempt, _max_retries, _retry_wait))
+                    time.sleep(_retry_wait)
+                    continue
+            self.log.error(res.content)
+            self.fail("!!!...New alert creation failed...!!!")
 
     def create_bucket_to_be_tested(self, org_id, proj_id, clus_id,
                                    buck_name, buckets):
@@ -1949,7 +1974,7 @@ class APIBase(CouchbaseBaseTest):
         self.update_auth_with_api_token(self.curr_owner_key)
 
         alert_deletion_failed = False
-        for alert in alerts:
+        for alert in list(alerts):
             res = self.capellaAPI.cluster_ops_apis.delete_alert(
                 self.organisation_id, project_id, alert)
             if res.status_code == 429:

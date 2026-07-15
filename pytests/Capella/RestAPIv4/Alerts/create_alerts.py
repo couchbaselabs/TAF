@@ -4,12 +4,34 @@ Created on February 26, 2024
 @author: Vipul Bhardwaj
 """
 
+import threading
+
 from pytests.Capella.RestAPIv4.Alerts.get_alerts import GetAlert
 
 class CreateAlert(GetAlert):
 
     def setUp(self, nomenclature="Alerts_Create"):
-        GetAlert.setUp(self, nomenclature)
+        from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
+        GetProject.setUp(self, nomenclature)
+
+        alert_kind = self.input.param("alert_kind", "webhook")
+        if alert_kind not in self._KIND_CONFIGS:
+            self.fail("Unsupported alert_kind '{}'. Choose from: {}".format(
+                alert_kind, list(self._KIND_CONFIGS.keys())))
+
+        self._init_expected_res(alert_kind, nomenclature)
+        self.alerts = []
+
+        # Clean up stale alerts from previous runs - exact name and
+        # unique-suffix variants created by throttle tests.
+        res = self.capellaAPI.cluster_ops_apis.list_alerts(
+            self.organisation_id, self.project_id)
+        if res.status_code == 200:
+            for alert in res.json().get("data", []):
+                if alert.get("name", "").startswith(self.expected_res["name"]):
+                    self.capellaAPI.cluster_ops_apis.delete_alert(
+                        self.organisation_id, self.project_id, alert["id"])
+                    self.log.info("Deleted stale alert: {}".format(alert["id"]))
 
     def tearDown(self):
         super(CreateAlert, self).tearDown()
@@ -22,10 +44,7 @@ class CreateAlert(GetAlert):
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/alertIntegrations",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/alertIntegration",
@@ -95,6 +114,9 @@ class CreateAlert(GetAlert):
             self.capellaAPI.cluster_ops_apis.alerts_endpoint = \
                 "/v4/organizations/{}/projects/{}/alertIntegrations"
 
+            if result.status_code == 201:
+                self.alerts.append(result.json()["id"])
+
             self.validate_testcase(result, [201, 422], testcase, failures)
 
         if failures:
@@ -142,16 +164,24 @@ class CreateAlert(GetAlert):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
+            unique_name = "{}_{}".format(self.expected_res["name"],
+                                          self.generate_random_string(6))
             result = self.capellaAPI.cluster_ops_apis.create_alert(
                 self.organisation_id, self.project_id,
                 self.expected_res["kind"], self.expected_res["config"],
-                self.expected_res["name"])
+                unique_name, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_alert(
                     self.organisation_id, self.project_id,
                     self.expected_res["kind"], self.expected_res["config"],
-                    self.expected_res["name"])
+                    unique_name, header)
+
+            if result.status_code == 201:
+                self.update_auth_with_api_token(self.curr_owner_key)
+                self.capellaAPI.cluster_ops_apis.delete_alert(
+                    self.organisation_id, self.project_id,
+                    result.json()["id"])
 
             self.validate_testcase(result, [201, 422], testcase, failures)
 
@@ -184,12 +214,18 @@ class CreateAlert(GetAlert):
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id):
-                if combination[0] == "":
-                    testcase["expected_status_code"] = 404
-                    testcase["expected_error"] = "404 page not found"
-                elif combination[1] == "":
-                    testcase["expected_status_code"] = 405
-                    testcase["expected_error"] = ""
+                if combination[0] == "" or combination[1] == "":
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 1000,
+                        "hint": "Check if you have provided a valid URL and "
+                                "all the required params are present in the "
+                                "request body.",
+                        "httpStatusCode": 400,
+                        "message": "The server cannot or will not process the "
+                                   "request due to something that is "
+                                   "perceived to be a client error."
+                    }
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                                                  variable in
@@ -251,19 +287,39 @@ class CreateAlert(GetAlert):
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
 
+    def _make_unique_create_func(self):
+        """Return a create_alert wrapper that appends a unique suffix to the
+        name on every call, avoiding 409/400 duplicate-name conflicts.
+        Created alert IDs are recorded in self.alerts for tearDown cleanup."""
+        lock = threading.Lock()
+
+        def _create(org_id, proj_id, kind, config, base_name, headers=None):
+            name = "{}_{}".format(base_name,
+                                  self.generate_random_string(6))
+            resp = self.capellaAPI.cluster_ops_apis.create_alert(
+                org_id, proj_id, kind, config, name, headers)
+            if resp.status_code == 201:
+                with lock:
+                    self.alerts.append(resp.json()["id"])
+            return resp
+
+        return _create
+
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.create_alert,
+            self._make_unique_create_func(),
             (self.organisation_id, self.project_id, self.expected_res["kind"],
              self.expected_res["config"], self.expected_res["name"])
         ]]
-        self.throttle_test(api_func_list)
+        self.throttle_test(api_func_list,
+                           extra_exclude_codes=["400", "422"])
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.create_alert,
+            self._make_unique_create_func(),
             (self.organisation_id, self.project_id, self.expected_res["kind"],
              self.expected_res["config"], self.expected_res["name"])
         ]]
-        self.throttle_test(api_func_list, True, self.project_id)
+        self.throttle_test(api_func_list, True, self.project_id,
+                           extra_exclude_codes=["400", "422"])

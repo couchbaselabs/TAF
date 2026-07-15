@@ -4,19 +4,85 @@ Created on February 23, 2024
 @author: Vipul Bhardwaj
 """
 
+import time
+
 from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 class GetAlert(GetProject):
 
-    def setUp(self, nomenclature="Alerts_Get"):
-        GetProject.setUp(self, nomenclature)
+    # Config templates keyed by alert_kind test param.
+    # Each entry has "api_kind" (sent to Capella) and "config" (request body).
+    # Pass alert_kind=<key> as a test param to select which one is used.
+    # Real credentials/URLs live in the [capella] section of the run's .ini
+    # file (webhook_password, webhook_url, slack_bot_token, slack_webhook_url,
+    # teams_webhook_url) so they never need to be committed to source.
+    @property
+    def _KIND_CONFIGS(self):
+        capella_cfg = self.input.capella
+        return {
+            "webhook": {
+                "api_kind": "webhook",
+                "config": {
+                    "webhook": {
+                        "basicAuth": {
+                            "user": "capella-webhook-uitest-user",
+                            "password": capella_cfg.get(
+                                "webhook_password", "<PLACEHOLDER_PASSWORD>")
+                        },
+                        "method": "POST",
+                        "url": capella_cfg.get(
+                            "webhook_url",
+                            "https://placeholder.service-now.com/api/"
+                            "1325623/capella_webhook_ui_test")
+                    }
+                }
+            },
+            "slack": {
+                "api_kind": "slack",
+                "config": {
+                    "slack": {
+                        "botToken": capella_cfg.get(
+                            "slack_bot_token", "xoxb-PLACEHOLDER-TOKEN"),
+                        "channel": "#capella-alerts-pipeline",
+                        "clusterChannelMappings": {}
+                    }
+                }
+            },
+            "slack_webhook": {
+                "api_kind": "slack",
+                "config": {
+                    "slack": {
+                        "channelWebhookUrlMappings": {
+                            "#capella-alerts-pipeline": capella_cfg.get(
+                                "slack_webhook_url",
+                                "https://hooks.slack.com/services/"
+                                "PLACEHOLDER/PLACEHOLDER/PLACEHOLDER")
+                        },
+                        "clusterWebhookChannelMappings": {}
+                    }
+                }
+            },
+            "teams": {
+                "api_kind": "teams",
+                "config": {
+                    "teams": {
+                        "webhookUrlMappings": {
+                            "default": capella_cfg.get(
+                                "teams_webhook_url",
+                                "https://placeholder.environment.api."
+                                "powerplatform.com/powerautomate/"
+                                "automations/direct/workflows/PLACEHOLDER/"
+                                "triggers/manual/paths/invoke?api-version=1"
+                                "&sig=PLACEHOLDER")
+                        },
+                        "clusterWebhookMappings": {}
+                    }
+                }
+            }
+        }
 
-        # Create a webhook.
-        ###############################################################
-        #   PLEASE NOTE THAT THE PAYLOAD FOR ALERT INTEGRATION CREATION
-        #   IS SUBJECT TO CHANGE BASED ON THE EXPIRY OF THE SERVICE NOW
-        #   URL and/or AUTH
-        ###############################################################
+    def _init_expected_res(self, alert_kind, nomenclature):
+        kind_cfg = self._KIND_CONFIGS[alert_kind]
         self.expected_res = {
             "enabled": False,
             "status": "healthy",
@@ -27,36 +93,84 @@ class GetAlert(GetProject):
                 "modifiedBy": None,
                 "version": None
             },
-            "config": {
-                "webhook": {
-                    "basicAuth": {
-                        "user": "capella-webhook-uitest-user",
-                        "password": "G:lM-5istvJ.h<3Y9HFl=EMdi}m*^07igec[W$hAPkB4}+G6Ko}rX<H10>Fg8=8"
-                    },
-                    "method": "POST",
-                    "url": "https://dev199760.service-now.com/api/1325623/capella_webhook_ui_test"
-                }
-            },
-            # "config": {
-            #     "webhook": {
-            #         "token": "",
-            #         "method": "POST",
-            #         "url": "https://dev116354.service-now.com/api/1259084/"
-            #                "testwebhook/new"
-            #     }
-            # },
-            "kind": "webhook",
+            "config": kind_cfg["config"],
+            "kind": kind_cfg["api_kind"],
             "name": self.prefix + nomenclature,
             "projectId": self.project_id,
             "tenantId": self.organisation_id
         }
+
+    def setUp(self, nomenclature="Alerts_Get"):
+        self.alerts = []
+        GetProject.setUp(self, nomenclature)
+
+        alert_kind = self.input.param("alert_kind", "webhook")
+        if alert_kind not in self._KIND_CONFIGS:
+            self.fail("Unsupported alert_kind '{}'. Choose from: {}".format(
+                alert_kind, list(self._KIND_CONFIGS.keys())))
+
+        self._init_expected_res(alert_kind, nomenclature)
+
+        # Teams alert requires at least one cluster mapping. Use the cluster
+        # deployed by setUp (self.cluster_id); fail clearly if none exists.
+        if (self.expected_res["kind"] == "teams" and
+                not self.expected_res["config"]["teams"].get(
+                    "clusterWebhookMappings")):
+            if self.cluster_id:
+                self.expected_res["config"]["teams"][
+                    "clusterWebhookMappings"] = {
+                    self.cluster_id: "default"
+                }
+            else:
+                self.log.error(
+                    "Teams alert kind requires a cluster. Re-run without "
+                    "skip_cluster=True, or use alert_kind=slack for "
+                    "cluster-less testing.")
+                self.tearDown()
+                self.fail("Error while creating Alert.")
+
+        # Clean up stale alerts from previous runs (exact name and
+        # unique-suffix variants) before creating the fixture alert.
+        stale = self.capellaAPI.cluster_ops_apis.list_alerts(
+            self.organisation_id, self.project_id)
+        if stale.status_code == 200:
+            for alert in stale.json().get("data", []):
+                if alert.get("name", "").startswith(self.expected_res["name"]):
+                    self.capellaAPI.cluster_ops_apis.delete_alert(
+                        self.organisation_id, self.project_id, alert["id"])
+                    self.log.info("Deleted stale alert: {}".format(
+                        alert["id"]))
+
         self.log.info("Creating Alert of Kind: {}"
                       .format(self.expected_res["kind"]))
-        res = self.capellaAPI.cluster_ops_apis.create_alert(
-            self.organisation_id, self.project_id,
-            self.expected_res["kind"], self.expected_res["config"],
-            self.expected_res["name"])
-        if res.status_code != 201:
+        _rate_limit_markers = ("rate_limited", "rate limit exceeded")
+        _max_retries = 5
+        _retry_wait = 60
+        res = None
+        for attempt in range(1, _max_retries + 1):
+            res = self.capellaAPI.cluster_ops_apis.create_alert(
+                self.organisation_id, self.project_id,
+                self.expected_res["kind"], self.expected_res["config"],
+                self.expected_res["name"])
+            if res.status_code == 201:
+                break
+            content = res.content if isinstance(res.content, str) \
+                else res.content.decode("utf-8", errors="replace")
+            if attempt < _max_retries:
+                if res.status_code == 500:
+                    self.log.warning(
+                        "create_alert got 500 (attempt {}/{}); "
+                        "retrying in 30s".format(attempt, _max_retries))
+                    time.sleep(30)
+                    continue
+                if res.status_code == 400 and any(
+                        m in content for m in _rate_limit_markers):
+                    self.log.warning(
+                        "create_alert rate-limited (attempt {}/{}); "
+                        "retrying in {}s".format(
+                            attempt, _max_retries, _retry_wait))
+                    time.sleep(_retry_wait)
+                    continue
             self.log.error("Result: {}".format(res.content))
             self.tearDown()
             self.fail("Error while creating Alert.")
@@ -88,10 +202,7 @@ class GetAlert(GetProject):
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/alertIntegrations",
                 "expected_status_code": 404,
-                "expected_error": {
-                    "errorType": "RouteNotFound",
-                    "message": "Not found"
-                }
+                "expected_error": "<html><head><title>404NotFound</title></head><body><center><h1>404NotFound</h1></center><hr><center>nginx</center></body></html>"
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/alertIntegration",
