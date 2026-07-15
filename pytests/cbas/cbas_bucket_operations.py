@@ -41,7 +41,9 @@ class CBASBucketOperations(CBASBaseTest):
                 "no_of_synonyms": 0,
                 "no_of_indexes": self.input.param('no_of_idx', 1),
                 "max_thread_count": self.input.param('no_of_threads', 1),
-                "dataset": {"creation_methods": ["cbas_collection", "cbas_dataset"]}}
+                "dataset": {
+                    "creation_methods": ["cbas_collection", "cbas_dataset"],
+                    "exclude_scopes": ["_system"]}}
         if self.cbas_spec_name:
             self.cbas_spec = self.cbas_util.get_cbas_spec(
                 self.cbas_spec_name)

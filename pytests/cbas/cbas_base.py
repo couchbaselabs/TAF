@@ -646,7 +646,16 @@ class CBASBaseTest(BaseTestCase):
 
         buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
 
-        if self.bucket_storage == Bucket.StorageBackend.magma:
+        if self.bucket_type == Bucket.Type.EPHEMERAL:
+            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.couchstore
+
+            if Bucket.evictionPolicy not in buckets_spec:
+                buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.NO_EVICTION
+
+            if Bucket.ramQuotaMB not in buckets_spec:
+                buckets_spec[Bucket.ramQuotaMB] = 100
+
+        elif self.bucket_storage == Bucket.StorageBackend.magma:
             buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.magma
             buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.FULL_EVICTION
 

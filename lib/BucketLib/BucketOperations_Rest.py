@@ -520,10 +520,16 @@ class BucketHelper(RestConnection):
                                .format(round(create_time, 2),
                                        bucket_params.get('name')))
                 break
-            elif (int(header['status']) == 503 and
+            if "status" in header:
+                status_code = int(header['status'])
+            else:
+                status_code = header.status_code
+            if (status_code == 503 and
                   '{"_":"Bucket with given name still exists"}' in content):
                 sleep(1, "Bucket still exists, will retry..")
             else:
+                self.log.error("Bucket creation failed with status {0}: {1}"
+                               .format(status_code, content))
                 return False
         else:
             self.log.warning("Failed creating the bucket after {0} secs"
