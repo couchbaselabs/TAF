@@ -685,14 +685,20 @@ class CommunityEditionRestrictions(ClusterSetup):
         Reinitializes master with fts,index,kv,n1ql services so the
         query service is running, then exercises each EE-only feature:
         - INFER
-        - Flex index (USE INDEX ... USING FTS)
         - Index partitioning (PARTITION BY HASH)
         - Window functions (CUME_DIST)
         - Cost-based optimizer (UPDATE STATISTICS)
         - Query profiling (admin/settings profile=phases)
 
-        The first five must return status=fatal from the query service.
-        The profiling request must fail with an EE-only error message.
+        These must return status=fatal from the query service. The
+        profiling request must fail with an EE-only error message.
+
+        Flex index (USE INDEX ... USING FTS) is checked separately:
+        USE INDEX is a hint, not a required semantic like the features
+        above, so an unhonored hint is expected to fall back to another
+        access path rather than fail the query. CE is validated instead
+        via EXPLAIN -- the FTS hint must appear in hints_not_followed
+        and the resulting plan must not use an FTS-backed scan.
 
         Replaces: check_infer, check_flex_index, check_index_partitioning,
                   check_query_window_functions,
@@ -720,13 +726,72 @@ class CommunityEditionRestrictions(ClusterSetup):
 
         q_svc_url = self.rest.query_url + "/query/service"
 
+        # Create a real FTS index plus a matching document so the
+        # flex-index query below has an actual FTS-backed plan and real
+        # data to return. This makes the failure signal unambiguous: if
+        # CE fails to block this, the query returns the real matching
+        # row rather than an empty result that could be dismissed as
+        # "the hint was never seriously attempted".
+        fts_index_name = "ce_flex_test_idx"
+        fts_index_body = json.dumps({
+            "type": "fulltext-index",
+            "name": fts_index_name,
+            "sourceType": "couchbase",
+            "sourceName": "default",
+            "params": {
+                "mapping": {
+                    "default_mapping": {"enabled": True, "dynamic": True},
+                    "default_analyzer": "standard"
+                }
+            }
+        })
+        fts_headers = self.rest.create_headers(content_type="application/json")
+        self.rest.request(
+            self.rest.fts_url + "/api/index/" + fts_index_name, "PUT",
+            fts_index_body, headers=fts_headers)
+        self.sleep(10, "wait for FTS index to build")
+        self.rest.request(
+            q_svc_url, "POST",
+            urllib.parse.urlencode({
+                "statement":
+                    'INSERT INTO `default` (KEY, VALUE) '
+                    'VALUES ("ce_flex_test_doc", {"f2": 100});'}))
+
+        # Flex index (USE INDEX ... USING FTS) is a hint: if CE can't
+        # honor it, the query is expected to fall back to another scan
+        # rather than fail outright, so it doesn't belong in the
+        # status=fatal loop below. Verify via EXPLAIN instead that CE
+        # rejects the FTS-backed hint and does not actually use it.
+        flex_index_stmt = (
+            "EXPLAIN SELECT META(d).id FROM `default` AS d "
+            "USE INDEX (USING FTS) WHERE d.f2 = 100;")
+        body = urllib.parse.urlencode({"statement": flex_index_stmt})
+        _, content, _ = self.rest.request(q_svc_url, "POST", body)
+        content_str = (content.decode() if isinstance(content, bytes)
+                       else str(content))
+        try:
+            plan_result = (self._as_json(content).get("results") or [{}])[0]
+        except (TypeError, ValueError, AttributeError, IndexError):
+            plan_result = {}
+        hints_not_followed = str(
+            plan_result.get("optimizer_hints", {})
+            .get("hints_not_followed", ""))
+        plan_str = json.dumps(plan_result.get("plan", {}))
+        self.assertIn(
+            "INDEX_FTS", hints_not_followed,
+            "CE must reject the FTS-backed flex-index hint (expected "
+            "INDEX_FTS in hints_not_followed). Got: %s" % content_str[:300])
+        self.assertNotIn(
+            "fts", plan_str.lower(),
+            "CE must not actually use an FTS-backed access path for the "
+            "flex-index hint. Plan: %s" % plan_str[:300])
+        self.log.info("CE correctly rejected FTS flex-index hint and "
+                      "fell back to a non-FTS scan: %s", hints_not_followed)
+
         # Each statement must return status=fatal on CE
         ee_stmts = [
             ("INFER",
              "infer `default` ;"),
-            ("flex index USE INDEX USING FTS",
-             "SELECT META(d).id FROM `default` AS d "
-             "USE INDEX (USING FTS) WHERE d.f2 = 100;"),
             ("index partitioning PARTITION BY HASH",
              "CREATE INDEX idx_part ON `default`(id) "
              "PARTITION BY HASH(META().id)"),
@@ -753,6 +818,9 @@ class CommunityEditionRestrictions(ClusterSetup):
                 "Got status=%s body=%s"
                 % (feature, q_status, content_str[:300]))
             self.log.info("CE blocked N1QL %s: status=fatal", feature)
+
+        self.rest.request(
+            self.rest.fts_url + "/api/index/" + fts_index_name, "DELETE")
 
         # Query profiling (admin/settings) — must fail with EE-only message
         admin_url = self.rest.query_url + "/admin/settings"

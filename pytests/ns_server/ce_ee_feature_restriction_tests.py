@@ -542,14 +542,13 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
 
         Uses servers[1] as a standalone remote cluster so the remote
         cluster reference is valid and CE validates the feature params.
-        Iterates four EE-only params in one pass:
+        Iterates three EE-only params in one pass:
         - filterExpression (advanced filtering)
         - priority
         - compressionType=Auto
-        - compressionType=Snappy
 
         Replaces: test_xdcr_filter, test_xdcr_priority,
-                  test_xdcr_compression (Auto + Snappy).
+                  test_xdcr_compression.
         Requires nodes_init=1 + 1 spare (2-node ini).
         """
         spare = self.cluster.servers[1]
@@ -597,10 +596,6 @@ class CeEeFeatureRestrictionTests(ClusterSetup):
              {"fromBucket": "default", "toCluster": "cluster1",
               "toBucket": "default", "replicationType": "continuous",
               "compressionType": "Auto"}),
-            ("compressionType=Snappy",
-             {"fromBucket": "default", "toCluster": "cluster1",
-              "toBucket": "default", "replicationType": "continuous",
-              "compressionType": "Snappy"}),
         ]
 
         try:

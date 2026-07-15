@@ -175,6 +175,11 @@ class KVRateLimitingTests(ClusterSetup):
         - Check if rate limiting stats are 0 or empty after bucket creation
           with rate limiting parameters in CE.
         """
+        # ep-engine reports a disabled hard limit as UINT64_MAX (no cap),
+        # not 0 -- 0 would mean "zero throughput allowed", the opposite of
+        # unrestricted.
+        UNLIMITED_HARD_LIMIT = 2 ** 64 - 1
+
         bucket_name = self.bucket.name
         throttle_stats = self.get_throttle_stats(bucket_name)
         self.log.info(f"CE throttle stats: {throttle_stats}")
@@ -182,8 +187,9 @@ class KVRateLimitingTests(ClusterSetup):
         # Verify that throttle values are 0/disabled in CE
         self.assertEqual(int(throttle_stats.get("throttle_reserved", 0)), 0,
                          f"throttle_reserved should be 0 in CE, found {throttle_stats.get('throttle_reserved')}")
-        self.assertEqual(int(throttle_stats.get("throttle_hard_limit", 0)), 0,
-                         f"throttle_hard_limit should be 0 in CE, found {throttle_stats.get('throttle_hard_limit')}")
+        self.assertEqual(int(throttle_stats.get("throttle_hard_limit", 0)), UNLIMITED_HARD_LIMIT,
+                         f"throttle_hard_limit should be unlimited ({UNLIMITED_HARD_LIMIT}) in CE, "
+                         f"found {throttle_stats.get('throttle_hard_limit')}")
         self.assertEqual(int(throttle_stats.get("throttle_count_total", 0)), 0,
                          f"throttle_count_total should be 0 in CE, found {throttle_stats.get('throttle_count_total')}")
         self.assertEqual(int(throttle_stats.get("reject_count_total", 0)), 0,
