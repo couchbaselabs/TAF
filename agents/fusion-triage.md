@@ -12,6 +12,41 @@ Unlike a fixed reference doc, this file is meant to accumulate what you learn. W
 
 ---
 
+## Step 0: Interview for triage inputs
+
+Before starting Step 1, collect what's needed to run the rest of this file — ask, don't assume:
+
+- **Cluster ID** (required) — the fusion cluster under investigation. Everything downstream (AWS lookups in Step 3, Capella identifiers/Datadog link/cbcollect/dp-agent logs in Step 4) is keyed off this. If not supplied, ask for it before doing anything else.
+- **Jenkins test run URL** (optional) — only if a Jenkins job flagged the failure; if there isn't one, skip straight to Step 3's AWS/memcached checks with the cluster id alone. If it *is* given, `JENKINS_USER`/`JENKINS_TOKEN` (below) become required, not optional.
+- **Confirm Jira access** — Step 2 and Step 4 need the Atlassian MCP tools (`searchJiraIssuesUsingJql`, `createJiraIssue`, `getJiraIssueTypeMetaWithFields`, `createIssueLink`, `lookupJiraAccountId`). If they're not available in this session, walk the caller through getting access now (see [No Jira access in this session?](#no-jira-access-in-this-session) below) rather than discovering it mid-Step-4.
+- **Environment variables** — check these are set before the step that needs them runs; if missing, ask the caller to export them rather than silently skipping:
+
+| Variable | Needed for | Default / notes |
+|---|---|---|
+| `AWS_PROFILE` | every `aws`/SSM call in Step 3 and 4.5 | `fusion` — use this unless the caller says otherwise |
+| `JIRA_API_TOKEN`, `JIRA_USER_EMAIL` | attaching artifacts (4.5), the `curl` fallback in Step 4 | no default — ask if unset; if the caller has none, note in the 4.8 report that attachments need to be added manually |
+| `DD_API_KEY`, `DD_APPLICATION_KEY` | querying the Datadog API directly | no default — the plain log-search link built in 4.4 doesn't need these; only ask if going beyond that link |
+| `JENKINS_USER`, `JENKINS_TOKEN` | authenticating the Jenkins console-log pull in Step 3 | **required if** a Jenkins test run URL was given above; otherwise not needed — skip the Jenkins console pull and go straight to the AWS/memcached checks |
+
+Don't block the whole triage on a missing optional input or env var — degrade gracefully (skip the dependent sub-step, note what was skipped and why in the 4.8 report) rather than stopping.
+
+### No Jira access in this session?
+
+If the Atlassian MCP tools above aren't showing up, the caller hasn't connected Jira for this session yet. Two ways to get it, easiest first:
+
+1. **OAuth Connector (easiest, recommended)**
+   - claude.ai → Settings → Connectors
+   - Find "Atlassian (Rovo)" in the directory, click Connect
+   - Log into Atlassian and approve the OAuth permissions
+   - It then shows up automatically in Claude Code sessions, no further setup
+   - Available on Pro/Max/Team/Enterprise plans
+2. **Local MCP server (manual, more stable for CLI-only use)**
+   - Generate an Atlassian API token
+   - Run: `claude mcp add --transport http atlassian https://mcp.atlassian.com/mcp --header "Authorization: Bearer <TOKEN>"`
+   - Registers as a plain local MCP tool (no `claude_ai_` prefix), independent of any claude.ai account connector
+
+Point the caller at option 1 first; fall back to option 2 for CLI-only/headless environments where a browser OAuth flow isn't practical. Don't proceed to Step 4's Jira calls until one of these is confirmed working (a quick `searchJiraIssuesUsingJql` no-op call is enough to verify).
+
 ## Step 1: Decide AV vs MB
 
 Ask: **is the evidence a server-side log line, or a control-plane/orchestration behavior?**
@@ -48,9 +83,9 @@ Both projects live on `couchbasecloud.atlassian.net` (cloudId to pass to Atlassi
 ## Step 3: Where to look for evidence
 
 ### Jenkins console logs
-Pull the full console text, not just the tail — failures are often explained by what happened many steps earlier:
+Only applicable when a Jenkins test run URL was given in Step 0 (with `JENKINS_USER`/`JENKINS_TOKEN` set). Pull the full console text, not just the tail — failures are often explained by what happened many steps earlier:
 ```
-curl -s -m 20 <job-url>/consoleText -o console.log
+curl -s -m 20 -u "${JENKINS_USER}:${JENKINS_TOKEN}" <job-url>/consoleText -o console.log
 ```
 **Exclude dp-agent log lines by default** (`grep -v dp-agent`) when the console is noisy and you're chasing a KV-engine or CP-orchestration symptom — dp-agent chatter is not the source of truth for those. Grep for the test's own step markers (`Step N.N:`, rebalance start/end lines, `FAIL:`/`AssertionError`) to reconstruct the timeline before diving into raw log noise.
 
@@ -61,7 +96,7 @@ curl -s -m 20 <job-url>/consoleText -o console.log
 - If dp-agent is crash-looping, treat that as the primary finding (file AV against `Deployer`), even if it's occurring alongside another symptom you were originally chasing — a crash-looping dp-agent can itself be *why* CP-side operations (scaling, hydration monitoring, disk resize) silently fail to happen
 
 ### AWS — live node diagnostics
-Auth with the `fusion` AWS CLI profile (account `264138468394`, IAM user `taf_aws_user`) — `--profile fusion` on every `aws` call, or `AWS_PROFILE=fusion` in the shell. Find a cluster's running instances by the exact `couchbase-cloud-cluster-id` tag (not a generic wildcard tag match):
+Auth with the `AWS_PROFILE` from Step 0 (default `fusion`, account `264138468394`, IAM user `taf_aws_user`) — pass it explicitly (`--profile fusion`) or rely on it already being exported. Find a cluster's running instances by the exact `couchbase-cloud-cluster-id` tag (not a generic wildcard tag match):
 ```
 aws --profile fusion ec2 describe-instances --region <region> \
   --filters "Name=tag:couchbase-cloud-cluster-id,Values=<cluster-id>" \
@@ -92,6 +127,99 @@ If a test already failed on this assertion, don't stop at "test caught it" — p
 ### Other fusion-specific log/metric locations (see also `pytests/aGoodDoctor/fusion/architecture.md`)
 - Fusion accelerator EBS "guest volumes" — created during rebalance, hydrate the main volume, should clean up to 0 after; use `list_volumes_by_cluster_id` with `couchbase-cloud-function: fusion-accelerator` tag
 - CP-reported cluster state/spec via `CapellaAPI.get_cluster_info` / `get_cluster_state` — compare against AWS ground truth rather than trusting it alone when triaging autoscaling/sizing bugs
+
+## Step 4: File the bug
+
+Step 2 only lists *which* fields to set. This step is the actual filing workflow — dedup search, confirmation gate, structured description, artifact collection, priority check, linking — covering both AV and MB.
+
+### 4.1 Search for duplicates first
+
+Two-pass JQL search, scoped to whichever project Step 1 routed to, keywords stripped of instance-specific ids (cluster id, build number, timestamps) — one symptom-centric pass, one component-centric pass:
+```
+searchJiraIssuesUsingJql(cloudId,
+  jql='project = <AV|MB> AND issuetype = Bug AND text ~ "<normalized keywords>" '
+      'AND status not in ("Closed (Not Released)") ORDER BY created DESC',
+  maxResults=10, searchResultMode="issues")
+```
+Show any matches. If it's a genuine duplicate, stop and comment on the existing ticket instead of filing a new one. If filing anyway, carry the matched keys into 4.6 as related links.
+
+### 4.2 Never create without explicit confirmation
+
+Show the fully assembled draft — summary, priority, required fields (Environment Impacted for AV / Is this a Regression? for MB), component, parent epic/fix version (AV), the description body, artifacts to attach, related links — and **wait for a go-ahead** before calling `createJiraIssue`. This is the single most important rule to carry over; nothing here should ever create a ticket silently off a webhook trigger.
+
+### 4.3 Structured description (ADF)
+
+Build via the Atlassian MCP as an ADF document, not a free-text dump. Sections, in order, omitting any with no value (never write "N/A"/"TODO"):
+- **Summary**
+- **Environment** — build/version, cloud/region, component(s)
+- **Identifiers** — AV: tenant/org id, project id, cluster id; MB: build, node
+- **Related tickets** — from 4.1 and Step 1's AV↔MB cross-reference case
+- **Steps to reproduce**, **Expected behaviour**, **Actual behaviour**, **Impact**
+- **Log excerpt / Datadog link** (see 4.4)
+- **Artifacts** (see 4.5)
+
+### 4.4 Datadog logs link (AV only)
+
+Only when a cluster id is known:
+- Map Environment Impacted → DD `env:` tag (lower-case): `Prod`→`prod`, `Stage`→`stage`, `Dev`→`dev`, `Sandbox`→`sandbox`.
+- OR the cluster-id tag casings to survive AV-84842: `env:<env> (@clusterId:"<id>" OR @cluster_id:"<id>" OR cluster_name:"<name>")`.
+- Compute the window in epoch **ms**, URL-encode, assemble: `https://app.datadoghq.com/logs?query=<ENCODED>&from_ts=<ms>&to_ts=<ms>&live=false`.
+
+MB bugs skip this — use the Jenkins console/memcached excerpt from Step 3 instead.
+
+### 4.5 Artifacts
+
+Two collection procedures:
+
+**cbcollect (server support bundle), via the cluster's own REST API:**
+1. Look up the `<cluster_id>_dp-admin` secret from AWS Secrets Manager (`secrets_manager_lib.py`'s `get_secret_by_name`, same call `fusion_monitor_util.py`'s `set_admin_credentials()` already makes) — its `SecretValue` is the password. The username is always the fixed constant `couchbase-cloud-admin`, never derived from the secret.
+2. Trigger collection with auto-upload:
+   ```
+   curl -u couchbase-cloud-admin:<password> -X POST https://<node-host>:18091/controller/startLogsCollection \
+     -d 'nodes=*' -d 'uploadHost=<supportal-upload-host>' \
+     -d 'customer=<cluster-id>' -d 'ticket=<AV-or-MB-key-if-known>'
+   ```
+3. Poll `GET /pools/default/tasks` for the `clusterLogsCollection` task until `status: completed`.
+4. The upload posts the supportal link to the **#initech** Slack channel — search/read that channel (Slack MCP `slack_read_channel` / `slack_search_public`) for the message matching the cluster id and pull the link out. It's a link, not a file — put it straight in the description's Artifacts section, no attachment upload needed.
+
+**dp-agent logs from the cluster's AWS instances:**
+1. Filter EC2 instances by the `couchbase-cloud-cluster-id` tag (same lookup as Step 3's AWS diagnostics).
+2. Pull logs via SSM (`aws ssm send-command --document-name AWS-RunShellScript` running `journalctl -u dp-agent --no-pager`) on each matching instance — one file per instance.
+3. Attach each resulting file per the mechanism below.
+
+**File attachment mechanics** — the Atlassian MCP cannot attach files; use `curl` against the Jira REST API with a temporary `--netrc-file` (never `-u`, so the token never lands in `argv`/shell history), delete it after use:
+```sh
+NETRC=$(mktemp) && chmod 600 "$NETRC"
+printf 'machine couchbasecloud.atlassian.net login %s password %s\n' \
+  "${JIRA_USER_EMAIL}" "${JIRA_API_TOKEN}" > "$NETRC"
+curl -s -X POST "https://couchbasecloud.atlassian.net/rest/api/3/issue/<ISSUE_KEY>/attachments" \
+  --netrc-file "$NETRC" -H "X-Atlassian-Token: no-check" -F "file=@<path-to-file>"
+rm -f "$NETRC"
+```
+Jenkins console excerpt / memcached log excerpt / core dump path remain the fallback artifacts for MB, or whenever the cbcollect/dp-agent pulls above aren't applicable (e.g. cluster already torn down).
+
+### 4.6 Priority sanity-check (AV only)
+
+Weigh Environment Impacted, whether a workaround exists, blast radius, and whether it blocks a release/workflow outright:
+
+| Priority | Typical signals |
+|---|---|
+| `Blocker` | Total block of a release/workflow/all usage; no workaround |
+| `P0 - Highest` | Severe impact, multiple tenants, no workaround |
+| `P1 - High` | Significant impact, no easy workaround, not a total outage |
+| `P2 - Medium` | Moderate impact; workaround exists, or confined to Dev/Sandbox |
+| `P3 - Low` | Minor impact, easy workaround, low blast radius |
+| `P4 - Lowest` | Cosmetic/trivial |
+
+If the evidence doesn't match the proposed priority in either direction, say so with reasoning and ask for confirmation — never silently override. MB doesn't carry this field; skip.
+
+### 4.7 Link related tickets
+
+For every key from 4.1's dedup search or Step 1's AV↔MB cross-reference, `createIssueLink` (type `Relates`) between the new ticket and that key.
+
+### 4.8 Report
+
+Print the new issue URL, the attachments that landed (including the supportal link), and the links created.
 
 ## Cross-reference
 
