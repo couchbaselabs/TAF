@@ -1,5 +1,6 @@
 import time
 import json
+import uuid
 
 from constants.cloud_constants.capella_constants import AWS, Cluster
 from global_vars import logger
@@ -1162,20 +1163,150 @@ class CapellaUtils(object):
         return None
 
     @staticmethod
+    def create_v4_api_key(pod, tenant, name_prefix="fusion"):
+        """
+        Mint a v4 organization API key and return its bearer token, for use
+        with clone_cloud_snapshot_backup() (the only v4 call in this file).
+
+        v4 calls in the capellaAPI submodule require a bearer token --
+        APIAuth (lib/capellaAPI/capella/lib/APIAuth.py) unconditionally
+        signs any URL containing "v4" as 'Bearer <token>', never falling
+        back to HMAC secret/access signing the way v2/v3 calls in this file
+        do. tenant.api_secret_key/api_access_key (used everywhere else here)
+        are therefore not usable for v4 calls at all.
+
+        Two-step mint, matching the working pattern in
+        pytests/Capella/RestAPIv4/api_base.py (create_v2_control_plane_api_key
+        + update_auth_with_api_token):
+          1. create_control_plane_api_key() -- a v2 internal endpoint,
+             authenticated via the existing username/password session
+             (do_internal_request), so no bearer token is needed yet.
+          2. Use that key's token as a bearer to call
+             org_ops_apis.create_api_key() -- itself a v4 endpoint -- to mint
+             a real v4 organizationOwner API key.
+
+        Returns (v2_key_id, v4_key_id, v4_bearer_token); the two ids are for
+        delete_v4_api_key() cleanup. Returns (v2_key_id_or_None, None, None)
+        on failure at either step.
+        """
+        capella_api_v4 = CapellaAPIv4(pod.url_public, tenant.api_secret_key,
+                                      tenant.api_access_key, tenant.user,
+                                      tenant.pwd, "")
+        resp = capella_api_v4.create_control_plane_api_key(
+            tenant.id, "{}-v2-{}".format(name_prefix, uuid.uuid4().hex[:6]))
+        if resp.status_code != 201:
+            CapellaUtils.log.error(
+                "Failed to create v2 control-plane API key: {}".format(
+                    resp.content))
+            return None, None, None
+        v2_key = resp.json()
+        capella_api_v4.org_ops_apis.bearer_token = v2_key["token"]
+
+        resp = capella_api_v4.org_ops_apis.create_api_key(
+            organizationId=tenant.id,
+            name="{}-v4-{}".format(name_prefix, uuid.uuid4().hex[:6]),
+            organizationRoles=["organizationOwner"],
+            description="Bootstrap key for fusion secondary-cluster clone")
+        if resp.status_code != 201:
+            CapellaUtils.log.error(
+                "Failed to create v4 API key: {}".format(resp.content))
+            return v2_key["id"], None, None
+        v4_key = resp.json()
+        return v2_key["id"], v4_key["id"], v4_key["token"]
+
+    @staticmethod
+    def delete_v4_api_key(pod, tenant, v2_key_id, v4_key_id, v4_bearer_token):
+        """Tear down the API keys minted by create_v4_api_key()."""
+        capella_api_v4 = CapellaAPIv4(pod.url_public, tenant.api_secret_key,
+                                      tenant.api_access_key, tenant.user,
+                                      tenant.pwd, "")
+        if v4_key_id:
+            capella_api_v4.org_ops_apis.bearer_token = v4_bearer_token
+            resp = capella_api_v4.org_ops_apis.delete_api_key(tenant.id, v4_key_id)
+            if resp.status_code != 204:
+                CapellaUtils.log.error(
+                    "Failed to delete v4 API key {}: {}".format(
+                        v4_key_id, resp.content))
+        if v2_key_id:
+            resp = capella_api_v4.delete_control_plane_api_key(tenant.id, v2_key_id)
+            if resp.status_code != 204:
+                CapellaUtils.log.error(
+                    "Failed to delete v2 control-plane API key {}: {}".format(
+                        v2_key_id, resp.content))
+
+    @staticmethod
     def clone_cloud_snapshot_backup(pod, tenant, project_id, backup_id, name,
-                                    cloud_provider, availability, support,
-                                    description=None, zones=None):
-        capella_api = CapellaAPI(pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-                                 tenant.user, tenant.pwd)
-        resp = capella_api.clone_cloud_snapshot_backup(
-            tenant.id, project_id, backup_id, name=name,
-            cloud_provider=cloud_provider, availability=availability,
-            support=support, description=description, zones=zones)
-        if resp.status_code == 202:
-            return resp.json()
+                                    region, bearer_token, description="",
+                                    plan="enterprise", cidr=None,
+                                    single_az=True, zones=None,
+                                    provider="aws", timeout=1800):
+        """
+        Clone a cloud snapshot backup into a brand-new cluster (v4 public
+        clusterrecovery API) -- this both provisions the destination cluster
+        AND restores the backup's data onto it in a single call.
+
+        Uses v4, not v2: v2's clone response only returns a restoreId, never
+        a clusterId, and (confirmed against couchbase-cloud's actual
+        CreateClone implementation, internal/backup/provisioned/cluster/
+        service/service.go) the resulting restore.Record's ClusterID is set
+        to the NEW clone cluster's id (cluster creation is synchronous
+        inside CreateClone), never the source/primary cluster's id. Since
+        ListRestores filters strictly by that ClusterID, there is no way to
+        discover the new cluster's id via v2's list-restores endpoint scoped
+        by primary -- that would require already knowing the new cluster's
+        id to query for it. v4's clone response
+        (oapi.CreateCloudSnapshotCloneResponse) returns clusterId directly
+        alongside restoreId, avoiding that lookup entirely.
+
+        *bearer_token* must come from create_v4_api_key() -- v4 calls need a
+        real bearer token, not tenant.api_secret_key/api_access_key (see
+        create_v4_api_key()'s docstring for why).
+
+        Uses ClusterOperationsAPIs (aliased ClusterOpsAPIv4 in this file),
+        the submodule class whose clone_cloud_snapshot_backup() already
+        builds the correct nested cloudProvider/availability/support payload
+        for this v4 endpoint (verified against
+        cmd/cp-open-api/specs/schemas/clusterrecovery/
+        CreateCloudSnapshotCloneRequest.yaml) -- unlike the v2-shaped
+        CapellaAPI.py wrapper, this one was already correct, just unused.
+
+        CIDR collisions are retried with a fresh CIDR the same way
+        create_cluster() does, since the CIDR pool is shared org-wide and
+        another concurrent deployment can grab it first.
+        """
+        cluster_ops = ClusterOpsAPIv4(pod.url_public, tenant.api_secret_key,
+                                      tenant.api_access_key, bearer_token)
+        subnet = cidr if cidr is not None else CapellaUtils.get_next_cidr() + "/20"
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            cloud_provider = {"type": provider, "region": region, "cidr": subnet}
+            availability = {"type": "single" if single_az else "multi"}
+            support = {"plan": plan}
+            CapellaUtils.log.info(
+                "Cloning cloud snapshot backup {} with cidr: {}".format(
+                    backup_id, subnet))
+            resp = cluster_ops.clone_cloud_snapshot_backup(
+                tenant.id, project_id, backup_id, name=name,
+                cloudProvider=cloud_provider, availability=availability,
+                support=support, description=description, zones=zones)
+            if resp.status_code == 202:
+                return resp.json()
+            if resp.status_code == 422:
+                content = resp.content.decode("utf-8")
+                if "CIDR" in content:
+                    CapellaUtils.log.warning(
+                        "CIDR {} not unique, retrying with a new one: {}"
+                        .format(subnet, content))
+                    subnet = CapellaUtils.get_next_cidr() + "/20"
+                    continue
+            CapellaUtils.log.error(
+                "Failed to clone cloud snapshot backup {}, "
+                "status: {}, content: {}".format(
+                    backup_id, resp.status_code, resp.content))
+            return None
         CapellaUtils.log.error(
-            "Failed to clone cloud snapshot backup {}, "
-            "status: {}".format(backup_id, resp.status_code))
+            "Failed to clone cloud snapshot backup {}: could not find a "
+            "unique CIDR within {}s".format(backup_id, timeout))
         return None
 
     @staticmethod

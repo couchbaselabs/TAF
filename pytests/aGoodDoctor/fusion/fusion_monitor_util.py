@@ -46,12 +46,25 @@ class FusionMonitorUtil():
             cluster.master.username = cluster.rest_username
             cluster.master.password = cluster.rest_password
         else:
-            secret_name = f"{cluster.id}_dp-admin"
-            secret = fusion_aws_util.secrets.get_secret_by_name(secret_name)
-            cluster.master.rest_username = "couchbase-cloud-admin"
-            cluster.master.rest_password = r"{}".format(secret.get('SecretValue'))
-            cluster.rest_username = "couchbase-cloud-admin"
-            cluster.rest_password = r"{}".format(secret.get('SecretValue'))
+            # Secret naming convention AND value format both differ by
+            # environment:
+            # - dev/stage: name is "<clusterId>_dp_admin" (underscore),
+            #   value is "username:password".
+            # - sandbox: name is "<clusterId>_dp-admin" (hyphen), value is
+            #   just the password (username is always
+            #   "couchbase-cloud-admin").
+            secret = fusion_aws_util.secrets.get_secret_by_name(f"{cluster.id}_dp_admin")
+            if secret.get('success'):
+                secret_value = r"{}".format(secret.get('SecretValue'))
+                username, _, password = secret_value.partition(":")
+            else:
+                secret = fusion_aws_util.secrets.get_secret_by_name(f"{cluster.id}_dp-admin")
+                username = "couchbase-cloud-admin"
+                password = r"{}".format(secret.get('SecretValue'))
+            cluster.master.rest_username = username
+            cluster.master.rest_password = password
+            cluster.rest_username = username
+            cluster.rest_password = password
 
         self.log.info(f"Rest Username = {cluster.master.rest_username}, Rest Password = {cluster.master.rest_password}")
 

@@ -12,6 +12,7 @@ from datetime import datetime
 
 from membase.api.rest_client import RestConnection
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
+from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from .fusion_aws_util import FusionAWSUtil, resolve_fusion_aws_credentials
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
@@ -257,11 +258,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # Enable fusion using Capella API
         for tenant in self.tenants:
             for cluster in tenant.clusters:
-                CapellaAPI.update_feature_flag_globally(self.pod, tenant, "fusion-rebalances", True)
-                CapellaAPI.update_feature_flag_globally(self.pod, tenant, "fusion-fallback-replace", True)
-                fusion_state = CapellaAPI.get_fusion_status(self.pod, tenant, cluster.id)
+                self.fusion_monitor.set_admin_credentials(cluster)
+                status, fusion_state = FusionRestAPI(cluster.master).get_fusion_status()
                 self.log.info(f"Fusion state for cluster {cluster.id}: {fusion_state}")
-                if fusion_state.get('state') == "enabled":
+                if status and fusion_state.get('state') == "enabled":
                     self.log.info(f"Fusion is already enabled for cluster {cluster.id}")
                     continue
                 resp = CapellaAPI.enable_fusion(self.pod, tenant, cluster.id)
