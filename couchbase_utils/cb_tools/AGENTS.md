@@ -30,7 +30,7 @@ model: inherit
 
 - Covers `backup`, `create_repo`, `worm`, `info`, `list_backups`, `restore`, `remove`, `generate_docs`, `merge`, `examine`, `collect_logs`.
 - `__init__` takes optional `cloud_provider` (any `couchbase_utils.cloud_provider_utils` provider, e.g. `AWSProvider`).
-- If set, every method above (except `merge`) appends `cloud_provider.get_cbbackupmgr_flags()`.
+- If set, every method above (except `merge`) appends `cloud_provider.get_cbbackupmgr_flags(self.shellConn)` — the provider gets the shell connection so providers needing a remote-staged file (e.g. `GCPProvider`) can stage it on the node the command actually runs on.
 - Each of those methods also takes `obj_staging_dir=None` as a **per-call** param (not stored on instance) — `--obj-staging-dir <dir>` added only when both `cloud_provider` is injected AND `obj_staging_dir` is passed.
 - `merge()` takes `obj_staging_dir` too but is NOT gated by `cloud_provider` and never appends provider flags.
 - No more `aws_region` param / `prepare_command()` / `_normalise_aws_region()` — the old `AWS_DEFAULT_REGION`/`AWS_REGION` env-var-prefix injection was removed in favor of the `cloud_provider` abstraction.
@@ -47,7 +47,7 @@ backup_mgr.restore(archive_dir, repo_name, cluster_host)
 ## CbContBk
 
 - Continuous backup (PITR) restore + log collection via cbcontbk CLI. Covers `restore`, `collect_logs`, `get_cluster_timestamp`.
-- Same `cloud_provider` injection pattern as `CbBackupMgr`: `restore()`/`collect_logs()` append `cloud_provider.get_cbconbk_flags()` plus optional per-call `obj_staging_dir` (added only when both provider + `obj_staging_dir` given).
+- Same `cloud_provider` injection pattern as `CbBackupMgr`: `restore()`/`collect_logs()` append `cloud_provider.get_cbconbk_flags(self.shellConn)` plus optional per-call `obj_staging_dir` (added only when both provider + `obj_staging_dir` given).
 
 ```python
 from couchbase_utils.cb_tools.cbcontbk import CbContBk

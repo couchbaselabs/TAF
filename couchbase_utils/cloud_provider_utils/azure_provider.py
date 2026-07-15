@@ -13,18 +13,18 @@ class AzureProvider(CloudProviderInterface):
     def __init__(self):
         self.azure_storage_account = os.getenv("AZURE_STORAGE_ACCOUNT")
         self.azure_storage_key = os.getenv("AZURE_STORAGE_KEY")
-        self.azure_region = os.getenv("AZURE_REGION")
+        self.azure_region = os.getenv("AZURE_REGION", "westus")
         self.azure_endpoint = os.getenv("AZURE_ENDPOINT")
 
-    def get_cbbackupmgr_flags(self):
+    def get_cbbackupmgr_flags(self, shell=None):
         return (
             "--obj-region {0} --obj-endpoint {1} --obj-access-key-id {2} "
             "--obj-secret-access-key {3}"
         ).format(self.azure_region, self.azure_endpoint,
                  self.azure_storage_account, self.azure_storage_key)
 
-    def get_cbconbk_flags(self):
-        return self.get_cbbackupmgr_flags()
+    def get_cbconbk_flags(self, shell=None):
+        return self.get_cbbackupmgr_flags(shell)
 
     def cleanup_for_bkrs(self, azure_path):
         """

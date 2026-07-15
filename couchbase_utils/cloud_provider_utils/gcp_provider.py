@@ -11,17 +11,42 @@ from couchbase_utils.security_utils.credential_store_utils import \
 
 
 class GCPProvider(CloudProviderInterface):
+    # cbbackupmgr/cbcontbk read --obj-auth-file on the node they run on,
+    # which is a remote cluster node reached via `shell`, not the test
+    # controller where GOOGLE_APPLICATION_CREDENTIALS points. Stage the key
+    # file at this fixed remote path instead of passing the local path through.
+    REMOTE_AUTH_FILE_PATH = "/tmp/tmp_gcp_service_account.json"
+
     def __init__(self):
         self.gcp_service_account_key_file = os.getenv(
             "GOOGLE_APPLICATION_CREDENTIALS")
-        self.gcp_region = os.getenv("GCP_REGION")
+        self.gcp_region = os.getenv("GCP_REGION", "us")
+        self._remote_auth_file_staged_hosts = set()
 
-    def get_cbbackupmgr_flags(self):
+    def _stage_remote_auth_file(self, shell):
+        """
+        Copies the local GCP service account key file to a fixed path on
+        `shell`'s node (once per node) and returns that remote path. Falls
+        back to the local path if no shell is given.
+        """
+        if shell is None:
+            return self.gcp_service_account_key_file
+
+        host = shell.ip
+        if host not in self._remote_auth_file_staged_hosts:
+            shell.copy_file_local_to_remote(
+                self.gcp_service_account_key_file,
+                self.REMOTE_AUTH_FILE_PATH)
+            self._remote_auth_file_staged_hosts.add(host)
+        return self.REMOTE_AUTH_FILE_PATH
+
+    def get_cbbackupmgr_flags(self, shell=None):
+        auth_file = self._stage_remote_auth_file(shell)
         return "--obj-auth-file {0} --obj-region {1}".format(
-            self.gcp_service_account_key_file, self.gcp_region)
+            auth_file, self.gcp_region)
 
-    def get_cbconbk_flags(self):
-        return self.get_cbbackupmgr_flags()
+    def get_cbconbk_flags(self, shell=None):
+        return self.get_cbbackupmgr_flags(shell)
 
     def cleanup_for_bkrs(self, gcs_path):
         """

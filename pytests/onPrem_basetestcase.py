@@ -228,6 +228,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             shell = RemoteMachineShellConnection(server)
             shell.execute_command(f"rm -rf {self.continuous_backup_location}/*")
             shell.execute_command(f"rm -rf {self.backup_archive_dir}/*")
+            if self.obj_staging_dir_cbbackup:
+                shell.execute_command(f"rm -rf {self.obj_staging_dir_cbbackup}")
+                shell.execute_command(f"mkdir -p {self.obj_staging_dir_cbbackup}")
+            if self.obj_staging_dir_cont_bkp:
+                shell.execute_command(f"rm -rf {self.obj_staging_dir_cont_bkp}")
+                shell.execute_command(f"mkdir -p {self.obj_staging_dir_cont_bkp}")
             shell.disconnect()
 
         self.ipv4_only = self.input.param("ipv4_only", False)

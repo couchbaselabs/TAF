@@ -11,14 +11,14 @@ from couchbase_utils.security_utils.credential_store_utils import \
 
 class LocalstackProvider(CloudProviderInterface):
     def __init__(self):
-        self.localstack_region = os.getenv("LOCALSTACK_REGION")
+        self.localstack_region = os.getenv("LOCALSTACK_REGION", "us-east-1")
         self.localstack_access_key_id = os.getenv(
             "LOCALSTACK_ACCESS_KEY_ID")
         self.localstack_secret_access_key = os.getenv(
             "LOCALSTACK_SECRET_ACCESS_KEY")
         self.localstack_endpoint = os.getenv("LOCALSTACK_ENDPOINT")
 
-    def get_cbbackupmgr_flags(self):
+    def get_cbbackupmgr_flags(self, shell=None):
         return (
             "--obj-region {0} --obj-access-key-id {1} "
             "--obj-secret-access-key {2} --obj-endpoint {3} "
@@ -27,8 +27,8 @@ class LocalstackProvider(CloudProviderInterface):
                  self.localstack_secret_access_key,
                  self.localstack_endpoint)
 
-    def get_cbconbk_flags(self):
-        return self.get_cbbackupmgr_flags()
+    def get_cbconbk_flags(self, shell=None):
+        return self.get_cbbackupmgr_flags(shell)
 
     def cleanup_for_bkrs(self, s3_path):
         """

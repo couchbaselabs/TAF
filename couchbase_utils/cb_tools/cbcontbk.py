@@ -111,7 +111,7 @@ class CbContBk(CbCmdBase):
         cmd += self.cli_flags
 
         if self.cloud_provider is not None:
-            cmd += f" {self.cloud_provider.get_cbconbk_flags()}"
+            cmd += f" {self.cloud_provider.get_cbconbk_flags(self.shellConn)}"
             if obj_staging_dir:
                 cmd += f" --obj-staging-dir {obj_staging_dir}"
 
@@ -143,7 +143,7 @@ class CbContBk(CbCmdBase):
         cmd += self.cli_flags
 
         if self.cloud_provider is not None:
-            cmd += f" {self.cloud_provider.get_cbconbk_flags()}"
+            cmd += f" {self.cloud_provider.get_cbconbk_flags(self.shellConn)}"
             if obj_staging_dir:
                 cmd += f" --obj-staging-dir {obj_staging_dir}"
 

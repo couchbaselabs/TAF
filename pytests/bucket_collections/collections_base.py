@@ -48,15 +48,15 @@ class CollectionBase(ClusterSetup, FusionBase):
     # localstack's cleanup_for_bkrs() instead creates/deletes the whole
     # bucket, so it needs a unique bucket name per test, not a shared one.
     BACKUP_URL_TEMPLATES = {
-        "AWS": "s3://test_backup_TAF/backups/{uid}",
-        "Azure": "az://test_backup_TAF/backups/{uid}",
-        "GCP": "gs://test_backup_TAF/backups/{uid}",
+        "AWS": "s3://test-backup-taf/backups/{uid}",
+        "Azure": "az://test-backup-taf/backups/{uid}",
+        "GCP": "gs://test-backup-taf/backups/{uid}",
         "localstack": "s3://{uid}",
     }
     CONT_BKP_URL_TEMPLATES = {
-        "AWS": "s3://test_backup_TAF/cont_bkp/{uid}",
-        "Azure": "az://test_backup_TAF/cont_bkp/{uid}",
-        "GCP": "gs://test_backup_TAF/cont_bkp/{uid}",
+        "AWS": "s3://test-backup-taf/cont_bkp/{uid}",
+        "Azure": "az://test-backup-taf/cont_bkp/{uid}",
+        "GCP": "gs://test-backup-taf/cont_bkp/{uid}",
         "localstack": "s3://{uid}",
     }
 
@@ -136,7 +136,7 @@ class CollectionBase(ClusterSetup, FusionBase):
         if self.fusion_test and self.fusion_enable:
             self.configure_fusion()
             self.enable_fusion()
-        
+
         shell = RemoteMachineShellConnection(self.cluster.master)
 
         if self.cbbackup_test == "NFS" or self.cont_bkp_test == "NFS":
@@ -176,7 +176,7 @@ class CollectionBase(ClusterSetup, FusionBase):
         self.backup_cloud_provider = None
         if self.cbbackup_test in self.CLOUD_PROVIDER_CLASSES:
             self.backup_archive_dir = self.BACKUP_URL_TEMPLATES[self.cbbackup_test].format(
-                uid=f"test_{uuid.uuid4()}")
+                uid=f"test-{uuid.uuid4()}")
             self.backup_repo_name = self.input.param("repo_name", f"test_{uuid.uuid4()}")
             self.backup_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cbbackup_test]()
 
@@ -192,18 +192,20 @@ class CollectionBase(ClusterSetup, FusionBase):
         self.contbk_cloud_provider = None
         if self.cont_bkp_test in self.CLOUD_PROVIDER_CLASSES:
             self.continuous_backup_location = self.CONT_BKP_URL_TEMPLATES[self.cont_bkp_test].format(
-                uid=f"test_{uuid.uuid4()}")
+                uid=f"test-{uuid.uuid4()}")
             self.contbk_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cont_bkp_test]()
 
+        self.cont_bkp_credential_store_id = None
         if self.contbk_cloud_provider:
             self.contbk_cloud_provider.cleanup_for_bkrs(self.continuous_backup_location)
             rest = RestConnection(self.cluster.master)
+            self.cont_bkp_credential_store_id = "cont_bkp_cred"
             self.contbk_cloud_provider.create_credential_store(
-                rest, cred_id="cont_bkp_cred",
+                rest, cred_id=self.cont_bkp_credential_store_id,
                 description="Credential store for continuous backup tests")
             CredentialStoreUtils().put_service_roles(
                 rest, service_name="backup",
-                roles=["credential_consumer[cont_bkp_cred]"])
+                roles=[f"credential_consumer[{self.cont_bkp_credential_store_id}]"])
 
         if self.cont_bkp_test:
             self.cont_bk_mgr = CbContBk(shell,
@@ -343,7 +345,7 @@ class CollectionBase(ClusterSetup, FusionBase):
                                         num_writer_threads="default",
                                         num_reader_threads="default",
                                         num_storage_threads="default")
-            
+
         self._cleanup_backup_location(
             self.cbbackup_test, self.backup_cloud_provider,
             self.backup_archive_dir, "backup archive")
@@ -463,7 +465,8 @@ class CollectionBase(ClusterSetup, FusionBase):
                             history_retention_bytes=history_retention_bytes,
                             continuous_backup_interval=self.continuous_backup_interval,
                             continuous_backup_location=self.continuous_backup_location,
-                            continuous_backup_enabled="true")
+                            continuous_backup_enabled="true",
+                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id)
                         self.log.info("Continuous backup enabled for bucket %s "
                                       "(history_retention_seconds=%s, history_retention_bytes=%s)"
                                       % (bucket.name, history_retention_seconds,
@@ -478,13 +481,14 @@ class CollectionBase(ClusterSetup, FusionBase):
                             self.cluster.master, bucket,
                             continuous_backup_interval=self.continuous_backup_interval,
                             continuous_backup_location=self.continuous_backup_location,
-                            continuous_backup_enabled="true")
+                            continuous_backup_enabled="true",
+                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id)
                         self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
 
-            if self.cont_bkp_test == "NFS":
+            if self.cont_bkp_test:
                 self.sleep(self.continuous_backup_interval * 60,
-                               f"Waiting for {self.continuous_backup_interval} "
-                               "minutes after enabling continuous backup")
+                           f"Waiting for {self.continuous_backup_interval} "
+                           "minutes after enabling continuous backup")
 
                 self.log.info("Reconnecting shell before backup operations")
                 old_backup_shell = self.backup_mgr.shellConn
@@ -500,10 +504,12 @@ class CollectionBase(ClusterSetup, FusionBase):
                 if self.input.param("initial_load", True):
                     self.log.info("Creating backup repository")
                     self.backup_mgr.create_repo(self.backup_archive_dir,
-                                                    self.backup_repo_name)
+                                                self.backup_repo_name,
+                                                obj_staging_dir=self.obj_staging_dir_cbbackup)
                     self.log.info("Performing initial backup")
                     self.backup_mgr.backup(self.backup_archive_dir,
-                                               self.backup_repo_name)
+                                           self.backup_repo_name,
+                                           obj_staging_dir=self.obj_staging_dir_cbbackup)
 
         if isinstance(self.range_scan_collections, int) \
                 and self.range_scan_collections > 0:

@@ -11,19 +11,19 @@ from couchbase_utils.security_utils.credential_store_utils import \
 
 class AWSProvider(CloudProviderInterface):
     def __init__(self):
-        self.aws_region = os.getenv("AWS_REGION")
+        self.aws_region = os.getenv("AWS_REGION", "us-east-1")
         self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
         self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
 
-    def get_cbbackupmgr_flags(self):
+    def get_cbbackupmgr_flags(self, shell=None):
         return (
             "--obj-region {0} --obj-access-key-id {1} "
             "--obj-secret-access-key {2}"
         ).format(self.aws_region, self.aws_access_key_id,
                  self.aws_secret_access_key)
 
-    def get_cbconbk_flags(self):
-        return self.get_cbbackupmgr_flags()
+    def get_cbconbk_flags(self, shell=None):
+        return self.get_cbbackupmgr_flags(shell)
 
     def cleanup_for_bkrs(self, s3_path):
         """

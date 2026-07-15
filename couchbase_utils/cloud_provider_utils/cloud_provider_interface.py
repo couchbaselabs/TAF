@@ -10,11 +10,18 @@ class CloudProviderInterface(object):
         pass
 
     @abstractmethod
-    def get_cbbackupmgr_flags(self):
+    def get_cbbackupmgr_flags(self, shell=None):
+        """
+        :param shell: shell connection to the node cbbackupmgr will run on.
+                     Providers whose flags reference a local file (e.g. GCP's
+                     --obj-auth-file) need this to stage the file on that
+                     node first, since cbbackupmgr runs there, not on the
+                     test controller.
+        """
         pass
 
     @abstractmethod
-    def get_cbconbk_flags(self):
+    def get_cbconbk_flags(self, shell=None):
         pass
 
     @abstractmethod

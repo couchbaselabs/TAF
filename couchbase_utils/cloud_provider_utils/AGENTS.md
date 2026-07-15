@@ -30,8 +30,8 @@ model: inherit
 | Method | Purpose |
 |---|---|
 | `__init__()` | Read provider-specific credentials from env vars |
-| `get_cbbackupmgr_flags()` | Return `cbbackupmgr` object-store flags string |
-| `get_cbconbk_flags()` | Return `cbcontbk` object-store flags string (identical to `get_cbbackupmgr_flags()` for every provider today) |
+| `get_cbbackupmgr_flags(shell=None)` | Return `cbbackupmgr` object-store flags string |
+| `get_cbconbk_flags(shell=None)` | Return `cbcontbk` object-store flags string (identical to `get_cbbackupmgr_flags()` for every provider today) |
 | `cleanup_for_bkrs(location)` | Clean up object-store location used by a backup-restore test run |
 | `create_credential_store(rest, cred_id, ...)` | Build provider's Credential Store payload, `POST /settings/credentials/:id` via `CredentialStoreUtils` |
 
@@ -39,6 +39,7 @@ Facts:
 - `__metaclass__ = ABCMeta` is Python-2 idiom — does **not** enforce abstractness under Python 3 (needs `class Foo(metaclass=ABCMeta):`). Pre-existing repo-wide pattern, kept as-is. All 4 providers implement all 5 methods for real; only matters for a hypothetical future provider that skips one.
 - `create_credential_store()` is deliberately per-provider, NOT a shared dispatcher on the interface (a common `isinstance`/duck-typing dispatcher was tried and rejected — defeats per-provider polymorphism).
 - All providers call cloud SDKs directly (`boto3`, `azure.storage.blob`, `google.cloud.storage`) — do NOT reuse `lib/awsLib/S3.py`, `lib/azureLib/Azure.py`, `lib/gcs.py` (deliberate, keeps package self-contained).
+- `shell` param on `get_cbbackupmgr_flags`/`get_cbconbk_flags`: the shell connection to the node cbbackupmgr/cbcontbk will actually run on (`CbBackupMgr`/`CbContBk` pass `self.shellConn`). AWS/Azure/Localstack ignore it — their flags are inline key/secret strings. GCPProvider uses it to stage its local auth file onto that node first (see below); passing `shell=None` makes it fall back to the local path, which only works if that path happens to also exist on the target node.
 
 ## AWSProvider
 
@@ -69,11 +70,11 @@ Facts:
 
 | Env var | Meaning |
 |---|---|
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service-account key JSON (standard GCP SDK var) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service-account key JSON (standard GCP SDK var), read on the test controller |
 | `GCP_REGION` | Region |
 
-- Flags: `--obj-auth-file <GOOGLE_APPLICATION_CREDENTIALS> --obj-region <GCP_REGION>`
-- `cleanup_for_bkrs(gcs_path)` — `gs://bucket-name/some-dir`; loads service-account JSON (`json.load`), `google.cloud.storage.Client.from_service_account_info(...)` deletes blobs with prefix `some-dir/` (bucket untouched).
+- Flags: `--obj-auth-file <path> --obj-region <GCP_REGION>`, where `<path>` is `REMOTE_AUTH_FILE_PATH` (`/tmp/tmp_gcp_service_account.json`) once a `shell` is passed to `get_cbbackupmgr_flags`/`get_cbconbk_flags` — cbbackupmgr/cbcontbk run on a cluster node, not the controller, so the raw `GOOGLE_APPLICATION_CREDENTIALS` path wouldn't resolve there. `_stage_remote_auth_file()` SFTPs the key file (`shell.copy_file_local_to_remote`) to that fixed path the first time a given `shell.ip` is seen, tracked in `_remote_auth_file_staged_hosts`, then reuses it on subsequent calls to the same node. No `shell` → falls back to the local `gcp_service_account_key_file` path.
+- `cleanup_for_bkrs(gcs_path)` — `gs://bucket-name/some-dir`; loads service-account JSON (`json.load`) from the **local** `gcp_service_account_key_file` (this runs on the controller via the GCP SDK, not over `shell`), `google.cloud.storage.Client.from_service_account_info(...)` deletes blobs with prefix `some-dir/` (bucket untouched).
 - `create_credential_store(...)` — reads `gcp_service_account_key_file` **raw** (whole file as one string, NOT `json.load`-parsed — different from `cleanup_for_bkrs`), builds `build_gcp_service_account_payload(json_credentials, gcp_region, ...)` → `create_credential(...)`.
 
 ## LocalstackProvider
