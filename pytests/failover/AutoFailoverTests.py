@@ -373,15 +373,29 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.rest.add_node(username=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
                                host_name=f"{node.ip}:{CbServer.ssl_port}")
-        nodes = self.cluster_util.get_nodes(self.cluster.master)
+
+        # The rebalance REST API requires known_nodes to exactly match the
+        # server's own complete current membership (active + inactiveAdded
+        # + inactiveFailed), or it rejects the request with {"mismatch": 1}.
+        # get_nodes() defaults to active-only, which excludes both the
+        # node just added above (clusterMembership=inactiveAdded until
+        # rebalanced in) and the failed-over node (inactiveFailed) --
+        # causing exactly that mismatch. Include both states so
+        # known_nodes reflects the server's true view.
+        nodes = self.cluster_util.get_nodes(self.cluster.master,
+                                            inactive_added=True,
+                                            inactive_failed=True)
         self.log.info("Marking {0} for removal".format(self.servers_to_remove))
         nodes_to_remove = [node.id for node in nodes if
                            node.ip in [t.ip for t in self.servers_to_remove]]
         nodes = [node.id for node in nodes]
-        started, _ = self.rest.rebalance(nodes, nodes_to_remove)
+        started, rebalance_content = self.rest.rebalance(nodes, nodes_to_remove)
         rebalance_success = False
         if started:
             rebalance_success = reb_util.monitor_rebalance()
+        else:
+            self.log.critical("Rebalance REST call rejected: {0}"
+                              .format(rebalance_content))
         if (not rebalance_success or not started) and not \
                 self.failover_expected:
             self.fail("Rebalance failed. Check logs")
