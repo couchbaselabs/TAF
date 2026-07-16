@@ -10,15 +10,59 @@ from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 class GetAlert(GetProject):
 
+    # Shared QE creds bucket: webhook/Slack/Teams secrets aren't allowed in
+    # the .ini file, so they live in a doc on the internal server pool instead.
+    _CREDS_POOL_HOST = "172.23.217.21"
+    _CREDS_BUCKET = "creds_for_tests"
+    _CREDS_DOC_ID = "slack and teams integration links"
+    _alert_creds_cache = None
+
+    @classmethod
+    def _fetch_alert_creds(cls):
+        if GetAlert._alert_creds_cache is not None:
+            return GetAlert._alert_creds_cache
+
+        from java.time import Duration
+        from com.couchbase.client.java import Cluster, ClusterOptions
+        from com.couchbase.client.java.env import ClusterEnvironment
+        from com.couchbase.client.core.env import TimeoutConfig, IoConfig
+
+        creds = {}
+        cluster = None
+        try:
+            cluster_env = ClusterEnvironment.builder().ioConfig(
+                IoConfig.numKvConnections(1)).timeoutConfig(
+                TimeoutConfig.builder()
+                .connectTimeout(Duration.ofSeconds(20))
+                .kvTimeout(Duration.ofSeconds(10)))
+            cluster_options = ClusterOptions.clusterOptions(
+                "Administrator", "esabhcuoc").environment(
+                cluster_env.build())
+            cluster = Cluster.connect(cls._CREDS_POOL_HOST, cluster_options)
+            bucket = cluster.bucket(cls._CREDS_BUCKET)
+            bucket.waitUntilReady(Duration.ofSeconds(10))
+            content = bucket.defaultCollection().get(
+                cls._CREDS_DOC_ID).contentAsObject()
+            for key in ("slack_bot_token", "slack_webhook_url",
+                        "teams_webhook_url", "serviceNowUrl",
+                        "serviceNowPassword"):
+                creds[key] = content.getString(key)
+        except Exception:
+            creds = {}
+        finally:
+            if cluster is not None:
+                cluster.disconnect()
+
+        GetAlert._alert_creds_cache = creds
+        return creds
+
     # Config templates keyed by alert_kind test param.
     # Each entry has "api_kind" (sent to Capella) and "config" (request body).
     # Pass alert_kind=<key> as a test param to select which one is used.
-    # Real credentials/URLs live in the [capella] section of the run's .ini
-    # file (webhook_password, webhook_url, slack_bot_token, slack_webhook_url,
-    # teams_webhook_url) so they never need to be committed to source.
+    # webhook/Slack/Teams secrets all come from _fetch_alert_creds.
     @property
     def _KIND_CONFIGS(self):
-        capella_cfg = self.input.capella
+        alert_creds = self._fetch_alert_creds()
         return {
             "webhook": {
                 "api_kind": "webhook",
@@ -26,12 +70,13 @@ class GetAlert(GetProject):
                     "webhook": {
                         "basicAuth": {
                             "user": "capella-webhook-uitest-user",
-                            "password": capella_cfg.get(
-                                "webhook_password", "<PLACEHOLDER_PASSWORD>")
+                            "password": alert_creds.get(
+                                "serviceNowPassword",
+                                "<PLACEHOLDER_PASSWORD>")
                         },
                         "method": "POST",
-                        "url": capella_cfg.get(
-                            "webhook_url",
+                        "url": alert_creds.get(
+                            "serviceNowUrl",
                             "https://placeholder.service-now.com/api/"
                             "1325623/capella_webhook_ui_test")
                     }
@@ -41,7 +86,7 @@ class GetAlert(GetProject):
                 "api_kind": "slack",
                 "config": {
                     "slack": {
-                        "botToken": capella_cfg.get(
+                        "botToken": alert_creds.get(
                             "slack_bot_token", "xoxb-PLACEHOLDER-TOKEN"),
                         "channel": "#capella-alerts-pipeline",
                         "clusterChannelMappings": {}
@@ -53,7 +98,7 @@ class GetAlert(GetProject):
                 "config": {
                     "slack": {
                         "channelWebhookUrlMappings": {
-                            "#capella-alerts-pipeline": capella_cfg.get(
+                            "#capella-alerts-pipeline": alert_creds.get(
                                 "slack_webhook_url",
                                 "https://hooks.slack.com/services/"
                                 "PLACEHOLDER/PLACEHOLDER/PLACEHOLDER")
@@ -67,7 +112,7 @@ class GetAlert(GetProject):
                 "config": {
                     "teams": {
                         "webhookUrlMappings": {
-                            "default": capella_cfg.get(
+                            "default": alert_creds.get(
                                 "teams_webhook_url",
                                 "https://placeholder.environment.api."
                                 "powerplatform.com/powerautomate/"
