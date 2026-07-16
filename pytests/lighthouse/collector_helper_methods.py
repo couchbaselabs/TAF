@@ -457,6 +457,64 @@ def get_portal_cluster_nodes(ucp_client, cluster_uuid):
     return cluster.get('nodes', [])
 
 
+def get_portal_last_collected_at(ucp_client, cluster_uuid):
+    """
+    Return the newest telemetry timestamp (collectedAt) the portal holds for a
+    cluster -- the portal-side freshness marker used to validate the telemetry
+    timestamp gap across a network partition.
+
+    Read from GET /clusters/{uuid} (telemetry.collectedAt), which always
+    reflects the most recent report delivered and ingested by the portal.  This
+    is simpler and more direct than counting /history entries: one timestamp
+    that advances only when fresh telemetry actually lands.
+
+    Args:
+        ucp_client:   Authenticated UnifiedControlPlaneClient instance.
+        cluster_uuid: str - the cluster UUID (from get_cb_cluster_uuid).
+
+    Returns:
+        str ISO8601 collectedAt of the latest snapshot, or None if the cluster
+        has no telemetry on the portal yet / could not be read.
+    """
+    cluster = get_portal_cluster(ucp_client, cluster_uuid)
+    if not cluster:
+        return None
+    telemetry = cluster.get('telemetry') or {}
+    return telemetry.get('collectedAt')
+
+
+def wait_for_portal_telemetry_after(ucp_client, cluster_uuid, after_ts,
+                                    timeout=180, poll_interval=10):
+    """
+    Poll the portal until its newest telemetry timestamp (collectedAt) for the
+    cluster is strictly greater than after_ts, or the timeout elapses.
+
+    Two uses:
+      - establish a healthy delivery baseline before partitioning -- pass
+        after_ts="" to wait for the first report to land on the portal;
+      - confirm telemetry RESUMED after recovery -- pass the pre-block baseline
+        and wait for it to advance.
+
+    Args:
+        ucp_client:    Authenticated UnifiedControlPlaneClient instance.
+        cluster_uuid:  str - the cluster UUID (from get_cb_cluster_uuid).
+        after_ts:      str ISO8601 lower bound (exclusive); "" means "any".
+        timeout:       seconds to keep polling.
+        poll_interval: seconds between polls.
+
+    Returns:
+        str the newer collectedAt once it advances past after_ts, or None if it
+        never did within the timeout.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ts = get_portal_last_collected_at(ucp_client, cluster_uuid)
+        if ts and ts > (after_ts or ""):
+            return ts
+        time.sleep(poll_interval)
+    return None
+
+
 def _uuid_in_clusters_response(data, cluster_uuid):
     """
     Check whether a cluster UUID appears in a parsed list_clusters() response.
@@ -860,4 +918,104 @@ def get_lighthouse_failure_reason_from_logs(server):
     if idx == -1:
         return None
     return line[idx + len(marker):].strip()
+
+
+def _fw_run(shell, command):
+    """Run a command over the shell and return its stdout as a single string."""
+    out, _ = shell.execute_command(command)
+    return "\n".join(out) if isinstance(out, list) else (out or "")
+
+
+def _portal_reachable_from(shell, portal_ip, portal_port):
+    """
+    True if a TCP connection from the node to portal_ip:portal_port succeeds.
+    Used to confirm a partition actually took effect (or was removed).
+    """
+    probe = ("timeout 5 bash -c '</dev/tcp/%s/%s' && echo FW_OPEN || echo FW_SHUT"
+             % (portal_ip, portal_port))
+    return "FW_OPEN" in _fw_run(shell, probe)
+
+
+def block_collector_to_portal(server, portal_ip, portal_port=None):
+    """
+    Simulate a collector->portal network partition by dropping ONLY the
+    outbound telemetry traffic from this node to the portal.
+
+    Mirrors Jython_tasks.task._block_incoming_network_from_node, which fires
+    BOTH firewall backends (iptables and nft): a node may be iptables-based or
+    nftables-based (Debian is nft-first and frequently ships no iptables binary
+    at all), so applying only one backend silently no-ops on the other.  These
+    are OUTPUT rules to the portal IP:port so intra-cluster traffic (cluster
+    health / autofailover) is left untouched -- the node stays up and only its
+    telemetry reports fail to leave.
+
+    ClusterUtils.flush_network_rules creates the nft "ip filter" table with an
+    INPUT chain only, so the OUTPUT chain is ensured here (idempotent) before
+    the rule is added.  After applying the rules the portal is probed to
+    confirm the partition took effect -- a missing firewall binary then fails
+    loudly (with the latest collector failure reason from the logs) instead of
+    silently passing as a "block".
+
+    Args:
+        server:      TestInputServer for the node running the collector
+                     (normally cluster.master).
+        portal_ip:   Portal IP address to block.
+        portal_port: Portal TCP port (defaults to LIGHTHOUSE_PORTAL_PORT).
+
+    Raises:
+        RuntimeError: if the portal is still reachable after applying rules.
+    """
+    if portal_port is None:
+        portal_port = LIGHTHOUSE_PORTAL_PORT
+    shell = RemoteMachineShellConnection(server)
+    try:
+        # iptables backend (harmless "command not found" on nft-only nodes).
+        _fw_run(shell, "iptables -A OUTPUT -d %s -p tcp --dport %s -j DROP"
+                % (portal_ip, portal_port))
+        # nft backend: ensure table + OUTPUT hook chain exist, then add drop.
+        _fw_run(shell, "nft add table ip filter")
+        _fw_run(shell, "nft add chain ip filter OUTPUT "
+                "'{ type filter hook output priority 0; }'")
+        _fw_run(shell, "nft add rule ip filter OUTPUT ip daddr %s tcp dport %s "
+                "counter drop" % (portal_ip, portal_port))
+        if _portal_reachable_from(shell, portal_ip, portal_port):
+            reason = get_lighthouse_failure_reason_from_logs(server)
+            raise RuntimeError(
+                "Failed to partition collector->portal %s:%s on %s -- portal "
+                "still reachable after applying both iptables and nft OUTPUT "
+                "DROP rules (no working firewall backend on the node). Latest "
+                "collector failure reason from logs: %s"
+                % (portal_ip, portal_port, server.ip, reason))
+    finally:
+        shell.disconnect()
+
+
+def unblock_collector_to_portal(server, portal_ip, portal_port=None):
+    """
+    Remove the OUTPUT DROP rule(s) added by block_collector_to_portal from both
+    firewall backends, restoring collector->portal connectivity.  Safe to call
+    even if the rules are absent.
+
+    Args:
+        server:      TestInputServer for the node running the collector.
+        portal_ip:   Portal IP address that was blocked.
+        portal_port: Portal TCP port (defaults to LIGHTHOUSE_PORTAL_PORT).
+    """
+    if portal_port is None:
+        portal_port = LIGHTHOUSE_PORTAL_PORT
+    shell = RemoteMachineShellConnection(server)
+    try:
+        # iptables backend.
+        _fw_run(shell, "iptables -D OUTPUT -d %s -p tcp --dport %s -j DROP"
+                % (portal_ip, portal_port))
+        # nft backend: delete only the OUTPUT drop rules matching this portal,
+        # by handle, so unrelated rules are left intact.
+        listing = _fw_run(shell, "nft -a list chain ip filter OUTPUT")
+        for line in listing.splitlines():
+            if portal_ip in line and "drop" in line and "handle" in line:
+                handle = line.rsplit("handle", 1)[1].strip()
+                _fw_run(shell, "nft delete rule ip filter OUTPUT handle %s"
+                        % handle)
+    finally:
+        shell.disconnect()
 
