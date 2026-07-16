@@ -1039,8 +1039,11 @@ class DocLoaderUtils(object):
                                     and op_type == DocLoading.Bucket.SubDocOps.REMOVE):
                             op_data[retry_strategy]["success"][key] = \
                                 result
+                            DocLoaderUtils.log.info(
+                                "Key %s confirmed successful (retry_strategy=%s)"
+                                % (key, retry_strategy))
+                            keys_to_remove.append(key)
                             if retry_strategy == "retried":
-                                keys_to_remove.append(key)
                                 target_tbl = retry_succeeded_table
                             else:
                                 target_tbl = unwanted_retry_succeeded_table

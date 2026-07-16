@@ -1,6 +1,8 @@
-from SecurityLib.rbac import RbacUtil
+import json
+
 from basetestcase import ClusterSetup
 from membase.api.rest_client import RestConnection
+from SecurityLib.rbac import RbacUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -32,6 +34,17 @@ class AllowedHosts(ClusterSetup):
         user[0].update({'Writer': writer})
         self.users_list.append(user[0])
 
+    @staticmethod
+    def __set_allowedhosts(shell, host, user, password, allowedhosts):
+        # allowedHosts can only be modified via a request that genuinely
+        # arrives over loopback, so this must run as curl over SSH on the
+        # target node itself -- a remote REST client can never satisfy
+        # that regardless of the hostname/IP used in the request.
+        cmd = "curl -X POST %s:8091/settings/security -d 'allowedHosts=%s' -u %s:%s" \
+              % (host, allowedhosts, user, password)
+        output, _ = shell.execute_command(cmd)
+        return output
+
     def test_allowed_hosts_rest_apis(self):
         self.__create_user("user1", "password", "data_writer[*]:admin")
         self.__create_user("user2", "password", "data_writer[*]", False)
@@ -39,12 +52,17 @@ class AllowedHosts(ClusterSetup):
             shell = RemoteMachineShellConnection(node)
             for user in self.users_list:
                 if user["Writer"]:
-                    output = shell.set_allowedhosts("localhost", user["name"], user["password"],
-                                                    self.allowedhosts)
+                    output = self.__set_allowedhosts(shell, "localhost", user["name"],
+                                                     user["password"], self.allowedhosts)
                     if len(output[0]) > 2:
                         self.fail("Allowed hosts is not changed and error is {0}".format(output))
-                    output = shell.get_allowedhosts(user["name"], user["password"])
-                    self.assertEqual(output, self.allowedhosts)
+                    # Reads aren't subject to the localhost-only write
+                    # restriction, so a normal REST call is fine here.
+                    status, content = RestConnection(node).get_security_settings()
+                    self.assertTrue(status,
+                                    "Failed to fetch security settings: %s" % content)
+                    actual_hosts = json.loads(content).get("allowedHosts")
+                    self.assertEqual(actual_hosts, json.loads(self.allowedhosts))
             shell.disconnect()
         self.add_node_and_rebalance()
 
@@ -72,11 +90,11 @@ class AllowedHosts(ClusterSetup):
             error = error_msg2
             if not user["Writer"]:
                 error = error_msg1
-                output = self.shell.set_allowedhosts("localhost", user["name"], user["password"],
-                                                self.allowedhosts)
+                output = self.__set_allowedhosts(self.shell, "localhost", user["name"],
+                                                 user["password"], self.allowedhosts)
                 self.assertEqual(output, error)
-            output = self.shell.set_allowedhosts(self.cluster.master.ip, user["name"], user["password"],
-                                            self.allowedhosts)
+            output = self.__set_allowedhosts(self.shell, self.cluster.master.ip, user["name"],
+                                             user["password"], self.allowedhosts)
             self.assertEqual(output, error)
         self.add_node_and_rebalance()
 
@@ -89,7 +107,8 @@ class AllowedHosts(ClusterSetup):
         for user in self.users_list:
             for host in invalid_entries:
                 host = str("[\"") + str(host) + str("\"]")
-                output = self.shell.set_allowedhosts("localhost", user["name"], user["password"], host)
+                output = self.__set_allowedhosts(self.shell, "localhost", user["name"],
+                                                 user["password"], host)
                 if "errors" not in output[0]:
                     self.fail("Invalid address should fail, address {0}".format(host))
         self.add_node_and_rebalance()
@@ -104,7 +123,7 @@ class AllowedHosts(ClusterSetup):
                 hosts += host
         hosts += ",\"172.23.0.0/16\"" + "]"
         self.__create_user("user1", "password", "cluster_admin:admin")
-        self.shell.set_allowedhosts("localhost", "user1", "password", hosts)
+        self.__set_allowedhosts(self.shell, "localhost", "user1", "password", hosts)
         self.add_node_and_rebalance()
 
     def test_host_not_allowed(self):
@@ -113,17 +132,17 @@ class AllowedHosts(ClusterSetup):
         if the node can be added successfully """
         self.__create_user("user1", "password", "cluster_admin:admin")
         host = str("[\"") + str(self.cluster.master.ip) + str("\"]")
-        self.shell.set_allowedhosts("localhost", "user1", "password", host)
+        self.__set_allowedhosts(self.shell, "localhost", "user1", "password", host)
         self.add_node_and_rebalance(expect_failure=True)
         host = str("[\"*\"]")
-        self.shell.set_allowedhosts("localhost", "user1", "password", host)
+        self.__set_allowedhosts(self.shell, "localhost", "user1", "password", host)
         self.add_node_and_rebalance(expect_failure=False)
 
     def test_wild_card_characters(self):
         """ this tests case mostly validates host names"""
         self.__create_user("user1", "password", "cluster_admin:admin")
         hosts = "[\"s*-ip6.qe.couchbase.com\", \"172.23.0.0/16\", \"*.qe.couchbase.com\"]"
-        self.shell.set_allowedhosts("localhost", "user1", "password", hosts)
+        self.__set_allowedhosts(self.shell, "localhost", "user1", "password", hosts)
         self.add_node_and_rebalance()
 
     def test_cluster_init(self):

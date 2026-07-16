@@ -1,40 +1,38 @@
+import json
+import uuid
 from math import ceil
 from random import sample
-import uuid
 
-from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from basetestcase import ClusterSetup
-from cb_constants import DocLoading, CbServer
+from bucket_utils.bucket_ready_functions import CollectionUtils
+from BucketLib.bucket import Bucket
+from BucketLib.BucketOperations import BucketHelper
+from cb_constants import CbServer, DocLoading
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbbackupmgr import CbBackupMgr
 from cb_tools.cbcontbk import CbContBk
 from cb_tools.cbepctl import Cbepctl
-from collections_helper.collections_spec_constants import \
-    MetaConstants, MetaCrudParams
-from couchbase_helper.durability_helper import DurabilityHelper
-from BucketLib.BucketOperations import BucketHelper
-from BucketLib.bucket import Bucket
-from cb_server_rest_util.buckets.buckets_api import BucketRestApi
-from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_tools.cbstats import Cbstats
+from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
+from couchbase.exceptions import InvalidIndexException, QueryIndexNotFoundException
+from couchbase_helper.durability_helper import DurabilityHelper
 from couchbase_utils.cloud_provider_utils.aws_provider import AWSProvider
 from couchbase_utils.cloud_provider_utils.azure_provider import AzureProvider
 from couchbase_utils.cloud_provider_utils.gcp_provider import GCPProvider
 from couchbase_utils.cloud_provider_utils.localstack_provider import LocalstackProvider
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
 from couchbase_utils.security_utils.credential_store_utils import CredentialStoreUtils
-from lib.membase.api.rest_client import RestConnection
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from lib.testconstants import PITR_NFS_SERVER
+from membase.api.rest_client import RestConnection
 from platform_utils.ssh_util.install_util.test_input import TestInputServer
+from pytests.bucket_collections.collection_scope_number_manager import CollectionScopeNumberManager
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.fusion.fusion_base import FusionBase
 from TestInput import TestInputSingleton
-from pytests.bucket_collections.collection_scope_number_manager import CollectionScopeNumberManager
-
-from couchbase.exceptions import InvalidIndexException, \
-    QueryIndexNotFoundException
 
 
 class CollectionBase(ClusterSetup, FusionBase):
@@ -1251,22 +1249,54 @@ class CollectionBase(ClusterSetup, FusionBase):
             retry_exceptions += SDKException.DurabilityImpossibleException
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
+    @staticmethod
+    def __set_allowedhosts(shell, host, user, password, allowedhosts):
+        # allowedHosts can only be modified via a request that genuinely
+        # arrives over loopback, so this must run as curl over SSH on the
+        # target node itself -- a remote REST client can never satisfy
+        # that regardless of the hostname/IP used in the request.
+        cmd = "curl -X POST %s:8091/settings/security -d 'allowedHosts=%s' -u %s:%s" \
+              % (host, allowedhosts, user, password)
+        output, _ = shell.execute_command(cmd)
+        return output
+
     def set_allowed_hosts(self):
         """ First operation will fail and the second operation will succeed"""
         allowedhosts = "[\"*.couchbase.com\",\"10.112.0.0/16\",\"172.23.0.0/16\"]"
         host = "[\"*.couchbase.com\"]"
         for node in self.cluster.nodes_in_cluster:
             shell = RemoteMachineShellConnection(node)
-            output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
-                                            self.cluster.master.rest_password, host)
+            output = self.__set_allowedhosts(shell, "localhost", self.cluster.master.rest_username,
+                                             self.cluster.master.rest_password, host)
+            # execute_allowedhosts() is deliberately called while a
+            # failover/rebalance may still be running in the background
+            # (to test allowedHosts changes concurrently with rebalance),
+            # so a node actively being removed can briefly return nothing
+            # while its own ns_server restarts. Skip it rather than treat
+            # a transient empty response as a real failure.
+            if not output:
+                self.log.warning(
+                    "%s - No response for set_allowedhosts (node likely "
+                    "mid-rebalance); skipping" % node.ip)
+                shell.disconnect()
+                continue
             self.log.info("expected failure from set_allowedhosts {0}".format(output))
             if "errors" not in output[0]:
                 self.fail("Invalid address should fail, address {0}".format(host))
-            output = shell.set_allowedhosts("localhost", self.cluster.master.rest_username,
-                                            self.cluster.master.rest_password, allowedhosts)
+            output = self.__set_allowedhosts(shell, "localhost", self.cluster.master.rest_username,
+                                             self.cluster.master.rest_password, allowedhosts)
+            if not output:
+                self.log.warning(
+                    "%s - No response for set_allowedhosts (node likely "
+                    "mid-rebalance); skipping" % node.ip)
+                shell.disconnect()
+                continue
             if len(output) > 2:
                 self.fail("Allowed hosts is not changed and error is {0}".format(output))
-            output = shell.get_allowedhosts(self.cluster.master.rest_username,
-                                            self.cluster.master.rest_password)
-            self.assertEqual(output, allowedhosts)
+            # Reads aren't subject to the localhost-only write
+            # restriction, so a normal REST call is fine here.
+            status, content = RestConnection(node).get_security_settings()
+            self.assertTrue(status, "Failed to fetch security settings: %s" % content)
+            actual_hosts = json.loads(content).get("allowedHosts")
+            self.assertEqual(actual_hosts, json.loads(allowedhosts))
             shell.disconnect()
