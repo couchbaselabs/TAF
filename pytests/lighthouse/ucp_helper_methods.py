@@ -263,6 +263,40 @@ def build_node_telemetry(hostname, cpu_physical_cores, cpu_logical_cores,
         node['uptimeSeconds'] = uptime_seconds
     return node
 
+def build_minimal_ingest_payload(cluster_uuid, product=None):
+    """
+    Build a well-formed single-node telemetry ingest payload.
+
+    Used as the valid baseline for ingest input-validation / security tests:
+    the test takes this dict and mutates one thing (injects an unknown field,
+    bloats it, or swaps the clusterUuid) so that the mutation is the only
+    reason the request could be rejected.
+
+    The portal validates the payload shape: the top-level 'product' must be
+    an object {name, edition, version} and every node must carry an
+    'edition'.  Hardware values are arbitrary but valid positive integers --
+    the ingest endpoint is being exercised for input handling here, not for
+    telemetry accuracy.
+    """
+    if product is None:
+        product = {
+            'name': 'Couchbase Server',
+            'edition': 'enterprise',
+            'version': '7.6.12-8944-enterprise',
+        }
+    node = build_node_telemetry(
+        hostname='node-0.test.local',
+        cpu_physical_cores=4, cpu_logical_cores=8,
+        ram_bytes_total=17179869184, ram_bytes_used=4294967296,
+        storage_bytes_total=107374182400, storage_bytes_used=10737418240,
+        services=['data'], os='linux', uptime_seconds=3600)
+    node['edition'] = 'enterprise'
+    return build_telemetry_payload(
+        collected_at=get_current_iso8601_timestamp(),
+        cluster_uuid=cluster_uuid,
+        product=product,
+        nodes=[node])
+
 def build_subscription_payload(start_at, end_at, nodes,
                               logical_cores, ram_bytes):
     """Build entitlement subscription payload."""
