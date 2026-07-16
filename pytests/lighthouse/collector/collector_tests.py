@@ -20,6 +20,8 @@ from lighthouse.collector_helper_methods import (
     get_cb_cluster_nodes_services,
     get_portal_cluster,
     get_portal_cluster_nodes,
+    get_portal_last_collected_at,
+    wait_for_portal_telemetry_after,
     wait_for_cluster_on_portal,
     wait_for_portal_node_count,
     set_lighthouse_ns_config_via_diag_eval,
@@ -29,6 +31,8 @@ from lighthouse.collector_helper_methods import (
     assert_within_tolerance,
     get_collector_metrics,
     get_lighthouse_failure_reason_from_logs,
+    block_collector_to_portal,
+    unblock_collector_to_portal,
 )
 from unified_control_plane import LighthouseCollectorClient
 
@@ -996,3 +1000,161 @@ class CollectorTests(LighthouseBase):
             except Exception as e:
                 self.log.warning(
                     "Finally: could not restore settings: %s" % e)
+
+    def test_telemetry_recovers_after_network_partition(self):
+        """
+        Intermittent connectivity: while the collector->portal path is
+        network-partitioned a few reports fail, and once the partition is
+        removed telemetry resumes and the success counter climbs again.
+
+        We do NOT check for data corruption -- the partition is a clean
+        OUTPUT DROP to the portal IP:port (see block_collector_to_portal),
+        so the node stays healthy and only its outbound reports are lost.
+
+        Steps (30 s interval so a couple of reports fire per 2 min window):
+          1. Point the collector at the real portal domain, 30 s interval.
+          2. Block master->portal:port.  Over 2 min assert the failure
+             counter grew (>= 1), the success counter did NOT grow, and
+             debug.log carries a network-class send-failure reason.  Record
+             the portal-side telemetry-history count (delivery baseline).
+          3. Unblock.  Over 2 min assert the success counter grows again
+             (>= 1) AND the portal's telemetry-history count grew -- data
+             actually reached the portal end-to-end, not just a local 2xx.
+
+        RULE: always unblock and restore the 2h interval before exit.
+        """
+        portal_domain = 'couchbase.fleetmanager.internal'
+        server = self.cluster.master
+        portal_ip = self.ucp_portal.ip
+        portal_port = self.ucp_portal.port
+        cluster_uuid = get_cb_cluster_uuid(server)
+
+        # Portal reads require an authenticated session (same as the passing
+        # telemetry tests, e.g. test_verify_telemetry_accuracy).
+        login_status, login_content, _ = self.ucp_client.session_login(
+            self.ucp_portal.username, self.ucp_portal.password)
+        self.assertTrue(login_status, "Portal login failed: %s" % login_content)
+
+        blocked = False
+        try:
+            # ===== Point at the real portal, short interval =================
+            diag_status, diag_content = set_lighthouse_ns_config_via_diag_eval(
+                server,
+                reporting_endpoint=portal_domain,
+                reporting_port=LIGHTHOUSE_DEFAULT_PORTAL_PORT,
+                reporting_interval_hours=30 / 3600.0)
+            self.assertTrue(diag_status, "diag/eval failed: %s" % diag_content)
+
+            # ===== Baseline: confirm telemetry is reaching the portal BEFORE
+            # partitioning, and capture the delivery watermark to compare
+            # against after recovery.  Each run re-provisions the cluster, so
+            # its portal record starts empty -- wait for the first report. ====
+            baseline_ts = wait_for_portal_telemetry_after(
+                self.ucp_client, cluster_uuid, "", timeout=180)
+            self.assertIsNotNone(
+                baseline_ts,
+                "Telemetry never reached the portal before the partition "
+                "(cluster %s not reporting)" % cluster_uuid)
+            self.log.info("Portal delivery baseline (pre-block): %s"
+                          % baseline_ts)
+
+            # ===== Partition: block collector -> portal =====================
+            self.log.info("Blocking collector->portal %s:%s"
+                          % (portal_ip, portal_port))
+            block_collector_to_portal(server, portal_ip, portal_port)
+            blocked = True
+
+            baseline = get_collector_metrics(server)
+            self.log.info("Partitioned baseline: success=%d failure=%d"
+                          % (baseline['telemetry_sends_success'],
+                             baseline['telemetry_sends_failure']))
+
+            self.sleep(120, "waiting 2 min for reports to fail while blocked")
+
+            during = get_collector_metrics(server)
+            failure_delta = (during['telemetry_sends_failure']
+                             - baseline['telemetry_sends_failure'])
+            success_delta = (during['telemetry_sends_success']
+                             - baseline['telemetry_sends_success'])
+            self.log.info("While blocked: success_delta=%d failure_delta=%d"
+                          % (success_delta, failure_delta))
+            self.assertGreaterEqual(
+                failure_delta, 1,
+                "Expected >= 1 failed report while partitioned, got %d"
+                % failure_delta)
+            self.assertEqual(
+                success_delta, 0,
+                "Expected 0 successful reports while partitioned, got %d"
+                % success_delta)
+
+            failure_reason = get_lighthouse_failure_reason_from_logs(server)
+            self.assertIsNotNone(
+                failure_reason,
+                "Expected a send-failure reason in debug.log while blocked")
+            self.log.info("Failure reason from debug.log: %s" % failure_reason)
+            # The reason must be a network-class failure (the partition), not
+            # some unrelated error (auth/cert/DNS) that would hide a real bug.
+            network_markers = ('timeout', 'timed out', 'closed', 'refused',
+                               'econnrefused', 'econnreset', 'unreachable',
+                               'no route', 'connection', 'connect', 'nxdomain')
+            self.assertTrue(
+                any(m in failure_reason.lower() for m in network_markers),
+                "Expected a network-class failure reason while partitioned, "
+                "got: %s" % failure_reason)
+
+            # While partitioned the portal timestamp must NOT advance past the
+            # pre-block baseline -- nothing new is getting through.  Logged as a
+            # gap indicator; the hard proof is that it resumes after recovery.
+            portal_ts_blocked = get_portal_last_collected_at(self.ucp_client,
+                                                             cluster_uuid)
+            self.log.info("Portal telemetry while blocked: %s (baseline %s)"
+                          % (portal_ts_blocked, baseline_ts))
+
+            # ===== Heal: remove the partition ================================
+            self.log.info("Unblocking collector->portal")
+            unblock_collector_to_portal(server, portal_ip, portal_port)
+            blocked = False
+
+            recover_baseline = get_collector_metrics(server)
+
+            # Telemetry must RESUME: poll the portal until its newest timestamp
+            # advances past the pre-block baseline -- fresh telemetry delivered
+            # end-to-end after the network healed.
+            resumed_ts = wait_for_portal_telemetry_after(
+                self.ucp_client, cluster_uuid, baseline_ts, timeout=180)
+            set_lighthouse_interval_via_diag_eval(server, 2)
+            self.assertIsNotNone(
+                resumed_ts,
+                "Telemetry did NOT resume after recovery: portal timestamp "
+                "never advanced past baseline %s" % baseline_ts)
+
+            after = get_collector_metrics(server)
+            recovered_delta = (after['telemetry_sends_success']
+                               - recover_baseline['telemetry_sends_success'])
+            self.assertGreaterEqual(
+                recovered_delta, 1,
+                "Expected the local success counter to grow after recovery, "
+                "got %d" % recovered_delta)
+
+            self.log.info(
+                "PASS -- telemetry resumed after network partition "
+                "(portal %s -> %s, local success +%d)"
+                % (baseline_ts, resumed_ts, recovered_delta))
+
+        finally:
+            if blocked:
+                try:
+                    unblock_collector_to_portal(server, portal_ip, portal_port)
+                except Exception as e:
+                    self.log.warning("Finally: could not unblock: %s" % e)
+            try:
+                set_lighthouse_ns_config_via_diag_eval(
+                    server,
+                    reporting_endpoint=portal_domain,
+                    reporting_interval_hours=2)
+            except Exception as e:
+                self.log.warning("Finally: could not restore settings: %s" % e)
+            try:
+                self.ucp_client.session_logout()
+            except Exception as e:
+                self.log.warning("Finally: portal logout failed: %s" % e)
