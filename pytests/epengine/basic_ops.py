@@ -1,5 +1,5 @@
 import time
-import urllib
+import urllib.parse
 import uuid
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from random import choice, randint
@@ -1738,7 +1738,7 @@ class basic_ops(ClusterSetup):
             # MB-55446 validation
             remote_uuid = xdcr_rest.get_pools_default()["controllers"][
                 "replication"]["createURI"].split("=")[-1]
-            q_str = urllib.quote_plus(
+            q_str = urllib.parse.quote_plus(
                 "/{}/{}/{}/meta_latency_wt"
                 .format(remote_uuid, self.cluster.buckets[0].name,
                         xdcr_cluster.buckets[0].name))
