@@ -5,6 +5,7 @@ Created on 22-MAY-2024
 
 This test suite contains tests for columnar upgrades on cloud.
 """
+import re
 import time
 from queue import Queue
 import random
@@ -145,6 +146,13 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
             self.columnar_spec_name = "full_template"
 
         self.upgrade_version = self.input.param("upgrade_version")
+
+        columnar_provider = self.input.param("columnar_provider", "aws")
+        self.provider = {
+            "aws": "hostedAWS",
+            "gcp": "hostedGCP",
+            "azure": "hostedAzure"
+        }.get(columnar_provider, "hostedAWS")
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -463,6 +471,16 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
                     res = False
         return res
 
+    def get_expected_version_post_upgrade(self, image_name):
+        version_match = re.match(
+            r"^enterprise-analytics-(\d+)[.-](\d+)[.-](\d+)-v?(\d+)[.-]",
+            image_name)
+        if not version_match:
+            self.fail(f"Unable to parse expected version from upgrade "
+                      f"image name - {image_name}")
+
+        major, minor, patch, build = version_match.groups()
+        return f"{major}.{minor}.{patch}-{build}-enterprise-analytics"
 
     def test_end_to_end_upgrade(self):
         """
@@ -636,7 +654,7 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
             start_datetime=upgrade_start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             end_datetime=upgrade_end_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             queue_datetime=queue_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            provider="hostedAWS",
+            provider=self.provider,
             cluster_ids=[self.columnar_cluster.cluster_id])
         if resp.status_code == 202:
             ungrade_info = resp.json()
@@ -693,9 +711,8 @@ class ColumnarCloudUpgrade(ColumnarBaseTest):
             self.fail(f"Post upgrade cluster has nodes with different "
                       f"versions - {node_versions}")
         else:
-            upgrade_version = self.upgrade_version.split("-")
-            expected_version_post_upgrade = "-".join(
-                upgrade_version[2:4] + upgrade_version[0:2])
+            expected_version_post_upgrade = (
+                self.get_expected_version_post_upgrade(self.upgrade_version))
             actual_version_post_upgrade = node_versions.pop()
             if actual_version_post_upgrade != expected_version_post_upgrade:
                 self.fail(f"Incorrect Server version post upgrade. Expected "
