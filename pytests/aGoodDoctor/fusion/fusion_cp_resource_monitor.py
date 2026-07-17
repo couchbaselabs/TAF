@@ -681,31 +681,6 @@ class FusionCPResourceMonitor:
             stop_run_event.wait(interval)
         return True
 
-    def get_current_guest_volume_ids(self, cluster):
-        """
-        Return the list of EBS volume IDs currently tagged as fusion accelerator
-        guest volumes for the given cluster.
-
-        Queries AWS directly; returns an empty list on any error so callers can
-        do a simple truthiness / len() check without extra error handling.
-
-        :param cluster: Cluster object
-        :return: List of volume ID strings (may be empty)
-        """
-        try:
-            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(
-                filters={
-                    'couchbase-cloud-cluster-id': cluster.id,
-                    'couchbase-cloud-function': 'fusion-accelerator',
-                }
-            )
-            return [v.get('VolumeId') for v in volumes if v.get('VolumeId')]
-        except Exception as e:
-            self.log.error(
-                f"Failed to list guest volume IDs for cluster {cluster.id}: {e}"
-            )
-            return []
-
     def verify_guest_volumes_attached_to_cluster(self, cluster):
         """
         Verify every attached EBS guest volume is attached to an instance that
@@ -735,10 +710,19 @@ class FusionCPResourceMonitor:
             i.get('InstanceId') for i in cluster_instances if i.get('InstanceId')
         }
 
+        # NOTE: 'couchbase-cloud-function: fusion-accelerator' is applied to
+        # every EBS volume associated with an accelerator node -- including
+        # the accelerator EC2 instance's own root/boot volume (tagged via the
+        # launch template's per-resource TagSpecifications). Only the actual
+        # guest volume additionally carries 'couchbase-cloud-fusion-guest-volume:
+        # true' (see couchbase-cloud internal/clusters/tags/tags.go
+        # FusionGuestVolumeTag()), so that tag must be included here to avoid
+        # counting root/boot volumes as guest volumes.
         volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(
             filters={
                 'couchbase-cloud-cluster-id': cluster.id,
                 'couchbase-cloud-function': 'fusion-accelerator',
+                'couchbase-cloud-fusion-guest-volume': 'true',
             }
         )
 
@@ -865,8 +849,20 @@ class FusionCPResourceMonitor:
         """
         Return the EBS Volume IDs of all current fusion guest volumes for a cluster.
 
-        Guest volumes are tagged with couchbase-cloud-function=fusion-accelerator
-        and couchbase-cloud-cluster-id=<cluster.id>.
+        Guest volumes are tagged with couchbase-cloud-cluster-id=<cluster.id>,
+        couchbase-cloud-function=fusion-accelerator, AND
+        couchbase-cloud-fusion-guest-volume=true.
+
+        Note: couchbase-cloud-function=fusion-accelerator alone is NOT sufficient
+        to identify a guest volume -- it is also applied (via the accelerator's
+        launch template TagSpecifications) to the accelerator EC2 instance's own
+        root/boot EBS volume. Only the actual guest volume additionally carries
+        couchbase-cloud-fusion-guest-volume=true (set by FusionGuestVolumeTag() in
+        couchbase-cloud's internal/clusters/tags/tags.go, applied only at the
+        guest-volume-creation call sites). Omitting this tag here inflates the
+        count with root/boot volumes of any still-running accelerator instances,
+        which then mismatches against the EBS snapshot count for a backup (only
+        genuine guest volumes get snapshotted/tagged couchbase-cloud-guestvolume=true).
 
         :param cluster: Cluster object with .id attribute
         :return: List of volume ID strings (may be empty)
@@ -875,6 +871,7 @@ class FusionCPResourceMonitor:
             volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
                 "couchbase-cloud-cluster-id": cluster.id,
                 "couchbase-cloud-function": "fusion-accelerator",
+                "couchbase-cloud-fusion-guest-volume": "true",
             })
             ids = [v.get("VolumeId") for v in volumes if v.get("VolumeId")]
             self.log.info(
