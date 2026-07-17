@@ -145,6 +145,9 @@ if [ "$server_type" = "PROVISIONED_ONCLOUD" ]; then
   if [ -n "$secret_key" ]; then
     cluster_info=`echo $cluster_info | sed s/}/,\ \"secret_key\":\ \"$secret_key\"}/`
   fi
+  if [ -n "$override_token" ]; then
+    cluster_info=`echo $cluster_info | sed s/}/,\ \"override_token\":\ \"$override_token\"}/`
+  fi
   echo $cluster_info
   servers="None"
 fi
