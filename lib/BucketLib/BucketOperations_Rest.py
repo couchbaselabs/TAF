@@ -454,11 +454,14 @@ class BucketHelper(BucketRestApi):
                             Bucket.historyRetentionSeconds,
                             Bucket.magmaKeyTreeDataBlockSize,
                             Bucket.magmaSeqTreeDataBlockSize,
-                            Bucket.durabilityImpossibleFallback,
                             Bucket.fusionLogstoreURI]:
                 val = bucket_params.get(b_param, None)
                 if val is not None:
                     init_params[b_param] = val
+
+        dif_val = bucket_params.get(Bucket.durabilityImpossibleFallback, None)
+        if dif_val is not None:
+            init_params[Bucket.durabilityImpossibleFallback] = dif_val
 
         if init_params[Bucket.priority] == "high":
             init_params[Bucket.threadsNumber] = 8

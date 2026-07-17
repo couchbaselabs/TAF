@@ -439,6 +439,7 @@ class CreateBucketTests(ClusterSetup):
         try:
             cb_cli.create_bucket({
                 Bucket.name: cli_bucket_name,
+                Bucket.bucketType: Bucket.Type.MEMBASE,
                 Bucket.ramQuotaMB: 256,
                 Bucket.throttleReserved: throttle_reserved,
                 Bucket.throttleHardLimit: throttle_hard_limit
