@@ -938,10 +938,20 @@ class APIBase(CouchbaseBaseTest):
                     "total_api_calls_made_to_hit_rate_limit": 0,
                     "2xx_status_code": {},
                     "4xx_errors": {},
-                    "5xx_errors": {}
+                    "5xx_errors": {},
+                    "exceptions": 0
                 }
             for i in range(call_batch_per_api):
-                resp = api_func(*api_args, headers=header)
+                try:
+                    resp = api_func(*api_args, headers=header)
+                except Exception as e:
+                    self.log.warning(
+                        "API call raised an exception for role {} "
+                        "(attempt {}): {}".format(
+                            api_role["role"], i, e))
+                    results[api_role["id"]]["exceptions"] += 1
+                    results[api_role["id"]]["end"] = datetime.now()
+                    continue
                 if resp.status_code == 429:
                     results[api_role["id"]]["rate_limit_hit"] = True
                 if not results[api_role["id"]]["rate_limit_hit"]:
@@ -1084,9 +1094,13 @@ class APIBase(CouchbaseBaseTest):
                 150, api_func_list, self.api_keys)
             for r in results:
                 self.log.info("**********************************************")
+                if results[r]["end"] and results[r]["start"]:
+                    duration = (results[r]["end"]
+                               - results[r]["start"]).total_seconds()
+                else:
+                    duration = "N/A"
                 self.log.info("Parallel API calls for role {} took {} seconds"
-                              .format(results[r]["role"], (results[r]["end"]
-                                      - results[r]["start"]).total_seconds()))
+                              .format(results[r]["role"], duration))
                 self.log.info("**********************************************")
             for result in results:
                 if ((not results[result]["rate_limit_hit"])
