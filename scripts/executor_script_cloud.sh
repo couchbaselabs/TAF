@@ -128,7 +128,7 @@ fi
 if [ "$server_type" = "PROVISIONED_ONCLOUD" ]; then
   #added below 2 lines - by Shaazin
   date
-  cluster_info="{\"pod\": \"$capella_api_url\", \"tenant_id\": \"$tenant_id\", \"capella_user\": \"$capella_user\", \"capella_pwd\": \"$capella_password\", \"project_id\": \"$project_id\", \"region\": \"$capella_region\"}"
+  cluster_info="{\"pod\": \"$capella_api_url\", \"tenant_id\": \"$tenant_id\", \"capella_user\": \"$capella_user\", \"capella_pwd\": \"$capella_password\", \"project_id\": \"$project_id\", \"project\": \"$project_id\", \"region\": \"$capella_region\", \"account_id\": \"$account_id\"}"
   #commented below 2 lines by Shaazin
   #echo python signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region
   #cluster_info=`python signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region`
@@ -136,7 +136,8 @@ if [ "$server_type" = "PROVISIONED_ONCLOUD" ]; then
     cluster_info=`echo $cluster_info | sed s/}/,\ \"dataplane_id\":\ \"$capella_dataplane_id\"}/`
   fi
   if [ -n "$cbs_image" ]; then
-	cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
+    cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
+    cluster_info=`echo $cluster_info | sed s/}/,\ \"image\":\ \"$cbs_image\"}/`
   fi
   if [ -n "$access_key" ]; then
     cluster_info=`echo $cluster_info | sed s/}/,\ \"access_key\":\ \"$access_key\"}/`
