@@ -12,16 +12,34 @@ class GetPrivateEndpointService(GetCluster):
     def setUp(self, nomenclature="PrivateEndpoints_GET"):
         GetCluster.setUp(self, nomenclature)
 
-        # Enable Private Endpoint Service
-        result = self.capellaAPI.cluster_ops_apis.enable_private_endpoint_service(
-            self.organisation_id, self.project_id, self.cluster_id)
-        if result.status_code != 202:
-            self.log.error(result.content)
-            super(GetPrivateEndpointService, self).tearDown()
-            self.fail("!!!...Enabling PES failed...!!!")
+        self.expected_res = {
+            "enabled": True,
+            "routes": {
+                "metrics": None,
+                "xdcr": None
+            },
+            "serviceName": None,
+            "status": "enabled"
+        }
 
-        self.log.info("Waiting for Private Endpoint Service to enable")
-        self.wait_for_deployment(pes=True)
+        # Single check: skip enable if PES is already enabled (e.g. reused cluster
+        # from a prior TC); otherwise enable immediately then poll until ready.
+        status_result = self.capellaAPI.cluster_ops_apis\
+            .fetch_private_endpoint_service_status_info(
+                self.organisation_id, self.project_id, self.cluster_id)
+        if (status_result.status_code == 200 and
+                status_result.json().get("enabled", False)):
+            self.log.info("Private Endpoint Service is already enabled")
+        else:
+            result = self.capellaAPI.cluster_ops_apis\
+                .enable_private_endpoint_service(
+                    self.organisation_id, self.project_id, self.cluster_id)
+            if result.status_code != 202:
+                self.log.error(result.content)
+                super(GetPrivateEndpointService, self).tearDown()
+                self.fail("!!!...Enabling PES failed...!!!")
+            self.log.info("Waiting for Private Endpoint Service to be enabled")
+            self.wait_for_deployment(pes=True)
 
     def tearDown(self):
         super(GetPrivateEndpointService, self).tearDown()
@@ -29,7 +47,8 @@ class GetPrivateEndpointService(GetCluster):
     def test_api_path(self):
         testcases = [
             {
-                "description": "Send call with valid path params"
+                "description": "Send call with valid path params",
+                "validate_response": True
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService",
@@ -117,7 +136,10 @@ class GetPrivateEndpointService(GetCluster):
                     organization, project, cluster)
             self.capellaAPI.cluster_ops_apis.private_network_service_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService"
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(
+                result, [200], testcase, failures,
+                validate_response=testcase.get("validate_response", False),
+                expected_res=self.expected_res)
 
         if failures:
             for fail in failures:
