@@ -5,6 +5,7 @@ Created on Feb 16, 2022
 """
 import copy
 import json
+import os
 
 from BucketLib.bucket import Bucket
 from py_constants import CbServer
@@ -114,7 +115,6 @@ class CapellaBaseTest(CouchbaseBaseTest):
 
         # initialise pod object
         url = self.input.capella.get("pod")
-        import os
         if url.find("qe-") != -1 or url.find("sbx-") != -1:
             override_token = os.environ.get("sbx_token_for_internal_support")
         elif url.find("dev") != -1:
@@ -586,7 +586,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         }
 
         if self.input.capella.get("image"):
-            server_version = self.input.capella["server_version"]
+            server_version = self.input.capella.get("server_version", None) or os.environ.get("cbs_version")
             release_id = self.input.capella.get("release_id", None)
             self.capella_cluster_config["overRide"] = {"token": self.pod.TOKEN,
                                                        "image": self.provisioned_image,
