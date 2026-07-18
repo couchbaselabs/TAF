@@ -114,8 +114,18 @@ class CapellaBaseTest(CouchbaseBaseTest):
 
         # initialise pod object
         url = self.input.capella.get("pod")
+        import os
+        if url.find("qe-") != -1 or url.find("sbx-") != -1:
+            override_token = os.environ.get("sbx_token_for_internal_support")
+        elif url.find("dev") != -1:
+            override_token = os.environ.get("dev_token_for_internal_support")
+        elif url.find("stage") != -1:
+            override_token = os.environ.get("stage_token_for_internal_support")
+        else:
+            override_token = None
+
         self.pod = Pod("https://%s" % url,
-                       self.input.capella.get("override_token", None),
+                       self.input.capella.get("override_token", None) or override_token,
                        self.input.capella.get("signup_token", None),
                        self.input.capella.get("override_key", None)
                        )
