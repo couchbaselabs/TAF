@@ -1,6 +1,9 @@
 import os
+import uuid
 from urllib.parse import urlparse
 
+from azure.identity import ClientSecretCredential
+from azure.keyvault.keys import KeyClient
 from azure.storage.blob import BlobServiceClient
 
 from couchbase_utils.cloud_provider_utils.cloud_provider_interface import \
@@ -21,6 +24,15 @@ class AzureProvider(CloudProviderInterface):
     def validate_credentials(self):
         if not self.azure_storage_account or not self.azure_storage_key:
             raise CloudOperationError("Incomplete Azure credentials")
+
+        self.azure_kv_url = os.getenv("AZURE_KEY_VAULT_URL")
+        self.azure_tenant_id = os.getenv("AZURE_TENANT_ID")
+        self.azure_client_id = os.getenv("AZURE_CLIENT_ID")
+        self.azure_client_secret = os.getenv("AZURE_CLIENT_SECRET")
+
+        self.km_key_url = None
+        self._km_key_name = None
+        self._km_created_by_us = False
 
     def get_cbbackupmgr_flags(self, shell=None):
         return (
@@ -71,6 +83,65 @@ class AzureProvider(CloudProviderInterface):
             expires_at_ms=expires_at_ms)
         return cs_utils.create_credential(
             rest, cred_id, payload, username=username, password=password)
+
+    def _kv_client(self):
+        if not self.azure_kv_url:
+            raise RuntimeError(
+                "AZURE_KEY_VAULT_URL must be set for KMS operations.")
+        credential = ClientSecretCredential(
+            tenant_id=self.azure_tenant_id,
+            client_id=self.azure_client_id,
+            client_secret=self.azure_client_secret)
+        return KeyClient(vault_url=self.azure_kv_url, credential=credential)
+
+    def _vault_host(self):
+        return urlparse(self.azure_kv_url).netloc
+
+    def create_kms_key(self, alias=None):
+        client = self._kv_client()
+        if alias:
+            client.get_key(alias)
+            self._km_key_name = alias
+            self._km_created_by_us = False
+        else:
+            self._km_key_name = "contbk-taf-{0}".format(uuid.uuid4().hex[:12])
+            client.create_rsa_key(name=self._km_key_name, size=2048)
+            self._km_created_by_us = True
+
+        self.km_key_url = "azurekms://{0}/keys/{1}".format(
+            self._vault_host(), self._km_key_name)
+        return self.km_key_url
+
+    def delete_kms_key(self, key_url=None):
+        if key_url is None:
+            key_url = self.km_key_url
+        if not key_url or not self._km_created_by_us:
+            return
+        try:
+            client = self._kv_client()
+            client.begin_delete_key(self._km_key_name)
+        except Exception:
+            pass
+        self.km_key_url = None
+        self._km_key_name = None
+        self._km_created_by_us = False
+
+    def get_km_flags(self, shell=None):
+        if not self.km_key_url:
+            raise RuntimeError(
+                "AzureProvider.get_km_flags called before a key URL was set.")
+        # cbbackupmgr/cbcontbk reuse --km-access-key-id / --km-secret-access-key
+        # for the AD client id / client secret when the target KM is Azure Key
+        # Vault, plus --km-tenant-id on top. There is no --km-client-id flag.
+        return (
+            "--km-tenant-id {0} --km-access-key-id {1} "
+            "--km-secret-access-key {2} --km-key-url {3}"
+        ).format(self.azure_tenant_id, self.azure_client_id,
+                 self.azure_client_secret, self.km_key_url)
+
+    def set_km_key(self, key_url):
+        self.km_key_url = key_url
+        self._km_created_by_us = False
 
     @staticmethod
     def _parse_location(archive_uri):

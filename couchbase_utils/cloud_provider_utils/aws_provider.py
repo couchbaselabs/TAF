@@ -21,6 +21,21 @@ class AWSProvider(CloudProviderInterface):
         if not self.aws_access_key_id or not self.aws_secret_access_key:
             raise CloudOperationError("Incomplete AWS credentials")
 
+        # KMS creds fall back to the object-store creds when not set
+        # separately, so a single IAM identity with both S3 + KMS permissions
+        # can serve both purposes.
+        self.aws_kms_region = os.getenv(
+            "AWS_KMS_REGION", self.aws_region)
+        self.aws_kms_access_key_id = os.getenv(
+            "AWS_KMS_ACCESS_KEY_ID", self.aws_access_key_id)
+        self.aws_kms_secret_access_key = os.getenv(
+            "AWS_KMS_SECRET_ACCESS_KEY", self.aws_secret_access_key)
+
+        self.km_key_url = None
+        self._km_key_id = None
+        self._km_alias_name = None
+        self._km_created_by_us = False
+
     def get_cbbackupmgr_flags(self, shell=None):
         return (
             "--obj-region {0} --obj-access-key-id {1} "
@@ -172,3 +187,68 @@ class AWSProvider(CloudProviderInterface):
                 return versions
             kwargs["KeyMarker"] = response.get("NextKeyMarker")
             kwargs["VersionIdMarker"] = response.get("NextVersionIdMarker")
+
+    def _kms_client(self):
+        return boto3.client(
+            "kms",
+            aws_access_key_id=self.aws_kms_access_key_id,
+            aws_secret_access_key=self.aws_kms_secret_access_key,
+            region_name=self.aws_kms_region)
+
+    def create_kms_key(self, alias=None):
+        client = self._kms_client()
+        if alias:
+            alias_name = alias if alias.startswith("alias/") else \
+                "alias/{0}".format(alias)
+            resp = client.describe_key(KeyId=alias_name)
+            self._km_key_id = resp["KeyMetadata"]["KeyId"]
+            self._km_alias_name = alias_name
+            self._km_created_by_us = False
+        else:
+            key = client.create_key(
+                Description="TAF contbk EaR test key",
+                KeyUsage="ENCRYPT_DECRYPT",
+                KeySpec="SYMMETRIC_DEFAULT")
+            self._km_key_id = key["KeyMetadata"]["KeyId"]
+            self._km_alias_name = "alias/contbk-taf-{0}".format(uuid.uuid4())
+            client.create_alias(
+                AliasName=self._km_alias_name,
+                TargetKeyId=self._km_key_id)
+            self._km_created_by_us = True
+
+        self.km_key_url = "awskms://{0}".format(self._km_alias_name)
+        return self.km_key_url
+
+    def delete_kms_key(self, key_url=None):
+        if key_url is None:
+            key_url = self.km_key_url
+        if not key_url or not self._km_created_by_us:
+            return
+        client = self._kms_client()
+        try:
+            client.delete_alias(AliasName=self._km_alias_name)
+        except Exception:
+            pass
+        client.schedule_key_deletion(
+            KeyId=self._km_key_id, PendingWindowInDays=7)
+        self.km_key_url = None
+        self._km_key_id = None
+        self._km_alias_name = None
+        self._km_created_by_us = False
+
+    def get_km_flags(self, shell=None):
+        if not self.km_key_url:
+            raise RuntimeError(
+                "AWSProvider.get_km_flags called before a key URL was set. "
+                "Call create_kms_key() or set_km_key() first.")
+        return (
+            "--km-region {0} --km-access-key-id {1} "
+            "--km-secret-access-key {2} --km-key-url {3}"
+        ).format(self.aws_kms_region, self.aws_kms_access_key_id,
+                 self.aws_kms_secret_access_key, self.km_key_url)
+
+    def set_km_key(self, key_url):
+        self.km_key_url = key_url
+        if key_url and key_url.startswith("awskms://"):
+            self._km_alias_name = key_url[len("awskms://"):]
+        self._km_created_by_us = False

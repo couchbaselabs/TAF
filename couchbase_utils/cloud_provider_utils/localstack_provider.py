@@ -93,3 +93,22 @@ class LocalstackProvider(CloudProviderInterface):
             expires_at_ms=expires_at_ms)
         return cs_utils.create_credential(
             rest, cred_id, payload, username=username, password=password)
+
+    # Localstack Community lacks a real KMS backend; EaR tests are not
+    # supported here. Provide no-op stubs so the ABC is satisfied and any
+    # accidental use surfaces a clear error rather than a mysterious import
+    # or NotImplementedError from the base class.
+    def create_kms_key(self, alias=None):
+        raise NotImplementedError(
+            "LocalstackProvider does not support KMS operations.")
+
+    def delete_kms_key(self, key_url=None):
+        return
+
+    def get_km_flags(self, shell=None):
+        raise NotImplementedError(
+            "LocalstackProvider does not support KMS operations.")
+
+    def set_km_key(self, key_url):
+        raise NotImplementedError(
+            "LocalstackProvider does not support KMS operations.")

@@ -1,8 +1,10 @@
 import json
 import os
+import uuid
 from urllib.parse import urlparse
 
 from google.cloud import storage
+from google.cloud import kms
 
 from couchbase_utils.cloud_provider_utils.cloud_provider_interface import \
     CloudOperationError, CloudProviderInterface
@@ -29,6 +31,14 @@ class GCPProvider(CloudProviderInterface):
         if not self.gcp_service_account_key_file:
             raise CloudOperationError(
                 "Missing GCS service-account credentials")
+
+        self.gcp_kms_project = os.getenv("GCP_KMS_PROJECT")
+        self.gcp_kms_location = os.getenv("GCP_KMS_LOCATION", self.gcp_region)
+        self.gcp_kms_key_ring = os.getenv("GCP_KMS_KEY_RING", "contbk-taf")
+
+        self.km_key_url = None
+        self._km_key_name = None
+        self._km_created_by_us = False
 
     def _stage_remote_auth_file(self, shell):
         """
@@ -161,3 +171,88 @@ class GCPProvider(CloudProviderInterface):
             "delete_marker": False,
         } for blob in bucket.list_blobs(prefix=key, versions=True)
             if blob.name == key]
+
+    def _kms_client(self):
+        with open(self.gcp_service_account_key_file) as key_file:
+            credentials_info = json.load(key_file)
+        if not self.gcp_kms_project:
+            self.gcp_kms_project = credentials_info.get("project_id")
+        return kms.KeyManagementServiceClient.from_service_account_info(
+            credentials_info)
+
+    def _key_ring_path(self, client):
+        return client.key_ring_path(
+            self.gcp_kms_project, self.gcp_kms_location, self.gcp_kms_key_ring)
+
+    def _crypto_key_url(self, key_id):
+        return ("gcpkms://projects/{0}/locations/{1}/keyRings/{2}"
+                "/cryptoKeys/{3}").format(
+                    self.gcp_kms_project, self.gcp_kms_location,
+                    self.gcp_kms_key_ring, key_id)
+
+    def create_kms_key(self, alias=None):
+        client = self._kms_client()
+        if alias:
+            self._km_key_name = alias
+            self._km_created_by_us = False
+        else:
+            self._km_key_name = "contbk-taf-{0}".format(uuid.uuid4().hex[:12])
+            try:
+                client.get_key_ring(
+                    request={"name": self._key_ring_path(client)})
+            except Exception:
+                parent = "projects/{0}/locations/{1}".format(
+                    self.gcp_kms_project, self.gcp_kms_location)
+                client.create_key_ring(
+                    request={"parent": parent,
+                             "key_ring_id": self.gcp_kms_key_ring,
+                             "key_ring": {}})
+            client.create_crypto_key(
+                request={
+                    "parent": self._key_ring_path(client),
+                    "crypto_key_id": self._km_key_name,
+                    "crypto_key": {
+                        "purpose": kms.CryptoKey.CryptoKeyPurpose
+                                    .ENCRYPT_DECRYPT}})
+            self._km_created_by_us = True
+
+        self.km_key_url = self._crypto_key_url(self._km_key_name)
+        return self.km_key_url
+
+    def delete_kms_key(self, key_url=None):
+        # GCP KMS crypto keys cannot be truly deleted, only their key versions
+        # can be scheduled for destruction. Reused keys are cheap; leaving the
+        # key itself in place is the intended lifecycle.
+        if key_url is None:
+            key_url = self.km_key_url
+        if not key_url or not self._km_created_by_us:
+            return
+        try:
+            client = self._kms_client()
+            key_path = client.crypto_key_path(
+                self.gcp_kms_project, self.gcp_kms_location,
+                self.gcp_kms_key_ring, self._km_key_name)
+            versions = client.list_crypto_key_versions(
+                request={"parent": key_path})
+            for version in versions:
+                if version.state == (kms.CryptoKeyVersion.CryptoKeyVersionState
+                                       .ENABLED):
+                    client.destroy_crypto_key_version(
+                        request={"name": version.name})
+        except Exception:
+            pass
+        self.km_key_url = None
+        self._km_key_name = None
+        self._km_created_by_us = False
+
+    def get_km_flags(self, shell=None):
+        if not self.km_key_url:
+            raise RuntimeError(
+                "GCPProvider.get_km_flags called before a key URL was set.")
+        auth_file = self._stage_remote_auth_file(shell)
+        return "--km-auth-file {0} --km-region {1} --km-key-url {2}".format(
+            auth_file, self.gcp_kms_location, self.km_key_url)
+
+    def set_km_key(self, key_url):
+        self.km_key_url = key_url
+        self._km_created_by_us = False
