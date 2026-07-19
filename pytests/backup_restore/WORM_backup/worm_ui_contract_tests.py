@@ -49,7 +49,7 @@ class WormUiContractTest(WormBackupBase):
                                  % (server.ip, error))
         candidates = [str(line).strip() for line in lines
                       if str(line).startswith(metric_name)]
-        repo_candidates = [line for line in candidates if self.repo_name in line]
+        repo_candidates = [line for line in candidates if self.backup_repo_name in line]
         if repo_candidates:
             candidates = repo_candidates
         self.assertTrue(candidates,
@@ -118,7 +118,8 @@ class WormUiContractTest(WormBackupBase):
         helper = self._require_cloud_helper("WORM metric drift validation")
         metric_value = self._create_backup_and_get_worm_metric()
         worm_path = self._find_required_metadata_path([".worm"])
-        retention_until = helper.get_retention_until(self.repo_name, worm_path)
+        retention_until = helper.get_retention_until(
+            self.backup_archive_dir, self.backup_repo_name, worm_path)
         self.assertTrue(retention_until,
                         "No CSP retention timestamp found for %s" % worm_path)
         retention_until = self._normalise_metric_timestamp(float(retention_until))

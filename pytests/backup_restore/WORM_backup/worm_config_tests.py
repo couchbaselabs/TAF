@@ -45,15 +45,17 @@ class WormConfigTest(WormBackupBase):
 
     def test_invalid_worm_repo_configuration_is_rejected(self):
         output, error = self.backup_mgr.create_repo(
-            self.archive_dir, self.repo_name,
+            self.backup_archive_dir, self.backup_repo_name,
             worm_period=self.worm_period_days,
-            default_retention=max(1, self.worm_period_days - 1))
+            default_retention=max(1, self.worm_period_days - 1),
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_failure(
             output, error,
             expected_texts=["retention", "worm", "period", "conflict"])
 
         output, error = self.backup_mgr.create_repo(
-            self.archive_dir, self.repo_name, worm_period=-1)
+            self.backup_archive_dir, self.backup_repo_name, worm_period=-1,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_failure(
             output, error,
             expected_texts=["worm", "period", "invalid", "positive", "range"])

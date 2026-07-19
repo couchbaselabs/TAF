@@ -23,7 +23,9 @@ class WormEnvironmentTest(WormBackupBase):
         if getattr(self.cluster, "edition", None) != "community" and CbServer.enterprise_edition:
             self.skipTest("Run on a Community Edition cluster for CE WORM validation")
         output, error = self.backup_mgr.create_repo(
-            self.archive_dir, self.repo_name, worm_period=self.worm_period_days)
+            self.backup_archive_dir, self.backup_repo_name,
+            worm_period=self.worm_period_days,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_failure(
             output, error,
             expected_texts=["enterprise", "community", "edition", "worm"])
@@ -33,7 +35,8 @@ class WormEnvironmentTest(WormBackupBase):
         self._load_data_and_return_count()
         backup_task = self._start_backup_task()
         output, error = self.backup_mgr.worm(
-            self.archive_dir, self.repo_name, self.worm_period_days)
+            self.backup_archive_dir, self.backup_repo_name, self.worm_period_days,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         command_text = self._command_text(output, error).lower()
         self._wait_for_backup_task(backup_task)
         if error:
@@ -52,7 +55,8 @@ class WormEnvironmentTest(WormBackupBase):
             "network_flap_command", "network flapping validation")
         self._wait_for_backup_task(backup_task)
         output, error = self.backup_mgr.backup(
-            self.archive_dir, self.repo_name, resume=True, no_progress_bar=True)
+            self.backup_archive_dir, self.backup_repo_name, resume=True,
+            no_progress_bar=True, obj_staging_dir=self.obj_staging_dir_cbbackup)
         if error:
             self._assert_command_failure(
                 output, error,
@@ -69,7 +73,8 @@ class WormEnvironmentTest(WormBackupBase):
 
         self._generate_additional_docs_and_return_count()
         output, error = self.backup_mgr.backup(
-            self.archive_dir, self.repo_name, no_progress_bar=True)
+            self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         if error:
             self._assert_command_failure(
                 output, error,
@@ -90,7 +95,8 @@ class WormEnvironmentTest(WormBackupBase):
 
         self._generate_additional_docs_and_return_count()
         output, error = self.backup_mgr.backup(
-            self.archive_dir, self.repo_name, no_progress_bar=True)
+            self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         command_text = self._command_text(output, error).lower()
         if error:
             self._assert_command_failure(
@@ -108,7 +114,8 @@ class WormEnvironmentTest(WormBackupBase):
             "mark_worm_expired_command", "expired WORM disable validation")
         self._create_expired_worm_backup("expired WORM disable validation")
         output, error = self.backup_mgr.worm(
-            self.archive_dir, self.repo_name, period=0)
+            self.backup_archive_dir, self.backup_repo_name, period=0,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_success(output, error)
         info_output = self._repo_info().lower()
         self._assert_output_contains_any(
@@ -126,7 +133,8 @@ class WormEnvironmentTest(WormBackupBase):
         self._run_required_success_command(
             "expire_partial_lock_command", "partial WORM lock expiry validation")
         output, error = self.backup_mgr.backup(
-            self.archive_dir, self.repo_name, no_progress_bar=True)
+            self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         if error:
             self._assert_command_failure(
                 output, error,
@@ -147,7 +155,8 @@ class WormEnvironmentTest(WormBackupBase):
             self._run_required_success_command(
                 "clock_skew_command", "WORM clock skew validation")
             output, error = self.backup_mgr.backup(
-                self.archive_dir, self.repo_name, no_progress_bar=True)
+                self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
+                obj_staging_dir=self.obj_staging_dir_cbbackup)
         finally:
             self._run_required_success_command(
                 "reset_clock_skew_command", "WORM clock skew cleanup")
@@ -184,7 +193,8 @@ class WormEnvironmentTest(WormBackupBase):
             self._run_required_success_command(
                 "csp_throttle_command", "CSP throttling validation")
             output, error = self.backup_mgr.backup(
-                self.archive_dir, self.repo_name, no_progress_bar=True)
+                self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
+                obj_staging_dir=self.obj_staging_dir_cbbackup)
         finally:
             if reset_command not in [None, ""]:
                 reset_output, reset_error = self.shell.execute_command(reset_command)
@@ -207,7 +217,8 @@ class WormEnvironmentTest(WormBackupBase):
             "mark_worm_expired_command", "expired .worm tampering validation")
         worm_path = self._find_required_metadata_path([".worm"])
         succeeded, detail = helper.attempt_overwrite(
-            self.repo_name, worm_path, content="tampered-expired-worm")
+            self.backup_archive_dir, self.backup_repo_name, worm_path,
+            content="tampered-expired-worm")
         if not succeeded:
             self._assert_tamper_blocked(succeeded, detail)
             return

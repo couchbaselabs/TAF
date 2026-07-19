@@ -29,14 +29,15 @@ class WormResumeTest(WormBackupBase):
             "expire_resume_window_command",
             "resume outside WORM window validation")
         output, error = self.backup_mgr.backup(
-            self.archive_dir, self.repo_name, resume=True, no_progress_bar=True)
+            self.backup_archive_dir, self.backup_repo_name, resume=True,
+            no_progress_bar=True, obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_failure(
             output, error,
             expected_texts=["resume", "expired", "expire", "window", "purge",
                             "obj_versions", "incomplete", "worm"])
 
     def test_s3_multipart_upload_strategy_resumes(self):
-        self._require_storage_provider("aws", "S3 multipart WORM resume validation")
+        self._require_storage_provider("AWS", "S3 multipart WORM resume validation")
         large_doc_size = int(self.input.param("large_doc_size", 6 * 1024 * 1024))
         self._create_worm_repo()
         self._generate_additional_docs_and_return_count(

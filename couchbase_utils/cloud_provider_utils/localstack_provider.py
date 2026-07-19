@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import boto3
 
 from couchbase_utils.cloud_provider_utils.cloud_provider_interface import \
-    CloudProviderInterface
+    CloudOperationError, CloudProviderInterface
 from couchbase_utils.security_utils.credential_store_utils import \
     CredentialStoreUtils
 
@@ -17,6 +17,13 @@ class LocalstackProvider(CloudProviderInterface):
         self.localstack_secret_access_key = os.getenv(
             "LOCALSTACK_SECRET_ACCESS_KEY")
         self.localstack_endpoint = os.getenv("LOCALSTACK_ENDPOINT")
+        self.validate_credentials()
+
+    def validate_credentials(self):
+        if not self.localstack_access_key_id or \
+                not self.localstack_secret_access_key or \
+                not self.localstack_endpoint:
+            raise CloudOperationError("Incomplete Localstack credentials")
 
     def get_cbbackupmgr_flags(self, shell=None):
         return (

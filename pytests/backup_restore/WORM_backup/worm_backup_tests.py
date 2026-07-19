@@ -27,25 +27,30 @@ class WormBackupTest(WormBackupBase):
                 "reduce_retention_command", "retention reduction validation")
 
         output, error = self.backup_mgr.remove(
-            self.archive_dir, self.repo_name, backup_range="1")
+            self.backup_archive_dir, self.backup_repo_name, backup_range="1",
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_failure(
             output, error,
             expected_texts=["worm", "compliance", "locked", "retention"])
 
-        output, error = self.backup_mgr.remove(self.archive_dir, self.repo_name)
+        output, error = self.backup_mgr.remove(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_failure(
             output, error,
             expected_texts=["worm", "compliance", "locked", "retention", "backup"])
 
         output, error = self.backup_mgr.worm(
-            self.archive_dir, self.repo_name, period=0)
+            self.backup_archive_dir, self.backup_repo_name, period=0,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         command_text = self._command_text(output, error).lower()
         if error:
             self.assertTrue(any(token in command_text for token in
                                 ["worm", "retention", "compliance", "expired", "active"]),
                             "Unexpected WORM disable failure: %s" % command_text)
         output, error = self.backup_mgr.remove(
-            self.archive_dir, self.repo_name, backup_range="1")
+            self.backup_archive_dir, self.backup_repo_name, backup_range="1",
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
         self._assert_command_failure(
             output, error,
             expected_texts=["worm", "compliance", "locked", "retention"])

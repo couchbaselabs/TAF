@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from google.cloud import storage
 
 from couchbase_utils.cloud_provider_utils.cloud_provider_interface import \
-    CloudProviderInterface
+    CloudOperationError, CloudProviderInterface
 from couchbase_utils.security_utils.credential_store_utils import \
     CredentialStoreUtils
 
@@ -22,6 +22,13 @@ class GCPProvider(CloudProviderInterface):
             "GOOGLE_APPLICATION_CREDENTIALS")
         self.gcp_region = os.getenv("GCP_REGION", "us")
         self._remote_auth_file_staged_hosts = set()
+        self._gcs_client = None
+        self.validate_credentials()
+
+    def validate_credentials(self):
+        if not self.gcp_service_account_key_file:
+            raise CloudOperationError(
+                "Missing GCS service-account credentials")
 
     def _stage_remote_auth_file(self, shell):
         """
@@ -85,3 +92,72 @@ class GCPProvider(CloudProviderInterface):
             expires_at_ms=expires_at_ms)
         return cs_utils.create_credential(
             rest, cred_id, payload, username=username, password=password)
+
+    def _client(self):
+        if self._gcs_client is None:
+            with open(self.gcp_service_account_key_file) as key_file:
+                credentials_info = json.load(key_file)
+            self._gcs_client = storage.Client.from_service_account_info(
+                credentials_info)
+        return self._gcs_client
+
+    def list_objects(self, archive_uri, repo_name, relative_prefix=""):
+        location = self._parse_location(archive_uri)
+        prefix = self._object_path(location["prefix"], repo_name,
+                                   relative_prefix)
+        bucket = self._client().bucket(location["bucket"])
+        return [blob.name for blob in bucket.list_blobs(prefix=prefix)]
+
+    def object_exists(self, archive_uri, repo_name, relative_path):
+        location = self._parse_location(archive_uri)
+        key = self._object_path(location["prefix"], repo_name, relative_path)
+        bucket = self._client().bucket(location["bucket"])
+        return bucket.blob(key).exists()
+
+    def read_text(self, archive_uri, repo_name, relative_path):
+        location = self._parse_location(archive_uri)
+        key = self._object_path(location["prefix"], repo_name, relative_path)
+        bucket = self._client().bucket(location["bucket"])
+        return bucket.blob(key).download_as_text()
+
+    def get_retention_until(self, archive_uri, repo_name, relative_path):
+        location = self._parse_location(archive_uri)
+        key = self._object_path(location["prefix"], repo_name, relative_path)
+        bucket = self._client().bucket(location["bucket"])
+        blob = bucket.blob(key)
+        blob.reload()
+        return self._to_timestamp(
+            getattr(blob, "retention_expiration_time", None))
+
+    def attempt_overwrite(self, archive_uri, repo_name, relative_path,
+                          content="tampered"):
+        location = self._parse_location(archive_uri)
+        key = self._object_path(location["prefix"], repo_name, relative_path)
+        bucket = self._client().bucket(location["bucket"])
+        blob = bucket.blob(key)
+        try:
+            blob.upload_from_string(content)
+        except Exception as error:
+            return False, str(error)
+        return True, "overwrite succeeded"
+
+    def delete_object(self, archive_uri, repo_name, relative_path):
+        location = self._parse_location(archive_uri)
+        key = self._object_path(location["prefix"], repo_name, relative_path)
+        try:
+            bucket = self._client().bucket(location["bucket"])
+            bucket.blob(key).delete()
+        except Exception as error:
+            return False, str(error)
+        return True, "delete succeeded"
+
+    def list_object_versions(self, archive_uri, repo_name, relative_path):
+        location = self._parse_location(archive_uri)
+        key = self._object_path(location["prefix"], repo_name, relative_path)
+        bucket = self._client().bucket(location["bucket"])
+        return [{
+            "version_id": getattr(blob, "generation", None),
+            "is_latest": True,
+            "delete_marker": False,
+        } for blob in bucket.list_blobs(prefix=key, versions=True)
+            if blob.name == key]
