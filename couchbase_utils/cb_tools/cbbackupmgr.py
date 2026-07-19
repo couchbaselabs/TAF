@@ -6,7 +6,7 @@ import logging
 class CbBackupMgr(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
                  password="password", no_ssl_verify=None, log=None,
-                 cloud_provider=None):
+                 cloud_provider=None, kms_provider=None):
         CbCmdBase.__init__(self, shell_conn, "cbbackupmgr",
                            username=username, password=password)
         if no_ssl_verify is None:
@@ -19,6 +19,12 @@ class CbBackupMgr(CbCmdBase):
         else:
             self.log = logging.getLogger("test")
         self.cloud_provider = cloud_provider
+        self.kms_provider = kms_provider
+
+    def _append_km_flags(self, cmd):
+        if self.kms_provider is not None:
+            cmd += " %s" % self.kms_provider.get_km_flags(self.shellConn)
+        return cmd
 
     """
     Method to backup a Couchbase cluster using cbbackupmgr backup command
@@ -87,6 +93,8 @@ class CbBackupMgr(CbCmdBase):
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
 
+        cmd = self._append_km_flags(cmd)
+
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
@@ -106,7 +114,7 @@ class CbBackupMgr(CbCmdBase):
 
     def create_repo(self, archive_dir, repo_name, exclude=None, include=None,
                     worm_period=None, default_retention=None,
-                    obj_staging_dir=None):
+                    obj_staging_dir=None, encrypted=False):
         """
         Execute cbbackupmgr config command to create a repository
         """
@@ -124,10 +132,15 @@ class CbBackupMgr(CbCmdBase):
         if default_retention is not None:
             cmd += " --default-retention %s" % default_retention
 
+        if encrypted:
+            cmd += " --encrypted"
+
         if self.cloud_provider is not None:
             cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
+
+        cmd = self._append_km_flags(cmd)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -149,6 +162,8 @@ class CbBackupMgr(CbCmdBase):
             cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
+
+        cmd = self._append_km_flags(cmd)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -173,6 +188,8 @@ class CbBackupMgr(CbCmdBase):
             cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
+
+        cmd = self._append_km_flags(cmd)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -204,6 +221,8 @@ class CbBackupMgr(CbCmdBase):
             cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
+
+        cmd = self._append_km_flags(cmd)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -303,6 +322,8 @@ class CbBackupMgr(CbCmdBase):
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
 
+        cmd = self._append_km_flags(cmd)
+
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
@@ -339,6 +360,8 @@ class CbBackupMgr(CbCmdBase):
             cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
+
+        cmd = self._append_km_flags(cmd)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
@@ -377,6 +400,8 @@ class CbBackupMgr(CbCmdBase):
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
 
+        cmd = self._append_km_flags(cmd)
+
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
@@ -408,6 +433,8 @@ class CbBackupMgr(CbCmdBase):
         if obj_staging_dir:
             cmd += " --obj-staging-dir %s" % obj_staging_dir
 
+        cmd = self._append_km_flags(cmd)
+
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
         self.log.debug(f"Command output: {output}")
@@ -437,6 +464,8 @@ class CbBackupMgr(CbCmdBase):
             cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
             if obj_staging_dir:
                 cmd += " --obj-staging-dir %s" % obj_staging_dir
+
+        cmd = self._append_km_flags(cmd)
 
         self.log.debug(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
