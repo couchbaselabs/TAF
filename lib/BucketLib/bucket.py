@@ -165,6 +165,8 @@ class Bucket(object):
     continuousBackupInterval = "continuousBackupInterval"
     continuousBackupRetentionPeriod = "continuousBackupRetentionPeriod"
     continuousBackupCloudStorageCredId = "continuousBackupCloudStorageCredId"
+    continuousBackupKmKeyUrl = "continuousBackupKmKeyUrl"
+    continuousBackupKmCredId = "continuousBackupKmCredId"
     magmaKeyTreeDataBlockSize = "magmaKeyTreeDataBlockSize"
     magmaSeqTreeDataBlockSize = "magmaSeqTreeDataBlockSize"
     durabilityImpossibleFallback = "durabilityImpossibleFallback"
@@ -289,6 +291,10 @@ class Bucket(object):
             Bucket.continuousBackupRetentionPeriod, None)
         self.continuousBackupCloudStorageCredId = new_params.get(
             Bucket.continuousBackupCloudStorageCredId, None)
+        self.continuousBackupKmKeyUrl = new_params.get(
+            Bucket.continuousBackupKmKeyUrl, None)
+        self.continuousBackupKmCredId = new_params.get(
+            Bucket.continuousBackupKmCredId, None)
         self.magmaKeyTreeDataBlockSize = new_params.get(
             Bucket.magmaKeyTreeDataBlockSize, 4096)
         self.magmaSeqTreeDataBlockSize = new_params.get(

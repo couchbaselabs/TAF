@@ -535,6 +535,8 @@ class BucketHelper(BucketRestApi):
                             continuous_backup_interval=None,
                             continuous_backup_retention_period=None,
                             continuous_backup_cloud_storage_cred_id=None,
+                            continuous_backup_km_key_url=None,
+                            continuous_backup_km_cred_id=None,
                             magma_key_tree_data_block_size=None,
                             magma_seq_tree_data_block_size=None,
                             durability_impossible_fallback=None,
@@ -594,6 +596,12 @@ class BucketHelper(BucketRestApi):
         if continuous_backup_cloud_storage_cred_id is not None:
             params_dict[Bucket.continuousBackupCloudStorageCredId] \
                 = continuous_backup_cloud_storage_cred_id
+        if continuous_backup_km_key_url is not None:
+            params_dict[Bucket.continuousBackupKmKeyUrl] \
+                = continuous_backup_km_key_url
+        if continuous_backup_km_cred_id is not None:
+            params_dict[Bucket.continuousBackupKmCredId] \
+                = continuous_backup_km_cred_id
         if magma_key_tree_data_block_size is not None:
             params_dict[Bucket.magmaKeyTreeDataBlockSize] \
                 = magma_key_tree_data_block_size
