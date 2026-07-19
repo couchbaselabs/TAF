@@ -207,12 +207,58 @@ class CollectionBase(ClusterSetup, FusionBase):
                 rest, service_name="backup",
                 roles=[f"credential_consumer[{self.cont_bkp_credential_store_id}]"])
 
+        # EaR is a continuous-backup-only overlay; both attributes default to
+        # None so tearDown can inspect them safely on non-cbcontbk runs.
+        self.ear = False
+        self.kms_provider = None
+        self.km_cred_store_id = None
+
         if self.cont_bkp_test:
             self.cont_bk_mgr = CbContBk(shell,
                                         username=self.cluster.master.rest_username,
                                         password=self.cluster.master.rest_password,
                                         log=self.log,
                                         cloud_provider=self.contbk_cloud_provider)
+
+            # EaR opt-in for cbcontbk tests: provision an external KMS key,
+            # upload its credentials to the Credential Store, and attach the
+            # provider to both CLI wrappers so every backup / restore
+            # invocation appends the --km-* flags.
+            self.ear = self.input.param("ear", False)
+            if self.ear:
+                km_provider_name = self.input.param("km_provider", "AWS")
+                if km_provider_name not in self.CLOUD_PROVIDER_CLASSES:
+                    self.fail(
+                        "Invalid km_provider %r. Expected one of %s."
+                        % (km_provider_name,
+                           list(self.CLOUD_PROVIDER_CLASSES.keys())))
+                self.kms_provider = self.CLOUD_PROVIDER_CLASSES[
+                    km_provider_name]()
+                self.kms_provider.create_kms_key(
+                    alias=self.input.param("km_key_alias", None))
+                self.log.info(
+                    "KMS key provisioned for EaR: %s"
+                    % self.kms_provider.km_key_url)
+
+                rest = RestConnection(self.cluster.master)
+                self.km_cred_store_id = "km_cred_%s" % uuid.uuid4()
+                self.kms_provider.create_credential_store(
+                    rest, cred_id=self.km_cred_store_id,
+                    description="KMS credential for cbcontbk EaR tests")
+                CredentialStoreUtils().put_service_roles(
+                    rest, service_name="backup",
+                    roles=["credential_consumer[%s]" % self.km_cred_store_id])
+
+                self.backup_mgr.kms_provider = self.kms_provider
+                self.cont_bk_mgr.kms_provider = self.kms_provider
+
+                # Ensure bucket-level EaR gets flipped on by the existing
+                # collection_setup plumbing (which gates on enable_encryption_at_rest and reads encryption_at_rest_id).
+                # Default to secret id 0 (ns_server's built-in generated key) when the caller hasn't set one
+                # this matches the design doc's `encryptionAtRestKeyId=0`.
+                self.enable_encryption_at_rest = True
+                if self.encryption_at_rest_id is None:
+                    self.encryption_at_rest_id = 0
 
         try:
             self.collection_setup()
@@ -355,6 +401,49 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.continuous_backup_location, "continuous backup",
             cleanup_repo=True, collect_logs_on_failure=True)
 
+        # EaR cleanup: delete the KMS key + Credential Store entry on both
+        # success and failure paths. Cloud KMS keys carry ongoing cost and
+        # must never be left orphaned. On failure we still log everything a
+        # human would need to find the key in the provider's console — the
+        # scheduled-delete window (AWS: 7 days pending; Azure: 90-day soft
+        # delete; GCP: destroys versions only) gives investigators time to
+        # cancel deletion if the key is still needed for post-mortem.
+        if self.ear:
+            if self.is_test_failed() and self.kms_provider is not None:
+                key_details = {
+                    "provider": type(self.kms_provider).__name__,
+                    "km_key_url": self.kms_provider.km_key_url,
+                    # AWS uses (_km_key_id, _km_alias_name); GCP/Azure use
+                    # _km_key_name. Read via getattr so the log line is
+                    # provider-agnostic.
+                    "km_key_id": getattr(
+                        self.kms_provider, "_km_key_id", None),
+                    "km_alias_name": getattr(
+                        self.kms_provider, "_km_alias_name", None),
+                    "km_key_name": getattr(
+                        self.kms_provider, "_km_key_name", None),
+                    "km_created_by_this_run": getattr(
+                        self.kms_provider, "_km_created_by_us", None),
+                    "km_cred_store_id": self.km_cred_store_id,
+                }
+                self.log.warning(
+                    "EaR test failed — KMS resources scheduled for deletion "
+                    "below. Details for post-mortem lookup: %s" % key_details)
+
+            if self.kms_provider is not None:
+                try:
+                    self.kms_provider.delete_kms_key()
+                except Exception as e:
+                    self.log.warning(
+                        "Failed to delete KMS key during teardown: %s" % e)
+            if self.km_cred_store_id is not None:
+                try:
+                    rest = RestConnection(self.cluster.master)
+                    CredentialStoreUtils().delete_credential(
+                        rest, self.km_cred_store_id)
+                except Exception as e:
+                    self.log.error(f"Exception while deleting KMS credential store entry: {e}")
+
         super(CollectionBase, self).tearDown()
 
     def _collect_backup_logs_on_failure(self):
@@ -466,7 +555,13 @@ class CollectionBase(ClusterSetup, FusionBase):
                             continuous_backup_interval=self.continuous_backup_interval,
                             continuous_backup_location=self.continuous_backup_location,
                             continuous_backup_enabled="true",
-                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id)
+                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
+                            continuous_backup_km_key_url=(
+                                self.kms_provider.km_key_url
+                                if self.ear else None),
+                            continuous_backup_km_cred_id=(
+                                self.km_cred_store_id
+                                if self.ear else None))
                         self.log.info("Continuous backup enabled for bucket %s "
                                       "(history_retention_seconds=%s, history_retention_bytes=%s)"
                                       % (bucket.name, history_retention_seconds,
@@ -482,7 +577,13 @@ class CollectionBase(ClusterSetup, FusionBase):
                             continuous_backup_interval=self.continuous_backup_interval,
                             continuous_backup_location=self.continuous_backup_location,
                             continuous_backup_enabled="true",
-                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id)
+                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
+                            continuous_backup_km_key_url=(
+                                self.kms_provider.km_key_url
+                                if self.ear else None),
+                            continuous_backup_km_cred_id=(
+                                self.km_cred_store_id
+                                if self.ear else None))
                         self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
 
             if self.cont_bkp_test:
@@ -505,7 +606,8 @@ class CollectionBase(ClusterSetup, FusionBase):
                     self.log.info("Creating backup repository")
                     self.backup_mgr.create_repo(self.backup_archive_dir,
                                                 self.backup_repo_name,
-                                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+                                                obj_staging_dir=self.obj_staging_dir_cbbackup,
+                                                encrypted=self.ear)
                     self.log.info("Performing initial backup")
                     self.backup_mgr.backup(self.backup_archive_dir,
                                            self.backup_repo_name,
