@@ -14,15 +14,22 @@ class CbContBk(CbCmdBase):
     CMD_TIMEOUT = 900
 
     def __init__(self, shell_conn, username="Administrator",
-                 password="password", log=None, cloud_provider=None):
+                 password="password", log=None, cloud_provider=None,
+                 kms_provider=None):
         CbCmdBase.__init__(self, shell_conn, "cbcontbk",
                            username=username, password=password)
         self.cli_flags = ""
         self.cloud_provider = cloud_provider
+        self.kms_provider = kms_provider
         if log:
             self.log = log
         else:
             self.log = logging.getLogger("test")
+
+    def _append_km_flags(self, cmd):
+        if self.kms_provider is not None:
+            cmd += " %s" % self.kms_provider.get_km_flags(self.shellConn)
+        return cmd
 
     def _execute_cmd(self, cmd):
         """Run the command with a hard timeout via a daemon thread.
@@ -115,6 +122,8 @@ class CbContBk(CbCmdBase):
             if obj_staging_dir:
                 cmd += f" --obj-staging-dir {obj_staging_dir}"
 
+        cmd = self._append_km_flags(cmd)
+
         self.log.debug(f"Executing command: {cmd}")
 
         output, error = self._execute_cmd(cmd)
@@ -146,6 +155,8 @@ class CbContBk(CbCmdBase):
             cmd += f" {self.cloud_provider.get_cbconbk_flags(self.shellConn)}"
             if obj_staging_dir:
                 cmd += f" --obj-staging-dir {obj_staging_dir}"
+
+        cmd = self._append_km_flags(cmd)
 
         self.log.debug(f"Executing command: {cmd}")
 
