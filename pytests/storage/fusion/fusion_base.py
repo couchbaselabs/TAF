@@ -157,6 +157,10 @@ class FusionBase(BaseTestCase):
             self.validate_batch_size = self.input.param("validate_batch_size", 500000)
             self.rebalance_ops_rate = self.input.param("rebalance_ops_rate", 10000)
             self.validate_uploaders_are_active = self.input.param("validate_uploaders_are_active", True)
+            # Some tests intentionally induce migration failures (e.g. disk-full
+            # during extent migration); they set this flag to skip the migration
+            # failure check in validate_fusion_health() during tearDown.
+            self.skip_migration_failure_check = self.input.param("skip_migration_failure_check", False)
 
             self.spare_nodes = list()
 
@@ -172,8 +176,18 @@ class FusionBase(BaseTestCase):
             self.log.info("Skipping Fusion SetUp")
 
     def tearDown(self):
+        health_check_error = None
         if self.fusion_test:
-            self.validate_fusion_health()
+            # Capture (don't raise) any fusion health check failure so that the
+            # remaining teardown steps (S3 cleanup, coredump check, NFS cleanup,
+            # cluster shutdown in super().tearDown()) still run. The failure is
+            # re-raised at the very end so the test is still reported as failed.
+            try:
+                self.validate_fusion_health()
+            except Exception as e:
+                health_check_error = e
+                self.log.error(f"Fusion health check failed during tearDown, "
+                               f"continuing with remaining teardown: {e}")
             if getattr(self, 'fusion_s3_test', False) and self.s3_run_prefix:
                 _, content = FusionRestAPI(self.cluster.master).get_fusion_status()
                 if content["state"] != "disabled":
@@ -186,6 +200,8 @@ class FusionBase(BaseTestCase):
                 ssh.disconnect()
                 self.log.info(f"S3 cleanup output: {o}, error: {e}")
         super(FusionBase, self).tearDown()
+        if health_check_error is not None:
+            raise health_check_error
 
     def setup_nfs_server(self):
 
@@ -1622,6 +1638,23 @@ class FusionBase(BaseTestCase):
             self.log.info(f"Log store Bucket DU = {bucket_du}")
             time.sleep(5)
 
+    def get_total_migration_failures(self):
+        """Return ep_fusion_migration_failures summed across all nodes and
+        buckets. Used to assert that no new migration failures occur after a
+        disk-full condition is cleared."""
+        total = 0
+        for node in self.cluster.servers:
+            cbstats = Cbstats(node)
+            for bucket in self.cluster.buckets:
+                try:
+                    stats = cbstats.all_stats(bucket.name)
+                    total += int(stats.get('ep_fusion_migration_failures', 0))
+                except Exception as e:
+                    self.log.warning(f"Error getting migration stats from "
+                                     f"{node.ip}:{bucket.name} - {e}")
+            cbstats.disconnect()
+        return total
+
     def validate_fusion_health(self):
         self.log.info("FUSION HEALTH CHECK - START")
         failure_messages = list()
@@ -1645,7 +1678,18 @@ class FusionBase(BaseTestCase):
                     migration_failures = int(stats.get('ep_fusion_migration_failures', 0))
                     read_failures = int(stats.get('ep_data_read_failed', 0))
 
-                    if sync_failures or migration_failures or read_failures:
+                    # Some tests intentionally induce migration failures (e.g.
+                    # disk-full during extent migration) and set
+                    # skip_migration_failure_check to exclude them from the health
+                    # check. The value is still logged for visibility.
+                    skip_migration = getattr(self, 'skip_migration_failure_check', False)
+                    if skip_migration and migration_failures:
+                        self.log.info(f"Node {node.ip}, Bucket {bucket.name}: "
+                                      f"ignoring migration_failures={migration_failures} "
+                                      f"(skip_migration_failure_check enabled)")
+                    counted_migration_failures = 0 if skip_migration else migration_failures
+
+                    if sync_failures or counted_migration_failures or read_failures:
                         self.log.error(f"Node {node.ip}, Bucket {bucket.name}: "
                                        f"sync={sync_failures}, migration={migration_failures}, "
                                        f"read={read_failures}")
@@ -2477,6 +2521,77 @@ class FusionBase(BaseTestCase):
         self.log.info(f"Node Sync Stats: {node_sync_stats}")
 
         return sync_stats_per_bucket, node_sync_stats, total_syncs_across_cluster
+
+
+    def validate_buckets_synced_to_log_store(self, buckets):
+        """Validate that the given buckets are actively syncing to the Fusion
+        log store.
+
+        For each bucket this asserts:
+          1. cbstats show sync progress (ep_fusion_syncs > 0 and
+             ep_fusion_bytes_synced > 0, aggregated across nodes).
+          2. No sync failures (ep_fusion_sync_failures == 0 on every node).
+          3. The bucket has a non-empty log-store directory (NFS du > 0).
+             Skipped for the S3 backend, where per-bucket directory DU is not
+             applicable; the cbstats checks above still validate syncing.
+        """
+        bucket_names = [bucket.name for bucket in buckets]
+        self.log.info(f"Validating log-store sync for new buckets: {bucket_names}")
+        failures = list()
+
+        # 1) Aggregated sync stats per bucket must show progress
+        sync_stats_per_bucket, _, _ = self.get_fusion_sync_stats()
+        for bucket in buckets:
+            stats = sync_stats_per_bucket.get(bucket.name, {})
+            syncs = stats.get("ep_fusion_syncs", 0)
+            bytes_synced = stats.get("ep_fusion_bytes_synced", 0)
+            self.log.info(f"Bucket '{bucket.name}': ep_fusion_syncs={syncs}, "
+                          f"ep_fusion_bytes_synced={bytes_synced}")
+            if syncs <= 0 or bytes_synced <= 0:
+                failures.append(f"Bucket '{bucket.name}' shows no sync progress "
+                                f"(ep_fusion_syncs={syncs}, "
+                                f"ep_fusion_bytes_synced={bytes_synced})")
+
+        # 2) No sync failures on any node
+        for server in self.cluster.nodes_in_cluster:
+            cbstats = Cbstats(server)
+            for bucket in buckets:
+                try:
+                    result = cbstats.all_stats(bucket.name)
+                    sync_failures = int(result.get("ep_fusion_sync_failures", 0))
+                    if sync_failures:
+                        failures.append(f"Bucket '{bucket.name}' on {server.ip} "
+                                        f"has ep_fusion_sync_failures={sync_failures}")
+                except Exception as e:
+                    self.log.warning(f"Error fetching sync stats from "
+                                     f"{server.ip}:{bucket.name} - {e}")
+            cbstats.disconnect()
+
+        # 3) Log-store directory for each bucket must be non-empty (NFS only)
+        if self.log_store == "s3":
+            self.log.info("S3 log store: skipping per-bucket log-store directory "
+                          "DU check (covered by cbstats sync stats above)")
+        else:
+            nfs_ssh = RemoteMachineShellConnection(self.nfs_server)
+            for bucket in buckets:
+                bucket_uuid = self.get_bucket_uuid(bucket.name)
+                log_store_path = os.path.join(self.nfs_server_path, "kv", bucket_uuid)
+                o, e = nfs_ssh.execute_command(f"du -sb {log_store_path}")
+                try:
+                    du_bytes = int(o[0].split("\t")[0])
+                except (IndexError, ValueError):
+                    du_bytes = 0
+                self.log.info(f"Bucket '{bucket.name}': log-store DU={du_bytes} "
+                              f"bytes at {log_store_path}")
+                if du_bytes <= 0:
+                    failures.append(f"Bucket '{bucket.name}' has an empty/missing "
+                                    f"log-store directory (DU={du_bytes} bytes at "
+                                    f"{log_store_path})")
+            nfs_ssh.disconnect()
+
+        self.assertFalse(failures,
+                         f"New bucket log-store sync validation failed: {failures}")
+        self.log.info("New bucket log-store sync validation PASSED")
 
 
     def get_fusion_status_stats(self, validate=False):

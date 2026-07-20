@@ -187,7 +187,8 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
             self.bucket_util.print_bucket_stats(self.cluster)
 
             time_delta = self.fusion_upload_interval - time_taken
-            self.sleep(time_delta+15, "Sleep after data loading")
+            if time_delta > 0:
+                self.sleep(time_delta+15, "Sleep after data loading")
 
             # Check stats
             self.get_fusion_sync_stats()

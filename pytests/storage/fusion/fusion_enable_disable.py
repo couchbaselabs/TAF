@@ -870,6 +870,14 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
 
+        # Stop Fusion syncs before removing log store permissions so that no
+        # sync activity races with the permission change.
+        self.log.info("Stopping Fusion syncs by setting fusion_sync_rate_limit to 0")
+        status, content = ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_sync_rate_limit=0)
+        self.log.info(f"Stopping Fusion syncs, Status = {status}, Content = {content}")
+        self.assertTrue(status, f"Failed to stop Fusion syncs: {content}")
+
         # Remove permissions for 'couchbase' user from the log store directory
         log_store_dir = "/" + self.fusion_log_store_uri.split("///")[-1]
         remove_perm_cmd = f"chown -R root:root {log_store_dir}"
@@ -890,6 +898,20 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         o, e = ssh.execute_command(restore_perm_cmd)
         self.assertFalse(e, f"Failed to restore permissions: {e}")
         ssh.disconnect()
+
+        # After restoring permissions, Fusion should be able to complete
+        # disabling. Fail the test if it stays stuck in the 'disabling' state.
+        self.log.info("Waiting for Fusion to reach 'disabled' state after "
+                      "restoring log store permissions")
+        fusion_disabled = self.monitor_fusion_state_transition(
+            state="disabled", timeout=3600)
+        if not fusion_disabled:
+            _, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+            self.monitor_fusion_info = False
+            monitor_fusion_th.join()
+            self.fail(f"Fusion did not reach 'disabled' state after restoring "
+                      f"log store permissions (stuck in "
+                      f"'{content.get('state')}')")
 
         self.sleep(60, "Wait before stopping all monitoring threads")
         self.monitor_fusion_info = False
@@ -1534,7 +1556,19 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
                                         logstore_frag_threshold=self.logstore_frag_threshold)
 
         self.sleep(30, "Wait before enabling Fusion")
-        enable_fusion_th = threading.Thread(target=self.enable_fusion, args=[])
+        # enable_fusion() calls self.fail() on timeout; running it in a thread
+        # would swallow that failure (the AssertionError dies in the thread and
+        # join() returns cleanly). Capture any exception so we can surface the
+        # real cause in the main thread instead of failing later in tearDown.
+        enable_fusion_errors = list()
+
+        def _enable_fusion_and_capture():
+            try:
+                self.enable_fusion()
+            except Exception as ex:
+                enable_fusion_errors.append(ex)
+
+        enable_fusion_th = threading.Thread(target=_enable_fusion_and_capture)
         enable_fusion_th.start()
 
         monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
@@ -1542,6 +1576,12 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         # Wait until Fusion is enabled
         enable_fusion_th.join()
+
+        if enable_fusion_errors:
+            self.monitor_fusion_info = False
+            monitor_fusion_th.join()
+            self.fail(f"Fusion did not enable after creating new buckets: "
+                      f"{enable_fusion_errors[0]}")
 
         self.log.info("Starting data workload on existing buckets")
         workload_th1 = threading.Thread(target=self.perform_workload, args=[self.num_items, self.num_items*2, "create", True, old_buckets])
@@ -1552,6 +1592,13 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         workload_th1.join()
         workload_th2.join()
+
+        # Allow time for the newly loaded data to sync to the log store, then
+        # validate that the new buckets are actively syncing (sync stats
+        # progressing, no sync failures, and a non-empty log-store directory).
+        self.sleep(120 + self.fusion_upload_interval,
+                   "Wait for new bucket data to sync to log store")
+        self.validate_buckets_synced_to_log_store(new_buckets)
 
         self.sleep(30, "Wait before stopping monitoring threads")
         self.monitor_fusion_info = False

@@ -77,6 +77,11 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
 
         kill_memcached = self.input.param("kill_memcached", False)
 
+        # Migration failures are expected while the disk is full in this test,
+        # so skip the migration failure check in validate_fusion_health() during
+        # tearDown (ep_fusion_migration_failures will be non-zero).
+        self.skip_migration_failure_check = True
+
         self.log.info("Starting initial load")
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 60
@@ -116,7 +121,26 @@ class FusionDiskFull(MagmaDiskFull, FusionBase):
             self.log.info(f"Freeing disk on {node.ip}")
             self.free_disk(server=node)
 
+        # Capture migration failures right after freeing the disk. Failures
+        # accumulated during the disk-full window are expected; what we validate
+        # is that NO further migration failures occur once the disk is freed.
+        migration_failures_after_free = self.get_total_migration_failures()
+        self.log.info(f"Migration failures after freeing disk: "
+                      f"{migration_failures_after_free}")
+
         guest_volume_th.join()
+
+        # Once all guest volumes have drained (extent migration complete), the
+        # migration failure count must not have increased beyond the count
+        # captured immediately after freeing the disk.
+        migration_failures_after_migration = self.get_total_migration_failures()
+        self.log.info(f"Migration failures after extent migration completed: "
+                      f"{migration_failures_after_migration}")
+        self.assertEqual(
+            migration_failures_after_migration, migration_failures_after_free,
+            f"Extra migration failures occurred after freeing disk: "
+            f"before={migration_failures_after_free}, "
+            f"after={migration_failures_after_migration}")
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)

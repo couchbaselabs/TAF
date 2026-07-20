@@ -94,55 +94,64 @@ class FusionLogCleaning(MagmaBaseTest, FusionBase):
     def test_log_cleaning_during_rebalance(self):
 
         bucket = self.cluster.buckets[0]
+        rebalance_sleep_time = self.input.param("rebalance_sleep_time", 900)
 
         self.log.info("Log Cleaning During Rebalance Test Started")
 
         monitor_count_th_array = list()
-        for bucket in self.cluster.buckets:
-            monitor_th = threading.Thread(target=self.monitor_log_count, args=[bucket, 5, 18000])
-            monitor_count_th_array.append(monitor_th)
-            monitor_th.start()
-
-        self.log.info("Starting initial load")
-        self.initial_load()
-        sleep_time = 120 + self.fusion_upload_interval + 20
-        self.sleep(sleep_time, "Sleep after data loading")
-        self.bucket_util.print_bucket_stats(self.cluster)
-
-        update_th = threading.Thread(target=self.perform_multiple_updates, args=[1, 90])
-        update_th.start()
-
         monitor_du_threads = list()
         monitor_cbstats_threads = list()
-        for bucket in self.cluster.buckets:
-            th = threading.Thread(target=self.monitor_fusion_du, args=[bucket])
-            monitor_du_threads.append(th)
-            th.start()
-            th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket])
-            monitor_cbstats_threads.append(th2)
-            th2.start()
+        update_th = None
 
-        self.log.info("Running a Fusion rebalance")
-        self.run_rebalance(output_dir=self.fusion_output_dir,
-                            rebalance_count=1,
-                            rebalance_sleep_time=900)
+        try:
+            for bucket in self.cluster.buckets:
+                monitor_th = threading.Thread(target=self.monitor_log_count, args=[bucket, 5, 18000])
+                monitor_count_th_array.append(monitor_th)
+                monitor_th.start()
 
-        self.log.info("Monitoring active guest volumes")
-        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
-        guest_volume_th.start()
-        guest_volume_th.join()
+            self.log.info("Starting initial load")
+            self.initial_load()
+            sleep_time = 120 + self.fusion_upload_interval + 20
+            self.sleep(sleep_time, "Sleep after data loading")
+            self.bucket_util.print_bucket_stats(self.cluster)
 
-        self.sleep(600, "Wait before stopping monitor threads")
+            update_th = threading.Thread(target=self.perform_multiple_updates, args=[1, 90, self.ops_rate])
+            update_th.start()
 
-        self.monitor_stats = False
-        update_th.join()
-        for th in monitor_du_threads:
-            th.join()
-        for th in monitor_cbstats_threads:
-            th.join()
-        self.log_count_monitor = False
-        for th in monitor_count_th_array:
-            th.join()
+            for bucket in self.cluster.buckets:
+                th = threading.Thread(target=self.monitor_fusion_du, args=[bucket])
+                monitor_du_threads.append(th)
+                th.start()
+                th2 = threading.Thread(target=self.monitor_log_store_stats, args=[bucket])
+                monitor_cbstats_threads.append(th2)
+                th2.start()
+
+            self.log.info("Running a Fusion rebalance")
+            self.run_rebalance(output_dir=self.fusion_output_dir,
+                                rebalance_count=1,
+                                rebalance_sleep_time=rebalance_sleep_time)
+
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
+            guest_volume_th.join()
+
+            self.sleep(600, "Wait before stopping monitor threads")
+        finally:
+            # Stop and join all monitoring threads even if the test body fails
+            # midway (e.g. run_rebalance raises). Otherwise these threads keep
+            # running after the test has ended, since the stop flags below would
+            # never be set.
+            self.monitor_stats = False
+            self.log_count_monitor = False
+            if update_th is not None:
+                update_th.join()
+            for th in monitor_du_threads:
+                th.join()
+            for th in monitor_cbstats_threads:
+                th.join()
+            for th in monitor_count_th_array:
+                th.join()
 
 
     def test_log_cleaning_with_history(self):

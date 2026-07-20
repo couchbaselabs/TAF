@@ -322,8 +322,11 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.sleep(10, "Wait before performing swap rebalance during migration")
         if self.swap_rebalance_method == "dcp":
             nodes_to_rebalance_out = self.cluster.nodes_in_cluster[-self.swap_rebalance_nodes_during_migration:]
-            nodes_to_rebalance_in = self.cluster.servers[len(self.cluster.nodes_in_cluster):\
-                                    len(self.cluster.nodes_in_cluster)+self.swap_rebalance_nodes_during_migration]
+            spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
+            self.assertTrue(len(spare_nodes) >= self.swap_rebalance_nodes_during_migration,
+                            f"Not enough spare nodes for swap rebalance: need "
+                            f"{self.swap_rebalance_nodes_during_migration}, found {len(spare_nodes)}")
+            nodes_to_rebalance_in = spare_nodes[:self.swap_rebalance_nodes_during_migration]
 
             self.log.info(f"Swap Rebalancing {nodes_to_rebalance_out} during extent migration")
             result = self.task.rebalance(self.cluster, nodes_to_rebalance_in,
@@ -1021,7 +1024,7 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
 
         self.log.info(f"Running Fusion rebalance up to acceleration (stopping before rebalance) with min_storage_size={min_storage_size} bytes")
-        nodes_to_monitor, plan_uuid, involved_nodes = self.run_rebalance(
+        nodes_to_monitor, current_nodes_str, new_nodes_str = self.run_rebalance(
             output_dir=self.fusion_output_dir,
             stop_before_rebalance=True,
             min_storage_size=min_storage_size
@@ -1076,10 +1079,14 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
         self.sleep(10, "Wait after deleting guest volumes")
 
+        # run_rebalance(stop_before_rebalance=True) returns comma-separated IP
+        # strings for the current and new node sets; the plan UUID is stored
+        # separately in self.reb_plan_uuids.
+        plan_uuid = self.reb_plan_uuids[-1]
         self.log.info(f"Manually starting rebalance with plan_uuid: {plan_uuid}")
 
-        current_nodes = [node.ip for node in self.cluster.nodes_in_cluster]
-        new_nodes = [node.replace("ns_1@", "") for node in involved_nodes]
+        current_nodes = [node.strip() for node in current_nodes_str.split(",") if node.strip()]
+        new_nodes = [node.strip() for node in new_nodes_str.split(",") if node.strip()]
 
         all_nodes = set(current_nodes) | set(new_nodes)
         known_nodes = [f"ns_1@{node}" for node in all_nodes]
@@ -1087,7 +1094,6 @@ class FusionMigration(MagmaBaseTest, FusionBase):
         ejected_nodes = set(current_nodes) - set(new_nodes)
         eject_nodes = [f"ns_1@{node}" for node in ejected_nodes]
 
-        self
         self.log.info(f"Known nodes: {known_nodes}")
         self.log.info(f"Ejected nodes: {eject_nodes}")
 

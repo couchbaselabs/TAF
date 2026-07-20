@@ -227,7 +227,7 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         elif rebalance_type == "out":
             self.num_nodes_to_rebalance_out = 1
         elif rebalance_type == "swap":
-            self.num_swap_rebalance = 1
+            self.num_nodes_to_swap_rebalance = 1
         elif rebalance_type == "random":
             num_kv_nodes = len([n for n in self.cluster.nodes_in_cluster if "kv" in n.services])
             if num_kv_nodes < 4:
@@ -240,11 +240,11 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
                 elif choice == "out":
                     self.num_nodes_to_rebalance_out = 1
                 else:
-                    self.num_swap_rebalance = 1
+                    self.num_nodes_to_swap_rebalance = 1
         
         self.log.info("Rebalance type: {0}, in={1}, out={2}, swap={3}".format(
             rebalance_type, self.num_nodes_to_rebalance_in,
-            self.num_nodes_to_rebalance_out, self.num_swap_rebalance))
+            self.num_nodes_to_rebalance_out, self.num_nodes_to_swap_rebalance))
 
     def test_toggle_upload_rate_limit_with_memcached_kills(self):
         """
