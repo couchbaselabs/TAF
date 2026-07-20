@@ -1268,12 +1268,12 @@ class UpgradeBase(BaseTestCase):
         bucket_rr = dict()
         for server in cluster.kv_nodes:
             kv_ep_max_size = dict()
-            _, res = RestConnection(server).query_prometheus("kv_ep_max_size")
+            _, res = ClusterRestAPI(server).query_prometheus("kv_ep_max_size")
             for item in res["data"]["result"]:
                 bucket_name = item["metric"]["bucket"]
                 kv_ep_max_size[bucket_name] = float(item["value"][1])
 
-            _, res = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
+            _, res = ClusterRestAPI(server).query_prometheus("kv_logical_data_size_bytes")
             for item in res["data"]["result"]:
                 if item["metric"]["state"] == "active":
                     bucket_name = item["metric"]["bucket"]
@@ -1289,7 +1289,7 @@ class UpgradeBase(BaseTestCase):
     def check_bucket_data_size_per_node(self, cluster):
         bucket_data_size = dict()
         for server in cluster.kv_nodes:
-            _, res = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
+            _, res = ClusterRestAPI(server).query_prometheus("kv_logical_data_size_bytes")
 
             for item in res["data"]["result"]:
                 if item["metric"]["state"] == "active":

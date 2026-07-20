@@ -205,6 +205,8 @@ if [ "$server_type" = "CAPELLA_LOCAL" ]; then
 else
   if [ "$server_type" = "ELIXIR_ONPREM" ]; then
     installParameters="cluster_profile=serverless"
+  elif [ "$server_type" = "ON_PREM_PROVISIONED" ]; then
+    installParameters="cluster_profile=provisioned"
   fi
 fi
 

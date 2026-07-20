@@ -1,10 +1,10 @@
 import math
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants.CBServer import CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.tuq_helper import N1QLHelper
-from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient, SDKClientPool
 from storage.storage_base import StorageBase
 
@@ -40,7 +40,7 @@ class GuardrailsBase(StorageBase):
             )
 
         self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster,
-                                                       self.cluster.nodes_in_cluster)
+                                                               self.cluster.nodes_in_cluster)
         self.log.info("KV nodes {}".format(self.cluster.kv_nodes))
 
     def check_resident_ratio(self, cluster):
@@ -54,12 +54,12 @@ class GuardrailsBase(StorageBase):
         bucket_rr = dict()
         for server in cluster.kv_nodes:
             kv_ep_max_size = dict()
-            _, res = RestConnection(server).query_prometheus("kv_ep_max_size")
+            _, res = ClusterRestAPI(server).query_prometheus("kv_ep_max_size")
             for item in res["data"]["result"]:
                 bucket_name = item["metric"]["bucket"]
                 kv_ep_max_size[bucket_name] = float(item["value"][1])
 
-            _, res = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
+            _, res = ClusterRestAPI(server).query_prometheus("kv_logical_data_size_bytes")
             for item in res["data"]["result"]:
                 if item["metric"]["state"] == "active":
                     bucket_name = item["metric"]["bucket"]
@@ -86,7 +86,7 @@ class GuardrailsBase(StorageBase):
 
         result = dict()
         for server in cluster.kv_nodes:
-            _, res = RestConnection(server).query_prometheus("cm_resource_limit_reached")
+            _, res = ClusterRestAPI(server).query_prometheus("cm_resource_limit_reached")
 
             for item in res["data"]["result"]:
                 if item["metric"]["resource"] == metric:
@@ -181,15 +181,26 @@ class GuardrailsBase(StorageBase):
         return True
 
     def create_sdk_clients_for_buckets(self):
-        self.cluster.sdk_client_pool = SDKClientPool()
+            
         max_clients = min(self.task_manager.number_of_threads, 20)
         if self.standard_buckets > 20:
             max_clients = self.standard_buckets
         clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
-        for bucket in self.cluster.buckets:
-            self.cluster.sdk_client_pool.create_clients(
-                self.cluster, bucket, req_clients=clients_per_bucket,
-                compression_settings=self.sdk_compression)
+        if self.load_docs_using == "default_loader":
+            self.cluster.sdk_client_pool = SDKClientPool()
+            for bucket in self.cluster.buckets:
+                self.cluster.sdk_client_pool.create_clients(
+                    self.cluster, bucket, [self.cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+        elif self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.cluster.buckets:
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.cluster.master,
+                    self.cluster.master.rest_username,
+                    self.cluster.master.rest_password,
+                    bucket.name,
+                    clients_per_bucket)
 
 
     def tearDown(self):

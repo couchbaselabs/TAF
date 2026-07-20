@@ -2,7 +2,8 @@ import time
 
 from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
-from membase.api.rest_client import RestConnection
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from rebalance_utils.rebalance_util import RebalanceUtil
 from storage.guardrails.guardrails_base import GuardrailsBase
 
 
@@ -18,6 +19,7 @@ class MaxDataGuardrails(GuardrailsBase):
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
         self.init_items_load = self.input.param("init_items_load", 5000000)
         self.timeout = self.input.param("guardrail_timeout", 3600)
+        self.ops_rate = self.input.param("ops_rate", 20000)
 
         status, content = \
             BucketHelper(self.cluster.master).set_max_data_per_bucket_guardrails(self.couch_max_data,
@@ -36,6 +38,20 @@ class MaxDataGuardrails(GuardrailsBase):
 
         self.log.info("Creating SDK clients for the buckets")
         self.create_sdk_clients_for_buckets()
+
+    def load_docs(self, doc_ops="create", ops_rate=None):
+        # java_doc_loader only assigns percentages for the ops present in
+        # doc_ops; reset all of them first so a prior load's percentages
+        # (e.g. create_perc=100) don't leak into this load.
+        self.create_perc = 0
+        self.update_perc = 0
+        self.delete_perc = 0
+        self.read_perc = 0
+        self.expiry_perc = 0
+        self.generate_docs(doc_ops=doc_ops)
+        generator = getattr(self, "gen_" + doc_ops)
+        self.java_doc_loader(generator=generator, doc_ops=doc_ops,
+                             ops_rate=ops_rate if ops_rate is not None else self.ops_rate)
 
 
     def test_max_data_per_bucket_with_data_growth(self):
@@ -138,15 +154,10 @@ class MaxDataGuardrails(GuardrailsBase):
 
         items_to_delete = bucket_item_count // ((self.num_scopes - 1) * self.num_collections * 2)
 
-        self.doc_ops = "delete"
         self.delete_start = 0
         self.delete_end = items_to_delete
-        self.create_perc = 0
-        self.delete_perc = 100
         self.log.info("Deleting {} items in each collection".format(items_to_delete))
-        self.new_loader()
-        self.doc_loading_tm.getAllTaskResult()
-        self.printOps.end_task()
+        self.load_docs(doc_ops="delete")
 
         self.log.info("Bucket data size after deletes = {}".format(
                                 self.check_bucket_data_size_per_node(self.cluster)))
@@ -325,10 +336,8 @@ class MaxDataGuardrails(GuardrailsBase):
         self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
         node_to_add = self.cluster.servers[self.nodes_init]
-        rest = RestConnection(self.cluster.master)
-        services = rest.get_nodes_services()
-        services_on_target_node = services[(self.cluster.master.ip + ":"
-                                            + str(self.cluster.master.port))]
+        _, node_info = ClusterRestAPI(self.cluster.master).node_details()
+        services_on_target_node = node_info["services"]
         self.log.info("Adding node {}".format(node_to_add.ip))
         rebalance_in_task = self.task.async_rebalance(self.cluster,
                                     to_add=[node_to_add],
@@ -376,23 +385,28 @@ class MaxDataGuardrails(GuardrailsBase):
                 self.assertTrue(exp, "Mutations were not blocked")
             self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
-        rest = RestConnection(self.cluster.master)
-        rest_nodes = rest.node_statuses()
-        node_to_failover = None
-        for node in rest_nodes:
-            if node.ip != self.cluster.master.ip:
-                node_to_failover = node
+        cluster_rest = ClusterRestAPI(self.cluster.master)
+        rebalance_util = RebalanceUtil(self.cluster)
+
+        _, node_statuses = cluster_rest.get_node_statuses()
+        otp_node_to_failover = None
+        for node_info in node_statuses.values():
+            otp_node = node_info["otpNode"]
+            if otp_node.split("@")[1] != self.cluster.master.ip:
+                otp_node_to_failover = otp_node
                 break
-        failover_res = rest.fail_over(node_to_failover.id, graceful=True)
-        self.assertTrue(failover_res, "Failover of node failed")
+        self.assertIsNotNone(otp_node_to_failover, "No node found to failover")
 
-        rebalance_passed = rest.monitorRebalance()
-        self.assertTrue(rebalance_passed, "Failover rebalance failed")
+        status, content = cluster_rest.perform_graceful_failover(otp_node_to_failover)
+        self.assertTrue(status, "Failover of node failed: {}".format(content))
+        self.assertTrue(rebalance_util.monitor_rebalance(), "Failover rebalance failed")
 
-        rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
-                       ejectedNodes=[])
-        rebalance_passed = rest.monitorRebalance()
-        self.assertTrue(rebalance_passed, "Rebalance after failover of node failed")
+        _, node_statuses = cluster_rest.get_node_statuses()
+        known_nodes = [node_info["otpNode"] for node_info in node_statuses.values()]
+        status, content = cluster_rest.rebalance(known_nodes=known_nodes, eject_nodes=[])
+        self.assertTrue(status, "Rebalance after failover failed to start: {}".format(content))
+        self.assertTrue(rebalance_util.monitor_rebalance(),
+                        "Rebalance after failover of node failed")
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.cluster.nodes_in_cluster = self.cluster_util.get_nodes(self.cluster.master)
@@ -452,10 +466,8 @@ class MaxDataGuardrails(GuardrailsBase):
                 break
 
         self.spare_node = self.cluster.servers[self.nodes_init]
-        rest = RestConnection(self.cluster.master)
-        services = rest.get_nodes_services()
-        services_on_target_node = services[(self.cluster.master.ip + ":"
-                                            + str(self.cluster.master.port))]
+        _, node_info = ClusterRestAPI(self.cluster.master).node_details()
+        services_on_target_node = node_info["services"]
 
         self.log.info("Swap Rebalance starting")
         swap_reb_task = self.task.async_rebalance(self.cluster,
@@ -488,7 +500,7 @@ class MaxDataGuardrails(GuardrailsBase):
         bucket_data_size = dict()
 
         for server in cluster.kv_nodes:
-            _, res = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
+            _, res = ClusterRestAPI(server).query_prometheus("kv_logical_data_size_bytes")
 
             for item in res["data"]["result"]:
                 if item["metric"]["state"] == "active":
@@ -518,7 +530,18 @@ class MaxDataGuardrails(GuardrailsBase):
         self.create_end = create_end
         end_time = time.time() + self.timeout
 
-        doc_loading_tasks = self.new_loader()
+        # java_doc_loader only assigns percentages for the ops present in
+        # doc_ops; reset all of them first before this create load.
+        self.create_perc = 0
+        self.update_perc = 0
+        self.delete_perc = 0
+        self.read_perc = 0
+        self.expiry_perc = 0
+        self.generate_docs(doc_ops="create")
+        # Start the load without waiting so we can poll bucket data size and
+        # stop the load as soon as the guardrail is breached.
+        doc_loading_tasks, print_ops_tasks = self.java_doc_loader(
+            generator=self.gen_create, doc_ops="create", wait=False)
 
         current_data_size = self.check_bucket_data_size_per_node(self.cluster)
 
@@ -531,5 +554,6 @@ class MaxDataGuardrails(GuardrailsBase):
         self.sleep(1)
         self.log.info("Stopping all doc loading tasks after hitting max data guardrail")
         for task in doc_loading_tasks:
-            task.stop_work_load()
-        self.printOps.end_task()
+            task.end_task()
+        for task in print_ops_tasks:
+            task.end_task()
