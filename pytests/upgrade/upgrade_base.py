@@ -16,18 +16,6 @@ import testconstants
 from upgrade_lib.couchbase import upgrade_chains
 from upgrade_lib.upgrade_helper import CbServerUpgrade
 import threading
-from lighthouse.collector_helper_methods import (
-    set_lighthouse_ns_config_via_diag_eval,
-    set_lighthouse_interval_via_diag_eval,
-    get_cb_cluster_uuid,
-    get_cb_cluster_node_count,
-    get_portal_cluster,
-    wait_for_cluster_on_portal,
-    LIGHTHOUSE_DEFAULT_PORTAL_PORT,
-    _parse_cb_version,
-)
-from lighthouse.lighthouse_portal import LighthousePortal
-from unified_control_plane import UnifiedControlPlaneClient
 
 
 class UpgradeBase(BaseTestCase):
@@ -1129,6 +1117,18 @@ class UpgradeBase(BaseTestCase):
             self.log.info(
                 "Lighthouse %s: ucp_ip not configured, skipping" % phase)
             return
+
+        from lighthouse.collector_helper_methods import (
+            set_lighthouse_ns_config_via_diag_eval,
+            set_lighthouse_interval_via_diag_eval,
+            get_cb_cluster_uuid,
+            get_cb_cluster_node_count,
+            get_portal_cluster,
+            wait_for_cluster_on_portal,
+            _parse_cb_version,
+        )
+        from lighthouse.lighthouse_portal import LighthousePortal
+        from unified_control_plane import UnifiedControlPlaneClient
 
         server = self.cluster.master
         portal_domain = 'lighthouse.couchbase.internal'
