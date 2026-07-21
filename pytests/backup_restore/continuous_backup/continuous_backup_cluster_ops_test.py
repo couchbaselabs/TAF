@@ -104,8 +104,9 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         if bucket_obj:
             self.bucket_util.delete_bucket(self.cluster, bucket_obj)
 
-    def _pitr_restore_to_new_bucket(self, restore_bucket_name, timestamp):
-        """Restore the primary bucket to a new bucket at the given timestamp."""
+    def _pitr_restore_to_new_bucket(self, restore_bucket_name, timestamp=None):
+        """Restore the primary bucket to a new bucket at the given timestamp.
+        timestamp=None restores everything cbcontbk has (the latest state)."""
         self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
@@ -199,7 +200,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._create_restore_bucket(restore_name)
 
         self.log.info("PITR to T2 (post-rebalance-in)")
-        self._pitr_restore_to_new_bucket(restore_name, ts_t2)
+        self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_c2, bucket_name=restore_name)
         self.log.info(f"T2 restore verified: {count_c2} items")
@@ -249,7 +250,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._create_restore_bucket(restore_name)
 
         self.log.info("PITR to T2 (post-rebalance-out)")
-        self._pitr_restore_to_new_bucket(restore_name, ts_t2)
+        self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_c2, bucket_name=restore_name)
 
@@ -301,7 +302,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._create_restore_bucket(restore_name)
 
         self.log.info("PITR to T2 (post-swap-rebalance)")
-        self._pitr_restore_to_new_bucket(restore_name, ts_t2)
+        self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_c2, bucket_name=restore_name)
 
@@ -360,7 +361,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._create_restore_bucket(restore_name)
 
         self.log.info("PITR to T2 (post-graceful-failover)")
-        self._pitr_restore_to_new_bucket(restore_name, ts_t2)
+        self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_c2, bucket_name=restore_name)
 
@@ -420,7 +421,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._create_restore_bucket(restore_name)
 
         self.log.info("PITR to T2 (post-hard-failover)")
-        self._pitr_restore_to_new_bucket(restore_name, ts_t2)
+        self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_c2, bucket_name=restore_name)
 
@@ -502,7 +503,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._create_restore_bucket(restore_name)
 
         self.log.info("PITR to T2 (post-quorum-loss recovery)")
-        self._pitr_restore_to_new_bucket(restore_name, ts_t2)
+        self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_c2, bucket_name=restore_name)
         self.log.info(f"T2 restore verified: {count_c2} items")
@@ -580,7 +581,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # it confirms the DCP stream reconnected without leaving a gap in the log
         self.log.info(
             "PITR to T2 (post-KV-restart) — validates no gap in continuous backup log")
-        self._pitr_restore_to_new_bucket(restore_name, ts_t2)
+        self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_c2, bucket_name=restore_name)
         self.log.info(

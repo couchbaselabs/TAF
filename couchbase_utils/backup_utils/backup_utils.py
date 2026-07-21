@@ -110,12 +110,6 @@ class ContinuousBackupUtil(object):
                 bucket_util.get_buckets_item_count(cluster, bucket.name)
             self.log.info(f"Original item count for {bucket.name}: {original_item_counts[bucket.name]}")
 
-        try:
-            timestamp_before_restore = self.cont_bk_mgr.get_cluster_timestamp()
-            self.log.info(f"Timestamp captured: {timestamp_before_restore}")
-        except Exception as e:
-            raise AssertionError(f"Failed to get cluster timestamp: {e}\n{traceback.format_exc()}")
-
         # Loop through each bucket for continuous restore verification
         for bucket in buckets:
             if (bucket.storageBackend != Bucket.StorageBackend.magma or bucket.bucketType == 'ephemeral' or
@@ -133,7 +127,7 @@ class ContinuousBackupUtil(object):
                     cluster_host=cluster_host,
                     location=continuous_backup_location,
                     temp_dir="/tmp",
-                    timestamp=timestamp_before_restore,
+                    timestamp=None,
                     map_data=f"{bucket.name}={restore_bucket_name}",
                     obj_staging_dir=obj_staging_dir)
 

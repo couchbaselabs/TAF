@@ -1350,6 +1350,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.cluster, self.bucket.name)
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T1 (within retention window): {ts_t1}, count: {count_t1}")
+        # ts_t1 is reused later (after shrinking retention) to test the
+        # expired-timestamp path, so it must stay a real point in time rather
+        # than switching to "everything" -- wait for its covering upload to
+        # land before restoring to it here.
+        self._wait_for_history_upload("ts_t1 (retention boundary)")
 
         # Verify PITR within the retention window succeeds
         restore_bucket_name = f"restore_bucket_ret_boundary_{int(time.time())}"
@@ -1927,8 +1932,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self._flush_restore_bucket(restore_bucket_name)
 
+        # No writes happen after ts_t2 was captured, so restoring everything
+        # lands on the same state ts_t2 would -- avoids relying on "now"
+        # being inside the backup's covered range.
         self.log.info("PITR restore to T2 (post-subdoc-mutations — same count expected)")
-        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t1, bucket_name=restore_bucket_name)
 

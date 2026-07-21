@@ -86,7 +86,12 @@ class CbContBk(CbCmdBase):
         :param cluster_host: Cluster address (e.g., "localhost:8091")
         :param threads: Number of threads to use for the restore (default: 8)
         :param timestamp: Timestamp in UTC for the point-in-time recovery.
-                          If not provided, defaults to the current UTC time from the cluster.
+                          If not provided, defaults to "everything" (restores
+                          up to the latest data cbcontbk has backed up).
+                          cbcontbk rejects a restore whose target timestamp
+                          is not contained within the backup, so callers
+                          must not pass the current cluster time as a stand-in
+                          for "latest" -- use "everything" for that instead.
         :param include_data: Specific collection to include
         :param map_data: Mapping for the data restore
         :param obj_staging_dir: Object staging dir, appended as
@@ -97,9 +102,7 @@ class CbContBk(CbCmdBase):
             cluster_host = f"http://{self.shellConn.server.ip}:8091"
 
         if timestamp is None:
-            timestamp = self.get_cluster_timestamp()
-            if not timestamp:
-                raise Exception("Could not retrieve cluster timestamp for restore.")
+            timestamp = "everything"
 
         unique_temp_dir = f"{temp_dir}/restore_{int(time.time() * 1000)}"
         _, mk_err = self._execute_cmd(f"mkdir -p {unique_temp_dir}")

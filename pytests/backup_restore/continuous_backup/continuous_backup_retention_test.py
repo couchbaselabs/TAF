@@ -227,7 +227,8 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
           1. Capture original doc count and a timestamp (T_before_add).
           2. Load 10000 additional docs.
           3. Wait for continuous backup interval so the new docs are captured.
-          4. Restore to a new bucket at T_after_backup; verify count = original + new docs.
+          4. Restore everything (no writes happen after this point, so
+             "everything" == T_after_backup); verify count = original + new docs.
           5. Wait for the retention check cycle so retention runs at least once.
           6. Restore to a new bucket at T_before_add; verify count = original (new docs absent).
         """
@@ -256,21 +257,21 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.sleep(backup_wait_secs,
                    f"Waiting {backup_wait_secs}s for continuous backup to capture new docs")
 
-        t_after_backup = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"Timestamp after backup interval: {t_after_backup}")
-
-        # 4. Delete and recreate bucket, restore at T_after_backup → expect original + new docs
+        # 4. Delete and recreate bucket, restore everything → expect original + new docs.
+        # No further writes happen after count_with_new_docs was captured, so
+        # "everything" cbcontbk has is bounded by it -- no need for a specific
+        # timestamp here (and "now" risks landing outside the backup's covered
+        # range, since cbcontbk now rejects timestamps it doesn't contain).
         self._delete_and_recreate_bucket()
         self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             cluster_host=cluster_host,
             location=self.continuous_backup_location,
             temp_dir="/tmp",
-            timestamp=t_after_backup,
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_with_new_docs)
-        self.log.info(f"Restore at T_after_backup verified: {count_with_new_docs} docs")
+        self.log.info(f"Restore of everything verified: {count_with_new_docs} docs")
 
         # 5. Wait for the retention check cycle to run
         retention_wait_secs = self.retention_check_mins * 60 + 30
