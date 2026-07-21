@@ -34,6 +34,11 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.crash_loop = True
         self.monitor_sync_stats = True
 
+        # Gate for the memcached-kill loop. Set => crashing allowed; cleared
+        # via pause_crashing() during no-crash phases such as rebalance.
+        self.crash_allowed = threading.Event()
+        self.crash_allowed.set()
+
         self.kvstore_stats = dict()
         for bucket in self.cluster.buckets:
             self.kvstore_stats[bucket.name] = dict()
@@ -50,6 +55,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.crash_loop = False
         self.monitor_sync_stats = False
         if self.crash_during_test:
+            # Unblock the crash loop in case it is parked in a pause so it can
+            # observe crash_loop=False and exit.
+            self.crash_allowed.set()
             self.crash_th.join()
         if self.monitor_log_store:
             for th in self.monitor_threads:
@@ -117,8 +125,16 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 self.uploader_map1 = deepcopy(self.fusion_vb_uploader_map)
 
             self.log.info("Running a Fusion rebalance")
-            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                                  rebalance_count=num_rebalance_count)
+            # Pause crashing for the duration of the rebalance; memcached
+            # kills during rebalance are not part of this test's intent.
+            if self.crash_during_test:
+                self.pause_crashing()
+            try:
+                nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                      rebalance_count=num_rebalance_count)
+            finally:
+                if self.crash_during_test:
+                    self.resume_crashing()
 
             if not aggressive_variant:
                 # Wait for doc load to complete

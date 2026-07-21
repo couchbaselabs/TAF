@@ -1033,7 +1033,32 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
+    def pause_crashing(self):
+        """Pause the memcached-kill loop for a no-crash phase (e.g. rebalance).
+
+        No-op if the crash loop was never armed. The paused loop finishes any
+        in-flight sleep and then blocks at the top of the next iteration until
+        resume_crashing() is called.
+        """
+        crash_allowed = getattr(self, "crash_allowed", None)
+        if crash_allowed is not None:
+            self.log.info("Pausing memcached crash loop")
+            crash_allowed.clear()
+
+    def resume_crashing(self):
+        """Resume the memcached-kill loop after a no-crash phase."""
+        crash_allowed = getattr(self, "crash_allowed", None)
+        if crash_allowed is not None:
+            self.log.info("Resuming memcached crash loop")
+            crash_allowed.set()
+
     def kill_memcached_on_nodes(self, interval):
+
+        # Gate that lets callers pause crashing during phases where killing
+        # memcached is undesirable (e.g. rebalance). Set => crashing allowed.
+        if getattr(self, "crash_allowed", None) is None:
+            self.crash_allowed = threading.Event()
+            self.crash_allowed.set()
 
         shell_dict = dict()
         for node in self.cluster.servers:
@@ -1041,7 +1066,17 @@ class FusionBase(BaseTestCase):
 
         self.crash_loop = True
         while self.crash_loop:
+            # Block here while crashing is paused. Re-check crash_loop after
+            # waking so teardown can unblock and stop the loop.
+            self.crash_allowed.wait()
+            if not self.crash_loop:
+                break
+
             for node, shell in shell_dict.items():
+                # Stop mid-round if a pause was requested (e.g. rebalance
+                # started) so no further kills land during the paused phase.
+                if not self.crash_allowed.is_set():
+                    break
                 self.log.info(f"Killing memcached on {node.ip}")
                 shell.kill_memcached()
 

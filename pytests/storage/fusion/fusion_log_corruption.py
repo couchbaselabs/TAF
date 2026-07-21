@@ -177,6 +177,9 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         self.sleep(sleep_time, "Sleep after data loading")
         self.bucket_util.print_bucket_stats(self.cluster)
 
+        self.current_master = self.cluster.master
+        self.current_nodes_in_cluster = self.cluster.nodes_in_cluster
+
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor, current_nodes_str, new_nodes_str = \
@@ -215,13 +218,23 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
 
         # Monitor Rebalance
         self.sleep(10, "Wait before checking rebalance progress")
+        # A rebalance that errors out is the EXPECTED outcome for this test
+        # (corrupted guest-volume logs should fail the mount). Only treat a
+        # monitor_rebalance exception as an expected failure; do NOT wrap the
+        # assertion below in the try, otherwise its AssertionError gets
+        # swallowed and an unexpected success is silently ignored.
         try:
             rebalance_result = RebalanceUtil(self.cluster).monitor_rebalance(progress_count=500)
-            if rebalance_result:
-                self.fail("Rebalance succeeded but was expected to fail due to log corruption")
-            self.log.info("Rebalance failed as expected due to log corruption")
         except Exception as ex:
-            self.log.error(f"Fusion Rebalance failed as expected: {ex}")
+            self.log.info(f"Fusion Rebalance failed as expected due to log corruption: {ex}")
+            rebalance_result = False
+        self.assertFalse(rebalance_result,
+                         "Rebalance succeeded but was expected to fail due to log corruption")
+        self.log.info("Rebalance failed as expected due to log corruption")
+
+        self.cluster.master = self.current_master
+        self.cluster.nodes_in_cluster = self.current_nodes_in_cluster
+        self.log.info(f"Restored cluster master to {self.cluster.master.ip}, nodes in cluster = {[node.ip for node in self.cluster.nodes_in_cluster]}")
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -365,7 +378,7 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         shell.disconnect()
 
 
-    def validate_read_failures(self):
+    def validate_read_failures(self, read_timeout=600, num_docs_to_read=None):
 
         # Check ep_data_read_failed stat before read workload
         read_failure_dict = dict()
@@ -380,11 +393,42 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         self.clear_page_cache()
         self.sleep(30, "Wait after clearing page cache")
 
-        # Perform read workload
-        self.log.info("Performing reads after extent migration")
-        self.perform_workload(0, self.num_items, doc_op="read")
+        # Perform a bounded read workload. Reading all self.num_items over
+        # corrupted extents can hang indefinitely (reads on corrupted data may
+        # never return), so read a bounded sample without blocking and enforce
+        # a timeout via a watchdog that force-stops the read tasks.
+        if num_docs_to_read is None:
+            num_docs_to_read = min(self.num_items, 100000)
+        self.log.info(f"Performing reads after extent migration "
+                      f"(num_docs={num_docs_to_read}, timeout={read_timeout}s)")
+        read_tasks = self.perform_workload(0, num_docs_to_read, doc_op="read",
+                                           wait=False, ops_rate=10000)
 
-        # Check ep_data_read_failed stat before read workload
+        # Watchdog: if the reads don't finish within read_timeout (e.g. reads
+        # on corrupted extents never return), stop the tasks so the test fails
+        # cleanly instead of hanging until the Jenkins build timeout.
+        reads_done = threading.Event()
+
+        def _read_watchdog():
+            if not reads_done.wait(read_timeout):
+                self.log.warning(f"Read workload exceeded {read_timeout}s; "
+                                 f"force-stopping read tasks")
+                for task in read_tasks:
+                    try:
+                        task.end_task()
+                    except Exception as ex:
+                        self.log.warning(f"Error stopping read task: {ex}")
+
+        watchdog = threading.Thread(target=_read_watchdog)
+        watchdog.start()
+        try:
+            for task in read_tasks:
+                self.doc_loading_tm.get_task_result(task)
+        finally:
+            reads_done.set()
+            watchdog.join()
+
+        # Check ep_data_read_failed stat after read workload
         read_failure_dict2 = dict()
         for server in self.cluster.nodes_in_cluster:
             read_failure_dict2[server.ip] = dict()

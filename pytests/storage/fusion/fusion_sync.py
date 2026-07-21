@@ -27,6 +27,10 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.nfs_latency = self.input.param("nfs_latency", None)
         self.nfs_packet_loss = self.input.param("nfs_packet_loss", None)
 
+        # Tracks whether log-store files have been made immutable (chattr +i).
+        # Used by tearDown to restore mutability if a test fails before doing so.
+        self.log_files_immutable = False
+
         # Maintain two dicts. One to monitor and one to record violations
         if self.monitor_log_store:
             self.kvstore_stats = dict()
@@ -39,6 +43,18 @@ class FusionSync(MagmaBaseTest, FusionBase):
                     self.kvstore_violations[bucket.name][i] = dict()
 
     def tearDown(self):
+        # Safety net: if a test made log-store files immutable and failed
+        # before restoring them, the NFS cleanup (rm -rf) in the parent
+        # tearDown would fail. Restore mutability before it runs.
+        if getattr(self, "log_files_immutable", False):
+            self.log.warning("Log-store files still immutable at teardown; "
+                             "restoring mutability so NFS cleanup can proceed")
+            try:
+                self.make_log_files_mutable()
+            except Exception as e:
+                self.log.error(f"Failed to restore log-file mutability during "
+                               f"teardown: {e}")
+
         if self.monitor_log_store:
             self.monitor = False
             self.sleep(10, "Wait after stopping monitor threads")
@@ -287,45 +303,48 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         # Make files on log store immutable to pause log cleaning
         self.make_log_files_immutable()
-        self.sleep(30, "Wait after making files immutable")
 
-        # Delete Fusion sync state files
-        self.delete_sync_state_files()
+        try:
+            self.sleep(30, "Wait after making files immutable")
 
-        du_th = threading.Thread(target=self.monitor_fusion_disk_usage)
-        du_th.start()
+            # Delete Fusion sync state files
+            self.delete_sync_state_files()
 
-        self.sleep(60, "Wait after deleting sync state files")
+            du_th = threading.Thread(target=self.monitor_fusion_disk_usage)
+            du_th.start()
 
-        # Load more data so that a sync is made to the log store
-        self.perform_workload(self.num_items, self.num_items + 500000,
-                              "create", ops_rate=5000)
-        self.sleep(300, "Wait after performing data load")
+            self.sleep(60, "Wait after deleting sync state files")
 
-        self.monitor_du = False
-        du_th.join()
+            # Load more data so that a sync is made to the log store
+            self.perform_workload(self.num_items, self.num_items + 500000,
+                                  "create", ops_rate=5000)
+            self.sleep(300, "Wait after performing data load")
 
-        # Perform a Fusion Rebalance
-        self.log.info("Running a Fusion rebalance")
-        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1)
+            self.monitor_du = False
+            du_th.join()
 
-        self.log.info("Monitoring active guest volumes")
-        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
-        guest_volume_th.start()
-        guest_volume_th.join()
+            # Perform a Fusion Rebalance
+            self.log.info("Running a Fusion rebalance")
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                  rebalance_count=1)
 
-        self.cluster_util.print_cluster_stats(self.cluster)
-        self.bucket_util.print_bucket_stats(self.cluster)
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
+            guest_volume_th.join()
 
-        self.log.info("Validating item count after rebalance")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets)
-        self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                  self.num_items)
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.bucket_util.print_bucket_stats(self.cluster)
 
-        # Make files on log store mutable to resume log cleaning
-        self.make_log_files_mutable()
+            self.log.info("Validating item count after rebalance")
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
+        finally:
+            # Always restore mutability so log cleaning resumes and, critically,
+            # so NFS cleanup can delete these files even if the block above fails.
+            self.make_log_files_mutable()
 
         du_th = threading.Thread(target=self.monitor_fusion_disk_usage)
         du_th.start()
@@ -853,6 +872,10 @@ class FusionSync(MagmaBaseTest, FusionBase):
 
         self.log.info("Making Fusion log file operations immutable")
 
+        # Mark state before applying +i so teardown restores mutability even
+        # if the chattr below only partially applies or a later step fails.
+        self.log_files_immutable = True
+
         shell = RemoteMachineShellConnection(self.nfs_server)
 
         for bucket in self.cluster.buckets:
@@ -879,6 +902,8 @@ class FusionSync(MagmaBaseTest, FusionBase):
             shell.execute_command(cmd)
 
         shell.disconnect()
+
+        self.log_files_immutable = False
 
 
     def delete_sync_state_files(self):
