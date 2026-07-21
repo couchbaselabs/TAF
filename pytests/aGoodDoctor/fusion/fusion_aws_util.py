@@ -13,8 +13,15 @@ from .awslib.s3_lib import S3Lib
 from .awslib.secrets_manager_lib import SecretsManagerLib
 import time, datetime
 import concurrent.futures
+import os
+import yaml
 from prettytable import PrettyTable
 from global_vars import logger as global_logger
+
+
+ERROR_LOG_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), '..', '..', '..',
+    'lib', 'couchbase_helper', 'error_log_config.yaml')
 
 
 FUSION_ASSUME_ROLE_NAME = "jenkins-cp-cli"
@@ -275,6 +282,17 @@ class FusionAWSUtil:
         errors_found = False
         instances = self.list_instances(filters=self._cluster_filter(cluster_id))
 
+        # Reuse the memcached.log exclude_patterns from the shared on-prem
+        # error-log config (lib/couchbase_helper/error_log_config.yaml) so
+        # known-benign messages only need to be allow-listed in one place.
+        exclude_patterns = ['Failed to start audit daemon']
+        with open(ERROR_LOG_CONFIG_PATH, 'r') as fp:
+            y_data = yaml.safe_load(fp)
+        for file_entry in y_data.get('file_name_patterns', []):
+            if file_entry.get('file') == 'memcached.log.*':
+                for grep_pattern in file_entry.get('grep_for', []):
+                    exclude_patterns.extend(grep_pattern.get('exclude_patterns', []))
+
         def scan_instance(instance):
             instance_id = instance.get('InstanceId', 'N/A')
             local_errors_found = False
@@ -309,10 +327,13 @@ class FusionAWSUtil:
                 else:
                     # Search for critical error patterns in each log file
                     grep_patterns = ['CRITICAL', 'Failed to hydrate fusion']
+                    exclude_pipe = ''.join(
+                        ' | grep -v "{}"'.format(pattern)
+                        for pattern in exclude_patterns)
                     for log_file in files_list:
                         for pattern in grep_patterns:
                             self.log.info(f"Grepping {pattern} in {log_file} on instance {instance_id}...")
-                            grep_cmd = 'grep -E "{}" {} | grep -v "Failed to start audit daemon" 2>/dev/null || true'.format(pattern, log_file)
+                            grep_cmd = 'grep -E "{}" {}{} 2>/dev/null || true'.format(pattern, log_file, exclude_pipe)
                             grep_result = self.ec2.run_shell_command(instance.get('InstanceId', 'N/A'), grep_cmd)
                             grep_output = grep_result.get('stdout', '').strip()
                             if grep_output:

@@ -25,6 +25,7 @@ file_name_patterns:
           - 'Invalid packet header detected'
             # Not a bug: Ref: MB-45330
           - 'failed - Already exists'
+          - 'exists in meta directory but missing from available logs'
       #- string: 'WARN'
       #  exclude_patterns:
       #    - 'Slow'
