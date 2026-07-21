@@ -38,6 +38,7 @@ class AWSProvider(CloudProviderInterface):
         self._km_key_id = None
         self._km_alias_name = None
         self._km_created_by_us = False
+        self._kms_client = _kms_client()
 
     def get_cbbackupmgr_flags(self, shell=None):
         return (
@@ -199,22 +200,21 @@ class AWSProvider(CloudProviderInterface):
             region_name=self.aws_kms_region)
 
     def create_kms_key(self, alias=None):
-        client = self._kms_client()
         if alias:
             alias_name = alias if alias.startswith("alias/") else \
                 "alias/{0}".format(alias)
-            resp = client.describe_key(KeyId=alias_name)
+            resp = self._kms_client.describe_key(KeyId=alias_name)
             self._km_key_id = resp["KeyMetadata"]["KeyId"]
             self._km_alias_name = alias_name
             self._km_created_by_us = False
         else:
-            key = client.create_key(
+            key = self._kms_client.create_key(
                 Description="TAF contbk EaR test key",
                 KeyUsage="ENCRYPT_DECRYPT",
                 KeySpec="SYMMETRIC_DEFAULT")
             self._km_key_id = key["KeyMetadata"]["KeyId"]
             self._km_alias_name = "alias/contbk-taf-{0}".format(uuid.uuid4())
-            client.create_alias(
+            self._kms_client.create_alias(
                 AliasName=self._km_alias_name,
                 TargetKeyId=self._km_key_id)
             self._km_created_by_us = True
@@ -229,17 +229,9 @@ class AWSProvider(CloudProviderInterface):
             return
         key_id = self._km_key_id
         alias_name = self._km_alias_name
-        try:
-            client = self._kms_client()
-        except Exception as e:
-            self.log.error(
-                "AWSProvider.delete_kms_key: failed to construct KMS client "
-                "for key %s (alias %s): %s. Key must be manually deleted "
-                "from the AWS console.", key_id, alias_name, e)
-            return
 
         try:
-            client.delete_alias(AliasName=alias_name)
+            self._kms_client.delete_alias(AliasName=alias_name)
         except ClientError as e:
             # NotFoundException here is expected if the alias was already
             # cleaned up on a prior run; other codes are worth surfacing.
@@ -259,7 +251,7 @@ class AWSProvider(CloudProviderInterface):
                 "to schedule key deletion.", alias_name, e)
 
         try:
-            client.schedule_key_deletion(
+            self._kms_client.schedule_key_deletion(
                 KeyId=key_id, PendingWindowInDays=7)
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")

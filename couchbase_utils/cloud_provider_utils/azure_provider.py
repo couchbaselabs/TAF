@@ -36,6 +36,10 @@ class AzureProvider(CloudProviderInterface):
         self.km_key_url = None
         self._km_key_name = None
         self._km_created_by_us = False
+        if self.azure_kv_url:
+            self._kms_client = self._kms_client()
+        else:
+            self._kms_client = None
 
     def get_cbbackupmgr_flags(self, shell=None):
         return (
@@ -88,9 +92,6 @@ class AzureProvider(CloudProviderInterface):
             rest, cred_id, payload, username=username, password=password)
 
     def _kv_client(self):
-        if not self.azure_kv_url:
-            raise RuntimeError(
-                "AZURE_KEY_VAULT_URL must be set for KMS operations.")
         credential = ClientSecretCredential(
             tenant_id=self.azure_tenant_id,
             client_id=self.azure_client_id,
@@ -101,14 +102,17 @@ class AzureProvider(CloudProviderInterface):
         return urlparse(self.azure_kv_url).netloc
 
     def create_kms_key(self, alias=None):
-        client = self._kv_client()
+        if self._kms_client is None:
+            raise RuntimeError(
+                "AZURE_KEY_VAULT_URL must be set for KMS operations.")
         if alias:
-            client.get_key(alias)
+            self._kms_client.get_key(alias)
             self._km_key_name = alias
             self._km_created_by_us = False
         else:
             self._km_key_name = "contbk-taf-{0}".format(uuid.uuid4().hex[:12])
-            client.create_rsa_key(name=self._km_key_name, size=2048)
+            self._kms_client.create_rsa_key(
+                name=self._km_key_name, size=2048)
             self._km_created_by_us = True
 
         self.km_key_url = "azurekms://{0}/keys/{1}".format(
@@ -121,18 +125,16 @@ class AzureProvider(CloudProviderInterface):
         if not key_url or not self._km_created_by_us:
             return
         key_name = self._km_key_name
-        try:
-            client = self._kv_client()
-        except Exception as e:
+        if self._kms_client is None:
             self.log.error(
-                "AzureProvider.delete_kms_key: failed to construct Key "
-                "Vault client for key %s: %s. Key must be manually deleted "
-                "from vault %s.",
-                key_name, e, self.azure_kv_url)
+                "AzureProvider.delete_kms_key: Key Vault client not "
+                "constructed (AZURE_KEY_VAULT_URL unset) — key %s must be "
+                "manually deleted from vault %s.",
+                key_name, self.azure_kv_url)
             return
 
         try:
-            client.begin_delete_key(key_name)
+            self._kms_client.begin_delete_key(key_name)
         except ResourceNotFoundError as e:
             self.log.info(
                 "Azure Key Vault begin_delete_key(%s): key not found — "

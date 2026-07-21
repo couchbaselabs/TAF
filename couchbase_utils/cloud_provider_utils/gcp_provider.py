@@ -42,6 +42,10 @@ class GCPProvider(CloudProviderInterface):
         self.gcp_kms_project = os.getenv("GCP_KMS_PROJECT")
         self.gcp_kms_location = os.getenv("GCP_KMS_LOCATION", self.gcp_region)
         self.gcp_kms_key_ring = os.getenv("GCP_KMS_KEY_RING", "contbk-taf")
+        if self.gcp_service_account_key_file:
+            self._kms_client = self._kms_client()
+        else:
+            self._kms_client = None
 
         self.km_key_url = None
         self._km_key_name = None
@@ -187,8 +191,8 @@ class GCPProvider(CloudProviderInterface):
         return kms.KeyManagementServiceClient.from_service_account_info(
             credentials_info)
 
-    def _key_ring_path(self, client):
-        return client.key_ring_path(
+    def _key_ring_path(self):
+        return self._kms_client.key_ring_path(
             self.gcp_kms_project, self.gcp_kms_location, self.gcp_kms_key_ring)
 
     def _crypto_key_url(self, key_id):
@@ -198,25 +202,28 @@ class GCPProvider(CloudProviderInterface):
                     self.gcp_kms_key_ring, key_id)
 
     def create_kms_key(self, alias=None):
-        client = self._kms_client()
+        if self._kms_client is None:
+            raise RuntimeError(
+                "GOOGLE_APPLICATION_CREDENTIALS must be set for KMS "
+                "operations.")
         if alias:
             self._km_key_name = alias
             self._km_created_by_us = False
         else:
             self._km_key_name = "contbk-taf-{0}".format(uuid.uuid4().hex[:12])
             try:
-                client.get_key_ring(
-                    request={"name": self._key_ring_path(client)})
+                self._kms_client.get_key_ring(
+                    request={"name": self._key_ring_path()})
             except Exception:
                 parent = "projects/{0}/locations/{1}".format(
                     self.gcp_kms_project, self.gcp_kms_location)
-                client.create_key_ring(
+                self._kms_client.create_key_ring(
                     request={"parent": parent,
                              "key_ring_id": self.gcp_kms_key_ring,
                              "key_ring": {}})
-            client.create_crypto_key(
+            self._kms_client.create_crypto_key(
                 request={
-                    "parent": self._key_ring_path(client),
+                    "parent": self._key_ring_path(),
                     "crypto_key_id": self._km_key_name,
                     "crypto_key": {
                         "purpose": kms.CryptoKey.CryptoKeyPurpose
@@ -235,21 +242,19 @@ class GCPProvider(CloudProviderInterface):
         if not key_url or not self._km_created_by_us:
             return
         key_name = self._km_key_name
-        try:
-            client = self._kms_client()
-        except Exception as e:
+        if self._kms_client is None:
             self.log.error(
-                "GCPProvider.delete_kms_key: failed to construct KMS client "
-                "for key %s: %s. Key versions must be manually destroyed in "
-                "the GCP console.", key_name, e)
+                "GCPProvider.delete_kms_key: KMS client not constructed "
+                "(GOOGLE_APPLICATION_CREDENTIALS unset) — key %s must be "
+                "manually destroyed from the GCP console.", key_name)
             return
 
-        key_path = client.crypto_key_path(
+        key_path = self._kms_client.crypto_key_path(
             self.gcp_kms_project, self.gcp_kms_location,
             self.gcp_kms_key_ring, key_name)
 
         try:
-            versions = list(client.list_crypto_key_versions(
+            versions = list(self._kms_client.list_crypto_key_versions(
                 request={"parent": key_path}))
         except NotFound as e:
             self.log.info(
@@ -277,7 +282,7 @@ class GCPProvider(CloudProviderInterface):
                                    .ENABLED):
                 continue
             try:
-                client.destroy_crypto_key_version(
+                self._kms_client.destroy_crypto_key_version(
                     request={"name": version.name})
             except FailedPrecondition as e:
                 self.log.info(
