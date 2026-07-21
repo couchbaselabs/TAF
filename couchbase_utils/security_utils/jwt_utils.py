@@ -1764,6 +1764,7 @@ class JWTUtils:
                 "baseRedirectUris": [
                     f"{'https' if cluster_use_https else 'http'}://{cluster_master_ip}:{cluster_port}/"
                 ],
+                "endpointSource": "discovery",
                 "oidcDiscoveryUri": discovery_uri,
                 "scopes": scopes,
                 "pkceEnabled": pkce_enabled,
