@@ -135,7 +135,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
                 deploy_task = DeployColumnarInstance(
                     self.pod, self.tenant, instance_config["name"],
-                    instance_config, timeout=self.wait_timeout)
+                    instance_config, timeout=self.deploy_timeout)
                 self.task_manager.add_new_task(deploy_task)
                 tasks.append(deploy_task)
 
