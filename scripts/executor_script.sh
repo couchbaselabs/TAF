@@ -123,6 +123,27 @@ fi
 # Used to pass on to the cleanup job
 export is_dynamic_vms=`echo $dispatcher_params | grep -o '"use_dynamic_vms": [^,]*' | cut -d' ' -f2`
 
+echo "###########################################"
+echo "  Populating env file for downstream jobs"
+echo "1/3 Creating file: cleanup_job_params"
+echo "descriptor=$descriptor" > cleanup_job_params
+echo "UPSTREAM_BUILD_NUMBER=${BUILD_NUMBER}" >> cleanup_job_params
+echo "addPoolServers=$addPoolServers" >> cleanup_job_params
+echo "version_number=$version_number" >> cleanup_job_params
+echo "is_dynamic_vms=$is_dynamic_vms" >> cleanup_job_params
+
+echo "2/3 Creating file: savejoblogs_job_params"
+echo "test_job_url=${JOB_URL}" > savejoblogs_job_params
+echo "test_job_build=${BUILD_NUMBER}" >> savejoblogs_job_params
+echo "test_name=${descriptor}" >> savejoblogs_job_params
+echo "addPoolServers=$addPoolServers" >> savejoblogs_job_params
+echo "version_number=$version_number" >> savejoblogs_job_params
+echo "is_dynamic_vms=$is_dynamic_vms" >> savejoblogs_job_params
+
+echo "3/3 Creating file: aws_cleanup_job_params"
+echo "servers=${servers}" > aws_cleanup_job_params
+echo "###########################################"
+
 echo "Set ALLOW_HTP to False so test could run."
 sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
 
