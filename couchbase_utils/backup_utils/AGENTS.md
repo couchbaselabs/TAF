@@ -9,8 +9,11 @@ model: inherit
 
 # backup_utils
 
-- Backup/restore utilities for Couchbase Server clusters.
-- Three classes: cbbackupmgr CLI ops, continuous backup (PITR), REST-based repo management.
+Backup/restore utilities for Couchbase Server clusters. Three classes:
+
+1. **`BackupMgrUtil`** — cbbackupmgr CLI operations
+2. **`ContinuousBackupUtil`** — continuous backup (PITR)
+3. **`BackupUtil`** — REST-based repo management
 
 ## Files
 
@@ -21,16 +24,18 @@ model: inherit
 ## BackupMgrUtil
 
 - Inherits `CbBackupMgr`.
-- Built from `cb_node` (not raw `shell_conn`) — opens its own `RemoteMachineShellConnection` internally.
-- `__init__(cb_node, cloud_provider=None)` — `cloud_provider` (any `couchbase_utils.cloud_provider_utils` provider, e.g. `AWSProvider`) passed straight through to `CbBackupMgr.__init__`; also drives provider-vs-shell branching below.
+- Built from `cb_node` (**not** raw `shell_conn`) — opens its own `RemoteMachineShellConnection` internally.
+- `__init__(cb_node, cloud_provider=None)`:
+  - `cloud_provider` — any `couchbase_utils.cloud_provider_utils` provider (e.g. `AWSProvider`), passed straight through to `CbBackupMgr.__init__`.
+  - Also drives the provider-vs-shell branching in the methods below.
 
 | Method | What it does |
 |---|---|
-| `configure_backup(archive, repo, exclude, include, obj_staging_dir=None)` | Provider set → `cloud_provider.cleanup_for_bkrs(archive)`, skips `chown`. No provider → `rm -rf -- {archive}` + `chown -R couchbase:couchbase {archive}`. Either way, calls `super().create_repo(..., obj_staging_dir=obj_staging_dir)` |
-| `monitor_restore(bucket_util, cluster, bucket_name, items, timeout)` | Polls item count until restore completes/timeout (default 43200s) — unchanged |
+| `configure_backup(archive, repo, exclude, include, obj_staging_dir=None)` | **Provider set** → `cloud_provider.cleanup_for_bkrs(archive)`, skips `chown`. **No provider** → `rm -rf -- {archive}` + `chown -R couchbase:couchbase {archive}`. Either way, calls `super().create_repo(..., obj_staging_dir=obj_staging_dir)` |
+| `monitor_restore(bucket_util, cluster, bucket_name, items, timeout)` | Polls item count until restore completes/timeout (default `43200s`) — unchanged |
 | `collect_backup_logs_on_failure(archive, log_path, obj_staging_dir=None)` | `self.collect_logs()` on Linux nodes; forwards `obj_staging_dir` |
 | `merge_all_backups(archive, repo)` | Finds + merges all backups in archive — unchanged |
-| `cleanup_archive(archive)` | Provider set → delegates entirely to `cloud_provider.cleanup_for_bkrs(archive)`. No provider → `find`s repos, `cbbackupmgr remove`s each, `rm -rf {archive}/` fallback |
+| `cleanup_archive(archive)` | **Provider set** → delegates entirely to `cloud_provider.cleanup_for_bkrs(archive)`. **No provider** → `find`s repos, `cbbackupmgr remove`s each, `rm -rf {archive}/` fallback |
 | `backup(...)` / `restore(...)` | Inherited from `CbBackupMgr` |
 
 ```python
@@ -49,7 +54,9 @@ See [cloud_provider_utils/AGENTS.md](../cloud_provider_utils/AGENTS.md), [cb_too
 ## ContinuousBackupUtil
 
 - Wraps `CbBackupMgr` (`self.backup_mgr`) + `CbContBk` (`self.cont_bk_mgr`).
-- `__init__(..., backupmgr_cloud_provider=None, contbk_cloud_provider=None)` — passed as `cloud_provider` to `CbBackupMgr`/`CbContBk` resp. `contbk_cloud_provider` also kept as `self.contbk_cloud_provider` for `cleanup_continuous_backup()`.
+- `__init__(..., backupmgr_cloud_provider=None, contbk_cloud_provider=None)`:
+  - Each is passed as `cloud_provider` to `CbBackupMgr`/`CbContBk` respectively.
+  - `contbk_cloud_provider` is also kept as `self.contbk_cloud_provider` for `cleanup_continuous_backup()`.
 
 | Method | What it does |
 |---|---|
@@ -60,7 +67,7 @@ See [cloud_provider_utils/AGENTS.md](../cloud_provider_utils/AGENTS.md), [cb_too
 | `monitor_restore(bucket_util, cluster, bucket, items, timeout, tolerance)` | Polls item count within `+/-tolerance` until restore completes/timeout |
 | `trigger_restore(cluster, archive, repo, cont_backup_location, staging_dir, timestamp, threads, obj_staging_dir=None)` | Wraps `cont_bk_mgr.restore()`; `obj_staging_dir` forwarded (distinct from `staging_dir` → CLI's local `temp_dir`) |
 | `collect_continuous_backup_logs_on_failure(backup_location, obj_staging_dir=None)` | `cont_bk_mgr.collect_logs()` on Linux nodes; forwards `obj_staging_dir` |
-| `cleanup_continuous_backup(backup_location)` | `if contbk_cloud_provider is not None` → `cleanup_for_bkrs(backup_location)`; `else` → `rm -rf {backup_location}/*` (Linux only). `if`/`else`, not sequential — exception in provider path is logged, does NOT fall through to `rm -rf` |
+| `cleanup_continuous_backup(backup_location)` | `contbk_cloud_provider` set → `cleanup_for_bkrs(backup_location)`. Not set → `rm -rf {backup_location}/*` (Linux only). **`if`/`else`, not sequential** — an exception in the provider path is logged and does **not** fall through to `rm -rf` |
 
 ```python
 from couchbase_utils.backup_utils.backup_utils import ContinuousBackupUtil
