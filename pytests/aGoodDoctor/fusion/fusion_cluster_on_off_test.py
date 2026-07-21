@@ -987,8 +987,12 @@ class FusionClusterOnOffTest(_FusionTestBase):
         self.log.info(
             f"In-place restore triggered — restore_id={restore_id}")
 
+        # Flat 8h ceiling -- the restore-job record has no bytes-remaining/
+        # progress signal to poll, and there's no reliable way to estimate
+        # this up front.
         restore_ok = CapellaAPI.wait_for_cloud_snapshot_restore_to_complete(
-            self.pod, self.tenant, project_id, self.cluster.id, restore_id)
+            self.pod, self.tenant, project_id, self.cluster.id, restore_id,
+            timeout=self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS)
         self.assertTrue(
             restore_ok, f"Cloud snapshot restore {restore_id} did not complete")
         CapellaAPI.wait_until_done(

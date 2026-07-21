@@ -10,10 +10,10 @@ Setup flow (initial_setup)
 1. Enable fusion on primary cluster.
 2. Create buckets and load data on primary.
 3. Run a steady-state mutation workload on primary.
-4. If restore_to=secondary: the secondary cluster is NOT pre-provisioned via
-   the .ini file. It is created on demand, immediately after primary's data
-   load / steady-state sleep completes -- i.e. before
-   test_backup_restore_volume()'s H/V scaling loop starts (see
+4. If restore_to=secondary: the secondary cluster is normally NOT
+   pre-provisioned via the .ini file -- it is created on demand,
+   immediately after primary's data load / steady-state sleep completes --
+   i.e. before test_backup_restore_volume()'s H/V scaling loop starts (see
    _ensure_secondary_ready(), called from initial_setup()). This avoids
    paying for an idle secondary cluster only while primary is still loading
    data, while still guaranteeing the secondary exists before any scaling
@@ -28,6 +28,13 @@ Setup flow (initial_setup)
         True  → enable fusion on secondary; trigger one scaling rebalance so
                  secondary builds its own EBS guest volumes.
         False → ensure fusion is disabled on secondary.
+
+   Exception: if the .ini supplies a SECOND cluster id
+   (clusters=<primary>,<secondary>), that cluster is used as the secondary
+   directly -- step (a) above is skipped entirely (no seed backup of
+   primary taken, no data copied over on first use), only step (b) runs
+   against it. It picks up primary's data organically once the normal
+   per-cycle backup+restore loop reaches it, same as any other cycle.
 
 Test loop (test_backup_restore_volume)
 --------------------------------------
@@ -67,6 +74,7 @@ h_scaling / v_scaling     : same as fusion_volume.py
 iterations, rebl_steps    : same as fusion_volume.py
 '''
 
+import concurrent.futures
 import socket
 import threading
 import time
@@ -111,14 +119,29 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # tearDown -- useful for debugging a failed run against the live secondary
         self.skip_secondary_teardown = self.input.param("skip_secondary_teardown", False)
 
+        # Applied to the restore target right after nodes are up (via SSM,
+        # before the IP allowlist reopens -- see _restore_snapshot_backup())
+        # to speed up the post-restore S3 fusion log-store upload/sync. Set
+        # to 0/None to leave the cluster's default memcached settings
+        # untouched.
+        self.fusion_num_uploader_threads = self.input.param("fusion_num_uploader_threads", 64)
+        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 300971520)
+
         all_clusters = [c for t in self.tenants for c in t.clusters]
         self.primary_cluster = all_clusters[0]
         self.primary_tenant = self.tenants[0]
 
-        # The secondary cluster (restore_to=="secondary") is created on demand
-        # by cloning a snapshot backup of primary -- it is no longer read from
-        # the .ini file. See _ensure_secondary_ready() / _target_cluster().
-        self.secondary_cluster = None
+        # The secondary cluster (restore_to=="secondary") is normally created
+        # on demand by cloning a snapshot backup of primary -- see
+        # _ensure_secondary_ready() / _target_cluster(). But if the .ini
+        # supplies a SECOND cluster id (clusters=<primary>,<secondary>), use
+        # that pre-provisioned cluster as secondary directly instead:
+        # _ensure_secondary_ready() then skips the clone-from-primary
+        # bootstrap entirely (no seed backup taken, no data copied over) and
+        # only applies the secondary_fusion_enabled config to it. Left
+        # untagged (no `_taf_owned`), so tearDown() never destroys a
+        # user-supplied cluster.
+        self.secondary_cluster = all_clusters[1] if len(all_clusters) > 1 else None
         self._secondary_ready = False
 
         # v4 API key bearer token needed for the clone call -- see
@@ -137,7 +160,12 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # _trigger_rebalance_on_secondary()) -- otherwise secondary's
         # scale-up/down rebalances corrupt primary's node-count tracking.
         # Cloned here, before any rebalances have run, since secondary
-        # starts with the same node topology primary has at this point.
+        # starts with the same node topology primary has at this point --
+        # true for a clone-created secondary. NOTE: if secondary is instead
+        # a pre-provisioned cluster from a second .ini cluster id (see
+        # above), its actual topology may not match primary's initial
+        # config; this counter isn't reconciled against it, so rebalance
+        # deltas computed from it could drift for that path.
         self.secondary_num_nodes = dict(self.num_nodes)
 
     # ------------------------------------------------------------- tearDown
@@ -238,17 +266,33 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.mutation_th.start()
         self.log.info("[primary] Mutation workload resumed")
 
-    # -------------------------------------------- log helpers (primary only)
-
-    def log_fusion_log_store_data_size(self):
-        self.fusion_monitor.log_fusion_log_store_data_size([self.primary_cluster])
-
-    def log_fusion_pending_bytes(self):
-        self.fusion_monitor.log_fusion_pending_bytes(
-            self.primary_tenant, [self.primary_cluster], self.find_master
-        )
-
     # -------------------------------------------- snapshot backup / restore
+
+    def _delete_backup(self, backup_id):
+        """
+        Delete EBS snapshot backup *backup_id* from primary (backups are
+        always taken on primary -- see _create_snapshot_backup() callers).
+
+        Every backup this test takes is consumed exactly once -- either
+        restored straight back onto a target (_restore_and_verify()) or
+        cloned into a brand-new secondary (_create_secondary_cluster_from_clone()) --
+        never reused across cycles. Left alone, backups would just pile up
+        for the rest of the run once whatever needed them is done. Called
+        once that consumer has fully verified success; best-effort, so a
+        failed delete is logged and not fatal to the test.
+        """
+        tenant = self.primary_tenant
+        project_id = tenant.projects[0]
+        primary = self.primary_cluster
+        ok = CapellaAPI.delete_cloud_snapshot_backup(
+            self.pod, tenant, project_id, primary.id, backup_id
+        )
+        if ok:
+            self.log.info(f"Deleted EBS snapshot backup {backup_id} on primary {primary.id}")
+        else:
+            self.log.warning(
+                f"Failed to delete EBS snapshot backup {backup_id} on primary {primary.id}"
+            )
 
     def _create_snapshot_backup(self, cluster):
         """
@@ -274,7 +318,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.log.info(f"{self._cluster_label(cluster)} Snapshot backup triggered: {backup_id}")
 
         ok = CapellaAPI.wait_for_cloud_snapshot_backup_to_complete(
-            self.pod, tenant, project_id, cluster.id, backup_id
+            self.pod, tenant, project_id, cluster.id, backup_id, timeout=4*3600
         )
         self.assertTrue(
             ok,
@@ -283,14 +327,24 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self.log.info(f"{self._cluster_label(cluster)} Snapshot backup {backup_id} complete on {cluster.id}")
         return backup_id
 
-    def _restore_snapshot_backup(self, backup_id, source_cluster, target_cluster):
+    def _restore_snapshot_backup(self, backup_id, source_cluster, target_cluster,
+                                  target_is_fusion=True, pre_restore_gv_ids=None):
         """
         Restore EBS snapshot *backup_id* (taken from *source_cluster*) onto
         *target_cluster* and wait for completion.  Waits for the target cluster
         to return to healthy state afterwards.
+
+        :param pre_restore_gv_ids: guest-volume IDs on target from before the
+            restore -- see _restore_and_verify(), which captures this ahead
+            of triggering the restore (same-cluster or cross-cluster: the
+            restore reset replaces guest volumes on the target either way).
+            Used once the restore job itself is confirmed complete, to
+            verify the old volumes were deleted and the new guest-volume
+            count matches the backup's snapshot count.
         """
         tenant = self.primary_tenant
         project_id = tenant.projects[0]
+        primary = source_cluster
 
         src_label = self._cluster_label(source_cluster)
         tgt_label = self._cluster_label(target_cluster)
@@ -298,6 +352,17 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             f"{tgt_label} Restoring snapshot backup {backup_id} "
             f"from {src_label} {source_cluster.id} → {tgt_label} {target_cluster.id}"
         )
+
+        # Captured BEFORE triggering the restore -- the restore tears down
+        # target_cluster's existing instances and creates new ones matching
+        # the restored topology, so apply_settings_once_ready() (below)
+        # needs this baseline to recognize when genuinely NEW instances
+        # (not the about-to-be-nuked old ones) have shown up.
+        old_instance_ids = (
+            self.fusion_monitor.get_current_instance_ids(target_cluster)
+            if target_is_fusion else []
+        )
+
         result = CapellaAPI.restore_cloud_snapshot_backup(
             self.pod, tenant, project_id, target_cluster.id, backup_id
         )
@@ -313,21 +378,87 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
         self.log.info(f"{tgt_label} Restore job triggered: {restore_id}")
 
-        ok = CapellaAPI.wait_for_cloud_snapshot_restore_to_complete(
-            self.pod, tenant, project_id, target_cluster.id, restore_id
-        )
-        self.assertTrue(
-            ok,
-            f"Snapshot restore {restore_id} did not complete on target {target_cluster.id}",
-        )
-        self.log.info(f"{tgt_label} Snapshot restore {restore_id} complete on {target_cluster.id}")
+        # Apply the memcached speed-up settings once NEW instances (not the
+        # pre-restore ones captured above) exist for the target -- not
+        # gated on any timeout calculation, just applied opportunistically,
+        # best-effort.
+        if target_is_fusion:
+            settings = {}
+            if self.fusion_num_uploader_threads:
+                settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
+            if self.fusion_sync_rate_limit:
+                settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
+            self.fusion_monitor.apply_settings_once_ready(
+                target_cluster, settings, old_instance_ids=old_instance_ids,
+            )
 
-        # Wait for target cluster to reach healthy state after restore
-        CapellaAPI.wait_until_done(
-            self.pod, tenant, target_cluster.id,
-            msg=f"{tgt_label} Wait for healthy state after snapshot restore on {target_cluster.id}",
-        )
-        self.log.info(f"{tgt_label} Target cluster {target_cluster.id} healthy after restore")
+        # Run all three post-restore waits concurrently, each with the same
+        # flat default timeout (8h) -- there's no reliable way to estimate
+        # how long any of these actually take up front, and serializing the
+        # restore-job wait in front of the other two (as before) meant
+        # wait_until_fusion_enabled never even started until the CP-level
+        # restore job reported "complete", hiding it from view for the
+        # entire (often 30-60+ minute) restore-job duration.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            restore_future = executor.submit(
+                CapellaAPI.wait_for_cloud_snapshot_restore_to_complete,
+                self.pod, tenant, project_id, target_cluster.id, restore_id,
+                timeout=self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS,
+            )
+            healthy_future = executor.submit(
+                CapellaAPI.wait_until_done, self.pod, tenant, target_cluster.id,
+                msg=f"{tgt_label} Wait for healthy state after snapshot restore on {target_cluster.id}",
+                timeout=self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS,
+            )
+            fusion_future = None
+            if target_is_fusion:
+                fusion_future = executor.submit(
+                    self.fusion_monitor.wait_until_fusion_enabled, target_cluster,
+                )
+
+            ok = restore_future.result()
+            self.assertTrue(
+                ok,
+                f"Snapshot restore {restore_id} did not complete on target {target_cluster.id}",
+            )
+            self.log.info(f"{tgt_label} Snapshot restore {restore_id} complete on {target_cluster.id}")
+
+            # Guest-volume checks only after the restore itself is confirmed
+            # successful -- this happens regardless of whether
+            # wait_until_done/wait_until_fusion_enabled have finished yet,
+            # since they're independent signals running concurrently above.
+            if target_is_fusion and pre_restore_gv_ids:
+                gv_ok = self.cp_monitor.verify_old_guest_volumes_deleted(
+                    target_cluster, pre_restore_gv_ids, timeout=600
+                )
+                self.assertTrue(
+                    gv_ok,
+                    f"{tgt_label} Pre-restore guest volumes still present on {target_cluster.id} "
+                    f"after restore reset — expected them deleted by the restore operation",
+                )
+                self.log.info(
+                    f"{tgt_label} Pre-restore guest volumes confirmed deleted on {target_cluster.id}"
+                )
+
+            if target_is_fusion and self.verify_snapshots:
+                gv_ids = self.cp_monitor.get_current_guest_volume_ids(target_cluster)
+                num_gvs = len(gv_ids)
+                self.log.info(
+                    f"{tgt_label} {target_cluster.id}: {num_gvs} guest volumes attached: {gv_ids}"
+                )
+                snap_ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
+                    primary, backup_id, num_gvs
+                )
+                self.assertTrue(
+                    snap_ok,
+                    f"Guest volume snapshot count mismatch after restore on {target_cluster.id}: "
+                    f"expected {num_gvs} snapshots for backup {backup_id}",
+                )
+
+            healthy_future.result()
+            self.log.info(f"{tgt_label} Target cluster {target_cluster.id} healthy after restore")
+            if fusion_future is not None:
+                fusion_future.result()
 
         # Refresh target_cluster's node list from the CP — an EBS snapshot
         # restore replaces the target's entire node topology to match
@@ -527,14 +658,19 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         Normally called with backup_id=None (from initial_setup(), before
         the scaling loop starts) -- a fresh primary backup is taken here
-        specifically for this bootstrap. If a scaling-loop *backup_id* is
-        passed instead (only possible via the _target_cluster() safety-net
-        path, and only if _ensure_secondary_ready() hasn't already run to
-        completion by then), it is reused instead of taking a second one.
+        specifically for this bootstrap, and deleted once the clone is
+        verified since nothing else needs it. If a scaling-loop *backup_id*
+        is passed instead (only possible via the _target_cluster()
+        safety-net path, and only if _ensure_secondary_ready() hasn't
+        already run to completion by then), it is reused instead of taking
+        a second one -- and NOT deleted here, since _restore_and_verify()
+        (the caller that passed it in) still needs it for its own restore
+        immediately afterward, and will delete it itself once that's done.
         """
         tenant = self.primary_tenant
         project_id = tenant.projects[0]
         primary = self.primary_cluster
+        owns_backup = backup_id is None
 
         self.PrintStep(
             f"Creating secondary cluster by cloning a snapshot backup of primary {primary.id}"
@@ -569,22 +705,93 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             f"cluster provisioning as {new_cluster_id}"
         )
 
-        # Scoped by the NEW cluster's id, not primary's -- a clone-created
-        # restore record's ClusterID is the new cluster, so list-restores
-        # scoped by primary would never find it (see docstring above).
-        ok = CapellaAPI.wait_for_cloud_snapshot_restore_to_complete(
-            self.pod, tenant, project_id, new_cluster_id, restore_id
+        # Lightweight stand-in for the not-yet-wrapped new cluster -- only
+        # .id (AWS tag lookup) and .master (credential storage) are needed by
+        # the SSM-based helpers below; the full CBCluster wrapping (node
+        # list, srv record, etc.) only happens later in _wrap_new_cluster(),
+        # once the cluster is confirmed healthy.
+        clone_target = CBCluster(
+            username=self.rest_username, password=self.rest_password,
+            servers=[None] * 40,
         )
-        self.assertTrue(
-            ok,
-            f"[secondary] Clone restore {restore_id} did not complete "
-            f"(new cluster {new_cluster_id})",
-        )
+        clone_target.id = new_cluster_id
+        clone_target.master = TestInputServer()
+        self.fusion_monitor.set_admin_credentials(clone_target)
 
-        CapellaAPI.wait_until_done(
-            self.pod, tenant, new_cluster_id,
-            msg=f"[secondary] Wait for cluster {new_cluster_id} healthy after clone",
+        # Same speed-up settings as the per-cycle restore (_restore_snapshot_backup) --
+        # no old_instance_ids to diff against here since this cluster is
+        # brand new (every instance found is, by definition, new). Applied
+        # opportunistically as soon as new instances exist (up to ~10 min:
+        # apply_settings_once_ready's default max_wait=600s + settle buffer),
+        # BEFORE the restore/healthy wait below -- applying it only after
+        # those complete (as before) means the S3 hydration window this is
+        # meant to speed up may already be over.
+        settings = {}
+        if self.fusion_num_uploader_threads:
+            settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
+        if self.fusion_sync_rate_limit:
+            settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
+
+        # Poll fusion state + snapshot-pending-bytes table via SSM (curl on
+        # localhost:8091 on one of the cluster's own EC2 instances -- the IP
+        # allowlist stays closed until allow_my_ip() below runs, well after
+        # this returns) so the clone-restore's hydration progress is visible
+        # the same way the per-cycle restore's is. Runs alongside the
+        # settings-application wait above and the restore/healthy wait below,
+        # stopping once the restore itself is confirmed complete.
+        fusion_status_stop_event = threading.Event()
+
+        def _fusion_status_monitor():
+            while not fusion_status_stop_event.is_set():
+                try:
+                    self.fusion_monitor._get_fusion_status_via_ssm(clone_target)
+                except Exception as err:
+                    self.log.debug(f"[secondary] fusion status poll failed: {err}")
+                fusion_status_stop_event.wait(15)
+
+        fusion_status_thread = threading.Thread(
+            target=_fusion_status_monitor, name="secondary-clone-fusion-status",
+            daemon=True,
         )
+        fusion_status_thread.start()
+
+        try:
+            self.fusion_monitor.apply_settings_once_ready(clone_target, settings)
+
+            # Scoped by the NEW cluster's id, not primary's -- a clone-created
+            # restore record's ClusterID is the new cluster, so list-restores
+            # scoped by primary would never find it (see docstring above).
+            # Same flat 8h ceiling used for the per-cycle restore wait -- no
+            # reliable way to estimate this up front.
+            #
+            # Run concurrently, same as _restore_snapshot_backup() -- these are
+            # two independent signals (CP restore-job state vs. CP deployment
+            # health) and serializing them hides the healthy-wait behind the
+            # (often 30-60+ minute) restore-job duration for no reason. No third
+            # fusion_future here (unlike _restore_snapshot_backup): fusion isn't
+            # enabled on this cluster yet at clone time -- that only happens
+            # afterward, in _configure_secondary_fusion().
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                restore_future = executor.submit(
+                    CapellaAPI.wait_for_cloud_snapshot_restore_to_complete,
+                    self.pod, tenant, project_id, new_cluster_id, restore_id,
+                    timeout=self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS,
+                )
+                healthy_future = executor.submit(
+                    CapellaAPI.wait_until_done, self.pod, tenant, new_cluster_id,
+                    msg=f"[secondary] Wait for cluster {new_cluster_id} healthy after clone",
+                )
+                ok = restore_future.result()
+                fusion_status_stop_event.set()
+                self.assertTrue(
+                    ok,
+                    f"[secondary] Clone restore {restore_id} did not complete "
+                    f"(new cluster {new_cluster_id})",
+                )
+                healthy_future.result()
+        finally:
+            fusion_status_stop_event.set()
+            fusion_status_thread.join(timeout=5)
 
         retry = 0
         while retry < 5:
@@ -605,10 +812,36 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         self.secondary_cluster = self._wrap_new_cluster(new_cluster_id, cluster_name)
         self.log.info(f"[secondary] Cluster ready: {self.secondary_cluster.id}")
+        self.fusion_monitor.set_admin_credentials(self.secondary_cluster)
+
+        # Same speed-up settings as the per-cycle restore (_restore_snapshot_backup) --
+        # no old_instance_ids to diff against here since this cluster is
+        # brand new (every instance found is, by definition, new).
+        settings = {}
+        if self.fusion_num_uploader_threads:
+            settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
+        if self.fusion_sync_rate_limit:
+            settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
+        self.fusion_monitor.apply_settings_once_ready(self.secondary_cluster, settings)
+
+        # Force the latest on-disk snapshot to sync to the S3 log store now,
+        # rather than waiting for it to happen on its own schedule -- the
+        # IP allowlist is already reopened at this point (allow_my_ip above),
+        # so a normal external REST call works here (unlike the per-cycle
+        # restore path, where this window is still SSM-only).
+        sync_status, sync_content = FusionRestAPI(self.secondary_cluster.master).sync_log_store()
+        if not sync_status:
+            self.log.warning(
+                f"[secondary] Failed to force fusion log-store sync on "
+                f"{self.secondary_cluster.id}: {sync_content}"
+            )
+        else:
+            self.log.info(
+                f"[secondary] Forced fusion log-store sync on {self.secondary_cluster.id}"
+            )
 
         # Verify secondary has data in each of primary's buckets -- the clone
         # both provisioned the cluster and restored primary's dataset onto it.
-        self.fusion_monitor.set_admin_credentials(self.secondary_cluster)
         rest = RestConnection(self.secondary_cluster.master)
         for bucket in primary.buckets:
             expected = (
@@ -632,15 +865,32 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     f"after clone"
                 )
 
+        # Clone verified -- delete the backup only if this method took it
+        # itself for the bootstrap; a reused scaling-loop backup_id is still
+        # needed by the _restore_and_verify() caller right after this
+        # returns, which deletes it once IT is done instead.
+        if owns_backup:
+            self._delete_backup(backup_id)
+
     def _ensure_secondary_ready(self, backup_id=None):
         """
-        Create + bootstrap the secondary cluster (clone-create + fusion
-        config + initial rebalance), gated by self._secondary_ready so it
-        only ever runs once. Called explicitly from initial_setup() right
-        after primary's data load, so the secondary cluster exists before
-        test_backup_restore_volume()'s scaling loop starts -- this avoids
-        billing for an idle secondary only while primary is still loading
-        data, not for the whole scaling loop.
+        Bootstrap the secondary cluster (fusion config + initial rebalance),
+        gated by self._secondary_ready so it only ever runs once. Called
+        explicitly from initial_setup() right after primary's data load, so
+        the secondary cluster exists before test_backup_restore_volume()'s
+        scaling loop starts -- this avoids billing for an idle
+        clone-created secondary only while primary is still loading data,
+        not for the whole scaling loop.
+
+        If setUp() already populated self.secondary_cluster from a second
+        .ini cluster id, that pre-provisioned cluster is used as-is --
+        _create_secondary_cluster_from_clone() (which seeds it with a fresh
+        backup of primary) is skipped entirely, so a user-supplied secondary
+        is never overwritten with primary's dataset on first use. It only
+        gets primary's data once the normal per-cycle backup+restore loop
+        (_restore_and_verify()) restores onto it like any other cycle.
+        Otherwise, a brand-new cluster is clone-created from a fresh primary
+        backup as before.
 
         Also called (as a no-op safety net, since the flag is already set
         by then) from _target_cluster() during the scaling loop -- if
@@ -650,7 +900,14 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         """
         if self.restore_to != "secondary" or self._secondary_ready:
             return
-        self._create_secondary_cluster_from_clone(backup_id)
+        if self.secondary_cluster is None:
+            self._create_secondary_cluster_from_clone(backup_id)
+        else:
+            self.log.info(
+                f"[secondary] Using pre-provisioned cluster "
+                f"{self.secondary_cluster.id} from .ini -- skipping "
+                f"clone-from-primary bootstrap"
+            )
         self._configure_secondary_fusion()
 
         secondary = self.secondary_cluster
@@ -867,11 +1124,14 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
     def _restore_and_verify(self, backup_id):
         """
-        Restore primary EBS snapshot backup to the target cluster and verify:
+        Restore primary EBS snapshot backup to the target cluster and verify,
+        in order:
+          - if target is fusion-enabled: pre-restore guest volumes deleted
+            + EBS snapshot count matches guest volume count on target --
+            done inside _restore_snapshot_backup() itself, once the restore
+            job is confirmed complete (see its docstring)
           - item count on target > 0 per bucket
           - if target is fusion-enabled:
-              * pre-restore guest volumes are deleted (by the restore reset)
-              * EBS snapshot count matches guest volume count on target
               * fusion S3 bucket is empty (cleanFusionBucket ran)
               * post-restore rebalances complete successfully (cluster healthy)
               * fusion state remains "enabled"
@@ -883,9 +1143,12 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         is_same = primary.id == target.id
         target_fusion = self._target_is_fusion()
 
-        # Snapshot pre-restore guest volumes on target (if fusion-enabled and cross-cluster)
+        # Snapshot pre-restore guest volumes on target (if fusion-enabled) --
+        # the restore reset replaces guest volumes on the target cluster
+        # whether that's a same-cluster restore or a cross-cluster one, so
+        # this applies equally to both, not just cross-cluster.
         pre_restore_gv_ids = []
-        if not is_same and target_fusion:
+        if target_fusion:
             pre_restore_gv_ids = self.cp_monitor.get_current_guest_volume_ids(target)
             self.log.info(
                 f"{tgt_label} Pre-restore guest volumes on {target.id}: {pre_restore_gv_ids}"
@@ -900,7 +1163,10 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             # an idempotent safety net in case of a direct call
             self._stop_workload()
 
-        self._restore_snapshot_backup(backup_id, primary, target)
+        self._restore_snapshot_backup(
+            backup_id, primary, target, target_is_fusion=target_fusion,
+            pre_restore_gv_ids=pre_restore_gv_ids,
+        )
 
         # Restore operation succeeded (asserted inside _restore_snapshot_backup) --
         # report attached guest volumes vs what ns_server reports on target, and
@@ -936,37 +1202,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     f"{tgt_label} No items on target {target.id}/{bucket.name} after restore timeout"
                 )
 
-        # Verify old guest volumes were deleted by the restore reset — this happens
-        # during the restore itself, before any post-restore rebalance
-        if not is_same and target_fusion and pre_restore_gv_ids:
-            ok = self.cp_monitor.verify_old_guest_volumes_deleted(
-                target, pre_restore_gv_ids, timeout=600
-            )
-            self.assertTrue(
-                ok,
-                f"{tgt_label} Pre-restore guest volumes still present on {target.id} "
-                f"after restore reset — expected them deleted by the restore operation",
-            )
-            self.log.info(
-                f"{tgt_label} Pre-restore guest volumes confirmed deleted on {target.id}"
-            )
-
-        # Verify guest volume count == EBS snapshot count for this backup
-        if target_fusion and self.verify_snapshots:
-            gv_ids = self.cp_monitor.get_current_guest_volume_ids(target)
-            num_gvs = len(gv_ids)
-            self.log.info(
-                f"{tgt_label} {target.id}: {num_gvs} guest volumes attached: {gv_ids}"
-            )
-            snap_ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
-                primary, backup_id, num_gvs
-            )
-            self.assertTrue(
-                snap_ok,
-                f"Guest volume snapshot count mismatch after restore on {target.id}: "
-                f"expected {num_gvs} snapshots for backup {backup_id}",
-            )
-
         # Post-restore rebalance on secondary to verify the cluster is healthy
         # and rebalances complete successfully after the restore reset
         if not is_same and target_fusion:
@@ -1001,6 +1236,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # Restart mutation thread if same-cluster restore kept it stopped
         if is_same:
             self._resume_workload()
+
+        # Every check above passed -- this backup has now been fully
+        # consumed (restored + verified) and is never reused, so clean it up
+        # rather than letting it accumulate for the rest of the run.
+        self._delete_backup(backup_id)
 
     # ------------------------------------------- primary scaling pass helper
 
@@ -1051,19 +1291,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
           - fusion state preservation
           - fusion S3 log-store bucket purged by cleanFusionBucket
         """
-        self._log_store_stop_event = threading.Event()
-
-        def _log_store_monitor():
-            while not self._log_store_stop_event.is_set():
-                self.log_fusion_log_store_data_size()
-                self.log_fusion_pending_bytes()
-                self._log_store_stop_event.wait(300)
-
-        self._log_store_thread = threading.Thread(
-            target=_log_store_monitor, name="log-store-monitor", daemon=True
-        )
-        self._log_store_thread.start()
-
         self._init_ops_stop_event = threading.Event()
 
         def _init_ops_rate_monitor():
@@ -1088,7 +1315,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         self._init_ops_thread.start()
 
         self.initial_setup()
-        self._log_store_stop_event.set()
         self._init_ops_stop_event.set()
 
         primary = self.primary_cluster
@@ -1138,8 +1364,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
                 # Scale-up iterations on primary
                 for rebl_step in range(self.iterations):
-                    self.log_fusion_log_store_data_size()
-                    self.log_fusion_pending_bytes()
                     self.PrintStep(f"Cycle {self.loop}: Scale UP step {rebl_step}")
                     self._primary_scaling_pass(direction=+1, rebl_step_idx=rebl_step)
 
@@ -1148,8 +1372,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
                 # Scale-down iterations on primary
                 for rebl_step in range(self.iterations):
-                    self.log_fusion_log_store_data_size()
-                    self.log_fusion_pending_bytes()
                     self.PrintStep(f"Cycle {self.loop}: Scale DOWN step {rebl_step}")
                     self._primary_scaling_pass(direction=-1, rebl_step_idx=rebl_step)
 
@@ -1169,8 +1391,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             # Disk rebalances
             self.loop = 0
             while self.loop < self.iterations:
-                self.log_fusion_log_store_data_size()
-                self.log_fusion_pending_bytes()
                 self.PrintStep(f"V-scale disk step {self.loop}")
                 self.loop += 1
 
@@ -1210,8 +1430,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             # Compute rebalances
             self.loop = 0
             while self.loop < self.iterations:
-                self.log_fusion_log_store_data_size()
-                self.log_fusion_pending_bytes()
                 self.PrintStep(f"V-scale compute step {self.loop}")
                 self.loop += 1
 

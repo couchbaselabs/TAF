@@ -480,23 +480,32 @@ class CapellaUtils(object):
                 break
 
     @staticmethod
-    def jobs(capella_api, pod, tenant, cluster_id):
-        resp = capella_api.jobs(tenant.projects[0], tenant.id, cluster_id)
-        if resp.status_code != 200:
+    def jobs(capella_api, pod, tenant, cluster_id, timeout=120):
+        deadline = time.time() + timeout
+        while True:
+            resp = capella_api.jobs(tenant.projects[0], tenant.id, cluster_id)
+            if resp.status_code == 404:
+                # Cluster genuinely gone (already destroyed) -- retrying
+                # forever here is the same unbounded-recursion bug fixed in
+                # get_cluster_info/get_nodes (Jenkins build 16458): this sibling
+                # was missed in that pass and produced the identical stuck
+                # ThreadPool worker hammering /jobs every 5s on build 16471.
+                raise Exception(
+                    f"Cluster {cluster_id} not found (404) -- it may "
+                    f"already be destroyed")
+            if resp.status_code == 200:
+                try:
+                    return json.loads(resp.content)
+                except Exception:
+                    pass
             CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
             {}".format(resp.status_code))
             print(resp.content)
+            if time.time() >= deadline:
+                raise Exception(
+                    f"jobs() for {cluster_id} kept failing (last status "
+                    f"{resp.status_code}) for over {timeout}s")
             time.sleep(5)
-            return CapellaUtils.jobs(capella_api, pod, tenant, cluster_id)
-        try:
-            content = json.loads(resp.content)
-        except Exception as e:
-            CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
-            {}".format(resp.status_code))
-            print(resp.content)
-            time.sleep(5)
-            return CapellaUtils.jobs(capella_api, pod, tenant, cluster_id)
-        return content
 
     @staticmethod
     def get_cluster_info(pod, tenant, cluster_id, timeout=120):
@@ -1465,7 +1474,7 @@ class CapellaUtils(object):
                 CapellaUtils.log.error(
                     "Cloud snapshot backup {} not found".format(backup_id))
                 not_found_count += 1
-                if not_found_count > 10:
+                if not_found_count > 30:
                     raise Exception(
                         "Cloud snapshot backup {} not found after 10 "
                         "retries".format(backup_id))
@@ -1490,9 +1499,14 @@ class CapellaUtils(object):
     def wait_for_cloud_snapshot_restore_to_complete(pod, tenant, project_id,
                                                     cluster_id, restore_id,
                                                     timeout=3600):
+        # Restore status values (couchbase-cloud:
+        # internal/backup/provisioned/cluster/restore/status.go):
+        # "queued", "processing", "complete", "failed". "failed" is terminal
+        # -- fail fast on it instead of polling the full timeout for a
+        # restore that has already given up retrying.
         start_time = time.time()
         restore_state = None
-        while restore_state != "complete" and time.time() < start_time + timeout:
+        while time.time() < start_time + timeout:
             restores = CapellaUtils.list_cloud_snapshot_restores(
                 pod=pod, tenant=tenant, project_id=project_id,
                 cluster_id=cluster_id)
@@ -1509,14 +1523,19 @@ class CapellaUtils(object):
             CapellaUtils.log.info(
                 "Waiting for cloud snapshot restore to complete, current "
                 "state: {}".format(restore_state))
+            if restore_state == "complete":
+                CapellaUtils.log.info(
+                    "Cloud snapshot restore {} completed in {} seconds".format(
+                        restore_id, time.time() - start_time))
+                return True
+            if restore_state == "failed":
+                CapellaUtils.log.error(
+                    "Cloud snapshot restore {} failed after {} seconds".format(
+                        restore_id, time.time() - start_time))
+                return False
             time.sleep(60)
-        if restore_state != "complete":
-            CapellaUtils.log.error(
-                "Cloud snapshot restore {} did not complete within {} "
-                "seconds".format(restore_id, timeout))
-            return False
-        CapellaUtils.log.info(
-            "Cloud snapshot restore {} completed in {} seconds".format(
-                restore_id, time.time() - start_time))
-        return True
+        CapellaUtils.log.error(
+            "Cloud snapshot restore {} did not complete within {} seconds "
+            "(last state: {})".format(restore_id, timeout, restore_state))
+        return False
 

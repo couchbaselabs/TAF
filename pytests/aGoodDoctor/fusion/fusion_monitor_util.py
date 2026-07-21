@@ -150,6 +150,275 @@ class FusionMonitorUtil():
             time.sleep(10)
         raise AssertionError(f"Fusion is not {state} on cluster {cluster.id}")
 
+    # Flat default timeout for post-restore fusion waits -- large datasets
+    # can take a long time to sync to the S3 log store and there's no
+    # reliable way to estimate that duration up front, so this is just a
+    # generous fixed ceiling rather than something derived per-restore.
+    DEFAULT_RESTORE_TIMEOUT_SECONDS = 8 * 3600  # 8 hours
+
+    def get_current_instance_ids(self, cluster):
+        """
+        Return the InstanceIds of all currently running, couchbase-function
+        EC2 instances for *cluster* -- tag:couchbase-cloud-cluster-id ==
+        cluster.id, tag:couchbase-cloud-function == "couchbase" (excludes
+        transient fusion-accelerator instances).
+
+        Two uses:
+        - Callers needing "any one live node to run a local curl on" (e.g.
+          set_memcached_global_setting(), the fusion-status poll) just take
+          the first element.
+        - Callers needing a pre-restore baseline to diff against later (see
+          apply_settings_once_ready()) use the full list -- a restore tears
+          down a cluster's existing instances and creates new ones matching
+          the restored topology, so "any running instance" isn't enough to
+          know the new ones have actually replaced the old ones yet.
+        """
+        filters = self.fusion_aws_util._cluster_filter(
+            cluster.id, [{'Name': 'tag:couchbase-cloud-function', 'Values': ['couchbase']}])
+        instances = self.fusion_aws_util.list_instances(filters=filters, suppress_log=True)
+        return [i.get('InstanceId') for i in instances]
+
+    def set_memcached_global_setting(self, cluster, key, value):
+        """
+        POST a single key/value to /pools/default/settings/memcached/global,
+        e.g. fusion_num_uploader_threads or fusion_sync_rate_limit.
+
+        Applied via SSM (curl against localhost:8091 on one of the cluster's
+        own EC2 instances), not external REST -- same reason as
+        wait_until_fusion_enabled(): this is meant to be callable during the
+        post-restore S3 fusion log-store upload, before the IP allowlist
+        reopens, e.g. to bump uploader threads/rate limit and speed up the
+        upload wait_until_fusion_enabled() is polling for.
+
+        Verifies the value actually took by reading it back with a GET
+        immediately after -- a successful POST only means ns_server accepted
+        the request, not that the setting is what's now in effect.
+
+        :param cluster: Cluster object
+        :param key: memcached global setting name
+        :param value: value to set (stringified into the POST body as-is)
+        :return: True if the POST succeeded AND the GET read-back confirms
+            *key* == *value*, False otherwise (logged, not raised -- callers
+            treat this as best-effort speed-up, not a hard requirement)
+        """
+        self.set_admin_credentials(cluster)
+        instance_ids = self.get_current_instance_ids(cluster)
+        instance_id = instance_ids[0] if instance_ids else None
+        if not instance_id:
+            self.log.warning(
+                f"No running instances found for cluster {cluster.id} to SSM "
+                f"into for setting {key}={value}")
+            return False
+
+        auth = "-u '{}':'{}'".format(cluster.master.rest_username, cluster.master.rest_password)
+        curl_cmd = (
+            "curl -sk -X POST {} "
+            "http://localhost:8091/pools/default/settings/memcached/global "
+            "-d {}={}"
+        ).format(auth, key, value)
+        result = self.fusion_aws_util.ec2.run_shell_command(instance_id, curl_cmd)
+        if not result.get('success'):
+            self.log.warning(
+                f"Failed to set {key}={value} on cluster {cluster.id} via "
+                f"{instance_id}: {result.get('stderr')}")
+            return False
+
+        self.log.info(
+            f"[restore] Set {key}={value} on cluster {cluster.id} via "
+            f"{instance_id}: {result.get('stdout')}")
+
+        get_cmd = "curl -sk -X GET {} http://localhost:8091/pools/default/settings/memcached/global".format(auth)
+        get_result = self.fusion_aws_util.ec2.run_shell_command(instance_id, get_cmd)
+        if not get_result.get('success'):
+            self.log.warning(
+                f"Could not verify {key} on cluster {cluster.id} via "
+                f"{instance_id}: {get_result.get('stderr')}")
+            return False
+
+        try:
+            current = json.loads(get_result.get('stdout', '').strip())
+        except ValueError as e:
+            self.log.warning(
+                f"Could not parse memcached global settings from "
+                f"{instance_id} on cluster {cluster.id}: {e} -- output: "
+                f"{get_result.get('stdout')!r}")
+            return False
+
+        actual = current.get(key)
+        if str(actual) != str(value):
+            self.log.warning(
+                f"{key} verification mismatch on cluster {cluster.id}: "
+                f"expected {value}, got {actual} (full settings: {current})")
+            return False
+
+        self.log.info(f"[restore] Verified {key}={actual} on cluster {cluster.id}")
+        return True
+
+    def apply_settings_once_ready(self, cluster, settings, old_instance_ids=None,
+                                   max_wait=600, poll_interval=15, settle_seconds=120):
+        """
+        Wait for NEW EC2 instances to replace *cluster*'s pre-restore ones,
+        then apply each key/value in *settings* via
+        set_memcached_global_setting().
+
+        A restore tears down the target's existing instances and creates
+        new ones matching the restored topology -- right after the restore
+        is triggered, the OLD instances may still be running/SSM-reachable
+        for a while before that teardown happens, so just checking "is
+        there any instance" could hit a stale instance that's about to be
+        nuked, silently losing the setting once it's replaced. Comparing
+        against *old_instance_ids*
+        (captured by the caller BEFORE triggering the restore, via
+        get_current_instance_ids()) ensures we only apply once a genuinely
+        new instance shows up.
+
+        Also waits *settle_seconds* after a new instance first appears
+        before applying anything, to give its SSM agent / couchbase service
+        time to fully come up.
+
+        Best-effort: logs and returns if no new instance appears within
+        *max_wait*, or if a given setting fails to apply -- these are a
+        speed-up, not a hard requirement, so a failure here shouldn't fail
+        the restore.
+
+        :param cluster: Cluster object (post-restore target)
+        :param settings: dict of {memcached_setting_name: value}
+        :param old_instance_ids: InstanceIds seen on *cluster* before the
+            restore was triggered (get_current_instance_ids()). If not
+            given, any running instance is treated as new (best-effort --
+            there's nothing to diff against).
+        :param max_wait: give up waiting for a new instance after this many
+            seconds (default 600 = 10 min)
+        :param poll_interval: seconds between instance-lookup retries (default 15)
+        :param settle_seconds: extra wait after a new instance is first seen,
+            before applying settings (default 120)
+        """
+        if not settings:
+            return
+        old_ids = set(old_instance_ids or [])
+        deadline = time.time() + max_wait
+        while True:
+            current_ids = self.get_current_instance_ids(cluster)
+            new_ids = [i for i in current_ids if i not in old_ids]
+            if new_ids:
+                break
+            if time.time() > deadline:
+                self.log.warning(
+                    f"No new instances found for cluster {cluster.id} within "
+                    f"{max_wait}s (still only seeing pre-restore instances) "
+                    f"-- skipping settings {list(settings.keys())}")
+                return
+            time.sleep(poll_interval)
+
+        self.log.info(
+            f"New instance(s) {new_ids} detected for cluster {cluster.id} "
+            f"post-restore -- waiting {settle_seconds}s before applying settings")
+        time.sleep(settle_seconds)
+
+        for key, value in settings.items():
+            self.set_memcached_global_setting(cluster, key, value)
+
+    def _get_fusion_status_via_ssm(self, cluster):
+        """
+        Single-shot GET /fusion/status via SSM (curl against localhost:8091
+        on one of cluster's own EC2 instances, not external REST -- see
+        wait_until_fusion_enabled() for why). Returns
+        (instance_id, state, total_pending_bytes, table) on success, or None
+        if no instance was found / the curl failed / the response didn't
+        parse (logged either way; caller decides whether/how to retry).
+        """
+        instance_ids = self.get_current_instance_ids(cluster)
+        instance_id = instance_ids[0] if instance_ids else None
+        if not instance_id:
+            self.log.warning(
+                f"No running instances found for cluster {cluster.id} to "
+                f"SSM into for fusion status")
+            return None
+
+        curl_cmd = "curl -sk -X GET -u '{}':'{}' http://localhost:8091/fusion/status".format(
+            cluster.master.rest_username, cluster.master.rest_password)
+        result = self.fusion_aws_util.ec2.run_shell_command(instance_id, curl_cmd)
+        if not result.get('success'):
+            self.log.warning(
+                f"Fusion status SSM curl failed on {instance_id} for "
+                f"cluster {cluster.id}: {result.get('stderr')}")
+            return None
+
+        try:
+            content = json.loads(result.get('stdout', '').strip())
+        except ValueError as e:
+            self.log.warning(
+                f"Could not parse fusion/status output from {instance_id} "
+                f"on cluster {cluster.id}: {e} -- output: "
+                f"{result.get('stdout')!r}")
+            return None
+
+        state = content.get("state")
+        table = PrettyTable()
+        table.field_names = ["Node ID", "Bucket Name", "Pending Bytes", "Sync Session Completed Bytes", "Sync Session Total Bytes"]
+        total_pending_bytes = 0
+        nodes = content.get("nodes") or {}
+        for node, stats in nodes.items():
+            buckets = stats.get("buckets") or {}
+            for bucket_name, bucket_stats in buckets.items():
+                pending_bytes = bucket_stats.get("snapshotPendingBytes") or 0
+                total_pending_bytes += pending_bytes
+                table.add_row([
+                    node, bucket_name,
+                    pending_bytes,
+                    bucket_stats.get("syncSessionCompletedBytes"),
+                    bucket_stats.get("syncSessionTotalBytes"),
+                ])
+        self.log.info(
+            f"[restore] Fusion state on {cluster.id} (via {instance_id}): "
+            f"{state}\n{table}")
+        return instance_id, state, total_pending_bytes, table
+
+    def wait_until_fusion_enabled(self, cluster, poll_interval=15, timeout=None):
+        """
+        Poll GET /fusion/status until state == "enabled", logging the state
+        plus all 3 per-bucket stats (snapshotPendingBytes,
+        syncSessionCompletedBytes, syncSessionTotalBytes) on every poll.
+
+        Queried via SSM (curl against localhost:8091 on one of the cluster's
+        own EC2 instances) rather than a REST call from outside the cluster:
+        the IP allowlist stays closed until the restore itself completes, so
+        external requests would be blocked for the whole S3 upload window
+        this method is meant to observe -- SSM-ing into any one node works
+        regardless of the allowlist/DB-user state.
+
+        Flat timeout (default DEFAULT_RESTORE_TIMEOUT_SECONDS / 8h) -- large
+        datasets can take a long time to sync to the S3 log store and there
+        is no reliable bytes-based way to estimate that duration up front,
+        so this uses a generous fixed ceiling rather than deriving one.
+
+        :param cluster: Cluster object (post-restore target)
+        :param poll_interval: Seconds between polls (default 15)
+        :param timeout: Seconds to wait before giving up (default
+            DEFAULT_RESTORE_TIMEOUT_SECONDS)
+        :raises AssertionError: if state never reaches "enabled" within the
+            timeout
+        """
+        if timeout is None:
+            timeout = self.DEFAULT_RESTORE_TIMEOUT_SECONDS
+        self.set_admin_credentials(cluster)
+        deadline = time.time() + timeout
+
+        while True:
+            reading = self._get_fusion_status_via_ssm(cluster)
+            if reading is None:
+                time.sleep(poll_interval)
+                continue
+            _, state, _, _ = reading
+            if state == "enabled":
+                return
+            if time.time() > deadline:
+                raise AssertionError(
+                    f"Fusion did not reach 'enabled' on cluster {cluster.id} "
+                    f"within {timeout}s"
+                )
+            time.sleep(poll_interval)
+
     def get_fusion_s3_uri(self, cluster, bucket_name=None):
         """
         Return the ep_magma_fusion_logstore_uri (Fusion S3 URI) from any one node in the cluster.
