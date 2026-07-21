@@ -391,7 +391,7 @@ class FusionMonitorUtil():
             for node, count in nodes.items():
                 final_count += count
                 uploader_table.add_row([bucket_name, node, count])
-            self.log.info(f"Fusion Uploader Distribution for bucket {bucket_name}:\n{uploader_table}")
+            self.log.info(f"Fusion Uploader Distribution for cluster {cluster.id}, bucket {bucket_name}:\n{uploader_table}")
 
         vb_table = PrettyTable()
         vb_table.field_names = ["Bucket Name", "VB No", "Node", "Term"]
@@ -400,7 +400,7 @@ class FusionMonitorUtil():
             for vb_no, details in vb_map.items():
                 vb_count += 1
                 vb_table.add_row([bucket_name, vb_no, details.get("node"), details.get("term")])
-            self.log.info(f"Fusion VB Uploader Map for bucket {bucket_name}:\n{vb_table}")
+            self.log.info(f"Fusion VB Uploader Map for cluster {cluster.id}, bucket {bucket_name}:\n{vb_table}")
             if vb_count != self.VBUCKET_COUNT:
                 self.log.critical(f"VB Uploader Count: {vb_count} is not equal to number of vBuckets: {self.VBUCKET_COUNT}")
 
@@ -540,7 +540,7 @@ class FusionMonitorUtil():
             except Exception as e:
                 self.log.error(f"Unexpected error resolving hostname '{node.ip}': {e}")
         if not suppress_log:
-            self.log.info(f"Hostname and public IP mapping:\n{table}")
+            self.log.info(f"Hostname and public IP mapping for cluster {cluster.id}:\n{table}")
         for node in cluster.nodes_in_cluster:
             node.aws_public_ip = cluster.hostname_public_ip_mapping.get(node.ip)
 

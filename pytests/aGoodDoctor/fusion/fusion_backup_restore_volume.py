@@ -691,6 +691,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             result,
             f"Accelerator nodes not killed after {label} on secondary {secondary.id}",
         )
+        self.scan_memcahced_logs(secondary)
 
     def _configure_secondary_fusion(self):
         """
@@ -901,6 +902,15 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
 
         self._restore_snapshot_backup(backup_id, primary, target)
 
+        # Restore operation succeeded (asserted inside _restore_snapshot_backup) --
+        # report attached guest volumes vs what ns_server reports on target, and
+        # scan the restored target's memcached logs for errors.
+        if target_fusion:
+            self.cp_monitor.guest_volume_attached_vs_ns_server_reported(
+                tenant, target, self.fusion_monitor, find_master_func=self.find_master
+            )
+        self.scan_memcahced_logs(target)
+
         self.sleep(30, f"{tgt_label} Wait after snapshot restore before verifying items")
 
         # Verify item count in each of primary's buckets on the target
@@ -1021,7 +1031,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"Accelerator nodes not killed after primary rebalance",
             )
             self.log_rebalance_report()
-            self.scan_memcahced_logs_for_errors()
+            self.scan_memcahced_logs(primary)
             self.parse_accelerator_logs()
             self.check_asg_cleanup_after_rebalance()
 
@@ -1187,7 +1197,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     )
                     self.assertTrue(result, "Accelerator nodes not killed after disk rebalance")
                     self.log_rebalance_report()
-                    self.scan_memcahced_logs_for_errors()
+                    self.scan_memcahced_logs(primary)
                     self.parse_accelerator_logs()
                     self.check_asg_cleanup_after_rebalance()
 
@@ -1226,7 +1236,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                         result, "Accelerator nodes not killed after compute rebalance"
                     )
                     self.log_rebalance_report()
-                    self.scan_memcahced_logs_for_errors()
+                    self.scan_memcahced_logs(primary)
                     self.parse_accelerator_logs()
                     self.check_asg_cleanup_after_rebalance()
 

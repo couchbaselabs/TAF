@@ -288,7 +288,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
             asg_table.field_names = ["ASG Name", "Instance Type Launched"]
             for asg_name, instance_type in launched_types.items():
                 asg_table.add_row([asg_name, instance_type])
-            self.log.info(f"Fusion ASG launch results:\n{asg_table}")
+            self.log.info(f"Fusion ASG launch results for cluster {cluster.id}:\n{asg_table}")
 
             # ordered_types = self.fusion_aws_util.get_asg_ordered_instance_types(cluster.id)
             # failing_types = set(ordered_types[:n_to_fail])

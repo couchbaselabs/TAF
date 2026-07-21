@@ -213,11 +213,10 @@ class FusionClusterOnOffTest(_FusionTestBase):
         self.log.info("Pending bytes drained to 0 — fusion upload resumed successfully")
 
         errors_found = self.cp_monitor.scan_memcached_logs_for_errors(
-            [self.cluster], steady_state_workload_sleep=0)
-        self.assertEqual(
-            len(errors_found), 0,
-            f"Memcached errors detected after cluster on/off cycle on: "
-            f"{[c.id for c in errors_found]}")
+            self.cluster, sleep_before_scan=0)
+        self.assertFalse(
+            errors_found,
+            f"Memcached errors detected after cluster on/off cycle on cluster {self.cluster.id}")
         self.log.info("No memcached errors found after cluster on/off cycle")
 
     # ------------------------------------------------------------------
@@ -774,11 +773,11 @@ class FusionClusterOnOffTest(_FusionTestBase):
         # Phase 10: no memcached errors across the entire test cycle
         # ------------------------------------------------------------------
         errors_found = self.cp_monitor.scan_memcached_logs_for_errors(
-            [self.cluster], steady_state_workload_sleep=0)
-        self.assertEqual(
-            len(errors_found), 0,
+            self.cluster, sleep_before_scan=0)
+        self.assertFalse(
+            errors_found,
             f"Memcached errors detected after cluster on/off and rebalance "
-            f"cycle on: {[c.id for c in errors_found]}")
+            f"cycle on cluster {self.cluster.id}")
         self.log.info(
             "No memcached errors — functional on/off test complete")
 
@@ -1136,11 +1135,11 @@ class FusionClusterOnOffTest(_FusionTestBase):
             f"cluster turn-off/turn-on cycle")
 
         errors_found = self.cp_monitor.scan_memcached_logs_for_errors(
-            [self.cluster], steady_state_workload_sleep=0)
-        self.assertEqual(
-            len(errors_found), 0,
+            self.cluster, sleep_before_scan=0)
+        self.assertFalse(
+            errors_found,
             f"Memcached errors detected after enable-then-immediately-turn-off "
-            f"cycle on: {[c.id for c in errors_found]}")
+            f"cycle on cluster {self.cluster.id}")
         self.log.info(
             f"No memcached errors — enable-then-immediately-turn-off-cluster "
             f"test complete (fusion final state: '{final_state}')")

@@ -57,13 +57,14 @@ class FusionCPResourceMonitor:
                 return tag.get('Value')
         return None
 
-    def log_fusion_guest_volumes_table(self, volumes):
+    def log_fusion_guest_volumes_table(self, cluster, volumes):
         """
         Log fusion guest volumes in structured PrettyTable format.
 
         Provides detailed view of EBS guest volumes including size, IOPS, state,
         attachment information, and fusion rebalance association.
 
+        :param cluster: Cluster object (used only for the log heading)
         :param volumes: List of volume dictionaries from AWS EC2 API
         """
         table = PrettyTable()
@@ -80,7 +81,7 @@ class FusionCPResourceMonitor:
                 volume.get('CreateTime').strftime('%Y-%m-%d %H:%M:%S') if volume.get('CreateTime') else 'N/A',
                 fusion_rebalance_value if fusion_rebalance_value else 'N/A'
             ])
-        self.log.info(f"Fusion Guest Volumes Table:\n{table}")
+        self.log.info(f"Fusion Guest Volumes Table for cluster {cluster.id}:\n{table}")
 
     @staticmethod
     def compute_ebs_cleanup_timeout(volumes, throughput_mbps=35):
@@ -174,7 +175,7 @@ class FusionCPResourceMonitor:
                 continue
 
             # Log initial volume discovery with detailed information
-            self.log_fusion_guest_volumes_table(ebs_guest_volumes)
+            self.log_fusion_guest_volumes_table(cluster, ebs_guest_volumes)
             break
 
         # Phase 2: Monitor hydration process and volume transitions
@@ -220,6 +221,73 @@ class FusionCPResourceMonitor:
 
         return False
 
+    def guest_volume_attached_vs_ns_server_reported(self, tenant, cluster, fusion_monitor_util, find_master_func=None):
+        self.log.info(f"Checking if CP is cleaning up the hydrated EBS guest volumes for cluster {cluster.id}")
+        instances = self.fusion_aws_util.list_instances(
+            self.fusion_aws_util._cluster_filter(cluster.id),
+            log="EBS Guest Volumes Attached to Cluster", suppress_log=True
+        )
+        volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                'couchbase-cloud-cluster-id': cluster.id,
+                'couchbase-cloud-function': 'fusion-accelerator'
+                })
+        volumes_by_instance = {}
+        for volume in volumes:
+            attachments = volume.get('Attachments', [])
+            instance_id = attachments[0]['InstanceId'] if attachments else None
+            if instance_id not in volumes_by_instance:
+                volumes_by_instance[instance_id] = []
+            volumes_by_instance[instance_id].append(volume)
+        try:
+            if find_master_func:
+                find_master_func(tenant, cluster)
+            from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
+            status, content = FusionRestAPI(cluster.master).get_active_guest_volumes()
+            table = PrettyTable()
+            table.field_names = ["Node ID", "Public IP", "Instance ID", "Attached GVs", "Existing GVs", "GV IDs", "Fusion Rebalance"]
+            fusion_monitor_util.get_hostname_public_ip_mapping(cluster, suppress_log=True)
+            for node_id in list(content):
+                public_ip = cluster.hostname_public_ip_mapping.get(node_id.split("@")[1])
+                instance_id = next((instance.get('InstanceId') for instance in instances if instance.get('PublicIpAddress') == public_ip), None)
+                volumes = volumes_by_instance.get(instance_id, [])
+                if len(volumes) > 0:
+                    for volume in volumes:
+                        fusion_rebalance_value = self.get_fusion_rebalance_tag(volume) or 'N/A'
+                        table.add_row([
+                            node_id.split("@")[1].split(".")[0],
+                            public_ip if public_ip else 'N/A',
+                            instance_id if instance_id else 'N/A',
+                            len(content[node_id]),
+                            len(volumes),
+                            volume.get('VolumeId') + " (" + volume.get('State') + ")",
+                            fusion_rebalance_value])
+                else:
+                    table.add_row([
+                            node_id.split("@")[1].split(".")[0],
+                            public_ip if public_ip else 'N/A',
+                            instance_id if instance_id else 'N/A',
+                            len(content[node_id]),
+                            len(volumes),
+                            'N/A',
+                            'N/A'])
+            if None in volumes_by_instance:
+                for volume in volumes_by_instance[None]:
+                    fusion_rebalance_value = self.get_fusion_rebalance_tag(volume) or 'N/A'
+                    table.add_row([
+                        'N/A',
+                        'N/A',
+                        'N/A',
+                        'N/A',
+                        'N/A',
+                        volume.get('VolumeId') + " (" + volume.get('State') + ")",
+                        fusion_rebalance_value])
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.log.error(f"Failed to get active guest volumes for cluster {cluster.id}: {e}")
+            return
+        self.log.info(f"EBS Guest Volumes attached to the cluster {cluster.id}:\n{table}")
+
     def check_ebs_guest_vol_deletion(self, tenant, cluster, fusion_monitor_util, stop_run_event, find_master_func=None):
         """
         Check if control plane is cleaning up hydrated EBS guest volumes.
@@ -231,72 +299,7 @@ class FusionCPResourceMonitor:
         :param find_master_func: Optional callback function to find master node (signature: find_master(tenant, cluster))
         """
         while not stop_run_event.is_set():
-            self.log.info(f"Checking if CP is cleaning up the hydrated EBS guest volumes for cluster {cluster.id}")
-            instances = self.fusion_aws_util.list_instances(
-                self.fusion_aws_util._cluster_filter(cluster.id),
-                log="EBS Guest Volumes Attached to Cluster", suppress_log=True
-            )
-            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
-                    'couchbase-cloud-cluster-id': cluster.id,
-                    'couchbase-cloud-function': 'fusion-accelerator'
-                    })
-            volumes_by_instance = {}
-            for volume in volumes:
-                attachments = volume.get('Attachments', [])
-                instance_id = attachments[0]['InstanceId'] if attachments else None
-                if instance_id not in volumes_by_instance:
-                    volumes_by_instance[instance_id] = []
-                volumes_by_instance[instance_id].append(volume)
-            try:
-                if find_master_func:
-                    find_master_func(tenant, cluster)
-                from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
-                status, content = FusionRestAPI(cluster.master).get_active_guest_volumes()
-                table = PrettyTable()
-                table.field_names = ["Node ID", "Public IP", "Instance ID", "Attached GVs", "Existing GVs", "GV IDs", "Fusion Rebalance"]
-                fusion_monitor_util.get_hostname_public_ip_mapping(cluster, suppress_log=True)
-                for node_id in list(content):
-                    public_ip = cluster.hostname_public_ip_mapping.get(node_id.split("@")[1])
-                    instance_id = next((instance.get('InstanceId') for instance in instances if instance.get('PublicIpAddress') == public_ip), None)
-                    volumes = volumes_by_instance.get(instance_id, [])
-                    if len(volumes) > 0:
-                        for volume in volumes:
-                            fusion_rebalance_value = self.get_fusion_rebalance_tag(volume) or 'N/A'
-                            table.add_row([
-                                node_id.split("@")[1].split(".")[0],
-                                public_ip if public_ip else 'N/A',
-                                instance_id if instance_id else 'N/A',
-                                len(content[node_id]),
-                                len(volumes),
-                                volume.get('VolumeId') + " (" + volume.get('State') + ")",
-                                fusion_rebalance_value])
-                    else:
-                        table.add_row([
-                                node_id.split("@")[1].split(".")[0],
-                                public_ip if public_ip else 'N/A',
-                                instance_id if instance_id else 'N/A',
-                                len(content[node_id]),
-                                len(volumes),
-                                'N/A',
-                                'N/A'])
-                if None in volumes_by_instance:
-                    for volume in volumes_by_instance[None]:
-                        fusion_rebalance_value = self.get_fusion_rebalance_tag(volume) or 'N/A'
-                        table.add_row([
-                            'N/A',
-                            'N/A',
-                            'N/A',
-                            'N/A',
-                            'N/A',
-                            volume.get('VolumeId') + " (" + volume.get('State') + ")",
-                            fusion_rebalance_value])
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                self.log.error(f"Failed to get active guest volumes for cluster {cluster.id}: {e}")
-                time.sleep(300)
-                continue
-            self.log.info(f"EBS Guest Volumes attached to the cluster {cluster.id}:\n{table}")
+            self.guest_volume_attached_vs_ns_server_reported(tenant, cluster, fusion_monitor_util, find_master_func=find_master_func)
             time.sleep(300)
         return True
 
@@ -568,7 +571,7 @@ class FusionCPResourceMonitor:
                     table.add_row([serial_no, rebalance, len(volumes), volume.get('VolumeId')])
                     serial_no += 1
             if table.rowcount > 0:
-                self.log.info(f"Available Volumes by Fusion Rebalance:\n{table}")
+                self.log.info(f"Available Volumes by Fusion Rebalance for cluster {cluster.id}:\n{table}")
             time.sleep(30)
         return True
 
@@ -583,22 +586,19 @@ class FusionCPResourceMonitor:
             asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster.id)
             self.log.critical(f"Fusion accelerator ASGs pending deletion for cluster {cluster.id}: {len(asgs)} ASGs")
 
-    def scan_memcached_logs_for_errors(self, clusters, steady_state_workload_sleep):
+    def scan_memcached_logs_for_errors(self, cluster, sleep_before_scan=60):
         """
-        Scan memcached logs for errors on all cluster instances.
+        Scan memcached logs for errors on a cluster's instances.
 
-        :param clusters: List of cluster objects
-        :param steady_state_workload_sleep: Sleep time before scanning
-        :return: List of clusters with errors found
+        :param cluster: Cluster object
+        :param sleep_before_scan: Sleep time before scanning (default: 60s)
+        :return: True if errors were found on the cluster, False otherwise
         """
-        self.log.info(f"Sleeping for {steady_state_workload_sleep} seconds before scanning memcached logs for errors on cluster instances")
-        time.sleep(steady_state_workload_sleep)
-        errors_found = []
-        for cluster in clusters:
-            result = self.fusion_aws_util.scan_logs_for_errors_on_cluster_instances(cluster.id)
-            if result:
-                errors_found.append(cluster)
-        return errors_found
+        if sleep_before_scan:
+            self.log.info(f"Sleeping for {sleep_before_scan} seconds before scanning memcached logs for errors on cluster {cluster.id}")
+            time.sleep(sleep_before_scan)
+        self.log.info(f"Scanning memcached logs for errors on cluster {cluster.id}")
+        return self.fusion_aws_util.scan_logs_for_errors_on_cluster_instances(cluster.id)
 
     def get_main_volume_disk_usage_percent(self, cluster):
         """

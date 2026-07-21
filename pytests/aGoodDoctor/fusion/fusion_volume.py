@@ -233,10 +233,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
         """Check EBS cleanup for a specific cluster."""
         return self.cp_monitor.monitor_ebs_cleanup(cluster, self.stop_run_event, timeout=self.hydration_timeout)
 
-    def scan_errors_for_clusters(self, clusters):
-        """Scan memcached logs for errors on all clusters."""
-        errors_found = self.cp_monitor.scan_memcached_logs_for_errors(clusters, self.steady_state_workload_sleep)
-        self.assertFalse(errors_found, "Errors found in memcached logs on cluster instances")
+    def scan_memcahced_logs(self, cluster):
+        """Scan memcached logs for errors on the given cluster."""
+        errors_found = self.cp_monitor.scan_memcached_logs_for_errors(cluster)
+        self.assertFalse(errors_found, f"Errors found in memcached logs on cluster {cluster.id}")
 
     def parse_accelerator_logs_for_clusters(self, clusters):
         """Parse accelerator logs for all clusters."""
@@ -476,11 +476,6 @@ class VolumeTest(BaseTestCase, hostedOPD):
         clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
         self.parse_accelerator_logs_for_clusters(clusters)
 
-    def scan_memcahced_logs_for_errors(self):
-        """Scan memcached logs for errors on all clusters using control plane monitor."""
-        clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
-        self.scan_errors_for_clusters(clusters)
-
     def log_fusion_log_store_data_size(self):
         """Log fusion log store data size for all clusters and buckets using fusion monitor."""
         clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
@@ -629,7 +624,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
-                        self.scan_memcahced_logs_for_errors()
+                        for rt in rebalance_tasks:
+                            self.scan_memcahced_logs(rt.cluster)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     # turn cluster off and back on
@@ -658,7 +654,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
-                        self.scan_memcahced_logs_for_errors()
+                        for rt in rebalance_tasks:
+                            self.scan_memcahced_logs(rt.cluster)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                 # turn cluster off and back on
@@ -704,7 +701,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
-                        self.scan_memcahced_logs_for_errors()
+                        for rt in rebalance_tasks:
+                            self.scan_memcahced_logs(rt.cluster)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     if self.backup_restore:
@@ -748,7 +746,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
-                        self.scan_memcahced_logs_for_errors()
+                        for rt in rebalance_tasks:
+                            self.scan_memcahced_logs(rt.cluster)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     if self.backup_restore:
@@ -800,7 +799,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
-                        self.scan_memcahced_logs_for_errors()
+                        for rt in rebalance_tasks:
+                            self.scan_memcahced_logs(rt.cluster)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     if self.backup_restore:
