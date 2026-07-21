@@ -1,7 +1,9 @@
+import logging
 import os
 import uuid
 from urllib.parse import urlparse
 
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.identity import ClientSecretCredential
 from azure.keyvault.keys import KeyClient
 from azure.storage.blob import BlobServiceClient
@@ -13,7 +15,8 @@ from couchbase_utils.security_utils.credential_store_utils import \
 
 
 class AzureProvider(CloudProviderInterface):
-    def __init__(self):
+    def __init__(self, log=None):
+        self.log = log if log is not None else logging.getLogger("test")
         self.azure_storage_account = os.getenv("AZURE_STORAGE_ACCOUNT")
         self.azure_storage_key = os.getenv("AZURE_STORAGE_KEY")
         self.azure_region = os.getenv("AZURE_REGION", "westus")
@@ -117,11 +120,36 @@ class AzureProvider(CloudProviderInterface):
             key_url = self.km_key_url
         if not key_url or not self._km_created_by_us:
             return
+        key_name = self._km_key_name
         try:
             client = self._kv_client()
-            client.begin_delete_key(self._km_key_name)
-        except Exception:
-            pass
+        except Exception as e:
+            self.log.error(
+                "AzureProvider.delete_kms_key: failed to construct Key "
+                "Vault client for key %s: %s. Key must be manually deleted "
+                "from vault %s.",
+                key_name, e, self.azure_kv_url)
+            return
+
+        try:
+            client.begin_delete_key(key_name)
+        except ResourceNotFoundError as e:
+            self.log.info(
+                "Azure Key Vault begin_delete_key(%s): key not found — "
+                "safe to ignore on cleanup path. %s", key_name, e)
+        except HttpResponseError as e:
+            self.log.error(
+                "Azure Key Vault begin_delete_key(%s) HTTP error "
+                "[status=%s]: %s. Key must be manually deleted from vault "
+                "%s.",
+                key_name, getattr(e, "status_code", "?"), e,
+                self.azure_kv_url)
+        except Exception as e:
+            self.log.error(
+                "Azure Key Vault begin_delete_key(%s) raised unexpected: "
+                "%s. Key must be manually deleted from vault %s.",
+                key_name, e, self.azure_kv_url)
+
         self.km_key_url = None
         self._km_key_name = None
         self._km_created_by_us = False

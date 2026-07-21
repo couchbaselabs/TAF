@@ -1,3 +1,4 @@
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -10,7 +11,8 @@ from couchbase_utils.security_utils.credential_store_utils import \
 
 
 class LocalstackProvider(CloudProviderInterface):
-    def __init__(self):
+    def __init__(self, log=None):
+        self.log = log if log is not None else logging.getLogger("test")
         self.localstack_region = os.getenv("LOCALSTACK_REGION", "us-east-1")
         self.localstack_access_key_id = os.getenv(
             "LOCALSTACK_ACCESS_KEY_ID")

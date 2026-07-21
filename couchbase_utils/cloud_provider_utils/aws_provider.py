@@ -1,7 +1,9 @@
+import logging
 import os
 from urllib.parse import urlparse
 
 import boto3
+from botocore.exceptions import ClientError
 
 from couchbase_utils.cloud_provider_utils.cloud_provider_interface import \
     CloudOperationError, CloudProviderInterface
@@ -10,7 +12,8 @@ from couchbase_utils.security_utils.credential_store_utils import \
 
 
 class AWSProvider(CloudProviderInterface):
-    def __init__(self):
+    def __init__(self, log=None):
+        self.log = log if log is not None else logging.getLogger("test")
         self.aws_region = os.getenv("AWS_REGION", "us-east-1")
         self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
         self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -224,13 +227,52 @@ class AWSProvider(CloudProviderInterface):
             key_url = self.km_key_url
         if not key_url or not self._km_created_by_us:
             return
-        client = self._kms_client()
+        key_id = self._km_key_id
+        alias_name = self._km_alias_name
         try:
-            client.delete_alias(AliasName=self._km_alias_name)
-        except Exception:
-            pass
-        client.schedule_key_deletion(
-            KeyId=self._km_key_id, PendingWindowInDays=7)
+            client = self._kms_client()
+        except Exception as e:
+            self.log.error(
+                "AWSProvider.delete_kms_key: failed to construct KMS client "
+                "for key %s (alias %s): %s. Key must be manually deleted "
+                "from the AWS console.", key_id, alias_name, e)
+            return
+
+        try:
+            client.delete_alias(AliasName=alias_name)
+        except ClientError as e:
+            # NotFoundException here is expected if the alias was already
+            # cleaned up on a prior run; other codes are worth surfacing.
+            code = e.response.get("Error", {}).get("Code", "")
+            if code == "NotFoundException":
+                self.log.info(
+                    "AWS KMS delete_alias(%s): alias not found — safe to "
+                    "ignore on cleanup path.", alias_name)
+            else:
+                self.log.warning(
+                    "AWS KMS delete_alias(%s) failed [%s]: %s. Alias may be "
+                    "orphaned; the underlying key deletion is still "
+                    "attempted below.", alias_name, code, e)
+        except Exception as e:
+            self.log.warning(
+                "AWS KMS delete_alias(%s) raised unexpected: %s. Continuing "
+                "to schedule key deletion.", alias_name, e)
+
+        try:
+            client.schedule_key_deletion(
+                KeyId=key_id, PendingWindowInDays=7)
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            self.log.error(
+                "AWS KMS schedule_key_deletion(%s) failed [%s]: %s. Key "
+                "must be manually deleted from the AWS console.",
+                key_id, code, e)
+        except Exception as e:
+            self.log.error(
+                "AWS KMS schedule_key_deletion(%s) raised unexpected: %s. "
+                "Key must be manually deleted from the AWS console.",
+                key_id, e)
+
         self.km_key_url = None
         self._km_key_id = None
         self._km_alias_name = None

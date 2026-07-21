@@ -178,7 +178,7 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.backup_archive_dir = self.BACKUP_URL_TEMPLATES[self.cbbackup_test].format(
                 uid=f"test-{uuid.uuid4()}")
             self.backup_repo_name = self.input.param("repo_name", f"test_{uuid.uuid4()}")
-            self.backup_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cbbackup_test]()
+            self.backup_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cbbackup_test](log=self.log)
 
         if self.backup_cloud_provider:
             self.backup_cloud_provider.cleanup_for_bkrs(self.backup_archive_dir)
@@ -193,7 +193,7 @@ class CollectionBase(ClusterSetup, FusionBase):
         if self.cont_bkp_test in self.CLOUD_PROVIDER_CLASSES:
             self.continuous_backup_location = self.CONT_BKP_URL_TEMPLATES[self.cont_bkp_test].format(
                 uid=f"test-{uuid.uuid4()}")
-            self.contbk_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cont_bkp_test]()
+            self.contbk_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cont_bkp_test](log=self.log)
 
         self.cont_bkp_credential_store_id = None
         if self.contbk_cloud_provider:
@@ -233,7 +233,7 @@ class CollectionBase(ClusterSetup, FusionBase):
                         % (km_provider_name,
                            list(self.CLOUD_PROVIDER_CLASSES.keys())))
                 self.kms_provider = self.CLOUD_PROVIDER_CLASSES[
-                    km_provider_name]()
+                    km_provider_name](log=self.log)
                 self.kms_provider.create_kms_key(
                     alias=self.input.param("km_key_alias", None))
                 self.log.info(
