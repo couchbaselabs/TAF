@@ -27,6 +27,8 @@ from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from global_vars import logger
 from unified_control_plane import UnifiedControlPlaneClient
 from lighthouse.lighthouse_portal import LighthousePortal
+from testconstants import (LIGHTHOUSE_PORTAL_IP, LIGHTHOUSE_PORTAL_PORT,
+                           LIGHTHOUSE_PORTAL_USERNAME, LIGHTHOUSE_PORTAL_PASSWORD)
 
 class LighthouseBase(CollectionBase):
     def setUp(self):
@@ -75,24 +77,18 @@ class LighthouseBase(CollectionBase):
 
     def _setup_ucp_portal(self):
         """
-        Extract the UCP portal server from input.lh_portal and
-        build a LighthousePortal config object.
-        The IP comes from [LHPortal] ini section.
-        Port and credentials can be overridden via test params:
-            - ucp_port (default 443)
-            - ucp_username (default from [membase] rest_username)
-            - ucp_password (default from [membase] rest_password)
+        Build a LighthousePortal config object using hardcoded constants
+        from testconstants (temporarily bypassing ini [LHPortal] section).
         Exposes:
             self.ucp_portal  - LighthousePortal config object
             self.ucp_client  - UnifiedControlPlaneClient instance
         """
-        if not self.input.lh_portal:
-            self.fail("No UCP portal server found. "
-                      "Ensure [LHPortal] section is defined in the ini file.")
-        server = self.input.lh_portal[0]
-        self.ucp_portal = LighthousePortal.from_server_and_params(
-            server, self.input)
-        self.log.info("UCP portal: %s" % self.ucp_portal)
+        self.ucp_portal = LighthousePortal(
+            ip=LIGHTHOUSE_PORTAL_IP,
+            port=LIGHTHOUSE_PORTAL_PORT,
+            username=LIGHTHOUSE_PORTAL_USERNAME,
+            password=LIGHTHOUSE_PORTAL_PASSWORD)
+        self.log.info("UCP portal (hardcoded): %s" % self.ucp_portal)
         # Create UCP client using the portal config
         self.ucp_client = UnifiedControlPlaneClient(self.ucp_portal)
 
