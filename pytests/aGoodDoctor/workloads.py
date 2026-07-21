@@ -6,7 +6,7 @@ Created on Mar 29, 2024
 from TestInput import TestInputSingleton
 
 _input = TestInputSingleton.input
-        
+
 default = {
     "key_prefix": "test_docs-",
     "key_size": 32,
@@ -905,3 +905,189 @@ hotel_vector = {
             },
         ],
     }
+
+# MSMARCO embedding workloads, loaded via DocLoader's /msmarco_doc_load endpoint.
+# Dense queries use ANN_DISTANCE, sparse queries use SPARSE_VECTOR_DISTANCE.
+
+# ---- Dataset 1: MSMARCOEmbeddingProduct (sparse-only) ----
+# 1-A  BHIVE sparse indexes (CREATE VECTOR INDEX on `sparse`)
+_msmarco_sparse_bhive_indexes = [
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, country) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};'
+]
+# 1-B  Composite sparse indexes (CREATE INDEX with `sparse` SPARSE VECTOR)
+_msmarco_sparse_indexes = [
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, `sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(brand, `sparse` SPARSE VECTOR, color) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(type, size, `sparse` SPARSE VECTOR) PARTITION BY HASH(type) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, size, `sparse` SPARSE VECTOR) PARTITION BY HASH(`sparse`) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF1024", "scan_nprobes": 20}};'
+]
+_msmarco_sparse_queries = [
+    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}), country FROM {bucket}.{scope}.{collection} WHERE size < 6 AND country = "USA" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10'
+]
+_msmarco_sparse_vector = [
+    {
+        "similarity": _input.param("similarity", "DOT"),
+        "quantization": _input.param("quantization", "SQ8"),
+        "nProbe": _input.param("nProbe", 20),
+        "description": "IVF1024"
+    }
+]
+
+# ---- Dataset 2: MSMARCOSiftEmbeddingProduct (dense + sparse hybrid) ----
+# 2-B  Dense vector BHIVE indexes (CREATE VECTOR INDEX on `embedding`, 128-dim)
+_msmarcosift_dense_bhive_indexes = [
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (review) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`embedding` VECTOR) INCLUDE (category, review) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+]
+# 2-C  Dense vector composite indexes (CREATE INDEX with `embedding` VECTOR)
+_msmarcosift_dense_indexes = [
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, `embedding` VECTOR) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(brand, `embedding` VECTOR, color) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(type, size, `embedding` VECTOR) PARTITION BY HASH(category) WITH {{"defer_build":true, "num_replica":1, {vector}}};'
+]
+_msmarcosift_dense_queries = [
+    'SELECT meta().id, ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) LIMIT 10',
+    'SELECT meta().id, ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) FROM {bucket}.{scope}.{collection} WHERE review >= 1 ORDER BY ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) LIMIT 10',
+    'SELECT meta().id, ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) LIMIT 10',
+    'SELECT meta().id, ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) FROM {bucket}.{scope}.{collection} WHERE brand = "Nike" AND color = "Green" ORDER BY ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) LIMIT 10',
+    'SELECT meta().id, ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) FROM {bucket}.{scope}.{collection} WHERE category = "Shoes" AND review >= 1 ORDER BY ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) LIMIT 10',
+    'SELECT meta().id, ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) FROM {bucket}.{scope}.{collection} WHERE type = "Footwear" AND size = 5 ORDER BY ANN_DISTANCE(`embedding`, $vector, "{similarity}", {nProbe}) LIMIT 10'
+]
+_msmarcosift_dense_vector = [
+    {
+        "similarity": _input.param("similarity", "L2_SQUARED"),
+        "quantization": _input.param("quantization", "SQ8"),
+        "nProbe": _input.param("nProbe", 20)
+    }
+]
+# Scalar-only indexes/queries, shared by both MSMARCO datasets.
+_msmarco_scalar_indexes = [
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size) WITH {{"defer_build":true}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand) WITH {{"defer_build":true}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(country, type, review) WITH {{"defer_build":true}};'
+]
+_msmarco_scalar_queries = [
+    'SELECT meta().id FROM {bucket}.{scope}.{collection} WHERE size = 5',
+    'SELECT brand, color FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green"',
+    'SELECT country, type FROM {bucket}.{scope}.{collection} WHERE country = "USA" AND review >= 1'
+]
+# 2-D  Sparse vector BHIVE indexes (on `sparse`)
+_msmarcosift_sparse_bhive_indexes = [
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF", "scan_nprobes": 20}};',
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF", "scan_nprobes": 20}};',
+    'CREATE VECTOR INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) INCLUDE (size, color, brand) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF", "scan_nprobes": 20}};'
+]
+# 2-E  Sparse vector composite indexes (on `sparse`)
+_msmarcosift_sparse_indexes = [
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(`sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF", "scan_nprobes": 20}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, `sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF", "scan_nprobes": 20}};',
+    'CREATE INDEX {index_name} ON {bucket}.{scope}.{collection}(size, color, brand, `sparse` SPARSE VECTOR) WITH {{"defer_build":true, "similarity": "DOT", "description": "IVF", "scan_nprobes": 20}};'
+]
+_msmarcosift_sparse_queries = [
+    'SELECT meta().id, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+    'SELECT meta().id, size, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10',
+    'SELECT meta().id, size, color, brand, SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) FROM {bucket}.{scope}.{collection} WHERE size = 5 AND color = "Green" ORDER BY SPARSE_VECTOR_DISTANCE(`sparse`, $vector, {nProbe}) LIMIT 10'
+]
+
+# n1ql.py picks indexes in list order, so sparse are created first, scalar last.
+_msmarcosift_indexes = (
+    _msmarcosift_sparse_indexes
+    + _msmarcosift_dense_indexes
+    + _msmarco_scalar_indexes
+)
+_msmarcosift_bhive_indexes = (
+    _msmarcosift_sparse_bhive_indexes
+    + _msmarcosift_dense_bhive_indexes
+    + _msmarco_scalar_indexes
+)
+_msmarcosift_queries = (
+    _msmarcosift_sparse_queries
+    + _msmarcosift_dense_queries
+    + _msmarco_scalar_queries
+)
+_msmarcosift_queryParams = [{} for _ in range(len(_msmarcosift_queries))]
+
+MSMARCOEmbeddingProduct = {
+    "key_prefix": "test_docs-",
+    "key_size": 32,
+    "key_type": _input.param("key_type", "SimpleKey"),
+    "valType": "MSMARCOEmbeddingProduct",
+    "vecFilePath": _input.param("vecFilePath", "/mnt/nfsdata/collection.vecs"),
+    "scopes": 1,
+    "collections": _input.param("collections", 2),
+    # Capped at DocLoader's MSMARCO STEPS upper bound (8,841,823).
+    "num_items": _input.param("num_items", 8841823),
+    "ops": _input.param("ops_rate", 50000),
+    "doc_size": _input.param("doc_size", 1024),
+    "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
+    "2iQPS": _input.param("2iQPS", 10),
+    "ftsQPS": 0,
+    "cbasQPS": 0,
+    "process_concurrency": _input.param("pc", 10),
+    "collections_defn": [
+        {
+            "collection_id": "8M",
+            "num_items": _input.param("num_items", 8841823),
+            "valType": "MSMARCOEmbeddingProduct",
+            "dim": _input.param("dim", 384),
+            "vector": _msmarco_sparse_vector,
+            "indexes": _msmarco_sparse_indexes + _msmarco_scalar_indexes,
+            "bhive_indexes": _msmarco_sparse_bhive_indexes + _msmarco_scalar_indexes,
+            "queries": _msmarco_sparse_queries + _msmarco_scalar_queries,
+            "queryParams": [{} for _ in range(len(_msmarco_sparse_queries)
+                                   + len(_msmarco_scalar_queries))],
+            "2i": {"num_queries": _input.param("2i_queries", 7),
+                   "num_indexes": _input.param("2i_indexes", 7)}
+        }
+    ]
+}
+
+MSMARCOSiftEmbeddingProduct = {
+    "key_prefix": "test_docs-",
+    "key_size": 32,
+    "key_type": _input.param("key_type", "SimpleKey"),
+    "valType": "MSMARCOSiftEmbeddingProduct",
+    "vecFilePath": _input.param("vecFilePath", "/mnt/nfsdata/collection.vecs"),
+    "baseFilePath": _input.param("baseFilePath", "/mnt/nfsdata/bigann/bigann_base.bvecs"),
+    "scopes": 1,
+    "collections": _input.param("collections", 2),
+    # Capped at DocLoader's MSMARCO STEPS upper bound (8,841,823).
+    "num_items": _input.param("num_items", 8841823),
+    "ops": _input.param("ops_rate", 50000),
+    "doc_size": _input.param("doc_size", 1024),
+    "doc_op_percentages": {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0},
+    "2iQPS": _input.param("2iQPS", 10),
+    "ftsQPS": 0,
+    "cbasQPS": 0,
+    "process_concurrency": _input.param("pc", 10),
+    "collections_defn": [
+        {
+            "collection_id": "8M",
+            "num_items": _input.param("num_items", 8841823),
+            "valType": "MSMARCOSiftEmbeddingProduct",
+            "dim": _input.param("dim", 128),
+            "vector": _msmarcosift_dense_vector,
+            "indexes": _msmarcosift_indexes,
+            "bhive_indexes": _msmarcosift_bhive_indexes,
+            "queries": _msmarcosift_queries,
+            "queryParams": _msmarcosift_queryParams,
+            "dense_indexes": _msmarcosift_dense_indexes,
+            "dense_bhive_indexes": _msmarcosift_dense_bhive_indexes,
+            "dense_queries": _msmarcosift_dense_queries,
+            "scalar_indexes": _msmarco_scalar_indexes,
+            "scalar_queries": _msmarco_scalar_queries,
+            "sparse_bhive_indexes": _msmarcosift_sparse_bhive_indexes,
+            "sparse_indexes": _msmarcosift_sparse_indexes,
+            "sparse_queries": _msmarcosift_sparse_queries,
+            "2i": {"num_queries": _input.param("2i_queries", 4),
+                   "num_indexes": _input.param("2i_indexes", 3)}
+        }
+    ]
+}

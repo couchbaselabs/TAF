@@ -508,7 +508,11 @@ class OPD:
     def print_stats(self, cluster):
         self.bucket_util.print_bucket_stats(cluster)
         self.cluster_util.print_cluster_stats(cluster)
-        if self.val_type != "siftBigANN":
+        # File-driven vector loaders (siftBigANN / MSMARCO) don't go through
+        # generate_docs, so the crud-stat attrs (initial_items, *_start/_end)
+        # aren't populated at initial_setup -> skip the crud stats table.
+        if self.val_type not in ("siftBigANN", "MSMARCOEmbeddingProduct",
+                                  "MSMARCOSiftEmbeddingProduct"):
             self.print_crud_stats(cluster.buckets)
         for bucket in cluster.buckets:
             self.get_bucket_dgm(cluster, bucket)
@@ -1408,6 +1412,14 @@ class OPD:
                                 validate_data=False,
                                 wait_for_stats=False,
                                 override_num_items=mem_only_items)
+            elif self.val_type in ("MSMARCOEmbeddingProduct",
+                                   "MSMARCOSiftEmbeddingProduct"):
+                JavaDocLoaderUtils.load_msmarco_data(cluster=self.cluster,
+                                buckets=self.cluster.buckets,
+                                overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},
+                                validate_data=False,
+                                wait_for_stats=False,
+                                override_num_items=mem_only_items)
             else:
                 JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets,
                                              overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},
@@ -1539,8 +1551,7 @@ class OPD:
         backup_node = self.cluster.backup_nodes[0]
         self.backup_cluster_host = backup_cluster_host
         if self.backup_location.path is None:
-            self.backup_location.path = os.path.join(backup_node.data_path,
-                                                     "bkrs")
+            self.backup_location.path = "/data/bkrs"
         self.backup_archive = self.backup_location.path
 
         self.drBackup = BackupMgrUtil(

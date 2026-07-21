@@ -22,7 +22,8 @@ from .cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
 from bucket_utils.bucket_ready_functions import CollectionUtils, JavaDocLoaderUtils, ScopeUtils
 from shell_util.remote_connection import RemoteMachineShellConnection
-from .workloads import Hotel, default, nimbus, hotel_vector, siftBigANN
+from .workloads import Hotel, default, nimbus, hotel_vector, siftBigANN, \
+    MSMARCOEmbeddingProduct, MSMARCOSiftEmbeddingProduct
 from gsiLib.gsiHelper import GsiHelper
 from .hostedEventing import DoctorEventing
 try:
@@ -140,6 +141,10 @@ class Murphy(BaseTestCase, OPD):
                 self.load_defn.append(Hotel)
         elif self.val_type == "siftBigANN":
             self.load_defn.append(siftBigANN)
+        elif self.val_type == "MSMARCOEmbeddingProduct":
+            self.load_defn.append(MSMARCOEmbeddingProduct)
+        elif self.val_type == "MSMARCOSiftEmbeddingProduct":
+            self.load_defn.append(MSMARCOSiftEmbeddingProduct)
         elif self.val_type == "Nimbus":
             self.load_defn.append(nimbus)
         else:
@@ -248,7 +253,9 @@ class Murphy(BaseTestCase, OPD):
                 self._sync_bucket_from_server(bucket)
 
         coll_id = self.input.param("collection_id", False)
-        if coll_id and self.val_type == "siftBigANN":
+        if coll_id and self.val_type in ("siftBigANN",
+                                         "MSMARCOEmbeddingProduct",
+                                         "MSMARCOSiftEmbeddingProduct"):
             coll_id = coll_id.split(",")
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["collections_defn"] = [defn for defn in bucket.loadDefn["collections_defn"] if defn.get("collection_id") in coll_id]
@@ -614,6 +621,13 @@ class Murphy(BaseTestCase, OPD):
                                                   overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
                                                   wait_for_stats=False,
                                                   validate_data=False)
+        elif self.val_type in ("MSMARCOEmbeddingProduct",
+                               "MSMARCOSiftEmbeddingProduct"):
+            if not self.skip_init:
+                JavaDocLoaderUtils.load_msmarco_data(self.cluster, self.cluster.buckets,
+                                                     overRidePattern={"create": 100, "update": 0, "delete": 0, "read": 0, "expiry": 0},
+                                                     wait_for_stats=False,
+                                                     validate_data=False)
         else:
             if not self.skip_init:
                 JavaDocLoaderUtils.load_data(self.cluster, self.cluster.buckets,
@@ -698,9 +712,10 @@ class Murphy(BaseTestCase, OPD):
             self.trigger_rollback()
 
         normal_mutation = self.input.param("normal_mutation", True)
-        if self.val_type == "siftBigANN":
+        if self.val_type in ("siftBigANN", "MSMARCOEmbeddingProduct",
+                             "MSMARCOSiftEmbeddingProduct"):
             self.mutations = True
-            self.mutation_th = threading.Thread(target=self.sift_mutations)
+            self.mutation_th = threading.Thread(target=self.vector_file_mutations)
             self.mutation_th.start()
 
             self.PrintStep("Running Query workload for {} during mutations".format(
@@ -1647,7 +1662,9 @@ class Murphy(BaseTestCase, OPD):
         self.mutations = False
         if self.mutation_th is not None:
             self.mutation_th.join()
-        if self.val_type != "siftBigANN" and self.track_failures:
+        if self.val_type not in ("siftBigANN", "MSMARCOEmbeddingProduct",
+                                 "MSMARCOSiftEmbeddingProduct") \
+                and self.track_failures:
             tasks = list()
             self.doc_loading_tm.getAllTaskResult()
             for task in tasks:
@@ -2059,7 +2076,19 @@ class Murphy(BaseTestCase, OPD):
                 self.loader_tasks.remove(task)
             self.check_index_pending_mutations(self.cluster)
 
-    def sift_mutations(self):
+    def vector_file_mutations(self):
+        """
+        Mutation loop for the file-driven vector datasets (siftBigANN and the
+        MSMARCO variants). These don't go through generate_docs - the docs are
+        sourced from the vector files on the loader side - so the only thing
+        that varies per dataset is the load helper (and hence the DocLoader
+        endpoint) used to replay them.
+        """
+        if self.val_type == "siftBigANN":
+            load_vector_data = JavaDocLoaderUtils.load_sift_data
+        else:
+            load_vector_data = JavaDocLoaderUtils.load_msmarco_data
+
         self.loader_tasks = list()
         for bucket in self.cluster.buckets:
             bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 10000)
@@ -2070,7 +2099,7 @@ class Murphy(BaseTestCase, OPD):
             if not self.mutations:
                 break
             self.mutate += 1
-            self.loader_tasks = JavaDocLoaderUtils.load_sift_data(
+            self.loader_tasks = load_vector_data(
                 cluster=self.cluster,
                 buckets=self.cluster.buckets,
                 validate_data=False,

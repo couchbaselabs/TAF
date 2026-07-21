@@ -186,6 +186,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                  elastic=False, es_server=None, es_api_key=None,
                  es_similarity=None,
                  base_vectors_file_path=None, sift_url=None,
+                 vec_file_path=None,
                  model=None, mockVector=False, dim=128, base64=False,
                  num_vbuckets=CbServer.total_vbuckets,
                  target_vbuckets=None,
@@ -295,6 +296,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.es_similarity = es_similarity
         self.base_vectors_file_path = base_vectors_file_path
         self.sift_url = sift_url
+        self.vec_file_path = vec_file_path
         self.model = model
         self.mockVector = mockVector
         self.dim = dim
@@ -507,6 +509,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             "es_similarity": self.es_similarity,
             "base_vectors_file_path": self.base_vectors_file_path,
             "sift_url": self.sift_url,
+            "vec_file_path": self.vec_file_path,
             "model": self.model,
             "mock_vector": self.mockVector,
             "dim": self.dim,
@@ -518,6 +521,9 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
 
         if self.value_type == "siftBigANN":
             api_endpoint = "sift_doc_load"
+        elif self.value_type in ("MSMARCOEmbeddingProduct",
+                                 "MSMARCOSiftEmbeddingProduct"):
+            api_endpoint = "msmarco_doc_load"
 
         data = BaseSiriusLoader._flatten_param_to_str(data)
         success, json_response = self._make_api_request(api_endpoint, data, 600)

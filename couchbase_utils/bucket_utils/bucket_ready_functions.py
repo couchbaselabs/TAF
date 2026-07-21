@@ -242,7 +242,9 @@ class JavaDocLoaderUtils(object):
                         track_failures=track_failures,
                         mutate=mutate,
                         elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64,
-                        stall_timeout=-1)
+                        stall_timeout=-1,
+                        vec_file_path=bucket.loadDefn.get("vecFilePath"),
+                        base_vectors_file_path=bucket.loadDefn.get("baseFilePath"))
                     loader_map.update({bucket.name+scope+collection: loader})
         return loader_map
 
@@ -369,6 +371,89 @@ class JavaDocLoaderUtils(object):
                     JavaDocLoaderUtils.doc_loading_tm.add_new_task(loader)
                     tasks.append(loader)
                     i -= 1
+        if wait_for_load:
+            JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
+        else:
+            return tasks
+
+        if validate_data:
+            JavaDocLoaderUtils.data_validation(cluster, skip_default=skip_default)
+
+    @staticmethod
+    def load_msmarco_data(cluster=None, buckets=None, overRidePattern=None,
+                          skip_default=True,
+                          wait_for_load=True,
+                          validate_data=False,
+                          wait_for_stats=True,
+                          override_num_items=None,
+                          mutate=0,
+                          suppress_error_table=False,
+                          track_failures=True):
+        """
+        Loads MSMARCO embedding datasets (valType MSMARCOEmbeddingProduct /
+        MSMARCOSiftEmbeddingProduct) through DocLoader's /msmarco_doc_load
+        endpoint. Mirrors load_sift_data but sources the embeddings from
+        'vecFilePath' (required by DocLoader) and, for the sift variant,
+        additionally from 'baseFilePath' (base vectors).
+        """
+        tasks = list()
+        buckets = buckets or cluster.buckets
+        coll_order = TestInputSingleton.input.param("coll_order", 1)
+        default_pattern = {"create": 0, "update": 100, "delete": 0, "read": 0, "expiry": 0}
+        for bucket in buckets:
+            pattern = overRidePattern or bucket.loadDefn.get("doc_op_percentages", default_pattern)
+            for scope in list(bucket.scopes.keys()):
+                if scope == CbServer.system_scope:
+                    continue
+                collections = list(bucket.scopes[scope].collections.keys())
+                if "_default" in collections:
+                    collections.remove("_default")
+                for i, collection in enumerate(sorted(collections)):
+                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                    if coll_order == -1:
+                        workloads = list(reversed(workloads))
+                    workload = workloads[i % len(workloads)]
+                    items = override_num_items or workload.get("num_items")
+                    key_prefix = bucket.loadDefn.get("key_prefix")
+                    key_size = bucket.loadDefn.get("key_size")
+                    key_type = bucket.loadDefn.get("key_type")
+                    doc_size = workload.get("doc_size", 256)
+                    model = bucket.loadDefn.get("model")
+                    mockVector = bucket.loadDefn.get("mockVector")
+                    base64 = bucket.loadDefn.get("base64")
+                    process_concurrency = JavaDocLoaderUtils.process_concurrency
+                    valType = workload["valType"]
+                    dim = workload.get("dim", 128)
+                    if collection == "_default" and scope == "_default" and skip_default:
+                        continue
+                    loader = SiriusCouchbaseLoader(
+                        server_ip=cluster.master.ip, server_port=cluster.master.port,
+                        generator=None, op_type=None,
+                        username="Administrator", password="password",
+                        bucket=bucket,
+                        scope_name=scope, collection_name=collection,
+                        key_prefix=key_prefix, key_size=key_size, doc_size=doc_size,
+                        key_type=key_type, value_type=valType,
+                        create_percent=pattern["create"], read_percent=pattern["read"], update_percent=pattern["update"],
+                        delete_percent=pattern["delete"], expiry_percent=pattern["expiry"],
+                        create_start_index=0, create_end_index=items,
+                        read_start_index=0, read_end_index=items,
+                        update_start_index=0, update_end_index=items,
+                        delete_start_index=0, delete_end_index=items,
+                        touch_start_index=0, touch_end_index=0,
+                        replace_start_index=0, replace_end_index=0,
+                        expiry_start_index=0, expiry_end_index=items,
+                        process_concurrency=process_concurrency,
+                        task_identifier="", ops=bucket.loadDefn.get("ops"),
+                        suppress_error_table=suppress_error_table,
+                        track_failures=track_failures,
+                        mutate=mutate,
+                        elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64,
+                        vec_file_path=bucket.loadDefn.get("vecFilePath"),
+                        base_vectors_file_path=bucket.loadDefn.get("baseFilePath"))
+                    loader.create_doc_load_task()
+                    JavaDocLoaderUtils.doc_loading_tm.add_new_task(loader)
+                    tasks.append(loader)
         if wait_for_load:
             JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
         else:

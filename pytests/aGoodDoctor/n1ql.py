@@ -81,18 +81,25 @@ def execute_via_sdk(client, statement, readonly=False, client_context_id=None, q
     output = {}
 
     result = client.query(statement, options)
-    if validate:
-        try:
-            output["results"] = [row for row in result.rows()]
-            output["status"] = result.metadata().status()
-            output["metrics"] = result.metadata().metrics()
-            output["errors"] = result.metadata().errors()
-            if str(output['status']) == QueryStatus.FATAL:
-                msg = output['errors'][0]['msg']
-                if "Job requirement" in msg and "exceeds capacity" in msg:
-                    raise Exception("Capacity cannot meet job requirement")
-        except CouchbaseException as e:
-            raise e
+    try:
+        # Always drain the row stream so the query fully executes and its
+        # metadata (status/metrics/errors) is available. Retain the rows only
+        # when the caller wants to validate them (e.g. item-count checks) -
+        # otherwise we still get metrics/status without holding the results.
+        # This keeps metrics from being None when validate=False (e.g. MSMARCO,
+        # which has no ground truth and disables result validation).
+        rows = [row for row in result.rows()]
+        if validate:
+            output["results"] = rows
+        output["status"] = result.metadata().status()
+        output["metrics"] = result.metadata().metrics()
+        output["errors"] = result.metadata().errors()
+        if str(output['status']) == QueryStatus.FATAL:
+            msg = output['errors'][0]['msg']
+            if "Job requirement" in msg and "exceeds capacity" in msg:
+                raise Exception("Capacity cannot meet job requirement")
+    except CouchbaseException as e:
+        raise e
 
     return output
 
@@ -423,6 +430,12 @@ class QueryLoad:
         self.valType = bucket.loadDefn.get("valType")
         self.base64 = False
         self.validate_item_count = validate_item_count
+        # MSMARCO datasets have no ground truth, so there is no meaningful
+        # recall/accuracy or result-count expectation. Disable result-count
+        # validation for them (recall/accuracy compare is siftBigANN-only).
+        if self.valType in ("MSMARCOEmbeddingProduct",
+                            "MSMARCOSiftEmbeddingProduct"):
+            self.validate_item_count = False
         self.bucket = bucket
         self.queries = [item[0] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
         self.queries_meta = [item[1] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
@@ -569,6 +582,18 @@ class QueryLoad:
             end = time.time()
             counter += 1
 
+    def _get_sparse_query_vector(self, nnz=None, vocab=None):
+        # SPARSE_VECTOR_DISTANCE expects the query vector as a sparse vector of
+        # the same shape as the stored `sparse` field: [[indices], [values]]
+        # (ints and floats). Without ground-truth query files we can't build a
+        # semantically meaningful vector, so generate one of the right FORMAT so
+        # the query executes (recall is not meaningful for these mock queries).
+        nnz = nnz or TestInputSingleton.input.param("sparse_nnz", 32)
+        vocab = vocab or TestInputSingleton.input.param("sparse_vocab", 30522)
+        indices = sorted(random.sample(range(vocab), min(nnz, vocab)))
+        values = [random.random() for _ in indices]
+        return [indices, values]
+
     def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
         counter = 0
@@ -581,7 +606,11 @@ class QueryLoad:
                 query = self.queries[counter%len(self.queries)]
                 query_tuple = self.queries_meta[counter%len(self.queries)]
                 q_param = query_tuple["queryParams"]
-                if query_tuple.get("dim"):
+                if "SPARSE_VECTOR_DISTANCE" in query:
+                    # Sparse vector search needs $vector as [[indices],[values]],
+                    # not a dense float array.
+                    q_param["vector"] = self._get_sparse_query_vector()
+                elif query_tuple.get("dim"):
                     index = random.randint(0, self.float_buf_length-query_tuple.get("dim"))
                     q_param["vector"] = self.float_buf[index:index+query_tuple.get("dim")]
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
