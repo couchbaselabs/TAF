@@ -1274,7 +1274,7 @@ class CredentialStoreTest(CredentialStoreBase):
             row_id = row["id"]
             with self.subTest(row=row_id):
                 if row.get("requires_cbq_password") and not self.cbq_engine_password:
-                    self.skipTest(
+                    self.fail(
                         f"[T12 {row_id}] requires cbq_engine_password — "
                         "use services_init=kv:n1ql to enable @cbq-engine rows"
                     )

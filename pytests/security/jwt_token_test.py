@@ -2783,7 +2783,7 @@ class JWTTokenTest(OnPremBaseTest):
 
             # Negative: token missing one required audience — auth fails, authz fails
             if len(unique_audiences) < 2:
-                self.skipTest(
+                self.fail(
                     "audienceHandling=all negative case requires 2+ unique audiences; "
                     f"only {len(unique_audiences)} configured"
                 )

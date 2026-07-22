@@ -410,7 +410,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
                 "CBS is tracking active guest volumes on KV nodes — "
                 "waiting for CBS rebalance to complete and volumes to be released")
         else:
-            self.skipTest(
+            self.fail(
                 "CBS activeGuestVolumes never went > 0; "
                 "fusion rebalance may not have reached the CBS phase within timeout")
 

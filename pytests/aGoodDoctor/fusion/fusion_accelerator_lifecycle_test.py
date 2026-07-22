@@ -605,7 +605,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
           small_create_end   — doc count for the small load (default: 1_000_000)
           create_end         — doc count for the large load  (default: 20_000_000)
         """
-        self.skipTest("Not yet implemented — guest volume size scaling validation pending")
+        self.fail("Not yet implemented — guest volume size scaling validation pending")
 
     # ------------------------------------------------------------------
     # Test 10: ASGs deleted within 5 minutes of rebalance completion

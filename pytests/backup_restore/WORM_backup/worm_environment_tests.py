@@ -21,7 +21,7 @@ class WormEnvironmentTest(WormBackupBase):
 
     def test_worm_enable_rejected_on_community_edition(self):
         if getattr(self.cluster, "edition", None) != "community" and CbServer.enterprise_edition:
-            self.skipTest("Run on a Community Edition cluster for CE WORM validation")
+            self.fail("Run on a Community Edition cluster for CE WORM validation")
         output, error = self.backup_mgr.create_repo(
             self.backup_archive_dir, self.backup_repo_name,
             worm_period=self.worm_period_days,

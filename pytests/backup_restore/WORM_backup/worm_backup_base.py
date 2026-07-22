@@ -70,7 +70,7 @@ class WormBackupBase(ContinuousBackupBase):
     def _require_param(self, name, reason):
         value = self.input.param(name, None)
         if value in [None, ""]:
-            self.skipTest("Set %s to run %s" % (name, reason))
+            self.fail("Set %s to run %s" % (name, reason))
         return value
 
     def _require_cloud_helper(self, reason):
@@ -84,7 +84,7 @@ class WormBackupBase(ContinuousBackupBase):
         Returns self.backup_cloud_provider for the caller to use directly.
         """
         if self.backup_cloud_provider is None:
-            self.skipTest(
+            self.fail(
                 "Set cbbackup_test to AWS/Azure/GCP to run %s" % reason)
         return self.backup_cloud_provider
 
@@ -100,7 +100,7 @@ class WormBackupBase(ContinuousBackupBase):
             providers = [providers]
         allowed = {provider.lower() for provider in providers}
         if self.cbbackup_test is None or self.cbbackup_test.lower() not in allowed:
-            self.skipTest(
+            self.fail(
                 "Set cbbackup_test to one of %s to run %s"
                 % (sorted(allowed), reason))
         return self.backup_cloud_provider

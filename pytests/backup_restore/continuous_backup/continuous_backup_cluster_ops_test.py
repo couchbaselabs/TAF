@@ -441,7 +441,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         Note: PITR is supported only on Magma buckets.
         """
         if len(self.cluster.kv_nodes) < 4:
-            self.skipTest(
+            self.fail(
                 "Quorum loss test requires at least 4 KV nodes; "
                 f"cluster has {len(self.cluster.kv_nodes)}")
 

@@ -172,7 +172,7 @@ class WormProviderTest(WormBackupBase):
                         self.backup_archive_dir, self.backup_repo_name)
                      if "log" in path.lower()]
         if not log_paths:
-            self.skipTest("No archive log objects found for version cleanup validation")
+            self.fail("No archive log objects found for version cleanup validation")
         for log_path in log_paths:
             versions = helper.list_object_versions(
                 self.backup_archive_dir, self.backup_repo_name, log_path)

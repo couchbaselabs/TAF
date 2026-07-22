@@ -1694,7 +1694,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         Note: PITR is supported only on Magma buckets. Requires >= 3 KV nodes.
         """
         if len(self.cluster.kv_nodes) < 3:
-            self.skipTest(
+            self.fail(
                 "MAJORITY durability requires at least 3 KV nodes; "
                 f"cluster has {len(self.cluster.kv_nodes)}")
 
@@ -1762,7 +1762,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         Note: PITR is supported only on Magma buckets. Requires >= 3 KV nodes.
         """
         if len(self.cluster.kv_nodes) < 3:
-            self.skipTest(
+            self.fail(
                 "PERSIST_TO_MAJORITY durability requires at least 3 KV nodes; "
                 f"cluster has {len(self.cluster.kv_nodes)}")
 

@@ -221,6 +221,12 @@ Before completion, ensure:
 - All test code belongs in `pytests/` directories
 - Never hard-code cloud identities or API keys
 - Test failures must include detailed analysis
+- NEVER use `self.skipTest()`. Always use `self.fail()` instead.
+  - Do not introduce `self.skipTest()` in any new or modified code.
+  - If you encounter an existing `self.skipTest(...)`, replace it with
+    `self.fail(...)`, preserving the message argument unchanged.
+  - Rationale: skipped tests silently mask unmet preconditions and hide
+    coverage gaps; a failure surfaces the condition instead of hiding it.
 
 ---
 

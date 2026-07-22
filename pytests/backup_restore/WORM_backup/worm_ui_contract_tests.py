@@ -85,7 +85,7 @@ class WormUiContractTest(WormBackupBase):
             "UI pause-before-WORM-enable contract validation",
             expected_texts=["pause", "paused", "active", "repository", "worm"]) or exercised
         if not exercised:
-            self.skipTest("Set a UI contract command parameter to run this validation")
+            self.fail("Set a UI contract command parameter to run this validation")
 
     def test_ns_server_worm_expiry_alert_contract(self):
         self._create_worm_repo()

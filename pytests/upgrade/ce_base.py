@@ -64,17 +64,12 @@ class CEBaseTest(UpgradeBase):
         return version_tuple >= self.ENFORCED_CE_MIN_VERSION
 
     def _require_enforced_ce_version(self):
-        """
-        Skip the test if no cluster node is running a version that enforces
-        the CE restrictions (< 8.1.0).  Uses skipTest so the result is
-        marked SKIP rather than FAIL on older builds.
-        """
         if not self.cluster.nodes_in_cluster:
             self.fail("cluster.nodes_in_cluster is empty — "
                       "setUp may not have completed")
         if not any(self._node_has_enforced_ce(n)
                    for n in self.cluster.nodes_in_cluster):
-            self.skipTest(
+            self.fail(
                 "CE restrictions are only enforced on %s+; "
                 "cluster is on an older version"
                 % ".".join(str(v) for v in self.ENFORCED_CE_MIN_VERSION))

@@ -188,7 +188,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             time.sleep(2)
 
         if not cancelled:
-            self.skipTest(
+            self.fail(
                 "Fusion enabled too fast to cancel; adjust cluster size or retry")
 
         self._wait_for_fusion_state(self.tenant, self.cluster, "stopped")
@@ -254,7 +254,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             time.sleep(2)
 
         if not stopped:
-            self.skipTest(
+            self.fail(
                 "Fusion enabled too fast to stop; adjust cluster size or retry")
 
         self._wait_for_fusion_state(self.tenant, self.cluster, "stopped")
@@ -459,7 +459,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             time.sleep(2)
 
         if not restarted:
-            self.skipTest("Fusion enabled too fast to inject ns_server restart; "
+            self.fail("Fusion enabled too fast to inject ns_server restart; "
                           "increase num_items or adjust cluster size and retry")
 
         self.log.info("Waiting for CP to recover and reach enabled state")
@@ -1765,7 +1765,7 @@ class FusionEnableDisableTests(_FusionTestBase):
             time.sleep(2)
 
         if not disabled_during_enabling:
-            self.skipTest("Fusion enabled too fast to send disable during enabling; "
+            self.fail("Fusion enabled too fast to send disable during enabling; "
                           "increase num_items or adjust cluster size and retry")
 
         self._wait_for_fusion_state(self.tenant, self.cluster, "disabled")

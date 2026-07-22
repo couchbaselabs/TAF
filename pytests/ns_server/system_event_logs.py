@@ -1634,7 +1634,7 @@ class SystemEventLogs(ClusterSetup):
         max_scope_event_ignores = 1
         thread_lock = Lock()
         if not self.cluster.kv_nodes:
-            self.skipTest("Cluster not stable: KV nodes missing")
+            self.fail("Cluster not stable: KV nodes missing")
         while index < max_loops:
             self.log.info("Loop index %s" % index)
             bucket_threads = list()

@@ -855,7 +855,7 @@ class JWTOIDCTest(JWTOIDCBase):
         if not cluster_nodes or len(cluster_nodes) < 2:
             self.log.warning(f"nodes_in_cluster={[n.ip for n in cluster_nodes] if cluster_nodes else []}")
             self.log.warning(f"servers[:nodes_init]={[n.ip for n in self.cluster.servers[:self.nodes_init]]}")
-            self.skipTest("Cluster-wide test requires at least 2 nodes in cluster")
+            self.fail("Cluster-wide test requires at least 2 nodes in cluster")
 
         self.log.info(f"Testing across {len(cluster_nodes)} actual cluster nodes: {[n.ip for n in cluster_nodes]}")
 
@@ -1027,7 +1027,7 @@ class JWTOIDCTest(JWTOIDCBase):
             )
 
             if int(status_whoami or 0) in [401, 403]:
-                self.skipTest(
+                self.fail(
                     f"JIT provisioning not supported for Bearer token auth on this build "
                     f"(status={status_whoami}). Verified working on CB 8.1.0+. "
                     "On older builds, jitProvisioning may only apply to the browser OIDC flow."
@@ -1156,7 +1156,7 @@ class JWTOIDCTest(JWTOIDCBase):
             )
 
             if int(status_whoami or 0) in [401, 403]:
-                self.skipTest(
+                self.fail(
                     f"JIT provisioning not supported for Bearer token auth on this build "
                     f"(status={status_whoami}). Verified working on CB 8.1.0+. "
                     "On older builds, jitProvisioning may only apply to the browser OIDC flow."

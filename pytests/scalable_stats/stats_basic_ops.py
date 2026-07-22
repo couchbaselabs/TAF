@@ -45,7 +45,7 @@ class StatsBasicOps(CollectionBase):
                 index_servers.append(server)
 
         if not index_servers:
-            self.skipTest("No index service present on selected nodes for component=index")
+            self.fail("No index service present on selected nodes for component=index")
         return index_servers
 
     def load_sample_buckets_for_metrics(self):
