@@ -27,6 +27,7 @@ import time
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from couchbase_utils.cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from membase.api.rest_client import RestConnection
+from TestInput import TestInputServer
 from aGoodDoctor.hostedOnOff import DoctorHostedOnOff
 from .fusion_test_base import _FusionTestBase
 
@@ -134,6 +135,64 @@ class FusionClusterOnOffTest(_FusionTestBase):
             "couchbase-cloud-cluster-id": cluster.id,
             "couchbase-cloud-function": "fusion-accelerator",
         })
+
+    def _populate_cluster_nodes(self, cluster):
+        """
+        (Re)fetch *cluster*'s current node list from the CP and rebuild
+        `.nodes_in_cluster`/per-service node lists/`.master` from it, in
+        place, discarding whatever was there before.
+
+        Needed after a cloud snapshot restore (even in-place, same-cluster):
+        an EBS snapshot restore replaces the target's entire node topology to
+        match whatever it was when the backup was taken, so a node list
+        captured before the restore can reference hostnames that no longer
+        exist afterward -- the reachability poll right after the restore
+        (below) would otherwise wait forever on a torn-down hostname. Always
+        refetches from the CP directly (CapellaAPI.get_nodes) rather than
+        bootstrapping via an existing node in the old list (cf. hostedOPD.py's
+        refresh_cluster(), which find_master() uses), since every
+        previously-known node may be gone post-restore. See
+        FusionBackupRestoreVolumeTest._populate_cluster_nodes() for the same
+        pattern used there.
+        """
+        servers = CapellaAPI.get_nodes(self.pod, self.tenant, cluster.id)
+
+        cluster.nodes_in_cluster = []
+        cluster.kv_nodes = []
+        cluster.query_nodes = []
+        cluster.index_nodes = []
+        cluster.eventing_nodes = []
+        cluster.cbas_nodes = []
+        cluster.fts_nodes = []
+
+        for server in servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = self.rest_username
+            temp_server.rest_password = self.rest_password
+            temp_server.type = "dedicated"
+            temp_server.memcached_port = "11207"
+            cluster.nodes_in_cluster.append(temp_server)
+            if "Data" in temp_server.services:
+                cluster.kv_nodes.append(temp_server)
+            if "Query" in temp_server.services:
+                cluster.query_nodes.append(temp_server)
+            if "Index" in temp_server.services:
+                cluster.index_nodes.append(temp_server)
+            if "Eventing" in temp_server.services:
+                cluster.eventing_nodes.append(temp_server)
+            if "Analytics" in temp_server.services:
+                cluster.cbas_nodes.append(temp_server)
+            if "Search" in temp_server.services:
+                cluster.fts_nodes.append(temp_server)
+
+        self.assertTrue(
+            cluster.kv_nodes, f"No KV/data nodes found for cluster {cluster.id}"
+        )
+        cluster.master = cluster.kv_nodes[0]
 
     def _load_above_threshold(self):
         """Load enough documents to trigger fusion acceleration on next rebalance."""
@@ -934,6 +993,13 @@ class FusionClusterOnOffTest(_FusionTestBase):
             restore_ok, f"Cloud snapshot restore {restore_id} did not complete")
         CapellaAPI.wait_until_done(
             self.pod, self.tenant, self.cluster.id, timeout=600)
+
+        # Refresh the cluster's node list from the CP — even an in-place
+        # restore replaces the entire node topology to match the backup, so
+        # nodes captured before this restore may no longer exist. Without
+        # this, the reachability poll below can wait forever on a hostname
+        # torn down by the restore itself (see _populate_cluster_nodes()).
+        self._populate_cluster_nodes(self.cluster)
 
         # Re-add 0.0.0.0/0 allow-all IP — restore flushes the allowlist
         retry = 0
