@@ -245,7 +245,23 @@ class CapellaUtils(object):
                 time.sleep(10)
 
     @staticmethod
-    def destroy_cluster(pod, tenant, cluster):
+    def destroy_cluster(pod, tenant, cluster, timeout=1800):
+        """
+        Delete cluster.id via the internal API and block until it either
+        disappears (get_cluster_internal returns "Not Found.") or *timeout*
+        seconds elapse.
+
+        Any status other than "destroying" (e.g. the CP reverting the
+        cluster to "healthy"/"destroyFailed" because the async destroy job
+        errored out) is treated as still-in-progress and polled with a
+        sleep rather than looping straight back to the top with no delay --
+        previously such a state fell through the if/elif with no sleep and
+        no exit condition, hot-looping against the Capella API forever.
+        That state is also not silently accepted as success: if the cluster
+        never reaches "Not Found." within *timeout*, this raises instead of
+        polling indefinitely, so a stuck/failed destroy surfaces as a clear
+        test failure rather than an unbounded hang.
+        """
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
@@ -253,26 +269,39 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.delete_cluster_internal(tenant.id, tenant.projects[0], cluster.id)
         if resp.status_code != 202:
-            raise Exception("Deleting Capella Cluster Failed.")
+            raise Exception("Deleting Capella Cluster Failed: {} {}".format(
+                resp.status_code, resp.content))
 
         time.sleep(10)
-        while True:
+        end_time = time.time() + timeout
+        last_state = None
+        while time.time() < end_time:
             resp = capella_api.get_cluster_internal(tenant.id,
                                                     tenant.projects[0],
                                                     cluster.id)
             content = json.loads(resp.content)
             if content.get("data"):
+                last_state = content.get("data").get("status").get("state")
                 CapellaUtils.log.info(
-                    "Cluster status %s: %s"
-                    % (cluster.id,
-                       content.get("data").get("status").get("state")))
-                if content.get("data").get("status").get("state") == "destroying":
+                    "Cluster status %s: %s" % (cluster.id, last_state))
+                if last_state == "destroying":
                     time.sleep(5)
                     continue
+                # Any other non-"destroying" state (e.g. a reverted
+                # "healthy", or a hypothetical "destroyFailed") means the
+                # async destroy job did not proceed as expected. Keep
+                # polling (bounded by the overall timeout below) instead of
+                # either hot-looping or treating it as success.
+                time.sleep(10)
+                continue
             elif content.get("message") == 'Not Found.':
                 CapellaUtils.log.info("Cluster is destroyed.")
                 tenant.clusters.remove(cluster)
-                break
+                return
+
+        raise Exception(
+            "Cluster {} did not finish destroying within {}s (last known "
+            "state: {})".format(cluster.id, timeout, last_state))
 
     @staticmethod
     def get_all_buckets(pod, tenant, cluster):

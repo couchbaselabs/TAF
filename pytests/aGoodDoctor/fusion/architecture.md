@@ -147,10 +147,11 @@ fusion_monitor.log_fusion_pending_bytes(tenant, clusters, find_master_func)
 **Key Methods**:
 - `monitor_fusion_guest_volumes(tenant, cluster, rebalance_task, ...)` - Complete volume lifecycle tracking
 - `monitor_cluster_accelerator_instances(cluster, rebalance_task, fusion_rebalances)` - Accelerator orchestration monitoring
-- `check_ebs_guest_vol_deletion(tenant, cluster, stop_run_event, ...)` - Background cleanup verification
+- `check_ebs_guest_vol_deletion(tenant, cluster, fusion_monitor_util, stop_run_event, find_master_func=None)` - Background cleanup verification
 - `scan_memcached_logs_for_errors(clusters, steady_state_workload_sleep)` - Error detection automation
 - `parse_accelerator_logs(clusters, fusion_rebalances, access_key, secret_key, region)` - Log artifact analysis
 - `monitor_fusion_accelerator_nodes_killed_after_rebalance(cluster)` - Post-operation validation
+- `monitor_full_cluster_teardown(cluster_id, resources, timeout=600)` - Full post-destroy AWS resource verification (EBS volumes — both all cluster-tagged volumes and fusion guest volumes specifically, ASGs, accelerator instances, cluster nodes, S3 bucket, IAM profile); returns a list of failure strings for the caller to assert on (see `FusionClusterDestroyTest` below)
 
 **Usage Pattern**:
 ```python
@@ -164,7 +165,8 @@ success = cp_monitor.monitor_fusion_guest_volumes(
 stop_event = threading.Event()
 cleanup_thread = threading.Thread(
     target=cp_monitor.check_ebs_guest_vol_deletion,
-    kwargs={"tenant": tenant, "cluster": cluster, "stop_run_event": stop_event}
+    kwargs={"tenant": tenant, "cluster": cluster,
+            "fusion_monitor_util": fusion_monitor_util, "stop_run_event": stop_event}
 )
 cleanup_thread.start()
 ```
@@ -213,7 +215,8 @@ class TestFusionScaling(VolumeTest):
         # Start background monitoring
         ebs_cleanup_thread = threading.Thread(
             target=self.cp_monitor.check_ebs_guest_vol_deletion,
-            kwargs={"tenant": tenant, "cluster": cluster, "stop_run_event": self.stop_run_event}
+            kwargs={"tenant": tenant, "cluster": cluster,
+                    "fusion_monitor_util": self.fusion_monitor, "stop_run_event": self.stop_run_event}
         )
         ebs_cleanup_thread.start()
 
@@ -231,6 +234,50 @@ class TestFusionScaling(VolumeTest):
         for thread in getattr(self, "background_threads", []):
             thread.join()
         super(TestFusionScaling, self).tearDown()
+```
+
+### _FusionTestBase (`fusion_test_base.py`)
+**Purpose**: Shared base class for every fusion lifecycle test suite (enable/disable, bucket ops, cluster on/off, destroy, accelerator lifecycle, backup/restore, etc.)
+
+**Responsibilities**:
+- AWS credential resolution and client construction (`FusionAWSUtil`/`FusionMonitorUtil`/`FusionCPResourceMonitor`/`S3Lib`), identical across every subclass
+- Shared-cluster lifecycle: when no cluster IDs are supplied via the `.ini`, the first test to run deploys a cluster and stashes its ID in `TestInputSingleton.input.capella["clusters"]` so every subsequent test in the run reuses it; the last test (or a test that leaves the cluster unhealthy) destroys it
+- Common polling/assertion helpers used across suites: `_ensure_fusion_state`, `_wait_for_fusion_state`, `_wait_for_pending_bytes_zero`, `_wait_for_s3_data_synced`, `_assert_s3_bucket_deleted/_empty`, `_delete_bucket_with_s3_cleanup`, `_get_active_guest_volume_count`
+
+**Key Methods**:
+- `_is_cluster_healthy(timeout=120)` - Used from `tearDown` to decide whether the shared cluster can be recycled or must be destroyed
+- `_ensure_fusion_state(tenant, cluster, target)` - Idempotent enable/disable fusion transition
+- `_get_s3_bucket_name_from_uri(cluster)` / `_wait_for_s3_uri(cluster)` - Fusion S3 log-store bucket discovery
+- `_wait_for_pending_bytes_zero(cluster, timeout, ...)` - Poll fusion pending-bytes to confirm sync completion
+
+**Usage Pattern**: subclasses simply inherit `_FusionTestBase` and call `super().setUp()`/`super().tearDown()`; test methods use the inherited helpers plus `self.fusion_aws_util`/`self.fusion_monitor`/`self.cp_monitor` set up by the base class.
+
+### FusionClusterDestroyTest (`fusion_cluster_destroy_test.py`)
+**Purpose**: Validates that destroying a cluster mid-fusion-rebalance (at various points across the 8-phase lifecycle), from a failed state, with an active backup, or while it should be rejected by the CP (active restore source, turned off), leaves no orphaned AWS resources.
+
+**Responsibilities**:
+- Deploys an independent cluster per test (bypasses `_FusionTestBase`'s shared-cluster bookkeeping — `setUp` calls `BaseTestCase.setUp` directly) so that a destroyed-mid-test cluster never affects other tests in the suite
+- Targets specific fusion-rebalance phases deterministically (accelerator provisioning, S3→EBS hydration, file-extent migration, CBS rebalance with accelerators already torn down) by polling AWS/CP state rather than fixed sleeps
+- Delegates all post-destroy AWS resource verification to `FusionCPResourceMonitor.monitor_full_cluster_teardown` (Layer 2) — the test class only asserts on the returned failure list, per the delegation pattern below
+- Exercises negative paths where destroy should be rejected outright by the CP (active restore/clone source, turned-off cluster) rather than proceeding
+
+**Key Workflows**:
+- **Phase-targeted destroy**: trigger a scale-out rebalance, poll AWS/CP state for the target phase's signature (e.g. accelerator instances present with zero guest volumes for phase 4; guest volumes attached to KV nodes for phase 6), then destroy asynchronously and assert full cleanup
+- **Failure-state destroy**: force a `scaleFailed` state (e.g. deleting the fusion S3 bucket mid-download) and destroy from there
+- **Backup interaction**: create an EBS snapshot backup before destroy and verify the backup's snapshots are cleaned up too (default cleanup path only — see the test's docstring for the RetainSnapshotBackups gap)
+- **Rejected destroy**: assert `CapellaAPI.destroy_cluster` raises (or otherwise fails to complete) when the cluster is an active clone/restore source or is turned off
+
+**Architecture Benefits**: same delegation/thread-coordination pattern as `VolumeTest` — `_assert_all_cluster_resources_cleaned` is a thin wrapper around `cp_monitor.monitor_full_cluster_teardown`, keeping all AWS polling logic in Layer 2.
+
+**Usage Pattern**:
+```python
+resources = self._capture_pre_destroy_resources(self.cluster)
+destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
+self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+
+destroy_thread.join(timeout=1800)
+self.assertFalse(destroy_thread.is_alive(), "destroy did not complete within 1800s")
+self.assertFalse(destroy_result["failed"], f"destroy returned an error: {destroy_result['error']}")
 ```
 
 ## Runtime Flows
@@ -328,12 +375,13 @@ def setUp(self):
 def start_background_monitoring(self):
     cleanup_thread = threading.Thread(
         target=self.cp_monitor.check_ebs_guest_vol_deletion,
-        kwargs={"tenant": tenant, "cluster": cluster, "stop_run_event": self.stop_run_event}
+        kwargs={"tenant": tenant, "cluster": cluster,
+                "fusion_monitor_util": self.fusion_monitor, "stop_run_event": self.stop_run_event}
     )
     cleanup_thread.start()
 
 # Utility method respects stop event
-def check_ebs_guest_vol_deletion(self, tenant, cluster, stop_run_event):
+def check_ebs_guest_vol_deletion(self, tenant, cluster, fusion_monitor_util, stop_run_event, find_master_func=None):
     while not stop_run_event.is_set():
         # Monitoring logic
         time.sleep(30)

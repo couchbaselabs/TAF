@@ -976,3 +976,139 @@ class FusionCPResourceMonitor:
             f"{len(snapshots)} total, {len(completed)} completed"
         )
         return True
+
+    def monitor_full_cluster_teardown(self, cluster_id, resources, timeout=600):
+        """
+        Poll AWS until every resource the CP creates for a fusion cluster is
+        gone, then return a list of human-readable failure strings (empty
+        list == fully clean).
+
+        Checked resources:
+          - ALL EBS volumes tagged to the cluster (couchbase-cloud-cluster-id
+            only, no function filter) -- covers CBS/KV node data/root
+            volumes, accelerator root/boot volumes, and guest volumes alike.
+          - Fusion guest volumes specifically (couchbase-cloud-function=
+            fusion-accelerator AND couchbase-cloud-fusion-guest-volume=true)
+            -- reported separately from the broad check above so a failure
+            message can distinguish "some cluster volume didn't clean up"
+            from "a fusion guest volume specifically didn't clean up". Not
+            just a subset check of the broad list: the two use different tag
+            filters, so an untagged/mistagged guest volume would surface
+            here even if the broad check happened to look clean.
+          - Fusion Auto Scaling Groups
+          - Fusion accelerator EC2 instances
+          - All cluster EC2 nodes (CBS/KV) in a non-terminated state
+          - Fusion S3 log-store bucket (if resources['s3_bucket_name'] set)
+          - Accelerator IAM instance profile (if resources['iam_profile_name'] set)
+
+        This is monitoring/verification logic only -- it returns data, it
+        never asserts. Callers (test layer) decide how to fail the test.
+
+        :param cluster_id: Cluster identifier the resources belong to
+        :param resources: dict with optional 's3_bucket_name' and
+            'iam_profile_name' keys -- see
+            FusionClusterDestroyTest._capture_pre_destroy_resources()
+        :param timeout: Max seconds to poll for full cleanup before taking a
+            final point-in-time snapshot for the failure report
+        :return: list of failure description strings (empty == fully clean)
+        """
+        s3_bucket_name = resources.get("s3_bucket_name")
+        iam_profile_name = resources.get("iam_profile_name")
+        acc_filter = self.fusion_aws_util._cluster_filter(
+            cluster_id,
+            [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}])
+        all_nodes_filter = self.fusion_aws_util._cluster_filter(cluster_id)
+
+        def _all_cluster_volumes():
+            return self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                "couchbase-cloud-cluster-id": cluster_id,
+            })
+
+        def _guest_volumes():
+            return self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                "couchbase-cloud-cluster-id": cluster_id,
+                "couchbase-cloud-function": "fusion-accelerator",
+                "couchbase-cloud-fusion-guest-volume": "true",
+            })
+
+        def _running_nodes():
+            all_nodes = self.fusion_aws_util.list_instances(
+                all_nodes_filter, log="ClusterNodeCheck", suppress_log=True)
+            return [
+                n for n in all_nodes
+                if n.get("State", {}).get("Name") not in ("terminated", "shutting-down")
+            ]
+
+        def _s3_bucket_exists():
+            try:
+                self.fusion_aws_util.s3.s3_client.head_bucket(Bucket=s3_bucket_name)
+                return True
+            except Exception:
+                return False
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            all_volumes = _all_cluster_volumes()
+            guest_volumes = _guest_volumes()
+            asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster_id)
+            acc_instances = self.fusion_aws_util.list_accelerator_instances(
+                acc_filter, log="DestroyCleanup")
+            running_nodes = _running_nodes()
+            if not all_volumes and not guest_volumes and not asgs \
+                    and not acc_instances and not running_nodes:
+                self.log.info(
+                    f"All compute resources cleaned up for cluster {cluster_id}")
+                break
+            self.log.info(
+                f"Cleanup in progress — {len(all_volumes)} cluster EBS vols "
+                f"({len(guest_volumes)} guest vols), {len(asgs)} ASGs, "
+                f"{len(acc_instances)} acc instances, {len(running_nodes)} cluster nodes — "
+                f"{int(deadline - time.time())}s remaining")
+            time.sleep(15)
+
+        # Final point-in-time checks across all resource types
+        failures = []
+
+        final_all_volumes = _all_cluster_volumes()
+        if final_all_volumes:
+            failures.append(
+                f"{len(final_all_volumes)} cluster EBS volume(s) remain (any type): "
+                f"{[v['VolumeId'] for v in final_all_volumes]}")
+
+        final_guest_volumes = _guest_volumes()
+        if final_guest_volumes:
+            failures.append(
+                f"{len(final_guest_volumes)} fusion guest volume(s) remain: "
+                f"{[v['VolumeId'] for v in final_guest_volumes]}")
+
+        final_asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster_id)
+        if final_asgs:
+            failures.append(f"{len(final_asgs)} ASG(s) remain: "
+                            f"{[a['AutoScalingGroupName'] for a in final_asgs]}")
+
+        final_acc = self.fusion_aws_util.list_accelerator_instances(
+            acc_filter, log="FinalAccCheck")
+        if final_acc:
+            failures.append(f"{len(final_acc)} accelerator instance(s) remain: "
+                            f"{[i['InstanceId'] for i in final_acc]}")
+
+        running_final = _running_nodes()
+        if running_final:
+            failures.append(f"{len(running_final)} cluster node(s) still running: "
+                            f"{[n['InstanceId'] for n in running_final]}")
+
+        if s3_bucket_name:
+            if _s3_bucket_exists():
+                failures.append(f"S3 bucket {s3_bucket_name} still exists")
+            else:
+                self.log.info(f"S3 bucket {s3_bucket_name} confirmed deleted")
+
+        if iam_profile_name:
+            if self.fusion_aws_util.ec2.check_iam_instance_profile_exists(iam_profile_name):
+                failures.append(f"IAM instance profile {iam_profile_name} still exists")
+            else:
+                self.log.info(f"IAM instance profile {iam_profile_name} confirmed deleted")
+
+        if not failures:
+            self.log.info(f"All AWS resources verified clean for cluster {cluster_id}")
+        return failures

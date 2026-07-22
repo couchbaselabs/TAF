@@ -183,6 +183,11 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | | | `test_destroy_during_s3_download` | ✅ |
 | | | `test_destroy_during_file_extent_migration` | ✅ |
 | | | `test_destroy_in_scale_failed_state` | ✅ |
+| | | `test_destroy_during_accelerator_provisioning` | ✅ |
+| | | `test_destroy_during_cbs_rebalance` | ✅ |
+| | | `test_destroy_with_active_backup` | ✅ |
+| | | `test_destroy_rejected_while_restore_source` | ✅ |
+| | | `test_destroy_while_turning_off` | ✅ |
 
 ---
 
