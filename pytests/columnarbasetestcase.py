@@ -23,9 +23,19 @@ from capella_utils.dedicated import CapellaUtils
 def transform_couchbase_version(aws_version):
     """
     Changes the build name from aws to gcp
-    Example: couchbase-columnar-1.1.0-XXXX-arm64-v1.1.0 to couchbase-columnar-1-1-0-XXXX-arm64-v1-1-0
+    Example: enterprise-analytics-2.2.1-1402-arm64-v1.0.0 to enterprise-analytics-2-2-1-1402-arm64-v1-0-0
     """
-    return re.sub(r'(\d+)\.(\d+)\.(\d+)', r'\1-\2-\3', aws_version)
+    return aws_version.replace(".", "-")
+
+
+def transform_couchbase_version_azure(aws_version):
+    """
+    Changes the build name from aws to azure
+    Example: enterprise-analytics-2.2.1-1402-arm64-v1.0.0 to
+    enterprise-analytics-2.2.1-v1402.0.0
+    """
+    return re.sub(r'-(\d+)-\w+-v\d+\.(\d+\.\d+)$', r'-v\1.\2', aws_version)
+
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
     def setUp(self):
@@ -47,6 +57,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         self.columnar_image_hash = self.capella.get("columnar_image_hash", None)
         if provider == "gcp":
             self.columnar_image = transform_couchbase_version(self.columnar_image)
+        elif provider == "azure":
+            self.columnar_image = transform_couchbase_version_azure(self.columnar_image)
 
         # Utility objects
         self.columnar_utils = ColumnarUtils(self.log)

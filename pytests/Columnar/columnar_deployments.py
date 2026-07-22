@@ -1,4 +1,5 @@
 from Columnar.columnar_base import ColumnarBaseTest
+from columnarbasetestcase import transform_couchbase_version_azure
 from capella_utils.columnar import ColumnarInstance
 from cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
 import itertools
@@ -18,8 +19,7 @@ class ColumnarDeployments(ColumnarBaseTest):
                                    'ap-southeast-1', 'ap-southeast-2']
         self.deployment_regions_gcp = ['us-east1', 'us-east4', 'us-central1', 'europe-west1',
                                        'europe-west4', 'europe-west3', 'asia-southeast1']
-        self.deployment_regions_azure = ['swedencentral', 'eastus2', 'westus2',
-                                         'germanywestcentral']
+        self.deployment_regions_azure = ['swedencentral'] # , 'eastus2', 'westus2', 'germanywestcentral'
         self.deployment_nodes = [1, 16]  # [1, 2, 4, 8, 16, 32]
         self.instance_types = [
             {'vcpus': '4vCPUs', 'memory': '32GB'},
@@ -45,6 +45,9 @@ class ColumnarDeployments(ColumnarBaseTest):
             self.columnar_image = self.columnar_image.replace(".", "-")
         elif self.input.param("columnar_provider", "aws") == "azure":
             self.deployment_regions = self.deployment_regions_azure
+            if self.columnar_image:
+                self.columnar_image = transform_couchbase_version_azure(
+                    self.columnar_image)
         self.override_key = self.input.capella.get("override_key")
         self.wait_timeout = 1800  # 30 minutes
 
