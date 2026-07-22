@@ -238,6 +238,7 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Upgrade begins...")
         for upgrade_version in self.upgrade_chain:
             itr = 0
+            lighthouse_mixed_validated = False
             bucket = self.cluster.buckets[0]
             self.initial_version = self.upgrade_version
             self.upgrade_version = upgrade_version
@@ -383,12 +384,19 @@ class UpgradeTests(UpgradeBase):
                     range_scan_started = True
                     CollectionBase.range_scan_load_setup(self)
 
-                # Lighthouse mid-upgrade validation: run once after the first
-                # node is upgraded so the cluster is in mixed mode.
-                if itr == 0:
-                    self.PrintStep(
-                        "Lighthouse telemetry check - mixed-mode cluster")
-                    self.validate_lighthouse_telemetry(phase='mixed')
+                if not lighthouse_mixed_validated:
+                    master_version = RestConnection(
+                        self.cluster.master).get_nodes_self(10).version
+                    if self.upgrade_version in master_version:
+                        self.PrintStep(
+                            "Lighthouse telemetry check - mixed-mode cluster")
+                        self.validate_lighthouse_telemetry(phase='mixed')
+                        lighthouse_mixed_validated = True
+                    else:
+                        self.log.info(
+                            "Lighthouse mixed-mode check deferred: master {0} "
+                            "not yet on target version {1}".format(
+                                self.cluster.master.ip, self.upgrade_version))
 
                 # Halt further upgrade if test has failed during current upgrade
                 if self.test_failure is not None:
