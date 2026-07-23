@@ -4,9 +4,8 @@ import argparse
 import find_rerun_job
 import get_jenkins_params
 import merge_reports
-import shutil
 import urllib
-import zipfile
+import xml.dom.minidom
 
 host = 'greenboard.sc.couchbase.com'
 bucket_name = 'rerun_jobs'
@@ -93,9 +92,17 @@ def merge_xmls(rerun_document, run_params=""):
     job_url = job['job_url']
     artifacts = get_jenkins_params.get_js(job_url, "tree=artifacts[*]")
     if not artifacts or len(artifacts['artifacts']) == 0:
+        # The build's archived artifacts (raw report xml files) are
+        # pruned on their own, often stricter, retention policy and
+        # can disappear well before the build record itself does.
+        # The build's testReport is kept alongside the build record,
+        # so try that live Jenkins source before falling back to AWS.
         print("Could not find the job. Job might be deleted")
-        print("Trying to get the job logs from AWS")
-        logs = get_from_aws(rerun_document, job_url)
+        print("Trying to get the test report directly from Jenkins")
+        logs = get_from_testreport(job_url)
+        if not logs:
+            print("Trying to get the job logs from AWS")
+            logs = get_from_aws(rerun_document, job_url)
     else:
         relative_paths = []
         for artifact in artifacts["artifacts"]:
@@ -152,9 +159,177 @@ def merge_xmls(rerun_document, run_params=""):
     return testsuites
 
 
+def _node_text(node):
+    """
+    Get the concatenated text content of an xml element
+    :param node: xml element whose text content is needed
+    :type node: xml.dom.minidom.Element
+    :return: Text content of the node
+    :rtype: str
+    """
+    return "".join(child.data for child in node.childNodes
+                   if child.nodeType == child.TEXT_NODE)
+
+
+def _junit_result_from_jenkins_status(status):
+    """
+    Map a Jenkins testReport case status to the pass/fail/skip result
+    values used in TAF's own JUnit reports
+    :param status: Jenkins case status (e.g. PASSED, FAILED, SKIPPED)
+    :type status: str
+    :return: One of "pass", "fail" or "skip"
+    :rtype: str
+    """
+    status = (status or "").upper()
+    if status in ("FAILED", "REGRESSION"):
+        return "fail"
+    if status == "SKIPPED":
+        return "skip"
+    return "pass"
+
+
+def convert_testreport_to_junit(xml_data):
+    """
+    Convert Jenkins' native testReport xml (hudson.tasks.junit.TestResult
+    schema: <testResult><suite><case><className/><name/><status/></case>
+    ...) into the plain JUnit <testsuite tests= failures=><testcase
+    result=> format that merge_reports.merge_reports() understands. This
+    schema is what Jenkins keeps attached to the build record itself
+    (and what the AWS-saved copy mirrors), independent of whether the
+    build's archived artifact files are still around.
+    :param xml_data: Raw testReport xml content
+    :type xml_data: str
+    :return: Equivalent JUnit xml string, or None if it couldn't be
+    parsed or had no test cases
+    :rtype: str
+    """
+    try:
+        doc = xml.dom.minidom.parseString(xml_data)
+    except Exception as e:
+        print(e)
+        return None
+    testresult_elems = doc.getElementsByTagName("testResult")
+    if not testresult_elems:
+        return None
+
+    suites = {}
+    for suite_elem in testresult_elems[0].getElementsByTagName("suite"):
+        for case_elem in suite_elem.getElementsByTagName("case"):
+            name_elem = case_elem.getElementsByTagName("name")
+            status_elem = case_elem.getElementsByTagName("status")
+            if not name_elem or not status_elem:
+                continue
+            class_name_elem = case_elem.getElementsByTagName("className")
+            duration_elem = case_elem.getElementsByTagName("duration")
+            if class_name_elem:
+                class_name = _node_text(class_name_elem[0])
+            else:
+                class_name = _node_text(name_elem[0])
+            tc_name = _node_text(name_elem[0])
+            if duration_elem:
+                tc_time = _node_text(duration_elem[0])
+            else:
+                tc_time = "0"
+            result = _junit_result_from_jenkins_status(
+                _node_text(status_elem[0]))
+
+            error_text = ""
+            if result == "fail":
+                for tag in ("errorStackTrace", "errorDetails"):
+                    detail_elem = case_elem.getElementsByTagName(tag)
+                    if detail_elem and detail_elem[0].childNodes:
+                        error_text = _node_text(detail_elem[0])
+                        break
+
+            suites.setdefault(class_name, []).append(
+                (tc_name, tc_time, result, error_text))
+
+    if not suites:
+        return None
+
+    out_doc = xml.dom.minidom.Document()
+    root = out_doc.createElement("testsuites")
+    out_doc.appendChild(root)
+    for class_name, cases in suites.items():
+        failures = sum(1 for case in cases if case[2] == "fail")
+        testsuite = out_doc.createElement("testsuite")
+        testsuite.setAttribute("name", class_name)
+        testsuite.setAttribute("tests", str(len(cases)))
+        testsuite.setAttribute("failures", str(failures))
+        testsuite.setAttribute("errors", str(failures))
+        testsuite.setAttribute("skips", "0")
+        testsuite.setAttribute("time", "0")
+        for tc_name, tc_time, result, error_text in cases:
+            testcase = out_doc.createElement("testcase")
+            testcase.setAttribute("name", tc_name)
+            testcase.setAttribute("time", tc_time)
+            testcase.setAttribute("result", result)
+            if result == "fail":
+                error_elem = out_doc.createElement("error")
+                error_elem.appendChild(
+                    out_doc.createTextNode(error_text or "Failed"))
+                testcase.appendChild(error_elem)
+            testsuite.appendChild(testcase)
+        root.appendChild(testsuite)
+    return root.toxml()
+
+
+def _write_junit_report(junit_xml, file_name):
+    """
+    Write a converted JUnit xml string to disk for merge_reports to
+    later glob and parse
+    :param junit_xml: JUnit-format xml content
+    :type junit_xml: str
+    :param file_name: Name of the file to write to
+    :type file_name: str
+    :return: List with the written file name, or None on failure
+    :rtype: list
+    """
+    try:
+        f = open(file_name, "w")
+        f.write(junit_xml)
+        f.close()
+        return [file_name]
+    except Exception as e:
+        print(e)
+        return None
+
+
+def get_from_testreport(job_url):
+    """
+    Get the previous job's results directly from Jenkins' testReport,
+    which Jenkins keeps attached to the build record for as long as the
+    build itself exists - typically much longer than the build's
+    archived artifact files, which can be pruned on their own, more
+    aggressive retention policy.
+    :param job_url: Job url of the job whose test report is needed
+    :type job_url: str
+    :return: List of converted report files if successful, else None
+    :rtype: list
+    """
+    url = "{0}/testReport/api/xml?pretty=true".format(
+        job_url.rstrip('/'))
+    xml_data = get_jenkins_params.download_url_data(url)
+    if not xml_data:
+        print("Could not get the test report from jenkins. ")
+        return None
+    junit_xml = convert_testreport_to_junit(xml_data)
+    if not junit_xml:
+        print("Could not parse the test report from jenkins. ")
+        return None
+    job_build_number = job_url.rstrip('/').split('/')[-1]
+    return _write_junit_report(
+        junit_xml, "Old_Report_testreport_{0}.xml".format(
+            job_build_number))
+
+
 def get_from_aws(rerun_document, job_url):
     """
-    Get the previous job's logs from aws.
+    Get the previous job's results from aws. The jenkins_logs archive
+    for a build only contains individual saved files (testresult.xml,
+    consoleText.txt, etc.), not a zipped bundle of the raw report xmls,
+    so this reads the same Jenkins-native testResult xml format used
+    by get_from_testreport().
     :param rerun_document: The rerun document containing reerun details
     :type rerun_document: dict
     :param job_url: Job url of the job whose logs have to be downloaded
@@ -166,35 +341,18 @@ def get_from_aws(rerun_document, job_url):
     job_name = job_url.rstrip('/').split('/')[-2]
     job_build_number = job_url.rstrip('/').split('/')[-1]
     aws_link = '{0}/{1}/jenkins_logs/{2}/{3}' \
-               '/archive.zip'.format(AWS_LINK, build, job_name,
-                                     job_build_number)
-    archive_zip = get_jenkins_params.download_url_data(aws_link)
-    if not archive_zip:
-        print('Could not get the archive files from aws. ')
+               '/testresult.xml'.format(AWS_LINK, build, job_name,
+                                        job_build_number)
+    xml_data = get_jenkins_params.download_url_data(aws_link)
+    if not xml_data:
+        print('Could not get the test result from aws. ')
         return None
-    try:
-        file_name = 'old_archive.zip'
-        f = open(file_name, "wb")
-        f.write(archive_zip)
-        f.close()
-        archive = zipfile.ZipFile('old_archive.zip')
-        extracted_files = []
-        for file in archive.namelist():
-            if file.startswith("archive/logs/") and file.endswith(
-                    ".xml"):
-                temp_folder = "temp"
-                test_log_file = 'Old_Report_{0}'.format(file.split(
-                    '/')[-1])
-                archive.extract(file, temp_folder)
-                shutil.copyfile("{0}/{1}".format(temp_folder, file),
-                                test_log_file)
-                shutil.rmtree(temp_folder)
-                extracted_files.append(test_log_file)
-        OS.remove('old_archive.zip')
-        return extracted_files
-    except Exception as e:
-        print(e)
+    junit_xml = convert_testreport_to_junit(xml_data)
+    if not junit_xml:
+        print('Could not parse the test result from aws. ')
         return None
+    return _write_junit_report(
+        junit_xml, 'Old_Report_{0}.xml'.format(job_build_number))
 
 
 def should_rerun_tests(testsuites=None, install_failure=False,
@@ -263,10 +421,10 @@ def get_rerun_parameters(rerun_document=None, is_rerun=False):
                 job_name = job_url.rstrip('/').split('/')[-2]
                 job_build_number = job_url.rstrip('/').split('/')[-1]
                 aws_link = '{0}/{1}/jenkins_logs/{2}/{3}' \
-                           '/archive.zip'.format(AWS_LINK, build, job_name,
-                                                 job_build_number)
-                archive_zip = get_jenkins_params.download_url_data(aws_link)
-                if not archive_zip:
+                           '/testresult.xml'.format(AWS_LINK, build, job_name,
+                                                     job_build_number)
+                test_result_xml = get_jenkins_params.download_url_data(aws_link)
+                if not test_result_xml:
                     print("Job wasn't saved. Trying with older build.")
                     num_runs -= 1
                     continue
