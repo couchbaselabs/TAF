@@ -977,7 +977,8 @@ class FusionCPResourceMonitor:
         )
         return True
 
-    def monitor_full_cluster_teardown(self, cluster_id, resources, timeout=600):
+    def monitor_full_cluster_teardown(self, cluster_id, resources, timeout=600,
+                                      destroy_thread=None, destroy_wait_timeout=1800):
         """
         Poll AWS until every resource the CP creates for a fusion cluster is
         gone, then return a list of human-readable failure strings (empty
@@ -1004,12 +1005,32 @@ class FusionCPResourceMonitor:
         This is monitoring/verification logic only -- it returns data, it
         never asserts. Callers (test layer) decide how to fail the test.
 
+        If destroy_thread is given, resource cleanup is observed starting
+        immediately (concurrently with the destroy call, same as before) --
+        but the `timeout` countdown that determines pass/fail only starts
+        once destroy_thread is confirmed no longer alive, bounded by
+        destroy_wait_timeout while waiting for that. This keeps "start
+        watching resources at the same time as destroy" while ensuring the
+        cleanup-timeout budget measures actual post-destroy AWS lag, not
+        however long the destroy call itself happened to take (on Jenkins
+        build 16458, destroy took ~13.4 minutes -- longer than the then-600s
+        cleanup timeout -- so the final failure snapshot was taken while the
+        cluster was still legitimately being destroyed, not after).
+        Without destroy_thread, the timeout starts immediately (old
+        behaviour, e.g. for callers with no async destroy to wait on).
+
         :param cluster_id: Cluster identifier the resources belong to
         :param resources: dict with optional 's3_bucket_name' and
             'iam_profile_name' keys -- see
             FusionClusterDestroyTest._capture_pre_destroy_resources()
-        :param timeout: Max seconds to poll for full cleanup before taking a
-            final point-in-time snapshot for the failure report
+        :param timeout: Max seconds to poll for full cleanup, counted from
+            the point destroy is confirmed done, before taking a final
+            point-in-time snapshot for the failure report
+        :param destroy_thread: optional threading.Thread running
+            CapellaUtils.destroy_cluster -- if given, gates when the
+            `timeout` countdown starts (see above)
+        :param destroy_wait_timeout: max seconds to wait for destroy_thread
+            to finish before starting the cleanup check anyway
         :return: list of failure description strings (empty == fully clean)
         """
         s3_bucket_name = resources.get("s3_bucket_name")
@@ -1045,6 +1066,24 @@ class FusionCPResourceMonitor:
                 return True
             except Exception:
                 return False
+
+        if destroy_thread is not None:
+            wait_deadline = time.time() + destroy_wait_timeout
+            while destroy_thread.is_alive() and time.time() < wait_deadline:
+                self.log.info(
+                    f"Destroy still in progress for cluster {cluster_id} — "
+                    f"{len(_all_cluster_volumes())} cluster EBS vols "
+                    f"({len(_guest_volumes())} guest vols), "
+                    f"{len(_cluster_asgs())} ASGs, "
+                    f"{len(self.fusion_aws_util.list_accelerator_instances(acc_filter, log='DestroyInProgress'))} "
+                    f"acc instances, {len(_running_nodes())} cluster nodes "
+                    f"(not yet counted against the {timeout}s cleanup timeout)")
+                time.sleep(15)
+            if destroy_thread.is_alive():
+                self.log.warning(
+                    f"destroy_thread for cluster {cluster_id} still alive "
+                    f"after {destroy_wait_timeout}s — starting the "
+                    f"post-destroy cleanup check anyway")
 
         deadline = time.time() + timeout
         while time.time() < deadline:

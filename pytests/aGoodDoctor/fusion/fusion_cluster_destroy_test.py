@@ -202,7 +202,8 @@ class FusionClusterDestroyTest(_FusionTestBase):
         thread.start()
         return thread, result
 
-    def _assert_all_cluster_resources_cleaned(self, resources, timeout=None):
+    def _assert_all_cluster_resources_cleaned(self, resources, timeout=None,
+                                              destroy_thread=None):
         """Assert every AWS resource the CP created for this cluster is gone.
 
         Thin Layer 3 wrapper: all polling/monitoring logic lives in
@@ -211,14 +212,22 @@ class FusionClusterDestroyTest(_FusionTestBase):
         on that list, per the "utilities return data, tests assert"
         convention (see agents/fusion.md / architecture.md).
 
-        Intended to run concurrently with _destroy_cluster_async so that
-        resource cleanup is observed while the destroy is in progress.
+        Call this concurrently with the async destroy_cluster call (pass
+        its thread as destroy_thread) so resource cleanup is still observed
+        while destroy is in progress -- but the timeout budget used to
+        decide pass/fail only starts counting once destroy_thread is
+        confirmed done, not from when this method was called. Otherwise the
+        cleanup-timeout budget is silently eaten by however long the
+        destroy call itself takes (on Jenkins build 16458, destroy took
+        ~13.4 minutes, longer than the then-600s cleanup timeout, so the
+        point-in-time failure snapshot was taken while the cluster was
+        still legitimately being destroyed).
         """
         if timeout is None:
             timeout = self.post_destroy_cleanup_timeout
         cluster_id = resources["cluster_id"]
         failures = self.cp_monitor.monitor_full_cluster_teardown(
-            cluster_id, resources, timeout=timeout)
+            cluster_id, resources, timeout=timeout, destroy_thread=destroy_thread)
         self.assertEqual(
             len(failures), 0,
             f"Resources not cleaned up after cluster {cluster_id} destroy:\n"
@@ -277,7 +286,9 @@ class FusionClusterDestroyTest(_FusionTestBase):
 
         self.log.info(f"Destroying cluster {self.cluster.id} mid-prepareRebalance")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
         destroy_thread.join(timeout=1800)
         self.assertFalse(
@@ -338,7 +349,9 @@ class FusionClusterDestroyTest(_FusionTestBase):
         resources = self._capture_pre_destroy_resources(self.cluster)
         self.log.info(f"Destroying cluster {self.cluster.id} during S3 download (phase 5)")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
         destroy_thread.join(timeout=1800)
         self.assertFalse(
@@ -423,7 +436,9 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.log.info(
             f"Destroying cluster {self.cluster.id} during file extent migration (phase 6)")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
         destroy_thread.join(timeout=1800)
         self.assertFalse(
@@ -551,7 +566,9 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.log.info(
             f"Destroying cluster {self.cluster.id} in scaleFailed state")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
         destroy_thread.join(timeout=1800)
         self.assertFalse(
@@ -617,7 +634,9 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.log.info(
             f"Destroying cluster {self.cluster.id} during accelerator provisioning (phase 4)")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
         destroy_thread.join(timeout=1800)
         self.assertFalse(
@@ -703,7 +722,9 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.log.info(
             f"Destroying cluster {self.cluster.id} during CBS rebalance (phase 7)")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
         destroy_thread.join(timeout=1800)
         self.assertFalse(
@@ -768,7 +789,9 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.log.info(
             f"Destroying cluster {self.cluster.id} with an active backup ({backup_id}) present")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        self._assert_all_cluster_resources_cleaned(resources, timeout=self.post_destroy_cleanup_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
         destroy_thread.join(timeout=1800)
         self.assertFalse(

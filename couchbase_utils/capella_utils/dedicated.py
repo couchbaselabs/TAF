@@ -495,55 +495,87 @@ class CapellaUtils(object):
         return content
 
     @staticmethod
-    def get_cluster_info(pod, tenant, cluster_id):
+    def get_cluster_info(pod, tenant, cluster_id, timeout=120):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_cluster_info(tenant.id, tenant.projects[0], cluster_id)
-
-        if resp.status_code != 200:
+        deadline = time.time() + timeout
+        while True:
+            resp = capella_api.get_cluster_info(tenant.id, tenant.projects[0], cluster_id)
+            if resp.status_code == 200:
+                return json.loads(resp.content)
+            if resp.status_code == 404:
+                # Cluster genuinely gone (already destroyed) -- retrying
+                # forever here is exactly what produced an orphaned worker
+                # thread hammering this endpoint indefinitely on Jenkins
+                # build 16458. Fail fast instead.
+                raise Exception(
+                    f"Cluster {cluster_id} not found (404) -- it may "
+                    f"already be destroyed")
             CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
             {}".format(resp.status_code))
             print(resp.content)
+            if time.time() >= deadline:
+                raise Exception(
+                    f"get_cluster_info for {cluster_id} kept failing "
+                    f"(last status {resp.status_code}) for over {timeout}s")
             time.sleep(5)
-            return CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
-        return json.loads(resp.content)
 
     @staticmethod
-    def get_cluster_info_internal(pod, tenant, cluster_id):
+    def get_cluster_info_internal(pod, tenant, cluster_id, timeout=120):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd,
                                  pod.TOKEN)
-        resp = capella_api.get_cluster_info_internal(cluster_id)
-        if resp.status_code != 200:
+        deadline = time.time() + timeout
+        while True:
+            resp = capella_api.get_cluster_info_internal(cluster_id)
+            if resp.status_code == 200:
+                return json.loads(resp.content)
+            if resp.status_code == 404:
+                raise Exception(
+                    f"Cluster {cluster_id} not found (404) -- it may "
+                    f"already be destroyed")
             CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
             {}".format(resp.status_code))
             print(resp.content)
+            if time.time() >= deadline:
+                raise Exception(
+                    f"get_cluster_info_internal for {cluster_id} kept "
+                    f"failing (last status {resp.status_code}) for over "
+                    f"{timeout}s")
             time.sleep(5)
-            return CapellaUtils.get_cluster_info_internal(pod, tenant, cluster_id)
-        return json.loads(resp.content)
 
     @staticmethod
-    def get_cluster_nodes_internal(pod, tenant, cluster_id):
+    def get_cluster_nodes_internal(pod, tenant, cluster_id, timeout=120):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd,
                                  pod.TOKEN)
-        resp = capella_api.get_cluster_nodes_internal(cluster_id)
-        if resp.status_code != 200:
+        deadline = time.time() + timeout
+        while True:
+            resp = capella_api.get_cluster_nodes_internal(cluster_id)
+            if resp.status_code == 200:
+                return json.loads(resp.content)
+            if resp.status_code == 404:
+                raise Exception(
+                    f"Cluster {cluster_id} not found (404) -- it may "
+                    f"already be destroyed")
             CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
             {}".format(resp.status_code))
             print(resp.content)
+            if time.time() >= deadline:
+                raise Exception(
+                    f"get_cluster_nodes_internal for {cluster_id} kept "
+                    f"failing (last status {resp.status_code}) for over "
+                    f"{timeout}s")
             time.sleep(5)
-            return CapellaUtils.get_cluster_nodes_internal(pod, tenant, cluster_id)
-        return json.loads(resp.content)
 
     @staticmethod
     def get_cluster_state(pod, tenant, cluster_id):
@@ -556,22 +588,31 @@ class CapellaUtils(object):
         return content.get("data").get("connect").get("srv")
 
     @staticmethod
-    def get_nodes(pod, tenant, cluster_id):
+    def get_nodes(pod, tenant, cluster_id, timeout=120):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_nodes(tenant.id, tenant.projects[0],
-                                     cluster_id)
-        if resp.status_code != 200:
+        deadline = time.time() + timeout
+        while True:
+            resp = capella_api.get_nodes(tenant.id, tenant.projects[0],
+                                         cluster_id)
+            if resp.status_code == 200:
+                return [server.get("data")
+                        for server in json.loads(resp.content).get("data")]
+            if resp.status_code == 404:
+                raise Exception(
+                    f"Cluster {cluster_id} not found (404) -- it may "
+                    f"already be destroyed")
             CapellaUtils.log.critical("LOG A BUG: Fetch Cluster Node API returns :\
             {}".format(resp.status_code))
             print(resp.content)
+            if time.time() >= deadline:
+                raise Exception(
+                    f"get_nodes for {cluster_id} kept failing (last "
+                    f"status {resp.status_code}) for over {timeout}s")
             time.sleep(5)
-            return CapellaUtils.get_nodes(pod, tenant, cluster_id)
-        return [server.get("data")
-                for server in json.loads(resp.content).get("data")]
 
     @staticmethod
     def get_db_users(pod, tenant, cluster_id, page=1, limit=100):
