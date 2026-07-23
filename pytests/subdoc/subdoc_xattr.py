@@ -2045,7 +2045,7 @@ class XattrTests(SubdocBaseTest):
     def apply_lose_last_node(self):
         """ Loses the last node """
         # Lose a single node by performing a graceful-failover if followed
-        self.task.failover(servers=self.cluster.servers,
+        self.task.failover(self.cluster,
                            failover_nodes=self.cluster.servers[-1:], graceful=False)
 
     def apply_node_restart(self):
@@ -2585,7 +2585,7 @@ class XattrTests(SubdocBaseTest):
         self.apply_faults()
 
         # Lose a single node by performing a hard-failover
-        self.task.failover(servers=self.cluster.servers,
+        self.task.failover(self.cluster,
                            failover_nodes=self.cluster.servers[-1:],
                            graceful=False)
 
