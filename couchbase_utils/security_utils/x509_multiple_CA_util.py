@@ -813,7 +813,7 @@ class x509main:
             msg = "Could not get trusted CAs on %s; Failed with error %s" \
                   % (server.ip, content)
             raise Exception(msg)
-        return json.loads(content.decode('utf-8'))
+        return json.loads(content)
 
     def get_ca_names_from_ids(self, ids, server=None):
         """

@@ -50,6 +50,10 @@ class InternalUserPassword(ClusterSetup):
         CollectionBase.load_data_from_spec_file(self, self.initial_data_spec,
                                                 validate_docs=False)
 
+    def tearDown(self):
+        self.x509.teardown_certs(servers=self.cluster.servers)
+        super(InternalUserPassword, self).tearDown()
+
     def failover_task(self):
         rest_nodes = self.rest.get_nodes()
         self.log.info("servers to fail: {0}".format(self.servers_to_fail))

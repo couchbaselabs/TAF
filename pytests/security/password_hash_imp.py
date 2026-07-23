@@ -43,6 +43,10 @@ class PasswordHashImp(ClusterSetup):
         CollectionBase.load_data_from_spec_file(self, self.initial_data_spec,
                                                 validate_docs=False)
 
+    def tearDown(self):
+        self.x509.teardown_certs(servers=self.cluster.servers)
+        super(PasswordHashImp, self).tearDown()
+
     def failover_task(self):
         rest_nodes = self.cluster_util.get_nodes(self.cluster.master)
         self.log.info("servers to fail: {0}".format(self.servers_to_fail))
