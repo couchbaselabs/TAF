@@ -298,11 +298,19 @@ def build_minimal_ingest_payload(cluster_uuid, product=None):
         nodes=[node])
 
 def build_subscription_payload(start_at, end_at, nodes,
-                              logical_cores, ram_bytes):
-    """Build entitlement subscription payload."""
+                              logical_cores, ram_bytes,
+                              classification='production',
+                              support_level='platinum'):
+    """
+    Build an entitlement subscription payload matching the `entitlements`
+    document shape (Architecture Spec 10.4): startAt, endAt, classification,
+    supportLevel, limits{nodes, logicalCores, ramBytes}.
+    """
     return {
         'startAt': start_at,
         'endAt': end_at,
+        'classification': classification,
+        'supportLevel': support_level,
         'limits': {
             'nodes': nodes,
             'logicalCores': logical_cores,
