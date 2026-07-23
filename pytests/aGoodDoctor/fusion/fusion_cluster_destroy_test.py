@@ -93,6 +93,7 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.sync_wait_timeout = self.input.param("sync_wait_timeout", 1200)
         self.fusion_threshold_gib = self.input.param("fusion_threshold_gib", 10)
         self.num_buckets = self.input.param("num_buckets", 1)
+        self.fragmentation = int(self.input.param("fragmentation", 50))
         self.rebalance_timeout = self.input.param("rebalance_timeout", 7200)
         # How long to poll AWS for full post-destroy resource cleanup before
         # asserting failure. Kept configurable rather than a hardcoded 600s:
