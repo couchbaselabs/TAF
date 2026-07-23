@@ -108,6 +108,11 @@ class FusionClusterDestroyTest(_FusionTestBase):
         # concluding it did not complete.
         self.destroy_reject_wait_timeout = self.input.param(
             "destroy_reject_wait_timeout", 300)
+        # Overall budget for tearDown's own force-destroy safety net (see
+        # _ensure_cluster_destroyed) to get the cluster into a destroyable
+        # state and destroyed, regardless of how/where the test itself failed.
+        self.teardown_force_destroy_timeout = self.input.param(
+            "teardown_force_destroy_timeout", 2400)
         self.load_defn = [Hotel]
 
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
@@ -127,11 +132,139 @@ class FusionClusterDestroyTest(_FusionTestBase):
         if hasattr(self, "stop_run_event"):
             self.stop_run_event.set()
         self.stop_run = True
+        try:
+            self._ensure_cluster_destroyed()
+        except Exception as e:
+            # Must never propagate -- a leaked cluster is far worse than a
+            # noisy log line, and BaseTestCase.tearDown below is still a
+            # fallback destroy attempt if this raised before finishing.
+            self.log.error(
+                f"[tearDown] Unexpected error in _ensure_cluster_destroyed: {e}")
         # ProvisionedBaseTestCase.tearDown destroys any cluster remaining in
-        # tenant.clusters (since capella["clusters"] is not set). If the test
-        # already called CapellaAPI.destroy_cluster, tenant.clusters is empty
-        # and tearDown's loop is a no-op.
+        # tenant.clusters (since capella["clusters"] is not set). By this
+        # point _ensure_cluster_destroyed has already removed self.cluster
+        # from tenant.clusters on success, so this loop is normally a no-op --
+        # it only serves as a final fallback if the explicit destroy above
+        # still failed.
         BaseTestCase.tearDown(self)
+
+    def _ensure_cluster_destroyed(self):
+        """
+        Best-effort, retrying guarantee that self.cluster is destroyed before
+        the rest of tearDown runs, no matter where or how the test failed
+        (setUp, a phase-detection wait, a mid-test assertion, or an
+        unhandled exception).
+
+        Specifically handles the two states a destroy test can legitimately
+        leave the cluster in in that make a plain destroy_cluster call fail:
+          - turned_off / turning_off (test_destroy_while_turning_off failing
+            before it turns the cluster back on) -- rejected by the CP with
+            ErrTearDownWhileTurningOff, so turn it back on first.
+          - still an active restore source (test_destroy_rejected_while_
+            restore_source failing before its own restore-completion wait
+            finishes) -- rejected with ErrClusterIsTheSourceForRestore (409),
+            so just retry after a short wait for the restore job to settle.
+
+        Bounded by self.teardown_force_destroy_timeout overall; never raises.
+        """
+        if not hasattr(self, "tenant") or not hasattr(self, "cluster"):
+            # setUp failed before tenant/cluster were even assigned --
+            # nothing to destroy yet (ProvisionedBaseTestCase.setUp itself
+            # would not have created a cluster this far in).
+            return
+
+        deadline = time.time() + self.teardown_force_destroy_timeout
+
+        # If the test kicked off _destroy_cluster_async and then raised
+        # before joining it (e.g. a resource-cleanup assertion failed, or the
+        # cluster was just genuinely still destroying when the test's own
+        # join(timeout=...) gave up), that thread may still be in flight.
+        # NEVER fire a second, concurrent destroy_cluster call while it's
+        # still running: CapellaUtils.destroy_cluster does
+        # tenant.clusters.remove(cluster) on success, and two concurrent
+        # callers both reaching "Not Found." both try to remove the same
+        # object from the same list -- the second one raises
+        # ValueError("list.remove(x): x not in list"). So we wait it out
+        # (bounded by the overall deadline) and only ever consider a fresh
+        # attempt once it has actually finished one way or another.
+        pending = getattr(self, "_pending_destroy", None)
+        if pending is not None:
+            thread, result = pending
+            if thread.is_alive():
+                self.log.warning(
+                    f"[tearDown] A destroy_cluster call for {self.cluster.id} "
+                    f"was still in flight when tearDown started — waiting "
+                    f"for it to finish rather than risk a concurrent "
+                    f"double-destroy race")
+                thread.join(timeout=max(0, deadline - time.time()))
+                if thread.is_alive():
+                    self.log.critical(
+                        f"[tearDown] In-flight destroy_cluster thread for "
+                        f"{self.cluster.id} did not finish within "
+                        f"{self.teardown_force_destroy_timeout}s — giving up "
+                        f"here rather than risk a concurrent double-destroy "
+                        f"race; check AWS/Capella for a leaked cluster.")
+                    return
+            if result.get("failed"):
+                self.log.warning(
+                    f"[tearDown] In-flight destroy_cluster for "
+                    f"{self.cluster.id} had already failed: {result.get('error')}")
+
+        if self.cluster not in self.tenant.clusters:
+            # Already destroyed (by the test itself, or by the in-flight
+            # thread we just joined above).
+            return
+
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                state = CapellaAPI.get_cluster_state(
+                    self.pod, self.tenant, self.cluster.id)
+            except Exception as e:
+                self.log.warning(
+                    f"[tearDown] Could not fetch state for cluster "
+                    f"{self.cluster.id} (attempt {attempt}): {e}")
+                state = None
+
+            if state in ("turning_off", "turned_off"):
+                try:
+                    self.log.warning(
+                        f"[tearDown] Cluster {self.cluster.id} is {state} — "
+                        f"turning it on before destroy (attempt {attempt})")
+                    DoctorHostedOnOff(self.pod, self.tenant, self.cluster) \
+                        .turn_on_cluster(timeout=1200)
+                except Exception as e:
+                    self.log.error(
+                        f"[tearDown] Failed to turn on cluster "
+                        f"{self.cluster.id} before destroy (attempt "
+                        f"{attempt}): {e}")
+
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            try:
+                CapellaAPI.destroy_cluster(
+                    self.pod, self.tenant, self.cluster,
+                    timeout=max(60, int(remaining)))
+                self.log.info(
+                    f"[tearDown] Cluster {self.cluster.id} destroyed "
+                    f"(attempt {attempt})")
+                return
+            except Exception as e:
+                self.log.error(
+                    f"[tearDown] Destroy attempt {attempt} failed for "
+                    f"cluster {self.cluster.id}: {e}")
+                if time.time() + 30 >= deadline:
+                    break
+                time.sleep(30)
+
+        self.log.critical(
+            f"[tearDown] Cluster {self.cluster.id} could NOT be confirmed "
+            f"destroyed within {self.teardown_force_destroy_timeout}s across "
+            f"{attempt} attempt(s) — falling back to BaseTestCase.tearDown's "
+            f"destroy loop as a last resort; check AWS/Capella for a leaked "
+            f"cluster if that also fails.")
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -187,6 +320,12 @@ class FusionClusterDestroyTest(_FusionTestBase):
 
         Returns (thread, result_dict). result_dict["failed"] is set True if
         destroy raises, with the message in result_dict["error"].
+
+        Also stashes (thread, result) on self._pending_destroy so that
+        tearDown's _ensure_cluster_destroyed can join this thread first if
+        the test fails/raises before joining it itself -- otherwise tearDown
+        could fire a second, concurrent destroy_cluster call against the
+        same cluster while this one is still in flight.
         """
         result = {"failed": False, "error": None}
 
@@ -199,6 +338,7 @@ class FusionClusterDestroyTest(_FusionTestBase):
 
         thread = threading.Thread(
             target=_do_destroy, name=f"destroy-{cluster.id}", daemon=True)
+        self._pending_destroy = (thread, result)
         thread.start()
         return thread, result
 

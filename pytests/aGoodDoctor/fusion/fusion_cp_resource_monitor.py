@@ -1002,6 +1002,15 @@ class FusionCPResourceMonitor:
           - Fusion S3 log-store bucket (if resources['s3_bucket_name'] set)
           - Accelerator IAM instance profile (if resources['iam_profile_name'] set)
 
+        Volumes already in AWS's own "deleting" state, and ASGs AWS is
+        already mid-deleting (describe_auto_scaling_groups only populates
+        Status while a DeleteAutoScalingGroup is in progress), are excluded
+        from every count above -- AWS is already actively tearing them down,
+        so counting them as a leftover/leaked resource would just be
+        measuring AWS's own deletion latency rather than a real CP cleanup
+        gap. EC2 instances don't need the same treatment: list_instances
+        already filters to State.Name == 'running' only.
+
         This is monitoring/verification logic only -- it returns data, it
         never asserts. Callers (test layer) decide how to fail the test.
 
@@ -1040,17 +1049,30 @@ class FusionCPResourceMonitor:
             [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}])
         all_nodes_filter = self.fusion_aws_util._cluster_filter(cluster_id)
 
+        _IN_DELETION_VOLUME_STATES = ("deleting", "deleted")
+
         def _all_cluster_volumes():
-            return self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
                 "couchbase-cloud-cluster-id": cluster_id,
             })
+            return [v for v in volumes
+                    if v.get("State") not in _IN_DELETION_VOLUME_STATES]
 
         def _guest_volumes():
-            return self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
                 "couchbase-cloud-cluster-id": cluster_id,
                 "couchbase-cloud-function": "fusion-accelerator",
                 "couchbase-cloud-fusion-guest-volume": "true",
             })
+            return [v for v in volumes
+                    if v.get("State") not in _IN_DELETION_VOLUME_STATES]
+
+        def _cluster_asgs():
+            asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster_id)
+            # 'Status' is only populated by describe_auto_scaling_groups
+            # while a DeleteAutoScalingGroup call is in progress -- its
+            # presence means AWS is already tearing this ASG down.
+            return [a for a in asgs if not a.get("Status")]
 
         def _running_nodes():
             all_nodes = self.fusion_aws_util.list_instances(
@@ -1089,7 +1111,7 @@ class FusionCPResourceMonitor:
         while time.time() < deadline:
             all_volumes = _all_cluster_volumes()
             guest_volumes = _guest_volumes()
-            asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster_id)
+            asgs = _cluster_asgs()
             acc_instances = self.fusion_aws_util.list_accelerator_instances(
                 acc_filter, log="DestroyCleanup")
             running_nodes = _running_nodes()
@@ -1120,7 +1142,7 @@ class FusionCPResourceMonitor:
                 f"{len(final_guest_volumes)} fusion guest volume(s) remain: "
                 f"{[v['VolumeId'] for v in final_guest_volumes]}")
 
-        final_asgs = self.fusion_aws_util.list_cluster_fusion_asg(cluster_id)
+        final_asgs = _cluster_asgs()
         if final_asgs:
             failures.append(f"{len(final_asgs)} ASG(s) remain: "
                             f"{[a['AutoScalingGroupName'] for a in final_asgs]}")

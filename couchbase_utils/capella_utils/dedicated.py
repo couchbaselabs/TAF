@@ -296,7 +296,11 @@ class CapellaUtils(object):
                 continue
             elif content.get("message") == 'Not Found.':
                 CapellaUtils.log.info("Cluster is destroyed.")
-                tenant.clusters.remove(cluster)
+                # Guard against a concurrent/duplicate destroy_cluster call
+                # for the same cluster racing this one to "Not Found." --
+                # list.remove() on an already-removed item raises ValueError.
+                if cluster in tenant.clusters:
+                    tenant.clusters.remove(cluster)
                 return
 
         raise Exception(
