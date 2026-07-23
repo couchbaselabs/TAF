@@ -908,7 +908,8 @@ class CollectionBase(ClusterSetup, FusionBase):
             test_obj.cluster, test_obj.task_manager,
             spec_load_task.loader_spec,
             batch_size=1000, process_concurrency=1, track_failures=False,
-            print_ops_rate=False, start_task=True)
+            print_ops_rate=False, start_task=True,
+            load_using=test_obj.load_docs_using)
         test_obj.task_manager.get_task_result(task)
         test_obj.bucket_util._wait_for_stats_all_buckets(
             test_obj.cluster, test_obj.cluster.buckets)
