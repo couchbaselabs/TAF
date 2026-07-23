@@ -2126,8 +2126,13 @@ class XattrTests(SubdocBaseTest):
         for path in self.paths:
             xattribute_template = '{{ "' + path + '": "{0}" }}'
             template_value = [self.get_subdoc_val()]
+            # key_size must yield the same 4-digit key as format_doc_key
+            # ("{prefix}-{:04}"); the default 8 only does so for a 3-char
+            # prefix and goes invalid once len(prefix) >= 8 (e.g. "tombstone").
             sub_doc_gen = SubdocDocumentGenerator(
-                doc_prefix, xattribute_template, template_value, start=key_min, end=key_max)
+                doc_prefix, xattribute_template, template_value,
+                start=key_min, end=key_max,
+                key_size=len(doc_prefix) + 5)
             task = self.task.async_load_gen_sub_docs(
                 self.cluster, self.bucket, sub_doc_gen,
                 DocLoading.Bucket.SubDocOps.UPSERT, exp=exp, xattr=True,
