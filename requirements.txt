@@ -22,6 +22,8 @@ beautifultable
 faker
 elasticsearch
 azure-storage-blob
+azure-identity
+azure-keyvault-keys
 cryptography==46.0.3
 PyJWT==2.10.1
 httplib2
