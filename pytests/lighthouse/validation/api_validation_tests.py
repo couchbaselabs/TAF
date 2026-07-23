@@ -7,6 +7,8 @@ List endpoints (cases 97, 98, 86):
     - 97: offset=-1                 -> rejected (422 validation_error)
     - 98: offset beyond total       -> 200 with empty items and correct total
     - 86: unknown query parameter   -> rejected (422 validation_error)
+    - negative limit                -> rejected (422 validation_error)
+    - non-integer limit             -> rejected (422 validation_error)
 
 Ingest payload (POST /api/v1/ingest/telemetry, requires a session):
     - unknown fields (__proto__, adminKey)    -> accepted by design (2xx); the
@@ -76,6 +78,34 @@ class ApiValidationTests(LighthouseBase):
             "offset=-1: expected HTTP %s, got %s: %s"
             % (self.expected_validation_status, response.status_code, content))
         self.log.info("PASS -- offset=-1 rejected with %s"
+                      % self.expected_validation_status)
+
+    def test_negative_limit_rejected(self):
+        """A negative limit on a list endpoint -> 422 validation_error."""
+        status, content, header = self.ucp_client.list_users(limit=-1)
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "limit=-1: expected %s but the call succeeded"
+            % self.expected_validation_status)
+        self.assertEqual(
+            response.status_code, self.expected_validation_status,
+            "limit=-1: expected HTTP %s, got %s: %s"
+            % (self.expected_validation_status, response.status_code, content))
+        self.log.info("PASS -- limit=-1 rejected with %s"
+                      % self.expected_validation_status)
+
+    def test_non_integer_limit_rejected(self):
+        """A non-integer limit value -> 422 validation_error."""
+        status, content, header = self.ucp_client.list_users(limit='abc')
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "limit='abc': expected %s but the call succeeded"
+            % self.expected_validation_status)
+        self.assertEqual(
+            response.status_code, self.expected_validation_status,
+            "limit='abc': expected HTTP %s, got %s: %s"
+            % (self.expected_validation_status, response.status_code, content))
+        self.log.info("PASS -- non-integer limit rejected with %s"
                       % self.expected_validation_status)
 
     def test_unknown_query_param_rejected(self):
