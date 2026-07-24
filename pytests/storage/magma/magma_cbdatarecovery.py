@@ -3,6 +3,7 @@ from cb_constants import CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from constants.platform_constants import os_constants
 from couchbase_helper.documentgenerator import doc_generator
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -79,6 +80,16 @@ class MagmaRecovery(BaseTestCase):
                 self.bucket_util.create_collection(
                         self.first_cluster_master, bucket,
                         self.scope_to_load, {"name": self.collection_to_load})
+
+        if self.load_docs_using == "sirius_java_sdk":
+            for bucket in self.first_cluster.buckets:
+                self.log.info("Creating Java SDK pool for {}".format(bucket.name))
+                SiriusCouchbaseLoader.create_clients_in_pool(
+                    self.first_cluster_master,
+                    self.first_cluster_master.rest_username,
+                    self.first_cluster_master.rest_password,
+                    bucket.name,
+                    req_clients=self.sdk_pool_capacity)
 
         for bucket in self.first_cluster.buckets:
             self.log.info("Loading data into bucket: {}".format(bucket.name))
