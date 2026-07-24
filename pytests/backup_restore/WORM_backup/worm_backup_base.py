@@ -14,11 +14,16 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 class WormBackupBase(ContinuousBackupBase):
 
-    WORM_URL_TEMPLATES = {
-        "AWS": "s3://test-worm-taf/backups/{uid}",
-        "Azure": "az://test-worm-taf/backups/{uid}",
-        "GCP": "gs://test-worm-taf/backups/{uid}",
+    # Object-store URL scheme per provider. The bucket/container is supplied
+    # via the `worm_bucket` param (default "test-worm-taf") so the suite can
+    # run against any lock-enabled bucket -- S3 bucket names are globally
+    # unique, so a different AWS account cannot reuse the default name.
+    WORM_URL_SCHEMES = {
+        "AWS": "s3",
+        "Azure": "az",
+        "GCP": "gs",
     }
+    DEFAULT_WORM_BUCKET = "test-worm-taf"
 
     def setUp(self):
         super(WormBackupBase, self).setUp()
@@ -30,12 +35,25 @@ class WormBackupBase(ContinuousBackupBase):
         self._restore_bucket_counter = 0
         self.restore_timeout = int(self.input.param("restore_timeout", 300))
 
+        self.worm_bucket = self.input.param("worm_bucket",
+                                            self.DEFAULT_WORM_BUCKET)
         if self.cbbackup_test in self.CLOUD_PROVIDER_CLASSES:
-            self.backup_archive_dir = self.WORM_URL_TEMPLATES[self.cbbackup_test].format(
-                uid=f"test-{uuid.uuid4()}")
+            self.backup_archive_dir = "%s://%s/backups/test-%s" % (
+                self.WORM_URL_SCHEMES[self.cbbackup_test], self.worm_bucket,
+                uuid.uuid4())
             self.backup_repo_name = self.input.param("repo_name", f"test_{uuid.uuid4()}")
 
+        self.log.info(
+            "WORM: setUp complete. cbbackup_test=%s, archive=%s, repo=%s, "
+            "worm_period_days=%s, validate_csp_locks=%s, cloud_provider=%s"
+            % (self.cbbackup_test, self.backup_archive_dir, self.backup_repo_name,
+               self.worm_period_days, self.validate_csp_locks,
+               type(self.backup_cloud_provider).__name__
+               if self.backup_cloud_provider else None))
+
         if self.backup_cloud_provider:
+            self.log.info("WORM: cleaning up any pre-existing objects at %s"
+                          % self.backup_archive_dir)
             self.backup_cloud_provider.cleanup_for_bkrs(self.backup_archive_dir)
 
     def tearDown(self):
@@ -280,11 +298,18 @@ class WormBackupBase(ContinuousBackupBase):
         return self._assert_command_success(output, error)
 
     def _create_repo(self, worm_period=None, default_retention=None):
+        self.log.info(
+            "WORM: creating repo '%s' in archive '%s' "
+            "(worm_period=%s, default_retention=%s, obj_staging_dir=%s)"
+            % (self.backup_repo_name, self.backup_archive_dir, worm_period,
+               default_retention, self.obj_staging_dir_cbbackup))
         output, error = self.backup_mgr.create_repo(
             self.backup_archive_dir, self.backup_repo_name, worm_period=worm_period,
             default_retention=default_retention,
             obj_staging_dir=self.obj_staging_dir_cbbackup)
-        return self._assert_command_success(output, error)
+        command_text = self._assert_command_success(output, error)
+        self.log.info("WORM: repo created. cbbackupmgr output: %s" % command_text)
+        return command_text
 
     def _create_worm_repo(self):
         return self._create_repo(worm_period=self.worm_period_days)
@@ -298,20 +323,33 @@ class WormBackupBase(ContinuousBackupBase):
 
     def _run_backup(self, resume=False, purge=False, full_backup=False,
                     no_progress_bar=True, threads=None):
+        self.log.info(
+            "WORM: running backup on repo '%s' (resume=%s, purge=%s, "
+            "full_backup=%s, threads=%s)"
+            % (self.backup_repo_name, resume, purge, full_backup, threads))
         output, error = self.backup_mgr.backup(
             self.backup_archive_dir, self.backup_repo_name, resume=resume, purge=purge,
             full_backup=full_backup, no_progress_bar=no_progress_bar,
             threads=threads, obj_staging_dir=self.obj_staging_dir_cbbackup)
-        return self._assert_command_success(output, error)
+        command_text = self._assert_command_success(output, error)
+        self.log.info("WORM: backup completed. cbbackupmgr output: %s" % command_text)
+        return command_text
 
     def _run_restore(self, map_data=None, auto_create_buckets=False,
                      allow_non_worm=False, backup_id=None):
+        self.log.info(
+            "WORM: running restore from repo '%s' (map_data=%s, "
+            "auto_create_buckets=%s, allow_non_worm=%s, backup_id=%s)"
+            % (self.backup_repo_name, map_data, auto_create_buckets,
+               allow_non_worm, backup_id))
         output, error = self.backup_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
             map_data=map_data, auto_create_buckets=auto_create_buckets,
             allow_non_worm=allow_non_worm, backup_id=backup_id,
             obj_staging_dir=self.obj_staging_dir_cbbackup)
-        return self._assert_command_success(output, error)
+        command_text = self._assert_command_success(output, error)
+        self.log.info("WORM: restore completed. cbbackupmgr output: %s" % command_text)
+        return command_text
 
     def _assert_restore_failure(self, map_data=None, allow_non_worm=False,
                                 backup_id=None, expected_texts=None):
@@ -379,10 +417,14 @@ class WormBackupBase(ContinuousBackupBase):
             sdk_client.close()
 
     def _repo_info(self):
+        self.log.info("WORM: fetching cbbackupmgr info for repo '%s'"
+                      % self.backup_repo_name)
         output, error = self.backup_mgr.info(
             self.backup_archive_dir, self.backup_repo_name,
             obj_staging_dir=self.obj_staging_dir_cbbackup)
-        return self._assert_command_success(output, error)
+        command_text = self._assert_command_success(output, error)
+        self.log.info("WORM: cbbackupmgr info output:\n%s" % command_text)
+        return command_text
 
     def _assert_repo_reports_worm(self):
         info_output = self._repo_info().lower()
@@ -391,6 +433,8 @@ class WormBackupBase(ContinuousBackupBase):
                       "Run this suite against a WORM-enabled cbbackupmgr/Couchbase build.")
         self.assertIn(str(self.worm_period_days), info_output,
                       "cbbackupmgr info did not report the configured WORM period")
+        self.log.info("WORM: repo '%s' reports WORM enabled with period=%s days"
+                      % (self.backup_repo_name, self.worm_period_days))
         return info_output
 
     def _latest_backup_name(self):
@@ -408,15 +452,32 @@ class WormBackupBase(ContinuousBackupBase):
         if target_path is None:
             target_path = self._find_required_metadata_path(
                 [".worm", "%s/.statusflag" % backup_name, ".statusflag"])
-        succeeded, detail = helper.attempt_overwrite(
+        # CSP Object Lock protects a specific object VERSION from being deleted
+        # or overwritten in place; it does NOT prevent writing a NEW version.
+        # A plain put/overwrite always succeeds on a versioning-enabled bucket
+        # (versioning is mandatory for S3/Azure/GCP object lock) and does not
+        # violate WORM, because a completed backup is self-describing and a
+        # restore only reads the first/locked version of each object
+        # (design doc 5.7). So an overwrite "succeeding" is expected and is NOT
+        # evidence that WORM is broken. We instead assert that the object
+        # carries an active retention lock whose expiry lies in the future --
+        # that is the actual WORM guarantee.
+        retain_until = helper.get_retention_until(
             self.backup_archive_dir, self.backup_repo_name, target_path)
-        self.assertFalse(succeeded,
-                         "Expected CSP overwrite of a WORM object to fail: %s"
-                         % detail)
-        self.assertTrue(any(token in detail.lower() for token in
-                            ["lock", "retain", "immut", "accessdenied",
-                             "access denied", "forbidden", "conditionnotmet"]),
-                        "Overwrite failed for an unexpected reason: %s" % detail)
+        self.assertIsNotNone(
+            retain_until,
+            "WORM object '%s' has no retention lock -- WORM is not being "
+            "enforced at the CSP" % target_path)
+        now = time.time()
+        self.assertGreater(
+            retain_until, now,
+            "WORM object '%s' retention has already expired "
+            "(retain_until_epoch=%s, now_epoch=%s)"
+            % (target_path, retain_until, now))
+        self.log.info(
+            "WORM: object '%s' is retention-locked until epoch %s "
+            "(%.1f days out) -- immutability enforced at the CSP"
+            % (target_path, retain_until, (retain_until - now) / 86400.0))
         return backup_name
 
     def _find_required_metadata_path(self, names):
