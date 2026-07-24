@@ -79,11 +79,14 @@ class CRLBase(OnPremBaseTest):
 
         shell = RemoteMachineShellConnection(server)
         try:
-            install_dir = (
-                getattr(shell, "default_install_dir", None)
-                or getattr(shell, "cb_path", None) or ""
-            ).rstrip("/")
-            ca_dir = f"{install_dir}{x509main.CHAINFILEPATH}/CA"
+            os_type = shell.extract_remote_info().distribution_type
+            if os_type == "windows":
+                install_path = x509main.WININSTALLPATH
+            elif os_type == "Mac":
+                install_path = x509main.MACINSTALLPATH
+            else:
+                install_path = x509main.LININSTALLPATH
+            ca_dir = f"{install_path}{x509main.CHAINFILEPATH}/CA"
             shell.execute_command(f"mkdir -p {ca_dir}")
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=".pem", mode="wb"
