@@ -21,12 +21,12 @@ Tests in this file (§11 of the E2E test plan):
   1. test_destroy_after_prepare_rebalance         — destroy before accelerators appear (phases 2-3)
   2. test_destroy_during_s3_download              — destroy during S3→EBS hydration (phase 5)
   3. test_destroy_during_file_extent_migration    — destroy when EBS volumes are attached to KV nodes (phase 6)
-  4. test_destroy_in_scale_failed_state           — delete S3 bucket mid-phase-5 to force scaleFailed, then destroy
-  5. test_destroy_during_accelerator_provisioning — destroy while accelerators exist but no guest volume yet (phase 4)
+  4. test_destroy_in_scale_failed_state           — corrupt a few S3 log-store files/folders before rebalance to force scaleFailed, then destroy
+  5. test_destroy_during_accelerator_provisioning — destroy while accelerator instances are still 'pending' (phase 4)
   6. test_destroy_during_cbs_rebalance            — destroy once volumes are on KV nodes and accelerators are gone (phase 7)
-  7. test_destroy_with_active_backup              — destroy with a completed EBS snapshot backup present
+  7. test_destroy_with_active_backup              — destroy with a completed EBS snapshot backup (regular + guest-volume) present
   8. test_destroy_rejected_while_restore_source    — destroy must be rejected while cluster is an active restore source
-  9. test_destroy_while_turning_off               — destroy must be rejected/not-silently-succeed while turned off
+  9. test_destroy_while_turning_off               — destroy of a turned-off cluster is an allowed operation and must complete cleanly
 """
 
 import threading
@@ -40,6 +40,7 @@ from cluster_utils.cluster_ready_functions import CBCluster
 from pytests.basetestcase import BaseTestCase
 from aGoodDoctor.hostedOPD import hostedOPD
 from bucket_utils.bucket_ready_functions import JavaDocLoaderUtils
+from membase.api.rest_client import RestConnection
 
 from .fusion_aws_util import FusionAWSUtil, resolve_fusion_aws_credentials
 from .fusion_monitor_util import FusionMonitorUtil
@@ -103,11 +104,6 @@ class FusionClusterDestroyTest(_FusionTestBase):
         # number risky to bake in permanently.
         self.post_destroy_cleanup_timeout = self.input.param(
             "post_destroy_cleanup_timeout", 600)
-        # How long to wait for a destroy attempt that is expected to be
-        # rejected (restore-source / turning-off negative paths) before
-        # concluding it did not complete.
-        self.destroy_reject_wait_timeout = self.input.param(
-            "destroy_reject_wait_timeout", 300)
         # Overall budget for tearDown's own force-destroy safety net (see
         # _ensure_cluster_destroyed) to get the cluster into a destroyable
         # state and destroyed, regardless of how/where the test itself failed.
@@ -285,13 +281,6 @@ class FusionClusterDestroyTest(_FusionTestBase):
         config = self.rebalance_config("data", +1)
         return self.task.async_rebalance_capella(
             self.pod, self.tenant, self.cluster, config, timeout=self.rebalance_timeout)
-
-    def _s3_bucket_still_exists(self, bucket_name):
-        try:
-            self.s3.s3_client.head_bucket(Bucket=bucket_name)
-            return True
-        except Exception:
-            return False
 
     def _capture_pre_destroy_resources(self, cluster):
         """Capture AWS resource identifiers before cluster destroy for post-destroy verification.
@@ -596,10 +585,22 @@ class FusionClusterDestroyTest(_FusionTestBase):
 
     def test_destroy_in_scale_failed_state(self):
         """
-        Force the cluster into a scaleFailed state by deleting the fusion S3 log-store
-        bucket while accelerators are actively downloading from it (phase 5). The CP
-        detects the bucket deletion, aborts the rebalance, and transitions the cluster
-        to scaleFailed. EBS guest volumes remain attached to accelerators at this point.
+        Force the cluster into a scaleFailed state by corrupting the fusion S3
+        log-store *before* triggering the rebalance -- deleting a few
+        vBucket/shard folders and a few individual files (FusionAWSUtil.
+        corrupt_fusion_log_store) rather than the entire S3 bucket. The
+        accelerator then fails to download the missing data during phase 5,
+        and the rebalance fails.
+
+        NOTE: deleting the *entire* S3 bucket mid-phase-5 (the previous
+        approach) was observed to leave the CP hot-looping "Replacing Node
+        (1/3)" at a fixed progress percentage for 35+ minutes without ever
+        detecting the outage or transitioning to scaleFailed (Jenkins build
+        16485) -- i.e. it doesn't reliably repro the failure this test targets.
+        Corrupting a subset of objects before the rebalance starts is a
+        smaller, more targeted blast radius that the accelerator is expected
+        to hit deterministically as soon as it tries to download the missing
+        shards.
 
         Destroying the cluster in scaleFailed state verifies that the CP correctly
         cleans up all AWS resources even when the rebalance never completed:
@@ -607,68 +608,53 @@ class FusionClusterDestroyTest(_FusionTestBase):
         - Accelerator EC2 instances and ASGs
         - Cluster CBS/KV nodes
         - IAM instance profile
-          (S3 bucket was deleted by the test — no bucket check after destroy)
+        - Fusion S3 bucket (only individual objects were deleted by the test,
+          the bucket itself still exists going into destroy)
         """
         self._load_above_threshold()
 
-        # Capture S3 bucket name before triggering rebalance
+        # Capture S3 bucket name and resolve the bucket UUID (kv/<uuid>/ is the
+        # log-store prefix for this Couchbase bucket) before corrupting anything.
         s3_bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
         self.assertIsNotNone(
             s3_bucket_name,
             "Fusion S3 URI not available — ensure fusion is enabled and a bucket exists")
 
+        bucket = self.cluster.buckets[0]
+        if not getattr(bucket, "bucket_uuid", None):
+            info = RestConnection(self.cluster.master).get_bucket_details(bucket_name=bucket.name)
+            bucket.bucket_uuid = info.get("uuid")
+        self.assertIsNotNone(
+            bucket.bucket_uuid, f"Could not resolve UUID for bucket {bucket.name}")
+
+        corrupted = self.fusion_aws_util.corrupt_fusion_log_store(
+            s3_bucket_name, bucket.bucket_uuid, num_folders=3, num_files=5)
+        self.assertTrue(
+            corrupted["folders_deleted"] or corrupted["files_deleted"],
+            f"Failed to corrupt any fusion log-store objects under kv/{bucket.bucket_uuid} "
+            f"in {s3_bucket_name} before triggering the rebalance")
+        self.log.info(
+            f"Corrupted fusion log store before rebalance: "
+            f"{len(corrupted['folders_deleted'])} folder(s), "
+            f"{len(corrupted['files_deleted'])} individual file(s)")
+
         rebalance_task = self._trigger_scale_out()
         self.sleep(30, "Wait for rebalance to start")
 
-        # Wait for EBS guest volumes to confirm we are in phase 5 (S3 download active)
-        # before deleting the bucket so the accelerators are mid-download when it vanishes.
-        phase5_deadline = time.time() + 1800
-        volumes_seen = False
-        while time.time() < phase5_deadline:
-            if rebalance_task.state in self._FAILED_STATES:
-                break  # May have failed early — proceed to delete S3 and wait
-            volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
-            if volumes:
-                volumes_seen = True
-                self.log.info(
-                    f"Phase 5 confirmed ({len(volumes)} EBS guest volume(s)) — "
-                    f"deleting S3 bucket {s3_bucket_name} to force scaleFailed")
-                break
-            time.sleep(10)
-
-        if not volumes_seen:
-            self.log.warning(
-                "EBS volumes did not appear before timeout — deleting S3 bucket "
-                "anyway to force scaleFailed")
-
-        # Delete the S3 bucket (all objects first, then the bucket itself)
-        if self._s3_bucket_still_exists(s3_bucket_name):
-            deleted = self.s3.delete_bucket(s3_bucket_name, force=True)
-            self.assertTrue(deleted,
-                            f"Failed to delete S3 bucket {s3_bucket_name}")
-            self.log.info(
-                f"S3 bucket {s3_bucket_name} deleted — waiting for cluster "
-                f"to enter scaleFailed")
-        else:
-            self.log.warning(
-                f"S3 bucket {s3_bucket_name} already gone before explicit deletion")
-
-        # Wait for the CP to detect S3 unavailability and report a failed state
+        # Wait for the rebalance to fail once the accelerator hits the missing objects.
         failed_deadline = time.time() + 1800
         reached_failed = False
         while time.time() < failed_deadline:
-            state = CapellaAPI.get_cluster_state(
-                self.pod, self.tenant, self.cluster.id)
-            if state in self._FAILED_STATES:
+            if rebalance_task.state in self._FAILED_STATES:
                 reached_failed = True
-                self.log.info(f"Cluster entered failed state: {state}")
+                self.log.info(f"Rebalance entered failed state: {rebalance_task.state}")
                 break
             time.sleep(15)
 
         self.assertTrue(
             reached_failed,
-            "Cluster did not enter a failed state within 1800s after S3 bucket "
-            "deletion — the CP may have not detected the missing bucket in time")
+            f"Rebalance did not enter a failed state within 1800s after corrupting "
+            f"the fusion log store — current state: {rebalance_task.state}")
 
         # Log what AWS resources exist in the failed state (informational).
         # Guest-volume count delegates to cp_monitor.get_current_guest_volume_ids
@@ -696,10 +682,11 @@ class FusionClusterDestroyTest(_FusionTestBase):
             iam_profile_name = self.fusion_aws_util.ec2.get_instance_iam_profile_name(
                 acc_in_failed[0]["InstanceId"])
 
-        # S3 bucket was deleted by the test — skip S3 check in post-destroy verification
+        # The bucket itself was never deleted this time -- only some of its
+        # objects were -- so the normal post-destroy S3 bucket check applies.
         resources = {
             "cluster_id": self.cluster.id,
-            "s3_bucket_name": None,
+            "s3_bucket_name": s3_bucket_name,
             "iam_profile_name": iam_profile_name,
         }
 
@@ -726,51 +713,79 @@ class FusionClusterDestroyTest(_FusionTestBase):
 
     def test_destroy_during_accelerator_provisioning(self):
         """
-        Destroy the cluster during phase 4 of the fusion rebalance — fusion
-        accelerator EC2 instances/ASGs have launched but no EBS guest volume has
-        appeared yet (S3→EBS hydration / phase 5 has not started).
+        Destroy the cluster while fusion accelerator EC2 instances are still
+        'pending' (initiating) — launched but not yet running.
 
-        Targeted deterministically by polling for "accelerator instances present
-        AND zero guest volumes", rather than test_destroy_after_prepare_rebalance's
-        best-effort timing, which only warns if it happens to land here.
+        Originally this targeted "accelerator running AND zero guest volumes"
+        via list_accelerator_instances(), but that method only ever returns
+        instances that are already 'running' AND whose attached volume IOPS
+        already matches FUSION_ACCELERATOR_IOPS -- i.e. by the time an
+        instance is visible there at all, its guest volume already exists.
+        On a live run (Jenkins build 16485) guest volumes and accelerator
+        instances were observed appearing together in the very same AWS poll,
+        confirming that window isn't reliably observable: guest-volume EBS
+        creation can happen asynchronously in parallel with instance boot,
+        not strictly after it.
+
+        'pending' EC2 instance state, in contrast, is a distinct, real
+        lifecycle stage that AWS itself reports before an instance transitions
+        to 'running' -- polling raw EC2 state (bypassing
+        list_accelerator_instances' running+IOPS filter) for at least one
+        fusion-accelerator-tagged instance still 'pending' gives a
+        deterministic, real window to target, independent of whether its
+        guest volume has been created yet.
 
         Validates full AWS resource cleanup, same as the other phase-targeted
-        destroy tests.
+        destroy tests. IAM profile is captured directly from the pending
+        instance (list_accelerator_instances/​_capture_pre_destroy_resources
+        would see it as not-yet-running and miss it, weakening that check).
         """
         self._load_above_threshold()
         rebalance_task = self._trigger_scale_out()
 
-        acc_filter = self._accelerator_filter()
+        acc_tag_filter = self.fusion_aws_util._cluster_filter(
+            self.cluster.id,
+            [{'Name': 'tag:couchbase-cloud-function', 'Values': ['fusion-accelerator']}])
         phase4_deadline = time.time() + 1800
-        phase4_seen = False
+        pending_instances = []
 
         while time.time() < phase4_deadline:
             if rebalance_task.state in self._FAILED_STATES:
                 self.fail(
                     f"Rebalance failed before phase 4 window: {rebalance_task.state}")
 
-            acc_instances = self.fusion_aws_util.list_accelerator_instances(
-                acc_filter, log="Phase4Detection")
-            guest_volumes = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
-            if acc_instances and not guest_volumes:
-                phase4_seen = True
+            raw_instances = self.fusion_aws_util.ec2.list_instances(filters=acc_tag_filter)
+            pending_instances = [
+                i for i in raw_instances if i.get("State", {}).get("Name") == "pending"]
+            if pending_instances:
                 self.log.info(
-                    f"Phase 4 confirmed — {len(acc_instances)} accelerator instance(s) "
-                    f"present, 0 guest volumes — triggering cluster destroy")
+                    f"Phase 4 confirmed — {len(pending_instances)} accelerator "
+                    f"instance(s) still 'pending' (initiating) — triggering "
+                    f"cluster destroy")
                 break
 
             if rebalance_task.state == "healthy":
                 break
-            time.sleep(5)
+            # 'pending' is short-lived -- poll tightly rather than the 5-15s
+            # interval used elsewhere for slower-moving phases.
+            time.sleep(2)
 
         self.assertTrue(
-            phase4_seen,
-            "Accelerator instances with zero guest volumes (phase 4) were not "
-            "observed before the rebalance progressed past it — the phase 4 "
-            "window may be too narrow; consider polling more frequently or "
-            "increasing data size to slow accelerator deployment")
+            pending_instances,
+            "No accelerator instance was observed in 'pending' (initiating) "
+            "state before the rebalance progressed past it — the pending "
+            "window may be too narrow at this poll rate; consider polling "
+            "even more tightly or increasing data size to slow accelerator "
+            "deployment")
 
-        resources = self._capture_pre_destroy_resources(self.cluster)
+        iam_profile_name = self.fusion_aws_util.ec2.get_instance_iam_profile_name(
+            pending_instances[0]["InstanceId"])
+        resources = {
+            "cluster_id": self.cluster.id,
+            "s3_bucket_name": self._get_s3_bucket_name_from_uri(self.cluster),
+            "iam_profile_name": iam_profile_name,
+        }
+
         self.log.info(
             f"Destroying cluster {self.cluster.id} during accelerator provisioning (phase 4)")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
@@ -895,10 +910,76 @@ class FusionClusterDestroyTest(_FusionTestBase):
         parameters. Only the default (snapshots cleaned up) path is exercised
         here; the retain-on-destroy variant would require adding a parameter to
         the submodule's delete_cluster_internal(), which is out of scope.
+
+        For complete coverage this test triggers a fusion scale-out rebalance
+        first and waits for phase 6 (EBS guest volumes attached to KV nodes for
+        file extent migration — same detection as test_destroy_during_file_extent_migration)
+        before taking the backup. That guarantees the backup's
+        GetEligibleNodes() (couchbase-cloud: recoverer.go) sees genuine fusion
+        guest-volume nodes alongside the regular CBS/KV nodes, so
+        snapshot_creator.go's Create() produces BOTH regular data-volume
+        snapshots AND guest-volume snapshots (tagged
+        couchbase-cloud-guestvolume=true by fusionTags()) for this backup —
+        rather than only regular snapshots, which is all a backup taken with no
+        rebalance in flight could ever produce. Phase 6 is deliberately used
+        (not phases 2-5): couchbase-cloud's shouldBlockOnFusionRebalance
+        (backup.go) rejects a backup with ErrFusionRebalanceDownloading while
+        the fusion manifest is Pending/DownloadComplete; by phase 6 the
+        manifest has moved to BackgroundMigration — the guest volumes are
+        still attached and syncing (the "guest volumes present at the end of
+        the rebalance" window) but backup is no longer blocked.
         """
         self._load_above_threshold()
 
-        self.log.info(f"Creating EBS snapshot backup on cluster {self.cluster.id}")
+        rebalance_task = self._trigger_scale_out()
+        self.sleep(30, "Wait for rebalance to start")
+
+        acc_filter = self._accelerator_filter()
+        phase6_deadline = time.time() + 1800
+        guest_volume_ids = []
+        while time.time() < phase6_deadline:
+            if rebalance_task.state in self._FAILED_STATES:
+                self.fail(
+                    f"Rebalance failed before file extent migration: {rebalance_task.state}")
+
+            # Same phase 6 detection as test_destroy_during_file_extent_migration:
+            # EBS guest volumes 'in-use' and attached to a non-accelerator (KV) node.
+            raw_volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                "couchbase-cloud-cluster-id": self.cluster.id,
+                "couchbase-cloud-function": "fusion-accelerator",
+                "couchbase-cloud-fusion-guest-volume": "true",
+            })
+            acc_ids = {
+                inst["InstanceId"]
+                for inst in self.fusion_aws_util.list_accelerator_instances(
+                    acc_filter, log="BackupPhase6Detection")
+            }
+            kv_attached = [
+                v for v in raw_volumes
+                if v.get("State") == "in-use"
+                and any(
+                    att.get("InstanceId") not in acc_ids
+                    for att in v.get("Attachments", []))
+            ]
+            if kv_attached:
+                guest_volume_ids = [v["VolumeId"] for v in kv_attached]
+                self.log.info(
+                    f"Phase 6 confirmed — {len(guest_volume_ids)} guest volume(s) "
+                    f"attached to KV nodes. Triggering backup while they are present.")
+                break
+            if rebalance_task.state == "healthy" and not raw_volumes:
+                break
+            time.sleep(10)
+
+        self.assertTrue(
+            guest_volume_ids,
+            "No EBS guest volumes found attached to KV nodes before the rebalance "
+            "completed — cannot verify fusion guest-volume snapshot coverage; "
+            "consider increasing data size or reducing the fusion threshold")
+
+        self.log.info(
+            f"Creating EBS snapshot backup on cluster {self.cluster.id} while "
+            f"{len(guest_volume_ids)} guest volume(s) are present")
         result = CapellaAPI.create_cloud_snapshot_backup(
             self.pod, self.tenant, self.tenant.projects[0], self.cluster.id)
         self.assertIsNotNone(result, "create_cloud_snapshot_backup returned None")
@@ -911,8 +992,13 @@ class FusionClusterDestroyTest(_FusionTestBase):
             backup_id, timeout=4 * 3600)
         self.assertTrue(ok, f"Snapshot backup {backup_id} did not complete")
 
+        self.assertTrue(
+            self.cp_monitor.verify_guest_volume_snapshots_for_backup(
+                self.cluster, backup_id, num_snapshots=len(guest_volume_ids)),
+            f"Guest-volume EBS snapshot count for backup {backup_id} did not match "
+            f"the {len(guest_volume_ids)} guest volume(s) present at backup time")
+
         snapshot_filter = [
-            {"Name": "tag:couchbase-cloud-guestvolume", "Values": ["true"]},
             {"Name": "tag:couchbase-cloud-backup-id", "Values": [backup_id]},
             {"Name": "tag:couchbase-cloud-cluster-id", "Values": [self.cluster.id]},
         ]
@@ -921,9 +1007,24 @@ class FusionClusterDestroyTest(_FusionTestBase):
             pre_destroy_snapshots,
             f"No EBS snapshots found for completed backup {backup_id} on "
             f"cluster {self.cluster.id} — cannot verify destroy cleanup")
+        self.assertGreater(
+            len(pre_destroy_snapshots), len(guest_volume_ids),
+            f"Backup {backup_id} produced only {len(pre_destroy_snapshots)} snapshot(s), "
+            f"no more than the {len(guest_volume_ids)} guest-volume snapshot(s) — "
+            f"expected additional regular CBS/KV data-volume snapshots too")
         self.log.info(
             f"{len(pre_destroy_snapshots)} EBS snapshot(s) present for backup "
-            f"{backup_id} before destroy")
+            f"{backup_id} before destroy ({len(guest_volume_ids)} of which are "
+            f"guest-volume snapshots)")
+
+        # Let the fusion rebalance finish on its own -- this test targets destroy
+        # with an active backup on a stable cluster, not destroy mid-rebalance
+        # (covered separately by test_destroy_during_file_extent_migration etc).
+        self.task_manager.get_task_result(rebalance_task)
+        self.assertTrue(
+            rebalance_task.result,
+            f"Rebalance did not complete successfully before destroy: "
+            f"{rebalance_task.state}")
 
         resources = self._capture_pre_destroy_resources(self.cluster)
         self.log.info(
@@ -942,8 +1043,8 @@ class FusionClusterDestroyTest(_FusionTestBase):
             f"Cluster destroy returned an error: {destroy_result['error']}")
 
         # Default cleanup path (no RetainSnapshotBackups-equivalent available
-        # from TAF — see docstring above): the backup's EBS snapshots should be
-        # gone after destroy.
+        # from TAF — see docstring above): ALL of the backup's EBS snapshots
+        # (regular and guest-volume) should be gone after destroy.
         deadline = time.time() + self.post_destroy_cleanup_timeout
         remaining = pre_destroy_snapshots
         while time.time() < deadline:
@@ -1115,28 +1216,32 @@ class FusionClusterDestroyTest(_FusionTestBase):
                     self.log.error(f"Failed to clean up v4 API key(s): {e}")
 
     # ------------------------------------------------------------------
-    # Test 9: Destroy attempted while cluster is turned off
+    # Test 9: Destroy of a turned-off cluster
     # ------------------------------------------------------------------
 
     def test_destroy_while_turning_off(self):
         """
-        Destroy attempted while the cluster is turned off should be rejected by
-        fusion teardown rather than silently succeeding (couchbase-cloud:
-        fusion/accelerator/accelerator.go assertForceTearDown returns
-        ErrTearDownWhileTurningOff when the cluster is in a TurningOff/TurnedOff
-        state), or should surface as a clear failure rather than an unbounded hang.
+        Destroy a cluster while it is turned off and verify it completes cleanly
+        with full AWS resource cleanup.
 
-        NOT INDEPENDENTLY CONFIRMED: whether this manifests as a synchronous
-        non-202 rejection on the initial DELETE call, or as an async destroy-job
-        failure that never reaches the "Not Found." terminal state (relying on
-        dedicated.py's destroy_cluster timeout fix — see the review — to
-        eventually raise instead of hot-looping), was not verified against a
-        live control plane. This test tolerates either manifestation by
-        asserting only that the destroy attempt does not succeed within
-        destroy_reject_wait_timeout and that the cluster is not silently removed
-        from tenant.clusters.
+        Destroy transitions the cluster into a 'destroying' state, which the CP's
+        fusion teardown path (couchbase-cloud: fusion/accelerator/accelerator.go
+        assertForceTearDown) treats as isDestroying() — forcing the teardown
+        regardless of the prior TurningOff/TurnedOff state — rather than hitting
+        the ErrTearDownWhileTurningOff fatal error path (which only applies to
+        teardown attempts against a cluster that is turning/turned off but NOT
+        itself being destroyed, e.g. a periodic reconciliation attempt). Confirmed
+        against a live control plane: destroy of a turned-off cluster is an
+        allowed operation and succeeds.
         """
         self._load_above_threshold()
+
+        s3_bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
+        resources = {
+            "cluster_id": self.cluster.id,
+            "s3_bucket_name": s3_bucket_name,
+            "iam_profile_name": None,  # No rebalance triggered, no accelerators exist
+        }
 
         dr_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.cluster)
         self.log.info(f"Turning cluster {self.cluster.id} off before destroy attempt")
@@ -1144,31 +1249,18 @@ class FusionClusterDestroyTest(_FusionTestBase):
         self.assertTrue(
             turned_off, f"Cluster {self.cluster.id} did not reach 'turned_off' state")
 
-        self.log.info(f"Attempting to destroy cluster {self.cluster.id} while turned off")
+        self.log.info(f"Destroying cluster {self.cluster.id} while turned off")
         destroy_thread, destroy_result = self._destroy_cluster_async(self.cluster)
-        destroy_thread.join(timeout=self.destroy_reject_wait_timeout)
+        self._assert_all_cluster_resources_cleaned(
+            resources, timeout=self.post_destroy_cleanup_timeout,
+            destroy_thread=destroy_thread)
 
-        rejected = destroy_result["failed"] or destroy_thread.is_alive()
-        self.assertTrue(
-            rejected,
-            f"Destroy of cluster {self.cluster.id} appeared to succeed while the "
-            f"cluster was turned off — expected rejection (ErrTearDownWhileTurningOff) "
-            f"or at least non-completion within {self.destroy_reject_wait_timeout}s")
-
-        if destroy_thread.is_alive():
-            self.log.warning(
-                f"Destroy thread for {self.cluster.id} still running after "
-                f"{self.destroy_reject_wait_timeout}s — treating as rejected/stuck "
-                f"rather than waiting further; tearDown will attempt cleanup")
-        else:
-            self.assertIn(
-                self.cluster, self.tenant.clusters,
-                "Cluster was removed from tenant.clusters despite an expected destroy rejection")
-            self.log.info(
-                f"Destroy correctly rejected while turned off: {destroy_result['error']}")
-            # Turn the cluster back on so tearDown's normal destroy path (which
-            # assumes a live, reachable cluster) can clean it up normally.
-            self.log.info(f"Turning cluster {self.cluster.id} back on for teardown")
-            turned_on = dr_on_off.turn_on_cluster(timeout=1200)
-            self.assertTrue(
-                turned_on, f"Cluster {self.cluster.id} did not return to healthy after turn-on")
+        destroy_thread.join(timeout=1800)
+        self.assertFalse(
+            destroy_thread.is_alive(),
+            "CapellaAPI.destroy_cluster did not complete within 1800s")
+        self.assertFalse(
+            destroy_result["failed"],
+            f"Cluster destroy returned an error: {destroy_result['error']}")
+        self.log.info(
+            "Cluster destroyed while turned off — all AWS resources verified clean")

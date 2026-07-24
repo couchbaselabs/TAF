@@ -654,3 +654,74 @@ class FusionAWSUtil:
                     result[asg["AutoScalingGroupName"]] = inst["InstanceType"]
                     break
         return result
+
+    def corrupt_fusion_log_store(self, s3_bucket_name: str, bucket_uuid: str,
+                                 num_folders: int = 3, num_files: int = 5) -> dict:
+        """
+        Delete a few vBucket/shard folders and a few individual files from a
+        fusion bucket's S3 log store, to force a fusion rebalance to fail
+        (accelerator download hits missing objects) without wiping the whole
+        bucket -- a targeted, deterministic alternative to deleting the entire
+        S3 bucket, which was observed to leave the CP hot-looping "Replacing
+        Node" indefinitely rather than detecting the outage and failing
+        (Jenkins build 16485).
+
+        Fusion log store objects for a Couchbase bucket live under the
+        kv/<bucket_uuid>/ prefix, with one immediate sub-folder per
+        vBucket/shard (see FusionMonitorUtil.get_fusion_log_store_data_size_on_s3
+        and the kv/<bucket.bucket_uuid> convention used throughout this
+        package). This picks up to `num_folders` of those sub-folders and
+        deletes every object under each, then picks up to `num_files`
+        individual objects from the remaining (non-deleted) folders and
+        deletes just those files -- leaving the majority of the log store
+        intact so the corruption is targeted rather than total.
+
+        :param s3_bucket_name: S3 bucket name (from _get_s3_bucket_name_from_uri)
+        :param bucket_uuid: Couchbase bucket UUID (bucket.bucket_uuid)
+        :param num_folders: Max number of vBucket/shard folders to delete entirely
+        :param num_files: Max number of individual files to delete from the
+            remaining folders
+        :return: {"folders_deleted": [...], "files_deleted": [...]}
+        """
+        kv_prefix = f"kv/{bucket_uuid}"
+        folders = sorted(self.s3._list_common_prefixes(s3_bucket_name, prefix=kv_prefix))
+        if not folders:
+            self.log.warning(
+                f"No vBucket/shard folders found under {kv_prefix} in {s3_bucket_name} "
+                f"-- log store may not be synced yet")
+            return {"folders_deleted": [], "files_deleted": []}
+
+        folders_to_delete = folders[:num_folders]
+        remaining_folders = folders[num_folders:] or folders_to_delete
+
+        folders_deleted = []
+        for folder in folders_to_delete:
+            result = self.s3.delete_files_by_prefix(s3_bucket_name, folder)
+            if result and all(result.values()):
+                folders_deleted.append(folder)
+                self.log.info(
+                    f"Deleted vBucket/shard folder {folder} ({len(result)} object(s)) "
+                    f"from {s3_bucket_name}")
+            else:
+                self.log.warning(
+                    f"Failed to fully delete vBucket/shard folder {folder} "
+                    f"from {s3_bucket_name}: {result}")
+
+        files_deleted = []
+        for folder in remaining_folders:
+            if len(files_deleted) >= num_files:
+                break
+            candidates = self.s3.list_files_in_bucket(
+                s3_bucket_name, prefix=folder, max_keys=num_files - len(files_deleted))
+            file_keys = [f["Key"] for f in candidates]
+            if not file_keys:
+                continue
+            result = self.s3.delete_multiple_files(s3_bucket_name, file_keys)
+            files_deleted.extend(key for key, ok in result.items() if ok)
+
+        self.log.info(
+            f"Corrupted fusion log store for bucket_uuid={bucket_uuid} in "
+            f"{s3_bucket_name}: {len(folders_deleted)} folder(s) deleted "
+            f"({folders_deleted}), {len(files_deleted)} individual file(s) "
+            f"deleted ({files_deleted})")
+        return {"folders_deleted": folders_deleted, "files_deleted": files_deleted}
