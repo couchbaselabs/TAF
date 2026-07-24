@@ -5,9 +5,10 @@ Helper functions for building API payloads, parsing timestamps,
 and constructing request bodies for Unified Control Plane tests.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from unified_control_plane import UnifiedControlPlaneClient
+from lighthouse.response import UCPResponse
 # ==================== Session Helper Methods ====================
 def create_session(client, username, password):
     """
@@ -67,13 +68,17 @@ def set_session_idle_timeout(client, timeout_minutes):
         return status, content, header
     config = json.loads(content)
     etag = header.headers.get('ETag') if header else None
-    # Update with new idle timeout
+    # Update with new idle timeout. The portal validates this PUT as a
+    # full replacement, not a partial update, so every current field must
+    # be resent even though only the idle timeout is actually changing.
     status, content, header = client.update_config(
         etag=etag,
         telemetry_retention_days=config.get('telemetryRetentionDays'),
         session_idle_timeout_minutes=timeout_minutes,
         session_absolute_timeout_minutes=config.get(
-            'sessionAbsoluteTimeoutMinutes')
+            'sessionAbsoluteTimeoutMinutes'),
+        global_rate_limit_per_sec=config.get('globalRateLimitPerSec'),
+        expensive_rate_limit_per_sec=config.get('expensiveRateLimitPerSec')
     )
     return status, content, header
 
@@ -193,6 +198,26 @@ def get_raw(client, path, query=None):
     if query:
         api += '?' + query
     return client._http_request(api, 'GET')
+
+def raw_request(client, method, path, body=None):
+    """
+    Issue an arbitrary-method raw request against a UCP path, reusing the
+    client's session cookie. For exercising HTTP verbs the typed client
+    methods do not expose (e.g. PUT/DELETE against a resource that has no
+    corresponding client method because it is meant to be immutable, such
+    as an audit event).
+    Args:
+        client: UnifiedControlPlaneClient instance (authenticated)
+        method: HTTP method string, e.g. 'PUT', 'DELETE'
+        path:   path below baseUrl, e.g. "api/v1/audit/<id>"
+        body:   dict to JSON-encode as the request body, or None
+    Returns:
+        Tuple (status, content, header) from the request.
+    """
+    api = client.baseUrl + path
+    payload = json.dumps(body) if body is not None else ''
+    return client._http_request(api, method, payload,
+                                headers=client._json_headers())
 # ==================== User Helper Methods ====================
 def get_user_with_etag(client, user_id):
     """
@@ -210,12 +235,73 @@ def get_user_with_etag(client, user_id):
     user = json.loads(content)
     etag = header.headers.get('ETag') if header is not None else None
     return user, etag
+# ==================== Audit Helper Methods ====================
+def get_latest_audit_event(client, action=None, actor=None, resource_id=None,
+                           since=None, limit=10):
+    """
+    Fetch the most recent audit event matching action/actor, optionally
+    narrowed to a specific resourceId and/or a time window.
+
+    On a shared portal (this lab is used by other engineers/test runs
+    concurrently), trusting item 0 of an actor+action-only query is a
+    race: someone else's matching event can land in between your action
+    and your lookup and get mistaken for yours, or push yours off the
+    page. Passing `resource_id` (a userId, cluster UUID, etc -- whatever
+    the mutated resource's own id is) and/or `since` (a timestamp
+    captured right before performing the action, via
+    get_current_iso8601_timestamp()) scopes the match to events that can
+    only be the one you just caused.
+
+    Args:
+        client:      UnifiedControlPlaneClient instance (authenticated)
+        action:      audit action string to filter on (e.g. ACTION_LOGIN),
+                     or None for no action filter
+        actor:       actor string to filter on, or None for no actor filter
+        resource_id: if given, only consider events whose resourceId
+                     matches exactly; None to skip this check (e.g. for
+                     session/report actions, which carry no resourceId)
+        since:       if given, used as a lower bound so only events at/after
+                     roughly this instant are considered (see padding note
+                     below)
+        limit:       how many of the most recent matching events to fetch
+                     when resource_id is given (ignored -- forced to 1 --
+                     when resource_id is None, since item 0 is then taken
+                     directly)
+    Returns:
+        Tuple (event_dict, response) -- event_dict is None if the call
+        failed, or no (optionally resource-matched) event was found.
+    """
+    from_timestamp = since
+    if since is not None:
+        from_timestamp = format_iso8601_timestamp(
+            parse_iso8601_timestamp(since) - timedelta(seconds=2))
+    status, content, header = client.list_audit_events(
+        action=action, actor=actor, from_timestamp=from_timestamp,
+        limit=(limit if resource_id is not None else 1))
+    response = UCPResponse(status, content, header)
+    if not status:
+        return None, response
+    items = response.items
+    if not items:
+        return None, response
+    if resource_id is None:
+        return items[0], response
+    for item in items:
+        if item.get('resourceId') == resource_id:
+            return item, response
+    return None, response
+
 # ==================== Timestamp Helpers ====================
 
 def parse_iso8601_timestamp(timestamp_str):
     """Parse ISO 8601 UTC timestamp to datetime."""
     if timestamp_str.endswith('Z'):
         timestamp_str = timestamp_str[:-1]
+    # The portal returns nanosecond-precision fractional seconds (9 digits);
+    # %f only accepts up to 6 (microseconds), so truncate before matching.
+    if '.' in timestamp_str:
+        whole, frac = timestamp_str.split('.', 1)
+        timestamp_str = '%s.%s' % (whole, frac[:6])
     # Handle both with and without fractional seconds
     for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f'):
         try:
