@@ -280,15 +280,22 @@ class UnifiedControlPlaneClient(BaseRestConnection):
             api, 'GET', headers=self._json_headers())
         return status, content, header
     # ==================== Reports APIs ====================
-    def generate_usage_report(self, from_timestamp, to_timestamp,
+    def generate_usage_report(self, from_timestamp=None, to_timestamp=None,
                              format_type='pdf'):
-        """GET /api/v1/reports/usage"""
+        """GET /api/v1/reports/usage
+
+        NOTE: confirmed live 2026-07-24 -- the portal currently rejects
+        'from'/'to' as unknown query parameters (422) and only accepts
+        'format' (required, must be 'pdf'). from_timestamp/to_timestamp
+        are kept as optional args for forward-compatibility but are only
+        sent if explicitly provided.
+        """
         api = self.baseUrl + 'api/v1/reports/usage'
-        params = {
-            'from': from_timestamp,
-            'to': to_timestamp,
-            'format': format_type
-        }
+        params = {'format': format_type}
+        if from_timestamp is not None:
+            params['from'] = from_timestamp
+        if to_timestamp is not None:
+            params['to'] = to_timestamp
         api += '?' + urllib.urlencode(params)
         status, content, header = self._http_request(
             api, 'GET', headers=self._json_headers())
@@ -332,8 +339,19 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         return status, content, header
     def update_config(self, etag, telemetry_retention_days=None,
                      session_idle_timeout_minutes=None,
-                     session_absolute_timeout_minutes=None):
-        """PUT /api/v1/config"""
+                     session_absolute_timeout_minutes=None,
+                     global_rate_limit_per_sec=None,
+                     expensive_rate_limit_per_sec=None):
+        """PUT /api/v1/config
+
+        NOTE: the portal validates this as a full replacement, not a
+        partial update -- telemetryRetentionDays, sessionIdleTimeoutMinutes,
+        sessionAbsoluteTimeoutMinutes, globalRateLimitPerSec AND
+        expensiveRateLimitPerSec must ALL be present in the body or the
+        portal rejects it with 422 ("expected required property ... to be
+        present"). Confirmed live 2026-07-24. Callers must fetch the
+        current config first and pass every field (changed or not).
+        """
         api = self.baseUrl + 'api/v1/config'
         body_dict = {}
         if telemetry_retention_days is not None:
@@ -342,6 +360,10 @@ class UnifiedControlPlaneClient(BaseRestConnection):
             body_dict['sessionIdleTimeoutMinutes'] = session_idle_timeout_minutes
         if session_absolute_timeout_minutes is not None:
             body_dict['sessionAbsoluteTimeoutMinutes'] = session_absolute_timeout_minutes
+        if global_rate_limit_per_sec is not None:
+            body_dict['globalRateLimitPerSec'] = global_rate_limit_per_sec
+        if expensive_rate_limit_per_sec is not None:
+            body_dict['expensiveRateLimitPerSec'] = expensive_rate_limit_per_sec
         body = json.dumps(body_dict)
         headers = self._json_headers()
         headers['If-Match'] = etag
