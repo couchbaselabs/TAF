@@ -240,9 +240,6 @@ class CollectionsDropRecreateRebalance(CollectionBase):
             self.data_loading_thread.start()
 
         if rebalance_operation == "rebalance_in":
-            operation = self.task.async_rebalance(self.cluster, self.add_nodes,
-                                                  [],
-                                                  retry_get_process_num=self.retry_get_process_num*3)
             if not self.fusion_test:
                 operation = self.task.async_rebalance(self.cluster, self.add_nodes, [],
                                                         retry_get_process_num=self.retry_get_process_num*3)
