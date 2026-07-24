@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Heartbeat marking this workspace as in-use for the disk-cleanup sweep below -
+# refreshed at the start of every run, so a workspace this job is (or very
+# recently was) actively using never gets reclaimed as "abandoned".
+touch "$WORKSPACE/.executor_lock" 2>/dev/null
+
 run_populate_ini_script() {
   set -x
   $1 scripts/populateIni.py $skip_mem_info \
@@ -386,13 +391,33 @@ if [ $status -eq 0 ]; then
   git submodule init
   git submodule update --init --force --remote
 
-  # To fix issues related to disk full on slaves.
-  find /data/workspace/*/logs/* -type d -ctime +7 -delete 2>/dev/null
-  find /data/workspace/ -type d -ctime +7 -exec rm -rf {} \; 2>/dev/null
-  find /root/workspace/ -type d -ctime +7 -exec rm -rf {} \; 2>/dev/null
-  find /root/jenkins/workspace/ -type d -ctime +7 -exec rm -rf {} \; 2>/dev/null
-  find /data/workspace/*/logs/* -type d -ctime +7 -exec rm -rf {} \; 2>/dev/null
-  find /root/workspace/*/logs/* -type d -ctime +7 -exec rm -rf {} \; 2>/dev/null
+  # Clean this build's own old per-run log dirs - each run gets a freshly
+  # timestamped logs/testrunner-<ts>/ (testrunner.py os.makedirs), so only
+  # genuinely completed runs of THIS job ever match; the live run's own dir
+  # always has a fresh ctime.
+  find "$WORKSPACE/logs" -mindepth 1 -maxdepth 1 -type d -ctime +7 -exec rm -rf {} \; 2>/dev/null
+
+  # Reclaim whole workspaces of jobs that haven't run in 7+ days, node-wide.
+  # logs/ itself only gets a new entry when testrunner.py actually starts a
+  # run, so its own ctime is a reliable "last ran" signal - unlike checking
+  # ctime on arbitrary directories, which previously let one job's cleanup
+  # delete a different, concurrently running job's live workspace (its cwd
+  # would vanish mid-test, ending the build with zero artifacts archived
+  # since allowEmptyArchive/allowEmptyResults are both true). Layered guards
+  # against catching a workspace still in use: never touch this build's own
+  # $WORKSPACE, skip anything with a recent .executor_lock heartbeat
+  # (touched at the top of every run), and skip anything with an open file
+  # handle.
+  for base in /data/workspace /root/workspace /root/jenkins/workspace; do
+    [ -d "$base" ] || continue
+    find "$base" -mindepth 2 -maxdepth 2 -type d -name logs -ctime +7 2>/dev/null | while IFS= read -r logdir; do
+      parent="$(dirname "$logdir")"
+      [ "$parent" = "$WORKSPACE" ] && continue
+      [ -n "$(find "$parent/.executor_lock" -mtime -1 2>/dev/null)" ] && continue
+      lsof +D "$parent" >/dev/null 2>&1 && continue
+      rm -rf "$parent"
+    done
+  done
 
   # To kill all python processes older than 10days
   killall --older-than 240h python
