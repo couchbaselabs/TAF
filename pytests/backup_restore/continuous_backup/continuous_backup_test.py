@@ -49,16 +49,6 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         return doc_loading_task
 
-    def _assert_restore_succeeded(self, output, error, timestamp):
-        """CbContBk.restore only logs failures and returns (output, error),
-        so unchecked calls let a failed/partial restore surface much later
-        as a doc-count mismatch. Fail here with the cbcontbk output instead."""
-        error_lines = [line for line in (output or [])
-                       if line.strip().lower().startswith("error")]
-        if error or not output or error_lines:
-            self.fail(f"cbcontbk restore to timestamp {timestamp} failed. "
-                      f"stdout: {output}, stderr: {error}")
-
     def _wait_for_history_upload(self, timestamp_desc="the captured timestamp"):
         """Continuous backup uploads history every continuousBackupInterval.
         A restore to a timestamp younger than one interval reads the backup
@@ -102,22 +92,6 @@ class ContinuousBackupTest(ContinuousBackupBase):
         )
         self._assert_restore_succeeded(output, error, timestamp)
         self.log.info("Continuous backup restore completed")
-
-    def _restore_entire_bucket(self, timestamp, target_bucket_name, include_data=None, map_data=None):
-        self.log.info(f"Restoring entire bucket to {target_bucket_name} at timestamp {timestamp}")
-        if map_data is None:
-            map_data = f"{self.bucket.name}={target_bucket_name}"
-        output, error = self.cont_bk_mgr.restore(
-            self.backup_archive_dir, self.backup_repo_name,
-            location=self.continuous_backup_location,
-            temp_dir="/tmp",
-            timestamp=timestamp,
-            include_data=include_data,
-            map_data=map_data,
-            obj_staging_dir=self.obj_staging_dir_cont_bkp
-        )
-        self._assert_restore_succeeded(output, error, timestamp)
-        self.log.info("Entire bucket restore completed")
 
     def _create_backup_intervals(self, num_intervals=5):
         timestamps = []
@@ -180,19 +154,6 @@ class ContinuousBackupTest(ContinuousBackupBase):
                                 obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(expected_item_count, bucket_name=self.restore_bucket_name)
-
-    def _create_restore_bucket(self, restore_bucket_name):
-        self.log.info("Creating new bucket for restore: %s" % restore_bucket_name)
-        ram_quota = self.input.param("bucket_size", 100)
-        # Flush-enabled so tests can reset the bucket between restores
-        # via flush instead of delete + recreate.
-        self.bucket_util.create_default_bucket(self.cluster,
-                                               bucket_name=restore_bucket_name,
-                                               bucket_type=self.bucket_type,
-                                               ram_quota=ram_quota,
-                                               replica=self.num_replicas,
-                                               storage=self.bucket_storage,
-                                               flush_enabled=Bucket.FlushBucket.ENABLED)
 
     def _verify_continuous_backup_params(self):
         self.log.info("Getting continuous backup params from bucket: %s" % self.bucket.name)
@@ -943,7 +904,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             # count at bucket-creation and ignores what the data spec loaded).
             expected_coll_count = \
                 bucket_obj.scopes[first_scope].collections[first_collection].num_items
-            
+
             # Define test cases for filtering
             test_cases = [
                 {
@@ -1083,20 +1044,6 @@ class ContinuousBackupTest(ContinuousBackupBase):
             for coll_name in scope.collections:
                 return scope_name, coll_name
         self.fail("No non-system scope/collection found in bucket")
-
-    def _flush_restore_bucket(self, restore_bucket_name):
-        """Flush the restore bucket back to an empty state and verify it.
-
-        Flush matches how users reset a restore target (they don't delete
-        and recreate buckets between restores), and cbcontbk restore needs
-        an empty bucket to produce the full expected count."""
-        restore_bucket_obj = self.bucket_util.get_bucket_obj(
-            self.cluster.buckets, restore_bucket_name)
-        if restore_bucket_obj is None:
-            self.fail(f"Restore bucket '{restore_bucket_name}' not found for flush")
-        if not self.bucket_util.flush_bucket(self.cluster, restore_bucket_obj):
-            self.fail(f"Flush of restore bucket '{restore_bucket_name}' failed")
-        self._verify_doc_count(0, bucket_name=restore_bucket_name)
 
     def test_pitr_before_collection_drop(self):
         """
