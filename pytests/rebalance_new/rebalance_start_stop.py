@@ -44,8 +44,14 @@ class RebalanceStartStopTests(RebalanceBaseTest):
     def load_all_buckets(self, op_type, doc_load_percent):
         loading_spec = \
             self.bucket_util.get_crud_template_from_package("initial_load")
-        loading_spec["doc_crud"][
-            MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
+        # When a bucket_spec is used, the cluster is loaded via the untouched
+        # initial_load spec (doc_key="test_collections"). Overriding to self.key
+        # here would mutate a disjoint key space and upserts would insert new
+        # docs. Only override for the legacy (no bucket_spec) load path, which
+        # seeds data with self.key.
+        if self.spec_name is None:
+            loading_spec["doc_crud"][
+                MetaCrudParams.DocCrud.COMMON_DOC_KEY] = self.key
         loading_spec["doc_crud"][
             MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
         if op_type == DocLoading.Bucket.DocOps.CREATE:
