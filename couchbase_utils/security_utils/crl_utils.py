@@ -1,6 +1,17 @@
 import datetime
 import ipaddress
+import json
 
+import requests
+from cb_server_rest_util.security.crl import (
+    CRLAPI,
+    ENDPOINT_CBAUTH_CRLS_VALIDATE,
+    ENDPOINT_CRL_DIAGNOSTICS_STATUS,
+    ENDPOINT_CRL_DIAGNOSTICS_VALIDATE,
+    ENDPOINT_CRL_FILES,
+    ENDPOINT_CRL_SETTINGS,
+    ENDPOINT_RELOAD_CRL,
+)
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
@@ -13,7 +24,12 @@ __all__ = [
     "CACHE_STATUS_VALUES",
     "RELOAD_RESULT_VALUES",
     "DIAGNOSTIC_STATUS_VALUES",
-    "KEY_ALGORITHMS",
+    "ENDPOINT_CRL_SETTINGS",
+    "ENDPOINT_CRL_FILES",
+    "ENDPOINT_CRL_DIAGNOSTICS_STATUS",
+    "ENDPOINT_CRL_DIAGNOSTICS_VALIDATE",
+    "ENDPOINT_RELOAD_CRL",
+    "ENDPOINT_CBAUTH_CRLS_VALIDATE",
 ]
 
 # ── Enums, from CRL_API_Contract.md ─────────────────────────────────────────
@@ -38,18 +54,65 @@ class CRLUtils:
     """
     High-level utilities for CRL (Certificate Revocation List) tests.
 
-    This slice covers CA/CRL crypto generation only (in-memory, via
-    `cryptography` — not x509main's SSH/openssl-shellout pattern, since CRL
-    construction needs cryptography.x509.CertificateRevocationListBuilder,
-    which x509main doesn't use anywhere), across both RSA 2048 and ECDSA P-256
-    key algorithms. REST orchestration against /settings/crl* (mirroring the
-    JWTUtils/CredentialStoreUtils convention of every REST-facing method
-    taking `rest_connection` as first argument) lands in a follow-up PR,
-    added to this same class.
+    Combines CA/CRL crypto generation (in-memory, via `cryptography`, not
+    x509main's SSH/openssl-shellout pattern) with REST orchestration against
+    /settings/crl* — mirrors the JWTUtils/CredentialStoreUtils convention:
+    every REST-facing method takes a `rest_connection` as first argument and
+    builds a CRLAPI (CBRestConnection) via the _crl_api() shim.
     """
 
     def __init__(self, log=None):
         self.log = log
+
+    # ── Internal helpers ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _crl_api(rest_connection, username=None, password=None):
+        """Build and configure a CRLAPI from a RestConnection-like object."""
+
+        class _Shim:
+            pass
+
+        shim = _Shim()
+        shim.ip = getattr(rest_connection, "ip", None)
+        shim.port = getattr(rest_connection, "port", None)
+        shim.rest_username = (
+            username
+            or getattr(rest_connection, "username", None)
+            or getattr(rest_connection, "rest_username", None)
+        )
+        shim.rest_password = (
+            password
+            or getattr(rest_connection, "password", None)
+            or getattr(rest_connection, "rest_password", None)
+        )
+        shim.type = getattr(rest_connection, "type", "default")
+        shim.services = getattr(rest_connection, "services", None)
+        shim.hostname = getattr(rest_connection, "hostname", None)
+        api = CRLAPI()
+        api.set_server_values(shim)
+        api.set_endpoint_urls(shim)
+        caller_base = (
+            getattr(rest_connection, "baseUrl", None)
+            or getattr(rest_connection, "base_url", None)
+        )
+        if caller_base:
+            api.base_url = caller_base.rstrip("/")
+        return api
+
+    @staticmethod
+    def parse_content(content):
+        """Return parsed JSON, tolerating bytes/str/dict input."""
+        if content is None:
+            return None
+        if isinstance(content, (bytes, bytearray)):
+            content = content.decode("utf-8", "replace")
+        if isinstance(content, str):
+            try:
+                return json.loads(content)
+            except ValueError:
+                return content
+        return content
 
     # ── Crypto: CA / leaf certs ──────────────────────────────────────────────
 
@@ -228,3 +291,137 @@ class CRLUtils:
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
+
+    # ── REST orchestration ───────────────────────────────────────────────────
+
+    def get_settings(self, rest):
+        """GET /settings/crl. Returns (status_bool, content_dict)."""
+        api = self._crl_api(rest)
+        status, content, _ = api.get_crl_settings()
+        return status, self.parse_content(content)
+
+    def set_settings(self, rest, **fields):
+        """
+        POST /settings/crl with the given fields (partial update).
+        Accepts keys: policyPerScope, directory, dirPollIntervalMs,
+        checkIntermediateCerts, urls, urlPollIntervalMs.
+
+        Returns (status_bool, content_dict) — the full merged config on success.
+        """
+        api = self._crl_api(rest)
+        status, content, _ = api.post_crl_settings(fields)
+        return status, self.parse_content(content)
+
+    def list_files(self, rest):
+        """GET /settings/crl/files. Returns (status_bool, content_list)."""
+        api = self._crl_api(rest)
+        status, content, _ = api.get_crl_files()
+        return status, self.parse_content(content)
+
+    def upload_file(self, rest, filename, pem_bytes, timeout=300):
+        """
+        POST /settings/crl/files. Returns (status_bool, content).
+
+        Pass a larger `timeout` for large CRLs (see
+        CRL_TEST_PLAN.md file_upload_large_crl_test) — the default 300s can
+        be too short for very large uploads.
+        """
+        api = self._crl_api(rest)
+        status, content, _ = api.upload_crl_file(filename, pem_bytes, timeout=timeout)
+        return status, self.parse_content(content)
+
+    def delete_file(self, rest, filename):
+        """DELETE /settings/crl/files/:filename. Returns (status_bool, content)."""
+        api = self._crl_api(rest)
+        status, content, _ = api.delete_crl_file(filename)
+        return status, self.parse_content(content)
+
+    def diagnostics_status(self, rest, nodes=None):
+        """GET /settings/crl/diagnostics/status. Returns (status_bool, content)."""
+        api = self._crl_api(rest)
+        status, content, _ = api.get_diagnostics_status(nodes=nodes)
+        return status, self.parse_content(content)
+
+    def diagnostics_validate(self, rest, policy=None, certs=None):
+        """POST /settings/crl/diagnostics/validate. Returns (status_bool, content)."""
+        api = self._crl_api(rest)
+        status, content, _ = api.post_diagnostics_validate(policy=policy, certs=certs)
+        return status, self.parse_content(content)
+
+    def reload_crl(self, rest):
+        """POST /node/controller/reloadCrl. Returns (status_bool, content)."""
+        api = self._crl_api(rest)
+        status, content, _ = api.reload_crl()
+        return status, self.parse_content(content)
+
+    def cbauth_crls_validate(self, rest, certs, scope):
+        """POST /_cbauth/crlsValidate. Returns (status_bool, content)."""
+        api = self._crl_api(rest)
+        status, content, _ = api.cbauth_crls_validate(certs, scope)
+        return status, self.parse_content(content)
+
+    def revoke_and_upload(self, rest, ca_cert, ca_key, serials, filename,
+                           timeout=300, **crl_kwargs):
+        """
+        Convenience: build_crl() revoking `serials` (int or list of int) then
+        upload_file() it. The single most-used helper across the test plan.
+
+        Returns (status_bool, content).
+        """
+        if isinstance(serials, int):
+            serials = [serials]
+        pem = self.build_crl(ca_cert, ca_key, revoked_serials=serials, **crl_kwargs)
+        return self.upload_file(rest, filename, pem, timeout=timeout)
+
+    # ── mTLS handshake helper ────────────────────────────────────────────────
+
+    @staticmethod
+    def perform_mtls_handshake(host, port, client_cert_path, client_key_path,
+                                ca_cert_path, path="/whoami", timeout=30):
+        """
+        Perform a real mTLS handshake using plain `requests` with a client
+        cert (NOT the legacy Jython subprocess bridge multiple_CA.py uses —
+        modern `requests` handles client-cert mTLS natively under Python 3.10).
+
+        Args:
+            host/port: target node, e.g. "18091" for the TLS mgmt port
+            client_cert_path/client_key_path: filesystem paths to PEM files
+            ca_cert_path: filesystem path to the CA cert PEM to verify against
+
+        Returns:
+            requests.Response on a successful handshake, or raises
+            requests.exceptions.SSLError on TLS-layer rejection (e.g. a
+            revoked cert — callers should catch this explicitly, since a
+            revoked-cert rejection is a connection-level failure, not an
+            HTTP status code, per CRL_API_Contract.md/CRL_TEST_PLAN.md §3).
+        """
+        url = f"https://{host}:{port}{path}"
+        return requests.get(
+            url, cert=(client_cert_path, client_key_path), verify=ca_cert_path,
+            timeout=timeout,
+        )
+
+    # ── Assert helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def assert_settings_equal(actual, expected_subset):
+        """Assert every key/value in expected_subset matches actual."""
+        for key, value in expected_subset.items():
+            if actual.get(key) != value:
+                raise AssertionError(
+                    f"CRL settings mismatch for '{key}': "
+                    f"expected {value!r}, got {actual.get(key)!r}"
+                )
+
+    @staticmethod
+    def assert_diagnostics_entry(entry, expected_status=None, expected_source=None):
+        """Assert a single diagnostics/status file entry matches expectations."""
+        if expected_status is not None and entry.get("cacheStatus") != expected_status:
+            raise AssertionError(
+                f"Expected cacheStatus={expected_status!r}, "
+                f"got {entry.get('cacheStatus')!r}"
+            )
+        if expected_source is not None and entry.get("source") != expected_source:
+            raise AssertionError(
+                f"Expected source={expected_source!r}, got {entry.get('source')!r}"
+            )
