@@ -1,5 +1,6 @@
 import contextlib
 import json
+import time
 from urllib.parse import quote
 
 import requests
@@ -72,28 +73,39 @@ class CRLAPI(CBRestConnection):
         api = f"{self.base_url}{ENDPOINT_CRL_FILES}"
         return self.request(api, self.GET)
 
-    def upload_crl_file(self, filename, content_bytes):
+    def upload_crl_file(self, filename, content_bytes, timeout=300):
         """
         POST /settings/crl/files — upload one CRL file, multipart/form-data.
 
         Args:
             filename: str, 1-255 chars of [a-zA-Z0-9._-], not "." or ".."
             content_bytes: bytes, PEM or DER CRL content
+            timeout: seconds; also the retry deadline for transient
+                connection errors (mirrors CBRestConnection.request()).
 
         Returns:
             tuple: (status_bool, content, response)
         """
         api = f"{self.base_url}{ENDPOINT_CRL_FILES}"
         files = {"file": (filename, content_bytes, "application/pkix-crl")}
-        response = requests.post(
-            api, files=files, auth=(self.username, self.password), verify=False,
-            timeout=300,
-        )
-        status = 200 <= response.status_code < 300
-        content = response.content
-        with contextlib.suppress(ValueError):
-            content = response.json()
-        return status, content, response
+        end_time = time.time() + timeout
+        last_err = None
+        while time.time() <= end_time:
+            try:
+                response = requests.post(
+                    api, files=files, auth=(self.username, self.password),
+                    verify=False, timeout=timeout,
+                )
+                status = response.ok
+                content = response.content
+                with contextlib.suppress(ValueError):
+                    content = response.json()
+                return status, content, response
+            except requests.exceptions.RequestException as err:
+                self.log.error(f"Error uploading CRL file {filename}: {err}")
+                last_err = err
+                time.sleep(3)
+        raise Exception(f"ServerUnavailableException - {self.ip}") from last_err
 
     def delete_crl_file(self, filename):
         """

@@ -3,7 +3,7 @@ import ipaddress
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 
 __all__ = [
@@ -13,6 +13,7 @@ __all__ = [
     "CACHE_STATUS_VALUES",
     "RELOAD_RESULT_VALUES",
     "DIAGNOSTIC_STATUS_VALUES",
+    "KEY_ALGORITHMS",
 ]
 
 # ── Enums, from CRL_API_Contract.md ─────────────────────────────────────────
@@ -27,18 +28,24 @@ RELOAD_RESULT_VALUES = {
 }
 DIAGNOSTIC_STATUS_VALUES = {"valid", "revoked", "undetermined", "failed"}
 
+# Key algorithms covering the two most common real-world Couchbase PKI shapes:
+# RSA 2048 (still the default for legacy/enterprise AD CS setups) and ECDSA
+# P-256 (default for Vault PKI, cert-manager, and cloud-native private CAs).
+KEY_ALGORITHMS = {"rsa2048", "ecdsa_p256"}
+
 
 class CRLUtils:
     """
     High-level utilities for CRL (Certificate Revocation List) tests.
 
-    This first slice covers CA/CRL crypto generation only (in-memory, via
+    This slice covers CA/CRL crypto generation only (in-memory, via
     `cryptography` — not x509main's SSH/openssl-shellout pattern, since CRL
     construction needs cryptography.x509.CertificateRevocationListBuilder,
-    which x509main doesn't use anywhere). REST orchestration against
-    /settings/crl* (mirroring the JWTUtils/CredentialStoreUtils convention of
-    every REST-facing method taking `rest_connection` as first argument) lands
-    in a follow-up PR, added to this same class.
+    which x509main doesn't use anywhere), across both RSA 2048 and ECDSA P-256
+    key algorithms. REST orchestration against /settings/crl* (mirroring the
+    JWTUtils/CredentialStoreUtils convention of every REST-facing method
+    taking `rest_connection` as first argument) lands in a follow-up PR,
+    added to this same class.
     """
 
     def __init__(self, log=None):
@@ -47,14 +54,30 @@ class CRLUtils:
     # ── Crypto: CA / leaf certs ──────────────────────────────────────────────
 
     @staticmethod
-    def generate_ca(cn, key_size=2048, valid_days=3650):
+    def _generate_private_key(key_algorithm):
+        """Return a private key for one of KEY_ALGORITHMS."""
+        if key_algorithm == "rsa2048":
+            return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        if key_algorithm == "ecdsa_p256":
+            return ec.generate_private_key(ec.SECP256R1())
+        raise ValueError(
+            f"Unsupported key_algorithm: {key_algorithm!r}, expected one of {KEY_ALGORITHMS}"
+        )
+
+    @staticmethod
+    def generate_ca(cn, key_algorithm="rsa2048", valid_days=3650):
         """
         Generate a self-signed CA cert/key pair, in memory.
 
+        Args:
+            key_algorithm: one of KEY_ALGORITHMS — "rsa2048" (default, matches
+                legacy/enterprise AD CS) or "ecdsa_p256" (matches Vault PKI,
+                cert-manager, cloud-native private CAs)
+
         Returns:
-            tuple: (ca_cert: x509.Certificate, ca_key: RSAPrivateKey)
+            tuple: (ca_cert: x509.Certificate, ca_key)
         """
-        key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+        key = CRLUtils._generate_private_key(key_algorithm)
         subject = issuer = x509.Name(
             [x509.NameAttribute(NameOID.COMMON_NAME, cn)]
         )
@@ -86,13 +109,16 @@ class CRLUtils:
         return cert, key
 
     @staticmethod
-    def generate_leaf_cert(ca_cert, ca_key, cn, key_size=2048, valid_days=825,
-                            extended_key_usage=None, crl_distribution_url=None,
-                            dns_names=None):
+    def generate_leaf_cert(ca_cert, ca_key, cn, key_algorithm="rsa2048",
+                            valid_days=825, extended_key_usage=None,
+                            crl_distribution_url=None, dns_names=None):
         """
         Generate a leaf cert signed by ca_cert/ca_key, in memory.
 
         Args:
+            key_algorithm: one of KEY_ALGORITHMS — "rsa2048" (default) or
+                "ecdsa_p256". Independent of ca_key's own algorithm — a CA can
+                sign leaf certs of either algorithm.
             extended_key_usage: list of x509.oid.ExtendedKeyUsageOID, defaults
                 to CLIENT_AUTH
             crl_distribution_url: optional http(s) URL to embed as a
@@ -102,11 +128,11 @@ class CRLUtils:
             dns_names: optional list of SAN DNS names (needed for node certs)
 
         Returns:
-            tuple: (cert: x509.Certificate, key: RSAPrivateKey, serial: int)
+            tuple: (cert: x509.Certificate, key, serial: int)
         """
         if extended_key_usage is None:
             extended_key_usage = [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
-        key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+        key = CRLUtils._generate_private_key(key_algorithm)
         subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
         now = datetime.datetime.now(datetime.timezone.utc)
         serial = x509.random_serial_number()
