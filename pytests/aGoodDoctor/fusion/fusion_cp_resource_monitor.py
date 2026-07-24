@@ -863,6 +863,10 @@ class FusionCPResourceMonitor:
         count with root/boot volumes of any still-running accelerator instances,
         which then mismatches against the EBS snapshot count for a backup (only
         genuine guest volumes get snapshotted/tagged couchbase-cloud-guestvolume=true).
+        Similarly, volumes already in AWS "deleting" state are excluded -- a
+        volume mid-deletion at backup time won't get a fresh snapshot either,
+        so counting it here would inflate the expected count against that
+        same EBS snapshot count.
 
         :param cluster: Cluster object with .id attribute
         :return: List of volume ID strings (may be empty)
@@ -873,7 +877,11 @@ class FusionCPResourceMonitor:
                 "couchbase-cloud-function": "fusion-accelerator",
                 "couchbase-cloud-fusion-guest-volume": "true",
             })
-            ids = [v.get("VolumeId") for v in volumes if v.get("VolumeId")]
+            ids = [
+                v.get("VolumeId")
+                for v in volumes
+                if v.get("VolumeId") and v.get("State") != "deleting"
+            ]
             self.log.info(
                 f"Current guest volumes for cluster {cluster.id}: {ids}"
             )
@@ -881,6 +889,71 @@ class FusionCPResourceMonitor:
         except Exception as e:
             self.log.error(f"Error listing guest volumes for cluster {cluster.id}: {e}")
             return []
+
+    def get_in_use_guest_volume_ids(self, cluster) -> list:
+        """
+        Return the EBS Volume IDs of guest volumes for a cluster that are
+        genuinely attached right now (AWS State == "in-use").
+
+        Stricter than get_current_guest_volume_ids(), which only excludes
+        "deleting" volumes -- this also excludes "available" (detached)
+        guest volumes, e.g. stray/orphaned ones left over from an earlier
+        scale-down rebalance that haven't been cleaned up yet (see
+        AV-138426). Use this when you need the ground-truth set of volumes
+        actually backing live data, such as the set a backup's snapshots
+        should be compared against: a backup snapshots every guest-volume
+        tagged EBS volume regardless of state, so an orphaned "available"
+        volume still gets a snapshot even though it has nothing meaningful
+        to restore -- comparing a restore's recreated volume count against
+        the *in-use* count (not the raw tagged count) avoids that mismatch.
+
+        :param cluster: Cluster object with .id attribute
+        :return: List of volume ID strings (may be empty)
+        """
+        try:
+            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                "couchbase-cloud-cluster-id": cluster.id,
+                "couchbase-cloud-function": "fusion-accelerator",
+                "couchbase-cloud-fusion-guest-volume": "true",
+            })
+            ids = [
+                v.get("VolumeId")
+                for v in volumes
+                if v.get("VolumeId") and v.get("State") == "in-use"
+            ]
+            self.log.info(
+                f"In-use guest volumes for cluster {cluster.id}: {ids}"
+            )
+            return ids
+        except Exception as e:
+            self.log.error(f"Error listing in-use guest volumes for cluster {cluster.id}: {e}")
+            return []
+
+    def count_guest_volume_snapshots_for_backup(self, cluster, backup_id: str) -> int:
+        """
+        Return the count of guest-volume EBS snapshots tagged for *backup_id*
+        on *cluster*.
+
+        Lightweight counterpart to verify_guest_volume_snapshots_for_backup()
+        for callers that just need a count to compare against (e.g. an
+        in-use guest-volume count captured at backup-trigger time), not a
+        strict coverage assertion.
+
+        :param cluster: Cluster object with .id attribute
+        :param backup_id: Backup ID from the completed backup
+        :return: Number of matching snapshots (0 if none / on error)
+        """
+        filters = [
+            {"Name": "tag:couchbase-cloud-guestvolume", "Values": ["true"]},
+            {"Name": "tag:couchbase-cloud-backup-id", "Values": [backup_id]},
+            {"Name": "tag:couchbase-cloud-cluster-id", "Values": [cluster.id]},
+        ]
+        snapshots = self.fusion_aws_util.ec2.list_snapshots_by_tags(filters)
+        self.log.info(
+            f"{len(snapshots)} guest-volume snapshot(s) found for backup "
+            f"{backup_id} on cluster {cluster.id}"
+        )
+        return len(snapshots)
 
     def verify_old_guest_volumes_deleted(
         self, cluster, pre_restore_volume_ids: list, timeout: int = 600

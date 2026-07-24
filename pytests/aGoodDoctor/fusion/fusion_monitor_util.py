@@ -103,17 +103,24 @@ class FusionMonitorUtil():
         while timeout > 0:
             status, content = FusionRestAPI(cluster.master).get_fusion_status()
             if status:
+                table = PrettyTable()
+                table.field_names = ["Node ID", "Bucket Name", "Pending Bytes", "Sync Session Completed Bytes", "Sync Session Total Bytes"]
                 nodes = content.get("nodes") or {}
-                pending_bytes = 0
+                total_pending_bytes = 0
                 for node, stats in nodes.items():
                     buckets = stats.get("buckets") or {}
                     for bucket_name, bucket_stats in buckets.items():
-                        pending_bytes += bucket_stats.get("snapshotPendingBytes")
-                        self.log.info(f"Fusion Pending Bytes for node {node}, bucket {bucket_name}: {pending_bytes}")
-                if pending_bytes > 0:
-                    self.log.info(f"Fusion Pending Bytes for cluster {pending_bytes} is not zero")
-                    timeout -= 10
-                    time.sleep(10)
+                        pending_bytes = bucket_stats.get("snapshotPendingBytes") or 0
+                        total_pending_bytes += pending_bytes
+                        table.add_row([
+                            node, bucket_name, pending_bytes,
+                            bucket_stats.get("syncSessionCompletedBytes"),
+                            bucket_stats.get("syncSessionTotalBytes"),
+                        ])
+                self.log.info(f"Fusion Pending Bytes for cluster {cluster.id}:\n{table}")
+                if total_pending_bytes > 0:
+                    timeout -= 30
+                    time.sleep(30)
                 else:
                     return
             else:
@@ -143,10 +150,25 @@ class FusionMonitorUtil():
                                  f"{cluster.id}: {e} — retrying")
                 time.sleep(10)
                 continue
-            self.log.info(f"Status = {status}, Content = {content}")
-            if status and isinstance(content, dict) and content.get('state') == state:
-                time.sleep(5)
-                return
+            if status and isinstance(content, dict):
+                table = PrettyTable()
+                table.field_names = ["Node ID", "Bucket Name", "Pending Bytes", "Sync Session Completed Bytes", "Sync Session Total Bytes"]
+                nodes = content.get("nodes") or {}
+                for node, stats in nodes.items():
+                    buckets = stats.get("buckets") or {}
+                    for bucket_name, bucket_stats in buckets.items():
+                        table.add_row([
+                            node, bucket_name,
+                            bucket_stats.get("snapshotPendingBytes"),
+                            bucket_stats.get("syncSessionCompletedBytes"),
+                            bucket_stats.get("syncSessionTotalBytes"),
+                        ])
+                self.log.info(f"Fusion state on cluster {cluster.id}: {content.get('state')}\n{table}")
+                if content.get('state') == state:
+                    time.sleep(5)
+                    return
+            else:
+                self.log.info(f"Status = {status}, Content = {content}")
             time.sleep(10)
         raise AssertionError(f"Fusion is not {state} on cluster {cluster.id}")
 

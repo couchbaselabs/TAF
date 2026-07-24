@@ -168,6 +168,14 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # deltas computed from it could drift for that path.
         self.secondary_num_nodes = dict(self.num_nodes)
 
+        # Per-backup guest-volume tracking, keyed by backup_id -- populated in
+        # _take_backup_and_verify() with the real (in-use) guest volumes on
+        # primary at trigger time plus the resulting snapshot count, consumed
+        # (and popped) in _restore_snapshot_backup() once that backup is
+        # restored. See both methods' docstrings for why this two-sided check
+        # exists instead of a single exact-match assertion.
+        self._backup_guest_volume_tracking = {}
+
     # ------------------------------------------------------------- tearDown
 
     def tearDown(self):
@@ -378,20 +386,6 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
         self.log.info(f"{tgt_label} Restore job triggered: {restore_id}")
 
-        # Apply the memcached speed-up settings once NEW instances (not the
-        # pre-restore ones captured above) exist for the target -- not
-        # gated on any timeout calculation, just applied opportunistically,
-        # best-effort.
-        if target_is_fusion:
-            settings = {}
-            if self.fusion_num_uploader_threads:
-                settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
-            if self.fusion_sync_rate_limit:
-                settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
-            self.fusion_monitor.apply_settings_once_ready(
-                target_cluster, settings, old_instance_ids=old_instance_ids,
-            )
-
         # Run all three post-restore waits concurrently, each with the same
         # flat default timeout (8h) -- there's no reliable way to estimate
         # how long any of these actually take up front, and serializing the
@@ -441,22 +435,62 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 )
 
             if target_is_fusion and self.verify_snapshots:
-                gv_ids = self.cp_monitor.get_current_guest_volume_ids(target_cluster)
-                num_gvs = len(gv_ids)
+                new_volume_ids = self.cp_monitor.get_in_use_guest_volume_ids(target_cluster)
                 self.log.info(
-                    f"{tgt_label} {target_cluster.id}: {num_gvs} guest volumes attached: {gv_ids}"
+                    f"{tgt_label} {target_cluster.id}: {len(new_volume_ids)} in-use "
+                    f"guest volumes restored: {new_volume_ids}"
                 )
-                snap_ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
-                    primary, backup_id, guest_volume_ids=gv_ids
-                )
-                self.assertTrue(
-                    snap_ok,
-                    f"Guest volume snapshot count mismatch after restore on {target_cluster.id}: "
-                    f"expected {num_gvs} snapshots for backup {backup_id}",
-                )
+                tracked = self._backup_guest_volume_tracking.pop(backup_id, None)
+                if tracked is None:
+                    self.log.warning(
+                        f"No tracked in-use guest-volume data for backup {backup_id} "
+                        f"(likely verify_snapshots was off or no in-use volumes existed "
+                        f"when it was taken) -- skipping post-restore guest-volume count check"
+                    )
+                else:
+                    expected_ids = tracked["in_use_ids"]
+                    num_snapshots = tracked["num_snapshots"]
+                    self.assertEqual(
+                        len(new_volume_ids), len(expected_ids),
+                        f"{tgt_label} Restored guest-volume count on {target_cluster.id} "
+                        f"({len(new_volume_ids)}) does not match the {len(expected_ids)} "
+                        f"in-use guest volume(s) present on {src_label} {primary.id} when "
+                        f"backup {backup_id} was triggered. Expected: {sorted(expected_ids)}. "
+                        f"Restored: {sorted(new_volume_ids)}.",
+                    )
+                    self.assertLessEqual(
+                        len(new_volume_ids), num_snapshots,
+                        f"{tgt_label} Restored guest-volume count on {target_cluster.id} "
+                        f"({len(new_volume_ids)}) exceeds the {num_snapshots} guest-volume "
+                        f"snapshot(s) available for backup {backup_id}",
+                    )
+                    self.log.info(
+                        f"{tgt_label} Restored guest-volume count "
+                        f"({len(new_volume_ids)}) matches in-use count at backup time "
+                        f"({len(expected_ids)}) and is within the {num_snapshots} "
+                        f"available snapshot(s)"
+                    )
 
             healthy_future.result()
             self.log.info(f"{tgt_label} Target cluster {target_cluster.id} healthy after restore")
+
+            # Apply the memcached speed-up settings only once the restore is
+            # fully complete and the cluster reports healthy -- applying this
+            # immediately after triggering the restore (as before) can land
+            # on a target instance that's still bootstrapping from the
+            # restore's node-topology replacement and isn't SSM-ready yet,
+            # failing outright with no retry.
+            if target_is_fusion:
+                settings = {}
+                if self.fusion_num_uploader_threads:
+                    settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
+                if self.fusion_sync_rate_limit:
+                    settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
+                if settings:
+                    self.fusion_monitor.apply_settings_once_ready(
+                        target_cluster, settings, old_instance_ids=old_instance_ids,
+                    )
+
             if fusion_future is not None:
                 fusion_future.result()
 
@@ -908,6 +942,19 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                 f"{self.secondary_cluster.id} from .ini -- skipping "
                 f"clone-from-primary bootstrap"
             )
+            # Same memcached speed-up settings applied to a freshly
+            # clone-created secondary (_create_secondary_cluster_from_clone)
+            # -- a pre-provisioned secondary would otherwise not get them
+            # until its first per-cycle restore lands, leaving the initial
+            # scale-up rebalance below (_configure_secondary_fusion()) to
+            # build guest volumes / sync at default speed.
+            settings = {}
+            if self.fusion_num_uploader_threads:
+                settings["fusion_num_uploader_threads"] = self.fusion_num_uploader_threads
+            if self.fusion_sync_rate_limit:
+                settings["fusion_sync_rate_limit"] = self.fusion_sync_rate_limit
+            if settings:
+                self.fusion_monitor.apply_settings_once_ready(self.secondary_cluster, settings)
         self._configure_secondary_fusion()
 
         secondary = self.secondary_cluster
@@ -919,6 +966,13 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         """
         Scale secondary cluster by *delta* data nodes and monitor the rebalance
         (including fusion guest-volume lifecycle if secondary is fusion-enabled).
+
+        Refreshes secondary's node list from the CP once the rebalance
+        completes -- a scale-up or scale-down changes which nodes exist, so
+        `secondary.master`/`nodes_in_cluster` captured before this call (e.g.
+        by the post-restore node refresh in _restore_snapshot_backup) can
+        otherwise reference a node the rebalance just removed, causing
+        ServerUnavailableException on the next REST call to `.master`.
         """
         secondary = self.secondary_cluster
         tenant = self.primary_tenant
@@ -949,6 +1003,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             f"Accelerator nodes not killed after {label} on secondary {secondary.id}",
         )
         self.scan_memcahced_logs(secondary)
+        self._populate_cluster_nodes(secondary)
 
     def _configure_secondary_fusion(self):
         """
@@ -967,7 +1022,17 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     resp.status_code == 200,
                     f"Failed to enable Fusion on secondary {secondary.id}: {resp.status_code}",
                 )
-            self.fusion_monitor.wait_for_fusion_status(secondary, state="enabled")
+            # Secondary was just cloned from primary, so it already carries
+            # primary's data -- ns_server releases the cluster from
+            # "restoring" to "healthy" well before fusion finishes syncing
+            # that pre-existing data to the S3 log store, so "enabling" can
+            # persist far past the generic DEFAULT_TIMEOUT. Use the same
+            # generous ceiling as the post-restore SSM wait instead of
+            # failing fast.
+            self.fusion_monitor.wait_for_fusion_status(
+                secondary, state="enabled",
+                timeout=self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS,
+            )
             self.log.info(f"Fusion enabled on secondary {secondary.id}")
 
             # Trigger a scale-up rebalance so secondary creates its own guest volumes
@@ -1094,25 +1159,55 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
     def _take_backup_and_verify(self):
         """
         Trigger an EBS snapshot backup on primary, optionally verify EBS
-        guest-volume snapshot tags, and return the backup ID.
+        guest-volume snapshot coverage, and return the backup ID.
+
+        Guest-volume verification here only checks that the backup's
+        snapshot count is >= the real (in-use) guest volumes on primary at
+        trigger time -- not an exact match. The backup snapshots every
+        guest-volume-tagged EBS volume regardless of state, which can
+        include stray/orphaned "available" (detached) volumes left over
+        from an earlier scale-down rebalance that haven't been cleaned up
+        yet (see AV-138426) -- those inflate the snapshot count but aren't
+        a coverage gap, so only a snapshot count *below* the in-use count
+        would indicate an actual problem. The in-use ids and snapshot count
+        captured here are stashed on self._backup_guest_volume_tracking,
+        keyed by backup_id, for _restore_snapshot_backup() to check the
+        restored side against once this backup is restored.
         """
         primary = self.primary_cluster
-        guest_volume_ids_expected = self.cp_monitor.get_current_guest_volume_ids(primary)
         self.PrintStep(f"Taking EBS snapshot backup on primary {primary.id}")
 
         # Stop the mutation workload for the duration of the backup so the
         # snapshot captures a quiesced dataset
         self._stop_workload()
+
+        # Real (in-use) guest volumes on primary right as the backup is
+        # about to be triggered -- the ground-truth set this backup should
+        # cover. Workload is already stopped, so nothing changes this
+        # between capturing it here and the trigger call just below.
+        in_use_ids = self.cp_monitor.get_in_use_guest_volume_ids(primary)
+
         backup_id = self._create_snapshot_backup(primary)
-        if self.verify_snapshots:
-            ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
-                primary, backup_id, guest_volume_ids=guest_volume_ids_expected
+
+        if self.verify_snapshots and in_use_ids:
+            num_snapshots = self.cp_monitor.count_guest_volume_snapshots_for_backup(
+                primary, backup_id
             )
-            self.assertTrue(
-                ok,
-                f"Guest-volume EBS snapshot verification failed for backup {backup_id}",
+            self.assertGreaterEqual(
+                num_snapshots, len(in_use_ids),
+                f"Backup {backup_id} produced only {num_snapshots} guest-volume "
+                f"snapshot(s), fewer than the {len(in_use_ids)} in-use guest "
+                f"volume(s) on primary {primary.id} at trigger time: {in_use_ids}",
             )
-            self.log.info(f"Guest-volume snapshots verified for backup {backup_id}")
+            self.log.info(
+                f"Backup {backup_id}: {num_snapshots} guest-volume snapshot(s) "
+                f">= {len(in_use_ids)} in-use guest volume(s) on primary at "
+                f"trigger time"
+            )
+            self._backup_guest_volume_tracking[backup_id] = {
+                "in_use_ids": in_use_ids,
+                "num_snapshots": num_snapshots,
+            }
 
         # For same-cluster restore the workload must stay stopped — the restore
         # that follows replaces all cluster data and resumes it afterwards.
