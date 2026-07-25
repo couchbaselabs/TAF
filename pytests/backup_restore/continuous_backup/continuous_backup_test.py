@@ -984,29 +984,36 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # --- Test continuousBackupEnabled toggle ---
         self.log.info("Testing continuousBackupEnabled toggle")
-        self._load_data_tolerating_stat_validation()
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        count_before_disable = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
-        self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
+        num_toggle_cycles = self.input.param("num_toggle_cycles", 3)
+        for i in range(num_toggle_cycles):
+            self.log.info(f"Toggle iteration {i + 1} of {num_toggle_cycles}")
+            # Reset the restore target to empty each cycle: cbcontbk restore
+            # needs an empty bucket to produce the full expected count,
+            # otherwise iteration 2+ lands on top of the prior cycle's docs.
+            self._flush_restore_bucket(restore_bucket_name)
+            self._load_data_tolerating_stat_validation()
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            count_before_disable = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
+            self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
-        self.log.info("Disabling continuous backup")
-        self.bucket_util.update_bucket_property(self.cluster.master, self.bucket, continuous_backup_enabled=False)
-        self.sleep(10, "Waiting for settings to apply")
+            self.log.info("Disabling continuous backup")
+            self.bucket_util.update_bucket_property(self.cluster.master, self.bucket, continuous_backup_enabled=False)
+            self.sleep(10, "Waiting for settings to apply")
 
-        self.log.info("Loading more data while continuous backup is disabled")
-        self._load_data_tolerating_stat_validation()
-        self.sleep(self.continuous_backup_interval * 60, "Waiting for backup interval to pass (backup should not run)")
+            self.log.info("Loading more data while continuous backup is disabled")
+            self._load_data_tolerating_stat_validation()
+            self.sleep(self.continuous_backup_interval * 60, "Waiting for backup interval to pass (backup should not run)")
 
-        self.log.info("Restoring to latest point in time")
-        self._restore_entire_bucket(None, restore_bucket_name)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_before_disable, bucket_name=restore_bucket_name)
-        self.log.info("Restore only contained data from before continuous backup was disabled, as expected.")
+            self.log.info("Restoring to latest point in time")
+            self._restore_entire_bucket(None, restore_bucket_name)
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+            self._verify_doc_count(count_before_disable, bucket_name=restore_bucket_name)
+            self.log.info("Restore only contained data from before continuous backup was disabled, as expected.")
 
-        self.log.info("Re-enabling continuous backup")
-        self.bucket_util.update_bucket_property(self.cluster.master, self.bucket, continuous_backup_enabled=True,
-                                                continuous_backup_location=self.continuous_backup_location)
-        self.sleep(10, "Waiting for settings to apply")
+            self.log.info("Re-enabling continuous backup")
+            self.bucket_util.update_bucket_property(self.cluster.master, self.bucket, continuous_backup_enabled=True,
+                                                    continuous_backup_location=self.continuous_backup_location)
+            self.sleep(10, "Waiting for settings to apply")
 
         # --- Test continuousBackupInterval change ---
         self.log.info("Testing continuousBackupInterval change")
