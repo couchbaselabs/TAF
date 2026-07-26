@@ -72,7 +72,7 @@ class WormIntegrityTest(WormBackupBase):
                                                             expected_count,
                                                             backup_name):
         statusflag_path = self._find_required_metadata_path(
-            ["%s/.statusflag" % backup_name, ".statusflag"])
+            ["%s/.status_flag" % backup_name, ".status_flag"])
         succeeded, detail = helper.attempt_overwrite(
             self.backup_archive_dir, self.backup_repo_name, statusflag_path,
             content='{"purged": true}')
@@ -108,15 +108,21 @@ class WormIntegrityTest(WormBackupBase):
         output, error = self.backup_mgr.backup(
             self.backup_archive_dir, self.backup_repo_name, resume=True,
             no_progress_bar=True, obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbbackupmgr reports the tamper as "this cloud backup can't be
+        # resumed and must be purged using the '--purge' flag", which is the
+        # outcome design doc 5.9 requires ("we would have to purge it to
+        # proceed") but shares no wording with the version/integrity markers.
         self._assert_command_failure(
             output, error,
-            expected_texts=["version", "obj_versions", "integrity", "tamper", "mismatch"])
+            expected_texts=["purge", "resumed", "version", "obj_versions",
+                            "integrity", "tamper", "mismatch"])
 
     def test_incomplete_backup_tampering_and_staging_mismatch_are_rejected(self):
         helper = self._require_cloud_helper("status flag tampering validation")
         self._prepare_interrupted_backup()
 
         alternate_staging_dir = "%s_alt" % self.obj_staging_dir_cbbackup
+        self._register_staging_dir_for_cleanup(alternate_staging_dir)
         output, error = self.shell.execute_command(
             "mkdir -p %s" % alternate_staging_dir)
         self._assert_command_success(output, error)
@@ -136,7 +142,7 @@ class WormIntegrityTest(WormBackupBase):
         backup_name = self._latest_backup_name()
         succeeded, detail = helper.upload_text(
             self.backup_archive_dir, self.backup_repo_name,
-            "%s/.statusflag" % backup_name, '{"purged": false}')
+            "%s/.status_flag" % backup_name, '{"purged": false}')
         if not succeeded:
             self._assert_tamper_blocked(succeeded, detail)
             return
@@ -148,7 +154,7 @@ class WormIntegrityTest(WormBackupBase):
         backup_name = "fake_race_backup"
         succeeded, detail = helper.upload_text(
             self.backup_archive_dir, self.backup_repo_name,
-            "%s/.statusflag" % backup_name, '{"purged": false}')
+            "%s/.status_flag" % backup_name, '{"purged": false}')
         self.assertTrue(succeeded, "Failed to create race status flag: %s" % detail)
         self._assert_restore_failure(
             backup_id=backup_name,
@@ -157,7 +163,7 @@ class WormIntegrityTest(WormBackupBase):
         fake_backup = "fake_backup"
         status_ok, status_detail = helper.upload_text(
             self.backup_archive_dir, self.backup_repo_name,
-            "%s/.statusflag" % fake_backup, '{"purged": false}')
+            "%s/.status_flag" % fake_backup, '{"purged": false}')
         plan_ok, plan_detail = helper.upload_text(
             self.backup_archive_dir, self.backup_repo_name,
             "%s/plan.json" % fake_backup, '{"fake": true}')
@@ -212,26 +218,60 @@ class WormIntegrityTest(WormBackupBase):
             expected_texts=["obj_versions", "resume", "missing", "purge",
                             "staging", "state", "incomplete"])
 
-    def test_metadata_tampering_blocks_restore_or_is_lock_blocked(self):
+    def test_metadata_tampering_does_not_affect_restore_of_locked_versions(self):
+        """Tampering with backup metadata must not change what a restore reads.
+
+        Design doc 5.7: "During a restore we will consider only the first
+        versions of each object (if versioning is enabled)." Object Lock
+        protects a specific object *version*; it does not stop a new version
+        being written. So on a versioning-enabled bucket:
+          - attempt_overwrite() is a plain put_object -> adds a new version,
+          - delete_object() omits VersionId -> adds a delete marker,
+        and in both cases the original locked version survives. The restore
+        must therefore still succeed and return the original documents -- that
+        success *is* the WORM guarantee.
+
+        This previously asserted the restore must FAIL, which contradicts 5.7.
+        It only ever "passed" because _looks_like_failure matched the "Errored"
+        column header in cbbackupmgr's summary table and mistook a successful
+        restore for a failed one.
+        """
         helper = self._require_cloud_helper("metadata corruption validation")
-        self._prepare_completed_backup()
+        expected_count = self._prepare_completed_backup()
+
         metadata_path = self._find_required_metadata_path(
-            ["plan.json", ".obj_versions", ".statusflag"])
+            ["plan.json", ".obj_versions", ".status_flag"])
         succeeded, detail = helper.attempt_overwrite(
             self.backup_archive_dir, self.backup_repo_name, metadata_path,
             content="not-json")
         if not succeeded:
+            # A CSP refusing the write outright is also a valid outcome.
             self._assert_tamper_blocked(succeeded, detail)
         else:
-            self._assert_restore_failure(
-                expected_texts=["metadata", "invalid", "corrupt", "integrity", "restore"])
+            self._assert_locked_version_survived(helper, metadata_path)
+            self._restore_to_new_bucket_and_verify(
+                expected_count, "after_metadata_overwrite")
 
         metadata_path = self._find_required_metadata_path(
-            ["plan.json", ".obj_versions", ".statusflag"])
+            ["plan.json", ".obj_versions", ".status_flag"])
         succeeded, detail = helper.delete_object(
             self.backup_archive_dir, self.backup_repo_name, metadata_path)
         if not succeeded:
             self._assert_tamper_blocked(succeeded, detail)
             return
-        self._assert_restore_failure(
-            expected_texts=["missing", "metadata", "invalid", "integrity", "restore"])
+        self._assert_locked_version_survived(helper, metadata_path)
+        self._restore_to_new_bucket_and_verify(
+            expected_count, "after_metadata_delete")
+
+    def _assert_locked_version_survived(self, helper, metadata_path):
+        """The retention-locked original version must still be present."""
+        versions = helper.list_object_versions(
+            self.backup_archive_dir, self.backup_repo_name, metadata_path)
+        live_versions = [version for version in versions
+                         if not version.get("delete_marker")]
+        self.assertTrue(
+            live_versions,
+            "Tampering removed every non-delete-marker version of '%s' -- the "
+            "retention-locked original should have survived" % metadata_path)
+        self.log.info("Object '%s' still has %s locked version(s) after tamper"
+                      % (metadata_path, len(live_versions)))

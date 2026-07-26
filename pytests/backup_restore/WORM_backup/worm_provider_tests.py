@@ -10,7 +10,7 @@ class WormProviderTest(WormBackupBase):
         target_path = helper.find_first_data_object(
             self.backup_archive_dir, self.backup_repo_name)
         if target_path is None:
-            target_path = self._find_required_metadata_path([".worm", ".statusflag"])
+            target_path = self._find_required_metadata_path([".worm", ".status_flag"])
         return helper, target_path
 
     def _assert_object_has_retention(self, provider):
@@ -21,7 +21,7 @@ class WormProviderTest(WormBackupBase):
         target_path = helper.find_first_data_object(
             self.backup_archive_dir, self.backup_repo_name)
         if target_path is None:
-            target_path = self._find_required_metadata_path([".worm", ".statusflag"])
+            target_path = self._find_required_metadata_path([".worm", ".status_flag"])
         retain_until = helper.get_retention_until(
             self.backup_archive_dir, self.backup_repo_name, target_path)
         self.assertTrue(retain_until, "No retention timestamp reported for %s" % target_path)

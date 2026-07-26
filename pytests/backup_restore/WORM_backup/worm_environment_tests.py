@@ -4,6 +4,42 @@ from backup_restore.WORM_backup.worm_backup_base import WormBackupBase
 
 
 class WormEnvironmentTest(WormBackupBase):
+
+    # Stall the in-flight S3 upload by dropping outbound HTTPS, then restore
+    # it. Only --dport 443 is touched, so SSH (sport 22 on an established
+    # connection) and Couchbase inter-node traffic (8091/11210/18091/11207)
+    # keep working. The leading background loop is a failsafe: if the
+    # foreground command is killed mid-flap the DROP rule would otherwise
+    # persist and cut the node off from the object store for good.
+    # Override with the network_flap_command param to flap a different way.
+    NETWORK_FLAP_COMMAND = (
+        "nohup sh -c 'sleep 90;"
+        " while iptables -D OUTPUT -p tcp --dport 443 -j DROP 2>/dev/null;"
+        " do :; done' >/dev/null 2>&1 &"
+        " iptables -I OUTPUT -p tcp --dport 443 -j DROP"
+        " && sleep 12"
+        " && iptables -D OUTPUT -p tcp --dport 443 -j DROP")
+
+    # Degrade the object-store path hard enough to force SDK retry/backoff
+    # during a backup. Drops ~60% of outbound HTTPS packets, so only S3 traffic
+    # is affected -- SSH (sport 22 on an established connection) and Couchbase
+    # inter-node traffic (8091/11210/18091/11207) keep working. This simulates
+    # retry pressure via packet loss rather than real CSP 429s, which we cannot
+    # induce from the client side. Paired with CSP_THROTTLE_RESET_COMMAND; the
+    # leading background loop is a failsafe in case the reset never runs.
+    # Override with csp_throttle_command / csp_throttle_reset_command.
+    CSP_THROTTLE_COMMAND = (
+        "nohup sh -c 'sleep 300;"
+        " while iptables -D OUTPUT -p tcp --dport 443"
+        " -m statistic --mode random --probability 0.6 -j DROP 2>/dev/null;"
+        " do :; done' >/dev/null 2>&1 &"
+        " iptables -I OUTPUT -p tcp --dport 443"
+        " -m statistic --mode random --probability 0.6 -j DROP")
+    CSP_THROTTLE_RESET_COMMAND = (
+        "while iptables -D OUTPUT -p tcp --dport 443"
+        " -m statistic --mode random --probability 0.6 -j DROP 2>/dev/null;"
+        " do :; done; echo throttle_cleared")
+
     def _create_expired_worm_backup(self, reason):
         self._create_worm_repo()
         self._load_data_and_return_count()
@@ -34,12 +70,12 @@ class WormEnvironmentTest(WormBackupBase):
     def test_backup_worm_enable_race_has_defined_outcome(self):
         self._create_repo()
         self._load_data_and_return_count()
-        backup_task = self._start_backup_task()
+        pid, log_path = self._start_remote_backup_process()
         output, error = self.backup_mgr.worm(
             self.backup_archive_dir, self.backup_repo_name, self.worm_period_days,
             obj_staging_dir=self.obj_staging_dir_cbbackup)
         command_text = self._command_text(output, error).lower()
-        self._wait_for_backup_task(backup_task)
+        self._wait_for_remote_backup_process(pid, log_path)
         if error:
             self.assertTrue(any(token in command_text for token in
                                 ["backup", "active", "running", "lock", "retry", "worm"]),
@@ -48,13 +84,14 @@ class WormEnvironmentTest(WormBackupBase):
         self._assert_repo_reports_worm()
 
     def test_network_flapping_backup_resumes_or_fails_safely(self):
-        self._require_param("network_flap_command", "network flapping validation")
+        flap_command = self.input.param("network_flap_command",
+                                        self.NETWORK_FLAP_COMMAND)
         self._create_worm_repo()
         self._load_data_and_return_count()
-        backup_task = self._start_backup_task()
-        self._run_required_remote_command(
-            "network_flap_command", "network flapping validation")
-        self._wait_for_backup_task(backup_task)
+        pid, log_path = self._start_remote_backup_process()
+        output, error = self.shell.execute_command(flap_command)
+        self.log.info("Network flap output=%s error=%s" % (output, error))
+        self._wait_for_remote_backup_process(pid, log_path)
         output, error = self.backup_mgr.backup(
             self.backup_archive_dir, self.backup_repo_name, resume=True,
             no_progress_bar=True, obj_staging_dir=self.obj_staging_dir_cbbackup)
@@ -186,13 +223,16 @@ class WormEnvironmentTest(WormBackupBase):
         self._assert_repo_reports_worm()
 
     def test_csp_throttling_retries_or_fails_safely(self):
-        self._require_param("csp_throttle_command", "CSP throttling validation")
-        reset_command = self.input.param("csp_throttle_reset_command", None)
+        throttle_command = self.input.param("csp_throttle_command",
+                                            self.CSP_THROTTLE_COMMAND)
+        reset_command = self.input.param("csp_throttle_reset_command",
+                                         self.CSP_THROTTLE_RESET_COMMAND)
         self._create_worm_repo()
         self._load_data_and_return_count()
         try:
-            self._run_required_success_command(
-                "csp_throttle_command", "CSP throttling validation")
+            output, error = self.shell.execute_command(throttle_command)
+            self._assert_command_success(output, error)
+            self.log.info("Applied CSP throttling: %s" % throttle_command)
             output, error = self.backup_mgr.backup(
                 self.backup_archive_dir, self.backup_repo_name, no_progress_bar=True,
                 obj_staging_dir=self.obj_staging_dir_cbbackup)

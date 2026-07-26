@@ -73,19 +73,55 @@ class WormUiContractTest(WormBackupBase):
         return self._get_worm_metric_value()
 
     def test_backup_service_ui_worm_command_contracts(self):
-        exercised = self._run_optional_contract_command(
-            "retention_obj_versions_command",
-            "UI retention delete-all-object-versions contract validation")
-        exercised = self._run_optional_contract_command(
-            "enable_worm_with_retention_command",
-            "UI enable-WORM retention prompt contract validation",
-            expected_texts=["obj", "version", "retention", "worm", "prompt"]) or exercised
-        exercised = self._run_optional_contract_command(
+        """CLI behaviour behind the Backup Service WORM UI contracts.
+
+        Contract 2 (design doc 5.10.2, third conflict case -- "WORM is enabled
+        after backup retention") is checked directly rather than through a
+        param: the command needs the per-test archive UUID, so a static conf
+        string cannot express it. 5.10.2 requires an error prompting the user
+        to pass the special flag (`--default-retention worm` /
+        `retention-settings --period worm`) or change the retention period.
+
+        Contract 1 (UI "delete all object versions" retention action, 5.10.1)
+        is already covered by
+        worm_provider_tests.test_non_worm_restore_and_obj_versions_cleanup_behaviour,
+        which runs `remove --obj-versions` and asserts every version is gone.
+
+        Contract 3 (a repo must be paused before WORM can be enabled) lives in
+        test_worm_enable_requires_paused_repo -- it needs a Backup Service REST
+        command, so keeping it here would either hide the gap behind a log line
+        or hold this contract's coverage hostage to it.
+        """
+        # Retention shorter than the WORM period, WORM not yet enabled.
+        retention_days = max(1, self.worm_period_days - 1)
+        self._create_repo(default_retention=retention_days)
+
+        output, error = self.backup_mgr.worm(
+            self.backup_archive_dir, self.backup_repo_name,
+            self.worm_period_days,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # Deliberately narrow markers: "worm" and "obj" both occur in the
+        # archive URI and in --obj-staging-dir, so either would match on the
+        # echoed command alone and pass for the wrong reason.
+        self._assert_command_failure(
+            output, error,
+            expected_texts=["retention", "obj-versions", "object version",
+                            "default-retention"])
+
+    def test_worm_enable_requires_paused_repo(self):
+        """Contract 3: a repo must be paused before WORM can be enabled.
+
+        Backup Service repo state is managed over REST, not by cbbackupmgr, so
+        the command cannot be built from cbbackupmgr arguments the way contract
+        2 is. It stays param-driven and fails loudly while unset, so the gap
+        stays visible rather than being logged and forgotten.
+        """
+        self._require_param("enable_worm_unpaused_repo_command",
+                            "UI pause-before-WORM-enable contract validation")
+        self._run_optional_contract_command(
             "enable_worm_unpaused_repo_command",
             "UI pause-before-WORM-enable contract validation",
-            expected_texts=["pause", "paused", "active", "repository", "worm"]) or exercised
-        if not exercised:
-            self.fail("Set a UI contract command parameter to run this validation")
+            expected_texts=["pause", "paused", "active", "repository"])
 
     def test_ns_server_worm_expiry_alert_contract(self):
         self._create_worm_repo()

@@ -193,3 +193,62 @@ class ContinuousBackupBase(CollectionBase):
                 f"{flag_name}=False but files under {location} carry the "
                 f"Couchbase Encrypted magic (state: {status}). The "
                 f"unencrypted-side surface was accidentally encrypted.")
+
+    def load_data_cbc_pillowfight(self, bucket=None, server=None,
+                                  total_data_mb=1, doc_size=1024,
+                                  key_prefix="contbk_docs", threads=1,
+                                  ops_rate=None, persist_wait=30):
+        """
+        Seed a bucket with real documents using cbc-pillowfight so
+        backup/restore tests have data to validate against.
+
+        Defaults load ~1 MB of data as 1 KB documents (i.e. 1024 docs).
+        Modelled on storage.storage_base.StorageBase.load_data_cbc_pillowfight
+        so any ContinuousBackupBase subclass (WORM, PITR, etc.) can reuse it.
+
+        :param bucket: bucket object to load into (default: self.bucket)
+        :param server: node to run cbc-pillowfight from (default: cluster master)
+        :param total_data_mb: total data volume to load, in MB (default 1)
+        :param doc_size: size of each document in bytes (default 1024 = 1 KB)
+        :param key_prefix: key prefix for the generated documents
+        :param threads: number of pillowfight worker threads
+        :param ops_rate: optional --rate-limit value
+        :param persist_wait: seconds to wait for docs to persist before counting
+        :returns: number of items in the bucket after loading
+        """
+        server = server or self.cluster.master
+        bucket = bucket or self.bucket
+        items = max(1, (total_data_mb * 1024 * 1024) // doc_size)
+        self.log.info("Loading %d docs of %d bytes (~%d MB) into bucket '%s' "
+                      "with cbc-pillowfight (key_prefix=%s)"
+                      % (items, doc_size, total_data_mb, bucket.name,
+                         key_prefix))
+        shell = RemoteMachineShellConnection(server)
+        try:
+            cmd = ("/opt/couchbase/bin/cbc-pillowfight "
+                   "-U couchbase://{ip}/{bkt} -u {user} -P {pwd} "
+                   "-I {items} -t {threads} -m {size} -M {size} "
+                   "--populate-only --random-body --key-prefix={prefix} "
+                   "-Dtimeout=10").format(
+                       ip=server.ip, bkt=bucket.name,
+                       user=self.cluster.master.rest_username,
+                       pwd=self.cluster.master.rest_password,
+                       items=items, threads=threads, size=doc_size,
+                       prefix=key_prefix)
+            if ops_rate is not None:
+                cmd += " --rate-limit {}".format(ops_rate)
+            self.log.info("Executing pillowfight command: %s" % cmd)
+            output, error = shell.execute_command(cmd, timeout=600)
+            self.log.debug("pillowfight output=%s error=%s" % (output, error))
+        finally:
+            shell.disconnect()
+
+        self.sleep(persist_wait, "Wait for pillowfight docs to persist")
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
+        loaded = self.bucket_util.get_buckets_item_count(
+            self.cluster, bucket.name)
+        self.log.info("Bucket '%s' now reports %d items after pillowfight load"
+                      % (bucket.name, loaded))
+
+        return loaded

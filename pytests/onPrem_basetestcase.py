@@ -8,7 +8,7 @@ import traceback
 import random
 import yaml
 from datetime import datetime
-from imp import reload
+from importlib import reload
 
 import global_vars
 import cb_constants
@@ -197,7 +197,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if self.cbbackup_test not in expected_cbbackup_test_values:
             self.fail(f"Invalid value for cbbackup_test. Expected: {expected_cbbackup_test_values}. Got: {self.cbbackup_test}")
         if self.cbbackup_test in ["AWS", "Azure", "GCP", "localstack"]:
-            self.obj_staging_dir_cbbackup = self.input.param("obj_staging_dir_cbbackup", "/data/staging_backup")
+            # Keep the staging dir outside the node's Couchbase data path:
+            # cbbackupmgr runs as root, and a root-owned dir under data_path is
+            # mistaken for a stale bucket dir, failing every later rebalance
+            # with {buckets_cleanup_failed,...} / {error,eacces}.
+            self.obj_staging_dir_cbbackup = self.input.param("obj_staging_dir_cbbackup", "/tmp/staging_backup")
         else:
             self.obj_staging_dir_cbbackup = None
 

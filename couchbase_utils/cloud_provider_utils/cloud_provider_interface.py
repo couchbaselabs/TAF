@@ -219,7 +219,7 @@ class CloudProviderInterface(object):
         return None
 
     def find_first_data_object(self, archive_uri, repo_name):
-        metadata_names = [".worm", ".statusflag", ".obj_versions", "plan.json"]
+        metadata_names = [".worm", ".status_flag", ".obj_versions", "plan.json"]
         for object_name in self.list_objects(archive_uri, repo_name):
             relative_name = self.relative_path(archive_uri, repo_name,
                                                object_name)

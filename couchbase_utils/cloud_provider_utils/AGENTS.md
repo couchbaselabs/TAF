@@ -87,7 +87,7 @@ Every method takes `archive_uri` (e.g. `s3://bucket/prefix`) **per call** rather
 | `find_latest_backup_name(archive_uri, repo_name)` | Last of `find_backup_names(...)`, or `None` |
 | `find_relative_paths(archive_uri, repo_name, suffix=None, contains=None)` | Filtered relative paths |
 | `find_metadata_path(archive_uri, repo_name, names)` | First relative path ending in any of `names` |
-| `find_first_data_object(archive_uri, repo_name)` | First object that isn't `.worm`/`.statusflag`/`.obj_versions`/`plan.json`/a directory marker |
+| `find_first_data_object(archive_uri, repo_name)` | First object that isn't `.worm`/`.status_flag`/`.obj_versions`/`plan.json`/a directory marker |
 | `wait_for_objects(archive_uri, repo_name, timeout=300, relative_prefix="")` | Poll `list_objects(...)` every 10s until non-empty or timeout |
 
 ## AWSProvider
