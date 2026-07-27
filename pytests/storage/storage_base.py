@@ -966,7 +966,8 @@ class StorageBase(BaseTestCase):
                             ops=ops_rate,
                             mutate=mutate,
                             target_vbuckets=target_vbs,
-                            value_type=value_type)
+                            value_type=value_type,
+                            track_failures=self.track_failures)
                     _task.create_doc_load_task()
                     self.doc_loading_tm.add_new_task(_task)
                     doc_loading_tasks.append(_task)

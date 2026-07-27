@@ -346,6 +346,9 @@ class MagmaCrashTests(MagmaBaseTest):
         self.log.info("====test_crash_during_ops starts====")
 
         self.compute_docs_ranges()
+        # Crash is induced during this in-flight load, so failures are expected;
+        # don't retain per-op failure objects in the loader (memory safety).
+        self.track_failures = False
 
         tasks, print_ops_tasks = self.java_doc_loader(
             doc_ops=self.doc_ops,
