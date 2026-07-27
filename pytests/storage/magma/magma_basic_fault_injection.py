@@ -179,6 +179,9 @@ class MagmaFaultInjectionBasic(MagmaFaultInjection):
         # 2b: Second CREATE workload
         self.create_start = first_batch_end
         self.create_end = first_batch_end + self.init_items_per_collection
+        # Fault injection can fail ops (fail_rate>0 / delay-induced timeouts);
+        # don't retain per-op failures.
+        self.track_failures = False
         create_tasks, _ = self.java_doc_loader(
             doc_ops="create",
             wait=False,
@@ -271,6 +274,10 @@ class MagmaFaultInjectionBasic(MagmaFaultInjection):
         # ---- Phase 3: enable fault injection, then run everything in parallel ----
         self.log.info(f"Phase 3: Enabling fault injection (delay_ms={delay_ms}, fail_rate={fail_rate}, fail_errno={fail_errno})")
         self._set_fault_injection(enabled=True, delay_ms=delay_ms, fail_rate=fail_rate, fail_errno=fail_errno)
+
+        # Negative phase: crash loop + swap rebalance make ops fail; don't retain
+        # per-op failures or the loader JVM OOMs.
+        self.track_failures = False
 
         # 3a: async compaction
         self.log.info("Starting async compaction on all buckets")
@@ -403,6 +410,8 @@ class MagmaFaultInjectionBasic(MagmaFaultInjection):
         self.create_start = self.num_items
         self.create_end = self.num_items * 2
         self.log.info(f"Starting CREATE workload: {self.create_start} → {self.create_end}")
+        # Ops fail while the node is warming up; don't retain per-op failures.
+        self.track_failures = False
         create_tasks, _ = self.java_doc_loader(
             doc_ops="create",
             wait=False,
@@ -491,6 +500,9 @@ class MagmaFaultInjectionBasic(MagmaFaultInjection):
         self.log.info(f"Loading {self.num_items} docs with WAL fault injection active")
         self.create_start = 0
         self.create_end = self.num_items
+        # Load runs under WAL EIO/ENOSPC injection (fail_rate default 10);
+        # don't retain per-op failures.
+        self.track_failures = False
         self.java_doc_loader(
             doc_ops="create",
             wait=True,
@@ -727,6 +739,9 @@ class MagmaFaultInjectionBasic(MagmaFaultInjection):
         self.log.info(f"Phase 4: Starting CREATE workload ({self.num_items} → {self.num_items * 2}) under WAL FI")
         self.create_start = self.num_items
         self.create_end = self.num_items * 2
+        # Workload runs under WAL fault injection and is SIGKILLed mid-flight;
+        # ops error out by design — don't retain the failures.
+        self.track_failures = False
         create_tasks, _ = self.java_doc_loader(
             doc_ops="create",
             wait=False,

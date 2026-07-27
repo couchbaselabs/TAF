@@ -177,6 +177,7 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
                         ops=self.ops_rate,
                         mutate=mutate_val,
                         value_type=self.val_type,
+                        track_failures=self.track_failures,
                     ))
         return kwargs_list
 
@@ -471,6 +472,8 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
 
     def test_validate_disk_reclaim_with_memcached_crashes_during_workload(self):
         self.log.info("=== test_validate_disk_reclaim_with_memcached_crashes_during_workload ===")
+        # Concurrent memcached crash loop makes ops fail; bound loader memory.
+        self.track_failures = False
         self._initial_load_and_push_script()
 
         stop_event = threading.Event()

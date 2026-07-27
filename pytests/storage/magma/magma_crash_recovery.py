@@ -584,7 +584,8 @@ class MagmaCrashTests(MagmaBaseTest):
             self.generate_docs(doc_ops="update")
             update_task_info = self.loadgen_docs(
                 self.retry_exceptions, self.ignore_exceptions,
-                suppress_error_table=True, _sync=False)
+                suppress_error_table=True, _sync=False,
+                track_failures=False)
 
             #update_task_info = self.loadgen_docs(
             #    self.retry_exceptions,
