@@ -555,10 +555,13 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.log.info("Starting another workload")
         self.perform_workload(self.num_items, self.num_items * 2, ops_rate=10000)
 
-        # Delete bucket during slow sync
-        for bucket in self.cluster.buckets:
-            self.log.info(f"Deleting bucket: {bucket.name}")
-            self.bucket_util.delete_bucket(self.cluster, bucket)
+        # 6. Delete both buckets while Fusion is being enabled.
+        self.log.info("Deleting all buckets during sync to Fusion")
+        self.bucket_util.delete_all_buckets(self.cluster)
+
+        # 7. Deleting mid-enable must be handled gracefully.
+        self.assertEqual(len(self.cluster.buckets), 0,
+                         "Buckets were not deleted during sync to Fusion")
 
         self.sleep(300, "Sleep after data loading")
 
