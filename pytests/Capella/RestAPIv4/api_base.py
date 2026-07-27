@@ -1267,8 +1267,7 @@ class APIBase(CouchbaseBaseTest):
             self.update_auth_with_api_token(self.curr_owner_key)
             # create a new API key with expiry of approx 2 mins
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id, "Expiry_Key", ["organizationOwner"],
-                expiry=0.0001)
+                self.organisation_id, "Expiry_Key", ["organizationOwner"])
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_new"] = resp.json()
             else:
