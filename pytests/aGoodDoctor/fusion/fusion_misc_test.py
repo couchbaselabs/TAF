@@ -10,6 +10,8 @@ Tests:
   1. test_concurrent_node_scale_down_and_disk_scale_up  — AV-134300
   2. test_concurrent_node_and_disk_scale_up
   3. test_hydration_fills_disk_triggers_disk_auto_scaling — AV-137329
+  4. test_fusion_accelerator_with_io2_storage — accelerator lifecycle on
+     IO2 disk storage at 200M-item scale
 """
 
 import time
@@ -131,6 +133,21 @@ class FusionMiscTest(_FusionTestBase):
             services = [s.get("type", "") for s in (spec.get("services") or [])]
             if service_type in services:
                 return (spec.get("disk") or {}).get("sizeInGb")
+        return None
+
+    def _get_cluster_disk_type(self, service_type="kv"):
+        """Return the disk storage type (e.g. "GP3", "IO2") reported by CP
+        for the given service type.
+
+        Mirrors _get_cluster_disk_gb but reads the "type" field of the disk
+        spec instead of "sizeInGb".
+        """
+        info = CapellaAPI.get_cluster_info(self.pod, self.tenant, self.cluster.id)
+        specs = (info.get("data") or {}).get("specs") or []
+        for spec in specs:
+            services = [s.get("type", "") for s in (spec.get("services") or [])]
+            if service_type in services:
+                return (spec.get("disk") or {}).get("type")
         return None
 
     def _scale_to_initial_config(self, initial_nodes, initial_disk_gb):
@@ -512,3 +529,121 @@ class FusionMiscTest(_FusionTestBase):
             "AV-137329 regression test passed: CP grew disk to "
             f"{final_disk_gb} GB before main volume usage became critical "
             f"(max observed {max_usage_seen}%)")
+
+    # ------------------------------------------------------------------ #
+    # Test 4: fusion accelerator lifecycle on IO2 disk storage             #
+    # ------------------------------------------------------------------ #
+
+    def test_fusion_accelerator_with_io2_storage(self):
+        """Fusion accelerator lifecycle validation on IO2-backed disk storage.
+
+        Scenario
+        --------
+        This class's setUp deploys a dedicated cluster whose data-service
+        disk uses IO2 storage instead of the usual GP3 (driven entirely by
+        the conf-file 'type=IO2' param — dedicatedbasetestcase.py reads
+        'type' before the test method runs, so the disk type cannot be
+        chosen here in code). Enable fusion, load num_items documents, then
+        trigger a horizontal scale-out rebalance — the only path that
+        brings up fusion accelerator EC2/EBS nodes, since loading data
+        alone never exercises them — and verify the whole accelerator
+        lifecycle behaves correctly on this less-common disk backend.
+
+        Assertions
+        ----------
+        1. The cluster's data-service disk actually came up as IO2 (sanity
+           check that the conf-driven deploy param took effect).
+        2. CP reaches "healthy" state after the scale-out rebalance (no
+           deployment_failed/rebalance_failed/scaleFailed).
+        3. Fusion state is still "enabled" after the rebalance.
+        4. Fusion accelerator instances that appeared during the rebalance
+           were killed again after it completed.
+        5. No CRITICAL errors surfaced in memcached logs post-rebalance.
+
+        Parameters
+        ----------
+        initial_kv_nodes (int, default 3)          — node count before
+                          scale-out; must match the conf-file 'kv_nodes'
+                          param used for the initial deploy
+        target_kv_nodes  (int, default 6)          — node count after the
+                          scale-out rebalance that triggers accelerators
+        num_items        (int, default 200_000_000) — load volume, well
+                          above fusion_threshold_gib so accelerators launch
+        """
+        initial_nodes = self.input.param("initial_kv_nodes", 3)
+        target_nodes = self.input.param("target_kv_nodes", 6)
+        num_items = self.input.param("num_items", 200_000_000)
+
+        self.PrintStep(
+            f"IO2 accelerator lifecycle: {initial_nodes}->{target_nodes} "
+            f"nodes, {num_items} docs")
+
+        # ── Phase 1: sanity-check the cluster actually deployed on IO2 ─── #
+        disk_type = self._get_cluster_disk_type("kv")
+        self.assertEqual(
+            (disk_type or "").upper(), "IO2",
+            f"Expected cluster to be deployed with IO2 disk storage, CP "
+            f"reports disk.type={disk_type!r} — check conf param 'type=IO2'")
+
+        # ── Phase 2: enable fusion ───────────────────────────────────── #
+        self.PrintStep("Enabling fusion on IO2-backed cluster")
+        self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
+        self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
+
+        # ── Phase 3: load num_items documents ───────────────────────── #
+        self.PrintStep(f"Loading {num_items} documents on IO2-backed cluster")
+        self._load_data(self.cluster, create_start=0, create_end=num_items)
+        self.sleep(120, "Allow initial S3 sync before triggering scale-out")
+
+        # ── Phase 4: trigger a horizontal scale-out rebalance ───────── #
+        # Scale-out is the path that brings up fusion accelerator nodes —
+        # loading data alone never exercises them.
+        self.PrintStep(
+            f"Triggering scale-out rebalance {initial_nodes}->{target_nodes} "
+            "nodes to exercise fusion accelerator lifecycle")
+        delta = target_nodes - self.num_nodes["data"]
+        scale_out_config = self.rebalance_config("data", delta)
+
+        scale_task = self.task.async_rebalance_capella(
+            self.pod, self.tenant, self.cluster,
+            scale_out_config, timeout=self.rebalance_timeout)
+
+        self.wait_for_rebalances([scale_task])
+
+        # ── Phase 5: assert CP reached healthy state ────────────────── #
+        final_state = CapellaAPI.get_cluster_state(
+            self.pod, self.tenant, self.cluster.id)
+        self.assertNotIn(
+            final_state, self._FAILED_STATES,
+            f"CP stuck in '{final_state}' after IO2 scale-out rebalance")
+        self.assertEqual(
+            final_state, "healthy",
+            f"Expected cluster state 'healthy' after IO2 scale-out rebalance, "
+            f"got '{final_state}'")
+
+        # ── Phase 6: assert fusion state is still enabled ───────────── #
+        fusion_status = CapellaAPI.get_fusion_status(
+            self.pod, self.tenant, self.cluster.id)
+        self.assertEqual(
+            fusion_status.get("state"), "enabled",
+            f"Fusion state drifted away from 'enabled' after IO2 scale-out "
+            f"rebalance: {fusion_status}")
+
+        # ── Phase 7: accelerator nodes appeared and were cleaned up ─── #
+        self.PrintStep(
+            "Verifying fusion accelerator nodes were killed after rebalance")
+        self.assertTrue(
+            self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(
+                self.cluster),
+            "Fusion accelerator nodes were not cleaned up after the IO2 "
+            "scale-out rebalance completed")
+
+        # ── Phase 8: no CRITICAL errors in memcached logs ───────────── #
+        self.assertFalse(
+            self.cp_monitor.scan_memcached_logs_for_errors(self.cluster),
+            "CRITICAL errors found in memcached logs after IO2 scale-out "
+            "rebalance")
+
+        self.log.info(
+            "IO2 accelerator lifecycle test passed: cluster healthy, fusion "
+            "enabled, accelerator nodes cleaned up, no CRITICAL errors")
