@@ -1097,7 +1097,7 @@ class DocHistoryRetention(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             scope=CbServer.default_scope, collection="c1",
             durability=self.durability_level, print_ops_rate=False,
-            iterations=420, skip_read_on_error=True,
+            iterations=420, skip_read_on_error=True, track_failures=False,
             load_using=self.load_docs_using)
         if target_scenario != CouchbaseError.STOP_MEMCACHED:
             while not load_task.completed:
