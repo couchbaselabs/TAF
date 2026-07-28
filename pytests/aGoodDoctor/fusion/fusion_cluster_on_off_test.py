@@ -963,7 +963,7 @@ class FusionClusterOnOffTest(_FusionTestBase):
 
         if verify_snapshots:
             snaps_ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
-                self.cluster, backup_id, num_guest_volumes)
+                self.cluster, backup_id, guest_volume_ids=guest_volumes_after_on)
             self.assertTrue(
                 snaps_ok,
                 f"Guest-volume EBS snapshot verification failed for backup "

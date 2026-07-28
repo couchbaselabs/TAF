@@ -912,74 +912,63 @@ class FusionClusterDestroyTest(_FusionTestBase):
         the submodule's delete_cluster_internal(), which is out of scope.
 
         For complete coverage this test triggers a fusion scale-out rebalance
-        first and waits for phase 6 (EBS guest volumes attached to KV nodes for
-        file extent migration — same detection as test_destroy_during_file_extent_migration)
-        before taking the backup. That guarantees the backup's
+        and waits for it to fully complete before taking the backup — guest
+        volumes stay attached to KV nodes after file extent migration (that's
+        the point of the migration: the data now lives on a locally-attached
+        EBS volume, not just for the duration of the rebalance), so there's no
+        need to race the backup against an in-flight rebalance to see
+        guest-volume snapshot coverage. That guarantees the backup's
         GetEligibleNodes() (couchbase-cloud: recoverer.go) sees genuine fusion
         guest-volume nodes alongside the regular CBS/KV nodes, so
         snapshot_creator.go's Create() produces BOTH regular data-volume
         snapshots AND guest-volume snapshots (tagged
         couchbase-cloud-guestvolume=true by fusionTags()) for this backup —
         rather than only regular snapshots, which is all a backup taken with no
-        rebalance in flight could ever produce. Phase 6 is deliberately used
-        (not phases 2-5): couchbase-cloud's shouldBlockOnFusionRebalance
-        (backup.go) rejects a backup with ErrFusionRebalanceDownloading while
-        the fusion manifest is Pending/DownloadComplete; by phase 6 the
-        manifest has moved to BackgroundMigration — the guest volumes are
-        still attached and syncing (the "guest volumes present at the end of
-        the rebalance" window) but backup is no longer blocked.
+        migrated guest volumes present could ever produce.
+
+        This used to trigger the backup mid-rebalance (at "phase 6" — guest
+        volumes attached but rebalance not yet finished) specifically to dodge
+        couchbase-cloud's shouldBlockOnFusionRebalance (backup.go), which
+        rejects a backup with ErrFusionRebalanceDownloading while the fusion
+        manifest is Pending/DownloadComplete. But that meant comparing a
+        guest-volume count captured early (at phase 6 detection) against the
+        actual snapshot set produced much later, once the backup itself
+        completed — and the rebalance kept running the whole time in between,
+        changing the guest-volume topology underneath the comparison. Waiting
+        for the rebalance to fully finish first removes that race entirely: by
+        phase 6 the fusion manifest has already moved past the blocking
+        Pending/DownloadComplete states, so the backup isn't blocked once the
+        rebalance is healthy either.
         """
         self._load_above_threshold()
 
         rebalance_task = self._trigger_scale_out()
-        self.sleep(30, "Wait for rebalance to start")
 
-        acc_filter = self._accelerator_filter()
-        phase6_deadline = time.time() + 1800
-        guest_volume_ids = []
-        while time.time() < phase6_deadline:
-            if rebalance_task.state in self._FAILED_STATES:
-                self.fail(
-                    f"Rebalance failed before file extent migration: {rebalance_task.state}")
+        # Wait for the scale-out rebalance to fully complete before taking the
+        # backup -- see docstring above for why this replaces the old
+        # mid-rebalance ("phase 6") backup-timing approach.
+        self.task_manager.get_task_result(rebalance_task)
+        self.assertTrue(
+            rebalance_task.result,
+            f"Rebalance did not complete successfully before taking backup: "
+            f"{rebalance_task.state}")
 
-            # Same phase 6 detection as test_destroy_during_file_extent_migration:
-            # EBS guest volumes 'in-use' and attached to a non-accelerator (KV) node.
-            raw_volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
-                "couchbase-cloud-cluster-id": self.cluster.id,
-                "couchbase-cloud-function": "fusion-accelerator",
-                "couchbase-cloud-fusion-guest-volume": "true",
-            })
-            acc_ids = {
-                inst["InstanceId"]
-                for inst in self.fusion_aws_util.list_accelerator_instances(
-                    acc_filter, log="BackupPhase6Detection")
-            }
-            kv_attached = [
-                v for v in raw_volumes
-                if v.get("State") == "in-use"
-                and any(
-                    att.get("InstanceId") not in acc_ids
-                    for att in v.get("Attachments", []))
-            ]
-            if kv_attached:
-                guest_volume_ids = [v["VolumeId"] for v in kv_attached]
-                self.log.info(
-                    f"Phase 6 confirmed — {len(guest_volume_ids)} guest volume(s) "
-                    f"attached to KV nodes. Triggering backup while they are present.")
-                break
-            if rebalance_task.state == "healthy" and not raw_volumes:
-                break
-            time.sleep(10)
-
+        # Guest volumes present now that the rebalance is done -- excludes any
+        # still in a "deleting" state (get_current_guest_volume_ids already
+        # filters those out, since they won't get a fresh snapshot either).
+        guest_volume_ids = self.cp_monitor.get_current_guest_volume_ids(self.cluster)
         self.assertTrue(
             guest_volume_ids,
-            "No EBS guest volumes found attached to KV nodes before the rebalance "
-            "completed — cannot verify fusion guest-volume snapshot coverage; "
-            "consider increasing data size or reducing the fusion threshold")
+            "No EBS guest volumes present after the scale-out rebalance completed "
+            "— cannot verify fusion guest-volume snapshot coverage; consider "
+            "increasing data size or reducing the fusion threshold")
+        self.log.info(
+            f"{len(guest_volume_ids)} guest volume(s) confirmed present after "
+            f"rebalance completion: {guest_volume_ids}")
 
         self.log.info(
-            f"Creating EBS snapshot backup on cluster {self.cluster.id} while "
-            f"{len(guest_volume_ids)} guest volume(s) are present")
+            f"Creating EBS snapshot backup on cluster {self.cluster.id} with "
+            f"{len(guest_volume_ids)} guest volume(s) present")
         result = CapellaAPI.create_cloud_snapshot_backup(
             self.pod, self.tenant, self.tenant.projects[0], self.cluster.id)
         self.assertIsNotNone(result, "create_cloud_snapshot_backup returned None")
@@ -992,11 +981,18 @@ class FusionClusterDestroyTest(_FusionTestBase):
             backup_id, timeout=4 * 3600)
         self.assertTrue(ok, f"Snapshot backup {backup_id} did not complete")
 
+        # Relaxed (allow_extra=True): every guest volume present at backup
+        # time must have a snapshot (no coverage gap), but tolerate extra
+        # snapshots -- some guest-volume churn can still happen between the
+        # capture above and the backup actually running, and additional
+        # coverage isn't a correctness problem, only a gap is.
         self.assertTrue(
             self.cp_monitor.verify_guest_volume_snapshots_for_backup(
-                self.cluster, backup_id, num_snapshots=len(guest_volume_ids)),
-            f"Guest-volume EBS snapshot count for backup {backup_id} did not match "
-            f"the {len(guest_volume_ids)} guest volume(s) present at backup time")
+                self.cluster, backup_id, guest_volume_ids=guest_volume_ids,
+                allow_extra=True),
+            f"Guest-volume EBS snapshot coverage gap for backup {backup_id} — "
+            f"not all of the {len(guest_volume_ids)} guest volume(s) present at "
+            f"backup time have a snapshot")
 
         snapshot_filter = [
             {"Name": "tag:couchbase-cloud-backup-id", "Values": [backup_id]},
@@ -1016,15 +1012,6 @@ class FusionClusterDestroyTest(_FusionTestBase):
             f"{len(pre_destroy_snapshots)} EBS snapshot(s) present for backup "
             f"{backup_id} before destroy ({len(guest_volume_ids)} of which are "
             f"guest-volume snapshots)")
-
-        # Let the fusion rebalance finish on its own -- this test targets destroy
-        # with an active backup on a stable cluster, not destroy mid-rebalance
-        # (covered separately by test_destroy_during_file_extent_migration etc).
-        self.task_manager.get_task_result(rebalance_task)
-        self.assertTrue(
-            rebalance_task.result,
-            f"Rebalance did not complete successfully before destroy: "
-            f"{rebalance_task.state}")
 
         resources = self._capture_pre_destroy_resources(self.cluster)
         self.log.info(

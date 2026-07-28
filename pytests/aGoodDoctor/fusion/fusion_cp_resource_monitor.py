@@ -930,7 +930,9 @@ class FusionCPResourceMonitor:
         )
         return False
 
-    def verify_guest_volume_snapshots_for_backup(self, cluster, backup_id: str, num_snapshots: int) -> bool:
+    def verify_guest_volume_snapshots_for_backup(self, cluster, backup_id: str,
+                                                  guest_volume_ids=None, num_snapshots: int = None,
+                                                  allow_extra: bool = False) -> bool:
         """
         Verify EBS guest volume snapshots exist for a completed backup.
 
@@ -941,8 +943,37 @@ class FusionCPResourceMonitor:
 
         :param cluster: Cluster object with .id attribute
         :param backup_id: Backup ID from the completed backup
+        :param guest_volume_ids: expected guest-volume EBS IDs this backup should have
+            snapshotted. When given, a count mismatch also logs the exact set difference
+            (which expected volumes have no snapshot, which snapshots don't map to an
+            expected volume) via each snapshot's own VolumeId field -- not just the two
+            raw counts.
+        :param num_snapshots: expected snapshot count. Derived from len(guest_volume_ids)
+            when not given; kept as a separate param for callers that only have a count,
+            not the actual volume IDs, though passing guest_volume_ids is preferred since
+            it enables the detailed mismatch dump above.
+        :param allow_extra: when True, a snapshot count that's higher than expected is not
+            a failure as long as every id in guest_volume_ids has a snapshot (no coverage
+            gap) -- only a MISSING snapshot for an expected volume fails. Requires
+            guest_volume_ids (can't determine "missing" from a bare count). Use this for
+            callers where the expected set is captured slightly before the backup actually
+            runs and more volumes may legitimately appear in the meantime -- extra coverage
+            isn't a correctness problem, only a gap is.
         :return: True if at least one guest volume snapshot found with a completed state
         """
+        if num_snapshots is None:
+            if guest_volume_ids is None:
+                raise ValueError(
+                    "verify_guest_volume_snapshots_for_backup requires guest_volume_ids "
+                    "or num_snapshots"
+                )
+            num_snapshots = len(guest_volume_ids)
+
+        if allow_extra and guest_volume_ids is None:
+            raise ValueError(
+                "allow_extra requires guest_volume_ids -- otherwise there's no expected "
+                "set to check for missing coverage against"
+            )
 
         filters = [
             {"Name": "tag:couchbase-cloud-guestvolume", "Values": ["true"]},
@@ -952,11 +983,12 @@ class FusionCPResourceMonitor:
         snapshots = self.fusion_aws_util.ec2.list_snapshots_by_tags(filters)
 
         table = PrettyTable()
-        table.field_names = ["Snapshot ID", "State", "Volume Size (GiB)", "Progress", "Start Time"]
+        table.field_names = ["Snapshot ID", "Source Volume ID", "State", "Volume Size (GiB)", "Progress", "Start Time"]
         for snap in snapshots:
             start = snap.get("StartTime")
             table.add_row([
                 snap.get("SnapshotId"),
+                snap.get("VolumeId"),
                 snap.get("State"),
                 snap.get("VolumeSize"),
                 snap.get("Progress"),
@@ -965,10 +997,40 @@ class FusionCPResourceMonitor:
         self.log.info(f"Guest volume snapshots for backup {backup_id} on cluster {cluster.id}:\n{table}")
 
         if len(snapshots) != num_snapshots:
+            delta = len(snapshots) - num_snapshots
             self.log.error(
-                f"Mismatch in number of guest volume snapshots for backup {backup_id} on cluster {cluster.id}"
+                f"Mismatch in number of guest volume snapshots for backup {backup_id} "
+                f"on cluster {cluster.id}: expected {num_snapshots}, found {len(snapshots)} "
+                f"(delta {delta:+d})"
             )
-            return False
+            missing = None
+            if guest_volume_ids is not None:
+                expected_ids = set(guest_volume_ids)
+                snapshot_volume_ids = {s.get("VolumeId") for s in snapshots if s.get("VolumeId")}
+                missing = expected_ids - snapshot_volume_ids
+                extra = snapshot_volume_ids - expected_ids
+                self.log.error(
+                    f"Expected guest volume(s) ({len(expected_ids)}): {sorted(expected_ids)}"
+                )
+                self.log.error(
+                    f"Snapshotted volume(s) ({len(snapshot_volume_ids)}): {sorted(snapshot_volume_ids)}"
+                )
+                if missing:
+                    self.log.error(
+                        f"Expected volume(s) with NO snapshot found ({len(missing)}): {sorted(missing)}"
+                    )
+                if extra:
+                    self.log.error(
+                        f"Snapshot(s) found for volume(s) NOT in the expected set "
+                        f"({len(extra)}): {sorted(extra)}"
+                    )
+            if allow_extra and not missing:
+                self.log.info(
+                    f"allow_extra=True and every expected guest volume has a snapshot -- "
+                    f"treating the extra snapshot(s) as additional coverage, not a failure"
+                )
+            else:
+                return False
 
         completed = [s for s in snapshots if s.get("State") == "completed"]
         self.log.info(

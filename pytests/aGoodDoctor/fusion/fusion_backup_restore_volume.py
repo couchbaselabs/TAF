@@ -447,7 +447,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     f"{tgt_label} {target_cluster.id}: {num_gvs} guest volumes attached: {gv_ids}"
                 )
                 snap_ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
-                    primary, backup_id, num_gvs
+                    primary, backup_id, guest_volume_ids=gv_ids
                 )
                 self.assertTrue(
                     snap_ok,
@@ -1097,7 +1097,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         guest-volume snapshot tags, and return the backup ID.
         """
         primary = self.primary_cluster
-        num_snapshots_expected = len(self.cp_monitor.get_current_guest_volume_ids(primary))
+        guest_volume_ids_expected = self.cp_monitor.get_current_guest_volume_ids(primary)
         self.PrintStep(f"Taking EBS snapshot backup on primary {primary.id}")
 
         # Stop the mutation workload for the duration of the backup so the
@@ -1106,7 +1106,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         backup_id = self._create_snapshot_backup(primary)
         if self.verify_snapshots:
             ok = self.cp_monitor.verify_guest_volume_snapshots_for_backup(
-                primary, backup_id, num_snapshots_expected
+                primary, backup_id, guest_volume_ids=guest_volume_ids_expected
             )
             self.assertTrue(
                 ok,
