@@ -43,11 +43,16 @@ class SystemEventLogs(ClusterSetup):
             for _ in range(size)
         )
 
-    def _wait_for_event(self, matcher, timeout_sec=30, events_count=200):
+    def _wait_for_event(self, matcher, timeout_sec=30, events_count=200,
+                        since_time=None):
+        # Events are returned oldest-first, so without since_time a stale
+        # match from before this wait (e.g. an earlier rebalance/test) can
+        # be returned instead of the one this caller just triggered.
         max_retry_time = time() + timeout_sec
         while time() < max_retry_time:
             events = self.event_rest_helper.get_events(
                 server=self.cluster.master,
+                since_time=since_time,
                 events_count=events_count)["events"]
             for event in events:
                 if matcher(event):
@@ -63,11 +68,17 @@ class SystemEventLogs(ClusterSetup):
         return node_name
 
     def _wait_for_service_events(self, node_ip, service_name,
-                                  crash_timeout=30, started_timeout=20):
+                                  crash_timeout=30, started_timeout=20,
+                                  since_time=None):
         """
         Wait for service crash and started events, add them to system_events.
         Returns tuple (crash_seen, started_seen) of observed events.
         """
+        def is_node_match(event_node):
+            # Own-node events can self-report as cb.local instead of the
+            # real IP, so accept either form.
+            return event_node in (node_ip, "cb.local", "ns_1@cb.local")
+
         crash_seen = self._wait_for_event(
             lambda event: (
                 event.get(Event.Fields.EVENT_ID) == NsServer.ServiceCrashed
@@ -75,7 +86,7 @@ class SystemEventLogs(ClusterSetup):
                 and event.get(Event.Fields.EXTRA_ATTRS, {}).get("name")
                 == service_name
             ),
-            timeout_sec=crash_timeout)
+            timeout_sec=crash_timeout, since_time=since_time)
 
         if crash_seen:
             self.system_events.add_event({
@@ -90,13 +101,18 @@ class SystemEventLogs(ClusterSetup):
             self.log.warning("ServiceCrashed event not observed for %s on %s",
                              service_name, node_ip)
 
+        # Filter by node too (not just service name), otherwise an
+        # unrelated/stale "started" event for the same service on a
+        # different node (e.g. from initial cluster setup) can match
+        # instead of this node's actual restart.
         started_seen = self._wait_for_event(
             lambda event: (
                 event.get(Event.Fields.EVENT_ID) == NsServer.ServiceStarted
                 and event.get(Event.Fields.EXTRA_ATTRS, {}).get("name")
                 == service_name
+                and is_node_match(event.get(Event.Fields.NODE_NAME))
             ),
-            timeout_sec=started_timeout)
+            timeout_sec=started_timeout, since_time=since_time)
 
         if started_seen:
             started_node = self._normalize_node_name(
@@ -111,11 +127,11 @@ class SystemEventLogs(ClusterSetup):
         return crash_seen, started_seen
 
     def _wait_for_rebalance_event(self, event_id, timeout_sec=30,
-                                   fail_on_missing=True):
+                                   fail_on_missing=True, since_time=None):
         """Wait for a rebalance event by event_id. Optionally fail if missing."""
         event = self._wait_for_event(
             lambda e: e.get(Event.Fields.EVENT_ID) == event_id,
-            timeout_sec=timeout_sec)
+            timeout_sec=timeout_sec, since_time=since_time)
         if not event and fail_on_missing:
             event_names = {
                 NsServer.RebalanceStarted: "RebalanceStarted",
@@ -951,13 +967,15 @@ class SystemEventLogs(ClusterSetup):
              CbServer.Services.EVENTING),
         ]
         for process_name, service_nodes, event_service_name in crash_matrix:
+            since_marker = EventHelper.get_timestamp_format(datetime.utcnow())
             node_ip = crash_process(process_name, service_nodes)
             if not node_ip:
                 continue
             started_timeout = 40 if event_service_name == "goxdcr" else 20
             self._wait_for_service_events(
                 node_ip, event_service_name,
-                crash_timeout=30, started_timeout=started_timeout)
+                crash_timeout=30, started_timeout=started_timeout,
+                since_time=since_marker)
         self.sleep(10, "Wait for service crash/start events to settle")
 
     def test_update_max_event_settings(self):
@@ -1266,6 +1284,7 @@ class SystemEventLogs(ClusterSetup):
         do_event_validation("hard failover")
 
         self.log.info("3/3 Testing auto-failover")
+        since_marker = EventHelper.get_timestamp_format(datetime.utcnow())
         shell = RemoteMachineShellConnection(target_node)
         cb_err = CouchbaseError(self.log,
                                 shell,
@@ -1274,10 +1293,19 @@ class SystemEventLogs(ClusterSetup):
         self.sleep(10, "Wait for auto_failover to trigger")
         cb_err.revert(CouchbaseError.STOP_MEMCACHED)
         shell.disconnect()
-        # Reason text can vary slightly across server builds; reuse cluster value.
-        last_auto_failover = self.get_last_event_from_cluster()
-        if last_auto_failover.get(Event.Fields.EVENT_ID) == NsServer.AutoFailoverStarted:
-            failover_reason = last_auto_failover.get(
+        # Reason text can vary slightly across server builds. get_last_event
+        # is racy right after revert (the actual auto-failover event may not
+        # have landed yet), so poll for the real event instead of trusting
+        # whatever happens to be last. since_time keeps this from matching a
+        # stale AutoFailoverStarted event from earlier in the job.
+        auto_failover_event = self._wait_for_event(
+            lambda event: (
+                event.get(Event.Fields.EVENT_ID) == NsServer.AutoFailoverStarted
+                and otp_node in event.get(Event.Fields.EXTRA_ATTRS, {})
+                                    .get("failover_reason", {})),
+            timeout_sec=auto_fo_threshold + 30, since_time=since_marker)
+        if auto_failover_event:
+            failover_reason = auto_failover_event.get(
                 Event.Fields.EXTRA_ATTRS, {}).get(
                     "failover_reason", {}).get(otp_node)
             if failover_reason:
@@ -1446,7 +1474,9 @@ class SystemEventLogs(ClusterSetup):
                     or len(self.cluster.nodes_in_cluster) < self.nodes_init)
 
         def bucket_events():
-            validation_retries = 15
+            # Event-log entries reach all nodes via gossip, same as the
+            # 120s budget test_kill_event_log_server gives that sync.
+            validation_retries = 60
             validation_retry_sleep_sec = 2
             event_helper = EventHelper()
             event_helper.set_test_start_time()
@@ -1644,7 +1674,12 @@ class SystemEventLogs(ClusterSetup):
                 bucket_threads.append(thread)
 
             for thread in bucket_threads:
-                thread.join(60)
+                # Wait for the full bucket lifecycle + event validation
+                # (including retries) to finish before starting the next
+                # loop. A short timeout here let iterations overlap and
+                # pile concurrent bucket ops onto the same cluster, adding
+                # the load that was slowing down event-log gossip sync.
+                thread.join()
 
             if test_failures:
                 self.fail(test_failures)
@@ -1834,10 +1869,17 @@ class SystemEventLogs(ClusterSetup):
         Refer MB-49631 for other valid fields
         """
         bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(
-            max_connections=2000)
-        bucket_helper.update_memcached_settings(
-            max_connections=2001)
+        # system_connections must stay below max_connections. Pin it well
+        # below our target values instead of relying on the server's
+        # current/default value, which may exceed 2000/2001 and make the
+        # update fail server-side without either call actually changing
+        # anything (MB-49631's max_connections default has moved over time).
+        if not bucket_helper.update_memcached_settings(
+                system_connections=1000, max_connections=2000):
+            self.fail("Failed to update memcached settings to max_connections=2000")
+        if not bucket_helper.update_memcached_settings(
+                system_connections=1000, max_connections=2001):
+            self.fail("Failed to update memcached settings to max_connections=2001")
         last_event = self.get_last_event_from_cluster()
         # Check and remove fields with dynamic values
         for field in [Event.Fields.UUID, Event.Fields.TIMESTAMP]:
@@ -1918,6 +1960,7 @@ class SystemEventLogs(ClusterSetup):
         self.log.critical("Memcached pid=%s" % p_id)
 
         if rebalance_failure:
+            since_marker = EventHelper.get_timestamp_format(datetime.utcnow())
             rebalance_task = self.task.async_rebalance(
                 self.cluster, to_add=[], to_remove=eject_nodes)
             self.system_events.add_event(
@@ -1927,19 +1970,23 @@ class SystemEventLogs(ClusterSetup):
                     delta_nodes=empty_list, failed_nodes=empty_list))
             self.sleep(5, "Wait for rebalance to start")
             cluster_event["reb_start"] = self._wait_for_rebalance_event(
-                NsServer.RebalanceStarted, timeout_sec=30)
+                NsServer.RebalanceStarted, timeout_sec=30,
+                since_time=since_marker)
 
+        kill_marker = EventHelper.get_timestamp_format(datetime.utcnow())
         shell.execute_command("kill -9 %s" % p_id)
         shell.disconnect()
 
         restarted_nodes = [node.ip]
         self._wait_for_service_events(
             node.ip, memcached_process,
-            crash_timeout=60, started_timeout=30)
+            crash_timeout=60, started_timeout=30,
+            since_time=kill_marker)
 
         if rebalance_failure:
             cluster_event["reb_failed"] = self._wait_for_rebalance_event(
-                NsServer.RebalanceFailure, timeout_sec=40)
+                NsServer.RebalanceFailure, timeout_sec=40,
+                since_time=since_marker)
 
         if rebalance_failure:
             self.task_manager.get_task_result(rebalance_task)
@@ -1958,11 +2005,13 @@ class SystemEventLogs(ClusterSetup):
                                             bucket.uuid))
 
         self.sleep(30, "Wait for bucket online before rebalancing")
+        since_marker = EventHelper.get_timestamp_format(datetime.utcnow())
         rebalance_task = self.task.async_rebalance(self.cluster, [], [])
         self.sleep(2, "Wait for rebalance to start")
         if not rebalance_failure:
             cluster_event["reb_start"] = self._wait_for_rebalance_event(
-                NsServer.RebalanceStarted, timeout_sec=30)
+                NsServer.RebalanceStarted, timeout_sec=30,
+                since_time=since_marker)
         self.task_manager.get_task_result(rebalance_task)
 
         self.system_events.add_event(
@@ -1976,7 +2025,8 @@ class SystemEventLogs(ClusterSetup):
                 keep_nodes=active_nodes, eject_nodes=empty_list,
                 delta_nodes=empty_list, failed_nodes=empty_list))
         cluster_event["reb_success"] = self._wait_for_rebalance_event(
-            NsServer.RebalanceComplete, timeout_sec=60)
+            NsServer.RebalanceComplete, timeout_sec=60,
+            since_time=since_marker)
 
         # Validate all cluster events before validating event specific fields
         self.__validate(self.system_events.test_start_time)
