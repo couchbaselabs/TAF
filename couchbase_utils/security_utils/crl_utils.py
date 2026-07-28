@@ -281,6 +281,12 @@ class CRLUtils:
         return crl.public_bytes(serialization.Encoding.PEM)
 
     @staticmethod
+    def pem_crl_to_der(pem_bytes):
+        """Convert a PEM-encoded CRL (as returned by build_crl) to DER bytes."""
+        crl = x509.load_pem_x509_crl(pem_bytes)
+        return crl.public_bytes(serialization.Encoding.DER)
+
+    @staticmethod
     def cert_to_pem(cert):
         return cert.public_bytes(serialization.Encoding.PEM)
 
