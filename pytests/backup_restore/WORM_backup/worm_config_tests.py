@@ -48,14 +48,16 @@ class WormConfigTest(WormBackupBase):
             self.backup_archive_dir, self.backup_repo_name,
             worm_period=self.worm_period_days,
             default_retention=max(1, self.worm_period_days - 1),
-            obj_staging_dir=self.obj_staging_dir_cbbackup)
+            obj_staging_dir=self.obj_staging_dir_cbbackup,
+            encrypted=self.ear_bk)
         self._assert_command_failure(
             output, error,
             expected_texts=["retention", "worm", "period", "conflict"])
 
         output, error = self.backup_mgr.create_repo(
             self.backup_archive_dir, self.backup_repo_name, worm_period=-1,
-            obj_staging_dir=self.obj_staging_dir_cbbackup)
+            obj_staging_dir=self.obj_staging_dir_cbbackup,
+            encrypted=self.ear_bk)
         self._assert_command_failure(
             output, error,
             expected_texts=["worm", "period", "invalid", "positive", "range"])

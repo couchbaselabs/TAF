@@ -1,6 +1,8 @@
 import time
 
 from BucketLib.bucket import Bucket
+from backup_restore.continuous_backup.encrypted_file_validator import (
+    aggregate_status, scan_remote_directory)
 from pytests.bucket_collections.collections_base import CollectionBase
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -24,6 +26,13 @@ class ContinuousBackupBase(CollectionBase):
         self.bucket = self.cluster.buckets[0]
         self.bucket_name = self.bucket.name
         self.shell = RemoteMachineShellConnection(self.cluster.master)
+
+        # Verify the on-disk encryption state of both backup locations matches
+        # what ear_bk / ear_contbk declared. CollectionBase.collection_setup()
+        # has already taken the initial cbbackupmgr backup and waited one
+        # continuous-backup interval by this point, so both locations have
+        # content to scan.
+        self._verify_backup_file_encryption_state()
 
     def tearDown(self):
 
@@ -110,3 +119,63 @@ class ContinuousBackupBase(CollectionBase):
         if not self.bucket_util.flush_bucket(self.cluster, restore_bucket_obj):
             self.fail(f"Flush of restore bucket '{restore_bucket_name}' failed")
         self._verify_doc_count(0, bucket_name=restore_bucket_name)
+
+    def _verify_backup_file_encryption_state(self):
+        """
+        Check that the files on disk under `backup_archive_dir` and
+        `continuous_backup_location` match what `ear_bk` and `ear_contbk`
+        declared. Fails the test on mismatch. Catches wiring regressions where
+        an ear_* flag silently fails to take effect (doc-count/content
+        assertions in tests would otherwise pass regardless).
+
+        NFS-only for now — the file-format validator's remote scan uses shell
+        commands (`find`, `head -c`) that don't reach into object-store URLs.
+        Object-store backends log a warning and skip.
+        """
+        if not (self.ear_bk or self.ear_contbk):
+            return
+        if self.cont_bkp_test != "NFS":
+            self.log.warning(
+                "_verify_backup_file_encryption_state: NFS is the only "
+                "backend supported for on-disk encryption checks today; "
+                "skipping. (cont_bkp_test=%s)" % self.cont_bkp_test)
+            return
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            self._check_location_encryption(
+                shell, self.backup_archive_dir,
+                expected_encrypted=self.ear_bk, flag_name="ear_bk")
+            self._check_location_encryption(
+                shell, self.continuous_backup_location,
+                expected_encrypted=self.ear_contbk,
+                flag_name="ear_contbk")
+        finally:
+            shell.disconnect()
+
+    def _check_location_encryption(self, shell, location, expected_encrypted,
+                                   flag_name):
+        """
+        Scan `location` on the given shell and assert its aggregate encryption
+        state matches `expected_encrypted`. When expected_encrypted is True,
+        we require at least one file to carry the Couchbase Encrypted magic
+        (partial or full — metadata files in a valid encrypted archive stay
+        plaintext, so "full" is not always achievable). When False, we
+        require zero encrypted files.
+        """
+        scan = scan_remote_directory(shell, location)
+        status = aggregate_status(scan)
+        self.log.info(
+            "_check_location_encryption: %s=%s, location=%s, "
+            "aggregate_status=%s, files_scanned=%d"
+            % (flag_name, expected_encrypted, location, status, len(scan)))
+        if expected_encrypted and status == "unencrypted":
+            self.fail(
+                "%s=True but no files under %s carry the Couchbase Encrypted "
+                "magic. The encryption flag did not take effect on this "
+                "surface." % (flag_name, location))
+        if not expected_encrypted and status != "unencrypted":
+            self.fail(
+                "%s=False but files under %s carry the Couchbase Encrypted "
+                "magic (state: %s). The unencrypted-side surface was "
+                "accidentally encrypted." % (flag_name, location, status))

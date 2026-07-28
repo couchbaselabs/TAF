@@ -325,7 +325,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         initial_item_count = self._get_total_docs()
         self.log.info("Creating backup repository")
         self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name,
-                                    obj_staging_dir=self.obj_staging_dir_cbbackup)
+                                    obj_staging_dir=self.obj_staging_dir_cbbackup,
+                                    encrypted=self.ear_bk)
         self.log.info("Performing initial backup")
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
@@ -364,7 +365,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         initial_item_count = self._get_total_docs()
         self.log.info("Creating backup repository")
         self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name,
-                                    obj_staging_dir=self.obj_staging_dir_cbbackup)
+                                    obj_staging_dir=self.obj_staging_dir_cbbackup,
+                                    encrypted=self.ear_bk)
         self.log.info("Performing initial backup")
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)

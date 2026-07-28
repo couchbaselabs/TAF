@@ -25,7 +25,8 @@ class WormEnvironmentTest(WormBackupBase):
         output, error = self.backup_mgr.create_repo(
             self.backup_archive_dir, self.backup_repo_name,
             worm_period=self.worm_period_days,
-            obj_staging_dir=self.obj_staging_dir_cbbackup)
+            obj_staging_dir=self.obj_staging_dir_cbbackup,
+            encrypted=self.encrypted)
         self._assert_command_failure(
             output, error,
             expected_texts=["enterprise", "community", "edition", "worm"])
