@@ -5700,10 +5700,14 @@ class CBOUtil(UDFUtil):
     collection_name str fully qualified name of the collection on which sample is to be created.
     sample_size str accepted values are low, medium and high
     sample_sed int can be a positive or negative integer
+    sample_method str accepted value is full-scan, used to request exact/full-scan
+    statistics instead of a random sample.
     """
 
     def create_sample_for_analytics_collections(
-            self, cluster, collection_name, sample_size=None, sample_seed=None, analytics=True):
+            self, cluster, collection_name, sample_size=None, sample_seed=None,
+            sample_method=None, analytics=True, validate_error_msg=False,
+            expected_error=None, expected_error_code=None):
 
         if analytics:
             cmd = "ANALYZE ANALYTICS COLLECTION %s" % collection_name
@@ -5714,6 +5718,8 @@ class CBOUtil(UDFUtil):
             params["sample-seed"] = sample_seed
         if sample_size is not None:
             params["sample"] = sample_size
+        if sample_method is not None:
+            params["sample-method"] = sample_method
         if params:
             params = json.dumps(params)
             cmd += " WITH {0}".format(params)
@@ -5721,7 +5727,11 @@ class CBOUtil(UDFUtil):
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, cmd)
+        if validate_error_msg:
+            return self.validate_error_and_warning_in_response(
+                status, errors, expected_error, expected_error_code)
         if status != "success":
+            self.log.error(str(errors))
             return False
         else:
             return True
@@ -5730,8 +5740,12 @@ class CBOUtil(UDFUtil):
     Method drops any existing sample created on collection specified.
     """
 
-    def drop_sample_for_analytics_collections(self, cluster, collection_name):
-        cmd = "ANALYZE ANALYTICS COLLECTION %s DROP STATISTICS;" % collection_name
+    def drop_sample_for_analytics_collections(self, cluster, collection_name,
+                                               analytics=True):
+        if analytics:
+            cmd = "ANALYZE ANALYTICS COLLECTION %s DROP STATISTICS;" % collection_name
+        else:
+            cmd = "ANALYZE COLLECTION %s DROP STATISTICS;" % collection_name
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, cmd)
@@ -5740,16 +5754,111 @@ class CBOUtil(UDFUtil):
         else:
             return True
 
-    def verify_sample_present_in_Metadata(self, cluster, dataset_name, dataverse_name=None):
-        query = "select count(*) from Metadata.`Index` where IsPrimary=false and IndexStructure=\"SAMPLE\" and DatasetName= \"%s\"" % dataset_name
+    def verify_sample_present_in_Metadata(self, cluster, dataset_name, dataverse_name=None,
+                                          sample_method=None, sample_size=None,
+                                          sample_seed=None):
+        """
+        Verifies a SAMPLE index row for dataset_name exists in
+        Metadata.`Index` and, when expected values are passed in, that
+        the row's SampleCardinalityTarget/SampleSeed columns actually
+        match them - a plain count(*) > 0 only proves *some* SAMPLE
+        index exists, not that ANALYZE honoured the requested
+        sample/sample-seed.
+        :param sample_size str/int, expected "sample" value: "low"
+            (1063), "medium" (4252), "high" (17008), or an int in
+            [1063, 68032]. Checked against SampleCardinalityTarget.
+        :param sample_method str, expected "sample-method" ("full-scan"
+            or "random"). Used to filter the Metadata query itself.
+        :param sample_seed number/str, expected "sample-seed". Checked
+            against SampleSeed (compared as strings, since it may be
+            passed as a number or a numeric string).
+        :return bool, True only if a matching SAMPLE index row is found
+            and every expected value provided actually matches.
+        """
+        query = "select i.* from Metadata.`Index` i where IsPrimary=false and IndexStructure=\"SAMPLE\" and DatasetName= \"%s\"" % dataset_name
+        if dataverse_name:
+            query += " and DataverseName=\"%s\"" % CBASHelper.metadata_format(dataverse_name)
+        if sample_method:
+            query += " and SampleMethod=\"%s\"" % sample_method
+        query += ";"
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, query)
+        if status != "success" or not results:
+            self.log.error("No SAMPLE index found in Metadata.Index for "
+                           "{0}: {1}".format(dataset_name, errors))
+            return False
+
+        row = results[0]
+        self.log.info("Found SAMPLE index row for {0}: {1}".format(dataset_name, row))
+
+        if sample_size is not None:
+            expected_target = {"low": 1063, "medium": 4252, "high": 17008}.get(
+                str(sample_size).lower())
+            if expected_target is None:
+                expected_target = int(sample_size)
+                if not (1063 <= expected_target <= 68032):
+                    self.log.error(
+                        "sample_size {0} is out of allowed range "
+                        "[1063, 68032]".format(expected_target))
+                    return False
+            if row.get("SampleCardinalityTarget") != expected_target:
+                self.log.error(
+                    "SampleCardinalityTarget mismatch for {0}: expected {1} "
+                    "(sample={2}), got {3}".format(
+                        dataset_name, expected_target, sample_size,
+                        row.get("SampleCardinalityTarget")))
+                return False
+
+        if sample_seed is not None:
+            if str(row.get("SampleSeed")) != str(sample_seed):
+                self.log.error(
+                    "SampleSeed mismatch for {0}: expected {1}, got {2}"
+                    .format(dataset_name, sample_seed, row.get("SampleSeed")))
+                return False
+
+        return True
+
+    def get_sample_index_metadata(self, cluster, dataset_name, dataverse_name=None):
+        """
+        Fetch the SAMPLE index row for dataset_name from Metadata.`Index`.
+        :param cluster
+        :param dataset_name str Name of the dataset/collection.
+        :param dataverse_name str Name of the dataverse.
+        :return dict, the SAMPLE index row, or None if not found/on failure.
+        """
+        query = "select i.* from Metadata.`Index` i where IsPrimary=false and IndexStructure=\"SAMPLE\" and DatasetName=\"%s\"" % dataset_name
         if dataverse_name:
             query += " and DataverseName=\"%s\"" % CBASHelper.metadata_format(dataverse_name)
         query += ";"
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, query)
-        if status == "success" and results[0]["$1"]:
-            return True
-        else:
-            return False
+        if status != "success" or not results:
+            self.log.error("Failed to fetch SAMPLE index metadata for {0}: {1}"
+                           .format(dataset_name, errors))
+            return None
+        return results[0]
+
+    def get_dump_index_count(self, cluster, dataset_name, index_name,
+                             dataverse_name="Default", where_clause=None):
+        """
+        Count rows in an index's DUMP_INDEX output, optionally filtered.
+        :param cluster
+        :param dataset_name str Name of the dataset/collection the index belongs to.
+        :param index_name str Name of the index to dump.
+        :param dataverse_name str Name of the dataverse.
+        :param where_clause str Optional filter applied to the dump output.
+        :return int, row count, or None on failure.
+        """
+        cmd = ("set `import-private-functions` `true`; "
+               "select count(*) from DUMP_INDEX(\"{0}\", \"{1}\", "
+               "\"{2}\") p".format(dataverse_name, dataset_name, index_name))
+        if where_clause:
+            cmd += " where {0}".format(where_clause)
+        cmd += ";"
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, cmd)
+        if status != "success":
+            self.log.error("DUMP_INDEX query failed for {0}: {1}".format(
+                dataset_name, errors))
+            return None
+        return results[0]["$1"]
 
 
 class CbasUtil(CBOUtil):

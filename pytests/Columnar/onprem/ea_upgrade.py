@@ -34,7 +34,8 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
     EA_BASE_URL_PATH = "builds/latestbuilds/enterprise-analytics"
     EA_VERSION_MAP = {
         "2.1": "phoenix",  # Map version to build path
-        "2.2": "lumina"
+        "2.2": "lumina",
+        "2.3": "helios"
     }
 
     # Enterprise Analytics service and paths
@@ -104,6 +105,11 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         self.spare_node = self.cluster.servers[self.nodes_init]
         # Track buckets created during upgrade for cleanup
         self.created_buckets = []  # List of (bucket_name, s3_obj) tuples
+        # Standalone collection used to validate that ANALYZE COLLECTION
+        # sample statistics survive the upgrade. Populated by
+        # _create_ea_upgrade_infra().
+        self.analyze_collection_name = None
+        self.analyze_collection_full_name = None
 
     def tearDown(self):
         self.log_setup_status(
@@ -1002,6 +1008,138 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
                     label, expected_version))
         return all_match
 
+    def _create_ea_upgrade_infra(self):
+        """
+        Creates (via a columnar spec) a standalone collection and an S3
+        external link to self.s3_source_bucket, used to verify ANALYZE
+        COLLECTION (and its SAMPLE statistics) across the upgrade.
+        Data is loaded separately via COPY INTO (see
+        _copy_into_analyze_collection), not by direct upsert.
+        """
+        # Fail fast with a clear message instead of silently creating an
+        # S3 link with blank credentials, which later manifests as a
+        # confusing "COPY INTO succeeded but ingested 0 docs" symptom
+        # (0 matched files from a broken/anonymous link is not an error).
+        if not self.aws_access_key or not self.aws_secret_key:
+            self.fail(
+                "AWS credentials not found (AWS_ACCESS_KEY_ID / "
+                "AWS_SECRET_ACCESS_KEY env vars are empty/unset) - "
+                "required to create the S3 external link used to load "
+                "ANALYZE COLLECTION test data from {}".format(
+                    self.s3_source_bucket))
+
+        self.log.info("Creating standalone collection for ANALYZE COLLECTION")
+        self.input.test_params["num_external_links"] = "1"
+        columnar_spec = self.populate_columnar_infra_spec(
+            columnar_spec=self.cbas_util.get_columnar_spec("full_template"))
+        columnar_spec["standalone_dataset"]["num_of_standalone_coll"] = 1
+        columnar_spec["standalone_dataset"]["primary_key"] = [
+            {"id": "string", "product_name": "string"}]
+
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            cluster=self.cluster, cbas_spec=columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False)
+        if not result:
+            self.fail(msg)
+
+        standalone_collection = self.cbas_util.get_all_dataset_objs("standalone")[
+            0]
+        self.analyze_collection_name = standalone_collection.name
+        self.analyze_collection_full_name = standalone_collection.full_name
+
+        # S3 external link created above via the spec, used by COPY INTO
+        # to load/upsert sample data from self.s3_source_bucket into the
+        # standalone collection created above.
+        external_link = self.cbas_util.get_all_link_objs("s3")[0]
+        self.analyze_collection_link_name = external_link.full_name
+
+    def _copy_into_analyze_collection(self, path):
+        """
+        Runs COPY INTO command
+        """
+        cmd = self.cbas_util.generate_copy_from_cmd(
+            self.analyze_collection_name, self.s3_source_bucket,
+            self.analyze_collection_link_name, "Default", "Default",
+            files_to_include=["*/file_1.json"], file_format="json",
+            path_on_aws_bucket=(path))
+        self.log.info(
+            "Running COPY INTO on {} from S3 bucket {} via link {}: "
+            "{}".format(
+                self.analyze_collection_full_name, self.s3_source_bucket,
+                self.analyze_collection_link_name, cmd))
+        status, metrics, errors, results, _, warnings = \
+            self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, cmd, timeout=1200, analytics_timeout=1200)
+        if warnings:
+            self.log.warn("COPY INTO warnings for {}: {}".format(
+                self.analyze_collection_full_name, warnings))
+        if status != "success":
+            self.fail("COPY INTO failed for {}: {}".format(
+                self.analyze_collection_full_name, errors))
+
+        doc_count = self.cbas_util.get_num_items_in_cbas_dataset(
+            self.cluster, self.analyze_collection_full_name,
+            timeout=300, analytics_timeout=300)
+        self.log.info("{} now has {} docs after COPY INTO".format(
+            self.analyze_collection_full_name, doc_count))
+        if doc_count == 0:
+            self.fail(
+                "COPY INTO on {} ingested 0 docs even though the "
+                "statement reported success (0 matched files is not an "
+                "error). Check: (1) AWS credentials - aws_access_key is "
+                "{}, aws_secret_key is {} (empty/None means "
+                "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are not set in "
+                "this environment); (2) whether PATH "
+                "'level_1_folder_1/level_2_folder_1/level_3_folder_1' + "
+                "include '*/file_1.json' still matches a file in S3 "
+                "bucket {}. Warnings: {}".format(
+                    self.analyze_collection_full_name,
+                    "set" if self.aws_access_key else "empty/None",
+                    "set" if self.aws_secret_key else "empty/None",
+                    self.s3_source_bucket, warnings))
+
+    def _run_analyze_collection(self, sample_size="high", sample_seed=1000,
+                                sample_method=None):
+        """
+        Runs ANALYZE COLLECTION on self.analyze_collection_full_name with
+        the given sample settings.
+        """
+        self.log.info(
+            "Running ANALYZE COLLECTION (sample={}, sample_method={}, "
+            "sample_seed={}) on {}".format(
+                sample_size, sample_method, sample_seed,
+                self.analyze_collection_full_name))
+        if not self.cbas_util.create_sample_for_analytics_collections(
+                self.cluster, self.analyze_collection_full_name,
+                sample_size=sample_size, sample_seed=sample_seed,
+                sample_method=sample_method, analytics=False):
+            self.fail("ANALYZE COLLECTION failed for {}".format(
+                self.analyze_collection_full_name))
+
+    def _verify_sample_metadata_index(self, sample_size="high", sample_seed=1000,
+                                      sample_method=None):
+        """
+        Verifies the SAMPLE statistics for self.analyze_collection_name
+        are present in Metadata.Index and match the given expected
+        sample settings.
+        """
+        self.log.info(
+            "Verifying SAMPLE statistics (sample={}, sample_method={}, "
+            "sample_seed={}) are present in Metadata.Index for {}".format(
+                sample_size, sample_method, sample_seed,
+                self.analyze_collection_name))
+        if not self.cbas_util.verify_sample_present_in_Metadata(
+                self.cluster, self.analyze_collection_name, "Default",
+                sample_method=sample_method, sample_size=sample_size,
+                sample_seed=sample_seed):
+            self.fail(
+                "SAMPLE statistics not found/mismatched in Metadata.Index "
+                "for {} (sample={}, sample_method={}, sample_seed={})".format(
+                    self.analyze_collection_name, sample_size, sample_method,
+                    sample_seed))
+        self.log.info("SAMPLE statistics verified in Metadata.Index for {}"
+                      .format(self.analyze_collection_name))
+
     def _upgrade_and_prepare_node(self, node):
         shell = RemoteMachineShellConnection(node)
         try:
@@ -1093,6 +1231,18 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
         self._validate_prod_compat_version(
             pre_upgrade_version_base, label="Pre-upgrade")
 
+        # Create infra
+        self._create_ea_upgrade_infra()
+
+        # Run COPY INTO to insert data (~10k docs) before upgrade
+        self._copy_into_analyze_collection(
+            path="level_1_folder_1/level_2_folder_1/level_3_folder_1")
+
+        # Run ANALYZE COLLECTION before upgrade
+        self._run_analyze_collection(sample_size="high", sample_seed=1000)
+        self._verify_sample_metadata_index(
+            sample_size="high", sample_seed=1000)
+
         nodes_to_upgrade = list(self.cluster.nodes_in_cluster)
         spare_node = self.spare_node
         iteration = 1
@@ -1168,6 +1318,40 @@ class EnterpriseAnalyticsUpgrade(ColumnarOnPremBase):
             prod_compat_valid,
             "prodCompatVersion validation failed: one or more nodes are not "
             "reporting prodCompatVersion={}".format(post_upgrade_version))
+
+        # Verify pre-upgrade SAMPLE statistics survived the upgrade
+        self._verify_sample_metadata_index(
+            sample_size="high", sample_seed=1000)
+
+        # Trigger FLUSH
+        maxRetry = 3
+        retry = 0
+        while (retry < maxRetry):
+            try:
+                # Run COPY INTO to upsert data (~10k docs) post-upgrade,
+                # before re-running ANALYZE COLLECTION, so the re-analyze
+                # has fresh data
+                self.log.info(
+                    "Running COPY INTO to upsert data post-upgrade (retry {}/{})".format(retry + 1, maxRetry))
+                self._copy_into_analyze_collection(path="level_1_folder_1")
+
+                # Re-run ANALYZE COLLECTION post-upgrade with
+                # sample-method=random and verify it took effect
+                self._run_analyze_collection(sample_size="high", sample_seed=1000,
+                                             sample_method="random")
+                self._verify_sample_metadata_index(sample_size="high", sample_seed=1000,
+                                                   sample_method="random")
+                break
+            except Exception as e:
+                retry += 1
+                if retry >= maxRetry:
+                    self.fail(
+                        "COPY INTO/ANALYZE COLLECTION/verify failed after "
+                        "{} attempts: {}".format(maxRetry, e))
+                self.log.warn(
+                    "COPY INTO/ANALYZE COLLECTION/verify failed on "
+                    "attempt {}/{}: {} - retrying".format(
+                        retry, maxRetry, e))
 
         self.log.info("=" * 60)
         self.log.info("Swap rebalance upgrade test completed successfully")
