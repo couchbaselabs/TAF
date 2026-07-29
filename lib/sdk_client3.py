@@ -26,7 +26,7 @@ from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
 from sdk_utils.sdk_options import SDKOptions
 
-from couchbase.auth import PasswordAuthenticator
+from couchbase.auth import CertificateAuthenticator, PasswordAuthenticator
 from couchbase.cluster import Cluster
 from couchbase.options import (ClusterOptions, ClusterTimeoutOptions,
                                QueryOptions, WaitUntilReadyOptions,
@@ -260,7 +260,7 @@ class SDKClient(object):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  username=None, password=None,
-                 compression_settings=None, cert_path=None,
+                 compression_settings=None, cert_path=None, key_path=None,
                  transaction_config=None):
         """
         :param framework_cb_cluster_obj: Cluster object holding sdk_env var
@@ -279,7 +279,10 @@ class SDKClient(object):
                                       "minRatio": Double int (None to default),
                                       "minSize": int (None to default)
                                      }
-        :param cert_path: Path of certificate file to establish connection
+        :param cert_path: Path of client certificate file for mTLS auth.
+                          When passed together with key_path, connects via
+                          CertificateAuthenticator instead of username/password.
+        :param key_path: Path of the client certificate's private key file
         """
         # Following params will be passed to create_conn() and
         # no need of them post connection. So having these as local variables
@@ -301,6 +304,7 @@ class SDKClient(object):
         self.collection = None
         self.compression = compression_settings
         self.cert_path = cert_path
+        self.key_path = key_path
         self.log = logger.get("test")
         self.transaction_conf = transaction_config
         if self.bucket is not None:
@@ -332,7 +336,11 @@ class SDKClient(object):
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
-        auth = PasswordAuthenticator(self.username, self.password)
+        if self.cert_path and self.key_path:
+            auth = CertificateAuthenticator(cert_path=self.cert_path,
+                                             key_path=self.key_path)
+        else:
+            auth = PasswordAuthenticator(self.username, self.password)
         timeout_opts = ClusterTimeoutOptions(
             kv_timeout=timedelta(seconds=10),
             analytics_timeout=timedelta(seconds=1200),
