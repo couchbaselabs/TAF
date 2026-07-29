@@ -121,7 +121,9 @@ class CollectorTests(LighthouseBase):
         No upper bound is documented so large-value testing is out of scope.
 
         Invalid cases: zero and negative values for reportIntervalHours and
-        reportTimeoutSeconds, which ns_server enforces as positive integers.
+        reportTimeoutSeconds, which ns_server enforces as positive integers,
+        plus a non-boolean value for 'enabled' (the only boolean-typed field
+        in the collector config) to confirm type validation is enforced.
         externalNodesMaxPayloadBytes and externalNodesMaxCount have no
         documented lower bound so they are not included in invalid cases.
 
@@ -164,6 +166,10 @@ class CollectorTests(LighthouseBase):
             {
                 'label': 'zero_report_timeout',
                 'params': {'report_timeout_seconds': 0},
+            },
+            {
+                'label': 'non_boolean_enabled',
+                'params': {'enabled': 'notabool'},
             },
         ]
 
