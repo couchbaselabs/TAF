@@ -260,8 +260,15 @@ class SharedArchiveBaseTest(ProvisionedBaseTestCase):
             os.makedirs(staging_dir)
 
         # ---- Auto-detect region if not explicitly set ----
+        # Provider-specific fallbacks when detection returns nothing:
+        #   aws → us-east-1  (S3 default region)
+        #   gcp → us          (GCS multi-region, matches Jenkins testrunner_gcp setup)
+        #   azure → no region flag used
+        _region_fallback = {"aws": "us-east-1", "gcp": "us"}.get(
+            self.cloud_provider, ""
+        )
         if not self.obj_region:
-            self.obj_region = self._detect_region() or "us-east-1"
+            self.obj_region = self._detect_region() or _region_fallback
         else:
             detected = self._detect_region()
             if detected and detected != self.obj_region:
@@ -708,7 +715,21 @@ class SharedArchiveBaseTest(ProvisionedBaseTestCase):
         """Execute cbbackupmgr backup. Returns (stdout, stderr, returncode)."""
         self.log.info("[%s] Taking backup from %s", label, cluster.srv)
         args = self._build_backup_args(cluster, staging_dir, full_backup=full_backup)
-        return self._run_cbbackupmgr(args, label=label)
+        stdout, stderr, rc = self._run_cbbackupmgr(args, label=label)
+        if rc != 0:
+            # A transient GCS error can leave a stale lock.lk in the staging
+            # dir, preventing any further backup operations on that archive.
+            # Detect it, remove it, and retry once to recover automatically.
+            _archive_rel = self.archive.split("//", 1)[-1].split("/", 1)[-1]
+            _lockfile = os.path.join(staging_dir, _archive_rel, "lock.lk")
+            if os.path.exists(_lockfile):
+                self.log.warning(
+                    "[%s] Stale lockfile found at %s — removing and retrying once",
+                    label, _lockfile,
+                )
+                os.remove(_lockfile)
+                stdout, stderr, rc = self._run_cbbackupmgr(args, label=label)
+        return stdout, stderr, rc
 
     def _build_restore_args(self, cluster, start_ts, end_ts, staging_dir,
                             resume=False):
