@@ -2,8 +2,13 @@
 """
 Portal Session Tests
 Validates the UCP portal session lifecycle (login, logout
-invalidation, session-ID rotation) and admin self-protection
-rules (an admin cannot disable, demote or delete their own account).
+invalidation, session-ID rotation) and admin protection rules: an
+admin cannot disable, demote or delete their own account, and (added
+2026-07-29, confirmed live) a DIFFERENT system_admin is likewise
+rejected when targeting the bootstrap ("break-glass") admin -- the
+portal protects that specific account rather than checking "is this
+the caller's own record?", which is the mechanism guaranteeing the
+system can never be left with zero enabled system_admin users.
 
 Inherits from LighthouseBase for cluster/test infrastructure.
 
@@ -21,8 +26,10 @@ from lighthouse.ucp_helper_methods import (
     set_session_cookie,
     extract_session_id,
     get_user_with_etag,
+    open_local_user_session,
+    safe_delete_user,
 )
-from unified_control_plane.constants import ROLE_SYSTEM_VIEWER
+from unified_control_plane.constants import ROLE_SYSTEM_VIEWER, ROLE_SYSTEM_ADMIN
 
 
 class CollectorConfigTests(LighthouseBase):
@@ -324,4 +331,104 @@ class CollectorConfigTests(LighthouseBase):
                 "PASS -- self-delete rejected with %s, account intact"
                 % response.status_code)
         finally:
+            self.ucp_client.session_logout()
+
+    def test_third_party_admin_cannot_modify_break_glass_admin(self):
+        """
+        The self-protection tests above (82/83/84) all act on the admin's
+        OWN account. This confirms the same protection extends past "self":
+        a DIFFERENT system_admin -- one who is not being asked to touch its
+        own account -- is still rejected when it targets the bootstrap
+        ("break-glass") admin, which the portal recognises as a specific,
+        always-protected account rather than checking "is this the caller's
+        own record?". Confirmed live 2026-07-29: both role-demotion and
+        deletion of the break-glass admin by a third-party admin return 409
+        Conflict ("Cannot modify or delete the break-glass admin user"),
+        exactly like the self-protection cases -- this is the mechanism that
+        guarantees the system can never be left with zero enabled
+        system_admin users.
+
+        Steps:
+        1. Provision a second, temporary system_admin user (not the
+           break-glass admin) and log in as it.
+        2. As that third-party admin, attempt to demote the break-glass
+           admin's role to system_viewer -> assert 409.
+        3. As the same third-party admin, attempt to delete the break-glass
+           admin -> assert 409.
+        4. Assert the break-glass admin's roles are unchanged throughout.
+        """
+        third_party_id = self.input.param(
+            "third_party_admin_id", "lh_third_party_admin@example.com")
+        temp_password = self.input.param(
+            "third_party_admin_temp_password", "TempAdmin3P#2026xyz")
+        final_password = self.input.param(
+            "third_party_admin_password", "Admin3P#2026xyz")
+        break_glass_id = self.ucp_portal.username
+        third_party_client = None
+        try:
+            self._login_as_admin()
+            safe_delete_user(self.ucp_client, third_party_id)
+            original_user, _ = get_user_with_etag(
+                self.ucp_client, break_glass_id)
+            self.assertIsNotNone(
+                original_user,
+                "Could not fetch break-glass admin's own record")
+            original_roles = original_user.get('roles')
+
+            third_party_client, err = open_local_user_session(
+                self.ucp_portal, self.ucp_client, third_party_id,
+                temp_password, final_password, [ROLE_SYSTEM_ADMIN])
+            self.assertIsNone(
+                err, "Could not provision third-party system_admin: %s" % err)
+
+            break_glass_user, break_glass_etag = get_user_with_etag(
+                third_party_client, break_glass_id)
+            self.assertIsNotNone(
+                break_glass_etag,
+                "Third-party admin could not fetch break-glass admin's ETag")
+
+            status, content, header = third_party_client.update_user(
+                break_glass_id, break_glass_etag,
+                roles=[ROLE_SYSTEM_VIEWER])
+            response = UCPResponse(status, content, header)
+            self.assertFalse(
+                status,
+                "Third-party demotion of break-glass admin unexpectedly "
+                "succeeded (HTTP %s): %s" % (response.status_code, content))
+            self.assertEqual(
+                response.status_code, 409,
+                "Third-party demotion of break-glass admin: expected HTTP "
+                "409, got %s: %s" % (response.status_code, content))
+
+            status, content, header = third_party_client.delete_user(
+                break_glass_id)
+            response = UCPResponse(status, content, header)
+            self.assertFalse(
+                status,
+                "Third-party deletion of break-glass admin unexpectedly "
+                "succeeded (HTTP %s): %s" % (response.status_code, content))
+            self.assertEqual(
+                response.status_code, 409,
+                "Third-party deletion of break-glass admin: expected HTTP "
+                "409, got %s: %s" % (response.status_code, content))
+
+            current_user, _ = get_user_with_etag(
+                self.ucp_client, break_glass_id)
+            self.assertEqual(
+                current_user.get('roles'), original_roles,
+                "Break-glass admin roles changed despite rejected "
+                "third-party operations: %r -> %r"
+                % (original_roles, current_user.get('roles')))
+            self.log.info(
+                "PASS -- third-party admin blocked from modifying/deleting "
+                "the break-glass admin (409), roles unchanged")
+        finally:
+            if third_party_client is not None:
+                try:
+                    if get_session_cookie(third_party_client):
+                        third_party_client.session_logout()
+                except Exception as e:
+                    self.log.warning(
+                        "Logout of third-party admin session failed: %s" % e)
+            safe_delete_user(self.ucp_client, third_party_id)
             self.ucp_client.session_logout()
