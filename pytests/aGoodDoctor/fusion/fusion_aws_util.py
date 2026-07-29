@@ -7,7 +7,7 @@ like instance discovery, accelerator management, and error scanning.
 """
 
 from .awslib.ec2_lib import EC2Lib
-from .awslib.fis_lib import FISLib
+from .awslib.fis_lib import FISLib, iso8601_duration_to_seconds
 from .awslib.iam_lib import IAMLib
 from .awslib.s3_lib import S3Lib
 from .awslib.secrets_manager_lib import SecretsManagerLib
@@ -599,43 +599,57 @@ class FusionAWSUtil:
             result[name] = self.fis.get_asg_capacity_failure_count(name, since_time)
         return result
 
-    def wait_for_min_capacity_failures_per_asg(
+    def wait_for_fis_experiment_to_finish(
         self,
         cluster_id: str,
-        min_failures: int,
+        fis_experiment_id: str,
         since_time: datetime.datetime,
-        timeout: int = 300,
-        poll_interval: int = 5,
+        duration: str,
+        poll_interval: int = 30,
+        timeout_buffer: int = 300,
     ) -> dict:
         """
-        Block until every fusion ASG in the cluster has seen at least
-        `min_failures` InsufficientInstanceCapacity failures since `since_time`.
+        Observe per-ASG InsufficientInstanceCapacity failure counts for the
+        life of the FIS experiment, without stopping it early. Returns once
+        FIS itself reaches a terminal state (completed/stopped/failed) — i.e.
+        once the experiment's own `duration` has elapsed — rather than as
+        soon as some minimum failure count is observed.
 
-        Returns the final failure-count mapping when the condition is met.
+        This lets AWS's FIS experiment lifecycle (not the test) decide when
+        the fault lifts and ASGs are free to launch instances; the caller is
+        expected to assert on the returned counts that failures actually
+        occurred.
 
         :param cluster_id: Cluster identifier
-        :param min_failures: Minimum failures required per ASG
+        :param fis_experiment_id: The running FIS experiment id to track
         :param since_time: Count failures after this UTC-aware datetime
-        :param timeout: Maximum wait time in seconds
+        :param duration: The experiment's configured ISO 8601 duration —
+                         used only to size the safety-net timeout below
         :param poll_interval: Seconds between polls
-        :return: Dict of asg_name → failure count
-        :raises TimeoutError: If the condition isn't met within timeout
+        :param timeout_buffer: Extra seconds allowed beyond `duration` before
+                               giving up, in case FIS is slow to transition
+        :return: Final per-ASG failure-count mapping
+        :raises TimeoutError: If FIS doesn't reach a terminal state in time
         """
-        deadline = time.time() + timeout
+        deadline = time.time() + iso8601_duration_to_seconds(duration) + timeout_buffer
+        counts = {}
         while time.time() < deadline:
+            status = self.fis.get_experiment_status(fis_experiment_id)["status"]
             counts = self.count_capacity_failures_per_asg(cluster_id, since_time)
-            if counts and all(v >= min_failures for v in counts.values()):
+            self.log.info(
+                f"FIS experiment {fis_experiment_id} status={status}, "
+                f"capacity failure counts: {counts}"
+            )
+            if status.lower() in ("completed", "stopped", "failed"):
                 self.log.info(
-                    f"All {len(counts)} ASGs reached {min_failures} capacity failures: {counts}"
+                    f"FIS experiment {fis_experiment_id} reached terminal state '{status}'"
                 )
                 return counts
-            self.log.info(
-                f"Waiting for {min_failures} failures per ASG: {counts}"
-            )
             time.sleep(poll_interval)
         raise TimeoutError(
-            f"ASGs for cluster {cluster_id} did not reach {min_failures} capacity failures "
-            f"within {timeout}s"
+            f"FIS experiment {fis_experiment_id} for cluster {cluster_id} did not reach a "
+            f"terminal state within duration={duration}+{timeout_buffer}s; "
+            f"last observed failure counts: {counts}"
         )
 
     def get_instance_type_per_asg(self, cluster_id: str) -> dict:

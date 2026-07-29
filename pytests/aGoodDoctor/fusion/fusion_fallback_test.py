@@ -40,6 +40,7 @@ from .fusion_aws_util import FusionAWSUtil
 from .fusion_monitor_util import FusionMonitorUtil
 from .fusion_cp_resource_monitor import FusionCPResourceMonitor
 from .fusion_test_base import _FusionTestBase
+from .awslib.fis_lib import iso8601_duration_to_seconds
 
 
 # Priority-ordered instance types mirroring unifiedInstanceTypes in
@@ -192,6 +193,16 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
         :param assert_x86: If True, additionally assert the launched type is x86
         :param duration: ISO 8601 duration to keep the FIS experiment running
         """
+        # Validate the duration up front — AWS rejects a bare 'H10M' style
+        # value (missing the 'PT' time designator) only once CreateExperimentTemplate
+        # runs, by which point ASG launch has already been suspended. Fail fast instead.
+        try:
+            iso8601_duration_to_seconds(duration)
+        except ValueError:
+            self.fail(
+                f"Invalid fis_duration {duration!r}: must be an ISO 8601 time "
+                f"duration with the 'PT' designator, e.g. 'PT15M', 'PT1H10M'"
+            )
 
         # self.PrintStep(f"Loading data for fusion rebalance on cluster {cluster.id}")
         # self.generate_docs(cluster, num_items=5_000_000, doc_size=1024)
@@ -261,24 +272,32 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
             self.fusion_aws_util.resume_asg_launch_process(suspended_asg_names)
             suspended_asg_names = []  # mark consumed so finally doesn't re-resume
 
-            # Wait until each ASG has attempted (and failed) n_to_fail instance types
+            # Let FIS run its full configured duration rather than stopping it
+            # early — keep observing capacity failures as they occur and return
+            # once FIS itself reaches a terminal state. The fault lifts
+            # naturally when FIS ends, and the next launch attempt for each
+            # ASG will use the first type in the override list that isn't
+            # blocked (type N+1+).
             self.PrintStep(
-                f"Waiting for {n_to_fail} capacity failures per ASG before stopping FIS"
+                f"Observing capacity failures until FIS experiment "
+                f"{fis_experiment_id} completes (duration={duration})"
             )
-            failure_counts = self.fusion_aws_util.wait_for_min_capacity_failures_per_asg(
+            failure_counts = self.fusion_aws_util.wait_for_fis_experiment_to_finish(
                 cluster_id=cluster.id,
-                min_failures=n_to_fail,
+                fis_experiment_id=fis_experiment_id,
                 since_time=experiment_start,
-                timeout=1200,
-                poll_interval=5,
+                duration=duration,
             )
             self.log.info(f"Capacity failure counts per ASG: {failure_counts}")
+            fis_experiment_id = None  # FIS reached a terminal state on its own; nothing to stop
 
-            # Stop FIS — the next launch attempt for each ASG will use the first
-            # type in the override list that isn't blocked (type N+1+)
-            self.log.info(f"Stopping FIS experiment {fis_experiment_id}")
-            self.fusion_aws_util.fis.stop_experiment(fis_experiment_id)
-            fis_experiment_id = None  # mark consumed so finally doesn't re-stop it
+            # Ensure the fault actually caused failures before trusting the
+            # subsequent fallback-launch assertions below
+            self.assertTrue(
+                failure_counts and all(v > 0 for v in failure_counts.values()),
+                f"Expected at least one capacity failure per ASG while FIS was "
+                f"active, got: {failure_counts}"
+            )
 
             # Wait for all ASG instances to reach InService
             self.PrintStep("Waiting for all ASG instances to become InService")

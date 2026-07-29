@@ -24,11 +24,28 @@ Usage Example:
 
 import time
 import datetime
+import re
 import boto3
 from botocore.exceptions import ClientError
 from typing import List, Dict, Optional, Any
 import logging
 import json
+
+
+def iso8601_duration_to_seconds(duration: str) -> int:
+    """
+    Convert an ISO 8601 time-duration string (the subset FIS actions accept,
+    e.g. 'PT15M', 'PT1H30M', 'PT45S') to whole seconds.
+
+    :param duration: ISO 8601 duration, e.g. 'PT15M'
+    :return: Total seconds
+    :raises ValueError: If the string isn't a valid PT#H#M#S duration
+    """
+    match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
+    if not match or not any(match.groups()):
+        raise ValueError(f"Not a valid ISO 8601 time duration: {duration!r}")
+    hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
+    return hours * 3600 + minutes * 60 + seconds
 
 
 class FISLib:
@@ -267,7 +284,7 @@ class FISLib:
             status_info = {
                 'id': experiment['id'],
                 'name': experiment.get('name', 'N/A'),
-                'status': experiment['status'],
+                'status': experiment['state']['status'],
                 'state': experiment.get('state', 'N/A'),
                 'startTime': experiment.get('startTime'),
                 'endTime': experiment.get('endTime'),
