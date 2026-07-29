@@ -564,6 +564,34 @@ class CapellaUtils(object):
             time.sleep(5)
 
     @staticmethod
+    def get_deployment_jobs(pod, tenant, cluster_id, timeout=60):
+        """
+        Fetch the internal-support deployment-jobs list for a cluster --
+        each entry is {"job": {id, type, status, attempts, errors (last 10),
+        createdAt, startedAt, completedAt, ...}, "plan": {...}}. Lets a test
+        identify and poll the actual CP job driving an in-flight
+        rebalance/scale/restore (status/attempts/per-attempt errors) instead
+        of only inferring success or failure from a generic client-side
+        timeout.
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        deadline = time.time() + timeout
+        while True:
+            resp = capella_api.deployement_jobs(cluster_id)
+            if resp.status_code == 200:
+                return json.loads(resp.content)
+            if time.time() >= deadline:
+                raise Exception(
+                    f"get_deployment_jobs for {cluster_id} kept failing "
+                    f"(last status {resp.status_code}) for over {timeout}s")
+            time.sleep(5)
+
+    @staticmethod
     def get_cluster_nodes_internal(pod, tenant, cluster_id, timeout=120):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,

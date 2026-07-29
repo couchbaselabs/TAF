@@ -6,9 +6,11 @@ including EBS guest volumes, accelerator instances, ASG cleanup, and error scann
 """
 
 import datetime
+import re
 import time
 from prettytable import PrettyTable
 from botocore.exceptions import ClientError, ConnectionError
+from capella_utils.dedicated import CapellaUtils
 from .fusion_monitor_util import FusionMonitorUtil
 
 
@@ -1308,3 +1310,121 @@ class FusionCPResourceMonitor:
         if not failures:
             self.log.info(f"All AWS resources verified clean for cluster {cluster_id}")
         return failures
+
+    @staticmethod
+    def _parse_cp_timestamp(ts):
+        """
+        Parse a CP-emitted RFC3339 timestamp, e.g. '2026-07-29T10:41:20.528604186Z'.
+        Go emits up to 9 fractional-second digits and a bare 'Z' -- Python's
+        datetime.fromisoformat() (3.10, the pinned interpreter here) only
+        accepts up to 6 fractional digits and requires an explicit offset,
+        so both are normalized before parsing.
+        """
+        ts = ts.replace("Z", "+00:00")
+        match = re.match(r"^(.*\.\d{6})\d*(\+00:00)$", ts)
+        if match:
+            ts = match.group(1) + match.group(2)
+        return datetime.datetime.fromisoformat(ts)
+
+    def wait_for_deployment_job(self, pod, tenant, cluster, since_time,
+                                 poll_interval=30, timeout=3600):
+        """
+        Poll the cluster's internal-support deployment-jobs list
+        (CapellaUtils.get_deployment_jobs) and track the specific job
+        actually driving the in-flight operation -- identified as the job
+        with the most recent createdAt at or after `since_time`, since a
+        cluster accumulates many historical deployment jobs over its
+        lifetime and picking the wrong one would mean tracking a stale,
+        already-finished operation instead of the current one.
+
+        Logs each new per-attempt error the instant it appears in the API's
+        rolling last-10-errors window (rather than only being visible via
+        after-the-fact Datadog log archaeology), and returns as soon as the
+        matched job reaches a terminal status -- True for "complete",
+        False for "failed" (with the full captured error trail already
+        logged at ERROR level) -- instead of waiting out the rest of a
+        generic rebalance timeout once the CP has already given up.
+
+        :param pod: Pod object
+        :param tenant: Tenant object
+        :param cluster: Cluster object
+        :param since_time: timezone-aware UTC datetime marking when the
+            operation being monitored was triggered
+        :param poll_interval: seconds between polls
+        :param timeout: safety-net ceiling in seconds, in case the job never
+            reaches a terminal status
+        :return: True if the matched job completed successfully, False if it
+            failed or polling timed out without a terminal status
+        """
+        deadline = time.time() + timeout
+        seen_attempts = set()
+        matched_job_id = None
+
+        while time.time() < deadline:
+            try:
+                jobs = CapellaUtils.get_deployment_jobs(pod, tenant, cluster.id)
+            except Exception as e:
+                self.log.warning(
+                    f"[{cluster.id}] Failed to fetch deployment jobs, retrying: {e}"
+                )
+                time.sleep(poll_interval)
+                continue
+
+            candidates = []
+            for entry in jobs:
+                job = entry.get("job") or {}
+                created_at = job.get("createdAt")
+                if not created_at:
+                    continue
+                if self._parse_cp_timestamp(created_at) >= since_time:
+                    candidates.append(job)
+
+            if not candidates:
+                self.log.info(
+                    f"[{cluster.id}] No deployment job created since "
+                    f"{since_time} yet -- waiting"
+                )
+                time.sleep(poll_interval)
+                continue
+
+            job = max(candidates, key=lambda j: j["createdAt"])
+            if matched_job_id != job["id"]:
+                matched_job_id = job["id"]
+                self.log.info(
+                    f"[{cluster.id}] Tracking deployment job {job['id']} "
+                    f"(type={job.get('type')}, createdAt={job['createdAt']})"
+                )
+
+            for err in job.get("errors") or []:
+                attempt = err.get("attempt")
+                if attempt not in seen_attempts:
+                    seen_attempts.add(attempt)
+                    self.log.error(
+                        f"[{cluster.id}] Deployment job {job['id']} attempt "
+                        f"{attempt} failed at {err.get('occurredAt')}: "
+                        f"{err.get('error')}"
+                    )
+
+            status = job.get("status")
+            if status == "complete":
+                self.log.info(
+                    f"[{cluster.id}] Deployment job {job['id']} completed "
+                    f"successfully after {job.get('attempts')} attempt(s)"
+                )
+                return True
+            if status == "failed":
+                self.log.error(
+                    f"[{cluster.id}] Deployment job {job['id']} FAILED after "
+                    f"{job.get('attempts')} attempts (completedAt="
+                    f"{job.get('completedAt')}) -- aborting wait, see "
+                    f"per-attempt errors logged above"
+                )
+                return False
+
+            time.sleep(poll_interval)
+
+        self.log.warning(
+            f"[{cluster.id}] Deployment job polling timed out after "
+            f"{timeout}s without reaching a terminal status"
+        )
+        return False

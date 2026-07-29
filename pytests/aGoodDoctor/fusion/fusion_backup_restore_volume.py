@@ -75,6 +75,7 @@ iterations, rebl_steps    : same as fusion_volume.py
 '''
 
 import concurrent.futures
+import datetime
 import socket
 import threading
 import time
@@ -371,6 +372,7 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
             if target_is_fusion else []
         )
 
+        restore_trigger_time = datetime.datetime.now(datetime.timezone.utc)
         result = CapellaAPI.restore_cloud_snapshot_backup(
             self.pod, tenant, project_id, target_cluster.id, backup_id
         )
@@ -386,14 +388,14 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         )
         self.log.info(f"{tgt_label} Restore job triggered: {restore_id}")
 
-        # Run all three post-restore waits concurrently, each with the same
+        # Run all four post-restore waits concurrently, each with the same
         # flat default timeout (8h) -- there's no reliable way to estimate
         # how long any of these actually take up front, and serializing the
         # restore-job wait in front of the other two (as before) meant
         # wait_until_fusion_enabled never even started until the CP-level
         # restore job reported "complete", hiding it from view for the
         # entire (often 30-60+ minute) restore-job duration.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             restore_future = executor.submit(
                 CapellaAPI.wait_for_cloud_snapshot_restore_to_complete,
                 self.pod, tenant, project_id, target_cluster.id, restore_id,
@@ -410,12 +412,31 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
                     self.fusion_monitor.wait_until_fusion_enabled, target_cluster,
                 )
 
+            # Poll the CP's own deployment-jobs status/errors for the job
+            # driving this restore (same DeployG2Cluster job type as
+            # scaling, distinguished by payload.reason == "restoring") so a
+            # stuck/failed CP job surfaces immediately with its exact
+            # per-attempt error trail, instead of only being discoverable
+            # after the fact via Datadog once the restore's own timeout has
+            # already elapsed.
+            deployment_job_future = executor.submit(
+                self.cp_monitor.wait_for_deployment_job,
+                self.pod, tenant, target_cluster, restore_trigger_time,
+                timeout=self.fusion_monitor.DEFAULT_RESTORE_TIMEOUT_SECONDS,
+            )
+
             ok = restore_future.result()
             self.assertTrue(
                 ok,
                 f"Snapshot restore {restore_id} did not complete on target {target_cluster.id}",
             )
             self.log.info(f"{tgt_label} Snapshot restore {restore_id} complete on {target_cluster.id}")
+
+            self.assertTrue(
+                deployment_job_future.result(),
+                f"{tgt_label} CP deployment job for restore {restore_id} on "
+                f"{target_cluster.id} failed -- see per-attempt errors logged above",
+            )
 
             # Guest-volume checks only after the restore itself is confirmed
             # successful -- this happens regardless of whether

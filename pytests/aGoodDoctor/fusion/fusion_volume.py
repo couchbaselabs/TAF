@@ -8,7 +8,7 @@ import os
 import socket
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from membase.api.rest_client import RestConnection
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
@@ -181,6 +181,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         import threading
         self.log.info(f"Monitoring cluster status for cluster {cluster.id}")
         rebalance_start_time = datetime.now()
+        rebalance_start_time_utc = datetime.now(timezone.utc)
         self.log.info(f"Rebalance start time (scaling): {rebalance_start_time.strftime('%Y-%m-%d %H:%M:%S')} for cluster {cluster.id}")
         threads = []
         result = {}
@@ -191,6 +192,19 @@ class VolumeTest(BaseTestCase, hostedOPD):
             args=(result, rebalance_task), daemon=True)
         thread.start()
         threads.append(thread)
+
+        # Poll the CP's own deployment-jobs status/errors for the job driving
+        # this rebalance, so a stuck/failed CP job (e.g. "maximum volume
+        # slots already used up", "request canceled" reading accelerator
+        # nodes) surfaces immediately with its exact per-attempt error trail,
+        # instead of only being discoverable after the fact via Datadog once
+        # the generic rebalance timeout above has already elapsed.
+        deployment_job_thread = threading.Thread(
+            target=lambda res, clus: res.update({"deployment_job_success": self.cp_monitor.wait_for_deployment_job(
+                self.pod, tenant, clus, rebalance_start_time_utc, timeout=3600)}),
+            args=(result, cluster), daemon=True)
+        deployment_job_thread.start()
+        threads.append(deployment_job_thread)
 
         # Monitor accelerator instances
         accelerator_thread = threading.Thread(
@@ -218,6 +232,9 @@ class VolumeTest(BaseTestCase, hostedOPD):
             thread.join()
         self.assertTrue(result.get("monitor_fusion_guest_volumes_complete", False),
                        f"monitor_fusion_guest_volumes failed for cluster {cluster.id}")
+        self.assertTrue(result.get("deployment_job_success", False),
+                       f"CP deployment job failed for cluster {cluster.id} -- "
+                       f"see per-attempt errors logged above")
 
         rebalance_end_time = datetime.now()
         elapsed_s = (rebalance_end_time - rebalance_start_time).total_seconds()
