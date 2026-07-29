@@ -1,0 +1,728 @@
+"""
+CE EE Feature Restriction Tests
+
+Verifies that Enterprise Edition-only features are blocked on CE clusters.
+Ported from TAF master's
+pytests/ns_server/ce_ee_feature_restriction_tests.py, which itself ported
+testrunner community-edition-only-1.conf and community-edition-only-2.conf
+(REST-only variants; no node-reset required).
+
+master_jython has no cb_server_rest_util (ClusterRestAPI /
+ClusterInitializationProvision) and no couchbase_utils/cb_tools/cbbackupmgr.py
+of its own. This port is rewritten against the classic monolithic
+RestConnection class (lib/membase/api/rest_client.py), plus a new minimal
+CbBackupMgr wrapper (couchbase_utils/cb_tools/cbbackupmgr.py) added to this
+branch following its existing CbCmdBase convention (see cb_tools/cb_cli.py):
+
+- ClusterRestAPI(master)              -> RestConnection(master)
+- self.rest.request(url, method, body) -> self.rest._http_request(url,
+  method, body); both return (status, content, header), but
+  _http_request expects an already url-encoded string body, so dict
+  params are encoded via urllib.urlencode() before the call.
+- ClusterInitializationProvision().initialize_cluster(...) (used only to
+  spin up a standalone single-node "remote cluster" for the XDCR test)
+  -> a direct POST to /clusterInit via RestConnection._http_request().
+- CBCluster is imported the same way (cluster_utils.cluster_ready_functions
+  has it on this branch too).
+- shell_util.remote_connection.RemoteMachineShellConnection ->
+  remote.remote_util.RemoteMachineShellConnection
+
+Testrunner mapping
+------------------
+test_disabled_zone
+    -> test_disabled_zone
+check_audit_available + check_settings_audit
+    -> test_audit_not_available
+check_ldap_available
+    -> test_ldap_not_available
+test_ldap_groups (REST)
+    -> test_ldap_groups_blocked
+test_ldap_cert (REST)
+    -> test_ldap_cert_blocked
+check_x509_cert
+    -> test_x509_cert_blocked
+check_roles_base_access,user_add=test22,user_role=admin
+    -> test_rbac_admin_user_blocked
+check_root_certificate
+    -> test_root_certificate_blocked
+test_max_ttl_bucket (REST)
+    -> test_max_ttl_bucket_blocked
+test_setting_audit (REST)
+    -> test_setting_audit_blocked
+test_setting_autofailover_enterprise_only (REST, disk-failover variants)
+    -> test_autofailover_disk_failover_blocked
+test_setting_autofailover_enterprise_only (REST, server-group variant)
+    -> test_autofailover_server_group_failover_blocked
+test_set_bucket_compression,compression_mode=off/passive/active (REST)
+    -> test_bucket_compression_blocked
+test_log_redaction (REST)
+    -> test_log_redaction_blocked
+test_network_encryption
+    -> test_network_encryption_blocked
+test_n2n_encryption
+    -> test_n2n_encryption_blocked
+
+CLI variants (CBQE-8979)
+------------------------
+test_setting_autofailover_enterprise_only,cli_test=True (x4)
+    -> test_autofailover_ee_settings_blocked_cli
+test_set_bucket_compression,cli_test=True (x3)
+    -> test_bucket_compression_blocked_cli
+test_max_ttl_bucket,cli_test=True
+    -> test_max_ttl_bucket_blocked_cli
+test_setting_audit,cli_test=True
+    -> test_setting_audit_blocked_cli
+test_ldap_groups,cli_test=True
+    -> test_ldap_groups_blocked_cli
+test_log_redaction,cli_test=True
+    -> test_log_redaction_blocked_cli
+test_ee_only_features,examine=True
+test_ee_only_features,merge=True
+test_ee_only_features,s3=True
+test_ee_only_features,consistency_check=True
+test_ee_only_features,coll_restore=True
+    -> test_backup_ee_features_blocked_cli
+test_lww
+    -> test_lww_conflict_resolution_blocked
+test_xdcr_filter + test_xdcr_priority + test_xdcr_compression (Auto + Snappy)
+    -> test_xdcr_ee_features_blocked
+test_xdcr_compression,cli_test=True
+    -> test_xdcr_compression_blocked_cli
+check_ent_backup
+    -> test_cbbackupmgr_binary_present_on_ce
+check_memory_optimized_storage_mode + check_plasma_storage_mode
+    -> test_indexer_storage_mode_blocked
+
+Note: check_full_backup_only (legacy cbbackup -m diff/accu full-only
+coercion) was dropped -- cbbackup was removed from the product; verified
+absent, and cbworkloadgen/cbtransfer remain but there is no equivalent
+tool left to exercise this restriction against.
+"""
+
+import urllib
+
+from basetestcase import ClusterSetup
+from BucketLib.bucket import Bucket
+from cb_tools.cb_cli import CbCli
+from cb_tools.cbbackupmgr import CbBackupMgr
+from cluster_utils.cluster_ready_functions import CBCluster
+from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
+
+
+class CeEeFeatureRestrictionTests(ClusterSetup):
+    """EE feature blocks on CE -- REST-only, no node reset required."""
+
+    def setUp(self):
+        super(CeEeFeatureRestrictionTests, self).setUp()
+        self.rest = RestConnection(self.cluster.master)
+
+        if self.cluster_util.is_enterprise_edition(self.cluster):
+            self.fail("Tests require Community Edition cluster. "
+                      "Install with edition=community parameter.")
+
+        self.log.info("CE cluster confirmed. Master: %s" % self.cluster.master.ip)
+
+    def tearDown(self):
+        super(CeEeFeatureRestrictionTests, self).tearDown()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _make_request(self, path, method="GET", params=""):
+        if isinstance(params, dict):
+            params = urllib.urlencode(params)
+        api = self.rest.baseUrl + path.lstrip("/")
+        status, content, _ = self.rest._http_request(api, method, params)
+        content_str = (content.decode() if isinstance(content, bytes)
+                       else str(content))
+        return status, content_str
+
+    def _assert_blocked(self, status, content_str, feature):
+        self.assertFalse(
+            status,
+            "CE must block '%s' but request succeeded. Response: %s"
+            % (feature, content_str[:300]))
+        self.log.info("CE correctly blocked '%s': %s" % (feature,
+                      content_str[:200]))
+
+    # ------------------------------------------------------------------
+    # Server groups / zones
+    # testrunner: test_disabled_zone
+    # ------------------------------------------------------------------
+
+    def test_disabled_zone(self):
+        """Server groups (rack-zone awareness) must be blocked on CE."""
+        status, content = self._make_request(
+            "pools/default/serverGroups", "POST", {"name": "group1"})
+        self._assert_blocked(status, content, "server groups / zones")
+
+    # ------------------------------------------------------------------
+    # Audit
+    # testrunner: check_audit_available + check_settings_audit
+    # ------------------------------------------------------------------
+
+    def test_audit_not_available(self):
+        """Audit endpoint must be inaccessible on CE."""
+        status, content = self._make_request("settings/audit")
+        self._assert_blocked(status, content, "audit settings")
+
+    def test_setting_audit_blocked(self):
+        """Enabling audit via REST must be blocked on CE."""
+        status, content = self._make_request(
+            "settings/audit", "POST", {"auditdEnabled": "true"})
+        self._assert_blocked(status, content, "enable audit")
+
+    # ------------------------------------------------------------------
+    # LDAP
+    # testrunner: check_ldap_available, test_ldap_groups, test_ldap_cert
+    # ------------------------------------------------------------------
+
+    def test_ldap_not_available(self):
+        """LDAP authentication settings must be blocked on CE."""
+        status, content = self._make_request(
+            "settings/ldap", "POST", {"authenticationEnabled": "false"})
+        self._assert_blocked(status, content, "LDAP settings")
+
+    def test_ldap_groups_blocked(self):
+        """LDAP group management must be blocked on CE."""
+        status, content = self._make_request(
+            "settings/rbac/groups/test_admins", "POST",
+            {"roles": "admin",
+             "description": "Test group",
+             "ldap_group_ref":
+                 "uid=cbadmins,ou=groups,dc=example,dc=com"})
+        self._assert_blocked(status, content, "LDAP groups")
+
+    def test_ldap_cert_blocked(self):
+        """LDAP TLS cert configuration must be blocked on CE."""
+        status, content = self._make_request(
+            "settings/ldap", "POST",
+            {"authenticationEnabled": "true",
+             "hosts": self.cluster.master.ip,
+             "port": 389,
+             "encryption": "StartTLSExtension",
+             "serverCertValidation": "true"})
+        self._assert_blocked(status, content, "LDAP cert settings")
+
+    # ------------------------------------------------------------------
+    # X.509 / certificates
+    # testrunner: check_x509_cert, check_root_certificate
+    # ------------------------------------------------------------------
+
+    def test_x509_cert_blocked(self):
+        """Extended X.509 certificate endpoint must return EE error on CE."""
+        status, content = self._make_request(
+            "pools/default/certificate?extended=true")
+        self._assert_blocked(status, content, "X.509 extended certificate")
+
+    def test_root_certificate_blocked(self):
+        """Root certificate endpoint must be blocked on CE."""
+        status, content = self._make_request("pools/default/certificate")
+        self._assert_blocked(status, content, "root certificate")
+
+    # ------------------------------------------------------------------
+    # RBAC
+    # testrunner: check_roles_base_access,user_add=test22,user_role=admin
+    # ------------------------------------------------------------------
+
+    def test_rbac_admin_user_blocked(self):
+        """Creating an admin RBAC user must be blocked on CE."""
+        user = self.input.param("user_add", "test22")
+        role = self.input.param("user_role", "admin")
+        status, content = self._make_request(
+            "settings/rbac/users/local/%s" % user, "PUT",
+            "name=%s&roles=%s" % (user, role))
+        self._assert_blocked(status, content, "RBAC admin user creation")
+
+    # ------------------------------------------------------------------
+    # Bucket-level EE features
+    # testrunner: test_max_ttl_bucket, test_set_bucket_compression
+    # ------------------------------------------------------------------
+
+    def test_max_ttl_bucket_blocked(self):
+        """Creating a bucket with maxTTL must be blocked on CE."""
+        status, content = self._make_request(
+            "pools/default/buckets", "POST",
+            {"name": "ttl_test_bucket", "maxTTL": 100, "ramQuotaMB": 256})
+        self._assert_blocked(status, content, "maxTTL bucket")
+        self.assertIn("enterprise edition", content.lower(),
+                      "Expected enterprise edition message, got: %s" % content)
+
+    def test_bucket_compression_blocked(self):
+        """Setting bucket compressionMode must be blocked on CE for all modes.
+
+        Iterates off, passive, and active in one pass.
+        """
+        for mode in ("off", "passive", "active"):
+            status, content = self._make_request(
+                "pools/default/buckets", "POST",
+                {"name": "comp_test_bucket",
+                 "compressionMode": mode,
+                 "ramQuotaMB": 256})
+            self._assert_blocked(status, content,
+                                 "bucket compression mode=%s" % mode)
+            self.assertIn("enterprise edition", content.lower(),
+                          "Expected enterprise edition message, got: %s"
+                          % content)
+
+    # ------------------------------------------------------------------
+    # Log redaction
+    # testrunner: test_log_redaction (REST)
+    # ------------------------------------------------------------------
+
+    def test_log_redaction_blocked(self):
+        """Log redaction must be blocked on CE."""
+        status, content = self._make_request(
+            "controller/startLogsCollection", "POST",
+            {"nodes": "*", "logRedactionLevel": "partial"})
+        self._assert_blocked(status, content, "log redaction")
+
+    # ------------------------------------------------------------------
+    # Network / node-to-node encryption
+    # testrunner: test_network_encryption, test_n2n_encryption
+    # ------------------------------------------------------------------
+
+    def test_network_encryption_blocked(self):
+        """Setting cluster encryption level must be blocked on CE."""
+        status, content = self._make_request(
+            "settings/security", "POST",
+            {"clusterEncryptionLevel": "control",
+             "tlsMinVersion": "tlsv1.2"})
+        self._assert_blocked(status, content, "cluster network encryption")
+
+    def test_n2n_encryption_blocked(self):
+        """Node-to-node encryption must be blocked on CE."""
+        status, content = self._make_request(
+            "settings/security", "POST",
+            {"nodeEncryption": "on"})
+        self._assert_blocked(status, content, "node-to-node encryption")
+
+    # ------------------------------------------------------------------
+    # Auto-failover EE-only settings
+    # testrunner: test_setting_autofailover_enterprise_only (x4 REST variants)
+    # ------------------------------------------------------------------
+
+    def test_autofailover_disk_failover_blocked(self):
+        """Auto-failover on data disk issues must be blocked on CE.
+
+        Covers testrunner variants:
+        - test_setting_autofailover_enterprise_only (default)
+        - test_setting_autofailover_enterprise_only,failover_disk_period=True
+        """
+        status, content = self._make_request(
+            "settings/autoFailover", "POST",
+            {"enabled": "true",
+             "timeout": 120,
+             "maxCount": 1,
+             "failoverOnDataDiskIssues[enabled]": "true",
+             "failoverOnDataDiskIssues[timePeriod]": 300})
+        self._assert_blocked(status, content,
+                             "auto-failover disk issues (EE-only)")
+
+    def test_autofailover_server_group_failover_blocked(self):
+        """Auto-failover of server groups must be blocked on CE.
+
+        Covers testrunner variants:
+        - test_setting_autofailover_enterprise_only,failover_server_group=True
+        - test_setting_autofailover_enterprise_only,failover_disk_period=True,failover_server_group=True
+        """
+        status, content = self._make_request(
+            "settings/autoFailover", "POST",
+            {"enabled": "true",
+             "timeout": 120,
+             "maxCount": 1,
+             "failoverServerGroup": "true"})
+        self._assert_blocked(status, content,
+                             "auto-failover server group (EE-only)")
+
+    # ------------------------------------------------------------------
+    # CLI helpers
+    # ------------------------------------------------------------------
+
+    def _cli_on(self, node):
+        shell = RemoteMachineShellConnection(node)
+        cb_cli = CbCli(shell, username=node.rest_username,
+                       password=node.rest_password)
+        return shell, cb_cli
+
+    @staticmethod
+    def _combined(output, error):
+        return "\n".join((output or []) + (error or []))
+
+    def _assert_cli_blocked(self, combined, feature):
+        combined_lower = combined.lower()
+        blocked = "enterprise edition" in combined_lower or \
+            "unrecognized arguments" in combined_lower
+        self.assertTrue(
+            blocked,
+            "CE must block '%s' via CLI. Got: %s" % (feature, combined[:300]))
+        self.log.info("CE blocked '%s' via CLI: %s" % (feature, combined[:200]))
+
+    # ------------------------------------------------------------------
+    # Auto-failover EE settings -- CLI variants
+    # testrunner: test_setting_autofailover_enterprise_only,cli_test=True (x4)
+    # ------------------------------------------------------------------
+
+    def test_autofailover_ee_settings_blocked_cli(self):
+        """CE must reject all EE-only autofailover setting combinations via CLI.
+
+        Iterates all four disk/server-group combos in one pass:
+        - disk_fo only
+        - disk_fo + disk_fo_timeout
+        - disk_fo + server_group
+        - disk_fo + disk_fo_timeout + server_group
+        """
+        cases = [
+            dict(disk_fo_timeout=None, failover_server_group=None),
+            dict(disk_fo_timeout=300,  failover_server_group=None),
+            dict(disk_fo_timeout=None, failover_server_group=1),
+            dict(disk_fo_timeout=300,  failover_server_group=1),
+        ]
+        for case in cases:
+            label = "disk_period=%s server_group=%s" % (
+                case["disk_fo_timeout"], case["failover_server_group"])
+            shell, cb_cli = self._cli_on(self.cluster.master)
+            try:
+                output = cb_cli.auto_failover(
+                    enable_auto_fo=1, disk_fo=1, **case)
+                combined = "\n".join(output) if isinstance(output, list) \
+                    else str(output)
+            except Exception as exc:
+                combined = str(exc)
+            finally:
+                shell.disconnect()
+
+            self._assert_cli_blocked(
+                combined, "autofailover EE settings (%s)" % label)
+
+    # ------------------------------------------------------------------
+    # Bucket compression -- CLI variants
+    # testrunner: test_set_bucket_compression,cli_test=True (x3)
+    # ------------------------------------------------------------------
+
+    def test_bucket_compression_blocked_cli(self):
+        """CE must reject bucket compressionMode for all modes via couchbase-cli.
+
+        Iterates off, passive, and active in one pass.
+        """
+        exp_err = "ERROR: Compression mode can only be configured on enterprise edition"
+        for mode in ("off", "passive", "active"):
+            shell, cb_cli = self._cli_on(self.cluster.master)
+            try:
+                output = cb_cli.create_bucket({
+                    Bucket.name: "comp_test_bucket",
+                    Bucket.bucketType: "couchbase",
+                    Bucket.ramQuotaMB: 512,
+                    Bucket.replicaNumber: 1,
+                    Bucket.compressionMode: mode,
+                })
+                self.assertTrue(exp_err in self._combined(output, []),
+                                "Compression mode=%s, Unexpected msg: %s"
+                                % (mode, output))
+            finally:
+                shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # Max TTL bucket -- CLI variant
+    # testrunner: test_max_ttl_bucket,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_max_ttl_bucket_blocked_cli(self):
+        """CE must reject bucket with --max-ttl via couchbase-cli."""
+        exp_err = "ERROR: Maximum TTL can only be configured on enterprise edition"
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        try:
+            output = cb_cli.create_bucket({
+                Bucket.name: "ttl_test_bucket",
+                Bucket.bucketType: "couchbase",
+                Bucket.ramQuotaMB: 512,
+                Bucket.replicaNumber: 1,
+                Bucket.maxTTL: 200,
+            })
+            self.assertTrue(exp_err in self._combined(output, []),
+                            "Unexpected error: %s" % (output,))
+        finally:
+            shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # Audit setting -- CLI variant
+    # testrunner: test_setting_audit,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_setting_audit_blocked_cli(self):
+        """CE must reject enabling audit via couchbase-cli setting-audit."""
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.setting_audit()
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self._assert_cli_blocked(combined, "setting-audit")
+
+    # ------------------------------------------------------------------
+    # LDAP groups -- CLI variant
+    # testrunner: test_ldap_groups,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_ldap_groups_blocked_cli(self):
+        """CE must reject LDAP group creation via couchbase-cli user-manage."""
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.user_manage_set_group(
+            group_name="admins",
+            roles="admin",
+            description="Couchbase Server Administrators",
+            ldap_ref="uid=cbadmins,ou=groups,dc=example,dc=com")
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self._assert_cli_blocked(combined, "LDAP group creation")
+
+    # ------------------------------------------------------------------
+    # Log redaction -- CLI variant
+    # testrunner: test_log_redaction,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_log_redaction_blocked_cli(self):
+        """CE must reject log collection with redaction via couchbase-cli."""
+        exp_err = "ERROR: {'logRedactionLevel': 'log redaction is an enterprise only feature'}"
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.collect_logs_start(
+            all_nodes=True, redaction_level="partial")
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self.assertTrue(exp_err in combined,
+                        "Unexpected error: %s" % (combined,))
+
+    # ------------------------------------------------------------------
+    # cbbackupmgr EE-only features
+    # testrunner: test_ee_only_features (x5 variants)
+    # ------------------------------------------------------------------
+
+    def test_backup_ee_features_blocked_cli(self):
+        """CE must reject EE-only cbbackupmgr features.
+
+        Iterates five EE-only operations in one pass:
+        - examine (document inspection)
+        - merge
+        - backup to S3 archive
+        - backup with --consistency-check
+        - config --include-data (scope/collection-level backup filtering)
+
+        All five should produce "Enterprise Edition" in output.
+        Replaces: test_ee_only_features (x5 variants).
+        Requires nodes_init=1.
+
+        Note: restore --include-data (collection-level restore) is NOT
+        EE-restricted on CE and was verified to succeed manually; only
+        scope/collection-level filtering at repo config time is EE-only
+        per docs.couchbase.com/server/current/backup-restore/
+        cbbackupmgr-config.html#optional.
+        """
+        master = self.cluster.master
+        shell = RemoteMachineShellConnection(master)
+        mgr = CbBackupMgr(shell, username=master.rest_username,
+                           password=master.rest_password)
+        archive = "/tmp/ce_ee_backup_test"
+        repo = "ce_ee_repo"
+
+        mgr.create_repo(archive, repo)
+
+        cases = [
+            ("examine", lambda: mgr.examine(
+                archive, repo, key="asdf",
+                collection_string="asdf.asdf.asdf")),
+            ("merge", lambda: mgr.merge(
+                archive, repo, start=None, end=None)),
+            ("backup s3://", lambda: mgr.backup(
+                "s3://ce-ee-test-bucket", repo)),
+            ("backup --consistency-check", lambda: mgr.backup(
+                archive, repo, consistency_check=1)),
+            ("config --include-data", lambda: mgr.create_repo(
+                archive + "_include_data", repo + "_include_data",
+                include=["asdf.asdf"])),
+        ]
+
+        try:
+            for label, fn in cases:
+                output, error = fn()
+                combined = self._combined(output, error)
+                combined_lower = combined.lower()
+                blocked = "enterprise edition" in combined_lower or \
+                    "ee only" in combined_lower
+                self.assertTrue(
+                    blocked,
+                    "CE must block cbbackupmgr %s. Got: %s"
+                    % (label, combined[:300]))
+                self.log.info("CE blocked cbbackupmgr %s: %s"
+                              % (label, combined[:120]))
+        finally:
+            shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # XDCR EE-only features -- REST
+    # testrunner: test_xdcr_filter, test_xdcr_priority,
+    #             test_xdcr_compression (Auto + Snappy)
+    # ------------------------------------------------------------------
+
+    def test_xdcr_ee_features_blocked(self):
+        """CE must reject EE-only XDCR features via createReplication REST API.
+
+        Uses servers[1] as a standalone remote cluster so the remote
+        cluster reference is valid and CE validates the feature params.
+        Iterates three EE-only params in one pass:
+        - filterExpression (advanced filtering)
+        - priority
+        - compressionType=Auto
+
+        Replaces: test_xdcr_filter, test_xdcr_priority,
+                  test_xdcr_compression.
+        Requires nodes_init=1 + 1 spare (2-node ini).
+        """
+        spare = self.cluster.servers[1]
+        remote_cluster = CBCluster("C2", servers=[spare])
+        remote_cluster.nodes_in_cluster = [spare]
+
+        # Initialize spare as a standalone single-node cluster via the
+        # server's /clusterInit REST endpoint directly.
+        remote_master = remote_cluster.master
+        remote_rest = RestConnection(remote_master)
+        remote_rest._http_request(
+            remote_rest.baseUrl + "clusterInit", "POST",
+            urllib.urlencode({
+                "hostname": remote_master.ip,
+                "port": "SAME",
+                "username": remote_master.rest_username,
+                "password": remote_master.rest_password,
+                "services": "kv",
+                "memoryQuota": 256}))
+
+        # Register spare as remote cluster reference "cluster1"
+        self._make_request(
+            "pools/default/remoteClusters", "POST",
+            {
+                "name": "cluster1",
+                "hostname": "%s:8091" % remote_master.ip,
+                "username": remote_master.rest_username,
+                "password": remote_master.rest_password})
+
+        # Create source bucket for fromBucket param
+        self._make_request(
+            "pools/default/buckets", "POST",
+            {"name": "default", "ramQuotaMB": 256,
+             "bucketType": "couchbase", "replicaNumber": 0})
+        self.sleep(5, "wait for default bucket to be ready")
+
+        ee_params = [
+            ("filterExpression",
+             {"fromBucket": "default", "toCluster": "cluster1",
+              "toBucket": "default", "replicationType": "continuous",
+              "filterExpression":
+                  'REGEXP_CONTAINS(META().id, "some_exp")'}),
+            ("priority=Medium",
+             {"fromBucket": "default", "toCluster": "cluster1",
+              "toBucket": "default", "replicationType": "continuous",
+              "priority": "Medium"}),
+            ("compressionType=Auto",
+             {"fromBucket": "default", "toCluster": "cluster1",
+              "toBucket": "default", "replicationType": "continuous",
+              "compressionType": "Auto"}),
+        ]
+
+        try:
+            for feature, params in ee_params:
+                status, content = self._make_request(
+                    "controller/createReplication", "POST", params)
+                self._assert_blocked(
+                    status, content, "XDCR %s (EE-only)" % feature)
+                self.assertIn(
+                    "enterprise edition", content.lower(),
+                    "Expected enterprise edition message for XDCR %s. "
+                    "Got: %s" % (feature, content[:300]))
+        finally:
+            self._make_request(
+                "pools/default/remoteClusters/cluster1", "DELETE")
+            remote_rest.reset_node()
+
+    # ------------------------------------------------------------------
+    # XDCR compression -- CLI variant
+    # testrunner: test_xdcr_compression,cli_test=True
+    # ------------------------------------------------------------------
+
+    def test_xdcr_compression_blocked_cli(self):
+        """CE must reject enabling XDCR compression via couchbase-cli.
+
+        Replaces: test_xdcr_compression,cli_test=True.
+        Requires nodes_init=1.
+        """
+        shell, cb_cli = self._cli_on(self.cluster.master)
+        output, error = cb_cli.setting_xdcr(enable_compression=1)
+        shell.disconnect()
+        combined = self._combined(output, error)
+        self.assertIn(
+            "enterprise edition", combined.lower(),
+            "CE must block XDCR --enable-compression via CLI. Got: %s"
+            % combined[:300])
+        self.log.info("CE blocked XDCR compression via CLI: %s"
+                      % combined[:120])
+
+    # ------------------------------------------------------------------
+    # LWW conflict resolution -- CE block
+    # testrunner: test_lww
+    # ------------------------------------------------------------------
+
+    def test_lww_conflict_resolution_blocked(self):
+        """CE must reject bucket creation with LWW conflict resolution.
+
+        Replaces: test_lww (CommunityXDCRTests).
+        Requires nodes_init=1.
+        """
+        status, content = self._make_request(
+            "pools/default/buckets", "POST",
+            {"name": "lww_test_bucket",
+             "conflictResolutionType": "lww",
+             "ramQuotaMB": 256})
+        self._assert_blocked(status, content, "LWW conflict resolution")
+        self.assertIn(
+            "enterprise edition", content.lower(),
+            "Expected enterprise edition message, got: %s" % content)
+
+    # ------------------------------------------------------------------
+    # cbbackupmgr binary presence check
+    # testrunner: check_ent_backup
+    # ------------------------------------------------------------------
+
+    def test_cbbackupmgr_binary_present_on_ce(self):
+        """cbbackupmgr binary must be present on CE nodes.
+
+        Replaces: check_ent_backup.
+        Requires nodes_init=1.
+        """
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            exists = shell.file_exists("/opt/couchbase/bin/", "cbbackupmgr")
+            self.assertTrue(
+                exists,
+                "cbbackupmgr binary not found on CE node at "
+                "/opt/couchbase/bin/cbbackupmgr")
+            self.log.info("cbbackupmgr binary confirmed present on CE node")
+        finally:
+            shell.disconnect()
+
+    # ------------------------------------------------------------------
+    # Indexer storage mode EE-only rejection
+    # testrunner: check_memory_optimized_storage_mode + check_plasma_storage_mode
+    # ------------------------------------------------------------------
+
+    def test_indexer_storage_mode_blocked(self):
+        """CE must reject EE-only indexer storage modes via REST.
+
+        Iterates memory_optimized and plasma in one pass.
+        Replaces: check_memory_optimized_storage_mode,
+                  check_plasma_storage_mode.
+        Requires nodes_init=1.
+        """
+        for mode in ("memory_optimized", "plasma"):
+            status, content = self._make_request(
+                "settings/indexes", "POST", {"storageMode": mode})
+            self._assert_blocked(
+                status, content,
+                "indexer storageMode=%s (EE-only)" % mode)

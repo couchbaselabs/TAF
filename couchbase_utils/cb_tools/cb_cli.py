@@ -23,9 +23,55 @@ class CbCli(CbCmdBase):
             return self.port - 10000
         return self.port
 
+    def node_init(self, cluster_url="localhost:8091",
+                  username="Administrator", password="password",
+                  client_cert=None, client_cert_password=None,
+                  client_key=None, client_key_password=None,
+                  node_init_data_path=None,
+                  node_init_index_path=None,
+                  node_init_analytics_path=None,
+                  node_init_eventing_path=None,
+                  node_init_hostname=None,
+                  node_init_java_home=None,
+                  services=None,
+                  ipv4=None, ipv6=None):
+        cmd = "%s node-init -c %s -u %s -p %s" \
+              % (self.cbstatCmd, cluster_url, username, password)
+        if node_init_hostname:
+            cmd += " --node-init-hostname " + str(node_init_hostname)
+        if node_init_data_path:
+            cmd += " --node-init-data-path " + str(node_init_data_path)
+        if node_init_index_path:
+            cmd += " --node-init-index-path " + str(node_init_index_path)
+        if node_init_analytics_path:
+            cmd += " --node-init-analytics-path " + str(node_init_analytics_path)
+        if node_init_eventing_path:
+            cmd += " --node-init-eventing-path " + str(node_init_eventing_path)
+        if node_init_java_home:
+            cmd += " --node-init-java-home " + str(node_init_java_home)
+        if services:
+            cmd += " --services " + str(services)
+
+        if client_cert:
+            cmd += " --client-cert " + str(client_cert)
+        if client_cert_password:
+            cmd += " --client-cert-password " + str(client_cert_password)
+        if client_key:
+            cmd += " --client-key " + str(client_key)
+        if client_key_password:
+            cmd += " --client-key-password " + str(client_key_password)
+
+        if ipv4:
+            cmd += " --ipv4"
+        if ipv6:
+            cmd += " --ipv6"
+
+        return self._execute_cmd(cmd)
+
     def cluster_init(self, data_ramsize, index_ramsize, fts_ramsize, services,
                      index_storage_mode, cluster_name,
-                     cluster_username, cluster_password, cluster_port):
+                     cluster_username, cluster_password, cluster_port,
+                     update_notifications=None):
         cmd = "%s cluster-init -c localhost:%s -u %s -p %s" \
               % (self.cbstatCmd, self.__get_http_port(),
                  self.username, self.password)
@@ -47,6 +93,8 @@ class CbCli(CbCmdBase):
             cmd += " --cluster-port " + str(cluster_port)
         if services:
             cmd += " --services " + str(services)
+        if update_notifications is not None:
+            cmd += " --update-notifications %s" % update_notifications
         return self._execute_cmd(cmd)
 
     def cluster_settings(self, data_ramsize, index_ramsize, fts_ramsize,
@@ -71,6 +119,19 @@ class CbCli(CbCmdBase):
             cmd += " --cluster-name " + str(cluster_name)
         if cluster_port:
             cmd += " --cluster-port " + str(cluster_port)
+        return self._execute_cmd(cmd)
+
+    def rebalance(self, servers_to_remove=None):
+        """
+        Run couchbase-cli rebalance. Returns (output, error) without raising.
+        :param servers_to_remove: list of "ip:port" strings to eject
+        """
+        cmd = "%s rebalance -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if servers_to_remove:
+            for server in servers_to_remove:
+                cmd += " --server-remove %s" % server
         return self._execute_cmd(cmd)
 
     def add_node(self, server, service):
@@ -223,7 +284,8 @@ class CbCli(CbCmdBase):
     def auto_failover(self, enable_auto_fo=1,
                       fo_timeout=None, max_failovers=None,
                       disk_fo=None, disk_fo_timeout=None,
-                      can_abort_rebalance=None):
+                      can_abort_rebalance=None,
+                      failover_server_group=None):
         cmd = "%s setting-autofailover -c localhost:%s -u %s -p %s" \
               % (self.cbstatCmd, self.__get_http_port(),
                  self.username, self.password)
@@ -238,10 +300,49 @@ class CbCli(CbCmdBase):
             cmd += " --failover-data-disk-period %s" % disk_fo_timeout
         if can_abort_rebalance:
             cmd += " --can-abort-rebalance %s" % can_abort_rebalance
+        if failover_server_group:
+            cmd += " --enable-failover-of-server-groups %s" % failover_server_group
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception("\n".join(error))
         return output
+
+    def setting_audit(self, audit_enabled=1, log_rotate_interval=604800,
+                      log_path="/opt/couchbase/var/lib/couchbase/logs"):
+        cmd = "%s setting-audit -c localhost:%s -u %s -p %s --set" \
+              " --audit-enabled %s" \
+              " --audit-log-rotate-interval %s" \
+              " --audit-log-path %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password,
+                 audit_enabled, log_rotate_interval, log_path)
+        return self._execute_cmd(cmd)
+
+    def user_manage_set_group(self, group_name, roles,
+                              description=None, ldap_ref=None):
+        cmd = "%s user-manage -c localhost:%s -u %s -p %s" \
+              " --set-group --group-name %s --roles %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password, group_name, roles)
+        if description:
+            cmd += ' --group-description "%s"' % description
+        if ldap_ref:
+            cmd += ' --ldap-ref "%s"' % ldap_ref
+        return self._execute_cmd(cmd)
+
+    def collect_logs_start(self, all_nodes=False, redaction_level=None,
+                           nodes=None):
+        cmd = "%s collect-logs-start -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if all_nodes:
+            cmd += " --all-nodes"
+        elif nodes:
+            for node in nodes:
+                cmd += " --nodes %s" % node
+        if redaction_level:
+            cmd += " --redaction-level %s" % redaction_level
+        return self._execute_cmd(cmd)
 
     def enable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \
@@ -290,3 +391,12 @@ class CbCli(CbCmdBase):
             return security_dict["clusterEncryptionLevel"]
         else:
             return None
+
+    def setting_xdcr(self, enable_compression=None):
+        cmd = "%s setting-xdcr -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if enable_compression is not None:
+            cmd += " --enable-compression %d" % enable_compression
+        cmd += self.cli_flags
+        return self._execute_cmd(cmd)
