@@ -124,14 +124,18 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
           fallback_n       – number of instance types to fail (default 3)
           fis_role_arn     – ARN of the FIS execution role; if omitted, uses
                              AWSServiceRoleForFIS derived from account ID
+          fis_duration     – ISO 8601 duration to keep the FIS capacity-error
+                             experiment running (default 'PT15M')
         """
         n_to_fail = self.input.param("fallback_n", 3)
         fis_role_arn = self.input.param("fis_role_arn", None)
+        fis_duration = self.input.param("fis_duration", "PT15M")
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 self._run_fallback_test(
-                    tenant, cluster, n_to_fail=n_to_fail, fis_role_arn=fis_role_arn
+                    tenant, cluster, n_to_fail=n_to_fail, fis_role_arn=fis_role_arn,
+                    duration=fis_duration,
                 )
 
     def test_fallback_exhausts_all_arm_types_falls_back_to_x86(self):
@@ -151,6 +155,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
         """
         arm_prefix_count = 4  # c8gb.4xlarge, c8gb.2xlarge, m8gb.2xlarge, r8gb.2xlarge
         fis_role_arn = self.input.param("fis_role_arn", None)
+        fis_duration = self.input.param("fis_duration", "PT15M")
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
@@ -160,6 +165,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
                     n_to_fail=arm_prefix_count,
                     fis_role_arn=fis_role_arn,
                     assert_x86=True,
+                    duration=fis_duration,
                 )
 
     # ------------------------------------------------------------------
@@ -167,7 +173,8 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
     # ------------------------------------------------------------------
 
     def _run_fallback_test(self, tenant, cluster, n_to_fail: int,
-                           fis_role_arn=None, assert_x86: bool = False):
+                           fis_role_arn=None, assert_x86: bool = False,
+                           duration: str = "PT15M"):
         """
         Core fallback test logic.
 
@@ -183,6 +190,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
         :param n_to_fail: Number of top-priority instance types to fail via FIS
         :param fis_role_arn: ARN of the FIS execution role (optional)
         :param assert_x86: If True, additionally assert the launched type is x86
+        :param duration: ISO 8601 duration to keep the FIS experiment running
         """
 
         # self.PrintStep(f"Loading data for fusion rebalance on cluster {cluster.id}")
@@ -242,7 +250,7 @@ class FusionFallbackInstanceTypeTests(_FusionTestBase):
             )
             fis_template_id, fis_experiment_id = self._start_fis_capacity_experiment(
                 cluster=cluster,
-                duration="PT15M",
+                duration=duration,
                 fis_role_arn=fis_role_arn,
             )
             self.sleep(10)
