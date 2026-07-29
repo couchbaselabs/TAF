@@ -218,6 +218,23 @@ def raw_request(client, method, path, body=None):
     payload = json.dumps(body) if body is not None else ''
     return client._http_request(api, method, payload,
                                 headers=client._json_headers())
+
+def post_raw_body(client, path, raw_body):
+    """
+    POST a literal, pre-serialized string body against a UCP path, bypassing
+    JSON encoding entirely -- for exercising malformed/non-JSON request
+    bodies that a dict-based helper could never produce (json.dumps always
+    emits valid JSON).
+    Args:
+        client:   UnifiedControlPlaneClient instance (authenticated)
+        path:     path below baseUrl, e.g. "api/v1/users"
+        raw_body: literal string sent as the request body, as-is
+    Returns:
+        Tuple (status, content, header) from the request.
+    """
+    api = client.baseUrl + path
+    return client._http_request(api, 'POST', raw_body,
+                                headers=client._json_headers())
 # ==================== User Helper Methods ====================
 def get_user_with_etag(client, user_id):
     """
