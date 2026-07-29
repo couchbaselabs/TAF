@@ -47,11 +47,11 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 | TAF File | TAF Class | TAF Method | Status |
 |---|---|---|---|
-| `fusion_accelerator_lifecycle_test.py` | `FusionAcceleratorLifecycleTest` | `test_accelerator_creation_during_rebalance` | ✅ |
+| `fusion_accelerator_lifecycle_test.py` | `FusionAcceleratorLifecycleTest` | `test_accelerator_deployment` (was `test_accelerator_creation_during_rebalance` + `test_accelerator_instance_type_validation`) | ✅ |
 | | | `test_accelerator_termination_after_rebalance` | ✅ |
 | | | `test_ebs_guest_volume_full_lifecycle` | ✅ |
 | | | `test_back_to_back_rebalances_no_orphaned_volumes` | ✅ |
-| | | `test_fusion_state_stays_enabled_through_rebalance` | ✅ |
+| | | fusion state stays 'enabled' — background watcher in `test_fusion_scaling_lifecycle` | ✅ |
 | | | `test_accelerator_instance_count_matches_data_size` | ✅ |
 | *(no file yet)* | — | EBS slot limits (>24 vol/node), compute quota limits | ⬜ |
 | *(no file yet)* | — | Remove node with attached guest volumes | ⬜ |
@@ -122,10 +122,18 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 |---|---|---|---|
 | `fusion_accelerator_lifecycle_test.py` | `FusionAcceleratorLifecycleTest` | `test_no_public_ip_on_accelerator_nodes` | ✅ |
 | | | `test_guest_volume_properties` | ✅ |
-| | | `test_guest_volume_size_scales_with_data` | 🔲 |
+| | | `test_guest_volume_size_scales_with_data` | ✅ |
 | | | `test_asg_deleted_after_rebalance_within_5_mins` | ✅ |
-| | | `test_accelerator_node_termination_resilience` | ✅ |
-| | | `test_accelerator_instance_type_validation` | ⬜ |
+| `fusion_accelerator_chaos_test.py` | `FusionAcceleratorChaosTest` | `test_remove_node_with_attached_guest_volumes` | ✅ |
+| | | `test_slot_exhaustion_triggers_fallback_replacement` | ✅ |
+| | | `test_abort_rebalance_invalidates_manifest` | ✅ |
+| | | `test_kill_memcached_during_extent_migration` | ✅ |
+| | | `test_accelerator_node_termination_resilience` (moved from lifecycle) | ✅ |
+| | | `test_accelerator_stopped_mid_download` | ✅ |
+| | | `test_asg_cannot_launch_replacement` | ✅ |
+| | | `test_accelerator_disk_full_during_download` | ✅ |
+| | | `test_accelerator_volume_detached_during_download` | ✅ |
+| | | `test_guest_volume_detached_during_transfer` | ✅ |
 | `fusion_fallback_test.py` | `FusionFallbackInstanceTypeTests` | `test_fallback_when_top_n_instance_types_unavailable` | ✅ |
 | | | `test_fallback_exhausts_all_arm_types_falls_back_to_x86` | ✅ |
 | *(no file yet)* | — | No public IP on accelerator nodes | ⬜ |

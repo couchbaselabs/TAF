@@ -783,6 +783,63 @@ class EC2Lib(AWSBase):
             self.logger.error(f"Error getting volume by id {volume_id}: {e}")
             return None
 
+    def detach_volume(self, volume_id: str, force: bool = False,
+                      instance_id: str = None) -> bool:
+        """
+        Detach an EBS volume from whatever instance it is attached to.
+
+        Used by fault-injection tests to yank a fusion guest volume out from under a KV
+        node. `force=True` maps to the AWS ForceDetach flag, which skips the guest OS
+        unmount — that is the point for a chaos test, and it is also how AWS documents
+        the risk of data loss, so only pass it deliberately.
+
+        :param volume_id: EBS VolumeId to detach
+        :param force: pass ForceDetach (skips the OS-level unmount)
+        :param instance_id: optional, restricts the detach to this instance
+        :return: True if AWS accepted the detach request
+        """
+        try:
+            kwargs = {"VolumeId": volume_id, "Force": force}
+            if instance_id:
+                kwargs["InstanceId"] = instance_id
+            response = self.ec2_client.detach_volume(**kwargs)
+            self.logger.info(
+                f"Detach requested for volume {volume_id} "
+                f"(force={force}, instance={instance_id or 'any'}): "
+                f"state={response.get('State')}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error detaching volume {volume_id}: {e}")
+            return False
+
+    def wait_for_volume_state(self, volume_id: str, target_state: str,
+                              timeout: int = 300, poll_interval: int = 5) -> bool:
+        """
+        Poll a volume until it reaches `target_state` (e.g. 'available', 'in-use').
+
+        Returns False on timeout, or if the volume disappears — a deleted volume can
+        never reach the target state, so callers get a definite answer rather than
+        waiting out the timeout on something that no longer exists.
+        """
+        import time as _time
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            volume = self.get_ebs_volume_by_id(volume_id)
+            if volume is None:
+                self.logger.warning(
+                    f"Volume {volume_id} no longer exists while waiting for "
+                    f"'{target_state}'")
+                return False
+            state = volume.get("State")
+            if state == target_state:
+                return True
+            self.logger.info(
+                f"Volume {volume_id} state={state}, waiting for '{target_state}'")
+            _time.sleep(poll_interval)
+        self.logger.error(
+            f"Volume {volume_id} did not reach '{target_state}' within {timeout}s")
+        return False
+
     def list_volumes_by_cluster_id(self, filters: Dict[str, str] = None) -> List[Dict[str, Any]]:
         """
         List EBS volumes filtered by the cluster id tag ('couchbase-cloud-cluster-id').

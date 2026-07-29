@@ -11,6 +11,7 @@ import time
 from prettytable import PrettyTable
 from botocore.exceptions import ClientError, ConnectionError
 from capella_utils.dedicated import CapellaUtils
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from .fusion_monitor_util import FusionMonitorUtil
 
 
@@ -341,10 +342,18 @@ class FusionCPResourceMonitor:
                 f"total size {total_size_gib} GiB\n{node_table}")
             dynamic_timeout = self.compute_ebs_cleanup_timeout(initial_volumes)
             timeout = max(timeout, dynamic_timeout)
+            # volumes_by_instance is empty whenever the volumes are already gone — e.g.
+            # when migration drained them before this check ran. max() over an empty
+            # sequence would raise ValueError and abort the caller's cleanup validation,
+            # so report the already-clean case instead.
+            worst_case_gib = max(
+                (sum(v.get('Size', 0) for v in vols)
+                 for vols in volumes_by_instance.values()),
+                default=0)
             self.log.info(
                 f"EBS cleanup timeout for cluster {cluster.id}: "
                 f"dynamic={dynamic_timeout}s, effective={timeout}s "
-                f"(worst-case node drives {max(sum(v.get('Size', 0) for v in vols) for vols in volumes_by_instance.values())} GiB @ 35 MBps)")
+                f"(worst-case node drives {worst_case_gib} GiB @ 35 MBps)")
         except (ClientError, ConnectionError) as e:
             self.log.warning(
                 f"Could not compute dynamic EBS cleanup timeout for cluster {cluster.id}: {e}")
@@ -602,17 +611,46 @@ class FusionCPResourceMonitor:
         self.log.info(f"Scanning memcached logs for errors on cluster {cluster.id}")
         return self.fusion_aws_util.scan_logs_for_errors_on_cluster_instances(cluster.id)
 
-    def get_main_volume_disk_usage_percent(self, cluster):
+    DEFAULT_DATA_PATH = "/opt/couchbase/var/lib/couchbase"
+
+    def resolve_data_path(self, cluster):
+        """Return the server's configured data path, e.g. ``/var/cb/data`` on Capella.
+
+        Read from ns_server (``GET /nodes/self`` -> storage.hdd[0].path) rather than
+        assumed: on Capella dedicated the data path is ``/var/cb/data``, not the
+        on-prem default ``/opt/couchbase/var/lib/couchbase``. Running ``df`` against
+        the wrong path silently measures a different filesystem (usually /), which
+        reports a plausible-looking percentage that never moves with the data.
+
+        Falls back to DEFAULT_DATA_PATH with a warning if the node cannot be read.
+        """
+        try:
+            status, content = ClusterRestAPI(cluster.master).node_details()
+            if status and content:
+                path = content["storage"]["hdd"][0]["path"]
+                self.log.info(f"Resolved server data path: {path}")
+                return path
+            self.log.warning(f"node_details returned status={status}; "
+                             f"falling back to {self.DEFAULT_DATA_PATH}")
+        except Exception as e:
+            self.log.warning(
+                f"Could not resolve the server data path ({e}); falling back to "
+                f"{self.DEFAULT_DATA_PATH}")
+        return self.DEFAULT_DATA_PATH
+
+    def get_main_volume_disk_usage_percent(self, cluster, data_path=None):
         """
         Poll each cluster instance's main persistent-data EBS/LVM volume disk
         usage percent via SSM ``df``.
 
-        This is the ``/opt/couchbase/var/lib/couchbase`` mount
-        (``VG_CB-LV_persistent_data``) — the volume Capella's diskAutoScaling
-        is expected to grow before it fills up (AV-137329: hydration filled
-        this volume to 100% on every node with no resize ever attempted).
+        This is the mount holding the server's data path — the volume Capella's
+        diskAutoScaling is expected to grow before it fills up (AV-137329: hydration
+        filled this volume to 100% on every node with no resize ever attempted).
 
         :param cluster: Cluster object
+        :param data_path: mount to measure. Resolved from ns_server when omitted;
+                          pass the cached value when polling in a loop to avoid a REST
+                          round trip per sample.
         :return: dict mapping instance ID -> usage percent (int), or None
                  for any instance whose check failed
         """
@@ -622,8 +660,9 @@ class FusionCPResourceMonitor:
             self.fusion_aws_util._cluster_filter(cluster.id),
             log="Couchbase Cluster Instances", suppress_log=True)
 
+        data_path = data_path or self.resolve_data_path(cluster)
         cmd = (
-            "df -h /opt/couchbase/var/lib/couchbase "
+            f"df -h {data_path} "
             "--output=pcent 2>/dev/null | tail -1 | tr -d '% '"
         )
 
@@ -657,7 +696,7 @@ class FusionCPResourceMonitor:
         for instance_id, pct in usage.items():
             table.add_row([instance_id, pct if pct is not None else "N/A"])
         self.log.info(
-            f"Main volume disk usage for cluster {cluster.id}:\n{table}")
+            f"Main volume disk usage for cluster {cluster.id} at {data_path}:\n{table}")
 
         return usage
 
