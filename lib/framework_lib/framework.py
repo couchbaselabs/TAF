@@ -1,7 +1,9 @@
+import faulthandler
 import os
 import re
 import requests
 import sys
+import threading
 from argparse import ArgumentParser
 from glob import glob
 from os.path import basename, exists, isdir, sep, splitext
@@ -15,9 +17,15 @@ from sirius_client_framework.sirius_setup import SiriusSetup
 
 class Parameters:
     ABORTED = False
+    # Exit code the shutdown guard reports if it has to bypass sys.exit().
+    # Kept in sync with testrunner's exit_status via HelperLib.set_exit_code().
+    EXIT_CODE = 0
 
 
 class HelperLib(object):
+
+    _shutdown_guard_armed = False
+
     def __init__(self):
         pass
 
@@ -28,9 +36,84 @@ class HelperLib(object):
         sys.exit(exit_code)
 
     @staticmethod
+    def set_exit_code(exit_code):
+        """
+        Record the run's exit status so the shutdown guard can preserve it
+        when it has to hard-exit instead of unwinding through sys.exit().
+        """
+        Parameters.EXIT_CODE = exit_code
+
+    @staticmethod
+    def arm_shutdown_guard():
+        """
+        Protect the run from hanging forever during interpreter shutdown.
+
+        Tests that delete / recreate buckets while SDK clients and remote
+        shells are live can strand a TaskManager worker blocked on network I/O.
+        Those workers are NON-daemon (CPython >= 3.9 no longer daemonises
+        ThreadPoolExecutor threads), so threading._shutdown() joins every one
+        of them: testrunner's sys.exit() never returns and the job freezes
+        after the final Summary, needing a manual Jenkins abort.
+
+        A stuck thread cannot be joined or made daemon after the fact, so the
+        only reliable escape is to run just before the join phase.
+        threading._register_atexit callbacks fire at the *start* of
+        threading._shutdown, ahead of the non-daemon join loop, so we dump
+        whatever is still alive (to identify the leaker for a targeted fix)
+        and then hard-exit with the run's real status.
+
+        Safe to call more than once; only the first call arms the guard.
+        """
+        if HelperLib._shutdown_guard_armed:
+            return
+        if not hasattr(threading, "_register_atexit"):
+            # Python < 3.9 - no pre-join hook available.
+            return
+
+        # Registration order matters. threading._shutdown() runs its atexit
+        # callbacks in REVERSE registration order, and the callback that
+        # actually hangs is concurrent.futures.thread._python_exit, which joins
+        # every pool worker ever created. It is registered when that module is
+        # first imported, so importing it here - before we register - keeps it
+        # ahead of us in the list and therefore behind us when the list is
+        # reversed. Arm the guard after that import and we run first; arm it
+        # before and _python_exit hangs the process before we are ever called.
+        import concurrent.futures.thread  # noqa: F401
+
+        HelperLib._shutdown_guard_armed = True
+
+        def _on_shutdown():
+            alive = [t for t in threading.enumerate()
+                     if t is not threading.current_thread()
+                     and t.is_alive() and not t.daemon]
+            if not alive:
+                return
+            # os._exit() below skips buffer flushing, so write to stderr (where
+            # faulthandler also writes) and flush explicitly - otherwise the
+            # one message explaining the hard exit is the thing that gets lost.
+            print("Critical:: %d non-daemon thread(s) still alive at "
+                  "interpreter shutdown %s - dumping tracebacks and forcing "
+                  "exit to avoid an indefinite join hang"
+                  % (len(alive), [t.name for t in alive]),
+                  file=sys.stderr, flush=True)
+            faulthandler.dump_traceback()
+            for stream in (sys.stdout, sys.stderr):
+                try:
+                    stream.flush()
+                except Exception:
+                    pass
+            # Reporting, cbcollect and Sirius teardown have all completed by
+            # this point, so there is nothing left to lose by skipping the
+            # join.
+            os._exit(Parameters.EXIT_CODE)
+
+        threading._register_atexit(_on_shutdown)
+
+    @staticmethod
     def handle_kill_signal(signum, frame):
         print(f"Critical:: Abrupt termination due to signal {signum}")
         Parameters.ABORTED = True
+        HelperLib.set_exit_code(signum)
         HelperLib.cleanup()
         sys.exit(signum)
 

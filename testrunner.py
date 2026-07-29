@@ -77,6 +77,7 @@ def main():
     TestInputSingleton.input.test_params = runtime_test_params
 
     HelperLib.register_signal_handlers()
+    HelperLib.arm_shutdown_guard()
 
     print("Global Test input params:")
     pprint(TestInputSingleton.input.test_params)
@@ -337,6 +338,7 @@ def main():
             break
 
     HelperLib.cleanup()
+    HelperLib.set_exit_code(exit_status)
     sys.exit(exit_status)
 
 if __name__ == "__main__":

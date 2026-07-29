@@ -10,7 +10,7 @@ import os
 import time
 from datetime import timedelta
 
-from threading import Lock
+from threading import Lock, Thread
 
 from couchbase.diagnostics import ServiceType
 from couchbase.exceptions import UnAmbiguousTimeoutException, \
@@ -217,6 +217,8 @@ class TransactionConfig(object):
 class SDKClient(object):
     sdk_connections = 0
     sdk_disconnections = 0
+    # Seconds to wait for cluster.close() before abandoning the connection
+    CLOSE_TIMEOUT = 30
     """
     Java SDK Client Implementation for testrunner - master branch
     """
@@ -449,8 +451,53 @@ class SDKClient(object):
 
     def close(self):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket)
-        if self.cluster:
-            self.cluster.close()
+        if not self.cluster:
+            return
+        # Clear upfront so every exit path below leaves the client closed and
+        # a second close() is a no-op.
+        cluster, self.cluster = self.cluster, None
+
+        # cluster.close() drains the C++ core's in-flight ops and IO threads
+        # and takes no timeout of its own. A KV socket wedged against a bucket
+        # that was deleted / recreated mid-test blocks it forever, which stalls
+        # SDKClientPool.shutdown() and therefore the whole teardown. Run it on
+        # a daemon babysitter so we can walk away: daemon threads are not
+        # joined during interpreter shutdown, so an abandoned close cannot hang
+        # the process at exit either.
+        close_error = list()
+
+        def _close():
+            try:
+                cluster.close()
+            except Exception as close_exception:
+                # Raised on the babysitter, so it would otherwise reach only
+                # threading.excepthook - and leave the thread looking like it
+                # finished cleanly. Hand it back to be logged and counted.
+                close_error.append(close_exception)
+
+        closer = Thread(target=_close, daemon=True,
+                        name="sdk-close-%s" % self.bucket)
+        try:
+            closer.start()
+        except RuntimeError as thread_error:
+            # Out of threads. Give up on this client rather than propagating
+            # into SDKClientPool.shutdown(), which would abandon every client
+            # still queued behind this one.
+            self.log.warning(
+                "Could not start the closer thread for bucket '%s': %s"
+                % (self.bucket, thread_error))
+            return
+
+        closer.join(timeout=SDKClient.CLOSE_TIMEOUT)
+        if closer.is_alive():
+            self.log.warning(
+                "cluster.close() for bucket '%s' did not return within %ss "
+                "- abandoning the connection"
+                % (self.bucket, SDKClient.CLOSE_TIMEOUT))
+        elif close_error:
+            self.log.warning("cluster.close() for bucket '%s' failed: %s"
+                             % (self.bucket, close_error[0]))
+        else:
             SDKClient.sdk_disconnections += 1
 
     # Translate APIs for document operations
