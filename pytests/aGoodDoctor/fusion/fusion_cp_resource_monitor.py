@@ -1339,11 +1339,18 @@ class FusionCPResourceMonitor:
 
         Logs each new per-attempt error the instant it appears in the API's
         rolling last-10-errors window (rather than only being visible via
-        after-the-fact Datadog log archaeology), and returns as soon as the
-        matched job reaches a terminal status -- True for "complete",
-        False for "failed" (with the full captured error trail already
-        logged at ERROR level) -- instead of waiting out the rest of a
-        generic rebalance timeout once the CP has already given up.
+        after-the-fact Datadog log archaeology), and returns True as soon as
+        the matched job reaches "complete". A "failed" status is logged but
+        not treated as terminal on its own -- CP can requeue the same job ID
+        after a transient failure (e.g. a rebalance-acceleration lock
+        collision) and carry it through to completion. The wait instead ends
+        early with False on either of two decisive signals: the job's own
+        CP-reported `attempts` count reaching `max_job_attempts` (CP itself
+        has given up retrying, regardless of the status value at the moment
+        we happen to poll), or `max_consecutive_poll_errors` consecutive
+        exceptions while fetching/parsing (we can no longer observe the job
+        at all). Anything short of those keeps polling until "complete" or
+        the overall `timeout`.
 
         :param pod: Pod object
         :param tenant: Tenant object
@@ -1352,10 +1359,24 @@ class FusionCPResourceMonitor:
             operation being monitored was triggered
         :param poll_interval: seconds between polls
         :param timeout: safety-net ceiling in seconds, in case the job never
-            reaches a terminal status
-        :return: True if the matched job completed successfully, False if it
-            failed or polling timed out without a terminal status
+            reaches "complete" or either give-up threshold below
+        :return: True if the matched job completed successfully, False if
+            its attempts count or consecutive poll errors hit their
+            threshold, or polling timed out without ever observing "complete"
         """
+        # CP's own attempts counter is the authoritative signal for "this job
+        # is never coming back" -- unlike a single "failed" status sighting
+        # (see the build-827 case below), an attempts count this high means
+        # CP itself has been retrying and failing for a long time, so there
+        # is no reason to keep waiting out the rest of an hour-long timeout.
+        max_job_attempts = 50
+        # Separately, if the poll itself keeps throwing (fetch failures,
+        # malformed responses), we can't observe the job at all -- give up
+        # after this many consecutive iterations rather than silently
+        # spinning to the same effect for the full timeout.
+        max_consecutive_poll_errors = 50
+        consecutive_poll_errors = 0
+
         deadline = time.time() + timeout
         seen_attempts = set()
         matched_job_id = None
@@ -1363,63 +1384,93 @@ class FusionCPResourceMonitor:
         while time.time() < deadline:
             try:
                 jobs = CapellaUtils.get_deployment_jobs(pod, tenant, cluster.id)
-            except Exception as e:
-                self.log.warning(
-                    f"[{cluster.id}] Failed to fetch deployment jobs, retrying: {e}"
-                )
-                time.sleep(poll_interval)
-                continue
+                consecutive_poll_errors = 0
 
-            candidates = []
-            for entry in jobs:
-                job = entry.get("job") or {}
-                created_at = job.get("createdAt")
-                if not created_at:
-                    continue
-                if self._parse_cp_timestamp(created_at) >= since_time:
-                    candidates.append(job)
+                candidates = []
+                for entry in jobs:
+                    job = entry.get("job") or {}
+                    created_at = job.get("createdAt")
+                    if not created_at:
+                        continue
+                    if self._parse_cp_timestamp(created_at) >= since_time:
+                        candidates.append(job)
 
-            if not candidates:
-                self.log.info(
-                    f"[{cluster.id}] No deployment job created since "
-                    f"{since_time} yet -- waiting"
-                )
-                time.sleep(poll_interval)
-                continue
+                if not candidates:
+                    self.log.info(
+                        f"[{cluster.id}] No deployment job created since "
+                        f"{since_time} yet -- waiting"
+                    )
+                else:
+                    job = max(candidates, key=lambda j: j["createdAt"])
+                    if matched_job_id != job["id"]:
+                        matched_job_id = job["id"]
+                        self.log.info(
+                            f"[{cluster.id}] Tracking deployment job {job['id']} "
+                            f"(type={job.get('type')}, createdAt={job['createdAt']})"
+                        )
 
-            job = max(candidates, key=lambda j: j["createdAt"])
-            if matched_job_id != job["id"]:
-                matched_job_id = job["id"]
-                self.log.info(
-                    f"[{cluster.id}] Tracking deployment job {job['id']} "
-                    f"(type={job.get('type')}, createdAt={job['createdAt']})"
-                )
+                    for err in job.get("errors") or []:
+                        attempt = err.get("attempt")
+                        if attempt not in seen_attempts:
+                            seen_attempts.add(attempt)
+                            self.log.error(
+                                f"[{cluster.id}] Deployment job {job['id']} attempt "
+                                f"{attempt} failed at {err.get('occurredAt')}: "
+                                f"{err.get('error')}"
+                            )
 
-            for err in job.get("errors") or []:
-                attempt = err.get("attempt")
-                if attempt not in seen_attempts:
-                    seen_attempts.add(attempt)
-                    self.log.error(
-                        f"[{cluster.id}] Deployment job {job['id']} attempt "
-                        f"{attempt} failed at {err.get('occurredAt')}: "
-                        f"{err.get('error')}"
+                    attempts = job.get("attempts") or 0
+                    status = job.get("status")
+                    self.log.info(
+                        f"[{cluster.id}] Deployment job {job['id']} status="
+                        f"{status} attempts={attempts}/{max_job_attempts}"
                     )
 
-            status = job.get("status")
-            if status == "complete":
-                self.log.info(
-                    f"[{cluster.id}] Deployment job {job['id']} completed "
-                    f"successfully after {job.get('attempts')} attempt(s)"
+                    if attempts >= max_job_attempts:
+                        self.log.error(
+                            f"[{cluster.id}] Deployment job {job['id']} has "
+                            f"reached {attempts} attempts (>= {max_job_attempts}) "
+                            f"-- giving up, see per-attempt errors logged above"
+                        )
+                        return False
+
+                    if status == "complete":
+                        self.log.info(
+                            f"[{cluster.id}] Deployment job {job['id']} completed "
+                            f"successfully after {attempts} attempt(s)"
+                        )
+                        return True
+                    if status == "failed":
+                        # Not treated as terminal on its own: build 827's job
+                        # 1c04045c-5eb1-4ec7-9f08-472470ead509 reported
+                        # status=="failed" with completedAt set after a
+                        # transient "one is already in progress" lock
+                        # collision, then CP requeued the same job ID back to
+                        # "processing" and it went on to complete -- bailing
+                        # out on the first sighting would have been a false
+                        # failure. The attempts check above is what catches a
+                        # genuinely stuck job instead.
+                        self.log.warning(
+                            f"[{cluster.id}] Deployment job {job['id']} reported "
+                            f"FAILED after {attempts} attempt(s) (completedAt="
+                            f"{job.get('completedAt')}) -- CP may still requeue "
+                            f"this job, continuing to poll "
+                            f"({attempts}/{max_job_attempts} attempts)"
+                        )
+            except Exception as e:
+                consecutive_poll_errors += 1
+                self.log.warning(
+                    f"[{cluster.id}] Error polling deployment jobs, continuing "
+                    f"to poll irrespective of the error "
+                    f"({consecutive_poll_errors}/{max_consecutive_poll_errors} "
+                    f"consecutive errors): {e}"
                 )
-                return True
-            if status == "failed":
-                self.log.error(
-                    f"[{cluster.id}] Deployment job {job['id']} FAILED after "
-                    f"{job.get('attempts')} attempts (completedAt="
-                    f"{job.get('completedAt')}) -- aborting wait, see "
-                    f"per-attempt errors logged above"
-                )
-                return False
+                if consecutive_poll_errors >= max_consecutive_poll_errors:
+                    self.log.error(
+                        f"[{cluster.id}] {consecutive_poll_errors} consecutive "
+                        f"errors polling deployment jobs -- giving up"
+                    )
+                    return False
 
             time.sleep(poll_interval)
 
