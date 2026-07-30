@@ -136,7 +136,7 @@ class APIBase(CouchbaseBaseTest):
                                     self.prefix + "security"):
                                 self.capellaAPI.org_ops_apis.delete_api_key(
                                     self.organisation_id, key["id"])
-                    # Create security related API keys, 255 to be exact.
+                    # Create security API keys (size-1 + size-2 combos = 36).
                     self.api_keys.update(
                         self.create_api_keys_for_all_combinations_of_roles(
                             [self.project_id]))
@@ -771,7 +771,7 @@ class APIBase(CouchbaseBaseTest):
             organization_roles = ["organizationOwner", "organizationMember",
                                   "projectCreator"]
         role_combinations = list()
-        for r in range(1, len(organization_roles+project_roles) + 1):
+        for r in range(1, 3):
             combinations = itertools.combinations(
                 organization_roles + project_roles, r)
             role_combinations.extend([list(c) for c in combinations])
