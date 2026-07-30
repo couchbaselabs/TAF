@@ -4,6 +4,7 @@ Created on Sep 14, 2017
 @author: riteshagarwal
 """
 import copy
+import datetime
 import json
 import os
 import random
@@ -372,6 +373,12 @@ class RebalanceTaskCapella(Task):
         self.test_log.critical("Scale_params: %s" % scale_params)
         self.poll_interval = poll_interval
         self.state = "healthy"
+        # Captured immediately before the CP request fires, since CP creates
+        # its internal-support deployment-job record at (or right after) this
+        # call -- capturing the timestamp any later (e.g. back in the test,
+        # after this constructor's own post-trigger state-polling below) would
+        # put since_time after the job's createdAt and make it un-matchable.
+        self.since_time = datetime.datetime.now(datetime.timezone.utc)
         DedicatedUtils.scale(self.pod, self.tenant, self.cluster, self.scale_params, self.timeout)
         count = 120
         while self.state == "healthy" and count > 0:

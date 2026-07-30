@@ -181,7 +181,12 @@ class VolumeTest(BaseTestCase, hostedOPD):
         import threading
         self.log.info(f"Monitoring cluster status for cluster {cluster.id}")
         rebalance_start_time = datetime.now()
-        rebalance_start_time_utc = datetime.now(timezone.utc)
+        # Prefer the timestamp RebalanceTaskCapella captured right before it
+        # fired the CP request -- capturing our own datetime.now() here would
+        # be after CP already created its deployment-job record, and
+        # wait_for_deployment_job's createdAt >= since_time filter would then
+        # permanently exclude that job (see AV triage on build 825).
+        rebalance_start_time_utc = getattr(rebalance_task, "since_time", None) or datetime.now(timezone.utc)
         self.log.info(f"Rebalance start time (scaling): {rebalance_start_time.strftime('%Y-%m-%d %H:%M:%S')} for cluster {cluster.id}")
         threads = []
         result = {}
