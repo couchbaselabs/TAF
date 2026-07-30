@@ -126,6 +126,16 @@ class APIBase(CouchbaseBaseTest):
 
                 if "apiKeys" not in self.capella["tenant_id"] or not \
                         self.capella["tenant_id"]["apiKeys"]:
+                    # Clean up leftover security keys from any prior aborted
+                    # run to avoid hitting the org-level API key limit.
+                    resp = self.capellaAPI.org_ops_apis.list_api_keys(
+                        self.organisation_id)
+                    if resp.status_code == 200:
+                        for key in resp.json().get("data", []):
+                            if key.get("name", "").startswith(
+                                    self.prefix + "security"):
+                                self.capellaAPI.org_ops_apis.delete_api_key(
+                                    self.organisation_id, key["id"])
                     # Create security related API keys, 255 to be exact.
                     self.api_keys.update(
                         self.create_api_keys_for_all_combinations_of_roles(
