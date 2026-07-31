@@ -187,6 +187,8 @@ class CreateBucketTests(ClusterSetup):
 
     def test_minimum_replica_update_during_replica_update_rebalance(self):
         rest = RestConnection(self.cluster.master)
+        status, content = rest.set_minimum_bucket_replica_for_cluster(0)
+        self.assertTrue(status, "minimum replica setting not reset to 0")
         minimum_replica = self.input.param("minimum_replica", 2)
         update_setting_during_regression = self.input.param(
             "update_setting_during_regression", True)

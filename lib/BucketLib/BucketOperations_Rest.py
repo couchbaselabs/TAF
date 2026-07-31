@@ -363,7 +363,7 @@ class BucketHelper(BucketRestApi):
 
         b_name = requests.utils.quote(bucket.name)
         api = f"{self.base_url}/pools/default/buckets/{b_name}"
-        status, content, response = self.http_request(api, self.DELETE)
+        status, content, response = self.request(api, self.DELETE)
         if not status:
             pass
         if int(response.status_code) == 500:
@@ -376,7 +376,7 @@ class BucketHelper(BucketRestApi):
 
     '''Load any of the three sample buckets'''
     def load_sample(self, sample_name):
-        status, _, _ = BucketRestApi.load_sample_bucket(self, [sample_name])
+        status, _ = BucketRestApi.load_sample_bucket(self, [sample_name])
         return status
 
     # figure out the proxy port
