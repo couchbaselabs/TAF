@@ -51,6 +51,13 @@ class APIBase(CouchbaseBaseTest):
             self.other_project_id = self.capella["tenant_id"]["otherProj"]
             self.api_keys = self.capella["tenant_id"]["apiKeys"]
             self.update_auth_with_api_token(self.curr_owner_key)
+            # Recreate security keys if cleared by previous TC's tearDown.
+            if (self.input.param("GROUP", "functional") == "security" and
+                    not self.api_keys):
+                self.api_keys.update(
+                    self.create_api_keys_for_all_combinations_of_roles(
+                        [self.capella["project"]]))
+                self.capella["tenant_id"]["apiKeys"] = self.api_keys
         else:
             self.capella["tenant_id"] = {
                 "id": self.organisation_id,
@@ -614,11 +621,6 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("Cluster destroyed successfully.")
             self.cluster_id = None
 
-            # Delete all the security related API Keys created and stored in
-            # the tenant DICT during initial SETUP run
-            self.log.info("Deleting {} API keys".format(len(self.api_keys)))
-            self.delete_api_keys(self.api_keys)
-
             # Delete the projects that were created.
             projects = [self.project_id]
             if self.capella["tenant_id"]["otherProj"]:
@@ -652,6 +654,15 @@ class APIBase(CouchbaseBaseTest):
                 if response.status_code != 204:
                     self.log.error("Error while deleting V2 control plane key")
                     self.log.error(response.content)
+        # Delete security keys after every TC to prevent accumulation
+        # against the org-level API key limit.
+        if (self.input.param("GROUP", "functional") == "security" and
+                self.api_keys):
+            self.log.info("Deleting {} security API keys after TC".format(
+                len(self.api_keys)))
+            self.delete_api_keys(self.api_keys)
+            self.capella["tenant_id"]["apiKeys"] = {}
+            self.api_keys = {}
         if "multi_project_1" in self.api_keys:
             del self.api_keys["multi_project_1"]
         if "multi_project_2" in self.api_keys:
