@@ -26,9 +26,18 @@ Other options:
     --project-id <id>       override the project id from the .ini
 
 Selection rules (a cluster is targeted if):
-  * its id is in --ids, OR
+  * its id is in --ids (bypasses every other rule below, including the
+    in-progress guard — an explicit id is a deliberate choice), OR
   * --failed-only and its currentState is a failed state, OR
-  * (default) its name starts with --prefix, OR its currentState is a failed state
+  * (default) its currentState is a failed state, OR its name starts with
+    --prefix AND --include-healthy is set AND it is currently healthy
+
+A cluster whose currentState is in-progress (deploying, rebalancing,
+scaling, restoring, turning on/off, resizing, healing, upgrading, deleting)
+is NEVER selected by the prefix/healthy rules above, even on a name match —
+only --ids can target one. A cluster mid-operation is not orphaned, it is
+in use by a running test/job; sweeping it up here would silently kill that
+run.
 """
 import argparse
 import configparser
@@ -55,6 +64,24 @@ FAILED_STATES = {
     "deploymentfailed", "deletionfailed", "restorefailed",
     "rebalancefailed", "scalefailed", "upgradefailed", "turnonfailed",
     "turnofffailed",
+}
+
+# States that mean "a live test/operation is using this cluster right now."
+# A prefix match alone must NEVER select one of these for deletion — the old
+# default ("failed, or --include-healthy, or simply state != healthy") swept
+# up anything mid-operation too (rebalancing, scaling, deploying, ...),
+# because those are also "not healthy". That is indistinguishable from an
+# orphaned cluster to this script, but is exactly what a running suite looks
+# like mid-rebalance/mid-scale/mid-deploy. Confirmed live: a fusion billing
+# test's own_cluster went from 'scaling' to 'destroying' to 404 mid-run with
+# no fusion-side error at all — consistent with something external deleting
+# it out from under the test, and this script's old default is the most
+# concrete candidate found. --ids still bypasses this for a deliberate,
+# explicitly-named delete.
+IN_PROGRESS_STATES = {
+    "deploying", "provisioning", "rebalancing", "scaling", "restoring",
+    "turningon", "turningoff", "resizing", "healing", "upgrading",
+    "deleting", "destroying",
 }
 
 
@@ -167,11 +194,19 @@ def _select(clusters, prefix, ids, failed_only, include_healthy):
             if is_failed:
                 selected.append((c, "failed state '{}'".format(state)))
             continue
+        if state in IN_PROGRESS_STATES:
+            # Never sweep up a cluster mid-operation on a prefix match alone,
+            # even if it also happens to match the prefix — see
+            # IN_PROGRESS_STATES. --ids above already bypassed this.
+            continue
         if name.startswith(prefix):
-            if is_failed or include_healthy or state != "healthy":
+            if is_failed or (include_healthy and state == "healthy"):
                 selected.append((c, "prefix match (state={})".format(state)))
             else:
-                # healthy prefix match, but --include-healthy not set
+                # Neither a known failed state nor an explicitly-requested
+                # healthy match, and not in-progress either (e.g. an unknown/
+                # unmapped state) — leave it alone by default; use --ids to
+                # target it explicitly if it really is orphaned.
                 continue
         elif is_failed:
             selected.append((c, "failed state '{}'".format(state)))

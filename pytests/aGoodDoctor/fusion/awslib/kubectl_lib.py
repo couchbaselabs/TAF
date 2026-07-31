@@ -6,26 +6,42 @@ needed to reach a Couchbase control-plane database running in a private
 subnet (get pods, describe pod, port-forward).
 """
 
+import base64
 import json
 import logging
 import os
+import platform
+import shutil
+import stat
 import subprocess
+import tempfile
 import threading
+import urllib.request
 from typing import Optional
+
+import yaml
+from botocore.signers import RequestSigner
 
 from .iam_lib import IAMLib
 
 
 class KubectlLib:
     """
-    EKS/kubectl library: assumes an IAM role for cluster access (via IAMLib)
-    and wraps the `aws eks update-kubeconfig` / `kubectl` CLIs needed to
-    reach a private control-plane Couchbase pod (e.g. sandbox database access).
+    EKS/kubectl library: assumes an IAM role for cluster access (via IAMLib),
+    configures kubectl for the target EKS cluster entirely via boto3 (describe
+    cluster + mint a bearer token — no `aws` CLI), and wraps the `kubectl`
+    commands needed to reach a private control-plane Couchbase pod
+    (e.g. sandbox database access).
     """
 
     DEFAULT_COMMAND_TIMEOUT = 60
     DEFAULT_PORT_FORWARD_READY_TIMEOUT = 60
     DEFAULT_CP_POD_NAME = "cp-couchbase-0000"
+
+    # Pinned kubectl for the auto-download fallback (see _kubectl_bin): used only
+    # when the agent has no `kubectl` on PATH. Any recent kubectl talks fine to
+    # the EKS API server via the static-token kubeconfig we generate.
+    KUBECTL_DOWNLOAD_VERSION = "v1.30.5"
 
     # The Datadog Autodiscovery annotation the operator stamps onto each CP
     # Couchbase pod; its value is a JSON array of {server, user, password}
@@ -55,6 +71,23 @@ class KubectlLib:
         self._lock = threading.Lock()
         self._port_forward_procs = {}
 
+        # EKS access is done WITHOUT the `aws` CLI: we describe the cluster and
+        # mint the k8s bearer token via boto3 (works on any arch where botocore
+        # imports), then write a static-token kubeconfig that kubectl reads via
+        # the KUBECONFIG env var. This avoids depending on a correctly-arch'd
+        # `aws` binary on the runner (an x86 aws on an arm64 agent gives ENOEXEC).
+        self._kubeconfig_path = None
+        self._eks_session = None
+        self._eks_endpoint = None
+        self._eks_ca_data = None
+        self._eks_cluster_name = None
+        self._eks_region = None
+        self._eks_context = None
+        # Resolved `kubectl` binary (PATH if present, else an auto-downloaded
+        # static build — some minimal CI agents ship neither aws nor kubectl).
+        self._kubectl_path = None
+        self.last_error = None
+
     def assume_role(self, role_arn: str, external_id: str = None,
                      role_session_name: str = None,
                      duration_seconds: int = None) -> bool:
@@ -69,21 +102,71 @@ class KubectlLib:
                                   (max 3600 when role chaining is involved)
         :return: True on success, False otherwise
         """
-        return self.iam.assume_role(role_arn, external_id=external_id,
-                                     role_session_name=role_session_name,
-                                     duration_seconds=duration_seconds)
+        ok = self.iam.assume_role(role_arn, external_id=external_id,
+                                   role_session_name=role_session_name,
+                                   duration_seconds=duration_seconds)
+        if not ok:
+            self.last_error = self.iam.last_error
+        return ok
 
     def _subprocess_env(self) -> dict[str, str]:
-        """Build the environment used for aws/kubectl subprocess calls."""
+        """Build the environment used for kubectl subprocess calls."""
         env = os.environ.copy()
         env.update(self.iam.get_env())
+        # Point kubectl at the static-token kubeconfig we generate via boto3 so
+        # it never invokes the `aws` CLI (no exec-credential plugin).
+        if self._kubeconfig_path:
+            env["KUBECONFIG"] = self._kubeconfig_path
         return env
+
+    def _kubectl_bin(self) -> str:
+        """Path to a usable `kubectl`: the one on PATH if present, else a static
+        build downloaded once for this arch to a temp dir. Minimal CI agents ship
+        neither `aws` nor `kubectl`; EKS auth is handled via boto3 + the static-
+        token kubeconfig, so a plain binary is all that's needed here."""
+        if self._kubectl_path:
+            return self._kubectl_path
+        found = shutil.which("kubectl")
+        if found:
+            self._kubectl_path = found
+            return found
+        self._kubectl_path = self._download_kubectl()
+        return self._kubectl_path
+
+    def _download_kubectl(self) -> str:
+        """Download a static kubectl matching the host arch (linux/amd64|arm64)
+        to a stable temp path (once), make it executable, and return its path."""
+        arch = {"x86_64": "amd64", "amd64": "amd64",
+                "aarch64": "arm64", "arm64": "arm64"}.get(
+                    platform.machine().lower(), "amd64")
+        dest = os.path.join(tempfile.gettempdir(),
+                            f"kubectl-{self.KUBECTL_DOWNLOAD_VERSION}-{arch}")
+        with self._lock:
+            if os.path.exists(dest) and os.path.getsize(dest) > 0:
+                return dest
+            url = (f"https://dl.k8s.io/release/{self.KUBECTL_DOWNLOAD_VERSION}"
+                   f"/bin/linux/{arch}/kubectl")
+            self.logger.info(f"kubectl not on PATH — downloading {url}")
+            tmp = dest + ".part"
+            urllib.request.urlretrieve(url, tmp)
+            os.chmod(tmp, os.stat(tmp).st_mode | stat.S_IEXEC
+                     | stat.S_IXGRP | stat.S_IXOTH)
+            os.replace(tmp, dest)
+            self.logger.info(f"kubectl ready at {dest}")
+        return dest
 
     def _run(self, cmd: list[str], timeout: int = None):
         """
         Run a command (argv list form, never shell=True) and return
         (success, stdout, stderr).
         """
+        # Refresh the kubeconfig's EKS token right before each kubectl call so a
+        # long test run never races the token's ~15 min lifetime, and resolve the
+        # kubectl binary (PATH or auto-downloaded).
+        if cmd and cmd[0] == "kubectl":
+            if self._kubeconfig_path:
+                self._write_kubeconfig()
+            cmd = [self._kubectl_bin()] + cmd[1:]
         try:
             result = subprocess.run(
                 cmd,
@@ -102,24 +185,94 @@ class KubectlLib:
             self.logger.error(f"Command {' '.join(cmd)} failed to start: {e}")
             return False, "", str(e)
 
+    def _boto3_session(self, region: str):
+        """boto3 session for the currently assumed role (auto-refreshing), or the
+        base credentials session if assume_role() was not called."""
+        try:
+            return self.iam.get_boto3_session(region=region)
+        except RuntimeError:
+            return self.iam.aws_session
+
+    def _generate_eks_token(self, session, cluster_name: str, region: str) -> str:
+        """Mint an EKS `k8s-aws-v1.` bearer token in pure Python (the same
+        presigned STS GetCallerIdentity URL that `aws eks get-token` produces),
+        so no `aws` CLI is needed. The `x-k8s-aws-id` header binds the token to
+        the target cluster; EKS accepts it for ~15 min from signing."""
+        botocore_session = session._session
+        sts = session.client("sts", region_name=region)
+        signer = RequestSigner(
+            sts.meta.service_model.service_id, region, "sts", "v4",
+            botocore_session.get_credentials(),
+            botocore_session.get_component("event_emitter"))
+        signed_url = signer.generate_presigned_url(
+            {"method": "GET",
+             "url": f"https://sts.{region}.amazonaws.com/"
+                    "?Action=GetCallerIdentity&Version=2011-06-15",
+             "body": {},
+             "headers": {"x-k8s-aws-id": cluster_name},
+             "context": {}},
+            region_name=region, expires_in=900, operation_name="")
+        return "k8s-aws-v1." + base64.urlsafe_b64encode(
+            signed_url.encode("utf-8")).decode("utf-8").rstrip("=")
+
+    def _write_kubeconfig(self) -> None:
+        """(Re)write the static-token kubeconfig using the cached EKS endpoint/CA
+        and a freshly minted token. Cheap (token is a local presign); called on
+        connect and before each kubectl call to keep the token within its TTL."""
+        with self._lock:
+            token = self._generate_eks_token(
+                self._eks_session, self._eks_cluster_name, self._eks_region)
+            ctx = self._eks_context
+            cfg = {
+                "apiVersion": "v1", "kind": "Config",
+                "clusters": [{"name": ctx, "cluster": {
+                    "server": self._eks_endpoint,
+                    "certificate-authority-data": self._eks_ca_data}}],
+                "contexts": [{"name": ctx, "context": {"cluster": ctx, "user": ctx}}],
+                "current-context": ctx,
+                "users": [{"name": ctx, "user": {"token": token}}],
+            }
+            if not self._kubeconfig_path:
+                fd, self._kubeconfig_path = tempfile.mkstemp(suffix=".kubeconfig")
+                os.close(fd)
+            with open(self._kubeconfig_path, "w") as fh:
+                yaml.safe_dump(cfg, fh, default_flow_style=False)
+
     def update_kubeconfig(self, cluster_name: str, region: str = None,
                            alias: str = None) -> bool:
         """
-        Run `aws eks update-kubeconfig` using the currently assumed role
-        (falls back to the base session credentials if assume_role() was not called).
+        Configure kubectl for the target EKS cluster WITHOUT the `aws` CLI:
+        describe the cluster (endpoint + CA) and mint a bearer token via boto3,
+        then write a static-token kubeconfig that kubectl reads via KUBECONFIG.
+        Uses the currently assumed role (falls back to the base session
+        credentials if assume_role() was not called).
 
         :param cluster_name: Name of the EKS cluster (e.g. sbx-10-cp-eks, qe-7-cp-eks)
         :param region: AWS region override (defaults to self.region)
-        :param alias: Optional kubeconfig context alias
+        :param alias: Optional kubeconfig context name
         :return: True on success, False otherwise
         """
-        cmd = ["aws", "eks", "update-kubeconfig",
-               "--name", cluster_name,
-               "--region", region or self.region]
-        if alias:
-            cmd += ["--alias", alias]
-        success, _, _ = self._run(cmd)
-        return success
+        region = region or self.region
+        try:
+            session = self._boto3_session(region)
+            cluster = session.client("eks", region_name=region).describe_cluster(
+                name=cluster_name)["cluster"]
+            self._eks_session = session
+            self._eks_region = region
+            self._eks_cluster_name = cluster_name
+            self._eks_endpoint = cluster["endpoint"]
+            self._eks_ca_data = cluster["certificateAuthority"]["data"]
+            self._eks_context = alias or cluster_name
+            self._write_kubeconfig()
+            self.logger.info(
+                f"Configured kubeconfig for EKS cluster {cluster_name} via boto3 "
+                f"(no aws CLI); endpoint {self._eks_endpoint}")
+            return True
+        except Exception as e:
+            self.last_error = str(e)
+            self.logger.error(
+                f"Failed to configure kubeconfig for EKS cluster {cluster_name}: {e}")
+            return False
 
     def use_context(self, context_name: str) -> bool:
         """Switch the active kubectl context to `context_name`."""
@@ -241,6 +394,73 @@ class KubectlLib:
             f"server={creds.get('server')}, user={creds.get('user')}")
         return creds
 
+    # The k8s secret holding the CP Couchbase admin credentials (the same source
+    # `cbc-db` uses). Unlike the Datadog Autodiscovery annotation — which carries
+    # a monitoring-only user that lacks the query_select role — this user can run
+    # N1QL against the CP database.
+    CP_COUCHBASE_AUTH_SECRET = "cp-couchbase-auth"
+
+    def get_cp_db_credentials_from_secret(self, context: str = None,
+                                           namespace: str = None) -> dict:
+        """
+        Return the CP Couchbase credentials from the `cp-couchbase-auth` k8s
+        secret (base64-decoded username/password). This is the query-capable DB
+        user; prefer it over the Datadog annotation for N1QL. Never logs the
+        password. Returns {} if the secret is unavailable.
+        """
+        cmd = ["kubectl", "get", "secret", self.CP_COUCHBASE_AUTH_SECRET, "-o", "json"]
+        if context:
+            cmd += ["--context", context]
+        if namespace:
+            cmd += ["-n", namespace]
+        success, stdout, _ = self._run(cmd)
+        if not success:
+            return {}
+        try:
+            data = json.loads(stdout).get("data", {}) or {}
+            user = base64.b64decode(data.get("username", "")).decode("utf-8").strip()
+            password = base64.b64decode(data.get("password", "")).decode("utf-8").strip()
+        except (ValueError, json.JSONDecodeError) as e:
+            self.logger.error(
+                f"Failed to parse {self.CP_COUCHBASE_AUTH_SECRET} secret: {e}")
+            return {}
+        if not user or not password:
+            return {}
+        self.logger.info(
+            f"Fetched CP db credentials from {self.CP_COUCHBASE_AUTH_SECRET} secret: user={user}")
+        return {"user": user, "password": password}
+
+    # The k8s secret holding the cp-api internal-support token (the value the
+    # /internal/support/* endpoints authenticate against, e.g. feature flags).
+    CP_API_SECRETS_AUTH_SECRET = "cp-api-secrets-auth"
+    INTERNAL_SUPPORT_TOKEN_KEY = "TOKEN_FOR_INTERNAL_SUPPORT"
+
+    def get_internal_support_token(self, context: str = None,
+                                    namespace: str = None) -> Optional[str]:
+        """
+        Return the cp-api internal-support token from the `cp-api-secrets-auth`
+        secret (base64-decoded `TOKEN_FOR_INTERNAL_SUPPORT`). This is the Bearer
+        token the /internal/support/* endpoints require (feature flags, etc.).
+        Never logs the token. None if unavailable.
+        """
+        cmd = ["kubectl", "get", "secret", self.CP_API_SECRETS_AUTH_SECRET, "-o", "json"]
+        if context:
+            cmd += ["--context", context]
+        if namespace:
+            cmd += ["-n", namespace]
+        success, stdout, _ = self._run(cmd)
+        if not success:
+            return None
+        try:
+            data = json.loads(stdout).get("data", {}) or {}
+            token = base64.b64decode(
+                data.get(self.INTERNAL_SUPPORT_TOKEN_KEY, "")).decode("utf-8").strip()
+        except (ValueError, json.JSONDecodeError) as e:
+            self.logger.error(
+                f"Failed to parse {self.CP_API_SECRETS_AUTH_SECRET} secret: {e}")
+            return None
+        return token or None
+
     def start_port_forward(self, pod_name: str, local_port: int, remote_port: int,
                             context: str = None, namespace: str = None,
                             ready_timeout: int = None) -> Optional[subprocess.Popen]:
@@ -252,11 +472,15 @@ class KubectlLib:
                  for use with stop_port_forward(); None if it failed to start
                  or did not become ready in time.
         """
-        cmd = ["kubectl", "port-forward", pod_name, f"{local_port}:{remote_port}"]
+        cmd = [self._kubectl_bin(), "port-forward", pod_name,
+               f"{local_port}:{remote_port}"]
         if context:
             cmd += ["--context", context]
         if namespace:
             cmd += ["-n", namespace]
+        # Freshly mint the token before the (long-lived) tunnel authenticates.
+        if self._kubeconfig_path:
+            self._write_kubeconfig()
         try:
             proc = subprocess.Popen(
                 cmd,

@@ -123,17 +123,18 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         # A cluster that is not healthy (failed rebalance, turned-off, etc.)
         # cannot be handed to the next test.  Destroy it now and clear the
         # shared-cluster bookkeeping so the next setUp deploys a fresh one.
-        if _FusionTestBase._shared_cluster_ids is not None:
+        cluster = getattr(self, "cluster", None)
+        if _FusionTestBase._shared_cluster_ids is not None and cluster:
             if not self._is_cluster_healthy():
                 self.log.warning(
-                    f"Cluster {self.cluster.id} is not healthy at tearDown — "
+                    f"Cluster {cluster.id} is not healthy at tearDown — "
                     "destroying it so the next test starts with a fresh cluster")
                 self._destroy_shared_cluster()
             elif (TestInputSingleton.input.test_params["case_number"] ==
                   TestInputSingleton.input.test_params["no_of_test_identified"]):
                 # Last test in the suite — normal end-of-run destroy.
                 self.log.info(
-                    f"Last test complete — destroying shared cluster {self.cluster.id}")
+                    f"Last test complete — destroying shared cluster {cluster.id}")
                 self._destroy_shared_cluster()
 
         BaseTestCase.tearDown(self)
@@ -328,12 +329,19 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         )
 
     def _enable_fusion_feature_flags(self, tenant, cluster_id=None):
-        # Fusion feature flags are honored at the TENANT level, not the
-        # cluster level (AV-136926, closed as designed) — set them on the
-        # tenant. cluster_id is kept for caller compatibility and unused.
-        CapellaAPI.create_tenant_feature_flag(
+        # Set GLOBALLY (env-wide), not per-tenant. These were previously set
+        # at the TENANT level (AV-136926, closed as designed for
+        # enable-eight-one-zero/fusion-rebalances), but fusion-fallback-replace
+        # does not take effect at tenant scope — confirmed by testing. Rather
+        # than split scope per-flag, all three are set globally for
+        # consistency. cluster_id is kept for caller compatibility and unused.
+        # enable-eight-one-zero gates 8.1.0 features; fusion is only available
+        # on 8.1.0 clusters, so it must be on for fusion to engage.
+        CapellaAPI.set_global_feature_flag(
+            self.pod, tenant, "enable-eight-one-zero", True)
+        CapellaAPI.set_global_feature_flag(
             self.pod, tenant, "fusion-rebalances", True)
-        CapellaAPI.create_tenant_feature_flag(
+        CapellaAPI.set_global_feature_flag(
             self.pod, tenant, "fusion-fallback-replace", True)
 
     def _ensure_fusion_state(self, tenant, cluster, target):

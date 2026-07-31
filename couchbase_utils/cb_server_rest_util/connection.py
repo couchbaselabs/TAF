@@ -5,6 +5,7 @@ import time
 
 from cb_constants.CBServer import CbServer
 from cb_constants.ClusterRun import ClusterRun
+from custom_exceptions.exception import ServerUnavailableException
 
 
 class CBRestConnection(object):
@@ -255,13 +256,13 @@ class CBRestConnection(object):
                 else:
                     self.log.debug("Error Connecting {0}".format(errc))
                 if time.time() > end_time:
-                    raise Exception(f"ServerUnavailableException - {self.ip}")
+                    raise ServerUnavailableException(self.ip)
             except requests.exceptions.Timeout as errt:
                 self.log.error("Timeout Error: {0}".format(errt))
                 if time.time() > end_time:
-                    raise Exception(f"ServerUnavailableException - {self.ip}")
+                    raise ServerUnavailableException(self.ip)
             except requests.exceptions.RequestException as err:
                 self.log.error("Something else: {0}".format(err))
                 if time.time() > end_time:
-                    raise Exception(f"ServerUnavailableException - {self.ip}")
+                    raise ServerUnavailableException(self.ip)
             time.sleep(3)

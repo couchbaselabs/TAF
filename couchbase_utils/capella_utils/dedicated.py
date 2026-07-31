@@ -694,8 +694,7 @@ class CapellaUtils(object):
             if result["errorType"] == "ErrDataplaneUserNameExists":
                 CapellaUtils.log.warn("User is already added: %s" % result["message"])
                 return
-            CapellaUtils.create_db_user(pod, tenant, cluster_id, user, pwd)
-            CapellaUtils.log.critical(json.loads(resp.content))
+            raise Exception("Create db user failed: {}".format(result))
         CapellaUtils.log.info(json.loads(resp.content))
         return json.loads(resp.content)
 
@@ -1184,6 +1183,35 @@ class CapellaUtils(object):
                 f"Creating tenant feature flag {ff} failed: {resp.status_code}")
             raise Exception("Creating tenant feature flag failed: {}".format(resp.content))
         CapellaUtils.log.info(f"Set tenant feature flag {ff}={value} for tenant {tenant.id}")
+
+    @staticmethod
+    def set_global_feature_flag(pod, tenant, ff, value):
+        """Set a GLOBAL feature flag via the internal-support API.
+
+        Global flags (e.g. ff-billing-fusion-enabled) are read by the control
+        plane WITHOUT tenant context (featureflags.BoolVariation with empty
+        tenantId -> the global value), so they must be set globally, not
+        per-tenant. Endpoint: PUT {internal}/internal/support/features/flags/{ff}
+        with {"value": bool}. Tries PUT (update) then POST (create) since the
+        flag may not exist yet.
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        payload = {"value": value}
+        # Try update (PUT); if the flag doesn't exist globally yet, create (POST).
+        resp = capella_api.update_global_feature_flag(ff, payload)
+        if resp.status_code not in [200, 201, 204]:
+            resp = capella_api.create_global_feature_flag(ff, payload)
+        if resp.status_code not in [200, 201, 204]:
+            CapellaUtils.log.critical(
+                f"Setting global feature flag {ff} failed: {resp.status_code}")
+            raise Exception(
+                "Setting global feature flag failed: {}".format(resp.content))
+        CapellaUtils.log.info(f"Set global feature flag {ff}={value}")
 
     # ---------------------------------------------------------------------------
     # Cloud snapshot backup methods (v2 internal API)

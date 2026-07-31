@@ -357,6 +357,7 @@ class FusionBackupRestoreBase(APIBase):
             self._delete_all_pooled_clusters()
             if self._preset_project_id:
                 self.project_id = None
+            self.cluster_id = None
             APIBase.tearDown(self)
             return
 
@@ -366,20 +367,41 @@ class FusionBackupRestoreBase(APIBase):
         will_delete |= self._delete_unhealthy_clusters()
 
         if not passed:
-            # Test failed/errored: keep buckets + the (healthy) clusters for
-            # debugging and reuse — any unhealthy cluster was already deleted
-            # above, so the remaining healthy ones are safe to reuse.
-            self.log.warning(
-                "tearDown: test did not succeed — the fresh target was already "
-                "deleted above; preserving the reused source cluster {} and its "
-                "buckets {} for reuse. (Use keep_clusters=True to preserve the "
-                "target too for debugging.)".format(
-                    self.source_cluster_id, self.source_bucket_ids))
-            self._scale_pooled_clusters_to_baseline(will_delete)
-            if self._pooling:
-                self._release_pooled_clusters(reusable=True)
+            if self.preserve_clusters:
+                # Test failed/errored: keep buckets + the (healthy) clusters
+                # for debugging and reuse — any unhealthy cluster was already
+                # deleted above, so the remaining healthy ones are safe to
+                # reuse.
+                self.log.warning(
+                    "tearDown: test did not succeed — the fresh target was "
+                    "already deleted above; preserving the reused source "
+                    "cluster {} and its buckets {} for reuse. (Use "
+                    "keep_clusters=True to preserve the target too for "
+                    "debugging.)".format(
+                        self.source_cluster_id, self.source_bucket_ids))
+                self._scale_pooled_clusters_to_baseline(will_delete)
+                if self._pooling:
+                    self._release_pooled_clusters(reusable=True)
+            else:
+                # preserve_clusters=False: the caller explicitly asked for no
+                # preservation, pass or fail — a failed test must not become
+                # a silent exception to that, or a wedged cluster hangs
+                # around unreused and undeleted until end-of-matrix (or
+                # forever, if the run never reaches it). _pooling is always
+                # False here too (it requires preserve_clusters), so there is
+                # nothing to release back to a pool — just destroy this
+                # test's clusters now.
+                self.log.warning(
+                    "tearDown: test did not succeed and preserve_clusters="
+                    "False — destroying this test's cluster(s) {} instead "
+                    "of leaving them hanging unreused.".format(
+                        self._clusters_created))
+                for cluster_id in list(self._clusters_created):
+                    self._delete_cluster_best_effort(
+                        cluster_id, self.project_id)
             if self._preset_project_id:
                 self.project_id = None
+            self.cluster_id = None
             APIBase.tearDown(self)
             return
 
@@ -424,6 +446,7 @@ class FusionBackupRestoreBase(APIBase):
         # of APIBase's project deletion via the None-guard it now honors.
         if self._preset_project_id:
             self.project_id = None
+        self.cluster_id = None
 
         APIBase.tearDown(self)
 
@@ -1089,7 +1112,19 @@ class FusionBackupRestoreBase(APIBase):
             self._internal_support_token() or "")
 
     def _apply_tenant_feature_flag(self, v2, ff, value):
-        """Create-or-update a single tenant feature flag to `value`."""
+        """Create-or-update a single tenant feature flag to `value`.
+
+        DELETE-then-CREATE, not create-then-update-on-conflict: confirmed
+        live (fusion_billing_test._set_fusion_billing_enabled) that this
+        control plane's update (PUT) path doesn't actually change an
+        existing flag's value -- it returns the same FeatureFlagAlreadyExists
+        conflict create does. Deleting the tenant-level override first
+        (no-op if absent) means create() never has an existing key to
+        conflict with. This call site has so far only ever set flags to
+        `true` (deploy-gating), which happened to mask the bug -- it stays
+        here so the next caller that needs to flip an existing flag doesn't
+        silently no-op the way the old create-then-update pattern did."""
+        v2.delete_tenant_feature_flag(self.organisation_id, ff)
         resp = v2.create_tenant_feature_flag(
             self.organisation_id, ff, {"value": value})
         if resp.status_code in [200, 201, 204]:
@@ -1100,6 +1135,7 @@ class FusionBackupRestoreBase(APIBase):
         except Exception:
             err_type = ""
         if err_type == "FeatureFlagAlreadyExists":
+            # Known-unreliable fallback, kept only as a last resort.
             resp = v2.update_tenant_feature_flag(
                 self.organisation_id, ff, {"value": value})
         if resp.status_code not in [200, 201, 204]:
@@ -1752,16 +1788,28 @@ class FusionBackupRestoreBase(APIBase):
             return "notfound", reason
         return "transient", reason
 
-    def _cp_giveup_msg(self, outcome, resource, count):
+    def _cp_giveup_msg(self, outcome, resource, count, operation="operation"):
         """Message when a poll loop gives up after `count` consecutive non-OK
         results, worded by outcome so infra (5xx/network) is never confused with
-        a genuine not-found (restore did not create the resource)."""
+        a genuine not-found (the `operation` — deploy/rebalance/restore/etc —
+        did not create the resource). Callers must pass the operation that's
+        actually being waited on; the message is misleading otherwise."""
         secs = count * self._cp_poll_interval
         if outcome == "notfound":
             return ("{} not found after ~{}s ({} consecutive 404s) — the "
-                    "restore did not create it".format(resource, secs, count))
+                    "{} did not create it".format(
+                        resource, secs, count, operation))
         return ("Control plane unreachable for {} — {} consecutive errors "
                 "(~{}s)".format(resource, count, secs))
+
+    def wait_for_deployment(self, proj_id, clus_id=None, app_svc_id=None,
+                            inst_id=None, pes=False):
+        """Override APIBase.wait_for_deployment (hardcoded 1800s) to respect
+        self.deploy_timeout and use the resilient CP poll loop (treats
+        transient CP errors / 404 as retriable without spending the convergence
+        budget). Delegates to _wait_for_cluster_healthy."""
+        return self._wait_for_cluster_healthy(
+            clus_id, proj_id, timeout=self.deploy_timeout)
 
     def _wait_for_cluster_healthy(self, cluster_id, project_id, timeout=1800):
         """Poll cluster state until healthy or timeout.
@@ -1784,7 +1832,8 @@ class FusionBackupRestoreBase(APIBase):
                 cp_errors += 1
                 if cp_errors >= self._cp_error_limit:
                     self.fail(self._cp_giveup_msg(
-                        outcome, "cluster {}".format(cluster_id), cp_errors)
+                        outcome, "cluster {}".format(cluster_id), cp_errors,
+                        operation="deploy")
                         + "; last: {}".format(payload))
                 # Don't spend the convergence budget on a CP blip / not-yet.
                 deadline += self._cp_poll_interval
@@ -2007,7 +2056,8 @@ class FusionBackupRestoreBase(APIBase):
                 cp_errors += 1
                 if cp_errors >= self._cp_error_limit:
                     self.fail(self._cp_giveup_msg(
-                        outcome, "bucket {}".format(bucket_id), cp_errors)
+                        outcome, "bucket {}".format(bucket_id), cp_errors,
+                        operation="bucket creation")
                         + "; last: {}".format(payload))
                 deadline += self._cp_poll_interval
                 time.sleep(self._cp_poll_interval)
@@ -2515,7 +2565,8 @@ class FusionBackupRestoreBase(APIBase):
                 cp_errors += 1
                 if cp_errors >= self._cp_error_limit:
                     self.log.error(self._cp_giveup_msg(
-                        outcome, "cluster {}".format(cluster_id), cp_errors)
+                        outcome, "cluster {}".format(cluster_id), cp_errors,
+                        operation="rebalance")
                         + "; last: {}".format(payload))
                     return False
                 deadline += self._cp_poll_interval
@@ -3218,7 +3269,8 @@ class FusionBackupRestoreBase(APIBase):
                     if cp_errors >= self._cp_error_limit:
                         self.fail(self._cp_giveup_msg(
                             outcome, "target {}".format(target_cluster_id),
-                            cp_errors) + "; last: {}".format(payload))
+                            cp_errors, operation="restore")
+                            + "; last: {}".format(payload))
                     deadline += self._cp_poll_interval
                     time.sleep(self._cp_poll_interval)
                     continue

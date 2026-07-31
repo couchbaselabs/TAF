@@ -64,6 +64,7 @@ class IAMLib:
         self._lock = threading.Lock()
         self._assumed_role_credentials = None
         self._assume_role_kwargs = None
+        self.last_error = None
 
     def assume_role(self, role_arn: str, external_id: str = None,
                      role_session_name: str = None,
@@ -106,6 +107,7 @@ class IAMLib:
             self.logger.info(f"Assumed role {kwargs['RoleArn']}, session expires at {creds['Expiration']}")
             return True
         except ClientError as e:
+            self.last_error = str(e)
             self.logger.error(f"Error assuming role {kwargs['RoleArn']}: {e}")
             return False
 

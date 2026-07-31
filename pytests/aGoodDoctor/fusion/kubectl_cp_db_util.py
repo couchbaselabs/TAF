@@ -56,16 +56,20 @@ class KubectlCPDBUtil:
 
     def get_cp_db_credentials(self, pod_name=None, namespace=None):
         """
-        Fetch the CP database's readonly credentials (server, user, password)
-        by inspecting the pod's Datadog Autodiscovery annotation. connect()
-        must be called first.
+        Fetch the CP database credentials. Prefers the `cp-couchbase-auth` k8s
+        secret (the query-capable DB user, same source cbc-db uses), and falls
+        back to the pod's Datadog Autodiscovery annotation (a monitoring-only
+        user that cannot run N1QL). connect() must be called first.
 
-        :param pod_name: Pod to inspect (defaults to KubectlLib.DEFAULT_CP_POD_NAME,
-                          i.e. "cp-couchbase-0000")
+        :param pod_name: Pod to inspect for the annotation fallback (defaults to
+                          KubectlLib.DEFAULT_CP_POD_NAME, i.e. "cp-couchbase-0000")
         :param namespace: Kubernetes namespace (optional)
-        :return: {"server": ..., "user": ..., "password": ...} dict,
-                 or None if the credentials could not be read
+        :return: {"user": ..., "password": ...} (plus "server" from the annotation
+                 path), or None if the credentials could not be read
         """
+        creds = self.kubectl.get_cp_db_credentials_from_secret(namespace=namespace)
+        if creds:
+            return creds
         return self.kubectl.get_cp_db_credentials(pod_name=pod_name, namespace=namespace)
 
     def _find_query_pod(self, creds, namespace=None):
