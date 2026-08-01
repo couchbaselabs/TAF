@@ -174,7 +174,8 @@ class CRLUtils:
     @staticmethod
     def generate_leaf_cert(ca_cert, ca_key, cn, key_algorithm="rsa2048",
                             valid_days=825, extended_key_usage=None,
-                            crl_distribution_url=None, dns_names=None):
+                            crl_distribution_url=None, dns_names=None,
+                            serial=None):
         """
         Generate a leaf cert signed by ca_cert/ca_key, in memory.
 
@@ -189,6 +190,9 @@ class CRLUtils:
                 does not auto-fetch from this per the PRD; useful only for
                 tests that assert the extension is present/ignored)
             dns_names: optional list of SAN DNS names (needed for node certs)
+            serial: optional int to force a specific serial number (e.g. to
+                deliberately collide two leaf certs from different CAs, for
+                cross-CA scope-isolation tests) — defaults to a random serial
 
         Returns:
             tuple: (cert: x509.Certificate, key, serial: int)
@@ -198,7 +202,7 @@ class CRLUtils:
         key = CRLUtils._generate_private_key(key_algorithm)
         subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
         now = datetime.datetime.now(datetime.timezone.utc)
-        serial = x509.random_serial_number()
+        serial = serial if serial is not None else x509.random_serial_number()
         builder = (
             x509.CertificateBuilder()
             .subject_name(subject)
@@ -256,7 +260,12 @@ class CRLUtils:
         """
         now = datetime.datetime.now(datetime.timezone.utc)
         if this_update is None:
-            this_update = now - datetime.timedelta(days=1)
+            # When expired, this_update must default to further in the past
+            # than next_update's own expired default (now-30d) below --
+            # otherwise both defaulting independently can produce
+            # this_update > next_update, which cryptography correctly
+            # rejects ("next update date must be after last update date").
+            this_update = now - datetime.timedelta(days=60 if expired else 1)
         if next_update is None:
             next_update = (
                 now - datetime.timedelta(days=30) if expired
@@ -383,28 +392,41 @@ class CRLUtils:
 
     @staticmethod
     def perform_mtls_handshake(host, port, client_cert_path, client_key_path,
-                                ca_cert_path, path="/whoami", timeout=30):
+                               path="/whoami", timeout=30):
         """
-        Perform a real mTLS handshake using plain `requests` with a client
-        cert (NOT the legacy Jython subprocess bridge multiple_CA.py uses —
-        modern `requests` handles client-cert mTLS natively under Python 3.10).
+        Performs a mutual TLS (mTLS) handshake and HTTP GET request using the 
+        provided client certificate.
 
         Args:
-            host/port: target node, e.g. "18091" for the TLS mgmt port
-            client_cert_path/client_key_path: filesystem paths to PEM files
-            ca_cert_path: filesystem path to the CA cert PEM to verify against
+            host (str): Target node IP or hostname.
+            port (int|str): Target TLS port (e.g., 18091 for mgmt).
+            client_cert_path (str): Filesystem path to the client's PEM certificate.
+            client_key_path (str): Filesystem path to the client's PEM private key.
+            path (str): HTTP endpoint to hit upon successful handshake (default: "/whoami").
+            timeout (int): Request timeout in seconds.
 
         Returns:
-            requests.Response on a successful handshake, or raises
-            requests.exceptions.SSLError on TLS-layer rejection (e.g. a
-            revoked cert — callers should catch this explicitly, since a
-            revoked-cert rejection is a connection-level failure, not an
-            HTTP status code, per CRL_API_Contract.md/CRL_TEST_PLAN.md §3).
+            requests.Response: On a successful handshake and HTTP response.
+
+        Raises:
+            requests.exceptions.SSLError: If the connection is rejected at the TLS layer 
+                (e.g., due to a revoked or expired client certificate).
+
+        Notes:
+            - Server identity verification is intentionally disabled (verify=False). 
+              The Couchbase node's default self-signed cert lacks the `CA:TRUE` 
+              constraint. Enabling verification causes the client's OpenSSL binding 
+              to abort the connection locally before the server can evaluate the CRL.
+            - `Connection: close` is forced to prevent urllib3 from reusing kept-alive 
+              sockets, ensuring a fresh TLS handshake occurs on every invocation.
         """
         url = f"https://{host}:{port}{path}"
         return requests.get(
-            url, cert=(client_cert_path, client_key_path), verify=ca_cert_path,
-            timeout=timeout,
+            url, 
+            cert=(client_cert_path, client_key_path), 
+            verify=False,
+            timeout=timeout, 
+            headers={"Connection": "close"}
         )
 
     # ── Assert helpers ───────────────────────────────────────────────────────

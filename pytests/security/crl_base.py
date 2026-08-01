@@ -1,5 +1,9 @@
 import os
+import re
 import tempfile
+
+import requests
+from cryptography.x509.oid import NameOID
 
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from membase.api.rest_client import RestConnection
@@ -9,6 +13,7 @@ from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from couchbase_utils.security_utils.crl_utils import CRLUtils
 from couchbase_utils.security_utils.x509main import x509main
 from pytests.onPrem_basetestcase import OnPremBaseTest
+from TestInput import TestInputSingleton
 
 
 class CRLBase(OnPremBaseTest):
@@ -18,6 +23,7 @@ class CRLBase(OnPremBaseTest):
     """
 
     def setUp(self):
+        self._self_heal_stuck_client_cert_auth()
         super().setUp()
 
         self.crl_utils = CRLUtils(log=self.log)
@@ -31,6 +37,8 @@ class CRLBase(OnPremBaseTest):
         self._rbac_users = []
         # Trusted CA ids uploaded during a test — cleaned up in tearDown
         self._trusted_ca_ids = []
+        # Temp PEM files written for mTLS handshake helpers — cleaned up in tearDown
+        self._temp_pem_files = []
 
         self.ca_cert, self.ca_key = self.crl_utils.generate_ca("TestCA1")
         self._trust_ca_on_cluster(self.ca_cert)
@@ -52,9 +60,55 @@ class CRLBase(OnPremBaseTest):
             self._cleanup_rbac_users()
         except Exception as exc:
             self.log.warning(f"RBAC user cleanup error: {exc}")
+        try:
+            self._cleanup_temp_pem_files()
+        except Exception as exc:
+            self.log.warning(f"Temp PEM file cleanup error: {exc}")
         finally:
             super().tearDown()
 
+    # ── Self-healing precondition ───────────────────────────────────────────
+
+    def _self_heal_stuck_client_cert_auth(self):
+        """
+        Resets 'clientCertAuth' to 'disable' if a previously aborted test left 
+        it in 'mandatory' mode. 
+
+        If left in 'mandatory' mode, all subsequent HTTPS REST calls (including 
+        the test framework's own setUp) will fail with a TLS "certificate required" 
+        error. This method uses the plain HTTP port (8091) to bypass the TLS layer 
+        and clear the setting safely.
+
+        Notes:
+            - Executes before super().setUp(), meaning self.cluster and self.log 
+              are not yet initialized. Uses TestInputSingleton and standard print().
+            - Execution is best-effort. Exceptions are caught and ignored so that 
+              genuine node-down errors surface naturally during the real setUp().
+        """
+        server = TestInputSingleton.input.servers[0]
+        base_url = f"http://{server.ip}:8091"
+        auth = (server.rest_username, server.rest_password)
+        
+        try:
+            resp = requests.get(
+                f"{base_url}/settings/clientCertAuth", auth=auth, timeout=30
+            )
+            resp.raise_for_status()
+            
+            if resp.json().get("state") == "mandatory":
+                print(
+                    f"[CRLBase] {server.ip} was stuck with clientCertAuth='mandatory'. "
+                    f"Resetting to 'disable' via HTTP before setUp()."
+                )
+                reset = requests.post(
+                    f"{base_url}/settings/clientCertAuth", auth=auth, timeout=30,
+                    headers={"Content-Type": "application/json"},
+                    json={"state": "disable", "prefixes": []},
+                )
+                reset.raise_for_status()
+                
+        except requests.exceptions.RequestException:
+            pass
     # ── EE / compat gating ───────────────────────────────────────────────────
 
     def _require_crl_supported(self):
@@ -73,9 +127,16 @@ class CRLBase(OnPremBaseTest):
         cluster to load it (POST /node/controller/loadTrustedCAs), mirroring
         x509main._upload_cluster_ca_certificate but for an in-memory-generated
         CA rather than one already on disk from an x509main._generate_cert call.
+
+        Each CA gets its own remote filename, derived from its CN plus serial
+        number -- reusing a single fixed filename across calls would let a
+        second _trust_ca_on_cluster() call silently overwrite (and thus
+        un-trust) a CA a test already trusted, e.g. tests that need more than
+        one simultaneously-trusted CA to check CRL-scope isolation.
         """
         server = server or self.cluster.master
         pem_bytes = self.crl_utils.cert_to_pem(ca_cert)
+        remote_filename = self._ca_remote_filename(ca_cert)
 
         shell = RemoteMachineShellConnection(server)
         try:
@@ -95,7 +156,7 @@ class CRLBase(OnPremBaseTest):
                 local_path = tmp_file.name
             try:
                 shell.copy_file_local_to_remote(
-                    local_path, f"{ca_dir}/crl_test_ca.pem"
+                    local_path, f"{ca_dir}/{remote_filename}"
                 )
             finally:
                 os.remove(local_path)
@@ -105,6 +166,15 @@ class CRLBase(OnPremBaseTest):
         status, content = self.rest.load_trusted_CAs()
         if not status:
             self.fail(f"Failed to load trusted CAs on {server.ip}: {content}")
+
+    @staticmethod
+    def _ca_remote_filename(ca_cert):
+        """Unique-per-CA remote filename: sanitized CN + serial number, so
+        distinct CAs trusted in the same test never collide on disk."""
+        cn_attrs = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+        cn = cn_attrs[0].value if cn_attrs else "ca"
+        safe_cn = re.sub(r"[^A-Za-z0-9_.-]", "_", cn)
+        return f"{safe_cn}_{ca_cert.serial_number}.pem"
 
     # ── Cleanup helpers ──────────────────────────────────────────────────────
 
@@ -125,7 +195,78 @@ class CRLBase(OnPremBaseTest):
         )
 
     def _disable_client_cert_auth(self):
-        SecurityRestAPI(self.cluster.master).cleanup_client_cert_auth()
+        """
+        Disables client certificate authentication (clientCertAuth) on the cluster.
+
+        Notes:
+            - This call intentionally uses plain HTTP (port 8091) instead of HTTPS. 
+              If the node was left in 'mandatory' mTLS mode, using HTTPS would 
+              cause this reset call to be locked out by the very state it is trying 
+              to clear.
+        """
+        server = self.cluster.master
+        requests.post(
+            f"http://{server.ip}:8091/settings/clientCertAuth",
+            auth=(server.rest_username, server.rest_password),
+            headers={"Content-Type": "application/json"},
+            json={"state": "disable", "prefixes": []},
+            timeout=30,
+        )
+
+    def _enable_client_cert_auth(self, state="enable", prefixes=None):
+        """
+        Enables client certificate authentication on the cluster.
+
+        Args:
+            state (str): 'enable' (optional mTLS) or 'mandatory' (strict mTLS). Defaults to 'enable'.
+            prefixes (list): RBAC identity mapping rules. Defaults to matching any Common Name (CN).
+
+        Notes:
+            - Using state="mandatory" forces a client certificate on every TLS connection. 
+              This will lock out standard username/password-based admin REST calls 
+              for the remainder of the test unless explicitly reverted.
+        """
+        if prefixes is None:
+            prefixes = [{"path": "subject.cn", "prefix": "", "delimiter": ""}]
+        
+        status, content, _ = SecurityRestAPI(
+            self.cluster.master
+        ).set_client_cert_auth_config(state=state, prefixes=prefixes)
+        
+        self.assertTrue(status, f"Failed to enable clientCertAuth: {content}")
+
+    def _write_temp_pem(self, pem_bytes, suffix=".pem"):
+        """
+        Writes in-memory PEM bytes to a tracked temporary file on disk.
+
+        Args:
+            pem_bytes (bytes): The certificate or key data to write.
+            suffix (str): The file extension. Defaults to ".pem".
+
+        Returns:
+            str: The absolute filesystem path to the created temporary file.
+        """
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=suffix, mode="wb"
+        ) as tmp_file:
+            tmp_file.write(pem_bytes)
+            path = tmp_file.name
+            
+        self._temp_pem_files.append(path)
+        return path
+
+    def _cleanup_temp_pem_files(self):
+        """
+        Deletes all tracked temporary PEM files created during the test run.
+        File deletion failures are logged as warnings rather than raising exceptions.
+        """
+        for path in self._temp_pem_files:
+            try:
+                os.remove(path)
+            except OSError as exc:
+                self.log.warning(f"Failed to remove temp PEM file {path}: {exc}")
+                
+        self._temp_pem_files = []
 
     def _create_rbac_test_user(self, username, role, password="Couchbase@1234"):
         rbac_utils = RbacUtils(self.cluster.master)
