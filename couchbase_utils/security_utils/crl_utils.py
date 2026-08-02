@@ -1,6 +1,7 @@
 import datetime
 import ipaddress
 import json
+import uuid
 
 import requests
 from cb_server_rest_util.security.crl import (
@@ -16,9 +17,18 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
+from shell_util.remote_connection import RemoteMachineShellConnection
+
+from couchbase_utils.security_utils.jwt_utils import (
+    remote_curl,
+    remote_write_file_b64,
+    start_remote_http_server,
+)
 
 __all__ = [
     "CRLUtils",
+    "setup_url_poll_crl_env",
+    "cleanup_url_poll_crl_env",
     "POLICY_MODES",
     "SCOPES",
     "CACHE_STATUS_VALUES",
@@ -170,6 +180,56 @@ class CRLUtils:
             .sign(key, hashes.SHA256())
         )
         return cert, key
+
+    @staticmethod
+    def generate_intermediate_ca(parent_cert, parent_key, cn, key_algorithm="rsa2048",
+                                  valid_days=1825, path_length=0):
+        """
+        Generate an intermediate CA cert/key pair, signed by parent_cert/
+        parent_key (not self-signed) -- same CA:TRUE / key_cert_sign+crl_sign
+        extension shape as generate_ca, but issued by a parent CA instead of
+        being a root. Useful for multi-tier chain tests (leaf -> intermediate
+        -> parent), where the intermediate's own serial can independently be
+        revoked by the parent, separately from the leaf's.
+
+        Args:
+            path_length: max number of further intermediate CAs this one may
+                sign beneath it (0 = may only sign end-entity leaf certs)
+
+        Returns:
+            tuple: (cert: x509.Certificate, key, serial: int)
+        """
+        key = CRLUtils._generate_private_key(key_algorithm)
+        subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        serial = x509.random_serial_number()
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(parent_cert.subject)
+            .public_key(key.public_key())
+            .serial_number(serial)
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=valid_days))
+            .add_extension(
+                x509.BasicConstraints(ca=True, path_length=path_length), critical=True
+            )
+            .add_extension(
+                x509.KeyUsage(
+                    digital_signature=False, content_commitment=False,
+                    key_encipherment=False, data_encipherment=False,
+                    key_agreement=False, key_cert_sign=True, crl_sign=True,
+                    encipher_only=False, decipher_only=False,
+                ),
+                critical=True,
+            )
+            .add_extension(
+                x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                critical=False,
+            )
+            .sign(parent_key, hashes.SHA256())
+        )
+        return cert, key, serial
 
     @staticmethod
     def generate_leaf_cert(ca_cert, ca_key, cn, key_algorithm="rsa2048",
@@ -337,9 +397,8 @@ class CRLUtils:
         """
         POST /settings/crl/files. Returns (status_bool, content).
 
-        Pass a larger `timeout` for large CRLs (see
-        CRL_TEST_PLAN.md file_upload_large_crl_test) — the default 300s can
-        be too short for very large uploads.
+        Pass a larger `timeout` for large CRLs (many thousands of revoked
+        entries) — the default 300s can be too short for very large uploads.
         """
         api = self._crl_api(rest)
         status, content, _ = api.upload_crl_file(filename, pem_bytes, timeout=timeout)
@@ -453,3 +512,148 @@ class CRLUtils:
             raise AssertionError(
                 f"Expected source={expected_source!r}, got {entry.get('source')!r}"
             )
+
+
+# ── URL-poll ingestion helpers ──────────────────────────────────────────────
+# Mirrors jwt_utils.py's setup_jwks_uri_issuer_env/cleanup_jwks_uri_issuer_env
+# exactly -- same throwaway-HTTP-server pattern, reusing jwt_utils.py's
+# generic remote_write_file_b64/start_remote_http_server/remote_curl helpers
+# directly rather than re-deriving them, just serving a CRL instead of a
+# JWKS document and pointing /settings/crl's `urls` at it instead of jwksUri.
+# stop_process_on_port (below) has no jwt_utils.py equivalent -- JWT's own
+# cleanup uses PID-based killing (stop_remote_process) and accepts its known
+# unreliability over a non-interactive SSH channel (see that function's own
+# docstring); CRL's retry loop needs killing-by-port specifically, since a
+# failed attempt must not leave a listener behind on the port before retrying.
+
+def stop_process_on_port(shell_conn, port):
+    """
+    Kill whatever is listening on `port`, regardless of how it was started.
+    More reliable than a PID captured from a backgrounded shell job (see
+    jwt_utils.stop_remote_process's docstring) -- this looks at the actual
+    live socket table instead of trusting shell job-control state that may
+    not have propagated correctly over a non-interactive SSH channel.
+    """
+    shell_conn.execute_command(
+        f"sh -c \"lsof -ti:{int(port)} | xargs -r kill -9 2>/dev/null || true\""
+    )
+
+
+def setup_url_poll_crl_env(*, crl_utils_obj, cluster_master, rest, ca_cert, ca_key,
+                            revoked_serials=None, crl_kwargs=None, filename="crl.pem",
+                            http_port=18990, http_bind="127.0.0.1",
+                            url_host_mode="localhost", url_poll_interval_ms=5000,
+                            start_attempts=10, log_callback=None):
+    """
+    Serves a signed CRL over a throwaway HTTP server on cluster_master, then
+    configures /settings/crl's `urls`/`urlPollIntervalMs` to fetch it.
+
+    Returns an env dict: shell_conn/pid/tmp_dir/crl_url/settings_status/settings_content.
+    Raises AssertionError if the server never started/served correctly after
+    start_attempts tries (port conflict or start failure).
+    """
+    tmp_dir = f"/tmp/taf_crl_url_{uuid.uuid4().hex[:8]}"
+    pid = None
+
+    shell_conn = RemoteMachineShellConnection(cluster_master)
+    shell_conn.execute_command("sh -c \"pkill -f 'http.server' >/dev/null 2>&1 || true\"")
+
+    crl_pem = crl_utils_obj.build_crl(
+        ca_cert, ca_key, revoked_serials=revoked_serials, **(crl_kwargs or {})
+    )
+    remote_write_file_b64(shell_conn, f"{tmp_dir}/{filename}", crl_pem.decode("utf-8"))
+
+    host = (
+        (getattr(cluster_master, "ip", None) or getattr(cluster_master, "hostname", None))
+        if url_host_mode == "node_ip" else "127.0.0.1"
+    )
+
+    chosen_port, crl_url = None, None
+    last_code, last_body = None, None
+
+    for attempt in range(1, max(1, int(start_attempts)) + 1):
+        candidate_port = int(http_port) + (attempt - 1)
+        pid, _listen_diag, start_cmd = start_remote_http_server(
+            shell_conn, port=candidate_port, directory=tmp_dir, bind=http_bind
+        )
+        if log_callback:
+            log_callback(f"Starting remote CRL HTTP server: {start_cmd}")
+
+        crl_url = f"http://{host}:{candidate_port}/{filename}"
+        if log_callback:
+            log_callback(f"Using CRL URL (attempt {attempt}): {crl_url}")
+
+        http_code, body, _curl_err = remote_curl(shell_conn, crl_url, timeout_seconds=5)
+        last_code, last_body = http_code, body
+        if str(http_code) == "200" and body and "BEGIN X509 CRL" in body:
+            chosen_port = candidate_port
+            break
+
+        # stop_process_on_port, not stop_remote_process -- $! captured after
+        # backgrounding a job over a non-interactive SSH channel isn't
+        # reliable (confirmed by direct testing), so killing by the port
+        # this attempt just tried to bind is the only way to guarantee the
+        # failed attempt's process doesn't linger before retrying.
+        stop_process_on_port(shell_conn, candidate_port)
+        pid = None
+
+    if chosen_port is None:
+        try:
+            shell_conn.execute_command(f"sh -c \"rm -rf '{tmp_dir}' || true\"")
+        except Exception:
+            pass
+        shell_conn.disconnect()
+        raise AssertionError(
+            "CRL HTTP server never started correctly.\n"
+            f"Last HTTP code={last_code}\n"
+            f"Last body={last_body}\n"
+            "Likely port conflict or server start failure."
+        )
+
+    status, content = crl_utils_obj.set_settings(
+        rest, urls=[crl_url], urlPollIntervalMs=url_poll_interval_ms
+    )
+
+    return {
+        "shell_conn": shell_conn,
+        "pid": pid,
+        "port": chosen_port,
+        "tmp_dir": tmp_dir,
+        "crl_url": crl_url,
+        "settings_status": status,
+        "settings_content": content,
+    }
+
+
+def cleanup_url_poll_crl_env(env):
+    """
+    Mirrors jwt_utils.cleanup_jwks_uri_issuer_env: kills the background HTTP
+    server, removes its temp dir, disconnects the shell. Does NOT reset CRL
+    settings itself -- CRLBase.tearDown()'s _reset_crl_settings() already
+    handles that.
+
+    Kills by port (stop_process_on_port), not by the PID captured at start
+    time -- confirmed by direct testing that $! after backgrounding a job
+    over a non-interactive SSH channel doesn't reliably name the actual
+    running process, which silently left a stray http.server process behind
+    on a real node even though stop_remote_process(shell_conn, pid) reported success.
+    """
+    if not env:
+        return
+    shell_conn = env.get("shell_conn")
+    port = env.get("port")
+    tmp_dir = env.get("tmp_dir")
+
+    try:
+        if shell_conn:
+            if port:
+                stop_process_on_port(shell_conn, port)
+            if tmp_dir:
+                shell_conn.execute_command(f"sh -c \"rm -rf '{tmp_dir}' || true\"")
+    except Exception:
+        pass
+    try:
+        if shell_conn:
+            shell_conn.disconnect()
+    except Exception:
+        pass

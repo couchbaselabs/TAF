@@ -2,32 +2,18 @@ import datetime
 import time
 
 import requests
+from shell_util.remote_connection import RemoteMachineShellConnection
 
+from couchbase_utils.security_utils.crl_utils import (
+    cleanup_url_poll_crl_env,
+    setup_url_poll_crl_env,
+)
+from couchbase_utils.security_utils.jwt_utils import remote_write_file_b64
 from pytests.security.crl_base import CRLBase
 
 
 class CRLTest(CRLBase):
-    """
-    Consolidated CRL (Certificate Revocation List) test suite — all CRL test
-    methods land here as CRL_TEST_PLAN.md sections get automated, rather than
-    proliferating one file per section.
-
-    test_settings_and_file_lifecycle: foundational smoke coverage proving the
-    REST wrapper / CRLUtils / CRLBase plumbing works end-to-end (settings CRUD
-    + file lifecycle as a single happy-path flow).
-
-    test_crl_trust_and_signature_boundary / test_crl_temporal_validity_lifecycle:
-    trust/signature-boundary and temporal-validity coverage (TestCases_CRL.csv
-    rows 13-19), written as 2 chained scenarios instead of 7 flat cases — one
-    test walks through every trust/signature edge case sharing one set of
-    CA/cert fixtures, the other walks a single CRL through its full
-    not-yet-valid -> valid -> expired lifecycle. Both drive a real mTLS
-    handshake via CRLUtils.perform_mtls_handshake(), using the
-    CRLBase._write_temp_pem/_enable_client_cert_auth helpers. Server identity
-    is not verified during the handshake (see
-    CRLUtils.perform_mtls_handshake's docstring) — these tests only care about
-    the client cert's CRL-driven accept/reject outcome.
-    """
+    """Consolidated CRL (Certificate Revocation List) test suite."""
 
     MGMT_PORT = 18091
 
@@ -238,7 +224,10 @@ class CRLTest(CRLBase):
             self._handshake_ok(leaf1_cert_path, leaf1_key_path),
             "leaf1 should still be rejected",
         )
-        self.log.info("leaf1 still correctly rejected (rows 14/15 had no effect)")
+        self.log.info(
+            "leaf1 still correctly rejected (the untrusted and forged CRLs "
+            "above had no effect)"
+        )
 
         # CA-2 needs its own applicable (even if empty) CRL before we can
         # test leaf2 under a Require policy — otherwise leaf2 would be
@@ -352,3 +341,208 @@ class CRLTest(CRLBase):
             self.log.info(f"Step 5: already-expired CRL accepted, flagged expired: {diag}")
         else:
             self.log.info(f"Step 5: already-expired CRL correctly rejected outright: {content}")
+
+    def test_crl_url_poll_ingestion(self):
+        """
+        Does urls/urlPollIntervalMs correctly fetch and apply a CRL from a
+        remote HTTP endpoint on a timer, without any explicit upload/reload
+        call? Serves a signed CRL over a throwaway HTTP server on the
+        cluster node itself (setup_url_poll_crl_env), points /settings/crl's
+        `urls` at it, then confirms the poller actually fetches and enforces
+        it -- not just that the setting was accepted.
+        """
+        leaf_cert, leaf_key, serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "urlPollLeaf"
+        )
+        leaf_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(leaf_cert))
+        leaf_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(leaf_key))
+        self.log.info(f"urlPollLeaf generated (serial {serial})")
+
+        # "enable" (optional), not "mandatory" -- same reasoning as the other
+        # tests in this class: our own admin REST calls need to keep working.
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.log.info("clientCertAuth=enable, clientAuth policy=Require")
+
+        env = setup_url_poll_crl_env(
+            crl_utils_obj=self.crl_utils,
+            cluster_master=self.cluster.master,
+            rest=self.rest,
+            ca_cert=self.ca_cert,
+            ca_key=self.ca_key,
+            revoked_serials=[serial],
+            url_poll_interval_ms=5000,
+            log_callback=self.log.info,
+        )
+        try:
+            self.assertTrue(
+                env["settings_status"],
+                f"Failed to configure urls/urlPollIntervalMs: {env['settings_content']}",
+            )
+            self.log.info(
+                f"Serving CRL at {env['crl_url']}, waiting for the poller to fetch it"
+            )
+
+            # No explicit upload/reload call above -- the leaf must be
+            # rejected purely because the URL poller fetched and applied
+            # the CRL on its own interval.
+            self._wait_until_handshake(
+                leaf_cert_path, leaf_key_path,
+                expect_ok=False,
+                deadline=datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=20),
+            )
+            self.log.info(
+                "urlPollLeaf correctly rejected — CRL was fetched via URL poll and applied"
+            )
+        finally:
+            cleanup_url_poll_crl_env(env)
+
+    def test_crl_settings_scope_independence_and_ingestion(self):
+        """
+        Three settings-surface checks that share one cluster/CA fixture
+        instead of three separate ones:
+
+        1. Do the two policy scopes (clientAuth/nodeToNode) update
+           independently, or does changing one silently affect the other?
+        2. Does a CRL dropped directly into the poll directory on disk (no
+           upload REST call at all) get picked up and enforced on its own,
+           purely from the background directory poller?
+        3. In a 3-tier chain (root -> intermediate -> leaf), does the
+           checkIntermediateCerts toggle actually control whether the
+           intermediate CA's *own* revocation status is checked, independent
+           of the leaf's?
+        """
+        self._enable_client_cert_auth(state="enable")
+
+        # 1. Per-scope independence: set both scopes, then change only one
+        # and confirm the other didn't move.
+        status, updated = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Initial policyPerScope update failed: {updated}")
+
+        status, updated = self.crl_utils.set_settings(
+            self.rest, policyPerScope={"nodeToNode": "Permissive"}
+        )
+        self.assertTrue(status, f"Single-scope policyPerScope update failed: {updated}")
+        self.crl_utils.assert_settings_equal(
+            updated,
+            {"policyPerScope": {"clientAuth": "Require", "nodeToNode": "Permissive"}},
+        )
+        self.log.info(
+            "clientAuth unaffected by a nodeToNode-only update: "
+            f"{updated.get('policyPerScope')}"
+        )
+
+        # 2. Directory poll ingestion: write a CRL straight to the poll
+        # directory over SSH, bypassing the upload endpoint entirely.
+        poll_dir = "/tmp/taf_crl_dir_poll_test"
+        status, updated = self.crl_utils.set_settings(
+            self.rest, directory=poll_dir, dirPollIntervalMs=5000
+        )
+        self.assertTrue(status, f"Directory/poll-interval update failed: {updated}")
+
+        dir_leaf_cert, dir_leaf_key, dir_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "dirPollLeaf"
+        )
+        dir_leaf_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(dir_leaf_cert)
+        )
+        dir_leaf_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(dir_leaf_key)
+        )
+        dir_crl_pem = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=[dir_serial], crl_number=1
+        )
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            shell.execute_command(f"mkdir -p {poll_dir}")
+            remote_write_file_b64(
+                shell, f"{poll_dir}/dir_poll_crl.pem", dir_crl_pem.decode("utf-8")
+            )
+        finally:
+            shell.disconnect()
+        self.log.info(f"Wrote a revoking CRL directly to {poll_dir} over SSH")
+
+        self._wait_until_handshake(
+            dir_leaf_cert_path, dir_leaf_key_path,
+            expect_ok=False,
+            deadline=datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(seconds=20),
+        )
+        self.log.info(
+            "dirPollLeaf correctly rejected — CRL picked up by the directory "
+            "poller with no upload call ever made"
+        )
+
+        # 3. checkIntermediateCerts toggle: revoke the intermediate CA's own
+        # serial (not the leaf's), then flip the toggle and confirm the
+        # outcome changes accordingly for the same cert/CRL pair.
+        intermediate_cert, intermediate_key, intermediate_serial = (
+            self.crl_utils.generate_intermediate_ca(
+                self.ca_cert, self.ca_key, "TestIntermediateCA"
+            )
+        )
+        # CRL-signing trust does not chain through the certificate hierarchy
+        # -- a CA must be separately, explicitly trusted before a CRL it
+        # signs will be accepted, even though its own certificate chains up
+        # to the already-trusted root.
+        self._trust_ca_on_cluster(intermediate_cert)
+        chain_leaf_cert, chain_leaf_key, _ = self.crl_utils.generate_leaf_cert(
+            intermediate_cert, intermediate_key, "chainLeaf"
+        )
+        # Client presents the full chain (leaf then its issuing
+        # intermediate) as one bundle, not just the leaf alone.
+        chain_bundle = self.crl_utils.cert_to_pem(
+            chain_leaf_cert
+        ) + self.crl_utils.cert_to_pem(intermediate_cert)
+        chain_cert_path = self._write_temp_pem(chain_bundle)
+        chain_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(chain_leaf_key))
+
+        # The leaf needs its own applicable (even if empty) CRL from its
+        # actual issuer (the intermediate) before testing the toggle below --
+        # otherwise the leaf would be rejected for having *no* applicable
+        # CRL at all under Require, which would look identical to a real
+        # rejection and defeat the point of this check.
+        baseline_filename = "settings_scope_intermediate_baseline.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, baseline_filename,
+            self.crl_utils.build_crl(intermediate_cert, intermediate_key, crl_number=1),
+        )
+        self.assertTrue(status, f"Intermediate baseline CRL upload failed: {content}")
+        self._track_uploaded_file(baseline_filename)
+
+        filename = "settings_scope_intermediate_revoked.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, intermediate_serial, filename,
+            crl_number=2,
+        )
+        self.assertTrue(status, f"Intermediate-revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.log.info(
+            f"Uploaded {filename}, revoking the intermediate CA's own serial "
+            f"{intermediate_serial} (not the leaf's)"
+        )
+
+        self.crl_utils.set_settings(self.rest, checkIntermediateCerts=False)
+        self.assertTrue(
+            self._handshake_ok(chain_cert_path, chain_key_path),
+            "With checkIntermediateCerts off, the intermediate's own "
+            "revocation should be ignored and the leaf should connect",
+        )
+        self.log.info("checkIntermediateCerts=False: chain connects as expected")
+
+        self.crl_utils.set_settings(self.rest, checkIntermediateCerts=True)
+        self.assertFalse(
+            self._handshake_ok(chain_cert_path, chain_key_path),
+            "With checkIntermediateCerts on, the revoked intermediate should "
+            "invalidate the whole chain",
+        )
+        self.log.info("checkIntermediateCerts=True: chain correctly rejected")

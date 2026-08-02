@@ -189,9 +189,24 @@ class CRLBase(OnPremBaseTest):
         self._created_files = []
 
     def _reset_crl_settings(self):
+        """
+        Reset every /settings/crl field back to its documented default, not
+        just policyPerScope. Found the hard way: a test that configures
+        `urls`/`urlPollIntervalMs` (e.g. test_crl_url_poll_ingestion) left
+        the cluster polling a now-dead URL every few seconds indefinitely
+        after its own HTTP server was torn down, since only resetting
+        policyPerScope left `urls` still pointed at it -- generating
+        continuous "unexpected HTTP status 404" warnings on the node with
+        no test still running to explain them.
+        """
         self.crl_utils.set_settings(
             self.rest,
             policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+            directory="/opt/couchbase/var/lib/couchbase/inbox/crls",
+            dirPollIntervalMs=60000,
+            checkIntermediateCerts=False,
+            urls=[],
+            urlPollIntervalMs=3600000,
         )
 
     def _disable_client_cert_auth(self):
