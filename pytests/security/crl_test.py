@@ -1,5 +1,6 @@
 import datetime
 import time
+import uuid
 
 import requests
 from shell_util.remote_connection import RemoteMachineShellConnection
@@ -115,17 +116,7 @@ class CRLTest(CRLBase):
         self.log.info(f"Defaults restored: {restored}")
 
     def test_crl_trust_and_signature_boundary(self):
-        """
-        Does a CRL's trust/signature actually apply to the cert being
-        checked?
-
-        Fixture: CA-1 (self.ca_cert, trusted in CRLBase.setUp) and a second
-        CA-2 explicitly trusted here too (both must be trusted so the
-        serial-collision check below isolates CRL-scope from ordinary
-        chain-of-trust rejection), plus a third CA that is deliberately
-        never trusted. leaf1 (CA-1) and leaf2 (CA-2) are built to share the
-        same serial number on purpose.
-        """
+        """Does a CRL's trust/signature actually apply to the cert being checked?"""
         self.log.info("Generating CA-1 (already trusted), CA-2, and an untrusted CA")
         ca1_cert, ca1_key = self.ca_cert, self.ca_key
 
@@ -343,14 +334,7 @@ class CRLTest(CRLBase):
             self.log.info(f"Step 5: already-expired CRL correctly rejected outright: {content}")
 
     def test_crl_url_poll_ingestion(self):
-        """
-        Does urls/urlPollIntervalMs correctly fetch and apply a CRL from a
-        remote HTTP endpoint on a timer, without any explicit upload/reload
-        call? Serves a signed CRL over a throwaway HTTP server on the
-        cluster node itself (setup_url_poll_crl_env), points /settings/crl's
-        `urls` at it, then confirms the poller actually fetches and enforces
-        it -- not just that the setting was accepted.
-        """
+        """Does urls/urlPollIntervalMs fetch and apply a CRL on its own timer?"""
         leaf_cert, leaf_key, serial = self.crl_utils.generate_leaf_cert(
             self.ca_cert, self.ca_key, "urlPollLeaf"
         )
@@ -402,20 +386,8 @@ class CRLTest(CRLBase):
             cleanup_url_poll_crl_env(env)
 
     def test_crl_settings_scope_independence_and_ingestion(self):
-        """
-        Three settings-surface checks that share one cluster/CA fixture
-        instead of three separate ones:
-
-        1. Do the two policy scopes (clientAuth/nodeToNode) update
-           independently, or does changing one silently affect the other?
-        2. Does a CRL dropped directly into the poll directory on disk (no
-           upload REST call at all) get picked up and enforced on its own,
-           purely from the background directory poller?
-        3. In a 3-tier chain (root -> intermediate -> leaf), does the
-           checkIntermediateCerts toggle actually control whether the
-           intermediate CA's *own* revocation status is checked, independent
-           of the leaf's?
-        """
+        """Per-scope policy independence, directory-poll ingestion, and the
+        checkIntermediateCerts toggle, sharing one fixture."""
         self._enable_client_cert_auth(state="enable")
 
         # 1. Per-scope independence: set both scopes, then change only one
@@ -441,7 +413,14 @@ class CRLTest(CRLBase):
 
         # 2. Directory poll ingestion: write a CRL straight to the poll
         # directory over SSH, bypassing the upload endpoint entirely.
-        poll_dir = "/tmp/taf_crl_dir_poll_test"
+        # Unique per run (not a fixed path) and explicitly removed from the
+        # node's disk in a finally block -- this is an ad-hoc SSH-written
+        # directory, not a CRL uploaded via the REST API, so
+        # _track_uploaded_file/_cleanup_created_files doesn't cover it. A
+        # fixed, never-cleaned-up path would linger on this shared node
+        # indefinitely, and a future test accidentally pointed at the same
+        # path would silently pick up a stale revoked CRL and fail mysteriously.
+        poll_dir = f"/tmp/taf_crl_dir_poll_{uuid.uuid4().hex[:8]}"
         status, updated = self.crl_utils.set_settings(
             self.rest, directory=poll_dir, dirPollIntervalMs=5000
         )
@@ -460,26 +439,30 @@ class CRLTest(CRLBase):
             self.ca_cert, self.ca_key, revoked_serials=[dir_serial], crl_number=1
         )
 
-        shell = RemoteMachineShellConnection(self.cluster.master)
+        poll_shell = RemoteMachineShellConnection(self.cluster.master)
         try:
-            shell.execute_command(f"mkdir -p {poll_dir}")
+            poll_shell.execute_command(f"mkdir -p {poll_dir}")
             remote_write_file_b64(
-                shell, f"{poll_dir}/dir_poll_crl.pem", dir_crl_pem.decode("utf-8")
+                poll_shell, f"{poll_dir}/dir_poll_crl.pem", dir_crl_pem.decode("utf-8")
+            )
+            self.log.info(f"Wrote a revoking CRL directly to {poll_dir} over SSH")
+
+            self._wait_until_handshake(
+                dir_leaf_cert_path, dir_leaf_key_path,
+                expect_ok=False,
+                deadline=datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=20),
+            )
+            self.log.info(
+                "dirPollLeaf correctly rejected — CRL picked up by the directory "
+                "poller with no upload call ever made"
             )
         finally:
-            shell.disconnect()
-        self.log.info(f"Wrote a revoking CRL directly to {poll_dir} over SSH")
-
-        self._wait_until_handshake(
-            dir_leaf_cert_path, dir_leaf_key_path,
-            expect_ok=False,
-            deadline=datetime.datetime.now(datetime.timezone.utc)
-            + datetime.timedelta(seconds=20),
-        )
-        self.log.info(
-            "dirPollLeaf correctly rejected — CRL picked up by the directory "
-            "poller with no upload call ever made"
-        )
+            try:
+                poll_shell.execute_command(f"rm -rf {poll_dir}")
+            except Exception as exc:
+                self.log.warning(f"Failed to clean up {poll_dir}: {exc}")
+            poll_shell.disconnect()
 
         # 3. checkIntermediateCerts toggle: revoke the intermediate CA's own
         # serial (not the leaf's), then flip the toggle and confirm the
@@ -546,3 +529,186 @@ class CRLTest(CRLBase):
             "invalidate the whole chain",
         )
         self.log.info("checkIntermediateCerts=True: chain correctly rejected")
+
+    def test_crl_policy_mode_matrix(self):
+        """Walks Disabled -> Permissive -> Require, re-checking a revoked,
+        a missing-CRL, and an expired-CRL cert at each mode."""
+        self.log.info("Building fixture: leafRevoked (CA-1, already trusted)")
+        ca1_cert, ca1_key = self.ca_cert, self.ca_key
+        leaf_revoked_cert, leaf_revoked_key, revoked_serial = (
+            self.crl_utils.generate_leaf_cert(ca1_cert, ca1_key, "leafRevoked")
+        )
+        leaf_revoked_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(leaf_revoked_cert)
+        )
+        leaf_revoked_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(leaf_revoked_key)
+        )
+
+        ca2_cert, ca2_key = self.crl_utils.generate_ca("TestCA2Missing")
+        self._trust_ca_on_cluster(ca2_cert)
+        self.log.info("CA-2 trusted on cluster")
+        leaf_missing_cert, leaf_missing_key, _ = self.crl_utils.generate_leaf_cert(
+            ca2_cert, ca2_key, "leafMissing"
+        )
+        leaf_missing_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(leaf_missing_cert)
+        )
+        leaf_missing_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(leaf_missing_key)
+        )
+        # Deliberately never upload any CRL for CA-2 -- this IS the
+        # missing-applicable-CRL case.
+
+        ca3_cert, ca3_key = self.crl_utils.generate_ca("TestCA3Expiring")
+        self._trust_ca_on_cluster(ca3_cert)
+        self.log.info("CA-3 trusted on cluster")
+        leaf_expired_cert, leaf_expired_key, _ = self.crl_utils.generate_leaf_cert(
+            ca3_cert, ca3_key, "leafExpired"
+        )
+        leaf_expired_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(leaf_expired_cert)
+        )
+        leaf_expired_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(leaf_expired_key)
+        )
+        self.log.info(
+            "Generated leafRevoked (CA-1), leafMissing (CA-2, no CRL ever "
+            "uploaded), leafExpired (CA-3, CRL will go stale)"
+        )
+
+        self._enable_client_cert_auth(state="enable")
+
+        # CA-1's CRL: long-lived, revokes leafRevoked's own serial.
+        filename1 = "policy_matrix_crl1_revoked.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, ca1_cert, ca1_key, revoked_serial, filename1, crl_number=1
+        )
+        self.assertTrue(status, f"CA-1 revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename1)
+
+        # CA-3's CRL: short-lived, revokes an unrelated dummy serial (not
+        # leafExpired's own) -- the only thing wrong with it is that it
+        # goes stale partway through the test.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        this_update = now - datetime.timedelta(seconds=5)
+        next_update = now + datetime.timedelta(seconds=20)
+        filename3 = "policy_matrix_crl3_expiring.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename3,
+            self.crl_utils.build_crl(
+                ca3_cert, ca3_key, revoked_serials=[999999999], crl_number=1,
+                this_update=this_update, next_update=next_update,
+            ),
+        )
+        self.assertTrue(status, f"CA-3 expiring-CRL upload failed: {content}")
+        self._track_uploaded_file(filename3)
+        self.crl_utils.reload_crl(self.rest)
+        self.log.info(
+            f"Fixture ready: CA-1 CRL revokes leafRevoked, CA-2 has no CRL, "
+            f"CA-3's CRL expires at {next_update}"
+        )
+
+        # Disabled ignores every cert state.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(
+            self._handshake_ok(leaf_revoked_cert_path, leaf_revoked_key_path),
+            "Disabled: revoked cert should still connect",
+        )
+        self.assertTrue(
+            self._handshake_ok(leaf_missing_cert_path, leaf_missing_key_path),
+            "Disabled: missing-CRL cert should connect",
+        )
+        self.assertTrue(
+            self._handshake_ok(leaf_expired_cert_path, leaf_expired_key_path),
+            "Disabled: expired-CRL cert should connect",
+        )
+        self.log.info("Disabled: all 3 cert states connect, as expected")
+
+        # Disabled -> Permissive: assert rejection immediately after the
+        # POST, no sleep in between, to prove the change takes effect on
+        # the very next connection with no restart required.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Permissive", "nodeToNode": "Disabled"},
+        )
+        self.assertFalse(
+            self._handshake_ok(leaf_revoked_cert_path, leaf_revoked_key_path),
+            "Permissive: revoked cert should be rejected on the very next "
+            "connection after the policy change",
+        )
+        self.log.info("Permissive took effect on the very next connection")
+
+        # Permissive fails open on a missing applicable CRL.
+        self.assertTrue(
+            self._handshake_ok(leaf_missing_cert_path, leaf_missing_key_path),
+            "Permissive: missing-CRL cert should connect (fail-open)",
+        )
+        self.log.info("Permissive: missing-CRL cert connects (fail-open)")
+
+        # Permissive fails open on an expired applicable CRL too, a
+        # distinct case from "missing" above (this CRL exists, it's just
+        # stale). Wait for real wall-clock time to actually pass CA-3's
+        # CRL's nextUpdate before checking. Computed from the remaining gap
+        # to next_update (plus a small buffer), not a flat sleep -- the
+        # steps above (cert generation, Disabled checks, the Permissive
+        # transition) already burn some of that 20s window, and a fixed
+        # sleep on top would either waste time re-waiting a window that's
+        # already elapsed, or need to be padded generously to stay safe
+        # either way. This sleeps only what's actually left.
+        remaining_seconds = (
+            next_update - datetime.datetime.now(datetime.timezone.utc)
+        ).total_seconds()
+        self.sleep(
+            max(0, remaining_seconds) + 5,
+            f"Waiting for CA-3's CRL to expire (nextUpdate={next_update})",
+        )
+        self.assertTrue(
+            self._handshake_ok(leaf_expired_cert_path, leaf_expired_key_path),
+            "Permissive: expired-CRL cert should connect (fail-open)",
+        )
+        self.log.info("Permissive: expired-CRL cert connects (fail-open)")
+        # Best-effort: look for a warning-shaped log line, never a hard
+        # assertion -- the connection outcome above is what actually proves
+        # fail-open semantics, this is just a nicety if the wording matches.
+        try:
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            try:
+                out, _ = shell.execute_command(
+                    "grep -i 'warn' /opt/couchbase/var/lib/couchbase/logs/debug.log "
+                    "| tail -20"
+                )
+                self.log.info(f"Warning-log check (best-effort): {out}")
+            finally:
+                shell.disconnect()
+        except Exception as exc:
+            self.log.info(f"Warning-log check skipped (best-effort): {exc}")
+
+        # Permissive -> Require: same immediate-effect check as above.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertFalse(
+            self._handshake_ok(leaf_revoked_cert_path, leaf_revoked_key_path),
+            "Require: revoked cert should be rejected on the very next "
+            "connection after the policy change",
+        )
+        self.log.info("Require took effect on the very next connection")
+
+        # Require fails closed on the now-expired CRL.
+        self.assertFalse(
+            self._handshake_ok(leaf_expired_cert_path, leaf_expired_key_path),
+            "Require: expired-CRL cert should be rejected (fail-closed)",
+        )
+        self.log.info("Require: expired-CRL cert rejected (fail-closed)")
+
+        # Require fails closed on the missing CRL.
+        self.assertFalse(
+            self._handshake_ok(leaf_missing_cert_path, leaf_missing_key_path),
+            "Require: missing-CRL cert should be rejected (fail-closed)",
+        )
+        self.log.info("Require: missing-CRL cert rejected (fail-closed)")
