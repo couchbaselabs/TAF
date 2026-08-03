@@ -211,7 +211,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if self.cont_bkp_test in ["AWS", "Azure", "GCP", "localstack"]:
             self.obj_staging_dir_cont_bkp = self.input.param("obj_staging_dir_cont_bkp", "/data/staging_cont_bkp")
         else:
-            self.obj_staging_dir_cont_bkp = None
+            self.obj_staging_dir_cont_bkp = self.obj_staging_dir_cbbackup
         self.retention_test = self.input.param("retention_test", False)
         self.retention_check_mins = self.input.param("retention_check_mins", 5)
         self.retention_period_unsafe = self.input.param("retention_period_unsafe", "5m")

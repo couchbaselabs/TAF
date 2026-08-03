@@ -14,21 +14,69 @@ class CbContBk(CbCmdBase):
     CMD_TIMEOUT = 900
 
     def __init__(self, shell_conn, username="Administrator",
-                 password="password", log=None, cloud_provider=None,
+                 password="password", log=None,
+                 cbcontbk_cloud_provider=None, backup_cloud_provider=None,
                  kms_provider=None):
+        """
+        :param cbcontbk_cloud_provider: provider backing the continuous-backup
+                                        location (cbcontbk's -l)
+        :param backup_cloud_provider: provider backing the traditional backup
+                                      archive (cbcontbk's -a)
+
+        Every cbcontbk command touches both the archive and the continuous
+        backup location, but the CLI takes only one set of object-store
+        credentials -- so the two halves must live in the same object store.
+        Accordingly the accepted combinations are:
+
+          - neither set                     -- both halves on local/NFS storage
+          - only one set                    -- that half is on an object store
+          - both set to the same provider type
+
+        Two different provider types raise here rather than producing a
+        command that can only ever reach one of the two locations.
+        """
         CbCmdBase.__init__(self, shell_conn, "cbcontbk",
                            username=username, password=password)
         self.cli_flags = ""
-        self.cloud_provider = cloud_provider
+        self.cbcontbk_cloud_provider = cbcontbk_cloud_provider
+        self.backup_cloud_provider = backup_cloud_provider
         self.kms_provider = kms_provider
         if log:
             self.log = log
         else:
             self.log = logging.getLogger("test")
 
+        if cbcontbk_cloud_provider is not None \
+                and backup_cloud_provider is not None \
+                and type(cbcontbk_cloud_provider) is not type(backup_cloud_provider):
+            raise ValueError(
+                "cbcontbk cannot span two object stores: continuous backup is "
+                "on %s but the backup archive is on %s"
+                % (type(cbcontbk_cloud_provider).__name__,
+                   type(backup_cloud_provider).__name__))
+
     def _append_km_flags(self, cmd):
         if self.kms_provider is not None:
             cmd += " %s" % self.kms_provider.get_km_flags(self.shellConn)
+        return cmd
+
+    def _append_obj_store_flags(self, cmd, obj_staging_dir=None):
+        """
+        Append the object-store flags for whichever half of the command needs
+        them, plus `--obj-staging-dir` if given.
+
+        `cbcontbk_cloud_provider` wins when both are set: __init__ has already
+        guaranteed they are the same provider type, so its flags cover the
+        archive too.
+        """
+        if obj_staging_dir:
+            cmd += f" --obj-staging-dir {obj_staging_dir}"
+
+        if self.cbcontbk_cloud_provider is not None:
+            cmd += f" {self.cbcontbk_cloud_provider.get_cbconbk_flags(self.shellConn)}"
+        elif self.backup_cloud_provider is not None:
+            cmd += f" {self.backup_cloud_provider.get_cbbackupmgr_flags(self.shellConn)}"
+
         return cmd
 
     def _execute_cmd(self, cmd):
@@ -95,8 +143,7 @@ class CbContBk(CbCmdBase):
         :param include_data: Specific collection to include
         :param map_data: Mapping for the data restore
         :param obj_staging_dir: Object staging dir, appended as
-                                --obj-staging-dir when a cloud_provider is
-                                injected
+                                --obj-staging-dir
         """
         if cluster_host is None:
             cluster_host = f"http://{self.shellConn.server.ip}:8091"
@@ -120,10 +167,7 @@ class CbContBk(CbCmdBase):
 
         cmd += self.cli_flags
 
-        if self.cloud_provider is not None:
-            cmd += f" {self.cloud_provider.get_cbconbk_flags(self.shellConn)}"
-            if obj_staging_dir:
-                cmd += f" --obj-staging-dir {obj_staging_dir}"
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -146,18 +190,14 @@ class CbContBk(CbCmdBase):
         :param location: Location of the continuous backup
         :param temp_dir: Temporary directory for log collection
         :param obj_staging_dir: Object staging dir, appended as
-                                --obj-staging-dir when a cloud_provider is
-                                injected
+                                --obj-staging-dir
         """
         cmd = (f"{self.cbstatCmd} collect-logs -l {location} "
                f"-d {temp_dir}")
 
         cmd += self.cli_flags
 
-        if self.cloud_provider is not None:
-            cmd += f" {self.cloud_provider.get_cbconbk_flags(self.shellConn)}"
-            if obj_staging_dir:
-                cmd += f" --obj-staging-dir {obj_staging_dir}"
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 

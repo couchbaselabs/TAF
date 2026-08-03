@@ -24,11 +24,14 @@ class ContinuousBackupUtil(object):
                                       password=password,
                                       log=self.log,
                                       cloud_provider=backupmgr_cloud_provider)
+        # cbcontbk reads both the archive and the continuous backup location,
+        # so it needs both providers
         self.cont_bk_mgr = CbContBk(shell_conn,
                                     username=username,
                                     password=password,
                                     log=self.log,
-                                    cloud_provider=contbk_cloud_provider)
+                                    cbcontbk_cloud_provider=contbk_cloud_provider,
+                                    backup_cloud_provider=backupmgr_cloud_provider)
 
     def enable_continuous_backup(self, bucket_util, cluster, buckets, continuous_backup_location="/tmp/cont_bkp", continuous_backup_interval=5, continuous_backup_cloud_storage_cred_id=None):
         """Enable continuous backup on all buckets in the cluster

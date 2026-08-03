@@ -216,11 +216,14 @@ class CollectionBase(ClusterSetup, FusionBase):
         self.km_cred_store_id = None
 
         if self.cont_bkp_test:
+            # cbcontbk reads both the archive and the continuous backup
+            # location, so it needs both providers
             self.cont_bk_mgr = CbContBk(shell,
                                         username=self.cluster.master.rest_username,
                                         password=self.cluster.master.rest_password,
                                         log=self.log,
-                                        cloud_provider=self.contbk_cloud_provider)
+                                        cbcontbk_cloud_provider=self.contbk_cloud_provider,
+                                        backup_cloud_provider=self.backup_cloud_provider)
 
             # EaR opt-in for cbcontbk tests: provision an external KMS key,
             # upload its credentials to the Credential Store, and attach the
