@@ -17,6 +17,7 @@ class TaskManager(object):
         self.pool = ThreadPoolExecutor(self.number_of_threads,
                                        thread_name_prefix="ThreadPool")
         self.futures = dict()
+        self.tasks = dict()
 
     def add_new_task(self, task):
         if isinstance(task, SiriusCouchbaseLoader) or isinstance(task, SiriusJavaMongoLoader):
@@ -26,6 +27,7 @@ class TaskManager(object):
         # Regular framework Task object handling
         future = self.pool.submit(task.call)
         self.futures[task.thread_name] = future
+        self.tasks[task.thread_name] = task
         self.log.info("Added new task: %s" % task.thread_name)
 
     def get_task_result(self, task, timeout=None):
@@ -53,6 +55,7 @@ class TaskManager(object):
             self.log.warning("%s is already cancelled" % task.thread_name)
 
         self.futures.pop(task.thread_name)
+        self.tasks.pop(task.thread_name, None)
         return result
 
     def schedule(self, task, sleep_time=0):
@@ -114,6 +117,18 @@ class TaskManager(object):
             result = future.cancel()
             if result:
                 self.log.debug("Stopped task {0}".format(task_name))
+                continue
+            # future.cancel() only works while the task is still PENDING;
+            # once a worker has picked it up it's a silent no-op. Continuous
+            # tasks (e.g. PrintBucketStats) expose end_task() to break their
+            # run loop - signal that directly, or they poll forever and leak
+            # a non-daemon thread that can hang interpreter shutdown.
+            task = self.tasks.get(task_name)
+            end_task = getattr(task, "end_task", None)
+            if callable(end_task):
+                self.log.debug("Task {0} already running - signalling it "
+                               "to stop".format(task_name))
+                end_task()
             else:
                 self.log.debug("Task {0} could not be cancelled or already finished."
                                .format(task_name))

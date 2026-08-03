@@ -264,10 +264,12 @@ class CapellaBase(BaseTestCase):
                         self.cluster.master.rest_username, self.cluster.master.rest_password,
                         str(self.cluster.master.memcached_port))
         tasks = list()
+        print_ops_tasks = list()
         i = self.process_concurrency
         for bucket in self.cluster.buckets:
             self.printOps = PrintBucketStats(self.cluster, bucket,
                                              monitor_stats=["doc_ops"], sleep=1)
+            print_ops_tasks.append(self.printOps)
             self.task_manager.add_new_task(self.printOps)
 
         while i > 0:
@@ -292,8 +294,15 @@ class CapellaBase(BaseTestCase):
                         i -= 1
 
         if wait:
-            self.doc_loading_tm.getAllTaskResult()
-            self.printOps.end_task()
+            try:
+                self.doc_loading_tm.getAllTaskResult()
+            finally:
+                # Guarantee every bucket's stats task is stopped, even if
+                # loading raises - otherwise the non-last bucket's
+                # PrintBucketStats worker keeps polling the REST API
+                # forever and leaks a non-daemon thread.
+                for print_ops_task in print_ops_tasks:
+                    print_ops_task.end_task()
             self.retry_failures(tasks)
         else:
             return tasks

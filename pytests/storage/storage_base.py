@@ -525,10 +525,12 @@ class StorageBase(BaseTestCase):
                         self.cluster.master.rest_username, self.cluster.master.rest_password,
                         str(self.cluster.master.memcached_port))
         tasks = list()
+        print_ops_tasks = list()
         i = self.process_concurrency
         for bucket in self.cluster.buckets:
             self.printOps = PrintBucketStats(self.cluster, bucket,
                                              monitor_stats=["doc_ops"], sleep=1)
+            print_ops_tasks.append(self.printOps)
             self.task_manager.add_new_task(self.printOps)
         while i > 0:
             for bucket in self.cluster.buckets:
@@ -554,8 +556,15 @@ class StorageBase(BaseTestCase):
                         i -= 1
 
         if wait:
-            self.doc_loading_tm.getAllTaskResult()
-            self.printOps.end_task()
+            try:
+                self.doc_loading_tm.getAllTaskResult()
+            finally:
+                # Guarantee every bucket's stats task is stopped, even if
+                # loading raises (e.g. node down mid-load) - otherwise the
+                # non-last bucket's PrintBucketStats worker keeps polling
+                # the REST API forever and leaks a non-daemon thread.
+                for print_ops_task in print_ops_tasks:
+                    print_ops_task.end_task()
             self.retry_failures(tasks)
         else:
             return tasks
@@ -929,10 +938,10 @@ class StorageBase(BaseTestCase):
         print_ops_tasks = list()
         if monitor_ops:
             for bucket in buckets:
-                self.printOps = PrintBucketStats(self.cluster, bucket,
-                                                monitor_stats=["doc_ops"], sleep=1)
-                print_ops_tasks.append(self.printOps)
-                self.task_manager.add_new_task(self.printOps)
+                print_ops = PrintBucketStats(self.cluster, bucket,
+                                             monitor_stats=["doc_ops"], sleep=1)
+                print_ops_tasks.append(print_ops)
+                self.task_manager.add_new_task(print_ops)
 
         for bucket in buckets:
             scopes_keys = scopes or bucket.scopes.keys()
@@ -973,11 +982,17 @@ class StorageBase(BaseTestCase):
                     doc_loading_tasks.append(_task)
 
         if wait:
-            for task in doc_loading_tasks:
-                self.doc_loading_tm.get_task_result(task)
-            if monitor_ops:
-                for task in print_ops_tasks:
-                    task.end_task()
+            try:
+                for task in doc_loading_tasks:
+                    self.doc_loading_tm.get_task_result(task)
+            finally:
+                # Stop the stats tasks even if a doc-loading task raises
+                # (e.g. node down mid-load), otherwise PrintBucketStats
+                # keeps polling the REST API forever and leaks a
+                # non-daemon thread.
+                if monitor_ops:
+                    for task in print_ops_tasks:
+                        task.end_task()
         else:
             return doc_loading_tasks, print_ops_tasks
 

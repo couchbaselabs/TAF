@@ -36,12 +36,12 @@ Central executor. `max_workers=100` by default (single `ThreadPoolExecutor`).
 
 | Method | Behaviour |
 |---|---|
-| `add_new_task(task)` | Sirius tasks (`SiriusCouchbaseLoader`, `SiriusJavaMongoLoader`): calls `task.start_task()`, raises on failure. Regular tasks: submits `task.call` to `ThreadPoolExecutor`, stores future in `self.futures[task.thread_name]`. |
-| `get_task_result(task)` | Sirius tasks: calls `task.get_task_result()`, logs CRITICAL on `False`. Regular tasks: blocks on `future.result()`, pops from `self.futures`. Returns `bool`. |
+| `add_new_task(task)` | Sirius tasks (`SiriusCouchbaseLoader`, `SiriusJavaMongoLoader`): calls `task.start_task()`, raises on failure. Regular tasks: submits `task.call` to `ThreadPoolExecutor`, stores future in `self.futures[task.thread_name]` and the task object itself in `self.tasks[task.thread_name]` (the latter is only consulted by `abort_all_tasks()`, to signal a task that can't be cancelled). |
+| `get_task_result(task)` | Sirius tasks: calls `task.get_task_result()`, logs CRITICAL on `False`. Regular tasks: blocks on `future.result()`, pops from `self.futures` and `self.tasks`. Returns `bool`. |
 | `schedule(task, sleep_time=0)` | Optional sleep then `add_new_task`. |
 | `stop_task(task)` | Sirius tasks: calls `task.end_task()`. Regular tasks: polls `future.done()` up to 30s then `future.cancel()`. |
 | `shutdown(timeout=5)` | `pool.shutdown()` + 5s sleep + `pool.shutdown(wait=True)`. |
-| `abort_all_tasks()` | Cancels all pending futures in `self.futures`. |
+| `abort_all_tasks()` | Cancels all pending futures in `self.futures`. `future.cancel()` is a no-op once a task is already running, so for those it falls back to `self.tasks[task_name].end_task()` (if the task exposes one) to signal continuous/looping tasks - e.g. `PrintBucketStats` - to stop. Does not remove entries from `self.futures`/`self.tasks`; a subsequent call re-processes them, which is harmless since `end_task()` is idempotent. |
 | `print_tasks_in_pool()` | Logs WARNING for any future not yet done. |
 
 ### `Task` (base, in `task_manager.py`)
