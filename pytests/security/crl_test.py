@@ -712,3 +712,86 @@ class CRLTest(CRLBase):
             "Require: missing-CRL cert should be rejected (fail-closed)",
         )
         self.log.info("Require: missing-CRL cert rejected (fail-closed)")
+
+    def test_crl_tampered_duplicate_and_empty_crl_handling(self):
+        """Does the server correctly handle a signature-tampered CRL, a
+        duplicate-serial entry, and a validly-signed empty CRL?"""
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+
+        leaf_revoke_cert, leaf_revoke_key, revoke_serial = (
+            self.crl_utils.generate_leaf_cert(self.ca_cert, self.ca_key, "leafToRevoke")
+        )
+        leaf_revoke_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(leaf_revoke_cert)
+        )
+        leaf_revoke_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(leaf_revoke_key)
+        )
+        leaf_untouched_cert, leaf_untouched_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "leafUntouched"
+        )
+        leaf_untouched_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(leaf_untouched_cert)
+        )
+        leaf_untouched_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(leaf_untouched_key)
+        )
+        self.log.info("Fixture ready: leafToRevoke and leafUntouched, both under the base CA")
+
+        # A validly-signed CRL, tampered after signing: flip the very last
+        # DER byte, which lands inside the signature value rather than a
+        # length field, so the structure still parses but the signature no
+        # longer matches. Distinct from an already-covered gross-malformed
+        # (non-CRL) byte string -- this one only fails signature validation.
+        valid_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1)
+        tampered_der = bytearray(self.crl_utils.pem_crl_to_der(valid_pem))
+        tampered_der[-1] ^= 0xFF
+        status, content = self.crl_utils.upload_file(
+            self.rest, "security_negative_tampered.der", bytes(tampered_der)
+        )
+        self.assertFalse(
+            status, f"Signature-tampered CRL must be rejected, got: {content}"
+        )
+        self.log.info("Signature-tampered CRL correctly rejected at upload")
+
+        # A validly-signed, empty CRL: accepted, and revokes nothing.
+        filename_empty = "security_negative_empty.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename_empty,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=2),
+        )
+        self.assertTrue(status, f"Empty CRL upload failed: {content}")
+        self._track_uploaded_file(filename_empty)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertTrue(
+            self._handshake_ok(leaf_untouched_cert_path, leaf_untouched_key_path),
+            "leafUntouched should connect under an empty CRL",
+        )
+        self.log.info("Empty CRL accepted; leafUntouched connects (nothing revoked)")
+
+        # Same serial listed twice in one CRL: accepted, and revokes exactly
+        # as a single entry would -- no crash, no double-counting effect.
+        filename_dup = "security_negative_duplicate_serial.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key,
+            [revoke_serial, revoke_serial], filename_dup, crl_number=3,
+        )
+        self.assertTrue(status, f"Duplicate-serial CRL upload failed: {content}")
+        self._track_uploaded_file(filename_dup)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(leaf_revoke_cert_path, leaf_revoke_key_path),
+            "leafToRevoke should be rejected under a CRL listing its serial twice",
+        )
+        self.assertTrue(
+            self._handshake_ok(leaf_untouched_cert_path, leaf_untouched_key_path),
+            "leafUntouched should remain unaffected by leafToRevoke's revocation",
+        )
+        self.log.info(
+            "Duplicate-serial CRL correctly revokes leafToRevoke only; "
+            "leafUntouched still connects"
+        )
