@@ -39,7 +39,7 @@ class AWSProvider(CloudProviderInterface):
         self._km_key_id = None
         self._km_alias_name = None
         self._km_created_by_us = False
-        self._kms_client = self._kms_client()
+        self._kms_client = self._build_kms_client()
 
     def get_cbbackupmgr_flags(self, shell=None):
         return (
@@ -193,7 +193,7 @@ class AWSProvider(CloudProviderInterface):
             kwargs["KeyMarker"] = response.get("NextKeyMarker")
             kwargs["VersionIdMarker"] = response.get("NextVersionIdMarker")
 
-    def _kms_client(self):
+    def _build_kms_client(self):
         return boto3.client(
             "kms",
             aws_access_key_id=self.aws_kms_access_key_id,
@@ -239,17 +239,17 @@ class AWSProvider(CloudProviderInterface):
             code = e.response.get("Error", {}).get("Code", "")
             if code == "NotFoundException":
                 self.log.info(
-                    "AWS KMS delete_alias(%s): alias not found — safe to "
-                    "ignore on cleanup path.", alias_name)
+                    f"AWS KMS delete_alias({alias_name}): alias not found "
+                    f"— safe to ignore on cleanup path.")
             else:
                 self.log.warning(
-                    "AWS KMS delete_alias(%s) failed [%s]: %s. Alias may be "
-                    "orphaned; the underlying key deletion is still "
-                    "attempted below.", alias_name, code, e)
+                    f"AWS KMS delete_alias({alias_name}) failed [{code}]: "
+                    f"{e}. Alias may be orphaned; the underlying key "
+                    f"deletion is still attempted below.")
         except Exception as e:
             self.log.warning(
-                "AWS KMS delete_alias(%s) raised unexpected: %s. Continuing "
-                "to schedule key deletion.", alias_name, e)
+                f"AWS KMS delete_alias({alias_name}) raised unexpected: "
+                f"{e}. Continuing to schedule key deletion.")
 
         try:
             self._kms_client.schedule_key_deletion(
@@ -257,14 +257,13 @@ class AWSProvider(CloudProviderInterface):
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
             self.log.error(
-                "AWS KMS schedule_key_deletion(%s) failed [%s]: %s. Key "
-                "must be manually deleted from the AWS console.",
-                key_id, code, e)
+                f"AWS KMS schedule_key_deletion({key_id}) failed [{code}]: "
+                f"{e}. Key must be manually deleted from the AWS console.")
         except Exception as e:
             self.log.error(
-                "AWS KMS schedule_key_deletion(%s) raised unexpected: %s. "
-                "Key must be manually deleted from the AWS console.",
-                key_id, e)
+                f"AWS KMS schedule_key_deletion({key_id}) raised "
+                f"unexpected: {e}. Key must be manually deleted from the "
+                f"AWS console.")
 
         self.km_key_url = None
         self._km_key_id = None
@@ -283,7 +282,20 @@ class AWSProvider(CloudProviderInterface):
                  self.aws_kms_secret_access_key, self.km_key_url)
 
     def set_km_key(self, key_url):
+        # Parse `awskms://<remainder>` where remainder is one of:
+        #   alias/<name>            → alias reference
+        #   <uuid key-id>           → raw key id
+        #   arn:aws:kms:<region>:<account>:key/<uuid>
+        #                           → full ARN
+        # Populate _km_alias_name only for the alias form; use _km_key_id for
+        # the other two (both are accepted as KeyId by the boto3 KMS API).
         self.km_key_url = key_url
+        self._km_alias_name = None
+        self._km_key_id = None
         if key_url and key_url.startswith("awskms://"):
-            self._km_alias_name = key_url[len("awskms://"):]
+            remainder = key_url[len("awskms://"):]
+            if remainder.startswith("alias/"):
+                self._km_alias_name = remainder
+            else:
+                self._km_key_id = remainder
         self._km_created_by_us = False

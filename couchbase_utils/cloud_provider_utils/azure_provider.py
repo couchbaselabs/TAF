@@ -37,7 +37,7 @@ class AzureProvider(CloudProviderInterface):
         self._km_key_name = None
         self._km_created_by_us = False
         if self.azure_kv_url:
-            self._kms_client = self._kms_client()
+            self._kms_client = self._build_kms_client()
         else:
             self._kms_client = None
 
@@ -91,7 +91,7 @@ class AzureProvider(CloudProviderInterface):
         return cs_utils.create_credential(
             rest, cred_id, payload, username=username, password=password)
 
-    def _kv_client(self):
+    def _build_kms_client(self):
         credential = ClientSecretCredential(
             tenant_id=self.azure_tenant_id,
             client_id=self.azure_client_id,
@@ -115,7 +115,7 @@ class AzureProvider(CloudProviderInterface):
                 name=self._km_key_name, size=2048)
             self._km_created_by_us = True
 
-        self.km_key_url = "azurekms://{0}/keys/{1}".format(
+        self.km_key_url = "azurekeyvault://{0}/keys/{1}".format(
             self._vault_host(), self._km_key_name)
         return self.km_key_url
 
@@ -127,30 +127,28 @@ class AzureProvider(CloudProviderInterface):
         key_name = self._km_key_name
         if self._kms_client is None:
             self.log.error(
-                "AzureProvider.delete_kms_key: Key Vault client not "
-                "constructed (AZURE_KEY_VAULT_URL unset) — key %s must be "
-                "manually deleted from vault %s.",
-                key_name, self.azure_kv_url)
+                f"AzureProvider.delete_kms_key: Key Vault client not "
+                f"constructed (AZURE_KEY_VAULT_URL unset) — key {key_name} "
+                f"must be manually deleted from vault {self.azure_kv_url}.")
             return
 
         try:
             self._kms_client.begin_delete_key(key_name)
         except ResourceNotFoundError as e:
             self.log.info(
-                "Azure Key Vault begin_delete_key(%s): key not found — "
-                "safe to ignore on cleanup path. %s", key_name, e)
+                f"Azure Key Vault begin_delete_key({key_name}): key not "
+                f"found — safe to ignore on cleanup path. {e}")
         except HttpResponseError as e:
+            status_code = getattr(e, "status_code", "?")
             self.log.error(
-                "Azure Key Vault begin_delete_key(%s) HTTP error "
-                "[status=%s]: %s. Key must be manually deleted from vault "
-                "%s.",
-                key_name, getattr(e, "status_code", "?"), e,
-                self.azure_kv_url)
+                f"Azure Key Vault begin_delete_key({key_name}) HTTP error "
+                f"[status={status_code}]: {e}. Key must be manually "
+                f"deleted from vault {self.azure_kv_url}.")
         except Exception as e:
             self.log.error(
-                "Azure Key Vault begin_delete_key(%s) raised unexpected: "
-                "%s. Key must be manually deleted from vault %s.",
-                key_name, e, self.azure_kv_url)
+                f"Azure Key Vault begin_delete_key({key_name}) raised "
+                f"unexpected: {e}. Key must be manually deleted from "
+                f"vault {self.azure_kv_url}.")
 
         self.km_key_url = None
         self._km_key_name = None
@@ -170,7 +168,16 @@ class AzureProvider(CloudProviderInterface):
                  self.azure_client_secret, self.km_key_url)
 
     def set_km_key(self, key_url):
+        # Parse `azurekeyvault://<vault>.vault.azure.net/keys/<name>`
+        # (optionally with a trailing `/<version>`) and extract just the key name:
+        # the segment right after `/keys/`, stripping any version suffix.
+        # The parsing is prefix-agnostic (works if the URL ever arrives with `https://` too), so it
+        # doesn't need to know that cbbackupmgr's accepted scheme is `azurekeyvault://`.
         self.km_key_url = key_url
+        self._km_key_name = None
+        if key_url and "/keys/" in key_url:
+            tail = key_url.rsplit("/keys/", 1)[-1]
+            self._km_key_name = tail.split("/", 1)[0]
         self._km_created_by_us = False
 
     @staticmethod

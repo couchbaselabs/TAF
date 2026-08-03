@@ -43,7 +43,7 @@ class GCPProvider(CloudProviderInterface):
         self.gcp_kms_location = os.getenv("GCP_KMS_LOCATION", self.gcp_region)
         self.gcp_kms_key_ring = os.getenv("GCP_KMS_KEY_RING", "contbk-taf")
         if self.gcp_service_account_key_file:
-            self._kms_client = self._kms_client()
+            self._kms_client = self._build_kms_client()
         else:
             self._kms_client = None
 
@@ -183,7 +183,7 @@ class GCPProvider(CloudProviderInterface):
         } for blob in bucket.list_blobs(prefix=key, versions=True)
             if blob.name == key]
 
-    def _kms_client(self):
+    def _build_kms_client(self):
         with open(self.gcp_service_account_key_file) as key_file:
             credentials_info = json.load(key_file)
         if not self.gcp_kms_project:
@@ -244,9 +244,9 @@ class GCPProvider(CloudProviderInterface):
         key_name = self._km_key_name
         if self._kms_client is None:
             self.log.error(
-                "GCPProvider.delete_kms_key: KMS client not constructed "
-                "(GOOGLE_APPLICATION_CREDENTIALS unset) — key %s must be "
-                "manually destroyed from the GCP console.", key_name)
+                f"GCPProvider.delete_kms_key: KMS client not constructed "
+                f"(GOOGLE_APPLICATION_CREDENTIALS unset) — key {key_name} "
+                f"must be manually destroyed from the GCP console.")
             return
 
         key_path = self._kms_client.crypto_key_path(
@@ -258,20 +258,20 @@ class GCPProvider(CloudProviderInterface):
                 request={"parent": key_path}))
         except NotFound as e:
             self.log.info(
-                "GCP KMS list_crypto_key_versions(%s): key not found — "
-                "safe to ignore on cleanup path. %s", key_name, e)
+                f"GCP KMS list_crypto_key_versions({key_name}): key not "
+                f"found — safe to ignore on cleanup path. {e}")
             versions = []
         except GoogleAPICallError as e:
             self.log.error(
-                "GCP KMS list_crypto_key_versions(%s) API error: %s. Key "
-                "versions must be manually destroyed in the GCP console.",
-                key_name, e)
+                f"GCP KMS list_crypto_key_versions({key_name}) API error: "
+                f"{e}. Key versions must be manually destroyed in the GCP "
+                f"console.")
             versions = []
         except Exception as e:
             self.log.error(
-                "GCP KMS list_crypto_key_versions(%s) raised unexpected: "
-                "%s. Key versions must be manually destroyed in the GCP "
-                "console.", key_name, e)
+                f"GCP KMS list_crypto_key_versions({key_name}) raised "
+                f"unexpected: {e}. Key versions must be manually destroyed "
+                f"in the GCP console.")
             versions = []
 
         # Per-version try/except so one un-destroyable version doesn't skip
@@ -286,22 +286,22 @@ class GCPProvider(CloudProviderInterface):
                     request={"name": version.name})
             except FailedPrecondition as e:
                 self.log.info(
-                    "GCP KMS destroy_crypto_key_version(%s): version not "
-                    "in destroyable state — safe to ignore. %s",
-                    version.name, e)
+                    f"GCP KMS destroy_crypto_key_version({version.name}): "
+                    f"version not in destroyable state — safe to ignore. "
+                    f"{e}")
             except NotFound as e:
                 self.log.info(
-                    "GCP KMS destroy_crypto_key_version(%s): version not "
-                    "found — safe to ignore. %s", version.name, e)
+                    f"GCP KMS destroy_crypto_key_version({version.name}): "
+                    f"version not found — safe to ignore. {e}")
             except GoogleAPICallError as e:
                 self.log.error(
-                    "GCP KMS destroy_crypto_key_version(%s) API error: "
-                    "%s. Version must be manually destroyed in the GCP "
-                    "console.", version.name, e)
+                    f"GCP KMS destroy_crypto_key_version({version.name}) "
+                    f"API error: {e}. Version must be manually destroyed "
+                    f"in the GCP console.")
             except Exception as e:
                 self.log.error(
-                    "GCP KMS destroy_crypto_key_version(%s) raised "
-                    "unexpected: %s.", version.name, e)
+                    f"GCP KMS destroy_crypto_key_version({version.name}) "
+                    f"raised unexpected: {e}.")
 
         self.km_key_url = None
         self._km_key_name = None
@@ -316,5 +316,14 @@ class GCPProvider(CloudProviderInterface):
             auth_file, self.gcp_kms_location, self.km_key_url)
 
     def set_km_key(self, key_url):
+        # Parse `gcpkms://projects/<proj>/locations/<loc>/keyRings/<ring>
+        # /cryptoKeys/<name>` and extract the key name — the last segment
+        # after `cryptoKeys/`. delete_kms_key won't run for reused keys
+        # (early-return on _km_created_by_us=False), but downstream code that
+        # inspects _km_key_name for logging / observability sees the right
+        # value.
         self.km_key_url = key_url
+        self._km_key_name = None
+        if key_url and "/cryptoKeys/" in key_url:
+            self._km_key_name = key_url.rsplit("/cryptoKeys/", 1)[-1]
         self._km_created_by_us = False

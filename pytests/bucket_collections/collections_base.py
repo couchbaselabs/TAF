@@ -238,19 +238,19 @@ class CollectionBase(ClusterSetup, FusionBase):
                     km_provider_name](log=self.log)
                 self.kms_provider.create_kms_key(
                     alias=self.input.param("km_key_alias", None))
-                self.log.info(
-                    "KMS key provisioned for EaR: %s"
-                    % self.kms_provider.km_key_url)
+                self.log.info(f"KMS key provisioned for EaR: {self.kms_provider.km_key_url}")
 
                 rest = RestConnection(self.cluster.master)
                 self.km_cred_store_id = "km_cred_%s" % uuid.uuid4()
                 self.kms_provider.create_credential_store(
                     rest, cred_id=self.km_cred_store_id,
                     description="KMS credential for cbcontbk EaR tests")
+                self.log.info(f"Created credential store for KMS with ID: {self.km_cred_store_id}")
 
-                roles = ["credential_consumer[%s]" % self.km_cred_store_id]
+                roles = [f"credential_consumer[{self.km_cred_store_id}]"]
                 if self.cont_bkp_credential_store_id:
-                    roles.append("credential_consumer[%s]" % self.cont_bkp_credential_store_id)
+                    roles.append(
+                        f"credential_consumer[{self.cont_bkp_credential_store_id}]")
                 CredentialStoreUtils().put_service_roles(
                     rest, service_name="backup", roles=roles)
 
@@ -260,13 +260,29 @@ class CollectionBase(ClusterSetup, FusionBase):
                 if self.ear_contbk:
                     self.cont_bk_mgr.kms_provider = self.kms_provider
 
-                # Ensure bucket-level EaR gets flipped on by the existing
-                # collection_setup plumbing (which gates on enable_encryption_at_rest and reads encryption_at_rest_id).
-                # Default to secret id 0 (ns_server's built-in generated key) when the caller hasn't set one
-                # this matches the design doc's `encryptionAtRestKeyId=0`.
+                # Bucket-level Encryption at Rest is a PREREQUISITE for continuous-backup EaR.
+                # Create a server-managed ns_server secret and let collection_setup thread its ID onto the
+                # bucket spec via encryption_at_rest_id. tearDown deletes it.
                 self.enable_encryption_at_rest = True
-                if self.encryption_at_rest_id is None:
-                    self.encryption_at_rest_id = 0
+                ear_secret_name = "taf-ear-%s" % uuid.uuid4().hex[:8]
+                ear_params = self.bucket_helper_obj.create_secret_params(
+                    secret_type="cb-server-managed-aes-key-256",
+                    name=ear_secret_name,
+                    usage=["bucket-encryption"],
+                    autoRotation=False,
+                    rotationIntervalInSeconds=None,
+                    port=None)
+                status, response = RestConnection(
+                    self.cluster.master).create_secret(ear_params)
+                if not status:
+                    self.fail(
+                        f"Failed to create bucket-encryption secret: "
+                        f"{response}")
+                self.encryption_at_rest_id = json.loads(response)["id"]
+                self.log.info(
+                    f"Created server-managed EaR bucket secret: "
+                    f"name={ear_secret_name}, "
+                    f"id={self.encryption_at_rest_id}")
 
         try:
             self.collection_setup()
@@ -435,15 +451,16 @@ class CollectionBase(ClusterSetup, FusionBase):
                     "km_cred_store_id": self.km_cred_store_id,
                 }
                 self.log.warning(
-                    "EaR test failed — KMS resources scheduled for deletion "
-                    "below. Details for post-mortem lookup: %s" % key_details)
+                    f"EaR test failed — KMS resources scheduled for "
+                    f"deletion below. Details for post-mortem lookup: "
+                    f"{key_details}")
 
             if self.kms_provider is not None:
                 try:
                     self.kms_provider.delete_kms_key()
                 except Exception as e:
                     self.log.warning(
-                        "Failed to delete KMS key during teardown: %s" % e)
+                        f"Failed to delete KMS key during teardown: {e}")
             if self.km_cred_store_id is not None:
                 try:
                     rest = RestConnection(self.cluster.master)
@@ -451,6 +468,35 @@ class CollectionBase(ClusterSetup, FusionBase):
                         rest, self.km_cred_store_id)
                 except Exception as e:
                     self.log.error(f"Exception while deleting KMS credential store entry: {e}")
+
+        # Delete the server-managed ns_server EaR secret created in setUp.
+        # ns_server rejects delete_secret while any bucket still references
+        # the secret via encryptionAtRestKeyId, and super().tearDown() (which
+        # drops the buckets) runs AFTER this block. So unbind each bucket
+        # first by setting encryptionAtRestKeyId=-1 — same pattern
+        # test_bucket_encryption_auto_rotation uses.
+        if (self.ear_bk or self.ear_contbk) and self.encryption_at_rest_id:
+            for bucket in self.cluster.buckets:
+                try:
+                    self.bucket_helper_obj.change_bucket_props(
+                        bucket, encryptionAtRestKeyId=-1)
+                except Exception as e:
+                    self.log.warning(
+                        f"Failed to unbind bucket '{bucket.name}' from EaR "
+                        f"secret id={self.encryption_at_rest_id} before "
+                        f"delete: {e}")
+            try:
+                status, response = RestConnection(
+                    self.cluster.master).delete_secret(
+                        self.encryption_at_rest_id)
+                if not status:
+                    self.log.warning(
+                        f"Failed to delete EaR bucket secret "
+                        f"id={self.encryption_at_rest_id}: {response}")
+            except Exception as e:
+                self.log.warning(
+                    f"Exception deleting EaR bucket secret "
+                    f"id={self.encryption_at_rest_id}: {e}")
 
         super(CollectionBase, self).tearDown()
 

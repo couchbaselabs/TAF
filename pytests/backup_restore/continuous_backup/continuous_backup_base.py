@@ -122,34 +122,48 @@ class ContinuousBackupBase(CollectionBase):
 
     def _verify_backup_file_encryption_state(self):
         """
-        Check that the files on disk under `backup_archive_dir` and
-        `continuous_backup_location` match what `ear_bk` and `ear_contbk`
-        declared. Fails the test on mismatch. Catches wiring regressions where
-        an ear_* flag silently fails to take effect (doc-count/content
+        Check that the files on disk under `backup_archive_dir` and `continuous_backup_location` match
+        what `ear_bk` and `ear_contbk` declared. Fails the test on mismatch.
+        Catches wiring regressions where an ear_* flag silently fails to take effect (doc-count/content
         assertions in tests would otherwise pass regardless).
 
-        NFS-only for now — the file-format validator's remote scan uses shell
-        commands (`find`, `head -c`) that don't reach into object-store URLs.
-        Object-store backends log a warning and skip.
+        Each surface is scanned independently and only when it's a local / NFS path.
+        The file-format validator's remote scan uses shell commands (`find`, `head -c`) that don't reach into
+        object-store URLs (s3://, gs://, az://).
+        A surface backed by cloud storage is skipped with a per-surface warning while the other surface is still checked.
         """
         if not (self.ear_bk or self.ear_contbk):
             return
-        if self.cont_bkp_test != "NFS":
-            self.log.warning(
-                "_verify_backup_file_encryption_state: NFS is the only "
-                "backend supported for on-disk encryption checks today; "
-                "skipping. (cont_bkp_test=%s)" % self.cont_bkp_test)
+
+        # Absolute POSIX paths (NFS / single-node local) start with `/`.
+        # Anything else (`s3://`, `gs://`, `az://`) can't be shell-scanned.
+        def _is_scannable(location):
+            return bool(location) and location.startswith("/")
+
+        surfaces = [
+            (self.backup_archive_dir, self.ear_bk, "ear_bk"),
+            (self.continuous_backup_location, self.ear_contbk, "ear_contbk"),
+        ]
+        scannable = [(loc, expected, name) for loc, expected, name in surfaces
+                     if _is_scannable(loc)]
+        for loc, expected, name in surfaces:
+            if not _is_scannable(loc):
+                self.log.warning(
+                    f"_verify_backup_file_encryption_state: {name} surface "
+                    f"backed by non-local location {loc!r}; skipping "
+                    f"on-disk encryption check for it. (expected_encrypted="
+                    f"{expected})")
+
+        if not scannable:
             return
 
         shell = RemoteMachineShellConnection(self.cluster.master)
         try:
-            self._check_location_encryption(
-                shell, self.backup_archive_dir,
-                expected_encrypted=self.ear_bk, flag_name="ear_bk")
-            self._check_location_encryption(
-                shell, self.continuous_backup_location,
-                expected_encrypted=self.ear_contbk,
-                flag_name="ear_contbk")
+            for location, expected_encrypted, flag_name in scannable:
+                self._check_location_encryption(
+                    shell, location,
+                    expected_encrypted=expected_encrypted,
+                    flag_name=flag_name)
         finally:
             shell.disconnect()
 
@@ -166,16 +180,16 @@ class ContinuousBackupBase(CollectionBase):
         scan = scan_remote_directory(shell, location)
         status = aggregate_status(scan)
         self.log.info(
-            "_check_location_encryption: %s=%s, location=%s, "
-            "aggregate_status=%s, files_scanned=%d"
-            % (flag_name, expected_encrypted, location, status, len(scan)))
+            f"_check_location_encryption: {flag_name}={expected_encrypted}, "
+            f"location={location}, aggregate_status={status}, "
+            f"files_scanned={len(scan)}")
         if expected_encrypted and status == "unencrypted":
             self.fail(
-                "%s=True but no files under %s carry the Couchbase Encrypted "
-                "magic. The encryption flag did not take effect on this "
-                "surface." % (flag_name, location))
+                f"{flag_name}=True but no files under {location} carry the "
+                f"Couchbase Encrypted magic. The encryption flag did not "
+                f"take effect on this surface.")
         if not expected_encrypted and status != "unencrypted":
             self.fail(
-                "%s=False but files under %s carry the Couchbase Encrypted "
-                "magic (state: %s). The unencrypted-side surface was "
-                "accidentally encrypted." % (flag_name, location, status))
+                f"{flag_name}=False but files under {location} carry the "
+                f"Couchbase Encrypted magic (state: {status}). The "
+                f"unencrypted-side surface was accidentally encrypted.")
