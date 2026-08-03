@@ -42,6 +42,7 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
         self.run_truncate_script = self.input.param("run_truncate_script", True)
         self.max_age_secs = self.input.param("max_age_secs", 180)
         self.verbose_script = self.input.param("verbose_script", True)
+        self.post_load_wait_secs = self.input.param("post_load_wait_secs", 300)
         taf_root = os.path.normpath(
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
         )
@@ -71,6 +72,19 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
         shell.disconnect()
         return du_mb, du_apparent_mb
 
+    def _get_bucket_disk_stats(self, server, bucket_name):
+        """Return (ep_magma_logical_disk_size, ep_db_file_size) in bytes.
+
+        ep_db_file_size is the ep-engine stat ns_server aggregates into the
+        REST/Prometheus metric couch_docs_actual_disk_size.
+        """
+        cb_stat = Cbstats(server)
+        all_stats = cb_stat.all_stats(bucket_name)
+        cb_stat.disconnect()
+        magma_logical_disk_size = int(all_stats["ep_magma_logical_disk_size"])
+        db_file_size = int(all_stats["ep_db_file_size"])
+        return magma_logical_disk_size, db_file_size
+
     def capture_disk_usage_loop(self, bucket):
         """Background thread to capture disk usage at intervals."""
         server = self.cluster.master
@@ -81,26 +95,33 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
             try:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 du_mb, du_apparent_mb = self.get_du_stats(server, bucket)
-                cbstats_bytes = self.magma_utils.get_magma_disk_size(
-                    server, bucket.name)
-                cbstats_mb = cbstats_bytes // (1024 * 1024)
+                magma_logical_disk_size_bytes, db_file_size_bytes = \
+                    self._get_bucket_disk_stats(server, bucket.name)
+                magma_logical_disk_size_mb = magma_logical_disk_size_bytes // (1024 * 1024)
+                db_file_size_mb = db_file_size_bytes // (1024 * 1024)
 
                 stat_entry = {
                     "timestamp": timestamp,
                     "du_mb": du_mb,
                     "du_apparent_mb": du_apparent_mb,
-                    "cbstats_disk_usage_mb": cbstats_mb,
+                    "ep_magma_logical_disk_size_mb": magma_logical_disk_size_mb,
+                    "ep_db_file_size_mb": db_file_size_mb,
                     "du_gb": du_mb / 1024,
                     "du_apparent_gb": du_apparent_mb / 1024,
-                    "cbstats_gb": cbstats_mb / 1024
+                    "ep_magma_logical_disk_size_gb": magma_logical_disk_size_mb / 1024,
+                    "ep_db_file_size_gb": db_file_size_mb / 1024
                 }
                 self.disk_usage_stats.append(stat_entry)
 
                 self.log.info(
                     "DU Stats | Time: {} | du: {}MB ({:.2f}GB) | "
-                    "du_apparent: {}MB ({:.2f}GB) | cbstats: {}MB ({:.2f}GB)".format(
+                    "du_apparent: {}MB ({:.2f}GB) | "
+                    "ep_magma_logical_disk_size: {}MB ({:.2f}GB) | "
+                    "ep_db_file_size: {}MB ({:.2f}GB)".format(
                         timestamp, du_mb, du_mb/1024, du_apparent_mb,
-                        du_apparent_mb/1024, cbstats_mb, cbstats_mb/1024))
+                        du_apparent_mb/1024, magma_logical_disk_size_mb,
+                        magma_logical_disk_size_mb/1024, db_file_size_mb,
+                        db_file_size_mb/1024))
 
             except Exception as e:
                 self.log.error("Error capturing disk usage: {}".format(e))
@@ -122,14 +143,18 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
             while checkpoint_idx < len(checkpoints) and du_gb >= checkpoints[checkpoint_idx]:
                 self.log.info(
                     "CHECKPOINT ~{}GB | Time: {} | du: {:.2f}GB | "
-                    "du_apparent: {:.2f}GB | cbstats: {:.2f}GB | "
-                    "diff(du vs cbstats): {:.2f}GB".format(
+                    "du_apparent: {:.2f}GB | ep_magma_logical_disk_size: {:.2f}GB | "
+                    "ep_db_file_size: {:.2f}GB | "
+                    "diff(du vs ep_magma_logical_disk_size): {:.2f}GB | "
+                    "diff(du vs ep_db_file_size): {:.2f}GB".format(
                         checkpoints[checkpoint_idx],
                         stat["timestamp"],
                         stat["du_gb"],
                         stat["du_apparent_gb"],
-                        stat["cbstats_gb"],
-                        stat["du_gb"] - stat["cbstats_gb"]))
+                        stat["ep_magma_logical_disk_size_gb"],
+                        stat["ep_db_file_size_gb"],
+                        stat["du_gb"] - stat["ep_magma_logical_disk_size_gb"],
+                        stat["du_gb"] - stat["ep_db_file_size_gb"]))
                 checkpoint_idx += 1
 
         # Final summary
@@ -138,8 +163,11 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
             self.log.info("-" * 80)
             self.log.info(
                 "FINAL | du: {:.2f}GB | du_apparent: {:.2f}GB | "
-                "cbstats: {:.2f}GB".format(
-                    final["du_gb"], final["du_apparent_gb"], final["cbstats_gb"]))
+                "ep_magma_logical_disk_size: {:.2f}GB | "
+                "ep_db_file_size: {:.2f}GB".format(
+                    final["du_gb"], final["du_apparent_gb"],
+                    final["ep_magma_logical_disk_size_gb"],
+                    final["ep_db_file_size_gb"]))
 
     def _build_loader_kwargs_list(self, create_pct, update_pct, read_pct, mutate_val):
         kwargs_list = []
@@ -203,27 +231,36 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
         self.log.info("Phase '{}' complete.".format(phase_label))
 
     def _snapshot_disk_usage(self, label, bucket):
-        """Log a labelled disk-usage snapshot and return the three values."""
+        """Log a labelled disk-usage snapshot and return the four values."""
         du_mb, du_apparent_mb = self.get_du_stats(self.cluster.master, bucket)
-        cbstats_bytes = self.magma_utils.get_magma_disk_size(
-            self.cluster.master, bucket.name)
-        cbstats_mb = cbstats_bytes // (1024 * 1024)
+        magma_logical_disk_size_bytes, db_file_size_bytes = \
+            self._get_bucket_disk_stats(self.cluster.master, bucket.name)
+        magma_logical_disk_size_mb = magma_logical_disk_size_bytes // (1024 * 1024)
+        db_file_size_mb = db_file_size_bytes // (1024 * 1024)
 
         self.log.info("=" * 80)
         self.log.info("DISK USAGE SNAPSHOT — {}".format(label))
         self.log.info("du (blocks):       {} MB ({:.2f} GB)".format(du_mb, du_mb / 1024))
         self.log.info("du --apparent-size: {} MB ({:.2f} GB)".format(
             du_apparent_mb, du_apparent_mb / 1024))
-        self.log.info("cbstats disk usage: {} MB ({:.2f} GB)".format(
-            cbstats_mb, cbstats_mb / 1024))
-        diff_du = abs(du_mb - cbstats_mb)
-        diff_ap = abs(du_apparent_mb - cbstats_mb)
-        self.log.info("Diff (du vs cbstats):       {} MB ({:.2f}%)".format(
+        self.log.info("ep_magma_logical_disk_size: {} MB ({:.2f} GB)".format(
+            magma_logical_disk_size_mb, magma_logical_disk_size_mb / 1024))
+        self.log.info("ep_db_file_size:            {} MB ({:.2f} GB)".format(
+            db_file_size_mb, db_file_size_mb / 1024))
+        diff_du = abs(du_mb - magma_logical_disk_size_mb)
+        diff_ap = abs(du_apparent_mb - magma_logical_disk_size_mb)
+        diff_db_du = abs(du_mb - db_file_size_mb)
+        diff_db_ap = abs(du_apparent_mb - db_file_size_mb)
+        self.log.info("Diff (du vs ep_magma_logical_disk_size):       {} MB ({:.2f}%)".format(
             diff_du, (diff_du / max(du_mb, 1)) * 100))
-        self.log.info("Diff (apparent vs cbstats): {} MB ({:.2f}%)".format(
+        self.log.info("Diff (apparent vs ep_magma_logical_disk_size): {} MB ({:.2f}%)".format(
             diff_ap, (diff_ap / max(du_apparent_mb, 1)) * 100))
+        self.log.info("Diff (du vs ep_db_file_size):       {} MB ({:.2f}%)".format(
+            diff_db_du, (diff_db_du / max(du_mb, 1)) * 100))
+        self.log.info("Diff (apparent vs ep_db_file_size): {} MB ({:.2f}%)".format(
+            diff_db_ap, (diff_db_ap / max(du_apparent_mb, 1)) * 100))
         self.log.info("=" * 80)
-        return du_mb, du_apparent_mb, cbstats_mb
+        return du_mb, du_apparent_mb, magma_logical_disk_size_mb, db_file_size_mb
 
     def test_load_data_and_validate_disk_usage(self):
         """
@@ -271,6 +308,14 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
                 self._build_loader_kwargs_list(create_pct=0, update_pct=100, read_pct=0, mutate_val=i))
             self._snapshot_disk_usage(
                 "After update iteration {}".format(i), bucket)
+
+        # Let magma background flush/compaction settle, then re-check
+        if self.post_load_wait_secs > 0:
+            self.log.info("Waiting {}s post-load for magma to settle before "
+                          "final snapshot...".format(self.post_load_wait_secs))
+            time.sleep(self.post_load_wait_secs)
+            self._snapshot_disk_usage(
+                "After {}s post-load wait".format(self.post_load_wait_secs), bucket)
 
         # Stop monitoring and print full timeline summary
         self.stop_monitoring = True
@@ -331,23 +376,30 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
                 prealloc_gap_mb = du_apparent_mb - du_mb
 
                 try:
-                    cbstats_bytes = self.magma_utils.get_magma_disk_size(
-                        server, bucket.name)
-                    cbstats_mb = cbstats_bytes // (1024 * 1024)
-                    diff_mb = abs(du_mb - cbstats_mb)
+                    magma_logical_disk_size_bytes, db_file_size_bytes = \
+                        self._get_bucket_disk_stats(server, bucket.name)
+                    magma_logical_disk_size_mb = magma_logical_disk_size_bytes // (1024 * 1024)
+                    db_file_size_mb = db_file_size_bytes // (1024 * 1024)
+                    diff_mb = abs(du_mb - magma_logical_disk_size_mb)
                     diff_pct = (diff_mb / max(du_mb, 1)) * 100
-                    cbstats_line = "{:>10} MB  ({:.2f} GB)  [diff vs du: {} MB / {:.1f}%]".format(
-                        cbstats_mb, cbstats_mb / 1024, diff_mb, diff_pct)
+                    magma_stats_line = "{:>10} MB  ({:.2f} GB)  [diff vs du: {} MB / {:.1f}%]".format(
+                        magma_logical_disk_size_mb, magma_logical_disk_size_mb / 1024, diff_mb, diff_pct)
+                    diff_db_mb = abs(du_mb - db_file_size_mb)
+                    diff_db_pct = (diff_db_mb / max(du_mb, 1)) * 100
+                    db_file_size_line = "{:>10} MB  ({:.2f} GB)  [diff vs du: {} MB / {:.1f}%]".format(
+                        db_file_size_mb, db_file_size_mb / 1024, diff_db_mb, diff_db_pct)
                 except Exception:
-                    cbstats_line = "N/A"
+                    magma_stats_line = "N/A"
+                    db_file_size_line = "N/A"
 
                 self.log.info("  Bucket: {}".format(bucket.name))
-                self.log.info("    du (blocks):          {:>10} MB  ({:.2f} GB)".format(
+                self.log.info("    du (blocks):                {:>10} MB  ({:.2f} GB)".format(
                     du_mb, du_mb / 1024))
-                self.log.info("    du --apparent-size:   {:>10} MB  ({:.2f} GB)".format(
+                self.log.info("    du --apparent-size:         {:>10} MB  ({:.2f} GB)".format(
                     du_apparent_mb, du_apparent_mb / 1024))
-                self.log.info("    cbstats disk (magma): {}".format(cbstats_line))
-                self.log.info("    Preallocated gap:     {:>10} MB  ({:.2f} GB)  [apparent - du]".format(
+                self.log.info("    ep_magma_logical_disk_size: {}".format(magma_stats_line))
+                self.log.info("    ep_db_file_size:            {}".format(db_file_size_line))
+                self.log.info("    Preallocated gap:           {:>10} MB  ({:.2f} GB)  [apparent - du]".format(
                     prealloc_gap_mb, prealloc_gap_mb / 1024))
 
                 try:
