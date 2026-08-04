@@ -53,6 +53,22 @@ class CloudProviderInterface(object):
                                  allowed_services=None, expires_at_ms=None):
         pass
 
+    def create_kms_credential_store(self, rest, cred_id, username=None,
+                                    password=None, description=None,
+                                    allowed_services=None,
+                                    expires_at_ms=None):
+        """
+        Upload a Credential Store entry usable as `continuousBackupKmCredId`.
+
+        Default: delegate to `create_credential_store` — for AWS and GCP the same IAM identity legitimately serves both
+        object-store and KMS, so a single credential type suffices. Providers whose KMS uses a distinct credential type
+        from their object-store (e.g. Azure: azureShared for blob, azureAd for Key Vault) must override.
+        """
+        return self.create_credential_store(
+            rest, cred_id, username=username, password=password,
+            description=description, allowed_services=allowed_services,
+            expires_at_ms=expires_at_ms)
+
     @abstractmethod
     def create_kms_key(self, alias=None):
         """

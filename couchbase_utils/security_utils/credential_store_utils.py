@@ -319,6 +319,52 @@ class CredentialStoreUtils:
         return payload
 
     @staticmethod
+    def build_azure_ad_payload(
+        tenant_id,
+        client_id,
+        client_secret,
+        *,
+        description=None,
+        allowed_services=None,
+        expires_at_ms=None,
+    ):
+        """
+        Build an 'azureAd' credential POST/PUT payload.
+
+        Used for Azure services (e.g. Key Vault) that authenticate via an
+        AAD service principal rather than a shared storage account key.
+        continuousBackupKmCredId only accepts azureAd/azureManaged for
+        Azure KMS — azureShared is rejected server-side.
+
+        Args:
+            tenant_id: Azure AD tenant ID (non-sensitive)
+            client_id: Azure AD application (client) ID (non-sensitive)
+            client_secret: Azure AD client secret (sensitive)
+            description: Optional free-text description
+            allowed_services: Optional list of service names for guardrails
+            expires_at_ms: Optional int, ms since epoch (must be >= now + 5 minutes)
+
+        Returns:
+            dict suitable for POST /settings/credentials/:id
+        """
+        fields = {
+            "tenantId": tenant_id,
+            "clientId": client_id,
+            "clientSecret": client_secret,
+        }
+
+        payload = {"type": "azureAd", "fields": fields}
+
+        if description:
+            payload["description"] = description
+        if expires_at_ms is not None:
+            payload["expiresAt"] = expires_at_ms
+        if allowed_services is not None:
+            payload["guardrails"] = {"allowedServices": allowed_services}
+
+        return payload
+
+    @staticmethod
     def build_gcp_service_account_payload(
         json_credentials,
         region,

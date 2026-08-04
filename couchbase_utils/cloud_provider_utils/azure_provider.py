@@ -91,6 +91,28 @@ class AzureProvider(CloudProviderInterface):
         return cs_utils.create_credential(
             rest, cred_id, payload, username=username, password=password)
 
+    def create_kms_credential_store(self, rest, cred_id, username=None,
+                                    password=None, description=None,
+                                    allowed_services=None,
+                                    expires_at_ms=None):
+        """
+        Build an 'azureAd' Credential Store payload from the AD service principal env vars
+        (AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET) the same identity used to talk to Key Vault in `_build_kms_client()`.
+        """
+        if not (self.azure_tenant_id and self.azure_client_id
+                and self.azure_client_secret):
+            raise CloudOperationError(
+                "AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET "
+                "must be set to upload an azureAd credential for KMS.")
+        cs_utils = CredentialStoreUtils()
+        payload = cs_utils.build_azure_ad_payload(
+            self.azure_tenant_id, self.azure_client_id,
+            self.azure_client_secret, description=description,
+            allowed_services=allowed_services,
+            expires_at_ms=expires_at_ms)
+        return cs_utils.create_credential(
+            rest, cred_id, payload, username=username, password=password)
+
     def _build_kms_client(self):
         credential = ClientSecretCredential(
             tenant_id=self.azure_tenant_id,

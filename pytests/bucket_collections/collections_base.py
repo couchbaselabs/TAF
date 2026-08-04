@@ -245,7 +245,7 @@ class CollectionBase(ClusterSetup, FusionBase):
 
                 rest = RestConnection(self.cluster.master)
                 self.km_cred_store_id = "km_cred_%s" % uuid.uuid4()
-                self.kms_provider.create_credential_store(
+                self.kms_provider.create_kms_credential_store(
                     rest, cred_id=self.km_cred_store_id,
                     description="KMS credential for cbcontbk EaR tests")
                 self.log.info(f"Created credential store for KMS with ID: {self.km_cred_store_id}")
