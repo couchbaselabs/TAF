@@ -6,7 +6,8 @@ import logging
 class CbBackupMgr(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
                  password="password", no_ssl_verify=None, log=None,
-                 cloud_provider=None, kms_provider=None):
+                 cloud_provider=None, kms_provider=None,
+                 obj_staging_dir=None):
         CbCmdBase.__init__(self, shell_conn, "cbbackupmgr",
                            username=username, password=password)
         if no_ssl_verify is None:
@@ -20,10 +21,27 @@ class CbBackupMgr(CbCmdBase):
             self.log = logging.getLogger("test")
         self.cloud_provider = cloud_provider
         self.kms_provider = kms_provider
+        self.obj_staging_dir = obj_staging_dir
 
     def _append_km_flags(self, cmd):
         if self.kms_provider is not None:
             cmd += " %s" % self.kms_provider.get_km_flags(self.shellConn)
+        return cmd
+
+    def _append_obj_store_flags(self, cmd, obj_staging_dir=None):
+        """
+        Append the object-store flags, if this instance backs an object store.
+
+        The staging dir is a property of the node/object-store pairing rather
+        than of an individual command, so it is normally set once via
+        __init__; `obj_staging_dir` overrides it for a single call.
+        """
+        staging_dir = obj_staging_dir or self.obj_staging_dir
+        if staging_dir:
+            cmd += " --obj-staging-dir %s" % staging_dir
+        if self.cloud_provider is None:
+            return cmd
+        cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
         return cmd
 
     """
@@ -88,10 +106,7 @@ class CbBackupMgr(CbCmdBase):
 
         cmd += self.cli_flags
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -135,10 +150,7 @@ class CbBackupMgr(CbCmdBase):
         if encrypted:
             cmd += " --encrypted"
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -158,10 +170,7 @@ class CbBackupMgr(CbCmdBase):
         cmd = "%s worm --archive %s --repo %s --period %s" % (
             self.cbstatCmd, archive_dir, repo_name, period)
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -184,10 +193,7 @@ class CbBackupMgr(CbCmdBase):
         if repo_name:
             cmd += " --repo %s" % repo_name
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -217,10 +223,7 @@ class CbBackupMgr(CbCmdBase):
 
         cmd += self.cli_flags
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -317,10 +320,7 @@ class CbBackupMgr(CbCmdBase):
 
         cmd += self.cli_flags
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -356,10 +356,7 @@ class CbBackupMgr(CbCmdBase):
         if obj_versions:
             cmd += " --obj-versions"
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -395,10 +392,7 @@ class CbBackupMgr(CbCmdBase):
 
         cmd += self.cli_flags
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -430,8 +424,7 @@ class CbBackupMgr(CbCmdBase):
         cmd = "%s merge --archive %s --repo %s %s" % (
             self.cbstatCmd, archive_dir, repo_name, extra_flags)
 
-        if obj_staging_dir:
-            cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -460,10 +453,7 @@ class CbBackupMgr(CbCmdBase):
             cmd += " --collection-string %s" % collection_string
         cmd += self.cli_flags
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         cmd = self._append_km_flags(cmd)
 
@@ -489,10 +479,7 @@ class CbBackupMgr(CbCmdBase):
         if archive_dir:
             cmd += " --archive %s" % archive_dir
 
-        if self.cloud_provider is not None:
-            cmd += " %s" % self.cloud_provider.get_cbbackupmgr_flags(self.shellConn)
-            if obj_staging_dir:
-                cmd += " --obj-staging-dir %s" % obj_staging_dir
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
 
         if output_dir:
             cmd += " --output-dir %s" % output_dir

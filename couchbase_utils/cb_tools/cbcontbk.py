@@ -16,12 +16,18 @@ class CbContBk(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
                  password="password", log=None,
                  cbcontbk_cloud_provider=None, backup_cloud_provider=None,
-                 kms_provider=None):
+                 kms_provider=None, obj_staging_dir=None):
         """
         :param cbcontbk_cloud_provider: provider backing the continuous-backup
                                         location (cbcontbk's -l)
         :param backup_cloud_provider: provider backing the traditional backup
                                       archive (cbcontbk's -a)
+        :param obj_staging_dir: default --obj-staging-dir for every command;
+                                the staging dir is a property of the
+                                node/object-store pairing rather than of an
+                                individual command, so it is normally set
+                                once here and overridden per call only when
+                                a command needs a different one
 
         Every cbcontbk command touches both the archive and the continuous
         backup location, but the CLI takes only one set of object-store
@@ -41,6 +47,7 @@ class CbContBk(CbCmdBase):
         self.cbcontbk_cloud_provider = cbcontbk_cloud_provider
         self.backup_cloud_provider = backup_cloud_provider
         self.kms_provider = kms_provider
+        self.obj_staging_dir = obj_staging_dir
         if log:
             self.log = log
         else:
@@ -63,14 +70,18 @@ class CbContBk(CbCmdBase):
     def _append_obj_store_flags(self, cmd, obj_staging_dir=None):
         """
         Append the object-store flags for whichever half of the command needs
-        them, plus `--obj-staging-dir` if given.
+        them, plus `--obj-staging-dir`.
 
         `cbcontbk_cloud_provider` wins when both are set: __init__ has already
         guaranteed they are the same provider type, so its flags cover the
         archive too.
+
+        The staging dir comes from `obj_staging_dir` if given, else the
+        instance default from __init__.
         """
-        if obj_staging_dir:
-            cmd += f" --obj-staging-dir {obj_staging_dir}"
+        staging_dir = obj_staging_dir or self.obj_staging_dir
+        if staging_dir:
+            cmd += f" --obj-staging-dir {staging_dir}"
 
         if self.cbcontbk_cloud_provider is not None:
             cmd += f" {self.cbcontbk_cloud_provider.get_cbconbk_flags(self.shellConn)}"
