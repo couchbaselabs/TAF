@@ -3,7 +3,6 @@ Created on 15-Apr-2021
 
 @author: riteshagarwal
 '''
-import os
 import random
 import threading
 from copy import deepcopy
@@ -13,14 +12,9 @@ from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from bucket_collections.collections_base import CollectionBase
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from collections_helper.collections_spec_constants import MetaCrudParams
-from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
-from lib.testconstants import PITR_NFS_SERVER
-from platform_utils.ssh_util.install_util.test_input import TestInputServer
-from couchbase_utils.backup_utils.backup_utils import BackupMgrUtil, ContinuousBackupUtil
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
 from py_constants.cb_constants.CBServer import CbServer
-from TestInput import TestInputSingleton
 from .cbas import CBASQueryLoad
 from .cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
@@ -41,6 +35,19 @@ from .xdcr import DoctorXDCR
 
 
 class Murphy(BaseTestCase, OPD):
+    """
+    On-prem volume tests.
+
+    Backup coverage is driven by two independent params, so a run can exercise
+    cbbackupmgr backup/restore, continuous backup (PITR), or both:
+
+      cbbackup_test  = None | NFS | AWS | Azure | GCP
+      cont_bkp_test  = None | single_node | NFS | AWS | Azure | GCP
+
+    Either param needs a backup node (`backup_nodes=1`, or 'backup' in
+    `services_init`) to run the CLI tools on. See setup_backup_locations().
+    """
+
     def setUp(self):
         BaseTestCase.setUp(self)
 
@@ -130,65 +137,14 @@ class Murphy(BaseTestCase, OPD):
         else:
             self.load_defn.append(default)
 
-        # Continuous backup valid params - [None, "single_node", "NFS"]
-        if self.cont_bkp_test == "NFS":
-            """
-            NFS setup requirements:
-            - Server: /data directory exported with appropriate permissions
-            - Client: Mount NFS export at /mnt/nfs_data
-            - Validation: Ensure server export and client mount are working
-            - Cleanup: Unique subdirectory created under mount point and removed after test
-            Scipts to setup NFS Server : https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
-            """
-            self.nfs_server = TestInputServer()
-            self.nfs_server.ip = PITR_NFS_SERVER
-            self.nfs_server.ssh_username = "root"
-            self.nfs_server.ssh_password = "couchbase"
-
-            self.nfs_util = NfsUtil(self.nfs_server)
-
-            self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
-            self.nfs_util.validate_nfs_server()
-
-            for node in self.servers:
-                self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
-                try:
-                    self.nfs_util.validate_nfs_client(node)
-                except Exception as e:
-                    self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
-                    self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
-                    self.nfs_util.validate_nfs_client(node)
-
-            shell = RemoteMachineShellConnection(self.cluster.master)
-            # Create continuous backup folder on NFS server
-            self.continuous_backup_location = f"/mnt/nfs_data/test_volume"
-
-            shell.execute_command(f"rm -rf {self.continuous_backup_location}")
-
-            output, error = shell.execute_command(f"mkdir -p {self.continuous_backup_location}")
-            if error:
-                self.fail("Error creating continuous backup folder: %s" % error)
-            else:
-                self.log.info("Created continuous backup folder: %s" % self.continuous_backup_location)
-                # Set permissions for couchbase user
-                output, error = shell.execute_command(f"chmod 777 {self.continuous_backup_location}")
-                if error:
-                    self.fail("Error setting permissions on continuous backup folder: %s" % error)
-                else:
-                    self.log.info("Set permissions on continuous backup folder")
-
-            self.continuous_backup_timestamps = []
-
-            if self.cluster.backup_nodes:
-                shell = RemoteMachineShellConnection(self.cluster.backup_nodes[0])
-                self.drContBackup = ContinuousBackupUtil(shell=shell,
-                                                         username=self.cluster.master.rest_username,
-                                                         password=self.cluster.master.rest_password)
-            else:
-                self.fail("No backup node available to run continuous backup manager")
-        elif self.cont_bkp_test is not None:
-            self.log.critical(f"Cont backup value '{self.cont_bkp_test}' "
-                              f"not yet supported")
+        # Backup / continuous-backup destinations. Resolved and provisioned up
+        # front so the location is writable before any bucket starts streaming
+        # into it; the CLI wrappers come later, in setup_backup_tools(), once
+        # the backup node has joined the cluster.
+        self.drBackup = None
+        self.drContBackup = None
+        self.continuous_backup_timestamps = list()
+        self.setup_backup_locations()
 
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
@@ -389,16 +345,8 @@ class Murphy(BaseTestCase, OPD):
                                       if servs not in self.cluster.eventing_nodes]
 
         cluster_rest = ClusterRestAPI(self.cluster.master)
-        if self.cluster.backup_nodes:
-            self.drBackup = BackupMgrUtil(self.cluster.backup_nodes[0])
-            self.backup_archive = os.path.join(
-                self.cluster.backup_nodes[0].data_path, "bkrs")
-            self.backup_repo = "magma"
-            self.backup_cluster_host = cluster_rest.base_url
-            self.restore_timeout = self.input.param("restore_timeout",
-                                                    12 * 60 * 60)
-            self.drBackup.cleanup_archive(self.backup_archive)
-            self.drBackup.configure_backup(self.backup_archive, self.backup_repo, [], [])
+        self.setup_backup_tools(cluster_rest.base_url)
+        self.enable_continuous_backup_on_buckets()
 
         if self.cluster.index_nodes:
             self.drIndex = DoctorN1QL(self.bucket_util)
@@ -436,19 +384,7 @@ class Murphy(BaseTestCase, OPD):
         for task in self.cbasQL:
             task.stop_query_load()
 
-        if self.cluster.backup_nodes:
-            if self.is_test_failed():
-                self.log.warning(f"Test failed, skipping cleanup of backup archive"
-                                f"to preserve data for investigation: {self.backup_archive}")
-                if self.get_cbcollect_info:
-                    log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
-                    self.drBackup.collect_backup_logs_on_failure(self.backup_archive, log_path=log_path)
-                    if self.cont_bkp_test == "NFS":
-                        self.drContBackup.collect_continuous_backup_logs_on_failure(self.continuous_backup_location)
-            else:
-                self.drBackup.cleanup_archive(self.backup_archive)
-                if self.cont_bkp_test == "NFS":
-                    self.drContBackup.cleanup_continuous_backup(self.continuous_backup_location)
+        self.teardown_backup_locations()
 
         BaseTestCase.tearDown(self)
 
@@ -552,12 +488,12 @@ class Murphy(BaseTestCase, OPD):
         # stat_th.join()
 
         # Merge the backups
-        if self.cont_bkp_test is None:
+        if self.drBackup is not None and self.cont_bkp_test is None:
             output, error = self.drBackup.merge_all_backups(archive=self.backup_archive, repo=self.backup_repo)
             self.log.info(f"Merge output: {output}\n\n Merge error: {error}")
 
         # Restore using backup/PITR
-        if self.backup_nodes > 0:
+        if self.drBackup is not None:
             if self.cont_bkp_test is None:
                 output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
                                                     cluster_host=self.backup_cluster_host)
@@ -580,7 +516,9 @@ class Murphy(BaseTestCase, OPD):
                     timeout=self.restore_timeout)
                 self.assertTrue(result, "Restore failed")
             else:
-                self.toggle_continuous_backup(self.cluster.buckets[0], enable=True)
+                # Stop continuous backup before the flush, so the deletes and
+                # the restores that follow are not themselves backed up.
+                self.toggle_continuous_backup(self.cluster.buckets[0], enable=False)
                 self.bucket_util.flush_all_buckets(self.cluster)
                 self.sleep(30, "Sleep for a while after flushing buckets and before triggering restore")
                 for timestamp, items in sorted(self.continuous_backup_timestamps, key=lambda x: x[0]):
@@ -1366,7 +1304,7 @@ class Murphy(BaseTestCase, OPD):
                     self.end_step_checks()
 
                 # Take an incremental backup
-                if self.backup_nodes > 0:
+                if self.drBackup is not None:
                     output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,
                         cluster_host=self.backup_cluster_host)
@@ -2039,7 +1977,7 @@ class Murphy(BaseTestCase, OPD):
     def test_30TB_10K_collections_cont_backup(self):
         self.initial_setup()
 
-        if self.backup_nodes > 0:
+        if self.drBackup is not None:
             output, error = self.drBackup.backup(
                 self.backup_archive, self.backup_repo,
                 cluster_host=self.backup_cluster_host)
@@ -2202,7 +2140,7 @@ class Murphy(BaseTestCase, OPD):
             self.task.jython_task_manager.get_task_result(doc_loading_task)
 
             # Take an incremental backup, merge and restore from backup
-            if self.backup_nodes > 0:
+            if self.drBackup is not None:
                 if self.cont_bkp_test is None:
                     output, error = self.drBackup.backup(
                         self.backup_archive, self.backup_repo,

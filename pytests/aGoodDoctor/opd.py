@@ -25,12 +25,39 @@ from py_constants.cb_constants.CBServer import CbServer
 from threading import Thread
 import threading
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
-from TestInput import TestInputServer
+from couchbase_utils.backup_utils.backup_utils import BackupLocation, \
+    BackupMgrUtil, ContinuousBackupUtil
+from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
+from TestInput import TestInputServer, TestInputSingleton
 from gsiLib.gsiHelper import GsiHelper
 from collections import defaultdict
 
 
 class OPD:
+    # Object-store destinations for cbbackup_test / cont_bkp_test.
+    #
+    # Unlike the functional suites, a volume run owns its cluster for the whole
+    # campaign, so the destinations are fixed rather than uuid-suffixed: a
+    # rerun reuses (and re-cleans) the same location instead of leaving a trail
+    # of prefixes behind in the shared bucket.
+    #
+    # localstack is deliberately absent: its cleanup_for_bkrs() creates and
+    # drops whole buckets against a local endpoint, which cannot hold the
+    # multi-TB datasets these tests generate. Asking for it fails in
+    # BackupLocation.build() rather than silently degrading.
+    BACKUP_URL_TEMPLATES = {
+        "AWS": "s3://test-backup-volume/backups",
+        "Azure": "az://test-backup-volume/backups",
+        "GCP": "gs://test-backup-volume/backups",
+    }
+    CONT_BKP_URL_TEMPLATES = {
+        "AWS": "s3://test-backup-volume/cont_bkp",
+        "Azure": "az://test-backup-volume/cont_bkp",
+        "GCP": "gs://test-backup-volume/cont_bkp",
+    }
+    NFS_BACKUP_ARCHIVE = f"{NfsUtil.MOUNT_POINT}/test_volume_backups"
+    NFS_CONT_BKP_LOCATION = f"{NfsUtil.MOUNT_POINT}/test_volume"
+
     def __init__(self):
         pass
 
@@ -60,7 +87,6 @@ class OPD:
         buckets = ["GleamBookUsers"]*self.num_buckets
         bucket_type = self.bucket_type.split(';')*self.num_buckets
         compression_mode = self.compression_mode.split(';')*self.num_buckets
-        cont_bkp_test = self.input.param("cont_bkp_test", None)
         self.bucket_eviction_policy = self.bucket_eviction_policy
 
         for i in range(self.num_buckets):
@@ -84,12 +110,6 @@ class OPD:
                  Bucket.weight: self.bucket_weight,
                  Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
                  Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
-
-            if cont_bkp_test == "NFS":
-                bucket.continuousBackupEnabled = True
-                bucket.continuousBackupLocation = "/mnt/nfs_data/test_volume"
-                bucket.continuousBackupInterval = self.input.param("continuous_backup_interval", 5)
-
             bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
             if bucket.loadDefn.get("name"):
                 bucket.name = bucket.loadDefn.get("name")
@@ -1039,6 +1059,146 @@ class OPD:
             else:
                 break
 
+    def setup_backup_locations(self):
+        """
+        Resolve `cbbackup_test` / `cont_bkp_test` into the cbbackupmgr archive
+        and the continuous-backup location, and make the latter usable.
+
+        Runs before the buckets exist, so the continuous-backup location is
+        already writable -- and its object-store credentials already known to
+        the cluster -- by the time continuous backup is switched on. The
+        archive needs no separate provisioning step: cbbackupmgr's own
+        configure_backup() wipes and recreates it in setup_backup_tools().
+        """
+        if "NFS" in (self.cbbackup_test, self.cont_bkp_test):
+            self.nfs_util = NfsUtil.for_pitr_tests(self.input)
+            self.nfs_server = self.nfs_util.nfs_server_node
+            self.nfs_util.ensure_nfs_clients(self.servers)
+
+        self.backup_repo = self.input.param("repo_name", "magma")
+        self.restore_timeout = self.input.param("restore_timeout", 12 * 60 * 60)
+
+        # An archive on NFS has a fixed path; anywhere else local it lives on
+        # the backup node's data path, which setup_backup_tools() resolves.
+        self.backup_archive = None
+        self.backup_location = BackupLocation.build(
+            self.cbbackup_test, "backup archive",
+            local_path=self.NFS_BACKUP_ARCHIVE
+            if self.cbbackup_test == "NFS" else None,
+            url_templates=self.BACKUP_URL_TEMPLATES,
+            obj_staging_dir=self.obj_staging_dir_cbbackup, log=self.log)
+
+        self.cont_bkp_location = BackupLocation.build(
+            self.cont_bkp_test, "continuous backup location",
+            local_path=self.NFS_CONT_BKP_LOCATION,
+            url_templates=self.CONT_BKP_URL_TEMPLATES,
+            obj_staging_dir=self.obj_staging_dir_cont_bkp, log=self.log)
+        self.continuous_backup_location = self.cont_bkp_location.path
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            self.cont_bkp_location.provision(shell)
+        finally:
+            shell.disconnect()
+
+        # The backup service reads the object store itself, so it needs the
+        # credentials in the cluster's Credential Store rather than on the CLI.
+        self.cont_bkp_credential_store_id = \
+            self.cont_bkp_location.create_credential_store(
+                RestConnection(self.cluster.master), cred_id="cont_bkp_cred",
+                description="Credential store for continuous backup "
+                            "volume tests")
+
+    def setup_backup_tools(self, backup_cluster_host):
+        """
+        Build the cbbackupmgr/cbcontbk wrappers -- which run on the backup
+        node -- and create the repository the volume test backs up into.
+        """
+        if not (self.cbbackup_test or self.cont_bkp_test
+                or self.cluster.backup_nodes):
+            return
+        if not self.cluster.backup_nodes:
+            self.fail("cbbackup_test=%s / cont_bkp_test=%s need a backup "
+                      "node; pass backup_nodes or add 'backup' to "
+                      "services_init" % (self.cbbackup_test,
+                                         self.cont_bkp_test))
+
+        backup_node = self.cluster.backup_nodes[0]
+        self.backup_cluster_host = backup_cluster_host
+        if self.backup_location.path is None:
+            self.backup_location.path = os.path.join(backup_node.data_path,
+                                                     "bkrs")
+        self.backup_archive = self.backup_location.path
+
+        self.drBackup = BackupMgrUtil(
+            backup_node, cloud_provider=self.backup_location.cloud_provider,
+            obj_staging_dir=self.backup_location.obj_staging_dir)
+        if self.cont_bkp_test:
+            self.drContBackup = ContinuousBackupUtil(
+                shell=RemoteMachineShellConnection(backup_node),
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log,
+                backupmgr_cloud_provider=self.backup_location.cloud_provider,
+                contbk_cloud_provider=self.cont_bkp_location.cloud_provider,
+                backupmgr_obj_staging_dir=self.backup_location.obj_staging_dir,
+                contbk_obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+
+        # configure_backup() wipes the archive before creating the repo, so it
+        # subsumes provisioning for every backing store.
+        self.drBackup.cleanup_archive(self.backup_archive)
+        self.drBackup.configure_backup(self.backup_archive, self.backup_repo,
+                                       [], [])
+
+    def enable_continuous_backup_on_buckets(self):
+        """
+        Point every bucket at the continuous-backup location resolved in
+        setup_backup_locations(). Called once the buckets exist, since the
+        create-bucket REST API does not accept the continuousBackup* settings.
+        """
+        if not self.cont_bkp_test:
+            return
+        ContinuousBackupUtil.enable_continuous_backup(
+            self.bucket_util, self.cluster, self.cluster.buckets,
+            continuous_backup_location=self.continuous_backup_location,
+            continuous_backup_interval=self.continuous_backup_interval,
+            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
+            default_history_retention_seconds=self.input.param(
+                "history_retention_seconds", 86400),
+            default_history_retention_bytes=self.input.param(
+                "history_retention_bytes", 0),
+            log=self.log)
+
+    def teardown_backup_locations(self):
+        """
+        Collect cbbackupmgr/cbcontbk logs when the test failed -- leaving the
+        backup data in place for investigation -- and otherwise remove
+        everything the run wrote.
+        """
+        if self.drBackup is None and self.drContBackup is None:
+            return
+
+        if self.is_test_failed():
+            self.log.warning(
+                "Test failed, skipping cleanup of backup data to preserve it "
+                "for investigation: archive=%s, continuous backup=%s"
+                % (self.backup_archive, self.continuous_backup_location))
+            if self.get_cbcollect_info:
+                log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
+                if self.drBackup is not None:
+                    self.drBackup.collect_backup_logs_on_failure(
+                        self.backup_archive, log_path=log_path)
+                if self.drContBackup is not None:
+                    self.drContBackup.collect_continuous_backup_logs_on_failure(
+                        self.continuous_backup_location)
+            return
+
+        if self.drBackup is not None:
+            self.drBackup.cleanup_archive(self.backup_archive)
+        if self.drContBackup is not None:
+            self.drContBackup.cleanup_continuous_backup(
+                self.continuous_backup_location)
+
     def toggle_continuous_backup(self, bucket, enable):
         """
         Toggle continuous backup on or off for a bucket.
@@ -1079,14 +1239,14 @@ class OPD:
         continuous_backup_timestamps.append([cont_bkp_timestamp, items])
 
     def traditional_backup_and_record_timestamp_for_continuous_backup(self, order=["record_timestamp", "traditional_backup"]):
-        if self.backup_nodes == 0:
+        if self.drBackup is None:
             return
         for step in order:
             if step == "traditional_backup":
                 output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
                                                     cluster_host=self.backup_cluster_host)
                 self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
-            elif step == "record_timestamp" and self.cont_bkp_test == "NFS":
+            elif step == "record_timestamp" and self.cont_bkp_test:
                 self.sleep(60 * self.continuous_backup_interval * 2, "Sleep for a while before recording timestamp for continuous backup")
                 self.record_timestamp_for_continuous_backup(self.cluster,
                                                             self.bucket_util,
