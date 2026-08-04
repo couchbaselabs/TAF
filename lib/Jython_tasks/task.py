@@ -927,8 +927,8 @@ class RebalanceTask(Task):
                                 msg = "%s vBuckets were shuffled on %s! " \
                                       "Expected: %s, Got: %s" \
                                       % (vb_type, srv.ip,
-                                         self.old_vbuckets[srv][vb_type],
-                                         new_vbuckets[srv][vb_type])
+                                         self.old_vbuckets[srv.ip][vb_type],
+                                         new_vbuckets[srv.ip][vb_type])
                                 self.test_log.error(msg)
                                 raise Exception(msg)
                 (status, progress) = \
