@@ -1,11 +1,60 @@
 from global_vars import logger
+from platform_utils.ssh_util.install_util.test_input import TestInputServer
 from shell_util.remote_connection import RemoteMachineShellConnection
+from testconstants import PITR_NFS_SERVER
 
 
 class NfsUtil(object):
+    # Defaults for the shared NFS export used by the PITR / continuous backup
+    # suites. Server side setup scripts live at
+    # https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
+    NFS_SHARE = "/data"
+    MOUNT_POINT = "/mnt/nfs_data"
+
     def __init__(self, nfs_server_node):
         self.log = logger.get("test")
         self.nfs_server_node = nfs_server_node
+
+    @classmethod
+    def for_pitr_tests(cls, test_input):
+        """
+        Build an NfsUtil for the shared PITR NFS server, letting a run point
+        at a different server or credentials via the pitr_nfs_* params.
+
+        :param test_input: TestInput instance (i.e. the test's `self.input`)
+        """
+        nfs_server_node = TestInputServer()
+        nfs_server_node.ip = test_input.param("pitr_nfs_server",
+                                              PITR_NFS_SERVER)
+        nfs_server_node.ssh_username = test_input.param("pitr_nfs_username",
+                                                        "root")
+        nfs_server_node.ssh_password = test_input.param("pitr_nfs_password",
+                                                        "couchbase")
+        return cls(nfs_server_node)
+
+    def ensure_nfs_clients(self, client_nodes, nfs_share=NFS_SHARE,
+                           mount_point=MOUNT_POINT):
+        """
+        Validate the NFS server, then make sure every node in `client_nodes`
+        has `nfs_share` mounted at `mount_point`, setting up the client on the
+        fly for any node that is not mounted yet.
+
+        Raises if the server is unhealthy, or if a node still fails client
+        validation after the setup attempt.
+        """
+        self.log.info("Validating NFS server at %s" % self.nfs_server_node.ip)
+        self.validate_nfs_server()
+
+        for node in client_nodes:
+            self.log.info("Validating NFS client at %s connected to server %s"
+                          % (node.ip, self.nfs_server_node.ip))
+            try:
+                self.validate_nfs_client(node, mount_point=mount_point)
+            except Exception as e:
+                self.log.warning("NFS client validation failed: %s. "
+                                 "Attempting to set up NFS client." % e)
+                self.setup_nfs_client(node, nfs_share, mount_point)
+                self.validate_nfs_client(node, mount_point=mount_point)
 
     def validate_nfs_server(self):
         """
