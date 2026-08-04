@@ -1,9 +1,6 @@
-import json
-import urllib
 from copy import deepcopy
 from random import choice, sample, randint
 
-from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from datetime import datetime, timedelta
 from basetestcase import ClusterSetup
@@ -92,7 +89,7 @@ class DocHistoryRetention(ClusterSetup):
             collection=CbServer.default_collection):
         def populate_stats(b_obj, stat_dict):
             for t_node in self.cluster_util.get_kv_nodes(self.cluster):
-                ip, t_shell = t_node.ip, self.shells[t_node.ip]
+                ip = t_node.ip
                 if ip not in stat_dict:
                     stat_dict[ip] = dict()
                 cbstats = Cbstats(t_node)
@@ -118,7 +115,8 @@ class DocHistoryRetention(ClusterSetup):
 
         num_items = 1000
         iterations = 20
-        doc_gen = doc_generator(self.key, 0, num_items)
+        doc_gen = doc_generator(self.key, 0, num_items,
+                                vbuckets=bucket.numVBuckets)
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             print_ops_rate=False, batch_size=500, process_concurrency=2,
@@ -212,7 +210,8 @@ class DocHistoryRetention(ClusterSetup):
         stats = dict()
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         doc_gen = doc_generator("test_collections", 0, self.num_items,
-                                doc_size=99999)
+                                doc_size=99999,
+                                vbuckets=self.cluster.buckets[0].numVBuckets)
         data_start_time = datetime.now()
         load_task = self.task.async_load_gen_docs(
             self.cluster, self.cluster.buckets[0], doc_gen,
@@ -613,7 +612,8 @@ class DocHistoryRetention(ClusterSetup):
         keys = list()
         for vb_num in range(bucket.numVBuckets):
             key, val = doc_generator("test_doc", 0, 1,
-                                     target_vbucket=[vb_num]).next()
+                                     target_vbucket=[vb_num],
+                                     vbuckets=bucket.numVBuckets).next()
             keys.append(key)
             client.crud(DocLoading.Bucket.DocOps.UPDATE, key, val)
 
@@ -822,7 +822,8 @@ class DocHistoryRetention(ClusterSetup):
         self.log.info("Creating / recreating collection")
         load_tasks = list()
         num_items = 10000
-        doc_gen = doc_generator(self.key, 0, num_items)
+        doc_gen = doc_generator(self.key, 0, num_items,
+                                vbuckets=bucket.numVBuckets)
         for scope_col in selected_cols:
             s_name, c_name = scope_col
             self.log.info("Drop collection {0}::{1}".format(s_name, c_name))
@@ -980,7 +981,8 @@ class DocHistoryRetention(ClusterSetup):
         self.validate_retention_settings_on_all_nodes()
         if init_load:
             self.log.info("Loading initial data into the scope")
-            doc_gen = doc_generator(self.key, 0, self.num_items)
+            doc_gen = doc_generator(self.key, 0, self.num_items,
+                                    vbuckets=bucket.numVBuckets)
             for ttl in [self.maxttl, 0]:
                 load_task = self.task.async_load_gen_docs(
                     self.cluster, bucket, doc_gen,
@@ -1006,6 +1008,7 @@ class DocHistoryRetention(ClusterSetup):
             bucket, Bucket.vBucket.ACTIVE)
         self.log.info("Creating doc_generator")
         doc_gen = doc_generator(self.key, 0, self.num_items/10,
+                                vbuckets=bucket.numVBuckets,
                                 target_vbucket=active_vbs)
 
         for index in range(1, total_iterations+1):
@@ -1061,7 +1064,8 @@ class DocHistoryRetention(ClusterSetup):
             {"name": "c1", "history": "true"})
 
         self.log.info("Loading initial data into the scope")
-        doc_gen = doc_generator(self.key, 0, self.num_items)
+        doc_gen = doc_generator(self.key, 0, self.num_items,
+                                vbuckets=bucket.numVBuckets)
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
             scope=CbServer.default_scope, collection="c1",
@@ -1085,6 +1089,7 @@ class DocHistoryRetention(ClusterSetup):
             bucket, Bucket.vBucket.REPLICA)
         self.log.info("Creating doc_generator")
         doc_gen = doc_generator(self.key, 0, self.num_items/10,
+                                vbuckets=bucket.numVBuckets,
                                 target_vbucket=replica_vbs)
 
         if target_scenario == CouchbaseError.STOP_MEMCACHED:
@@ -1220,6 +1225,7 @@ class DocHistoryRetention(ClusterSetup):
         replica_vbs = cb_stat.vbucket_list(bucket.name, Bucket.vBucket.REPLICA)
         cb_stat.disconnect()
         doc_gen = doc_generator(self.key, 0, self.num_items,
+                                vbuckets=bucket.numVBuckets,
                                 target_vbucket=replica_vbs)
         self.log.info("Starting dedupe doc_ops")
         load_task = self.task.async_load_gen_docs(
@@ -1291,8 +1297,6 @@ class DocHistoryRetention(ClusterSetup):
         """
         target_vbs = list()
         doc_ttl = self.input.param("doc_ttl", 0)
-        max_disk_size_per_vb = \
-            self.bucket_dedup_retention_bytes / self.cluster.buckets[0].numVBuckets
         num_compactions = self.input.param("num_compactions", 0)
         num_cols_to_drop = self.input.param("num_collections_to_drop", 0)
         new_replica = self.input.param("new_replica", None)
@@ -1626,6 +1630,7 @@ class DocHistoryRetention(ClusterSetup):
             bucket, CbServer.default_scope, only_names=True))
         self.log.info("Creating doc_gen for loading")
         doc_gen = doc_generator(self.key, self.num_items, 1000,
+                                vbuckets=bucket.numVBuckets,
                                 target_vbucket=replica_vbs)
         self.log.info("Loading docs into {} to create history".format(col))
         cb_err.create(CouchbaseError.STOP_MEMCACHED)
