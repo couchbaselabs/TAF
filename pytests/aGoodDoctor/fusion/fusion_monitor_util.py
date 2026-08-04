@@ -80,15 +80,13 @@ class FusionMonitorUtil():
             status, content = FusionRestAPI(cluster.master).get_fusion_status()
             if status:
                 table = PrettyTable()
-                table.field_names = ["Node ID", "Bucket Name", "Pending Bytes", "Sync Session Completed Bytes", "Sync Session Total Bytes"]
+                table.field_names = ["Node ID", "Bucket Name", "Pending Bytes"]
                 nodes = content.get("nodes") or {}
                 for node, stats in nodes.items():
                     buckets = stats.get("buckets") or {}
                     for bucket_name, bucket_stats in buckets.items():
                         pending_bytes = bucket_stats.get("snapshotPendingBytes")
-                        syncSessionCompletedBytes = bucket_stats.get("syncSessionCompletedBytes")
-                        syncSessionTotalBytes = bucket_stats.get("syncSessionTotalBytes")
-                        table.add_row([node, bucket_name, pending_bytes, syncSessionCompletedBytes, syncSessionTotalBytes])
+                        table.add_row([node, bucket_name, pending_bytes])
                 self.log.info(f"Fusion Pending Bytes for cluster {cluster.id}:\n{table}")
             else:
                 self.log.error(f"Failed to get Fusion status for cluster {cluster.id}: {content}")
@@ -380,7 +378,7 @@ class FusionMonitorUtil():
 
         state = content.get("state")
         table = PrettyTable()
-        table.field_names = ["Node ID", "Bucket Name", "Pending Bytes", "Sync Session Completed Bytes", "Sync Session Total Bytes"]
+        table.field_names = ["Node ID", "Bucket Name", "Pending Bytes"]
         total_pending_bytes = 0
         nodes = content.get("nodes") or {}
         for node, stats in nodes.items():
@@ -388,12 +386,7 @@ class FusionMonitorUtil():
             for bucket_name, bucket_stats in buckets.items():
                 pending_bytes = bucket_stats.get("snapshotPendingBytes") or 0
                 total_pending_bytes += pending_bytes
-                table.add_row([
-                    node, bucket_name,
-                    pending_bytes,
-                    bucket_stats.get("syncSessionCompletedBytes"),
-                    bucket_stats.get("syncSessionTotalBytes"),
-                ])
+                table.add_row([node, bucket_name, pending_bytes])
         self.log.info(
             f"[restore] Fusion state on {cluster.id} (via {instance_id}): "
             f"{state}\n{table}")
@@ -402,8 +395,7 @@ class FusionMonitorUtil():
     def wait_until_fusion_enabled(self, cluster, poll_interval=15, timeout=None):
         """
         Poll GET /fusion/status until state == "enabled", logging the state
-        plus all 3 per-bucket stats (snapshotPendingBytes,
-        syncSessionCompletedBytes, syncSessionTotalBytes) on every poll.
+        plus the per-bucket snapshotPendingBytes stat on every poll.
 
         Queried via SSM (curl against localhost:8091 on one of the cluster's
         own EC2 instances) rather than a REST call from outside the cluster:
