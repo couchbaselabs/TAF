@@ -971,6 +971,12 @@ class DocHistoryRetention(ClusterSetup):
         target_node = self.cluster.nodes_in_cluster[1]
         init_load = self.input.param("initial_load", True)
         total_iterations = self.input.param("iterations", 10)
+        # Keeps the un-persisted mutations under ep_checkpoint_memory_quota
+        # (0.2 * bucket_quota). Beyond it the flusher is paused, dedupe is off
+        # (history=true) so nothing can be freed, and every write is rejected
+        # with TMPFAIL until persistence resumes - which only happens after
+        # this load completes. Sized to ~60% of the quota; pool/loader specific.
+        crash_load_itr = self.input.param("crash_load_iterations", 75)
 
         RestConnection(self.cluster.master).update_autofailover_settings(
             False, 60)
@@ -1018,7 +1024,7 @@ class DocHistoryRetention(ClusterSetup):
             load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 scope=CbServer.default_scope, collection="c1", exp=self.maxttl,
-                durability=self.durability_level, iterations=420,
+                durability=self.durability_level, iterations=crash_load_itr,
                 skip_read_on_error=True, print_ops_rate=False,
                 load_using=self.load_docs_using)
             self.task_manager.get_task_result(load_task)
@@ -1056,6 +1062,7 @@ class DocHistoryRetention(ClusterSetup):
         target_node = self.cluster.nodes_in_cluster[1]
         target_scenario = self.input.param("scenario",
                                            CouchbaseError.STOP_PERSISTENCE)
+        crash_load_itr = self.input.param("crash_load_iterations", 75)
 
         RestConnection(self.cluster.master).update_autofailover_settings(
             False, 60)
@@ -1102,7 +1109,8 @@ class DocHistoryRetention(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             scope=CbServer.default_scope, collection="c1",
             durability=self.durability_level, print_ops_rate=False,
-            iterations=420, skip_read_on_error=True, track_failures=False,
+            iterations=crash_load_itr, skip_read_on_error=True,
+            track_failures=False,
             load_using=self.load_docs_using)
         if target_scenario != CouchbaseError.STOP_MEMCACHED:
             while not load_task.completed:
