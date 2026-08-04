@@ -35,6 +35,10 @@ class APIBase(CouchbaseBaseTest):
         self.organisation_id = self.input.capella.get("tenant_id")
         self.invalid_UUID = "00000000-0000-0000-0000-000000000000"
         self.prefix = "Automated_v4API_test_"
+        # Unique per shard/run, so security-key cleanup never touches keys
+        # belonging to another shard concurrently using the same org.
+        self.security_key_prefix = self.prefix + "security_" + \
+            self.input.test_params.get("cluster_name", "") + "_"
         self.project_id = self.input.capella.get("project", None)
         self.free_tier_cluster_id = None
         self.count = 0
@@ -140,7 +144,7 @@ class APIBase(CouchbaseBaseTest):
                     if resp.status_code == 200:
                         for key in resp.json().get("data", []):
                             if key.get("name", "").startswith(
-                                    self.prefix + "security"):
+                                    self.security_key_prefix):
                                 self.capellaAPI.org_ops_apis.delete_api_key(
                                     self.organisation_id, key["id"])
                     # Create security API keys (size-1 + size-2 combos = 36).
@@ -810,12 +814,12 @@ class APIBase(CouchbaseBaseTest):
                     o_roles.append("organizationMember")
 
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id, self.prefix + "security", o_roles,
+                self.organisation_id, self.security_key_prefix, o_roles,
                 "", 0.5, ["0.0.0.0/0"], resource)
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id, self.prefix + "security", o_roles,
+                    self.organisation_id, self.security_key_prefix, o_roles,
                     "", 0.5, ["0.0.0.0/0"], resource)
             if resp.status_code == 201:
                 api_key_dict["-".join(role_combination)] = {
