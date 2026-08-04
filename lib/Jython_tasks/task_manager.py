@@ -33,6 +33,13 @@ class TaskManager(object):
     def get_task_result(self, task, timeout=None):
         self.log.debug("Getting task result for %s" % task.thread_name)
         if isinstance(task, SiriusCouchbaseLoader) or isinstance(task, SiriusJavaMongoLoader):
+            # `timeout` is intentionally NOT forwarded here. A flat deadline
+            # would fail large-but-healthy loads (e.g. thousands of
+            # collections) that legitimately take longer than any fixed
+            # value. SiriusCouchbaseLoader.get_task_result() instead runs its
+            # own stall detector (see _wait_for_completion_or_stall) that
+            # only fails fast when a task's own progress genuinely stops
+            # advancing - do not "fix" this by re-adding timeout=timeout.
             okay = task.get_task_result()
             if not okay:
                 self.log.critical("Failure during get_task_result of "

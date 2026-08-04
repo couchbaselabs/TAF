@@ -1,7 +1,10 @@
+import time
+
 import requests
 
 import global_vars
 from cb_constants import DocLoading
+from common_lib import sleep
 from sirius_client_framework.sirius_setup import SiriusSetup
 from table_view import TableView
 from cb_constants.CBServer import CbServer
@@ -179,7 +182,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                  base_vectors_file_path=None, sift_url=None,
                  model=None, mockVector=False, dim=128, base64=False,
                  num_vbuckets=CbServer.total_vbuckets,
-                 target_vbuckets=None):
+                 target_vbuckets=None,
+                 stall_timeout=300, progress_poll_interval=5):
         """
         Gateway to start doc loading using Java SDK.
         Have common params for both storage_tests and regular test.
@@ -218,6 +222,12 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.track_failures = track_failures
         self.ops = ops
         self.gtm = False
+        # Stall detection: get_task_result() polls per-task progress instead of
+        # blocking forever. A task_id's clock resets on any observed advance in
+        # completed_ops, so this stays scale-safe regardless of task count -
+        # only genuine zero-progress for stall_timeout seconds trips it.
+        self.stall_timeout = stall_timeout
+        self.progress_poll_interval = progress_poll_interval
         self.iterations = iterations
         self.target_vbuckets = target_vbuckets
         self.vbuckets = CbServer.total_vbuckets
@@ -491,13 +501,99 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.completed = True
         return self._make_task_request(self.task_ids, "cancel_task")
 
+    def _raise_stall(self, stalled_task_id, stalled_for, last_ops, reason):
+        log = global_vars.logger.get("test")
+        log.critical(
+            "%s stalled (%s): no progress for %.0fs (stall_timeout=%ss), "
+            "last known completed_ops=%s. Stopping sibling tasks: %s"
+            % (stalled_task_id, reason, stalled_for, self.stall_timeout,
+               last_ops, self.task_ids))
+        ok, _ = self._make_task_request(self.task_ids, "stop_task", timeout=30)
+        if not ok:
+            log.critical("stop_task failed for %s, attempting cancel_task"
+                        % self.task_ids)
+            self._make_task_request(self.task_ids, "cancel_task", timeout=30)
+        self.completed = True
+        raise Exception(
+            "Sirius task %s stalled (%s): no completed_ops progress for "
+            "%.0fs (stall_timeout=%ss), last known completed_ops=%s. "
+            "Sibling tasks %s have been sent stop/cancel."
+            % (stalled_task_id, reason, stalled_for, self.stall_timeout,
+               last_ops, self.task_ids))
+
+    def _wait_for_completion_or_stall(self):
+        """
+        Poll the non-blocking /get_task_progress endpoint instead of jumping
+        straight to the blocking /get_task_result call. A task_id's stall
+        clock resets on any observed advance in completed_ops, so this is
+        scale-safe (many collections/tasks progressing steadily never trips
+        it) - it only fires when a task genuinely stops making progress.
+        """
+        log = global_vars.logger.get("test")
+        progress_poll_timeout = 30
+        max_transient_failures = 3
+
+        last_ops = dict.fromkeys(self.task_ids, 0)
+        last_change_ts = dict.fromkeys(self.task_ids, time.time())
+        transient_failures = dict.fromkeys(self.task_ids, 0)
+        pending = set(self.task_ids)
+
+        while pending:
+            for task_id in list(pending):
+                data = BaseSiriusLoader._flatten_param_to_str(
+                    {"task_id": task_id})
+                try:
+                    success, resp = self._make_api_request(
+                        "get_task_progress", data, progress_poll_timeout)
+                except Exception as e:
+                    success, resp = False, None
+                    log.warning("get_task_progress(%s) raised %s"
+                              % (task_id, e))
+
+                now = time.time()
+                if not success or not resp or not resp.get("status", False):
+                    transient_failures[task_id] += 1
+                    log.warning(
+                        "get_task_progress(%s) failed, transient retry %d/%d"
+                        % (task_id, transient_failures[task_id],
+                           max_transient_failures))
+                    if transient_failures[task_id] < max_transient_failures:
+                        continue
+                    self._raise_stall(
+                        task_id, now - last_change_ts[task_id],
+                        last_ops[task_id],
+                        reason="get_task_progress unreachable")
+
+                transient_failures[task_id] = 0
+                completed_ops = resp.get("completed_ops", 0)
+                is_running = resp.get("is_running", False)
+
+                if completed_ops > last_ops[task_id]:
+                    last_ops[task_id] = completed_ops
+                    last_change_ts[task_id] = now
+
+                if not is_running:
+                    pending.discard(task_id)
+                    continue
+
+                stalled_for = now - last_change_ts[task_id]
+                if stalled_for >= self.stall_timeout:
+                    self._raise_stall(task_id, stalled_for, last_ops[task_id],
+                                     reason="no forward progress")
+
+            if pending:
+                sleep(self.progress_poll_interval,
+                    "Waiting for Sirius tasks %s to make progress"
+                    % sorted(pending), log_type="test")
+
     def get_task_result(self):
+        self._wait_for_completion_or_stall()
         ok = True
         for task_id in self.task_ids:
             try:
                 data = BaseSiriusLoader._flatten_param_to_str({"task_id": task_id})
                 success, json_resp = self._make_api_request("get_task_result",
-                                                          data, None)
+                                                          data, 600)
                 ok = ok and success and json_resp["status"]
                 if "fail" in json_resp:
                     self.fail.update(json_resp["fail"])
