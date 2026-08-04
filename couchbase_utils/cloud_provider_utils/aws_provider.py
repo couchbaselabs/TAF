@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from urllib.parse import urlparse
 
 import boto3
@@ -38,7 +39,7 @@ class AWSProvider(CloudProviderInterface):
         self._km_key_id = None
         self._km_alias_name = None
         self._km_created_by_us = False
-        self._kms_client = _kms_client()
+        self._kms_client = self._kms_client()
 
     def get_cbbackupmgr_flags(self, shell=None):
         return (
