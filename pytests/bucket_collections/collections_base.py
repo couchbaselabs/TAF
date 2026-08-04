@@ -17,16 +17,13 @@ from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from couchbase.exceptions import InvalidIndexException, QueryIndexNotFoundException
 from couchbase_helper.durability_helper import DurabilityHelper
-from couchbase_utils.cloud_provider_utils.aws_provider import AWSProvider
-from couchbase_utils.cloud_provider_utils.azure_provider import AzureProvider
-from couchbase_utils.cloud_provider_utils.gcp_provider import GCPProvider
-from couchbase_utils.cloud_provider_utils.localstack_provider import LocalstackProvider
+from couchbase_utils.backup_utils.backup_utils import BackupLocation, \
+    CLOUD_PROVIDER_CLASSES, ContinuousBackupUtil
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
-from couchbase_utils.security_utils.credential_store_utils import CredentialStoreUtils
+from couchbase_utils.security_utils.credential_store_utils import \
+    CredentialStoreUtils
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
-from lib.testconstants import PITR_NFS_SERVER
 from membase.api.rest_client import RestConnection
-from platform_utils.ssh_util.install_util.test_input import TestInputServer
 from pytests.bucket_collections.collection_scope_number_manager import CollectionScopeNumberManager
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
@@ -36,15 +33,9 @@ from TestInput import TestInputSingleton
 
 
 class CollectionBase(ClusterSetup, FusionBase):
-    # cbbackup_test/cont_bkp_test cloud provider dispatch tables.
-    CLOUD_PROVIDER_CLASSES = {
-        "AWS": AWSProvider,
-        "Azure": AzureProvider,
-        "GCP": GCPProvider,
-        "localstack": LocalstackProvider,
-    }
-    # AWS/Azure/GCP share one pre-provisioned bucket ("test_backup_TAF") and
-    # rely on cleanup_for_bkrs() to prefix-delete a unique subdir per test.
+    # Object-store destinations for cbbackup_test/cont_bkp_test. AWS/Azure/GCP
+    # share one pre-provisioned bucket ("test-backup-taf") and rely on
+    # cleanup_for_bkrs() to prefix-delete a unique subdir per test.
     # localstack's cleanup_for_bkrs() instead creates/deletes the whole
     # bucket, so it needs a unique bucket name per test, not a shared one.
     BACKUP_URL_TEMPLATES = {
@@ -59,17 +50,6 @@ class CollectionBase(ClusterSetup, FusionBase):
         "GCP": "gs://test-backup-taf/cont_bkp/{uid}",
         "localstack": "s3://{uid}",
     }
-
-    def _create_remote_dir(self, shell, path, description):
-        """mkdir -p + chmod 777 `path` on `shell`; fails the test on error."""
-        _, error = shell.execute_command(f"mkdir -p {path}")
-        if error:
-            self.fail(f"Error creating {description}: {error}")
-        self.log.info(f"Created {description}: {path}")
-        _, error = shell.execute_command(f"chmod 777 {path}")
-        if error:
-            self.fail(f"Error setting permissions on {description}: {error}")
-        self.log.info(f"Set permissions on {description}")
 
     def setUp(self):
         super(CollectionBase, self).setUp()
@@ -137,155 +117,8 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.configure_fusion()
             self.enable_fusion()
 
-        shell = RemoteMachineShellConnection(self.cluster.master)
-
-        if self.cbbackup_test == "NFS" or self.cont_bkp_test == "NFS":
-            self.nfs_server = TestInputServer()
-            self.nfs_server.ip = self.input.param(
-                "pitr_nfs_server", PITR_NFS_SERVER)
-            self.nfs_server.ssh_username = self.input.param(
-                "pitr_nfs_username", "root")
-            self.nfs_server.ssh_password = self.input.param(
-                "pitr_nfs_password", "couchbase")
-
-            self.nfs_util = NfsUtil(self.nfs_server)
-
-            self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
-            self.nfs_util.validate_nfs_server()
-
-            for node in self.servers:
-                self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
-                try:
-                    self.nfs_util.validate_nfs_client(node)
-                except Exception as e:
-                    self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
-                    self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
-                    self.nfs_util.validate_nfs_client(node)
-
-            if self.cbbackup_test == "NFS":
-                self.backup_archive_dir = f"/mnt/nfs_data/test_{uuid.uuid4()}"
-                self.backup_repo_name = self.input.param("repo_name", f"test_{uuid.uuid4()}")
-                self._create_remote_dir(shell, self.backup_archive_dir,
-                                        "backup archive folder")
-
-            if self.cont_bkp_test == "NFS":
-                self.continuous_backup_location = f"/mnt/nfs_data/test_{uuid.uuid4()}"
-                self._create_remote_dir(shell, self.continuous_backup_location,
-                                        "continuous backup folder")
-
-        self.backup_cloud_provider = None
-        if self.cbbackup_test in self.CLOUD_PROVIDER_CLASSES:
-            self.backup_archive_dir = self.BACKUP_URL_TEMPLATES[self.cbbackup_test].format(
-                uid=f"test-{uuid.uuid4()}")
-            self.backup_repo_name = self.input.param("repo_name", f"test_{uuid.uuid4()}")
-            self.backup_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cbbackup_test](log=self.log)
-
-        if self.backup_cloud_provider:
-            self.backup_cloud_provider.cleanup_for_bkrs(self.backup_archive_dir)
-
-        self.backup_mgr = CbBackupMgr(shell,
-                                      username=self.cluster.master.rest_username,
-                                      password=self.cluster.master.rest_password,
-                                      log=self.log,
-                                      cloud_provider=self.backup_cloud_provider)
-
-        self.contbk_cloud_provider = None
-        if self.cont_bkp_test in self.CLOUD_PROVIDER_CLASSES:
-            self.continuous_backup_location = self.CONT_BKP_URL_TEMPLATES[self.cont_bkp_test].format(
-                uid=f"test-{uuid.uuid4()}")
-            self.contbk_cloud_provider = self.CLOUD_PROVIDER_CLASSES[self.cont_bkp_test](log=self.log)
-
-        self.cont_bkp_credential_store_id = None
-        if self.contbk_cloud_provider:
-            self.contbk_cloud_provider.cleanup_for_bkrs(self.continuous_backup_location)
-            rest = RestConnection(self.cluster.master)
-            self.cont_bkp_credential_store_id = "cont_bkp_cred"
-            self.contbk_cloud_provider.create_credential_store(
-                rest, cred_id=self.cont_bkp_credential_store_id,
-                description="Credential store for continuous backup tests")
-            CredentialStoreUtils().put_service_roles(
-                rest, service_name="backup",
-                roles=[f"credential_consumer[{self.cont_bkp_credential_store_id}]"])
-
-        # ear_bk     — encrypt the cbbackupmgr archive
-        # ear_contbk — encrypt the cbcontbk
-        # Both default to False.
-        self.ear_bk = False
-        self.ear_contbk = False
-        self.kms_provider = None
-        self.km_cred_store_id = None
-
-        if self.cont_bkp_test:
-            # cbcontbk reads both the archive and the continuous backup
-            # location, so it needs both providers
-            self.cont_bk_mgr = CbContBk(shell,
-                                        username=self.cluster.master.rest_username,
-                                        password=self.cluster.master.rest_password,
-                                        log=self.log,
-                                        cbcontbk_cloud_provider=self.contbk_cloud_provider,
-                                        backup_cloud_provider=self.backup_cloud_provider)
-
-            # EaR opt-in for cbcontbk tests: provision an external KMS key,
-            # upload its credentials to the Credential Store, and attach the
-            # provider to the CLI wrapper(s).
-            self.ear_bk = self.input.param("ear_bk", False)
-            self.ear_contbk = self.input.param("ear_contbk", False)
-            if self.ear_bk or self.ear_contbk:
-                km_provider_name = self.input.param("km_provider", "AWS")
-                if km_provider_name not in self.CLOUD_PROVIDER_CLASSES:
-                    self.fail(
-                        "Invalid km_provider %r. Expected one of %s."
-                        % (km_provider_name,
-                           list(self.CLOUD_PROVIDER_CLASSES.keys())))
-                self.kms_provider = self.CLOUD_PROVIDER_CLASSES[
-                    km_provider_name](log=self.log)
-                self.kms_provider.create_kms_key(
-                    alias=self.input.param("km_key_alias", None))
-                self.log.info(f"KMS key provisioned for EaR: {self.kms_provider.km_key_url}")
-
-                rest = RestConnection(self.cluster.master)
-                self.km_cred_store_id = "km_cred_%s" % uuid.uuid4()
-                self.kms_provider.create_kms_credential_store(
-                    rest, cred_id=self.km_cred_store_id,
-                    description="KMS credential for cbcontbk EaR tests")
-                self.log.info(f"Created credential store for KMS with ID: {self.km_cred_store_id}")
-
-                roles = [f"credential_consumer[{self.km_cred_store_id}]"]
-                if self.cont_bkp_credential_store_id:
-                    roles.append(
-                        f"credential_consumer[{self.cont_bkp_credential_store_id}]")
-                CredentialStoreUtils().put_service_roles(
-                    rest, service_name="backup", roles=roles)
-
-                # Attach the provider only to the required CLI wrapper
-                if self.ear_bk:
-                    self.backup_mgr.kms_provider = self.kms_provider
-                if self.ear_contbk:
-                    self.cont_bk_mgr.kms_provider = self.kms_provider
-
-                # Bucket-level Encryption at Rest is a PREREQUISITE for continuous-backup EaR.
-                # Create a server-managed ns_server secret and let collection_setup thread its ID onto the
-                # bucket spec via encryption_at_rest_id. tearDown deletes it.
-                self.enable_encryption_at_rest = True
-                ear_secret_name = "taf-ear-%s" % uuid.uuid4().hex[:8]
-                ear_params = self.bucket_helper_obj.create_secret_params(
-                    secret_type="cb-server-managed-aes-key-256",
-                    name=ear_secret_name,
-                    usage=["bucket-encryption"],
-                    autoRotation=False,
-                    rotationIntervalInSeconds=None,
-                    port=None)
-                status, response = RestConnection(
-                    self.cluster.master).create_secret(ear_params)
-                if not status:
-                    self.fail(
-                        f"Failed to create bucket-encryption secret: "
-                        f"{response}")
-                self.encryption_at_rest_id = json.loads(response)["id"]
-                self.log.info(
-                    f"Created server-managed EaR bucket secret: "
-                    f"name={ear_secret_name}, "
-                    f"id={self.encryption_at_rest_id}")
+        self.setup_backup_locations()
+        self.setup_backup_encryption()
 
         try:
             self.collection_setup()
@@ -325,61 +158,212 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.cluster_util.set_file_based_rebalance(
                 cluster_node, enabled=False)
 
-    def _cleanup_backup_location(self, test_mode, cloud_provider, location,
-                                 label, cleanup_repo=False,
-                                 collect_logs_on_failure=False):
+    def setup_backup_locations(self):
         """
-        Shared NFS/single_node-vs-cloud-provider cleanup for a backup
-        location in tearDown().
+        Resolve `cbbackup_test` / `cont_bkp_test` into the cbbackupmgr archive
+        and the continuous-backup location, provision both, and build the
+        cbbackupmgr/cbcontbk wrappers that talk to them.
 
-        :param test_mode: self.cbbackup_test or self.cont_bkp_test
-        :param cloud_provider: self.backup_cloud_provider or
-                               self.contbk_cloud_provider
-        :param location: folder/archive path being cleaned up
-        :param label: human-readable name for log messages, e.g.
-                     "backup archive" / "continuous backup"
-        :param cleanup_repo: also remove the backup repo dir under
-                             `location` (NFS/single_node only)
-        :param collect_logs_on_failure: collect cbbackupmgr/cbcontbk logs
-                                        if the test failed
+        Every backing store gets a destination unique to this test, so
+        concurrent runs against a shared NFS export or object-store bucket
+        cannot see each other's data.
         """
-        is_local = test_mode in ("NFS", "single_node")
-        if not is_local and test_mode not in self.CLOUD_PROVIDER_CLASSES:
+        if "NFS" in (self.cbbackup_test, self.cont_bkp_test):
+            self.nfs_util = NfsUtil.for_pitr_tests(self.input)
+            self.nfs_server = self.nfs_util.nfs_server_node
+            self.nfs_util.ensure_nfs_clients(self.servers)
+
+        # A cbbackup_test/cont_bkp_test of None leaves the archive and
+        # continuous-backup paths at whatever OnPremBaseTest resolved from the
+        # archive_dir/continuous_backup_location params.
+        if self.cbbackup_test is not None:
+            self.backup_repo_name = self.input.param("repo_name",
+                                                     f"test_{uuid.uuid4()}")
+        self.backup_location = BackupLocation.build(
+            self.cbbackup_test, "backup archive",
+            local_path=f"{NfsUtil.MOUNT_POINT}/test_{uuid.uuid4()}"
+            if self.cbbackup_test == "NFS" else self.backup_archive_dir,
+            url_templates=self.BACKUP_URL_TEMPLATES,
+            template_args={"uid": f"test-{uuid.uuid4()}"},
+            obj_staging_dir=self.obj_staging_dir_cbbackup, log=self.log)
+        self.backup_archive_dir = self.backup_location.path
+        self.backup_cloud_provider = self.backup_location.cloud_provider
+
+        self.cont_bkp_location = BackupLocation.build(
+            self.cont_bkp_test, "continuous backup location",
+            local_path=f"{NfsUtil.MOUNT_POINT}/test_{uuid.uuid4()}"
+            if self.cont_bkp_test == "NFS" else self.continuous_backup_location,
+            url_templates=self.CONT_BKP_URL_TEMPLATES,
+            template_args={"uid": f"test-{uuid.uuid4()}"},
+            obj_staging_dir=self.obj_staging_dir_cont_bkp, log=self.log)
+        self.continuous_backup_location = self.cont_bkp_location.path
+        self.contbk_cloud_provider = self.cont_bkp_location.cloud_provider
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        self.backup_location.provision(shell)
+        self.cont_bkp_location.provision(shell)
+
+        # The backup service reads the object store itself, so it needs the
+        # credentials in the cluster's Credential Store rather than on the CLI.
+        self.cont_bkp_credential_store_id = \
+            self.cont_bkp_location.create_credential_store(
+                RestConnection(self.cluster.master), cred_id="cont_bkp_cred",
+                description="Credential store for continuous backup tests")
+
+        self.backup_mgr = CbBackupMgr(
+            shell,
+            username=self.cluster.master.rest_username,
+            password=self.cluster.master.rest_password,
+            log=self.log,
+            cloud_provider=self.backup_location.cloud_provider,
+            obj_staging_dir=self.backup_location.obj_staging_dir)
+        if self.cont_bkp_test:
+            # cbcontbk reads both the archive and the continuous backup
+            # location, so it needs both providers
+            self.cont_bk_mgr = CbContBk(
+                shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log,
+                cbcontbk_cloud_provider=self.cont_bkp_location.cloud_provider,
+                backup_cloud_provider=self.backup_location.cloud_provider,
+                obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+
+    def setup_backup_encryption(self):
+        """
+        Opt in to encryption-at-rest for the backup tools, per `ear_bk`
+        (cbbackupmgr archive) and `ear_contbk` (cbcontbk), both default False.
+
+        Three steps, in order:
+          1. Provision an external KMS key and upload its credentials to the
+             Credential Store, so the backup service can reach the key.
+          2. Attach the KMS provider to whichever CLI wrapper asked for it.
+          3. Turn on bucket-level EaR, a prerequisite for continuous-backup
+             EaR, backed by a secret this test owns.
+
+        Runs after setup_backup_locations(), which owns the CLI wrappers and
+        the continuous-backup credential granted alongside the KMS one.
+        teardown_backup_encryption() reverses all of it.
+        """
+        self.ear_bk = False
+        self.ear_contbk = False
+        self.kms_provider = None
+        self.km_cred_store_id = None
+
+        if not self.cont_bkp_test:
+            return
+
+        self.ear_bk = self.input.param("ear_bk", False)
+        self.ear_contbk = self.input.param("ear_contbk", False)
+        if not (self.ear_bk or self.ear_contbk):
+            return
+
+        km_provider_name = self.input.param("km_provider", "AWS")
+        if km_provider_name not in CLOUD_PROVIDER_CLASSES:
+            self.fail(f"Invalid km_provider {km_provider_name!r}. Expected "
+                      f"one of {list(CLOUD_PROVIDER_CLASSES)}.")
+        self.kms_provider = CLOUD_PROVIDER_CLASSES[km_provider_name](
+            log=self.log)
+        self.kms_provider.create_kms_key(
+            alias=self.input.param("km_key_alias", None))
+        self.log.info(f"KMS key provisioned for EaR: "
+                      f"{self.kms_provider.km_key_url}")
+
+        rest = RestConnection(self.cluster.master)
+        self.km_cred_store_id = f"km_cred_{uuid.uuid4()}"
+        self.kms_provider.create_kms_credential_store(
+            rest, cred_id=self.km_cred_store_id,
+            description="KMS credential for cbcontbk EaR tests")
+        self.log.info(f"Created credential store for KMS with ID: "
+                      f"{self.km_cred_store_id}")
+
+        roles = [f"credential_consumer[{self.km_cred_store_id}]"]
+        if self.cont_bkp_credential_store_id:
+            roles.append(
+                f"credential_consumer[{self.cont_bkp_credential_store_id}]")
+        CredentialStoreUtils().put_service_roles(
+            rest, service_name="backup", roles=roles)
+
+        # Attach the provider only to the required CLI wrapper
+        if self.ear_bk:
+            self.backup_mgr.kms_provider = self.kms_provider
+        if self.ear_contbk:
+            self.cont_bk_mgr.kms_provider = self.kms_provider
+
+        # Bucket-level EaR is a PREREQUISITE for continuous-backup EaR.
+        # collection_setup threads encryption_at_rest_id onto the bucket spec
+        # once enable_encryption_at_rest is set.
+        self.enable_encryption_at_rest = True
+        self.encryption_at_rest_id = self._create_bucket_encryption_secret()
+
+    def _create_bucket_encryption_secret(self):
+        """
+        Create a server-managed ns_server secret for bucket-level EaR and
+        return its id.
+
+        The default secret (id 0) is not usable here: it is incompatible with
+        external KMS-based EaR, so every EaR run provisions -- and
+        teardown_backup_encryption() deletes -- its own.
+        """
+        secret_name = f"taf-ear-{uuid.uuid4().hex[:8]}"
+        secret_params = self.bucket_helper_obj.create_secret_params(
+            secret_type="cb-server-managed-aes-key-256",
+            name=secret_name,
+            usage=["bucket-encryption"],
+            autoRotation=False,
+            rotationIntervalInSeconds=None,
+            port=None)
+        status, response = RestConnection(self.cluster.master).create_secret(
+            secret_params)
+        if not status:
+            self.fail(f"Failed to create bucket-encryption secret: {response}")
+
+        secret_id = json.loads(response)["id"]
+        self.log.info(f"Created server-managed EaR bucket secret: "
+                      f"name={secret_name}, id={secret_id}")
+        return secret_id
+
+    def teardown_backup_locations(self):
+        """
+        Collect cbbackupmgr/cbcontbk logs when the test failed -- leaving the
+        backup data in place for investigation -- and otherwise remove
+        everything the run wrote.
+        """
+        locations = [location
+                     for location in (self.backup_location,
+                                      self.cont_bkp_location)
+                     if location.enabled]
+        if not locations:
             return
 
         if self.is_test_failed():
-            self.log.warning(
-                "Test failed, skipping cleanup of %s folder to preserve "
-                "data for investigation: %s" % (label, location))
-            if collect_logs_on_failure and self.get_cbcollect_info:
+            for location in locations:
+                self.log.warning(
+                    "Test failed, skipping cleanup of %s to preserve data "
+                    "for investigation: %s" % (location.label, location.path))
+            if self.get_cbcollect_info:
                 self._collect_backup_logs_on_failure()
             return
 
-        if is_local:
-            shell = RemoteMachineShellConnection(self.cluster.master)
-            try:
-                self.log.info("Removing %s folder: %s" % (label, location))
-                _, error = shell.execute_command(f"rm -rf {location}",
-                                                 timeout=300)
-                if error:
-                    self.log.warning("Error removing %s folder: %s" % (label, error))
-            except Exception as e:
-                self.log.warning("Exception during cleanup: %s" % str(e))
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            for location in locations:
+                location.cleanup(shell)
 
-            if cleanup_repo and self.backup_repo_name:
-                try:
-                    self.log.info("Removing backup repository")
-                    shell.execute_command(
-                        f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}",
-                        timeout=300)
-                except Exception as e:
-                    self.log.warning(f"Exception during cleanup: {e}")
-        elif cloud_provider:
-            try:
-                self.log.info("Cleaning up %s folder: %s" % (label, location))
-                cloud_provider.cleanup_for_bkrs(location)
-            except Exception as e:
-                self.log.warning("Exception during cloud provider cleanup: %s" % str(e))
+            # The traditional-backup repo lives under the archive dir. On an
+            # object-store archive the prefix delete above already took it; on
+            # a local archive it may sit outside any path this test created,
+            # since archive_dir defaults to /tmp/backups when cbbackup_test is
+            # unset.
+            if self.backup_repo_name and not self.backup_location.is_cloud:
+                self.log.info("Removing backup repository")
+                shell.execute_command(
+                    f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}",
+                    timeout=BackupLocation.CLEANUP_TIMEOUT)
+        except Exception as e:
+            self.log.warning(f"Exception during backup cleanup: {e}")
+        finally:
+            shell.disconnect()
 
     def tearDown(self):
         if self.range_scan_task is not None:
@@ -419,89 +403,101 @@ class CollectionBase(ClusterSetup, FusionBase):
                                         num_reader_threads="default",
                                         num_storage_threads="default")
 
-        self._cleanup_backup_location(
-            self.cbbackup_test, self.backup_cloud_provider,
-            self.backup_archive_dir, "backup archive")
-
-        self._cleanup_backup_location(
-            self.cont_bkp_test, self.contbk_cloud_provider,
-            self.continuous_backup_location, "continuous backup",
-            cleanup_repo=True, collect_logs_on_failure=True)
-
-        # EaR cleanup: delete the KMS key + Credential Store entry on both
-        # success and failure paths. Cloud KMS keys carry ongoing cost and
-        # must never be left orphaned. On failure we still log everything a
-        # human would need to find the key in the provider's console — the
-        # scheduled-delete window (AWS: 7 days pending; Azure: 90-day soft
-        # delete; GCP: destroys versions only) gives investigators time to
-        # cancel deletion if the key is still needed for post-mortem.
-        if self.ear_bk or self.ear_contbk:
-            if self.is_test_failed() and self.kms_provider is not None:
-                key_details = {
-                    "provider": type(self.kms_provider).__name__,
-                    "km_key_url": self.kms_provider.km_key_url,
-                    # AWS uses (_km_key_id, _km_alias_name); GCP/Azure use
-                    # _km_key_name. Read via getattr so the log line is
-                    # provider-agnostic.
-                    "km_key_id": getattr(
-                        self.kms_provider, "_km_key_id", None),
-                    "km_alias_name": getattr(
-                        self.kms_provider, "_km_alias_name", None),
-                    "km_key_name": getattr(
-                        self.kms_provider, "_km_key_name", None),
-                    "km_created_by_this_run": getattr(
-                        self.kms_provider, "_km_created_by_us", None),
-                    "km_cred_store_id": self.km_cred_store_id,
-                }
-                self.log.warning(
-                    f"EaR test failed — KMS resources scheduled for "
-                    f"deletion below. Details for post-mortem lookup: "
-                    f"{key_details}")
-
-            if self.kms_provider is not None:
-                try:
-                    self.kms_provider.delete_kms_key()
-                except Exception as e:
-                    self.log.warning(
-                        f"Failed to delete KMS key during teardown: {e}")
-            if self.km_cred_store_id is not None:
-                try:
-                    rest = RestConnection(self.cluster.master)
-                    CredentialStoreUtils().delete_credential(
-                        rest, self.km_cred_store_id)
-                except Exception as e:
-                    self.log.error(f"Exception while deleting KMS credential store entry: {e}")
-
-        # Delete the server-managed ns_server EaR secret created in setUp.
-        # ns_server rejects delete_secret while any bucket still references
-        # the secret via encryptionAtRestKeyId, and super().tearDown() (which
-        # drops the buckets) runs AFTER this block. So unbind each bucket
-        # first by setting encryptionAtRestKeyId=-1 — same pattern
-        # test_bucket_encryption_auto_rotation uses.
-        if (self.ear_bk or self.ear_contbk) and self.encryption_at_rest_id:
-            for bucket in self.cluster.buckets:
-                try:
-                    self.bucket_helper_obj.change_bucket_props(
-                        bucket, encryptionAtRestKeyId=-1)
-                except Exception as e:
-                    self.log.warning(
-                        f"Failed to unbind bucket '{bucket.name}' from EaR "
-                        f"secret id={self.encryption_at_rest_id} before "
-                        f"delete: {e}")
-            try:
-                status, response = RestConnection(
-                    self.cluster.master).delete_secret(
-                        self.encryption_at_rest_id)
-                if not status:
-                    self.log.warning(
-                        f"Failed to delete EaR bucket secret "
-                        f"id={self.encryption_at_rest_id}: {response}")
-            except Exception as e:
-                self.log.warning(
-                    f"Exception deleting EaR bucket secret "
-                    f"id={self.encryption_at_rest_id}: {e}")
+        self.teardown_backup_locations()
+        self.teardown_backup_encryption()
 
         super(CollectionBase, self).tearDown()
+
+    def teardown_backup_encryption(self):
+        """
+        Reverse setup_backup_encryption(): drop the KMS key, its Credential
+        Store entry, and the bucket-encryption secret.
+
+        Runs on both the success and failure paths — cloud KMS keys carry
+        ongoing cost and must never be left orphaned. On failure everything a
+        human needs to find the key in the provider's console is logged first:
+        the scheduled-delete window (AWS: 7 days pending; Azure: 90-day soft
+        delete; GCP: destroys versions only) gives investigators time to
+        cancel deletion if the key is still needed for post-mortem.
+
+        Every step swallows its own exceptions so one failure cannot strand
+        the resources after it.
+        """
+        if not (self.ear_bk or self.ear_contbk):
+            return
+
+        if self.is_test_failed() and self.kms_provider is not None:
+            key_details = {
+                "provider": type(self.kms_provider).__name__,
+                "km_key_url": self.kms_provider.km_key_url,
+                # AWS uses (_km_key_id, _km_alias_name); GCP/Azure use
+                # _km_key_name. Read via getattr so the log line is
+                # provider-agnostic.
+                "km_key_id": getattr(self.kms_provider, "_km_key_id", None),
+                "km_alias_name": getattr(
+                    self.kms_provider, "_km_alias_name", None),
+                "km_key_name": getattr(
+                    self.kms_provider, "_km_key_name", None),
+                "km_created_by_this_run": getattr(
+                    self.kms_provider, "_km_created_by_us", None),
+                "km_cred_store_id": self.km_cred_store_id,
+            }
+            self.log.warning(f"EaR test failed — KMS resources scheduled for "
+                             f"deletion below. Details for post-mortem "
+                             f"lookup: {key_details}")
+
+        if self.kms_provider is not None:
+            try:
+                self.kms_provider.delete_kms_key()
+            except Exception as e:
+                self.log.warning(
+                    f"Failed to delete KMS key during teardown: {e}")
+
+        if self.km_cred_store_id is not None:
+            try:
+                CredentialStoreUtils().delete_credential(
+                    RestConnection(self.cluster.master),
+                    self.km_cred_store_id)
+            except Exception as e:
+                self.log.error(f"Exception while deleting KMS credential "
+                               f"store entry: {e}")
+
+        self._delete_bucket_encryption_secret()
+
+    def _delete_bucket_encryption_secret(self):
+        """
+        Delete the server-managed ns_server secret created by
+        _create_bucket_encryption_secret().
+
+        ns_server rejects delete_secret while any bucket still references the
+        secret via encryptionAtRestKeyId, and super().tearDown() -- which
+        drops the buckets -- runs after this. So unbind every bucket first by
+        setting encryptionAtRestKeyId=-1, the same pattern
+        test_bucket_encryption_auto_rotation uses.
+        """
+        if not self.encryption_at_rest_id:
+            return
+
+        for bucket in self.cluster.buckets:
+            try:
+                self.bucket_helper_obj.change_bucket_props(
+                    bucket, encryptionAtRestKeyId=-1)
+            except Exception as e:
+                self.log.warning(
+                    f"Failed to unbind bucket '{bucket.name}' from EaR "
+                    f"secret id={self.encryption_at_rest_id} before "
+                    f"delete: {e}")
+
+        try:
+            status, response = RestConnection(
+                self.cluster.master).delete_secret(self.encryption_at_rest_id)
+            if not status:
+                self.log.warning(f"Failed to delete EaR bucket secret "
+                                 f"id={self.encryption_at_rest_id}: "
+                                 f"{response}")
+        except Exception as e:
+            self.log.warning(f"Exception deleting EaR bucket secret "
+                             f"id={self.encryption_at_rest_id}: {e}")
 
     def _collect_backup_logs_on_failure(self):
         """
@@ -512,18 +508,19 @@ class CollectionBase(ClusterSetup, FusionBase):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
         remote_tmp_dir = "/data/tmp"
 
+        # cont_bk_mgr only exists when the test exercises continuous backup
         collectors = [
             ("cbbackupmgr", self.backup_mgr,
              lambda mgr, tmp: mgr.collect_logs(archive_dir=self.backup_archive_dir,
-                                               output_dir=tmp,
-                                               obj_staging_dir=self.obj_staging_dir_cbbackup)),
-            ("cbcontbk", self.cont_bk_mgr,
+                                               output_dir=tmp)),
+            ("cbcontbk", getattr(self, "cont_bk_mgr", None),
              lambda mgr, tmp: mgr.collect_logs(location=self.continuous_backup_location,
-                                               temp_dir=tmp,
-                                               obj_staging_dir=self.obj_staging_dir_cont_bkp)),
+                                               temp_dir=tmp)),
         ]
 
         for name, mgr, collect_fn in collectors:
+            if mgr is None:
+                continue
             try:
                 shell = mgr.shellConn
                 os_info = shell.extract_remote_info()
@@ -594,54 +591,20 @@ class CollectionBase(ClusterSetup, FusionBase):
                                                     validate_docs)
 
         if self.continuous_backup_enabled:
-            for bucket in self.cluster.buckets:
-                if bucket.bucketType != Bucket.Type.EPHEMERAL and \
-                        bucket.storageBackend == Bucket.StorageBackend.magma:
-                    current_ret_seconds = bucket.historyRetentionSeconds or 0
-                    current_ret_bytes = bucket.historyRetentionBytes or 0
-                    if current_ret_seconds == 0 and current_ret_bytes == 0:
-                        # Not set — apply defaults so continuous backup has history to work with
-                        history_retention_seconds = self.input.param(
-                            "history_retention_seconds", 86400)
-                        history_retention_bytes = self.input.param(
-                            "history_retention_bytes", 0)
-                        self.bucket_util.update_bucket_property(
-                            self.cluster.master, bucket,
-                            history_retention_seconds=history_retention_seconds,
-                            history_retention_bytes=history_retention_bytes,
-                            continuous_backup_interval=self.continuous_backup_interval,
-                            continuous_backup_location=self.continuous_backup_location,
-                            continuous_backup_enabled="true",
-                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
-                            continuous_backup_km_key_url=(
-                                self.kms_provider.km_key_url
-                                if self.ear_contbk else None),
-                            continuous_backup_km_cred_id=(
-                                self.km_cred_store_id
-                                if self.ear_contbk else None))
-                        self.log.info("Continuous backup enabled for bucket %s "
-                                      "(history_retention_seconds=%s, history_retention_bytes=%s)"
-                                      % (bucket.name, history_retention_seconds,
-                                         history_retention_bytes))
-                    else:
-                        # Already set — preserve existing retention to allow tests that
-                        # exercise expiry within the test window
-                        self.log.info("Bucket %s already has history retention set "
-                                      "(seconds=%s, bytes=%s); not overriding"
-                                      % (bucket.name, current_ret_seconds, current_ret_bytes))
-                        self.bucket_util.update_bucket_property(
-                            self.cluster.master, bucket,
-                            continuous_backup_interval=self.continuous_backup_interval,
-                            continuous_backup_location=self.continuous_backup_location,
-                            continuous_backup_enabled="true",
-                            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
-                            continuous_backup_km_key_url=(
-                                self.kms_provider.km_key_url
-                                if self.ear_contbk else None),
-                            continuous_backup_km_cred_id=(
-                                self.km_cred_store_id
-                                if self.ear_contbk else None))
-                        self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
+            ContinuousBackupUtil.enable_continuous_backup(
+                self.bucket_util, self.cluster, self.cluster.buckets,
+                continuous_backup_location=self.continuous_backup_location,
+                continuous_backup_interval=self.continuous_backup_interval,
+                continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
+                continuous_backup_km_key_url=(
+                    self.kms_provider.km_key_url if self.ear_contbk else None),
+                continuous_backup_km_cred_id=(
+                    self.km_cred_store_id if self.ear_contbk else None),
+                default_history_retention_seconds=self.input.param(
+                    "history_retention_seconds", 86400),
+                default_history_retention_bytes=self.input.param(
+                    "history_retention_bytes", 0),
+                log=self.log)
 
             if self.cont_bkp_test:
                 self.sleep(self.continuous_backup_interval * 60,
@@ -661,14 +624,13 @@ class CollectionBase(ClusterSetup, FusionBase):
 
                 if self.input.param("initial_load", True):
                     self.log.info("Creating backup repository")
+                    # obj_staging_dir comes from the CbBackupMgr instance
                     self.backup_mgr.create_repo(self.backup_archive_dir,
                                                 self.backup_repo_name,
-                                                obj_staging_dir=self.obj_staging_dir_cbbackup,
                                                 encrypted=self.ear_bk)
                     self.log.info("Performing initial backup")
                     self.backup_mgr.backup(self.backup_archive_dir,
-                                           self.backup_repo_name,
-                                           obj_staging_dir=self.obj_staging_dir_cbbackup)
+                                           self.backup_repo_name)
 
         if isinstance(self.range_scan_collections, int) \
                 and self.range_scan_collections > 0:

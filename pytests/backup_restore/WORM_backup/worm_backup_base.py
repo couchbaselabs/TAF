@@ -5,6 +5,7 @@ import uuid
 
 from backup_restore.continuous_backup.continuous_backup_base import ContinuousBackupBase
 from cb_constants import CbServer
+from couchbase_utils.backup_utils.backup_utils import CLOUD_PROVIDER_CLASSES
 from pytests.bucket_collections.collections_base import CollectionBase
 from sdk_client3 import SDKClient
 
@@ -41,7 +42,7 @@ class WormBackupBase(ContinuousBackupBase):
 
         self.worm_bucket = self.input.param("worm_bucket",
                                             self.DEFAULT_WORM_BUCKET)
-        if self.cbbackup_test in self.CLOUD_PROVIDER_CLASSES:
+        if self.cbbackup_test in CLOUD_PROVIDER_CLASSES:
             self.backup_archive_dir = "%s://%s/backups/test-%s" % (
                 self.WORM_URL_SCHEMES[self.cbbackup_test], self.worm_bucket,
                 uuid.uuid4())
@@ -150,7 +151,7 @@ class WormBackupBase(ContinuousBackupBase):
         """
         Skip the test unless cbbackup_test matches one of `providers`
         (a single name or a list of names, case-insensitive against the
-        CollectionBase.CLOUD_PROVIDER_CLASSES keys: AWS/Azure/GCP).
+        backup_utils.CLOUD_PROVIDER_CLASSES keys: AWS/Azure/GCP).
 
         Returns self.backup_cloud_provider for the caller to use directly.
         """
