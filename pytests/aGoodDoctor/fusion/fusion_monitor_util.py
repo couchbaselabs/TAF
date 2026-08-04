@@ -163,7 +163,10 @@ class FusionMonitorUtil():
                             bucket_stats.get("syncSessionCompletedBytes"),
                             bucket_stats.get("syncSessionTotalBytes"),
                         ])
-                self.log.info(f"Fusion state on cluster {cluster.id}: {content.get('state')}\n{table}")
+                if table.rows:
+                    self.log.info(f"Fusion state on cluster {cluster.id}: {content.get('state')}\n{table}")
+                else:
+                    self.log.info(f"Fusion state on cluster {cluster.id}: {content.get('state')}")
                 if content.get('state') == state:
                     time.sleep(5)
                     return
