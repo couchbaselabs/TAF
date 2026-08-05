@@ -113,6 +113,41 @@ def set_session_cookie(client, cookie):
     """
     client._session_cookie = cookie
 
+def parse_cookie_attributes(raw_set_cookie):
+    """
+    Parse the attributes of a raw Set-Cookie header value into a dict.
+
+    Use with UCPResponse.set_cookie to assert on the cookie's security
+    attributes. The leading "name=value" pair is the cookie itself, not an
+    attribute, so it is skipped -- use extract_session_id for that.
+
+    Valueless flag attributes (HttpOnly, Secure) map to True; keyed
+    attributes (Path, SameSite, Max-Age) map to their string value. Keys are
+    lower-cased because servers are free to choose their own casing.
+
+    Args:
+        raw_set_cookie: raw header value, e.g.
+                        "session=abc; Path=/; HttpOnly; Secure; SameSite=Strict"
+    Returns:
+        dict of attributes, e.g.
+        {'path': '/', 'httponly': True, 'secure': True, 'samesite': 'Strict'}
+        Empty dict if raw_set_cookie is empty/None.
+    """
+    if not raw_set_cookie:
+        return {}
+    attributes = {}
+    # parts[0] is the cookie's own name=value pair, not an attribute.
+    for part in raw_set_cookie.split(';')[1:]:
+        part = part.strip()
+        if not part:
+            continue
+        if '=' in part:
+            key, value = part.split('=', 1)
+            attributes[key.strip().lower()] = value.strip()
+        else:
+            attributes[part.lower()] = True
+    return attributes
+
 def extract_session_id(cookie):
     """
     Extract the session ID (the cookie value) from a "name=value"
@@ -199,25 +234,32 @@ def get_raw(client, path, query=None):
         api += '?' + query
     return client._http_request(api, 'GET')
 
-def raw_request(client, method, path, body=None):
+def raw_request(client, method, path, body=None, extra_headers=None):
     """
     Issue an arbitrary-method raw request against a UCP path, reusing the
     client's session cookie. For exercising HTTP verbs the typed client
     methods do not expose (e.g. PUT/DELETE against a resource that has no
     corresponding client method because it is meant to be immutable, such
-    as an audit event).
+    as an audit event), or bodies the typed methods cannot express (e.g. a
+    field carrying the wrong JSON type).
     Args:
-        client: UnifiedControlPlaneClient instance (authenticated)
-        method: HTTP method string, e.g. 'PUT', 'DELETE'
-        path:   path below baseUrl, e.g. "api/v1/audit/<id>"
-        body:   dict to JSON-encode as the request body, or None
+        client:        UnifiedControlPlaneClient instance (authenticated)
+        method:        HTTP method string, e.g. 'PUT', 'DELETE'
+        path:          path below baseUrl, e.g. "api/v1/audit/<id>"
+        body:          dict to JSON-encode as the request body, or None
+        extra_headers: dict of additional headers merged over the client's
+                       defaults, or None. Needed to supply a valid If-Match
+                       on a PUT so that a conditional-request failure cannot
+                       mask the dimension actually under test.
     Returns:
         Tuple (status, content, header) from the request.
     """
     api = client.baseUrl + path
     payload = json.dumps(body) if body is not None else ''
-    return client._http_request(api, method, payload,
-                                headers=client._json_headers())
+    headers = client._json_headers()
+    if extra_headers:
+        headers.update(extra_headers)
+    return client._http_request(api, method, payload, headers=headers)
 
 def post_raw_body(client, path, raw_body):
     """
