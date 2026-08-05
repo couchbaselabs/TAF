@@ -1140,14 +1140,23 @@ class StorageBase(BaseTestCase):
         dgm = 100
         while count < 5:
             try:
-                dgm = self.rest_client.get_bucket_info(
-                    bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
+                # vb_active_resident_items_ratio is served by the bucket stats
+                # API, not by get_bucket_info()
+                status, content = self.rest_client.get_bucket_stats(
+                    bucket.name, zoom="minute")
+                if not status:
+                    raise Exception(content)
+                dgm = content["op"]["samples"][
+                    "vb_active_resident_items_ratio"][-1]
                 self.log.info("Active Resident Threshold of {0} is {1}".format(
                     bucket.name, dgm))
                 return dgm
             except Exception as e:
-                self.sleep(5, e)
+                self.sleep(5, "Fetching dgm of {0} failed: {1}".format(
+                    bucket.name, e))
             count += 1
+        self.log.warning("Could not fetch dgm of {0}, assuming {1}".format(
+            bucket.name, dgm))
         return dgm
 
     def change_swap_space(self, servers=None, disable=True):
