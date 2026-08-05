@@ -225,9 +225,9 @@ class MagmaExpiryTests(MagmaBaseTest):
             self.bucket_util._run_compaction(self.cluster, number_of_times=1, timeout=self.compaction_timeout)
             ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
             self.log.info("Tombstones after bucket compaction: {}".format(ts))
-            self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
+            self.assertTrue(self.bucket_num_vb * (self.num_replicas+1)>=ts,
                              "Incorrect tombstone count in storage,\
-                             Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
+                             Expected: {}, Found: {}".format(self.bucket_num_vb * (self.num_replicas+1), ts))
             self.set_metadata_purge_interval(
                 value=3.0, buckets=self.buckets)
 
@@ -723,9 +723,9 @@ class MagmaExpiryTests(MagmaBaseTest):
                                          timeout=self.compaction_timeout)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
-        self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
+        self.assertTrue(self.bucket_num_vb * (self.num_replicas+1)>=ts,
                         "Incorrect tombstone count in storage,\
-                        Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
+                        Expected: {}, Found: {}".format(self.bucket_num_vb * (self.num_replicas+1), ts))
         self.set_metadata_purge_interval(
                 value=3.0, buckets=self.buckets)
 
@@ -815,9 +815,9 @@ class MagmaExpiryTests(MagmaBaseTest):
                                          timeout=self.compaction_timeout)
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after bucket compaction: {}".format(ts))
-        self.assertTrue(self.vbuckets * (self.num_replicas+1)>=ts,
+        self.assertTrue(self.bucket_num_vb * (self.num_replicas+1)>=ts,
                         "Incorrect tombstone count in storage,\
-                        Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
+                        Expected: {}, Found: {}".format(self.bucket_num_vb * (self.num_replicas+1), ts))
         self.set_metadata_purge_interval(
             value=3.0, buckets=self.buckets)
 
@@ -889,11 +889,11 @@ class MagmaExpiryTests(MagmaBaseTest):
         # All docs and tomb-stone should be dropped from the storage
         ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
         self.log.info("Tombstones after full compaction: {}".format(ts))
-        self.log.info("Expected {}".format(self.vbuckets * (self.num_replicas+1)))
+        self.log.info("Expected {}".format(self.bucket_num_vb * (self.num_replicas+1)))
 
-        self.assertTrue(self.vbuckets * (self.num_replicas+1) >= ts,
+        self.assertTrue(self.bucket_num_vb * (self.num_replicas+1) >= ts,
                         "Incorrect tombstone count in storage,\
-                        Expected: {}, Found: {}".format(self.vbuckets * (self.num_replicas+1), ts))
+                        Expected: {}, Found: {}".format(self.bucket_num_vb * (self.num_replicas+1), ts))
         self.set_metadata_purge_interval(
                 value=3.0, buckets=self.buckets)
 
