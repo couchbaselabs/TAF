@@ -277,6 +277,21 @@ class StorageBase(BaseTestCase):
             '''
             self.key_size = self.input.param("key_size", 20)
 
+        # SimpleKey builds keys as prefix + zero-padding + doc_index, so
+        # key_size must hold the prefix plus every index digit. The sirius
+        # loaders throw on a negative padding and the whole load task dies
+        # without writing a single doc; default_loader only overshoots
+        # key_size, so it is left alone
+        key_digits = len(str(max(1, self.num_items - 1)))
+        if self.load_docs_using != "default_loader" \
+                and self.key_size < len(self.key) + key_digits:
+            self.fail(
+                "key_size={0} is too small: prefix '{1}' needs {2} chars "
+                "and num_items={3} needs {4} digits, so key_size must be "
+                ">= {5}".format(
+                    self.key_size, self.key, len(self.key), self.num_items,
+                    key_digits, len(self.key) + key_digits))
+
         self.doc_ops = self.input.param("doc_ops", "create")
         self.sub_doc_ops = self.input.param("sub_doc_ops", "upsert")
         self.doc_size = self.input.param("doc_size", 2048)
