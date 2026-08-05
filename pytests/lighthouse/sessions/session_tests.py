@@ -27,8 +27,10 @@ from lighthouse.ucp_helper_methods import (
     extract_session_id,
     get_user_with_etag,
     open_local_user_session,
+    parse_cookie_attributes,
     safe_delete_user,
 )
+from unified_control_plane import UnifiedControlPlaneClient
 from unified_control_plane.constants import ROLE_SYSTEM_VIEWER, ROLE_SYSTEM_ADMIN
 
 
@@ -432,3 +434,85 @@ class CollectorConfigTests(LighthouseBase):
                         "Logout of third-party admin session failed: %s" % e)
             safe_delete_user(self.ucp_client, third_party_id)
             self.ucp_client.session_logout()
+
+    def test_invalid_credentials_rejected(self):
+        """
+        Case 60: invalid credentials return 401 and issue no session.
+
+        Uses an unknown userId rather than a wrong password on a real account:
+        this is a shared QE portal, and repeated failed logins against a live
+        account risk locking it out for every other test run.
+
+        A separate client is used so a stray cookie cannot disturb the session
+        the rest of this class depends on.
+        """
+        unknown_user = self.input.param("unknown_user_id",
+                                        "lh_no_such_user@example.com")
+        unknown_password = self.input.param("unknown_user_password",
+                                            "WrongPass#2026xyz")
+        bad_client = UnifiedControlPlaneClient(self.ucp_portal)
+        status, content, header = bad_client.session_login(
+            unknown_user, unknown_password)
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status,
+            "Login with unknown credentials unexpectedly succeeded (HTTP %s)"
+            % response.status_code)
+        self.assertEqual(
+            response.status_code, 401,
+            "Login with unknown credentials expected HTTP 401, got %s: %s"
+            % (response.status_code, content))
+        self.assertFalse(
+            get_session_cookie(bad_client),
+            "Login was rejected with 401 but a session cookie was still issued")
+        self.log.info(
+            "PASS -- unknown credentials rejected with 401, no session issued")
+
+    def test_session_cookie_is_httponly_and_secure(self):
+        """
+        Cases 189/190 (and 62): the session cookie carries HttpOnly (so it is
+        not readable from JavaScript) and Secure (so it is not sent over plain
+        HTTP).
+
+        Only the login response carries Set-Cookie, and the client keeps just
+        the leading name=value pair -- the attributes are read via
+        UCPResponse.set_cookie, which preserves the raw header.
+
+        SameSite is not a matrix case; it is logged as a CSRF-hardening
+        observation rather than asserted, so a product change there does not
+        fail this test.
+        """
+        cookie_client = UnifiedControlPlaneClient(self.ucp_portal)
+        try:
+            status, content, header = cookie_client.session_login(
+                self.ucp_portal.username, self.ucp_portal.password)
+            response = UCPResponse(status, content, header)
+            self.assertTrue(
+                status, "Portal login failed (HTTP %s): %s"
+                % (response.status_code, content))
+
+            raw_cookie = response.set_cookie
+            self.assertIsNotNone(
+                raw_cookie,
+                "Login returned no Set-Cookie header. Headers were: %s"
+                % response.headers)
+
+            attributes = parse_cookie_attributes(raw_cookie)
+            self.assertTrue(
+                attributes.get('httponly'),
+                "Session cookie is not HttpOnly, so it is readable from "
+                "JavaScript. Attributes: %s" % attributes)
+            self.assertTrue(
+                attributes.get('secure'),
+                "Session cookie is not Secure, so it may be sent over plain "
+                "HTTP. Attributes: %s" % attributes)
+            self.log.info(
+                "PASS -- session cookie is HttpOnly and Secure; full "
+                "attributes: %s" % attributes)
+        finally:
+            try:
+                if get_session_cookie(cookie_client):
+                    cookie_client.session_logout()
+            except Exception as e:
+                self.log.warning(
+                    "Logout of the cookie-inspection session failed: %s" % e)
