@@ -993,6 +993,41 @@ class EC2Lib(AWSBase):
                 f"Error checking IAM instance profile {profile_name}: {e}")
             return True
 
+    def get_iam_resource_tags(self, profile_name: str) -> Dict[str, Any]:
+        """
+        Return tags for an IAM instance profile and every role attached to it.
+
+        :param profile_name: IAM instance profile name (e.g. from get_instance_iam_profile_name)
+        :return: {'instance_profile_tags': {key: value, ...},
+                  'role_tags': {role_name: {key: value, ...}, ...}}
+                 Empty dicts on lookup failure (e.g. profile already deleted).
+        """
+        result = {"instance_profile_tags": {}, "role_tags": {}}
+        iam = self.create_service_client("iam")
+        try:
+            profile = iam.get_instance_profile(
+                InstanceProfileName=profile_name).get("InstanceProfile", {})
+        except Exception as e:
+            self.logger.error(f"Error getting IAM instance profile {profile_name}: {e}")
+            return result
+
+        result["instance_profile_tags"] = {
+            t["Key"]: t["Value"] for t in profile.get("Tags", [])}
+
+        for role in profile.get("Roles", []):
+            role_name = role.get("RoleName")
+            if not role_name:
+                continue
+            try:
+                role_tags = iam.get_role(
+                    RoleName=role_name).get("Role", {}).get("Tags", [])
+                result["role_tags"][role_name] = {
+                    t["Key"]: t["Value"] for t in role_tags}
+            except Exception as e:
+                self.logger.error(f"Error getting IAM role {role_name}: {e}")
+
+        return result
+
     def list_snapshots_by_tags(self, filters: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         List EBS snapshots owned by this account, filtered by tags.

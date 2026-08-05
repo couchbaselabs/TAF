@@ -132,10 +132,10 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 | | | `test_guest_volume_detached_during_transfer` | ✅ |
 | `fusion_fallback_test.py` | `FusionFallbackInstanceTypeTests` | `test_fallback_when_top_n_instance_types_unavailable` | ✅ |
 | | | `test_fallback_exhausts_all_arm_types_falls_back_to_x86` | ✅ |
-| *(no file yet)* | — | No public IP on accelerator nodes | ⬜ |
+| | | `test_no_public_ip_on_accelerator_nodes` | ✅ |
 | *(no file yet)* | — | Log file variants: large count (slow mutations) | ⬜ |
 | *(no file yet)* | — | Log file variants: large size (post log cleaning) | ⬜ |
-| *(no file yet)* | — | Correct instance count based on data size | ⬜ |
+| | | `test_accelerator_instance_count_matches_data_size` | ✅ |
 
 ---
 

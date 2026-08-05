@@ -712,7 +712,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         split = self.input.param("fusion_min_split_size_gb", None)
         slots = self.input.param("fusion_max_slots", None)
         return self._apply_fusion_config_overrides(
-            min_split_size_gb=int(split) if split else None,
+            min_split_size_gb=float(split) if split else None,
             max_slots=int(slots) if slots else None)
 
     def _apply_fusion_config_overrides(self, min_split_size_gb=None, max_slots=None):
@@ -741,7 +741,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             self.log.warning(f"Could not read the existing fusion config: {e}")
         self.log.info(f"Fusion config before override: {self._prior_fusion_config}")
 
-        min_split_bytes = (min_split_size_gb * (1024 ** 3)) if min_split_size_gb else None
+        min_split_bytes = int(min_split_size_gb * (1024 ** 3)) if min_split_size_gb else None
         CapellaAPI.set_fusion_config(
             self.pod, self.tenant, self.cluster.id,
             min_split_size=min_split_bytes, max_slots=max_slots)
@@ -1075,9 +1075,15 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
 
         Fails with the observed history if the fleet never settles, since a bare "4 != 1"
         would hide the real problem.
+
+        Polls every `fleet_poll_interval` seconds (default 5): accelerators launch and
+        scale back down per shard, so a slow cadence can miss the fleet's peak entirely —
+        e.g. a fleet that ramps to full parity and starts draining again within a single
+        10s poll never gets the 3 consecutive samples the stability path needs.
         """
         timeout = timeout or self.gv_launch_timeout
         stable_samples = int(self.input.param("fleet_stable_samples", 3))
+        poll_interval = int(self.input.param("fleet_poll_interval", 5))
         history = []
         instances, asgs = [], []
 
@@ -1127,7 +1133,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
 
             if rebalance_task.state == "healthy":
                 break
-            time.sleep(10)
+            time.sleep(poll_interval)
 
         counts = ", ".join(f"({t}i/{a}asg/{g}gv)" for t, a, g in history) or "no samples"
         if history and all(h[0] == 0 for h in history):
@@ -1142,7 +1148,8 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             f"Stage A assertions are not meaningful against a moving fleet. Observed "
             f"(tagged instances / ASGs / with guest volume): {counts}. If the counts "
             f"rise and fall, the accelerator lifecycle is completing faster than this "
-            f"gate can sample it — raise create_end.")
+            f"gate can sample it — raise create_end, or lower fleet_poll_interval "
+            f"(currently {poll_interval}s).")
 
     # ==================================================================
     # Stage validators — one per stage of the fusion rebalance lifecycle,
@@ -1198,6 +1205,29 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 break
             time.sleep(10)
         return volumes
+
+    def _guest_volumes_by_instance(self):
+        """Return {instance_id: [volume_id, ...]} for the current guest volumes.
+
+        'unattached' collects volumes with no attachment — the valid window between CBS
+        releasing a volume and the CP deleting it.
+        """
+        mapping = dict()
+        for vol in self._list_accelerator_volumes(guest_only=True):
+            atts = vol.get("Attachments") or []
+            inst = atts[0].get("InstanceId") if atts else "unattached"
+            mapping.setdefault(inst, []).append(vol.get("VolumeId"))
+        return mapping
+
+    def _log_guest_volume_placement(self, label):
+        """Log where the guest volumes currently sit, and return the mapping."""
+        mapping = self._guest_volumes_by_instance()
+        total = sum(len(v) for v in mapping.values())
+        self.log.info(
+            f"[{label}] {total} guest volume(s) across {len(mapping)} attachment(s):\n"
+            + "\n".join(f"    {inst}: {len(vols)} {sorted(vols)}"
+                        for inst, vols in sorted(mapping.items())))
+        return mapping
 
     def _run_read_workload(self, label, read_items=None):
         """Run a read-only workload to prove data is accessible at this point."""
@@ -3184,6 +3214,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         The freeze is a hard prerequisite: without it the CP releases each volume as its
         shard finishes copying, and there is no accumulation to observe.
         """
+        rebalance_flow = self.input.param("rebalance_flow", None) # provide in the form of a string, in:in, in:out:in, etc
         self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
 
@@ -3201,7 +3232,10 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 "and this test is entirely about what accumulates while it is frozen — "
                 "see the recorded issue above for the cause")
 
-        run_types = [self._default_rebalance_type(), self._inverse_rebalance_type()]
+        if not rebalance_flow:
+            run_types = [self._default_rebalance_type(), self._inverse_rebalance_type()]
+        else:
+            run_types = rebalance_flow.split(":")
         volumes_after_run = {}      # run -> {volume_id: host_instance_id}
         instances_after_run = {}    # run -> set of cluster instance IDs
 
@@ -3341,3 +3375,110 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
             f"Migration-paused accumulation validated: {len(second)} guest volume(s) "
             f"built up across two rebalances, then all of them and the surrounding "
             f"infrastructure were destroyed once migration resumed")
+
+    # ------------------------------------------------------------------
+    # Test 21: Resource tags across the full accelerator fleet
+    # ------------------------------------------------------------------
+
+    def test_accelerator_resource_tags(self):
+        """
+        During a fusion rebalance, assert that every temporary AWS resource the
+        acceleration process creates carries the tags the control plane relies on for
+        tag-based discovery and lifecycle management (see _cluster_filter /
+        list_accelerator_instances / list_cluster_fusion_asg /
+        monitor_full_cluster_teardown):
+
+          couchbase-cloud-cluster-id = <cluster.id>
+          couchbase-cloud-function   = fusion-accelerator
+
+        Covers accelerator EC2 instances, their ASGs, guest EBS volumes, the S3
+        log-store bucket, and the accelerator IAM instance profile/role -- the five
+        resource kinds the CP provisions and tears down per rebalance.
+
+        Guest-volume tags are also checked by test_guest_volume_properties; they are
+        repeated here so this test is a single place proving ALL temporary resources are
+        tagged, not just some of them. The EC2/ASG/volume checks re-verify a tag value
+        that already had to match for the resource to be *found* (they are discovered by
+        that same tag filter), so they mainly guard against a future regression that
+        widens the filter. The S3 bucket and IAM instance-profile/role checks are
+        different: those two are looked up by name/ARN, never by tag filter, so this is
+        the first real assertion anywhere in this suite that the CP tags them at all.
+        """
+        self._enable_fusion_feature_flags(self.tenant, self.cluster.id)
+        self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
+        self._apply_fusion_config_from_params()
+        self._apply_fusion_sync_threshold()
+
+        s3_bucket_name, _ = self._capture_s3_log_store_baseline()
+        self.assertIsNotNone(
+            s3_bucket_name, "No S3 log-store bucket found before rebalance — "
+            "cannot validate bucket tags")
+
+        self._load_above_threshold()
+        rebalance_task = self._trigger_rebalance()
+        self.sleep(30, "Wait for rebalance to start before polling for the fleet")
+
+        instances, asgs = self._wait_for_accelerator_fleet_stable(rebalance_task)
+        volumes = self._list_accelerator_volumes(guest_only=True)
+        self.assertGreater(
+            len(volumes), 0,
+            "No guest volumes appeared alongside the accelerator fleet — "
+            "cannot validate guest volume tags")
+
+        iam_profile_name = self.fusion_aws_util.ec2.get_instance_iam_profile_name(
+            instances[0]["InstanceId"])
+        self.assertIsNotNone(
+            iam_profile_name,
+            f"Accelerator instance {instances[0]['InstanceId']} has no IAM instance "
+            f"profile attached — cannot validate IAM tags")
+        iam_tags = self.fusion_aws_util.ec2.get_iam_resource_tags(iam_profile_name)
+        s3_tags = self.fusion_aws_util.s3.get_bucket_tags(s3_bucket_name)
+
+        expected = {
+            "couchbase-cloud-cluster-id": self.cluster.id,
+            "couchbase-cloud-function": "fusion-accelerator",
+        }
+
+        failures = []
+
+        def _check(resource_label, resource_id, tag_dict):
+            for key, value in expected.items():
+                actual = tag_dict.get(key)
+                status = "OK" if actual == value else "FAIL"
+                self.log.info(
+                    f"  [{status}] {resource_label} {resource_id} tag:{key}: {actual!r}")
+                if actual != value:
+                    failures.append(
+                        f"{resource_label} {resource_id} -- tag:{key}: "
+                        f"got {actual!r}, expected {value!r}")
+
+        for inst in instances:
+            _check("accelerator instance", inst.get("InstanceId"),
+                   {t["Key"]: t["Value"] for t in inst.get("Tags", [])})
+
+        for asg in asgs:
+            _check("ASG", asg.get("AutoScalingGroupName"),
+                   {t["Key"]: t["Value"] for t in asg.get("Tags", [])})
+
+        for vol in volumes:
+            _check("guest volume", vol.get("VolumeId"),
+                   {t["Key"]: t["Value"] for t in vol.get("Tags", [])})
+
+        _check("S3 log-store bucket", s3_bucket_name, s3_tags)
+        _check("IAM instance profile", iam_profile_name,
+               iam_tags.get("instance_profile_tags", {}))
+        for role_name, role_tags in iam_tags.get("role_tags", {}).items():
+            _check("IAM role", role_name, role_tags)
+
+        self.assertEqual(
+            len(failures), 0,
+            "Resource tag violations across the accelerator fleet:\n"
+            + "\n".join(failures))
+        self.log.info(
+            f"All accelerator resources correctly tagged: {len(instances)} instance(s), "
+            f"{len(asgs)} ASG(s), {len(volumes)} guest volume(s), 1 S3 bucket, "
+            f"1 IAM instance profile"
+            + (f" + {len(iam_tags.get('role_tags', {}))} role(s)"
+               if iam_tags.get("role_tags") else ""))
+
+        self.wait_for_rebalances([rebalance_task])

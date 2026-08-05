@@ -101,7 +101,22 @@ class S3Lib:
             self.logger.error(f"Error getting bucket region for {bucket_name}: {e}")
             return 'us-east-1'
 
-    def list_files_in_bucket(self, bucket_name: str, prefix: str = '', 
+    def get_bucket_tags(self, bucket_name: str) -> Dict[str, str]:
+        """
+        Return the tag set on an S3 bucket as a flat {Key: Value} dict.
+
+        :param bucket_name: Name of the S3 bucket
+        :return: {} if the bucket has no tags (NoSuchTagSet) or the call fails
+        """
+        try:
+            response = self.s3_client.get_bucket_tagging(Bucket=bucket_name)
+            return {t['Key']: t['Value'] for t in response.get('TagSet', [])}
+        except ClientError as e:
+            if e.response.get('Error', {}).get('Code') != 'NoSuchTagSet':
+                self.logger.error(f"Error getting bucket tags for {bucket_name}: {e}")
+            return {}
+
+    def list_files_in_bucket(self, bucket_name: str, prefix: str = '',
                            max_keys: int = 1000) -> List[Dict[str, Any]]:
         """
         List files/objects in an S3 bucket.
