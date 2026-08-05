@@ -580,6 +580,7 @@ class CollectionsRebalance(CollectionBase):
                         self.bucket_util.print_bucket_stats(self.cluster)
                     if not self.fusion_test:
                         operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
+                                                              check_vbucket_shuffling=not self.update_replica,
                                                               retry_get_process_num=self.retry_get_process_num)
                     else:
                         nodes_to_monitor = self.run_rebalance(
@@ -646,6 +647,7 @@ class CollectionsRebalance(CollectionBase):
                     self.bucket_util.print_bucket_stats(self.cluster)
                 if not self.fusion_test:
                     operation = self.task.async_rebalance(self.cluster, add_nodes, remove_nodes,
+                                                            check_vbucket_shuffling=not self.update_replica,
                                                             retry_get_process_num=self.retry_get_process_num)
                 else:
                     nodes_to_monitor = self.run_rebalance(
