@@ -11,6 +11,7 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.random_query_template import WhereClause
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
+from membase.api.rest_client import RestConnection
 from n1ql_exceptions import N1qlException
 from platform_constants.os_constants import Linux
 from sdk_exceptions import SDKException
@@ -70,6 +71,18 @@ class N1qlBase(CollectionBase):
             cluster=self.cluster,
             service_type=CbServer.Services.N1QL,
             get_all_nodes=True)
+        # /clusterInit only applies indexerStorageMode when the bootstrap
+        # node's own services include 'index' (onPrem_basetestcase.py takes
+        # only services_init's first node for that call). For topologies
+        # where the index service lands on a later node via rebalance-in
+        # (e.g. services_init=kv-n1ql-index-...), that mode is silently
+        # dropped and every CREATE INDEX fails with "Please Set Indexer
+        # Storage Mode Before Create Index". Set it explicitly here once
+        # the full topology is up, before any index gets created.
+        status = RestConnection(self.cluster.master).set_indexer_storage_mode(
+            self.gsi_type)
+        self.assertTrue(status, "Failed to set indexer storage mode to %s"
+                        % self.gsi_type)
         self.n1ql_helper = N1QLHelper(server=self.n1ql_server,
                                       use_rest=True,
                                       buckets=self.buckets,
@@ -135,11 +148,18 @@ class N1qlBase(CollectionBase):
         # modify this to get values for list of docs
         keys = list(docs.keys())
         name = index.split('.')
+        # Decode bytes back to strings for JSON serialization
+        keys_for_json = [k.decode('utf-8') if isinstance(k, bytes) else k
+                         for k in keys]
+        keys_json = json.dumps(keys_for_json)
         query = "SELECT  * from default:`%s`.`%s`.`%s` WHERE META().id in %s"\
-                % (name[0], name[1], name[2], keys)
+                % (name[0], name[1], name[2], keys_json)
         result = self.n1ql_helper.run_cbq_query(query,
                                                 query_params=query_params,
                                                 server=server)
+        if result["status"] != "success":
+            self.fail("Validation query '%s' failed: %s" % (query, result))
+            return
         for doc in result["results"]:
             t = list(doc.values())[0]
             if len(keys) > 1:
