@@ -120,9 +120,29 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.fusion_rebalances = list()
         self.stop_run_event = threading.Event()
 
+        # Fusion min_split_size / max_slots control-plane overrides (see
+        # CapellaUtils.set_fusion_config / internal support configs API).
+        # Overriding min_split_size lets a rebalance split into far more
+        # shards than the 50GB-per-shard default would allow for a modest
+        # loaded dataset, so the number of guest-volume slots a couchbase
+        # server (KV) node ends up with after volume transfer can be driven
+        # up to the maxSlots cap (default 22 guest-volume slots per KV host)
+        # without needing a huge dataset. Both default to None (no override,
+        # stock 50GB/22-slot behaviour).
+        self.fusion_min_split_size_mb = self.input.param("fusion_min_split_size_mb", None)
+        self.fusion_max_slots_override = self.input.param("fusion_max_slots_override", None)
+        self.expected_max_guest_volume_slots = self.input.param(
+            "expected_max_guest_volume_slots",
+            self.fusion_max_slots_override if self.fusion_max_slots_override else 22)
+        self.fusion_config_override_resources = list()
+        # {cluster.id: {instance_id: max_guest_volume_count_seen}}
+        self.peak_guest_volume_slot_counts = dict()
+
     def tearDown(self):
         if hasattr(self, "stop_run_event"):
             self.stop_run_event.set()
+        if hasattr(self, "fusion_config_override_resources"):
+            self.cleanup_fusion_config_overrides()
         if hasattr(self, "_log_dcp_items_stop_event"):
             self._log_dcp_items_stop_event.set()
         if hasattr(self, "_log_store_stop_event"):
@@ -175,6 +195,104 @@ class VolumeTest(BaseTestCase, hostedOPD):
         """Check if ASG cleanup is running for all clusters."""
         clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
         self.cp_monitor.check_asg_cleanup_after_rebalance(clusters)
+
+    def apply_fusion_config_overrides(self):
+        """
+        Override the fusion min_split_size (and optionally max_slots) per
+        cluster via the internal support config API
+        (CapellaUtils.set_fusion_config), so accelerator expansion up to
+        the maxSlots cap (default 22 guest-volume slots per KV host) can be
+        driven with a much smaller loaded dataset than the stock 50GB-per-
+        shard default would otherwise require.
+
+        Controlled by the fusion_min_split_size_mb / fusion_max_slots_override
+        test params set in setUp; a no-op if neither is set. Applied configs
+        are tracked in self.fusion_config_override_resources for teardown.
+        """
+        if self.fusion_min_split_size_mb is None and self.fusion_max_slots_override is None:
+            return
+        min_split_size_bytes = (
+            int(self.fusion_min_split_size_mb) * 1024 * 1024
+            if self.fusion_min_split_size_mb is not None else None)
+        # max_slots is sent explicitly (defaulting to 22, the documented
+        # server-side default -- see couchbase-cloud
+        # internal/clusters/fusion/accelerator/accelerator.go maxSlots)
+        # whenever any override is active, so the applied config always
+        # matches expected_max_guest_volume_slots's own default instead of
+        # silently relying on the server to fall back to the same value.
+        max_slots = (
+            self.fusion_max_slots_override
+            if self.fusion_max_slots_override is not None else 22)
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                self.log.info(
+                    f"Overriding fusion config for cluster {cluster.id}: "
+                    f"min_split_size={min_split_size_bytes} bytes, "
+                    f"max_slots={max_slots}")
+                CapellaAPI.set_fusion_config(
+                    self.pod, tenant, cluster.id,
+                    min_split_size=min_split_size_bytes,
+                    max_slots=max_slots)
+                self.fusion_config_override_resources.append((tenant, cluster.id))
+
+                applied_config = CapellaAPI.get_fusion_config(self.pod, tenant, cluster.id)
+                self.log.info(
+                    f"Confirmed fusion config for cluster {cluster.id} "
+                    f"after override: {applied_config}")
+                manifest = applied_config.get("manifest", {})
+                if min_split_size_bytes is not None:
+                    self.assertEqual(
+                        manifest.get("minSplitSize"), min_split_size_bytes,
+                        f"Fusion config min_split_size not applied for cluster "
+                        f"{cluster.id}: expected {min_split_size_bytes}, "
+                        f"got {manifest.get('minSplitSize')} ({applied_config})")
+                self.assertEqual(
+                    manifest.get("maxSlots"), max_slots,
+                    f"Fusion config max_slots not applied for cluster "
+                    f"{cluster.id}: expected {max_slots}, "
+                    f"got {manifest.get('maxSlots')} ({applied_config})")
+
+    def cleanup_fusion_config_overrides(self):
+        """Delete any fusion config overrides applied by apply_fusion_config_overrides."""
+        for tenant, resource_id in self.fusion_config_override_resources:
+            try:
+                CapellaAPI.delete_fusion_config(self.pod, tenant, resource_id)
+                self.log.info(f"Deleted fusion config override for resource {resource_id}")
+            except Exception as e:
+                self.log.warning(
+                    f"Failed to delete fusion config override for resource {resource_id}: {e}")
+        self.fusion_config_override_resources = list()
+
+    def assert_max_guest_volume_slots_reached(self, cluster):
+        """
+        Assert that at least one couchbase server (KV) node for `cluster`
+        reached the expected guest-volume slot count
+        (self.expected_max_guest_volume_slots, default 22 -- the maxSlots
+        cap) during the rebalance(s) tracked so far by
+        FusionCPResourceMonitor.track_peak_guest_volumes_per_instance.
+
+        Guest volumes start attached to a transient fusion accelerator
+        instance during S3 download/hydration, then get reattached to the
+        target KV node during volume transfer -- the maxSlots cap is a
+        per-KV-host limit, so it's the KV node's peak that matters here, not
+        any accelerator instance's.
+
+        No-op unless a fusion min_split_size/max_slots override is active for
+        this run, since without the override a modest loaded dataset would
+        not be expected to reach the cap.
+        """
+        if self.fusion_min_split_size_mb is None and self.fusion_max_slots_override is None:
+            return
+        peak_counts = self.peak_guest_volume_slot_counts.get(cluster.id, {})
+        observed_max = max(peak_counts.values()) if peak_counts else 0
+        self.log.info(
+            f"Peak guest-volume slots per instance for cluster {cluster.id}: {peak_counts}")
+        self.assertGreaterEqual(
+            observed_max, self.expected_max_guest_volume_slots,
+            f"Expected a couchbase server node on cluster {cluster.id} to reach "
+            f"{self.expected_max_guest_volume_slots} guest-volume slots after "
+            f"the fusion min_split_size/max_slots override, but observed max "
+            f"was {observed_max}. Peaks by instance: {peak_counts}")
 
     def monitor_cluster_status(self, tenant, cluster, rebalance_task):
         """Monitor fusion cluster status during rebalance."""
@@ -291,6 +409,11 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 self.assertTrue(resp.status_code == 200, f"Failed to enable Fusion on cluster {cluster.id}: {resp.status_code}") 
                 self.fusion_monitor.wait_for_fusion_status(cluster, state="enabled")
                 self.get_hostname_public_ip_mapping(cluster)
+
+        # Apply min_split_size/max_slots overrides (if configured) before any
+        # scaling rebalance runs, so the very first fusion rebalance already
+        # splits into the overridden shard count.
+        self.apply_fusion_config_overrides()
 
         self.cpu_monitor_threads = list()
         for tenant in self.tenants:
@@ -602,6 +725,18 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 ebs_available_thread.start()
                 ebs_available_threads.append(ebs_available_thread)
 
+                # Only needed when a min_split_size/max_slots override is
+                # active -- otherwise there's nothing to peak-track against.
+                if self.fusion_min_split_size_mb is not None or self.fusion_max_slots_override is not None:
+                    self.peak_guest_volume_slot_counts.setdefault(cluster.id, {})
+                    peak_tracker_thread = threading.Thread(
+                        target=self.cp_monitor.track_peak_guest_volumes_per_instance,
+                        kwargs={"cluster": cluster, "stop_run_event": self.stop_run_event,
+                                "peak_counts": self.peak_guest_volume_slot_counts[cluster.id]},
+                        daemon=True)
+                    peak_tracker_thread.start()
+                    ebs_available_threads.append(peak_tracker_thread)
+
         all_clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
         dp_agent_log_thread = threading.Thread(
             target=self.cp_monitor.scan_dp_agent_logs_for_errors,
@@ -645,6 +780,11 @@ class VolumeTest(BaseTestCase, hostedOPD):
                         for rebalance_task in rebalance_tasks:
                             result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
+                        # Validate the min_split_size/max_slots override (if any) actually
+                        # drove a couchbase server node's guest-volume slots up to the
+                        # expected cap after volume transfer.
+                        for rebalance_task in rebalance_tasks:
+                            self.assert_max_guest_volume_slots_reached(rebalance_task.cluster)
                         self.log_rebalance_report()
                         for rt in rebalance_tasks:
                             self.scan_memcahced_logs(rt.cluster)

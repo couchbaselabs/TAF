@@ -996,6 +996,80 @@ class FusionCPResourceMonitor:
         )
         return len(snapshots)
 
+    def get_guest_volume_counts_by_attached_instance(self, cluster) -> dict:
+        """
+        Snapshot the current EBS guest volumes for a cluster and group the
+        count by the EC2 instance they are attached to right now.
+
+        A guest volume's attached instance changes over its lifecycle: it
+        starts attached to a fusion accelerator instance during the S3
+        download/hydration phase, then gets detached and reattached to the
+        target couchbase server (KV) node during the volume-transfer phase
+        (see couchbase-cloud internal/clusters/fusion/ACCELERATION.md).
+        The `maxSlots` cap (default 22, see internal/clusters/fusion/
+        accelerator/accelerator.go) is a per-KV-host limit, so it's only
+        meaningfully checked against the instance a volume ends up on after
+        transfer, not against the transient accelerator it started on.
+
+        Uses the same tag filter as get_current_guest_volume_ids (both
+        couchbase-cloud-function=fusion-accelerator AND
+        couchbase-cloud-fusion-guest-volume=true are required -- the latter
+        excludes the accelerator instance's own root/boot volume).
+
+        :param cluster: Cluster object with .id attribute
+        :return: dict of {instance_id: guest_volume_count}; volumes not yet
+            attached to any instance are bucketed under 'unattached'
+        """
+        counts = {}
+        try:
+            volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(filters={
+                "couchbase-cloud-cluster-id": cluster.id,
+                "couchbase-cloud-function": "fusion-accelerator",
+                "couchbase-cloud-fusion-guest-volume": "true",
+            })
+        except Exception as e:
+            self.log.error(f"Error listing guest volumes for cluster {cluster.id}: {e}")
+            return counts
+
+        for volume in volumes:
+            attachments = volume.get("Attachments") or []
+            instance_id = attachments[0].get("InstanceId") if attachments else "unattached"
+            counts[instance_id] = counts.get(instance_id, 0) + 1
+        return counts
+
+    def track_peak_guest_volumes_per_instance(self, cluster, stop_run_event,
+                                              peak_counts: dict, poll_interval=15):
+        """
+        Background poller: repeatedly samples guest-volume counts per
+        attached instance for `cluster` and records the highest count seen
+        per instance into `peak_counts` (mutated in place), until
+        `stop_run_event` is set.
+
+        Intended to run for the duration of a rebalance (or a whole scaling
+        loop) alongside a min_split_size/max_slots fusion config override, so
+        the test can assert afterwards that a couchbase server node actually
+        reached the expected number of guest-volume slots once volumes were
+        transferred to it (see get_guest_volume_counts_by_attached_instance
+        for the accelerator -> KV-node attachment lifecycle).
+
+        :param cluster: Cluster object
+        :param stop_run_event: threading.Event signalling when to stop polling
+        :param peak_counts: dict to mutate in place -> {instance_id: max_count_seen}
+        :param poll_interval: seconds between samples (default 15)
+        """
+        while not stop_run_event.is_set():
+            try:
+                counts = self.get_guest_volume_counts_by_attached_instance(cluster)
+                for instance_id, count in counts.items():
+                    if count > peak_counts.get(instance_id, 0):
+                        peak_counts[instance_id] = count
+                        self.log.info(
+                            f"New peak guest-volume slot count for cluster {cluster.id}, "
+                            f"couchbase server instance {instance_id}: {count}")
+            except (ClientError, ConnectionError) as e:
+                self.log.warning(f"track_peak_guest_volumes_per_instance polling error for cluster {cluster.id}: {e}")
+            stop_run_event.wait(poll_interval)
+
     def verify_old_guest_volumes_deleted(
         self, cluster, pre_restore_volume_ids: list, timeout: int = 600
     ) -> bool:
