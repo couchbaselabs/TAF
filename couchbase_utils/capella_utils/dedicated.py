@@ -943,7 +943,11 @@ class CapellaUtils(object):
         """GET /internal/support/configs/{resource_id}/fusion.
 
         resource_id can be a tenant ID, cluster ID, or node ID.
-        Returns the parsed JSON config dict, or {} if none is set.
+        Returns the parsed JSON config dict ({} if one is set but empty),
+        or None if no config exists yet for this resource (404) -- callers
+        that need to distinguish "nothing configured" from "configured but
+        empty" (e.g. to later restore exactly what was there before an
+        override) should check for None specifically, not falsiness.
         """
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
@@ -952,6 +956,8 @@ class CapellaUtils(object):
                                  tenant.pwd,
                                  pod.TOKEN)
         resp = capella_api.get_fusion_config(resource_id=resource_id)
+        if resp.status_code == 404:
+            return None
         if resp.status_code != 200:
             CapellaUtils.log.critical(
                 "Getting fusion config failed for resource {}: {}".format(
@@ -961,7 +967,7 @@ class CapellaUtils(object):
 
     @staticmethod
     def _build_fusion_config(min_split_size=None, max_slots=None,
-                             iops=None, throughput=None):
+                             iops=None, throughput=None, download_rate_limit=None):
         config = {}
         if min_split_size is not None or max_slots is not None:
             config["manifest"] = {}
@@ -969,17 +975,22 @@ class CapellaUtils(object):
                 config["manifest"]["minSplitSize"] = min_split_size
             if max_slots is not None:
                 config["manifest"]["maxSlots"] = max_slots
-        if iops is not None or throughput is not None:
-            config["accelerator"] = {"guestVolumes": {}}
-            if iops is not None:
-                config["accelerator"]["guestVolumes"]["iops"] = iops
-            if throughput is not None:
-                config["accelerator"]["guestVolumes"]["throughput"] = throughput
+        if iops is not None or throughput is not None or download_rate_limit is not None:
+            config["accelerator"] = {}
+            if iops is not None or throughput is not None:
+                config["accelerator"]["guestVolumes"] = {}
+                if iops is not None:
+                    config["accelerator"]["guestVolumes"]["iops"] = iops
+                if throughput is not None:
+                    config["accelerator"]["guestVolumes"]["throughput"] = throughput
+            if download_rate_limit is not None:
+                config["accelerator"]["download"] = {"rateLimit": download_rate_limit}
         return config
 
     @staticmethod
     def set_fusion_config(pod, tenant, resource_id, min_split_size=None,
-                          max_slots=None, iops=None, throughput=None):
+                          max_slots=None, iops=None, throughput=None,
+                          download_rate_limit=None):
         """PUT /internal/support/configs/{resource_id}/fusion.
 
         Replaces the entire fusion config for the resource.
@@ -988,10 +999,14 @@ class CapellaUtils(object):
         max_slots: maximum accelerator nodes per cluster node (default 22).
         iops: EBS volume IOPS (default 3000).
         throughput: EBS volume throughput in MB/s (default 125).
+        download_rate_limit: aggregate S3 download throttle in bytes/sec for
+            the accelerator-cli downloader on accelerator nodes (0/unset =
+            unlimited; see couchbase-cloud PR #54025, AV-134867).
         """
         config = CapellaUtils._build_fusion_config(
             min_split_size=min_split_size, max_slots=max_slots,
-            iops=iops, throughput=throughput)
+            iops=iops, throughput=throughput,
+            download_rate_limit=download_rate_limit)
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
@@ -1006,8 +1021,37 @@ class CapellaUtils(object):
             raise Exception("Setting fusion config failed: {}".format(resp.content))
 
     @staticmethod
+    def set_fusion_config_raw(pod, tenant, resource_id, config):
+        """PUT /internal/support/configs/{resource_id}/fusion with an
+        already-built config dict, bypassing _build_fusion_config.
+
+        For restoring an exact config previously captured via
+        get_fusion_config() -- e.g. reverting a test override back to
+        whatever was on the resource before, rather than deleting it
+        outright (deleting can leave the resource with no config at all,
+        which some CP config-service operations, e.g. PATCH, don't handle
+        gracefully on a resource with nothing set).
+
+        resource_id can be a tenant ID, cluster ID, or node ID.
+        config: raw config dict, as returned by get_fusion_config().
+        """
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.set_fusion_config(resource_id=resource_id, config=config)
+        if resp.status_code != 204:
+            CapellaUtils.log.critical(
+                "Restoring fusion config failed for resource {}: {}".format(
+                    resource_id, resp.status_code))
+            raise Exception("Restoring fusion config failed: {}".format(resp.content))
+
+    @staticmethod
     def patch_fusion_config(pod, tenant, resource_id, min_split_size=None,
-                            max_slots=None, iops=None, throughput=None):
+                            max_slots=None, iops=None, throughput=None,
+                            download_rate_limit=None):
         """PATCH /internal/support/configs/{resource_id}/fusion.
 
         Merges the provided fields into the existing fusion config.
@@ -1018,10 +1062,14 @@ class CapellaUtils(object):
         max_slots: maximum accelerator nodes per cluster node (default 22).
         iops: EBS volume IOPS (default 3000).
         throughput: EBS volume throughput in MB/s (default 125).
+        download_rate_limit: aggregate S3 download throttle in bytes/sec for
+            the accelerator-cli downloader on accelerator nodes (0/unset =
+            unlimited; see couchbase-cloud PR #54025, AV-134867).
         """
         config = CapellaUtils._build_fusion_config(
             min_split_size=min_split_size, max_slots=max_slots,
-            iops=iops, throughput=throughput)
+            iops=iops, throughput=throughput,
+            download_rate_limit=download_rate_limit)
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
