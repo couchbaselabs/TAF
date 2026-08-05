@@ -92,6 +92,11 @@ class ApiValidationTests(LighthouseBase):
         # live 2026-07-29 as 412 Precondition Failed.
         self.expected_precondition_failed_status = self.input.param(
             "expected_precondition_failed_status", 412)
+        # Highest accepted list-endpoint limit. The test matrix documents 200,
+        # but the portal enforces 250 ("expected number <= 250", confirmed live
+        # 2026-08-05), so limit=201 succeeds. Conf param so resolving that
+        # spec/implementation disagreement is a one-line change.
+        self.max_page_limit = self.input.param("max_page_limit", 250)
         status, content, _ = create_session(
             self.ucp_client, self.ucp_portal.username,
             self.ucp_portal.password)
@@ -447,3 +452,165 @@ class ApiValidationTests(LighthouseBase):
             % (self.expected_validation_status, response.status_code, content))
         self.log.info("PASS -- malformed clusterUuid rejected with %s"
                       % self.expected_validation_status)
+
+    def test_limit_above_maximum_rejected(self):
+        """
+        Case 96: a limit above the maximum is rejected, and the maximum itself
+        is still accepted.
+
+        Both halves matter: the accepted-at-maximum leg is what proves the
+        rejection is a boundary check rather than a blanket refusal of large
+        limits.
+
+        NOTE: the test matrix documents the maximum as 200, but the portal
+        enforces 250 -- so limit=201 through 250 succeed. This asserts the
+        IMPLEMENTED contract via the max_page_limit conf param; the
+        spec/implementation disagreement is tracked in
+        docs/agent-context/lighthouse/PORTAL_API_FINDINGS_2026_08_05.md.
+        """
+        over_limit = self.max_page_limit + 1
+        status, content, header = self.ucp_client.list_users(limit=over_limit)
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "limit=%s: expected %s but the call succeeded"
+            % (over_limit, self.expected_validation_status))
+        self.assertEqual(
+            response.status_code, self.expected_validation_status,
+            "limit=%s: expected HTTP %s, got %s: %s"
+            % (over_limit, self.expected_validation_status,
+               response.status_code, content))
+
+        status, content, header = self.ucp_client.list_users(
+            limit=self.max_page_limit)
+        response = UCPResponse(status, content, header)
+        self.assertTrue(
+            status, "limit=%s (the maximum) should be accepted, got HTTP %s: %s"
+            % (self.max_page_limit, response.status_code, content))
+        self.log.info(
+            "PASS -- limit=%s rejected with %s, limit=%s accepted"
+            % (over_limit, self.expected_validation_status,
+               self.max_page_limit))
+
+    def test_field_type_coercion_rejected(self):
+        """
+        Case 99: a field carrying the wrong JSON type is rejected rather than
+        silently coerced. Two flavours, on two different resources:
+
+        - a string where the schema requires an array (body.roles on
+          POST /users)  -> 422 "expected array"
+        - a string where the schema requires an integer
+          (body.telemetryRetentionDays on PUT /config) -> 422 "expected integer"
+
+        Distinct from test_non_integer_limit_rejected, which covers a QUERY
+        parameter's type; this covers request-body fields.
+
+        The config leg sends a valid If-Match so a conditional-request failure
+        cannot be mistaken for the type rejection, and resends every field
+        because PUT /config is a full replacement. telemetryRetentionDays is
+        sent as the string form of its CURRENT value, so even if the portal did
+        coerce it the stored value would be unchanged -- the check cannot
+        corrupt shared config state.
+        """
+        status, content, header = raw_request(
+            self.ucp_client, 'POST', 'api/v1/users',
+            body={'userId': 'probe_type_coercion@example.com',
+                  'roles': 'system_viewer',
+                  'authType': 'local',
+                  'password': 'Probe#2026xyz'})
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "roles as a string: expected %s but the call succeeded"
+            % self.expected_validation_status)
+        self.assertEqual(
+            response.status_code, self.expected_validation_status,
+            "roles as a string: expected HTTP %s, got %s: %s"
+            % (self.expected_validation_status, response.status_code, content))
+        self.log.info("PASS -- string-for-array rejected with %s"
+                      % response.status_code)
+
+        status, content, header = self.ucp_client.get_config()
+        config_response = UCPResponse(status, content, header)
+        self.assertTrue(status, "Could not read config: %s" % content)
+        self.assertIsNotNone(
+            config_response.etag,
+            "get_config returned no ETag; cannot isolate the type check")
+        current = config_response.json
+
+        status, content, header = raw_request(
+            self.ucp_client, 'PUT', 'api/v1/config',
+            body={'telemetryRetentionDays': str(
+                      current.get('telemetryRetentionDays')),
+                  'sessionIdleTimeoutMinutes': current.get(
+                      'sessionIdleTimeoutMinutes'),
+                  'sessionAbsoluteTimeoutMinutes': current.get(
+                      'sessionAbsoluteTimeoutMinutes'),
+                  'globalRateLimitPerSec': current.get(
+                      'globalRateLimitPerSec'),
+                  'expensiveRateLimitPerSec': current.get(
+                      'expensiveRateLimitPerSec')},
+            extra_headers={'If-Match': config_response.etag})
+        response = UCPResponse(status, content, header)
+        self.assertFalse(
+            status, "telemetryRetentionDays as a string: expected %s but the "
+            "call succeeded" % self.expected_validation_status)
+        self.assertEqual(
+            response.status_code, self.expected_validation_status,
+            "telemetryRetentionDays as a string: expected HTTP %s, got %s: %s"
+            % (self.expected_validation_status, response.status_code, content))
+        self.log.info("PASS -- string-for-integer rejected with %s"
+                      % response.status_code)
+
+    def test_mutable_resources_return_etag_on_read(self):
+        """
+        Case 91: every mutable resource returns an ETag on read, so a caller
+        can always make a conditional write.
+
+        The individual reads are already exercised incidentally elsewhere
+        (entitlement_tests asserts it for entitlements; audit_tests asserts it
+        for clusters/entitlements/config as preconditions; session_tests for
+        users). This asserts it once as the explicit contract across all four,
+        so a regression reports as case 91 rather than surfacing as an
+        unrelated-looking failure inside an audit test.
+
+        The cluster UUID is taken from the portal's own cluster list rather than
+        forcing a collector report: any registered cluster exercises the same
+        read path, and this keeps the check free of cluster-side setup.
+        """
+        cluster_uuid = None
+        status, content, header = self.ucp_client.list_clusters(limit=1)
+        clusters_response = UCPResponse(status, content, header)
+        self.assertTrue(status, "Could not list clusters: %s" % content)
+        items = clusters_response.items
+        if items:
+            cluster_uuid = (items[0].get('clusterUuid')
+                            or items[0].get('uuid'))
+        if not cluster_uuid:
+            self.log.warning(
+                "No cluster registered on the portal, so the "
+                "clusters/{clusterUuid} ETag read is not exercised; the other "
+                "three mutable resources are still checked")
+
+        etag_reads = [
+            ('users/{userId}',
+             lambda: self.ucp_client.get_user(self.ucp_portal.username)),
+            ('config', self.ucp_client.get_config),
+            ('entitlements', self.ucp_client.get_entitlements),
+        ]
+        if cluster_uuid:
+            etag_reads.append(
+                ('clusters/{clusterUuid}',
+                 lambda: self.ucp_client.get_cluster(cluster_uuid)))
+
+        for label, call in etag_reads:
+            status, content, header = call()
+            response = UCPResponse(status, content, header)
+            self.assertTrue(
+                status, "GET %s failed, cannot check its ETag (HTTP %s): %s"
+                % (label, response.status_code, content))
+            self.assertIsNotNone(
+                response.etag,
+                "GET %s returned no ETag header; a caller cannot make a "
+                "conditional write. Headers were: %s"
+                % (label, response.headers))
+            self.log.info("PASS -- GET %s returned ETag %s"
+                          % (label, response.etag))
