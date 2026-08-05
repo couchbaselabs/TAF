@@ -75,10 +75,39 @@ class UCPResponse(object):
         """Get response headers."""
         return dict(self.response.headers) if self.response is not None else {}
 
+    def get_header(self, name):
+        """
+        Case-insensitive lookup of a single response header value.
+        HTTP/2 delivers header names lower-cased while HTTP/1.1 preserves the
+        sender's casing, so every header read must be case-insensitive.
+        Args:
+            name: header name to look up, in any casing
+        Returns:
+            Header value string, or None if the header is absent.
+        """
+        lowered = name.lower()
+        for key, value in self.headers.items():
+            if key.lower() == lowered:
+                return value
+        return None
+
     @property
     def etag(self):
         """Get ETag header if present."""
-        return self.headers.get('ETag') or self.headers.get('etag')
+        return self.get_header('ETag')
+
+    @property
+    def set_cookie(self):
+        """
+        Raw Set-Cookie header value exactly as sent by the portal, or None.
+
+        Distinct from the client's stored session cookie: the client keeps only
+        the leading "name=value" pair (see UnifiedControlPlaneClient.
+        session_login) and discards everything after the first ';', so the
+        security attributes (HttpOnly, Secure, SameSite) are only visible here.
+        Pair with ucp_helper_methods.parse_cookie_attributes to inspect them.
+        """
+        return self.get_header('Set-Cookie')
 
     @property
     def x_request_id(self):
