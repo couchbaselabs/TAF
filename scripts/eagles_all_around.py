@@ -2,15 +2,39 @@ from com.jcraft.jsch import JSchException
 from com.jcraft.jsch import JSch
 from org.python.core.util import FileUtil
 import sys
+import traceback
+from datetime import date
 
 failed = []
+skipped = []
 exclude = "'Rollback point not found\|No space left on device\|Permission denied\|Already exists\|Unsupported key supplied'"
 
+# A host that accepts the connection and then stalls used to block the run
+# until Jenkins aborted the build. Reads carry a socket timeout and commands
+# an upper bound on the host itself, so a stuck host raises and we move on.
+CONNECT_TIMEOUT_MS = 10000
+SOCKET_TIMEOUT_MS = 120000
+CMD_TIMEOUT_SECS = 300
+GDB_TIMEOUT_SECS = 900
 
-def run(command, session):
+
+def sh_quote(command):
+    return "'" + command.replace("'", "'\\''") + "'"
+
+
+def run(command, session, timeout=CMD_TIMEOUT_SECS):
     output = []
     error = []
+    _ssh_client = None
+    if timeout:
+        command = "timeout %s sh -c %s" % (timeout, sh_quote(command))
+        # Keep the socket timeout above the command timeout so a slow but
+        # healthy command is not mistaken for a dead host.
+        socket_timeout = (timeout + 60) * 1000
+    else:
+        socket_timeout = SOCKET_TIMEOUT_MS
     try:
+        session.setTimeout(socket_timeout)
         _ssh_client = session.openChannel("exec")
         _ssh_client.setInputStream(None)
         _ssh_client.setErrStream(None)
@@ -28,9 +52,23 @@ def run(command, session):
         for line in fu2.readlines():
             error.append(line)
         fu2.close()
-        _ssh_client.disconnect()
-    except JSchException as e:
-        print("JSch exception on %s: %s" % (session.getHost(), str(e)))
+
+        # 124 is `timeout` killing the command. Partial output is not worth
+        # trusting, and the next command would most likely stall as well.
+        if _ssh_client.getExitStatus() == 124:
+            raise JSchException("timed out after %ss: %s" % (timeout, command))
+    except:
+        # Once a host stops answering it will stall on every later command
+        # too, so give up on it rather than paying the timeout again.
+        print("%s : command failed: %s" % (session.getHost(),
+                                           sys.exc_info()[1]))
+        raise
+    finally:
+        if _ssh_client is not None:
+            try:
+                _ssh_client.disconnect()
+            except:
+                pass
     return output, error
 
 
@@ -40,11 +78,26 @@ def connection(server):
         session = jsch.getSession("root", server, 22)
         session.setPassword("couchbase")
         session.setConfig("StrictHostKeyChecking", "no")
-        session.connect(10000)
+        session.connect(CONNECT_TIMEOUT_MS)
+        session.setTimeout(SOCKET_TIMEOUT_MS)
         return session
     except:
+        print("%s : ssh failed: %s" % (server, sys.exc_info()[1]))
         failed.append(server)
         return None
+
+
+def disconnect(session):
+    try:
+        session.disconnect()
+    except:
+        pass
+
+
+def give_up(server, phase):
+    print("%s : giving up (%s): %s" % (server, phase, sys.exc_info()[1]))
+    traceback.print_exc()
+    skipped.append("%s (%s)" % (server, phase))
 
 
 def scan_all_slaves():
@@ -91,58 +144,85 @@ def scan_all_slaves():
         if session is None:
             continue
 
-        cmds = ["find /data/workspace/ -iname '*collect*2025*.zip'", "find /data/workspace/ -iname '*2025*diag*.zip'"]
-        if len(sys.argv) > 1:
-            cmds = ["find /data/workspace/ -iname '*collect*{}*.zip'".format(sys.argv[1]),
-                    "find /data/workspace/ -iname '*{}*diag*.zip'".format(sys.argv[1].replace("-", ""))]
+        try:
+            scan_slave(session)
+        except:
+            give_up(server, "slave scan")
+        finally:
+            disconnect(session)
 
-        for cmd in cmds:
-            output, _ = run(cmd, session)
-            try:
-                for cbcollect_zips in output:
-                    flag = True
-                    log_files, _ = run("zipinfo -1 {}".format(cbcollect_zips), session)
-                    for file in log_files:
-                        if file.rstrip().endswith("dmp"):
-                            print "#######################"
-                            print "checking: %s" % cbcollect_zips.rstrip()
-                            print "#######################"
-                            print file.rstrip()
-                            flag = False
-                            break
-                    run("rm -rf /root/cbcollect*", session)[0]
-                    run("unzip {}".format(cbcollect_zips), session)[0]
-                    memcached = "/root/cbcollect*/memcached.log*"
-                    o, _ = run("grep 'CRITICAL\| ERROR ' {} | grep -v {}".format(memcached, exclude), session)
-                    if o:
-                        if flag:
-                            print "#######################"
-                            print "checking: %s" % cbcollect_zips.rstrip()
-                            print "#######################"
-                        print "".join(o)
-                    # Check all logs for panic
-                    all_log = "/root/cbcollect*/*"
-                    o, _ = run("grep -i 'panic' {} --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(all_log), session)
-                    if o:
-                        if flag:
-                            print "#######################"
-                            print "checking: %s" % cbcollect_zips.rstrip()
-                            print "#######################"
-                        print "=== panic found ==="
-                        print "".join(o)
-            except:
-                pass
-        session.disconnect()
+
+def scan_patterns():
+    if len(sys.argv) > 1:
+        return [sys.argv[1]]
+    # With no argument, scan the current year rather than a hardcoded one. In
+    # January last year's workspaces are still around, so include them too.
+    today = date.today()
+    patterns = [str(today.year)]
+    if today.month == 1:
+        patterns.append(str(today.year - 1))
+    return patterns
+
+
+def scan_slave(session):
+    cmds = []
+    for pattern in scan_patterns():
+        cmds.append("find /data/workspace/ -iname '*collect*{}*.zip'".format(pattern))
+        cmds.append("find /data/workspace/ -iname '*{}*diag*.zip'".format(pattern.replace("-", "")))
+
+    for cmd in cmds:
+        output, _ = run(cmd, session)
+        for cbcollect_zips in output:
+            flag = True
+            log_files, _ = run("zipinfo -1 {}".format(cbcollect_zips), session)
+            for file in log_files:
+                if file.rstrip().endswith("dmp"):
+                    print "#######################"
+                    print "checking: %s" % cbcollect_zips.rstrip()
+                    print "#######################"
+                    print file.rstrip()
+                    flag = False
+                    break
+            run("rm -rf /root/cbcollect*", session)[0]
+            run("unzip {}".format(cbcollect_zips), session)[0]
+            memcached = "/root/cbcollect*/memcached.log*"
+            o, _ = run("grep 'CRITICAL\| ERROR ' {} | grep -v {}".format(memcached, exclude), session)
+            if o:
+                if flag:
+                    print "#######################"
+                    print "checking: %s" % cbcollect_zips.rstrip()
+                    print "#######################"
+                print "".join(o)
+            # Check all logs for panic
+            all_log = "/root/cbcollect*/*"
+            o, _ = run("grep -i 'panic' {} --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(all_log), session)
+            if o:
+                if flag:
+                    print "#######################"
+                    print "checking: %s" % cbcollect_zips.rstrip()
+                    print "#######################"
+                print "=== panic found ==="
+                print "".join(o)
 
 
 def check_coredump_exist(server):
     binCb = "/opt/couchbase/bin/"
     libCb = "/opt/couchbase/var/lib/couchbase/"
-    dmpmsg = ""
     session = connection(server)
 
     if session is None:
         return
+
+    try:
+        check_server_logs(server, session, binCb, libCb)
+    except:
+        give_up(server, "server scan")
+    finally:
+        disconnect(session)
+
+
+def check_server_logs(server, session, binCb, libCb):
+    dmpmsg = ""
 
     def findIndexOf(strList, subString):
         for i in range(len(strList)):
@@ -155,7 +235,7 @@ def check_coredump_exist(server):
         coreFile = dmpPath + dmpName.strip(".dmp") + ".core"
         run("rm -rf " + coreFile, session)
         run("/" + binCb + "minidump-2-core " + dmpFile + " > " + coreFile, session)
-        gdbOut = run("gdb --batch " + binCb + "memcached -c " + coreFile + " -ex \"bt full\" -ex quit", session)[0]
+        gdbOut = run("gdb --batch " + binCb + "memcached -c " + coreFile + " -ex \"bt full\" -ex quit", session, timeout=GDB_TIMEOUT_SECS)[0]
         index = findIndexOf(gdbOut, "Core was generated by")
         gdbOut = gdbOut[index:]
         gdbOut = " ".join(gdbOut)
@@ -199,8 +279,6 @@ def check_coredump_exist(server):
         print(server + " : === panic found in " + version_str + " ===")
         print("".join(panicMessages))
 
-    session.disconnect()
-
 
 def scan_all_servers():
     from java.time import Duration
@@ -222,9 +300,18 @@ def scan_all_servers():
 
 
 if __name__ == "__main__":
-    scan_all_slaves()
-    scan_all_servers()
+    for phase in [scan_all_slaves, scan_all_servers]:
+        try:
+            phase()
+        except:
+            print("ERROR: %s did not complete: %s"
+                  % (phase.__name__, sys.exc_info()[1]))
+            traceback.print_exc()
 
     if failed:
         for server in failed:
             print("ssh failed: %s" % server)
+
+    if skipped:
+        for server in skipped:
+            print("skipped: %s" % server)
