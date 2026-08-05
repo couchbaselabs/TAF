@@ -120,13 +120,11 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         # tearDown -- useful for debugging a failed run against the live secondary
         self.skip_secondary_teardown = self.input.param("skip_secondary_teardown", False)
 
-        # Applied to the restore target right after nodes are up (via SSM,
-        # before the IP allowlist reopens -- see _restore_snapshot_backup())
-        # to speed up the post-restore S3 fusion log-store upload/sync. Set
-        # to 0/None to leave the cluster's default memcached settings
-        # untouched.
-        self.fusion_num_uploader_threads = self.input.param("fusion_num_uploader_threads", 64)
-        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 300971520)
+        # self.fusion_num_uploader_threads / self.fusion_sync_rate_limit are
+        # set by VolumeTest.setUp(); applied to the restore target right
+        # after nodes are up (via SSM, before the IP allowlist reopens --
+        # see _restore_snapshot_backup()) to speed up the post-restore S3
+        # fusion log-store upload/sync.
 
         all_clusters = [c for t in self.tenants for c in t.clusters]
         self.primary_cluster = all_clusters[0]

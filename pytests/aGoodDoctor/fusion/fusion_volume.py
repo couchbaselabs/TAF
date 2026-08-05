@@ -138,6 +138,15 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # {cluster.id: {instance_id: max_guest_volume_count_seen}}
         self.peak_guest_volume_slot_counts = dict()
 
+        # Global memcached settings (see couchbase-cloud
+        # internal/clusters/settings/settings.go FusionNumUploaderThreads/
+        # FusionSyncRateLimit) applied via FusionMonitorUtil's
+        # set_memcached_global_setting/apply_settings_once_ready to speed up
+        # the fusion S3 log-store upload/sync pipeline. Set to 0/None to
+        # leave the cluster's default memcached settings untouched.
+        self.fusion_num_uploader_threads = self.input.param("fusion_num_uploader_threads", 64)
+        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 300971520)
+
     def tearDown(self):
         if hasattr(self, "stop_run_event"):
             self.stop_run_event.set()
@@ -262,6 +271,27 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 self.log.warning(
                     f"Failed to delete fusion config override for resource {resource_id}: {e}")
         self.fusion_config_override_resources = list()
+
+    def apply_fusion_memcached_settings(self):
+        """
+        Apply fusion_num_uploader_threads/fusion_sync_rate_limit (if
+        configured) via FusionMonitorUtil.set_memcached_global_setting, to
+        speed up the fusion S3 log-store upload/sync pipeline. A no-op if
+        neither param is set. Best-effort: failures are logged by
+        set_memcached_global_setting, not raised.
+        """
+        if not self.fusion_num_uploader_threads and not self.fusion_sync_rate_limit:
+            return
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                if self.fusion_num_uploader_threads:
+                    self.fusion_monitor.set_memcached_global_setting(
+                        cluster, "fusion_num_uploader_threads",
+                        self.fusion_num_uploader_threads)
+                if self.fusion_sync_rate_limit:
+                    self.fusion_monitor.set_memcached_global_setting(
+                        cluster, "fusion_sync_rate_limit",
+                        self.fusion_sync_rate_limit)
 
     def assert_max_guest_volume_slots_reached(self, cluster):
         """
@@ -414,6 +444,13 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # scaling rebalance runs, so the very first fusion rebalance already
         # splits into the overridden shard count.
         self.apply_fusion_config_overrides()
+
+        # Apply fusion_num_uploader_threads/fusion_sync_rate_limit (if
+        # configured) directly, unlike FusionBackupRestoreVolumeTest's use of
+        # apply_settings_once_ready() -- there's no restore here replacing
+        # node instances underneath us, so no need to wait for/diff against
+        # new instance IDs; the cluster's nodes are already up at this point.
+        self.apply_fusion_memcached_settings()
 
         self.cpu_monitor_threads = list()
         for tenant in self.tenants:
