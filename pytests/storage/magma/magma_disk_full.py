@@ -29,8 +29,8 @@ class MagmaDiskFull(MagmaBaseTest):
                         "AutoFailover disabling failed")
 
     def tearDown(self):
-        # for node in self.servers:
-        #     self.free_disk(node)
+        for node in self.servers:
+            self.free_disk(node)
         MagmaBaseTest.tearDown(self)
 
     def simulate_persistence_failure(self, servers=None):
