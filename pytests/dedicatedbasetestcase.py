@@ -131,27 +131,50 @@ class CapellaBaseTest(CouchbaseBaseTest):
                        )
         self.tenants = list()
         if self.input.capella.get("tenant_id"):
-            tenant = Tenant(self.input.capella.get("tenant_id"),
-                            self.input.capella.get("capella_user"),
-                            self.input.capella.get("capella_pwd"),
-                            self.input.capella.get("secret_key"),
-                            self.input.capella.get("access_key"))
-            tenant.name = self.input.capella.get("capella_user").split("@")[0]
-            if not (self.input.capella.get("access_key") and
-                    self.input.capella.get("secret_key")):
-                self.log.info("Creating API keys for tenant...")
-                resp = CapellaUtils.create_access_secret_key(
-                    self.pod, tenant, tenant.name)
-                tenant.api_secret_key = resp["secret"]
-                tenant.api_access_key = resp["access"]
-                tenant.api_key_id = resp["id"]
-            self.tenants.append(tenant)
-            if TestInputSingleton.input.capella.get("project", None):
-                tenant.projects.append(TestInputSingleton.input.capella.get("project"))
-            else:
-                for i in range(self.num_projects):
-                    CapellaUtils.create_project(self.pod, tenant, tenant.name + "_{}".format(i))
-                    self.sleep(1)
+            tenant_ids = self.__parse_csv(self.input.capella.get("tenant_id"))
+            capella_users = self.__broadcast(
+                self.__parse_csv(self.input.capella.get("capella_user")),
+                len(tenant_ids), "capella_user")
+            capella_pwds = self.__broadcast(
+                self.__parse_csv(self.input.capella.get("capella_pwd")),
+                len(tenant_ids), "capella_pwd")
+            access_keys = self.__broadcast(
+                self.__parse_csv(self.input.capella.get("access_key")),
+                len(tenant_ids), "access_key")
+            secret_keys = self.__broadcast(
+                self.__parse_csv(self.input.capella.get("secret_key")),
+                len(tenant_ids), "secret_key")
+            # Projects in the ini map 1-1 onto tenant_id entries, in order.
+            # Any tenant left without a mapped project gets new project(s)
+            # created for it below.
+            projects = self.__parse_csv(self.input.capella.get("project"))
+            if len(projects) > len(tenant_ids):
+                raise Exception(
+                    "capella.project has {} entries but only {} tenant_id "
+                    "entries were given - projects must map 1-1 to "
+                    "tenants".format(len(projects), len(tenant_ids)))
+
+            for i, tenant_id in enumerate(tenant_ids):
+                tenant = Tenant(tenant_id, capella_users[i], capella_pwds[i],
+                                secret_keys[i], access_keys[i])
+                tenant.name = capella_users[i].split("@")[0]
+                if not (access_keys[i] and secret_keys[i]):
+                    self.log.info("Creating API keys for tenant...")
+                    resp = CapellaUtils.create_access_secret_key(
+                        self.pod, tenant, tenant.name)
+                    tenant.api_secret_key = resp["secret"]
+                    tenant.api_access_key = resp["access"]
+                    tenant.api_key_id = resp["id"]
+                self.tenants.append(tenant)
+
+                if i < len(projects):
+                    tenant.projects.append(projects[i])
+                    tenant.projects_preassigned = True
+                else:
+                    for j in range(self.num_projects):
+                        CapellaUtils.create_project(
+                            self.pod, tenant, tenant.name + "_{}".format(j))
+                        self.sleep(1)
         else:
             email = self.input.param("tenant_user",
                                      ''.join([random.choice(string.ascii_uppercase + string.ascii_lowercase) for _ in range(10)])+"@couchbase.com")
@@ -226,6 +249,26 @@ class CapellaBaseTest(CouchbaseBaseTest):
                         except ValueError:
                             value = raw
                     CapellaUtils.create_tenant_feature_flag(self.pod, tenant, ff.strip(), value)
+
+    @staticmethod
+    def __parse_csv(value):
+        if not value:
+            return []
+        return [item.strip() for item in value.split(",") if item.strip()]
+
+    @staticmethod
+    def __broadcast(values, count, field_name):
+        if not values:
+            return [None] * count
+        if len(values) == count:
+            return values
+        if len(values) == 1:
+            return values * count
+        raise Exception(
+            "capella.{} must have either 1 value (shared across all "
+            "tenants) or exactly {} values (one per tenant_id), got {}"
+            .format(field_name, count, len(values)))
+
 
 class ProvisionedBaseTestCase(CapellaBaseTest):
     def setUp(self):
@@ -380,16 +423,17 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 delete_th.join()
 
         if hasattr(self, "skip_redeploy") and not self.skip_redeploy:
-            if not TestInputSingleton.input.capella.get("project", None):
-                th = list()
-                for tenant in self.tenants:
-                    delete_th = threading.Thread(
-                        target=CapellaUtils.delete_project, name=tenant.id,
-                        args=(self.pod, tenant, tenant.projects))
-                    delete_th.start()
-                    th.append(delete_th)
-                for delete_th in th:
-                    delete_th.join()
+            th = list()
+            for tenant in self.tenants:
+                if tenant.projects_preassigned:
+                    continue
+                delete_th = threading.Thread(
+                    target=CapellaUtils.delete_project, name=tenant.id,
+                    args=(self.pod, tenant, tenant.projects))
+                delete_th.start()
+                th.append(delete_th)
+            for delete_th in th:
+                delete_th.join()
 
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1

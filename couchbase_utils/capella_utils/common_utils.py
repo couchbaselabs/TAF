@@ -104,6 +104,10 @@ class Tenant:
         # This will be used to destroy the key in teardown.
         self.api_key_id = None
         self.projects = []
+        # True when a project was supplied via the ini (pre-existing,
+        # not owned by this test run) rather than created by TAF - such
+        # projects must not be deleted in tearDown.
+        self.projects_preassigned = False
         self.clusters = list()
         self.columnar_instances = list()
         self.xdcr_clusters = list()
