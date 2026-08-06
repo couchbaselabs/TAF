@@ -1065,7 +1065,9 @@ class BasicOps(DurabilityTestsBase):
 
     def test_subdoc_multi_max_paths(self):
         """
-        MB-63734: Test for SUBDOC_MULTI_MAX_PATHS configuration feature
+        MB-63734: Test for SUBDOC_MULTI_MAX_PATHS configuration feature,
+        plus the related subdoc_offload_paths_threshold /
+        subdoc_offload_size_threshold NonIO-thread offload settings.
 
         Test flow:
         1. Create a test doc
@@ -1080,6 +1082,13 @@ class BasicOps(DurabilityTestsBase):
         5. Make sure the value succeeds with exactly the same 'original_limit' length
         6. Delete the bucket and recreate
         7. Create the same doc and make sure the default limit is still valid
+        8. Verify subdoc_offload_paths_threshold: mutations under it stay on
+           the front-end thread; mutations over it get offloaded to the
+           NonIO thread pool (via the 'subdoc_offload_count' stat) and are
+           still functionally correct
+        9. Same as 8, but via subdoc_offload_size_threshold (document size)
+        10. Restore both offload thresholds to their original values
+        11. Test for invalid values for the subdoc_multi_max_paths setting
         """
         def validate_sdk_context_err(t_value, t_json):
             self.assertTrue(
@@ -1089,6 +1098,17 @@ class BasicOps(DurabilityTestsBase):
         bucket = self.cluster.buckets[0]
         rest = ClusterRestAPI(self.cluster.master)
         client = SDKClient(self.cluster, bucket)
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+        cbstat_objs = dict()
+        for node in kv_nodes:
+            cbstat_objs[node.ip] = Cbstats(node)
+
+        def total_offload_count():
+            total = 0
+            for cbstat_obj in cbstat_objs.values():
+                stats = cbstat_obj.all_stats(bucket.name)
+                total += int(stats.get("subdoc_offload_count", 0))
+            return total
 
         # Test parameters
         original_limit = 16
@@ -1231,10 +1251,152 @@ class BasicOps(DurabilityTestsBase):
                          f"Mutation succeeded with {original_limit+1} path length")
         validate_sdk_context_err(original_limit, fail_dict)
 
+        # NOTE: subdoc_offload_paths_threshold/subdoc_offload_size_threshold
+        # are only reported by GET once they have been explicitly POSTed at
+        # least once; until then the (documented) defaults apply silently.
+        default_paths_threshold = 16
+        default_size_threshold = 1048576
+        _, offload_settings = rest.manage_global_memcached_setting()
+        orig_paths_threshold = offload_settings.get(
+            "subdoc_offload_paths_threshold", default_paths_threshold)
+        orig_size_threshold = offload_settings.get(
+            "subdoc_offload_size_threshold", default_size_threshold)
+
+        # 8. subdoc_offload_paths_threshold: path-count based offload
+        paths_threshold = 4
+        self.log.info(f"Step 8: Setting subdoc_offload_paths_threshold={paths_threshold}")
+        status, content = rest.manage_global_memcached_setting(
+            subdoc_offload_paths_threshold=paths_threshold)
+        self.assertTrue(status, f"Failed to set subdoc_offload_paths_threshold: {content}")
+        self.sleep(15, "Wait for new threshold to get reflected in memcached")
+
+        _, content = rest.manage_global_memcached_setting()
+        self.assertEqual(content["subdoc_offload_paths_threshold"], paths_threshold,
+                         "subdoc_offload_paths_threshold value mismatch")
+
+        below_key = "offload_paths_below_test_doc"
+        above_key = "offload_paths_above_test_doc"
+        for key in (below_key, above_key):
+            res = client.crud(DocLoading.Bucket.DocOps.CREATE, key,
+                              {"base": "value"},
+                              durability=self.durability_level)
+            self.assertTrue(res["status"], f"Failed to create test document {key}")
+
+        self.log.info(f"8a. Mutating with {paths_threshold - 1} paths (below threshold, "
+                      "should stay on the front-end thread)")
+        count_before = total_offload_count()
+        below_dict = {below_key: [("path_%d" % i, "val_%d" % i)
+                                  for i in range(paths_threshold - 1)]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            below_dict, xattr=True, durability=self.durability_level)
+        self.assertEqual(len(fail_dict), 0,
+                         f"Mutation with {paths_threshold - 1} paths failed: {fail_dict}")
+        count_after = total_offload_count()
+        self.assertEqual(
+            count_after, count_before,
+            "subdoc_offload_count increased for a mutation under the paths threshold")
+
+        num_paths = paths_threshold + 4
+        self.log.info(f"8b. Mutating with {num_paths} paths (above threshold, should "
+                      "offload to the NonIO thread pool)")
+        count_before = total_offload_count()
+        above_dict = {above_key: [("path_%d" % i, "val_%d" % i)
+                                  for i in range(num_paths)]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            above_dict, xattr=True, durability=self.durability_level)
+        self.assertEqual(len(fail_dict), 0,
+                         f"Mutation with {num_paths} paths failed: {fail_dict}")
+        count_after = total_offload_count()
+        self.assertGreater(
+            count_after, count_before,
+            "subdoc_offload_count did not increase for a mutation over the paths threshold")
+
+        self.log.info("Verifying the offloaded mutation is functionally correct")
+        read_dict = {above_key: [("path_%d" % i, "") for i in range(num_paths)]}
+        success_dict, fail_dict = client.sub_doc_read_multi(read_dict, xattr=True)
+        self.assertEqual(len(fail_dict), 0,
+                         f"Read-back of offloaded mutation failed: {fail_dict}")
+        for path_name, expected_val in above_dict[above_key]:
+            actual_val = success_dict[above_key]["value"][path_name]
+            self.assertEqual(actual_val, expected_val,
+                             f"Value mismatch for '{path_name}' after offloaded mutation")
+
+        # Restore paths threshold before the size-threshold checks so the
+        # single-path mutations below aren't offloaded by path count
+        status, content = rest.manage_global_memcached_setting(
+            subdoc_offload_paths_threshold=orig_paths_threshold)
+        self.assertTrue(status, f"Failed to restore subdoc_offload_paths_threshold: {content}")
+        self.sleep(15, "Wait for restored threshold to get reflected in memcached")
+
+        # 9. subdoc_offload_size_threshold: document-size based offload
+        size_threshold = 256
+        self.log.info(f"Step 9: Setting subdoc_offload_size_threshold={size_threshold} bytes")
+        status, content = rest.manage_global_memcached_setting(
+            subdoc_offload_size_threshold=size_threshold)
+        self.assertTrue(status, f"Failed to set subdoc_offload_size_threshold: {content}")
+        self.sleep(15, "Wait for new threshold to get reflected in memcached")
+
+        _, content = rest.manage_global_memcached_setting()
+        self.assertEqual(content["subdoc_offload_size_threshold"], size_threshold,
+                         "subdoc_offload_size_threshold value mismatch")
+
+        small_key = "offload_size_small_test_doc"
+        large_key = "offload_size_large_test_doc"
+        res = client.crud(DocLoading.Bucket.DocOps.CREATE, small_key,
+                          {"base": "value"}, durability=self.durability_level)
+        self.assertTrue(res["status"], f"Failed to create test document {small_key}")
+        res = client.crud(DocLoading.Bucket.DocOps.CREATE, large_key,
+                          {"base": "x" * (size_threshold * 2)},
+                          durability=self.durability_level)
+        self.assertTrue(res["status"], f"Failed to create test document {large_key}")
+
+        self.log.info("9a. Mutating a single path on a small doc (below size "
+                      "threshold, should stay on the front-end thread)")
+        count_before = total_offload_count()
+        small_dict = {small_key: [("single_path", "single_val")]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            small_dict, xattr=True, durability=self.durability_level)
+        self.assertEqual(len(fail_dict), 0, f"Mutation on small doc failed: {fail_dict}")
+        count_after = total_offload_count()
+        self.assertEqual(
+            count_after, count_before,
+            "subdoc_offload_count increased for a mutation under the size threshold")
+
+        self.log.info("9b. Mutating a single path on a large doc (above size "
+                      "threshold, should offload to the NonIO thread pool)")
+        count_before = total_offload_count()
+        large_dict = {large_key: [("single_path", "single_val")]}
+        success_dict, fail_dict = client.sub_doc_upsert_multi(
+            large_dict, xattr=True, durability=self.durability_level)
+        self.assertEqual(len(fail_dict), 0, f"Mutation on large doc failed: {fail_dict}")
+        count_after = total_offload_count()
+        self.assertGreater(
+            count_after, count_before,
+            "subdoc_offload_count did not increase for a mutation over the size threshold")
+
+        self.log.info("Verifying the size-based offloaded mutation is functionally correct")
+        success_dict, fail_dict = client.sub_doc_read_multi(
+            {large_key: [("single_path", "")]}, xattr=True)
+        self.assertEqual(len(fail_dict), 0,
+                         f"Read-back of offloaded mutation failed: {fail_dict}")
+        self.assertEqual(
+            success_dict[large_key]["value"]["single_path"], "single_val",
+            "Value mismatch after size-based offloaded mutation")
+
+        # 10. Restore both offload thresholds to their original values
+        self.log.info(f"Step 10: Restoring offload thresholds (paths={orig_paths_threshold}, "
+                      f"size={orig_size_threshold})")
+        status, content = rest.manage_global_memcached_setting(
+            subdoc_offload_paths_threshold=orig_paths_threshold,
+            subdoc_offload_size_threshold=orig_size_threshold)
+        self.assertTrue(status, f"Failed to restore offload thresholds: {content}")
+
         # Close SDK client connection
         client.close()
+        for cbstat_obj in cbstat_objs.values():
+            cbstat_obj.disconnect()
 
-        # Test for invalid values for the setting
+        # 11. Test for invalid values for the subdoc_multi_max_paths setting
         invalid_value = [-1, 0, 15, "a", "test"]
         for curr_value in invalid_value:
             self.log.info(f"Testing for multi-max-path value {curr_value}")

@@ -194,6 +194,8 @@ class SettingsAndConnectionsAPI(CBRestConnection):
                                         fusion_max_pending_upload_bytes=None,
                                         fusion_max_pending_upload_bytes_lwm_percentage=None,
                                         subdoc_multi_max_paths=None,
+                                        subdoc_offload_size_threshold=None,
+                                        subdoc_offload_paths_threshold=None,
                                         throttle_enabled=None,
                                         read_unit_size=None,
                                         write_unit_size=None,
@@ -232,6 +234,10 @@ class SettingsAndConnectionsAPI(CBRestConnection):
             params["fusion_max_pending_upload_bytes_lwm_percentage"] = fusion_max_pending_upload_bytes_lwm_percentage
         if subdoc_multi_max_paths is not None:
             params["subdoc_multi_max_paths"] = subdoc_multi_max_paths
+        if subdoc_offload_size_threshold is not None:
+            params["subdoc_offload_size_threshold"] = subdoc_offload_size_threshold
+        if subdoc_offload_paths_threshold is not None:
+            params["subdoc_offload_paths_threshold"] = subdoc_offload_paths_threshold
         # Data-server rate-limiting feature params
         if throttle_enabled is not None:
             params["throttle_enabled"] = throttle_enabled
