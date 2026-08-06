@@ -1182,7 +1182,7 @@ class basic_ops(ClusterSetup):
         doc_op_timeout = self.input.param("doc_op_timeout", 120)
         # Failsafe timeout (secs) to avoid hanging forever waiting for a
         # watermark to be reached (job getting aborted instead of failing)
-        wm_wait_timeout = self.input.param("wm_wait_timeout", 1800)
+        wm_wait_timeout = self.input.param("wm_wait_timeout", 600)
         # To provide little 'headroom' while loading/deleting docs in batches
         mem_buffer_gap = 10000
         low_wm_reached = False
@@ -1352,7 +1352,7 @@ class basic_ops(ClusterSetup):
         # Get doc to make sure we see not_found exception
         result = client_1.crud(DocLoading.Bucket.DocOps.READ, self.key)
         if not self.bucket_util.check_if_exception_exists(
-                sdk_err, SDKException.DocumentNotFoundException):
+                result["error"], SDKException.DocumentNotFoundException):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with deleted_doc: %s"
                              % result["error"])
@@ -1369,7 +1369,7 @@ class basic_ops(ClusterSetup):
         # Doc read should return not_found
         result = client_2.crud(DocLoading.Bucket.DocOps.READ, self.key)
         if not self.bucket_util.check_if_exception_exists(
-                sdk_err, SDKException.DocumentNotFoundException):
+                result["error"], SDKException.DocumentNotFoundException):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with prepared doc: %s"
                              % result["error"])
