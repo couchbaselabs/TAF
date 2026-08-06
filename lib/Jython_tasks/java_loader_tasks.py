@@ -582,9 +582,9 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                                      reason="no forward progress")
 
             if pending:
-                sleep(self.progress_poll_interval,
-                    "Waiting for Sirius tasks %s to make progress"
-                    % sorted(pending), log_type="test")
+                log.debug("Waiting for Sirius tasks %s to make progress"
+                    % sorted(pending))
+                sleep(self.progress_poll_interval)
 
     def get_task_result(self):
         self._wait_for_completion_or_stall()
