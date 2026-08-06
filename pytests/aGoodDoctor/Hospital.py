@@ -72,6 +72,9 @@ class Murphy(BaseTestCase, OPD):
 
         self.threads_calculation()
         self.loader_tasks = list()
+        # Handshake used to park/unpark the data and query workloads around
+        # steps that need a quiet dataset (see restore_with_workloads_paused)
+        self.init_workload_controls()
         self.rest = RestConnection(self.servers[0])
         self.op_type = self.input.param("op_type", "create")
         self.dgm = self.input.param("dgm", None)
@@ -538,7 +541,6 @@ class Murphy(BaseTestCase, OPD):
                                                                timeout=self.restore_timeout)
                     self.assertTrue(result, "Restore failed for backup with timestamp: {}".format(timestamp))
                 self.toggle_continuous_backup(self.cluster.buckets[0], enable=True)
-
 
     def initial_setup(self):
         if self.initial_setup_done or self.skip_init:
@@ -1589,8 +1591,14 @@ class Murphy(BaseTestCase, OPD):
         self.track_failures = False
         self.initial_setup()
 
+        # Take first backup
+        self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["traditional_backup"])
+
         self.PrintStep("Crash indexer with Loading of docs")
         self.crash_indexer(num_kills=2, graceful=False)
+
+        # Taking incremental backups and recording timestamps for PITR
+        self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
         self.loop = 0
         while self.loop < self.iterations:
@@ -1628,6 +1636,9 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats(self.cluster)
 
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
                 ###################################################################
                 '''
                 Existing:
@@ -1660,6 +1671,9 @@ class Murphy(BaseTestCase, OPD):
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
 
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
                 ###################################################################
                 '''
                 Existing:
@@ -1689,6 +1703,9 @@ class Murphy(BaseTestCase, OPD):
 
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
+
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1720,6 +1737,9 @@ class Murphy(BaseTestCase, OPD):
 
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
+
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
 
                 ###################################################################
                 '''
@@ -1776,6 +1796,10 @@ class Murphy(BaseTestCase, OPD):
                 self.PrintStep("Crash indexer with Loading of docs")
 
                 self.crash_indexer(num_kills=2, graceful=False)
+
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
                 ###################################################################
                 '''
                 Existing:
@@ -1827,6 +1851,10 @@ class Murphy(BaseTestCase, OPD):
 
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
+
+                # Take incremental backup and record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup()
+
                 ###################################################################
                 '''
                 Existing:
@@ -1878,6 +1906,9 @@ class Murphy(BaseTestCase, OPD):
                 self.PrintStep("Crash indexer with Loading of docs")
                 self.crash_indexer(num_kills=2, graceful=False)
 
+                # Record timestamp for PITR
+                self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_timestamp"])
+
                 ###################################################################
                 '''
                 Existing:
@@ -1893,6 +1924,15 @@ class Murphy(BaseTestCase, OPD):
                 Final Docs = 30M (Random: 0-10M, 90-100M, Sequential: 0-10M)
                 Nodes In Cluster = 3
                 '''
+
+                ###################################################################
+                self.PrintStep("Step 14.{}: Restore from backup".format(
+                    self.loop))
+                # Both workloads are parked for the duration: the item count
+                # captured before the flush has to be stable, and queries
+                # against a flushed bucket are noise. They resume from the
+                # same point once the restore is verified.
+                self.restore_with_workloads_paused()
 
                 self.loop += 1
         self.mutations = False
@@ -1926,6 +1966,12 @@ class Murphy(BaseTestCase, OPD):
                 "expiry": self.expiry_perc
                 }
         while self.mutations:
+            # Park before touching any range bookkeeping, so a pause leaves
+            # the doc indexes consistent and the next wave resumes from
+            # exactly where this loop left off.
+            self.wait_if_workload_paused()
+            if not self.mutations:
+                break
             self.mutate += 1
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["pattern"] = pattern or bucket.loadDefn.get("pattern")
@@ -1950,6 +1996,9 @@ class Murphy(BaseTestCase, OPD):
             self.gtm = False
 
         while self.mutations:
+            self.wait_if_workload_paused()
+            if not self.mutations:
+                break
             self.mutate += 1
             self.loader_tasks = JavaDocLoaderUtils.load_sift_data(
                 cluster=self.cluster,

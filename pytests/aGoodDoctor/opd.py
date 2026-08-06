@@ -811,6 +811,406 @@ class OPD:
                 ql = [ql for ql in self.cbasQL if ql.bucket == bucket][0]
                 ql.start_query_load()
 
+    # ------------------------------------------------------------------
+    # Workload pause / resume
+    #
+    # A few steps -- flush + restore above all -- need the dataset to hold
+    # still: an item count taken while the mutation thread is writing is a
+    # moving target, and every query issued against a bucket that has just
+    # been emptied is a spurious failure that buries the real ones.
+    #
+    # These helpers *park* both workloads rather than tearing them down, so
+    # the run resumes with the same loader ranges, the same query-load
+    # objects and the same accumulated stats. The data side is a two-event
+    # handshake with one owner each: the controller owns
+    # `_workload_may_run` (cleared to pause, set to resume) and clears
+    # `_data_workload_parked` before each pause; the mutation thread only
+    # ever sets the ack. That split means neither side can observe a stale
+    # ack from a previous pause.
+    #
+    # `_workload_may_run` is deliberately phrased as "may run" rather than
+    # "is paused" so the parked thread can block on Event.wait() and be
+    # released the instant resume is called, instead of sleeping out a poll
+    # interval first.
+    # ------------------------------------------------------------------
+
+    # Upper bound on how long the parked thread waits before re-checking
+    # `self.mutations`; resume itself is immediate via the event. Keeps
+    # tearDown from waiting on a thread parked at the barrier.
+    WORKLOAD_BARRIER_POLL = 1
+    # How often the controller re-signals in-flight loader tasks while it
+    # waits for the ack. Larger, because each sweep is a REST round-trip
+    # per task_id.
+    WORKLOAD_PAUSE_POLL = 10
+    # Query worker threads are named by the loaders in n1ql/cbas/fts.py.
+    QUERY_THREAD_PREFIX = "query_thread_"
+
+    def init_workload_controls(self):
+        """
+        Create the pause/resume handshake state. Call once from setUp, before
+        any workload thread can exist.
+        """
+        self._workload_may_run = threading.Event()
+        self._workload_may_run.set()
+        self._data_workload_parked = threading.Event()
+        # Query loads that were serving traffic when we paused, so resume
+        # restarts exactly those and not, say, one that a previous step had
+        # deliberately left stopped.
+        self._resumable_query_loads = list()
+
+    def wait_if_workload_paused(self):
+        """
+        Barrier for the data-workload thread. Call at the top of every
+        mutation iteration, before any range bookkeeping is advanced.
+
+        Parking here rather than between generate_docs() and perform_load()
+        is deliberate: the doc ranges are whole-iteration state, so pausing
+        at the loop boundary leaves them consistent and the next wave picks
+        up exactly where the previous one stopped.
+
+        Re-sets the ack on every wake so that a pause issued immediately
+        after a resume -- before this thread has left the barrier -- is still
+        acknowledged.
+        """
+        if self._workload_may_run.is_set():
+            return
+        self.log.info("Data workload: parking at pause barrier")
+        while not self._workload_may_run.is_set() and self.mutations:
+            self._data_workload_parked.set()
+            # Returns as soon as resume sets the event; the timeout only
+            # bounds how often `self.mutations` is re-read.
+            self._workload_may_run.wait(timeout=self.WORKLOAD_BARRIER_POLL)
+        self.log.info("Data workload: leaving pause barrier")
+
+    def _stop_loader_tasks(self, tasks):
+        """
+        Ask Sirius to stop the given doc-loading tasks; returns the number
+        signalled.
+
+        Calls SiriusCouchbaseLoader.end_task() directly rather than going
+        through TaskManager.stop_task(): a loader whose create_doc_load_task()
+        failed carries an empty task_ids list, for which end_task() returns a
+        None response that TaskManager.stop_task() then subscripts.
+
+        /stop_task is idempotent on the Java side (an already-completed task
+        reports status=true), so this is safe to call repeatedly on the same
+        task while waiting for the mutation thread to notice the pause.
+        """
+        stopped = 0
+        for task in tasks:
+            task_ids = getattr(task, "task_ids", None)
+            if not task_ids:
+                continue
+            try:
+                okay, response = task.end_task()
+                if okay:
+                    stopped += 1
+                else:
+                    self.log.warning("stop_task failed for %s: %s"
+                                     % (task_ids, response))
+            except Exception as e:
+                self.log.warning("Exception while stopping loader task %s: %s"
+                                 % (task_ids, e))
+        return stopped
+
+    def pause_data_workload(self, timeout=1800):
+        """
+        Park the mutation thread and stop whatever it currently has in flight.
+
+        Returns True once the thread has acknowledged (or if no mutation
+        thread is running), False if it was still busy when `timeout` expired
+        -- the caller decides whether that is fatal.
+
+        The in-flight tasks are signalled repeatedly rather than once: the
+        thread may have been a statement past the barrier when the request
+        landed, in which case it submits one more full wave that also has to
+        be cut short. Stopped tasks make the thread's get_task_result() return
+        promptly, at the cost of a benign "Failure during get_task_result"
+        line in the log.
+        """
+        self._data_workload_parked.clear()
+        self._workload_may_run.clear()
+
+        mutation_th = getattr(self, "mutation_th", None)
+        if mutation_th is None or not mutation_th.is_alive() \
+                or not self.mutations:
+            self.log.info("Data workload: no mutation thread running, "
+                          "nothing to pause")
+            return True
+
+        self.log.info("Data workload: pause requested, waiting for the "
+                      "current wave to wind down")
+        deadline = time.time() + timeout
+        parked = False
+        while not parked and time.time() < deadline:
+            # `or []` because perform_load() returns False, not a list, when
+            # a loader task could not be created.
+            self._stop_loader_tasks(list(self.loader_tasks or []))
+            parked = self._data_workload_parked.wait(
+                timeout=self.WORKLOAD_PAUSE_POLL)
+
+        if not parked:
+            self.log.critical(
+                "Data workload did not park within %ss; continuing with it "
+                "still running" % timeout)
+            return False
+
+        # Sweep once more for anything submitted between the last sweep and
+        # the thread reaching the barrier.
+        self._stop_loader_tasks(list(self.loader_tasks or []))
+        self.log.info("Data workload: paused")
+        return True
+
+    def resume_data_workload(self):
+        """
+        Release the barrier. The mutation thread resumes at the top of its
+        loop, so the next wave continues from the ranges the paused iteration
+        left behind -- no range is replayed or skipped.
+        """
+        self._workload_may_run.set()
+        self.log.info("Data workload: resume signalled")
+
+    def _live_query_threads(self):
+        return [th for th in threading.enumerate()
+                if th.is_alive() and th.name.startswith(
+                    self.QUERY_THREAD_PREFIX)]
+
+    def _wait_for_query_threads_to_exit(self, timeout=600):
+        """
+        Wait for the query worker threads to actually die after stop_run was
+        set.
+
+        This matters for correctness, not tidiness: start_query_load() spawns
+        a fresh set of workers, so resuming while stragglers are still looping
+        on `while not self.stop_run` would permanently inflate the query
+        concurrency once stop_run flips back to False.
+
+        The loaders keep no handle on their threads, so identify them by the
+        name every loader gives its workers.
+        """
+        deadline = time.time() + timeout
+        live = self._live_query_threads()
+        while live and time.time() < deadline:
+            self.log.debug("Waiting for %s query thread(s) to exit"
+                           % len(live))
+            time.sleep(5)
+            live = self._live_query_threads()
+        if live:
+            self.log.critical(
+                "%s query thread(s) still alive after %ss: %s. Resuming "
+                "anyway; query concurrency may exceed the configured QPS."
+                % (len(live), timeout, [th.name for th in live]))
+            return False
+        return True
+
+    def pause_query_workload(self, timeout=600):
+        """
+        Stop every query load that is currently serving traffic and wait for
+        its worker threads to exit. Records which ones were running so
+        resume_query_workload() restarts exactly that set.
+        """
+        self._resumable_query_loads = [
+            ql for ql in (self.ql + self.ftsQL + self.cbasQL)
+            if not ql.stop_run]
+        if not self._resumable_query_loads:
+            self.log.info("Query workload: nothing running, nothing to pause")
+            return True
+
+        self.log.info("Query workload: stopping %s query load(s)"
+                      % len(self._resumable_query_loads))
+        for ql in self._resumable_query_loads:
+            ql.stop_query_load()
+        drained = self._wait_for_query_threads_to_exit(timeout=timeout)
+        self.log.info("Query workload: paused")
+        return drained
+
+    def resume_query_workload(self):
+        """
+        Restart the query loads recorded by pause_query_workload().
+
+        QueryLoad.start_query_load() re-initialises query_stats, which would
+        reset the per-query latency/count tables printed by
+        monitor_query_status() every time a restore runs. Carry the previous
+        dict over so those tables stay cumulative for the whole run. The
+        other two loaders do not touch their stats on start, so re-assigning
+        the same object back is a no-op for them.
+        """
+        for ql in self._resumable_query_loads:
+            query_stats = getattr(ql, "query_stats", None)
+            ql.start_query_load()
+            if query_stats is not None:
+                ql.query_stats = query_stats
+        self.log.info("Query workload: resumed %s query load(s)"
+                      % len(self._resumable_query_loads))
+        self._resumable_query_loads = list()
+
+    def pause_workloads(self, data_timeout=1800, query_timeout=600):
+        """
+        Quiesce the cluster: no doc loading, no queries.
+
+        Queries stop first so the KV/GSI capacity they were consuming is
+        available to the doc-load drain and the index catch-up that
+        pause_data_workload() then waits on.
+        """
+        self.PrintStep("Pausing data and query workloads")
+        query_ok = self.pause_query_workload(timeout=query_timeout)
+        data_ok = self.pause_data_workload(timeout=data_timeout)
+        return data_ok and query_ok
+
+    def resume_workloads(self):
+        """
+        Bring both workloads back, in the reverse order of pause_workloads():
+        doc loading first, so the queries restarted after it find an index
+        that is already being fed again.
+        """
+        self.PrintStep("Resuming data and query workloads")
+        self.resume_data_workload()
+        self.resume_query_workload()
+
+    # ------------------------------------------------------------------
+    # Backup / restore driven from inside a running volume test
+    # ------------------------------------------------------------------
+
+    def run_backup_restore(self):
+        """
+        Flush the buckets and restore them, using whichever backup mechanism
+        the run was configured with. A no-op when neither backup param is set.
+
+        Named `run_backup_restore` rather than `restore_from_backup` because
+        hostedHospital.Murphy defines a same-named method with different
+        semantics; keeping them distinct avoids an inherited/overridden trap
+        for anything that ends up mixing the two hierarchies.
+
+        Expects the workloads to already be quiesced -- see
+        restore_with_workloads_paused(), which is what callers should use.
+
+        cbbackupmgr (cont_bkp_test is None):
+            backup -> merge -> capture item count -> flush -> restore ->
+            monitor
+        continuous backup / PITR:
+            disable cont-backup -> flush -> restore every recorded timestamp
+            in order -> monitor -> re-enable cont-backup
+        """
+        if self.drBackup is None:
+            self.log.info("No backup configured for this run; skipping restore")
+            return
+
+        if self.cont_bkp_test is None:
+            self._restore_using_cbbackupmgr()
+        else:
+            self._restore_using_continuous_backup()
+
+    def _restore_using_cbbackupmgr(self):
+        bucket = self.cluster.buckets[0]
+
+        output, error = self.drBackup.backup(
+            self.backup_archive, self.backup_repo,
+            cluster_host=self.backup_cluster_host)
+        self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+
+        # merge_all_backups() raises for an object-store archive, which
+        # cbbackupmgr cannot merge. Skipping the merge still leaves a
+        # restorable repo, so degrade rather than fail the run here.
+        if self.drBackup.cloud_provider is None:
+            output, error = self.drBackup.merge_all_backups(
+                archive=self.backup_archive, repo=self.backup_repo)
+            self.log.info(f"Merge Output: {output}\n\n Merge Error: {error}")
+        else:
+            self.log.info("Skipping merge: cbbackupmgr cannot merge an "
+                          "object-store archive (%s)"
+                          % type(self.drBackup.cloud_provider).__name__)
+
+        # Safe to trust this count only because the workloads are paused.
+        items = self.bucket_util.get_buckets_item_count(self.cluster,
+                                                        bucket.name)
+        self.log.info("Item count in %s before flush: %s"
+                      % (bucket.name, items))
+        self.bucket_util.flush_all_buckets(self.cluster)
+
+        output, error = self.drBackup.restore(
+            self.backup_archive, self.backup_repo,
+            cluster_host=self.backup_cluster_host, threads=60)
+        self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
+
+        result = self.drBackup.monitor_restore(
+            self.bucket_util, self.cluster, bucket.name, items,
+            timeout=self.restore_timeout)
+        self.assertTrue(result,
+                        "Restore failed: %s did not reach %s items in %ss"
+                        % (bucket.name, items, self.restore_timeout))
+
+    def _restore_using_continuous_backup(self):
+        if self.drContBackup is None:
+            self.log.critical("cont_bkp_test is set but drContBackup was "
+                              "never built; skipping PITR restore")
+            return
+
+        bucket = self.cluster.buckets[0]
+        # Every recorded timestamp, every time: the flush below empties the
+        # bucket, so each restore replays from a clean slate and there is
+        # nothing to be gained by skipping the earlier ones.
+        timestamps = sorted(self.continuous_backup_timestamps,
+                            key=lambda x: x[0])
+        if not timestamps:
+            self.log.warning("No continuous-backup timestamps recorded; "
+                             "skipping PITR restore")
+            return
+
+        # Disable continuous backup before the flush, so neither the deletes
+        # the flush generates nor the writes the restores replay end up in
+        # the backup location.
+        self.toggle_continuous_backup(bucket, enable=False)
+        self.bucket_util.flush_all_buckets(self.cluster)
+        self.sleep(30, "Sleep after flushing buckets, before triggering restore")
+
+        try:
+            for timestamp, items in timestamps:
+                self.log.info("Restoring backup with timestamp: %s "
+                              "(expected items: %s)" % (timestamp, items))
+                output, error = self.drContBackup.trigger_restore(
+                    cluster=self.cluster,
+                    archive=self.backup_archive,
+                    repo=self.backup_repo,
+                    cont_backup_location=self.continuous_backup_location,
+                    staging_dir="/data/tmp",
+                    timestamp=timestamp,
+                    threads=60)
+                self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
+
+                result = self.drContBackup.monitor_restore(
+                    self.bucket_util, cluster=self.cluster, bucket=bucket,
+                    items=items, timeout=self.restore_timeout)
+                self.assertTrue(
+                    result,
+                    "Restore failed for backup with timestamp: %s" % timestamp)
+        finally:
+            # Leave continuous backup on even if a restore failed, so the
+            # bucket is not silently left unprotected for the rest of the run.
+            self.toggle_continuous_backup(bucket, enable=True)
+
+    def restore_with_workloads_paused(self):
+        """
+        Quiesce the workloads, run a full backup/restore verification against
+        the live cluster, then bring the workloads back exactly as they were.
+
+        The resume is in a finally block on purpose: a failed restore raises
+        out of assertTrue, and leaving the mutation thread parked would strand
+        it for whatever the enclosing test does next.
+        """
+        if self.drBackup is None:
+            self.log.info("No backup configured for this run; "
+                          "skipping restore step")
+            return
+
+        if not self.pause_workloads():
+            self.log.critical(
+                "Workloads did not fully quiesce; the restore below may see "
+                "concurrent traffic and its item counts may be unstable")
+        try:
+            self.run_backup_restore()
+        finally:
+            self.resume_workloads()
+
     def monitor_query_status(self, print_duration=120):
         self.query_result = True
 
