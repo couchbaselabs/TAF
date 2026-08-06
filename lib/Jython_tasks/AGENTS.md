@@ -190,6 +190,11 @@ Shared HTTP utilities for all Sirius Java loaders.
 ### `SiriusCouchbaseLoader`
 HTTP bridge to the DocLoader REST API for Couchbase document operations.
 
+`sdk_retry_strategy` (values from `SDKConstants.RetryStrategy`: `fail_fast` / `best_effort`) is sent to DocLoader as
+the `retry_strategy` REST field and applied to every op's SDK options (upsert/insert/remove/get/mutateIn/lookupIn)
+via `WorkLoadBase.setRetryStrategy()` in `WorkLoadGenerate.actual_run()`. `None` (unset) keeps DocLoader's default
+of `BestEffortRetryStrategy`.
+
 | Method | DocLoader endpoint | Purpose |
 |---|---|---|
 | `create_doc_load_task()` | `POST /doc_load` | Registers task in DocLoader; populates `self.task_ids`; returns `{"tasks": [...], "status": true}` |

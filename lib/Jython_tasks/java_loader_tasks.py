@@ -170,6 +170,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                  durability="NONE",
                  exp=0, exp_unit="seconds",
                  timeout=10, time_unit="seconds",
+                 sdk_retry_strategy=None,
                  process_concurrency=1, task_identifier="", ops=None,
                  suppress_error_table=False,
                  track_failures=True,
@@ -211,6 +212,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.timeout = timeout
         self.time_unit = time_unit
         self.durability = durability
+        self.sdk_retry_strategy = sdk_retry_strategy
         self.create_path = create_path
         self.is_xattr = is_xattr
         self.is_sys_xattr = is_sys_xattr
@@ -454,6 +456,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             "doc_ttl": self.exp,
             "doc_ttl_unit": self.exp_unit,
             "durability_level": self.durability,
+            "retry_strategy": self.sdk_retry_strategy,
 
             "ops": self.ops,
             "gtm": self.gtm,

@@ -228,7 +228,8 @@ class ServerTasks(object):
                         process_concurrency=process_concurrency,
                         suppress_error_table=suppress_error_table,
                         track_failures=track_failures,
-                        iterations=iterations)
+                        iterations=iterations,
+                        sdk_retry_strategy=sdk_retry_strategy)
                     ok, response = _task.create_doc_load_task()
                     if not ok:
                         raise Exception(f"Failure in Sirius Task: {response}")
@@ -348,7 +349,8 @@ class ServerTasks(object):
                 timeout=timeout_secs,
                 process_concurrency=process_concurrency,
                 create_path=path_create,
-                is_xattr=xattr)
+                is_xattr=xattr,
+                sdk_retry_strategy=sdk_retry_strategy)
             _task.create_doc_load_task()
         elif load_using == "sirius_go_sdk":
             _task = sirius_task.LoadCouchbaseDocs(
