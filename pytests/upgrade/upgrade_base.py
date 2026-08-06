@@ -216,6 +216,7 @@ class UpgradeBase(BaseTestCase):
             nodes=self.cluster.servers[0:self.nodes_init],
             version=initial_install_version,
             edition=build_type)
+        self.initial_version = initial_install_version
 
         for node in self.cluster.servers[0:self.nodes_init]:
             self.assertTrue(
