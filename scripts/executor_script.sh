@@ -388,7 +388,12 @@ if [ $status -eq 0 ]; then
     echo "Launching java/magma doc loader to load documents."
     python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_java_doc_loader --sirius_url http://localhost:$sirius_port ${rerun_params}
   fi
+  testrunner_status=$?
   set +x
+  # Capture this before rerun_jobs.py runs: merge_reports.merge_reports()
+  # renames logs/ to job_logs/ and creates a fresh empty logs/ as a side
+  # effect, so checking logs/*/*.xml afterwards would always read 0.
+  report_count=$(ls $WORKSPACE/logs/*/*.xml 2>/dev/null | wc -l)
 
   # ---- NFS teardown for fusion tests (runs once after all tests complete) ----
   if [ "${component}" = "fusion" ] && [ -n "${CLIENT_SHARE_DIR}" ]; then
@@ -397,10 +402,29 @@ if [ $status -eq 0 ]; then
   fi
 
   set -x
-  awk -F' ' 'BEGIN {failures = 0; total_tests = 0} /<testsuite/ {match($0, /failures="([0-9]+)"/, failures_match); match($0, /tests="([0-9]+)"/, tests_match); if (failures_match[1] > 0) {failures += failures_match[1];} total_tests += tests_match[1]} END {print "Aggregate Failures: " failures ", Aggregate Total Tests: " total_tests;}' $WORKSPACE/logs/*/*.xml
+  awk 'BEGIN {failures = 0; total_tests = 0}
+    /<testsuite/ {
+      if (match($0, /failures="[0-9]+"/)) {
+        f = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", f); failures += f;
+      }
+      if (match($0, /tests="[0-9]+"/)) {
+        t = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", t); total_tests += t;
+      }
+    }
+    END {print "Aggregate Failures: " failures ", Aggregate Total Tests: " total_tests;}' $WORKSPACE/logs/*/*.xml
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
   status=$?
   set +x
+  # testrunner.py can crash before writing any report (e.g. Sirius/doc-loader
+  # launch failure) - rerun_jobs.py then finds zero testsuites and happily
+  # exits 0 ("no more failed tests"), which would otherwise mask the crash
+  # and let Jenkins report the build as SUCCESS with no test results at all.
+  if [ "$testrunner_status" -ne 0 ] && [ "$report_count" -eq 0 ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "testrunner.py exited $testrunner_status without producing any test report"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    exit $testrunner_status
+  fi
   if [ $status -ne 0 ]; then
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     echo "Non-zero exit while running rerun_jobs.py"
