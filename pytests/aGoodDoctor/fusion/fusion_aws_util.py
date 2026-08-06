@@ -751,7 +751,6 @@ class FusionAWSUtil:
             f"({folders_deleted}), {len(files_deleted)} individual file(s) "
             f"deleted ({files_deleted})")
         return {"folders_deleted": folders_deleted, "files_deleted": files_deleted}
-
     def get_guest_volumes_for_cluster(self, cluster_id: str) -> dict:
         """
         Retrieve the guest volume inventory for a cluster via AWS EC2 API.
@@ -807,33 +806,23 @@ class FusionAWSUtil:
         Returns bucket name, or None if not found.
         """
         try:
-            tagging = self.ec2.create_service_client(
-                "resourcegroupstaggingapi", region=self.ec2.region)
-            paginator = tagging.get_paginator("get_resources")
-            for page in paginator.paginate(
-                    TagFilters=[
-                        {"Key": "couchbase-cloud-cluster-id",
-                         "Values": [cluster_id]},
-                        {"Key": "couchbase-cloud-storage-use",
-                         "Values": ["fusion"]},
-                    ],
-                    ResourceTypeFilters=["s3:bucket"]):
-                for resource in page.get("ResourceTagMappingList", []):
-                    bucket_name = resource["ResourceARN"].split(":::")[-1]
-                    if bucket_name:
-                        self.log.info(
-                            "Found Fusion S3 bucket for cluster {}: {}".format(
-                                cluster_id, bucket_name))
-                        return bucket_name
-            self.log.warning(
-                "No S3 bucket tagged couchbase-cloud-cluster-id={} AND "
-                "couchbase-cloud-storage-use=fusion found".format(cluster_id))
-            return None
+            buckets = self.s3.find_buckets_by_tags([
+                {"Key": "couchbase-cloud-cluster-id", "Values": [cluster_id]},
+                {"Key": "couchbase-cloud-storage-use", "Values": ["fusion"]},
+            ])
         except Exception as e:
             self.log.warning(
                 "find_fusion_s3_bucket failed for cluster {}: {}".format(
                     cluster_id, e))
             return None
+        if buckets:
+            self.log.info("Found Fusion S3 bucket for cluster {}: {}".format(
+                cluster_id, buckets[0]))
+            return buckets[0]
+        self.log.warning(
+            "No S3 bucket tagged couchbase-cloud-cluster-id={} AND "
+            "couchbase-cloud-storage-use=fusion found".format(cluster_id))
+        return None
 
     def get_ebs_snapshots_for_backup(self, backup_id: str,
                                      backup_record: dict = None) -> list:
@@ -894,76 +883,3 @@ class FusionAWSUtil:
                 return tag["Value"]
         return None
 
-    def verify_snapshot_tags(self, snapshot: dict, expected_tags: dict) -> list:
-        """
-        Check that all expected_tags are present and match on the snapshot.
-
-        Returns a list of issue strings (empty = all tags OK).
-        """
-        issues = []
-        actual_tags = {t["Key"]: t["Value"] for t in snapshot.get("Tags", [])}
-        for key, expected_val in expected_tags.items():
-            if key not in actual_tags:
-                issues.append("snapshot {} missing tag '{}'".format(
-                    snapshot["SnapshotId"], key))
-            elif expected_val is not None and actual_tags[key] != expected_val:
-                issues.append(
-                    "snapshot {} tag '{}': expected '{}', got '{}'".format(
-                        snapshot["SnapshotId"], key,
-                        expected_val, actual_tags[key]))
-        return issues
-
-    def count_s3_objects(self, bucket_name: str) -> int:
-        """Return the total object count in an S3 bucket using pagination.
-
-        Returns -1 if the bucket does not exist.
-        """
-        import botocore.exceptions as _botocore_exc
-        s3 = self.s3.s3_client
-        try:
-            total = 0
-            paginator = s3.get_paginator("list_objects_v2")
-            for page in paginator.paginate(Bucket=bucket_name):
-                total += page.get("KeyCount", 0)
-            return total
-        except _botocore_exc.ClientError as e:
-            if e.response["Error"]["Code"] in ("NoSuchBucket", "NoSuchKey"):
-                return -1
-            raise
-
-    def verify_s3_cleanup_triggered(self, bucket_name: str) -> bool:
-        """
-        Verify that the Fusion S3 log-store cleanup was triggered after restore.
-
-        Checks that the bucket exists and logs the current object count.
-        Does NOT assert empty — cleanup may still be in progress.
-
-        Returns True if bucket exists (cleanup was triggered), False otherwise.
-        """
-        import botocore.exceptions as _botocore_exc
-        s3 = self.s3.s3_client
-        try:
-            response = s3.list_objects_v2(
-                Bucket=bucket_name, Delimiter="/", MaxKeys=1000)
-        except _botocore_exc.ClientError as e:
-            if e.response["Error"]["Code"] == "NoSuchBucket":
-                self.log.warning(
-                    "Fusion S3 bucket '{}' does not exist — "
-                    "Fusion log store was not created on this cluster.".format(
-                        bucket_name))
-                return False
-            raise
-
-        prefix_count = len(response.get("CommonPrefixes") or [])
-        object_count = response.get("KeyCount", 0)
-
-        if object_count == 0 and prefix_count == 0:
-            self.log.info(
-                "Fusion S3 bucket '{}' is empty — cleanup completed.".format(
-                    bucket_name))
-        else:
-            self.log.info(
-                "Fusion S3 bucket '{}' has {} top-level prefixes, {} objects "
-                "— cleanup triggered, may still be in progress.".format(
-                    bucket_name, prefix_count, object_count))
-        return True

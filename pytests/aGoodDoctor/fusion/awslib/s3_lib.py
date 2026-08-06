@@ -430,6 +430,36 @@ class S3Lib:
             self.logger.error(f"Error getting bucket summary for {bucket_name}: {e}")
             return {}
 
+    def count_objects(self, bucket_name: str) -> int:
+        """Total object count in a bucket (paginated). Returns -1 if the bucket
+        does not exist."""
+        try:
+            total = 0
+            paginator = self.s3_client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=bucket_name):
+                total += page.get("KeyCount", 0)
+            return total
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("NoSuchBucket", "NoSuchKey"):
+                return -1
+            raise
+
+    def find_buckets_by_tags(self, tag_filters: List[Dict[str, Any]]) -> List[str]:
+        """Return S3 bucket names matching ALL given ResourceGroupsTagging
+        filters, e.g. [{"Key": "couchbase-cloud-cluster-id", "Values": [cid]}].
+        """
+        tagging = self.aws_session.client(
+            "resourcegroupstaggingapi", region_name=self.region)
+        buckets = []
+        paginator = tagging.get_paginator("get_resources")
+        for page in paginator.paginate(
+                TagFilters=tag_filters, ResourceTypeFilters=["s3:bucket"]):
+            for resource in page.get("ResourceTagMappingList", []):
+                name = resource["ResourceARN"].split(":::")[-1]
+                if name:
+                    buckets.append(name)
+        return buckets
+
     def create_bucket(self, bucket_name: str, region: str = None) -> bool:
         """
         Create a new S3 bucket.

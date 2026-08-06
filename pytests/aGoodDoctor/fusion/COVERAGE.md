@@ -39,6 +39,86 @@ Status legend: ✅ Automated · 🔲 Planned (stub/file exists) · ⬜ Not Start
 
 ---
 
+## §1a Fusion Backup / Restore (Capella Dedicated)
+
+| TAF File | TAF Class | TAF Method | Status |
+|---|---|---|---|
+**Main e2e matrix — `fusion_backup_restore.py` / `FusionBackupRestore`** (the 15-case
+source×target × guest-volume × transition matrix, plus a self-cluster restore):
+
+| TAF Method | Sheet TC | Status |
+|---|---|---|
+| `test_disabled_source_to_disabled_target` | TC1 | ✅ |
+| `test_disabled_source_to_enabled_target_without_guest_volumes` | TC2 | ✅ |
+| `test_disabled_source_to_enabled_target_with_guest_volumes` | TC3 | ✅ |
+| `test_enabled_source_without_guest_volumes_to_disabled_target` | TC4 | ✅ |
+| `test_enabled_source_without_guest_volumes_to_enabled_target_without_guest_volumes` | TC5 | ✅ |
+| `test_enabled_source_without_guest_volumes_to_enabled_target_with_guest_volumes` | TC6 | ✅ |
+| `test_enabled_source_with_guest_volumes_to_disabled_target` | TC7 | ✅ |
+| `test_enabled_source_with_guest_volumes_to_enabled_target_without_guest_volumes` | TC8 | ✅ |
+| `test_enabled_source_with_guest_volumes_to_enabled_target_with_guest_volumes` | TC9 | ✅ |
+| `test_disabled_source_to_target_while_enabling` | TC10 | ✅ |
+| `test_enabled_source_to_target_while_enabling` | TC11 | ✅ |
+| `test_disabled_source_to_target_while_disabling_without_guest_volumes` | TC12 | ✅ |
+| `test_enabled_source_to_target_while_disabling_without_guest_volumes` | TC13 | ✅ |
+| `test_disabled_source_to_target_while_disabling_with_guest_volumes` | TC14 | ✅ |
+| `test_enabled_source_to_target_while_disabling_with_guest_volumes` | TC15 | ✅ |
+| `test_enabled_source_with_guest_volumes_self_cluster_restore` | — (extra) | ✅ |
+
+**Small functional snapshot checks — `fusion_snapshot_verification.py` /
+`FusionSnapshotVerification`** (backup-side snapshot inventory / tags / lifecycle
+scenarios NOT covered by the restore-flow matrix above):
+
+| TAF Method | What it uniquely verifies | Status |
+|---|---|---|
+| `test_guest_volume_snapshots_created_during_backup` | backup creates guest-volume EBS snapshots | ✅ |
+| `test_guest_volume_snapshots_match_attached_state` | only currently-attached GVs snapshotted across cycles | ✅ |
+| `test_no_guest_vol_snapshots_no_rebalance` | Fusion ON + 0 rebalances → 0 GV snapshots | ✅ |
+| `test_guest_volume_snapshot_tags_all_clouds` | EBS snapshot tag structure | ✅ |
+| `test_backup_during_fusion_state_transition` | backup while disabling Fusion on the **source** | ✅ |
+| `test_guest_volume_snapshot_cleanup_after_backup_deletion` | deleting a backup purges primary + GV snapshots | ✅ |
+| `test_backup_large_guest_volume_inventory` | large guest-volume inventory (scale) | ✅ |
+
+> **Dedup note:** restore-flow cases that used to live in
+> `fusion_snapshot_verification.py` (recreate-GV-from-snapshots, cross-cluster,
+> same-cluster, bucket-cleaned-on-restore, node-mapping, nodes-with-no-GV,
+> empty-bucket, count-mismatch) are now covered by the matrix in
+> `fusion_backup_restore.py` and were removed to avoid duplication. Node-mapping
+> and source/target GV counts are logged by the matrix runner.
+
+> **Restore behaviour note (observed):** a Fusion restore brings back KV
+> **primary data only** — it does **not** re-apply the `IsFusionGuestVolume`
+> snapshots to recreate guest volumes on the target. Data integrity is intact
+> (verified by doc-count checks); guest volumes are regenerated on the **next
+> Fusion rebalance**. The snapshot-verification tests therefore trigger a
+> rebalance before asserting guest volumes return. This differs from the design
+> doc ("guest volumes recreated during restoration") — flagged for the
+> backup/fusion team to confirm intended behaviour.
+
+### Not automated (and why)
+
+These plan cases are **not** automatable from TAF without infrastructure that
+doesn't exist here (control-plane fault injection, precise mid-operation timing
+hooks, or TB-scale / multi-region setups). Listed so the gap is explicit:
+
+| Plan test | Why not automated |
+|---|---|
+| `test_restore_bucket_cleanup_races_with_active_fusion_sync` | timing race (clean bucket while accelerators read) — not deterministic from TAF |
+| `test_backup_during_fusion_rebalance_in_progress` | must fire backup at a precise mid-rebalance sub-phase |
+| `test_backup_during_accelerator_active_write` | must fire backup during the S3→guest-volume download window |
+| `test_backup_during_guest_volume_attach_detach_race` | timing race during post-rebalance detach |
+| `test_restore_aborts_pending_guest_volume_deletion_jobs` | needs CP job-queue inspection + precise timing (no TAF hook) |
+| `test_backup_mid_write_restore_consistency` | mid-download timing window |
+| `test_backup_guest_volume_snapshot_failure` | needs to inject a CSP snapshot failure on one volume |
+| `test_restore_fails_if_guest_volume_snapshot_missing` | premise contradicts observed behaviour (restore ignores guest-vol snapshots, so deleting one does not fail restore) |
+| `test_restore_fusion_bucket_cleanup_failure` | needs S3 permission-denied injected on the CP's bucket (CP uses its own creds) |
+| `test_restore_fusion_storage_lookup_failure` | needs to corrupt the CP FusionStorage tracker record (CP-internal DB) |
+| `test_restore_fusion_object_client_failure` | needs a CSP credential failure injected into the CP |
+| `test_guest_volume_snapshots_max_slots` | needs ~TB-scale data to fill 22 guest volumes/host |
+| `test_backup_restore_cross_region_fusion` | `provision_fusion_cluster` deploys one region; no cross-region snapshot-copy support — needs plumbing |
+
+---
+
 ## §2 Fusion Rebalance at Scale
 
 | TAF File | TAF Class | TAF Method | Status |

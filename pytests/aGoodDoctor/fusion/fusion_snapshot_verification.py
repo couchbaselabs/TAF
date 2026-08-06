@@ -9,10 +9,11 @@ transitions.
 All tests reuse the FusionBackupRestoreBase infrastructure (cluster
 provisioning, bucket management, DocLoader, snapshot backup/restore).
 """
+import time
+
 from pytests.aGoodDoctor.fusion.fusion_backup_restore_base import (
     FusionBackupRestoreBase,
 )
-
 
 class FusionSnapshotVerification(FusionBackupRestoreBase):
 
@@ -340,363 +341,11 @@ class FusionSnapshotVerification(FusionBackupRestoreBase):
     # ------------------------------------------------------------------
     # Test 3: Per-node guest-volume → snapshot → restore mapping integrity
     # ------------------------------------------------------------------
-    def test_guest_volume_snapshot_node_mapping(self):
-        """Verify that each restored guest volume lands on the same KV node
-        it was on at backup time, per the nodeID tag in the snapshot.
-
-        Test plan:
-          1.  Source cluster (Fusion ON), populate, rebalance
-          2.  Record per-node guest volume IDs + KV node assignments
-          3.  Create backup; verify per-node snapshot inventory matches
-          4.  Restore to target (Fusion ON)
-          5.  Verify restored guest vols are on the corresponding KV nodes
-        """
-        # Step 1: Provision + populate + rebalance source
-        self.log.info(
-            "=== Step 1: Provisioning source cluster (Fusion ON) ===")
-        if not self.source_cluster_id:
-            self.source_cluster_id, self.source_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.source_num_nodes,
-                    name_prefix="TAF_FusionSrc"))
-        else:
-            self.log.info(
-                "Step 1: Reusing source cluster {}".format(
-                    self.source_cluster_id))
-            if not self.wait_for_deployment(
-                    self.source_project_id, self.source_cluster_id):
-                self.fail(
-                    "Source cluster {} not healthy".format(
-                        self.source_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.source_cluster_id, self.source_project_id)
-            self._wait_for_cluster_healthy(
-                self.source_cluster_id, self.source_project_id,
-                timeout=self.rebalance_timeout)
-
-        self.log.info("=== Step 1b: Populating data ===")
-        self.populate_source_buckets()
-
-        self.log.info("=== Step 1c: Fusion rebalance ===")
-        self._source_original_nodes, _ = (
-            self.trigger_fusion_rebalance(
-                self.source_cluster_id,
-                project_id=self.source_project_id))
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail(
-                "Step 1c: Rebalance did not complete on {}".format(
-                    self.source_cluster_id))
-
-        # Step 2: Record per-node guest volume mapping
-        #   node_vol_map: {node_id: {vol_id, ...}}
-        #   vol_node_map: {vol_id: node_id}
-        self.log.info(
-            "=== Step 2: Recording per-node guest volume mapping ===")
-        node_vol_map = {}
-        vol_node_map = {}
-        if self.fusion_aws_util:
-            try:
-                guest = self.fusion_aws_util.get_guest_volumes_for_cluster(
-                    self.source_cluster_id)
-                for node_id, vols in guest.items():
-                    if node_id == "unattached":
-                        continue
-                    node_vol_map[node_id] = set(vols)
-                    for vid in vols:
-                        vol_node_map[vid] = node_id
-                self.log.info(
-                    "Per-node guest volumes: {}".format(
-                        {k: sorted(v) for k, v in node_vol_map.items()}))
-            except NotImplementedError as e:
-                self.log.warning(
-                    "Step 2 guest-vol lookup skipped: {}".format(e))
-
-        # Step 3: Create backup + verify snapshot node assignments
-        self.log.info("=== Step 3: Creating backup ===")
-        backup_id = self.trigger_snapshot_backup(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
-        self._last_backup_id = backup_id
-        backup_record = self.wait_for_backup_complete(
-            backup_id, self.source_cluster_id,
-            project_id=self.source_project_id)
-
-        # Verify each guest-vol snapshot carries the correct node-id tag
-        if self.fusion_aws_util and vol_node_map:
-            all_snapshots = (
-                self.fusion_aws_util.get_ebs_snapshots_for_backup(
-                    backup_id, backup_record))
-            guest_snaps = [
-                s for s in all_snapshots
-                if self.fusion_aws_util.get_tag_value(
-                    s,
-                    self.fusion_aws_util.FUSION_GUEST_VOL_TAG_KEY
-                ) == self.fusion_aws_util.FUSION_GUEST_VOL_TAG_VAL
-            ]
-            snap_vol_ids = {s.get("VolumeId") for s in guest_snaps
-                            if s.get("VolumeId")}
-            missing = set(vol_node_map.keys()) - snap_vol_ids
-            if missing:
-                self.fail(
-                    "Step 3: {} guest volumes from Step 2 have no snapshot "
-                    "in backup {}: {}".format(
-                        len(missing), backup_id, sorted(missing)))
-            self.log.info(
-                "Step 3 passed: all {} guest volumes have snapshots".format(
-                    len(vol_node_map)))
-
-        # Step 4: Provision target + restore
-        self.log.info(
-            "=== Step 4: Provisioning target cluster (Fusion ON) ===")
-        if not self.target_cluster_id:
-            self.target_cluster_id, self.target_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.target_num_nodes,
-                    name_prefix="TAF_FusionTgt"))
-        else:
-            self.log.info(
-                "Step 4: Reusing target cluster {}".format(
-                    self.target_cluster_id))
-            if not self.wait_for_deployment(
-                    self.target_project_id, self.target_cluster_id):
-                self.fail(
-                    "Target cluster {} not healthy".format(
-                        self.target_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.target_cluster_id, self.target_project_id)
-            self._wait_for_cluster_healthy(
-                self.target_cluster_id, self.target_project_id,
-                timeout=self.rebalance_timeout)
-
-        self._target_original_nodes = self.get_cluster_node_count(
-            self.target_cluster_id, self.target_project_id)
-
-        # Preload target so its pre-restore guest vols get deleted
-        self.log.info("=== Step 4b: Preloading target + rebalance ===")
-        self.preload_target(rebalance=True)
-
-        self.log.info("=== Step 4c: Restoring backup ===")
-        self.trigger_restore(
-            backup_id=backup_id,
-            target_cluster_id=self.target_cluster_id,
-            project_id=self.target_project_id)
-        self.wait_for_restore_complete(
-            self.target_cluster_id,
-            project_id=self.target_project_id,
-            expected_bucket_names=self.source_bucket_names)
-
-        # Step 5: Restore restores KV primary data only; guest volumes are
-        # regenerated by the next Fusion rebalance (restore does NOT re-apply
-        # the per-node guest-vol snapshots, so the backup's per-node mapping is
-        # not reproduced). Trigger the rebalance, then verify guest volumes are
-        # present across the target's KV nodes; data integrity is the guarantee.
-        self.log.info(
-            "=== Step 5: Regenerate + verify guest vols on target ===")
-        if self.fusion_aws_util and vol_node_map:
-            tgt_node_vol_map = self.regenerate_guest_volumes_via_rebalance(
-                self.target_cluster_id, self.target_project_id)
-            tgt_total = sum(len(v) for v in tgt_node_vol_map.values())
-            if tgt_total == 0:
-                self.fail(
-                    "Step 5: target has 0 guest volumes even after a "
-                    "post-restore Fusion rebalance")
-            self.log.info(
-                "Step 5 passed: guest vols present on {} target node(s) after "
-                "the post-restore rebalance (per-node counts: {}). Restore "
-                "does not re-apply guest-vol snapshots, so the exact backup "
-                "mapping is not expected to match.".format(
-                    len(tgt_node_vol_map),
-                    sorted(len(v) for v in tgt_node_vol_map.values())))
-        else:
-            self.log.warning(
-                "Step 5 skipped: AWS creds not set or 0 guest vols on source")
-
-        self.log.info("=== Step 6: Verifying data integrity ===")
-        self.verify_data_integrity()
-
-        self._test_succeeded = True
-        self.log.info(
-            "test_guest_volume_snapshot_node_mapping PASSED")
 
     # ------------------------------------------------------------------
     # Test 4: Partial rebalance — some KV nodes have 0 guest volumes;
     #         restore preserves that asymmetry.
     # ------------------------------------------------------------------
-    def test_restore_nodes_with_no_guest_volumes(self):
-        """After a partial rebalance where only some KV nodes receive guest
-        volumes, restore must preserve the per-node asymmetry: nodes that
-        had guest vols get them back; nodes that had none stay empty.
-
-        Test plan:
-          1.  Source (Fusion ON, multi-node), populate, rebalance
-          2.  Verify at least one KV node has 0 guest volumes
-             (if all have guest vols, skip with a clear message)
-          3.  Record per-node guest vol counts
-          4.  Create backup
-          5.  Restore to target (Fusion ON)
-          6.  Verify per-node guest vol count matches source
-        """
-        # Step 1: Provision, populate, rebalance
-        self.log.info(
-            "=== Step 1: Provisioning source cluster (Fusion ON) ===")
-        if not self.source_cluster_id:
-            self.source_cluster_id, self.source_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.source_num_nodes,
-                    name_prefix="TAF_FusionSrc"))
-        else:
-            self.log.info(
-                "Step 1: Reusing source cluster {}".format(
-                    self.source_cluster_id))
-            if not self.wait_for_deployment(
-                    self.source_project_id, self.source_cluster_id):
-                self.fail(
-                    "Source cluster {} not healthy".format(
-                        self.source_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.source_cluster_id, self.source_project_id)
-            self._wait_for_cluster_healthy(
-                self.source_cluster_id, self.source_project_id,
-                timeout=self.rebalance_timeout)
-
-        self.log.info("=== Step 1b: Populating data ===")
-        self.populate_source_buckets()
-
-        self.log.info("=== Step 1c: Fusion rebalance ===")
-        self._source_original_nodes, scaled_nodes = (
-            self.trigger_fusion_rebalance(
-                self.source_cluster_id,
-                project_id=self.source_project_id))
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail(
-                "Step 1c: Rebalance did not complete on {}".format(
-                    self.source_cluster_id))
-
-        # Step 2: Verify at least one node has 0 guest volumes.
-        self.log.info(
-            "=== Step 2: Checking for zero-guest-volume nodes ===")
-        src_node_counts = {}
-        if self.fusion_aws_util:
-            try:
-                guest = self.fusion_aws_util.get_guest_volumes_for_cluster(
-                    self.source_cluster_id)
-                for node_id, vols in guest.items():
-                    if node_id == "unattached":
-                        continue
-                    src_node_counts[node_id] = len(vols)
-            except NotImplementedError as e:
-                self.log.warning(
-                    "Step 2 guest-vol lookup skipped: {}".format(e))
-                src_node_counts = None
-
-        if src_node_counts:
-            zeros = [n for n, c in src_node_counts.items() if c == 0]
-            if not zeros:
-                self.skipTest(
-                    "Step 2: All {} KV nodes have guest volumes ({}) — "
-                    "cannot validate zero-guest-vol node restore "
-                    "asymmetry. Fusion may assign at least one guest vol "
-                    "per node at this data scale.".format(
-                        len(src_node_counts), src_node_counts))
-            self.log.info(
-                "Step 2: {} node(s) have 0 guest vols: {}; distribution: "
-                "{}".format(len(zeros), zeros, src_node_counts))
-        else:
-            self.log.warning(
-                "Step 2: AWS creds not set — proceeding without per-node "
-                "guest vol count verification")
-
-        # Step 3: Create backup
-        self.log.info("=== Step 3: Creating backup ===")
-        backup_id = self.trigger_snapshot_backup(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
-        self._last_backup_id = backup_id
-        backup_record = self.wait_for_backup_complete(
-            backup_id, self.source_cluster_id,
-            project_id=self.source_project_id)
-        self.log.info(
-            "Step 3: Snapshot backup {} ready".format(backup_id))
-
-        # Step 4: Provision target + restore
-        self.log.info(
-            "=== Step 4: Provisioning target cluster (Fusion ON) ===")
-        if not self.target_cluster_id:
-            self.target_cluster_id, self.target_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.target_num_nodes,
-                    name_prefix="TAF_FusionTgt"))
-        else:
-            self.log.info(
-                "Step 4: Reusing target cluster {}".format(
-                    self.target_cluster_id))
-            if not self.wait_for_deployment(
-                    self.target_project_id, self.target_cluster_id):
-                self.fail(
-                    "Target cluster {} not healthy".format(
-                        self.target_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.target_cluster_id, self.target_project_id)
-            self._wait_for_cluster_healthy(
-                self.target_cluster_id, self.target_project_id,
-                timeout=self.rebalance_timeout)
-
-        self._target_original_nodes = self.get_cluster_node_count(
-            self.target_cluster_id, self.target_project_id)
-
-        self.log.info("=== Step 4b: Preloading target + rebalance ===")
-        self.preload_target(rebalance=True)
-
-        self.log.info("=== Step 4c: Restoring backup ===")
-        self.trigger_restore(
-            backup_id=backup_id,
-            target_cluster_id=self.target_cluster_id,
-            project_id=self.target_project_id)
-        self.wait_for_restore_complete(
-            self.target_cluster_id,
-            project_id=self.target_project_id,
-            expected_bucket_names=self.source_bucket_names)
-
-        # Step 5: Restore restores KV primary data only; guest volumes are
-        # regenerated by the next Fusion rebalance, which accelerates all
-        # eligible nodes — so the source's per-node asymmetry is NOT preserved
-        # (restore doesn't re-apply the snapshots). Trigger the rebalance and
-        # verify guest volumes regenerate; data integrity is the guarantee.
-        self.log.info(
-            "=== Step 5: Regenerate + verify guest vols on target ===")
-        if self.fusion_aws_util and src_node_counts:
-            tgt_node_vols = self.regenerate_guest_volumes_via_rebalance(
-                self.target_cluster_id, self.target_project_id)
-            tgt_dist = sorted(len(v) for v in tgt_node_vols.values())
-            tgt_total = sum(tgt_dist)
-            if tgt_total == 0:
-                self.fail(
-                    "Step 5: target has 0 guest volumes even after a "
-                    "post-restore Fusion rebalance")
-            self.log.info(
-                "Step 5 passed: guest vols regenerated on target after the "
-                "post-restore rebalance (per-node counts: {}). Source had {}; "
-                "restore does not re-apply snapshots so per-node asymmetry is "
-                "not preserved.".format(
-                    tgt_dist, sorted(src_node_counts.values())))
-        else:
-            self.log.warning(
-                "Step 5 skipped: AWS creds not set or 0 source guest vol data")
-
-        self.log.info("=== Step 6: Verifying data integrity ===")
-        self.verify_data_integrity()
-
-        self._test_succeeded = True
-        self.log.info(
-            "test_restore_nodes_with_no_guest_volumes PASSED")
 
     # ------------------------------------------------------------------
     # Test 5: Backup during fusion state transition (enable → disable)
@@ -1259,750 +908,227 @@ class FusionSnapshotVerification(FusionBackupRestoreBase):
     # ------------------------------------------------------------------
     # Test 8: Guest volumes recreated from snapshots on restore
     # ------------------------------------------------------------------
-    def test_restore_recreates_guest_volumes_from_snapshots(self):
-        """Core: restore applies guest-volume snapshots to target KV nodes.
 
-        Test plan:
-          1.  Source (Fusion ON), populate, rebalance
-          2.  Record all guest volume IDs and node assignments
-          3.  Create backup; record guest-vol snapshot IDs
-          4.  Provision target (Fusion ON)
-          5.  Restore backup to target
-          6.  Verify volumes created from recorded guest-vol snapshot IDs
-          7.  Verify restored guest vols attached to correct KV nodes
-          8.  Verify data integrity
-        """
-        # Step 1: Provision, populate, rebalance
+    # ------------------------------------------------------------------
+    # Test 9: Fusion S3 bucket cleaned on restore
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Test 10: Cross-cluster restore — per-cluster bucket isolation
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Test 11: Same-cluster restore with existing guest volumes
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Test 12: Restore when fusion S3 bucket is already empty
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Helper: provision (or reuse) a Fusion-ON source cluster and load data.
+    # ------------------------------------------------------------------
+    def _provision_loaded_fusion_source(self):
         self.log.info(
-            "=== Step 1: Provisioning source cluster (Fusion ON) ===")
+            "=== Provisioning source cluster (Fusion ON) + loading data ===")
         if not self.source_cluster_id:
             self.source_cluster_id, self.source_project_id = (
                 self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.source_num_nodes,
+                    fusion_enabled=True, num_nodes=self.source_num_nodes,
                     name_prefix="TAF_FusionSrc"))
         else:
-            self.log.info(
-                "Step 1: Reusing source cluster {}".format(
-                    self.source_cluster_id))
             if not self.wait_for_deployment(
                     self.source_project_id, self.source_cluster_id):
-                self.fail(
-                    "Source cluster {} not healthy".format(
-                        self.source_cluster_id))
+                self.fail("Source cluster {} not healthy".format(
+                    self.source_cluster_id))
             self.enable_fusion_on_cluster(
                 self.source_cluster_id, self.source_project_id)
             self._wait_for_cluster_healthy(
                 self.source_cluster_id, self.source_project_id,
                 timeout=self.rebalance_timeout)
-
-        self.log.info("=== Step 1b: Populating data ===")
         self.populate_source_buckets()
 
-        self.log.info("=== Step 1c: Fusion rebalance ===")
-        self._source_original_nodes, scaled_nodes = (
-            self.trigger_fusion_rebalance(
-                self.source_cluster_id,
-                project_id=self.source_project_id))
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail("Step 1c: Rebalance did not complete")
-
-        # Step 2: Record guest vol IDs and node assignments
+    def _provision_fusion_target(self):
         self.log.info(
-            "=== Step 2: Recording guest volume inventory ===")
-        node_vol_map = {}
-        total_guest = 0
-        if self.fusion_aws_util:
-            try:
-                guest = self.fusion_aws_util.get_guest_volumes_for_cluster(
-                    self.source_cluster_id)
-                for n, vols in guest.items():
-                    if n == "unattached":
-                        continue
-                    node_vol_map[n] = sorted(vols)
-                    total_guest += len(vols)
-                self.log.info(
-                    "Source {} guest vols on {} nodes: {}".format(
-                        total_guest, len(node_vol_map), node_vol_map))
-            except NotImplementedError as e:
-                self.log.warning(
-                    "Step 2 guest-vol lookup skipped: {}".format(e))
+            "=== Provisioning target cluster (Fusion ON) ===")
+        if not self.target_cluster_id:
+            self.target_cluster_id, self.target_project_id = (
+                self.acquire_cluster(
+                    fusion_enabled=True, num_nodes=self.target_num_nodes,
+                    name_prefix="TAF_FusionTgt"))
+        else:
+            if not self.wait_for_deployment(
+                    self.target_project_id, self.target_cluster_id):
+                self.fail("Target cluster {} not healthy".format(
+                    self.target_cluster_id))
+            self.enable_fusion_on_cluster(
+                self.target_cluster_id, self.target_project_id)
+            self._wait_for_cluster_healthy(
+                self.target_cluster_id, self.target_project_id,
+                timeout=self.rebalance_timeout)
+        self._target_original_nodes = self.get_cluster_node_count(
+            self.target_cluster_id, self.target_project_id)
 
-        # Step 3: Create backup; record guest-vol snapshot IDs
-        self.log.info("=== Step 3: Creating backup ===")
+    # ------------------------------------------------------------------
+    # Test 13: Restore with guest-volume count mismatch (source N vs target M)
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Test 14: Backup deletion purges all its EBS snapshots (no orphans)
+    # ------------------------------------------------------------------
+    def test_guest_volume_snapshot_cleanup_after_backup_deletion(self):
+        """Deleting a backup purges BOTH its primary-disk and guest-volume EBS
+        snapshots from the CSP — no orphaned snapshots remain.
+        """
+        self._provision_loaded_fusion_source()
+        self.log.info("=== Source Fusion rebalance ===")
+        self._source_original_nodes, _ = self.trigger_fusion_rebalance(
+            self.source_cluster_id, project_id=self.source_project_id)
+        if not self.wait_for_rebalance_complete(
+                self.source_cluster_id, project_id=self.source_project_id):
+            self.fail("Source rebalance did not complete")
+
+        self.log.info("=== Creating snapshot backup ===")
         backup_id = self.trigger_snapshot_backup(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
+            self.source_cluster_id, project_id=self.source_project_id)
         self._last_backup_id = backup_id
         backup_record = self.wait_for_backup_complete(
             backup_id, self.source_cluster_id,
             project_id=self.source_project_id)
 
-        guest_snapshot_ids = set()
-        if self.fusion_aws_util:
-            all_snaps = (
-                self.fusion_aws_util.get_ebs_snapshots_for_backup(
-                    backup_id, backup_record))
-            if all_snaps:
-                guest_snapshot_ids = {
-                    s["SnapshotId"] for s in all_snaps
-                    if self.fusion_aws_util.get_tag_value(
-                        s,
-                        self.fusion_aws_util.FUSION_GUEST_VOL_TAG_KEY
-                    ) == self.fusion_aws_util.FUSION_GUEST_VOL_TAG_VAL
-                }
-                self.log.info(
-                    "Backup {} guest-vol snapshot IDs: {}".format(
-                        backup_id, sorted(guest_snapshot_ids)))
-
-        # Step 4: Provision target (Fusion ON)
+        if not self.fusion_aws_util:
+            self.skipTest("AWS creds required for snapshot-deletion check")
+        all_snaps = self.fusion_aws_util.get_ebs_snapshots_for_backup(
+            backup_id, backup_record)
+        if not all_snaps:
+            self.skipTest(
+                "0 snapshots visible from TAF account (Capella-internal) — "
+                "cannot verify snapshot deletion")
+        primary, guest = self.fusion_aws_util.classify_snapshots(all_snaps)
         self.log.info(
-            "=== Step 4: Provisioning target cluster (Fusion ON) ===")
-        if not self.target_cluster_id:
-            self.target_cluster_id, self.target_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.target_num_nodes,
-                    name_prefix="TAF_FusionTgt"))
-        else:
+            "Backup {} has {} snapshot(s): {} primary, {} guest".format(
+                backup_id, len(all_snaps), len(primary), len(guest)))
+
+        self.log.info("=== Deleting the backup ===")
+        resp = self.capellaAPI.cluster_ops_apis.delete_backup(
+            self.organisation_id, self.source_project_id,
+            self.source_cluster_id, backup_id)
+        if resp.status_code not in (200, 202, 204):
+            self.fail("delete_backup returned {}: {}".format(
+                resp.status_code, resp.content))
+        # Deleted here — clear so tearDown doesn't try to delete it again.
+        self._last_backup_id = None
+
+        self.log.info("=== Verifying all snapshots purged ===")
+        timeout = int(self.input.param("snapshot_cleanup_timeout", 1800))
+        deadline = time.time() + timeout
+        remaining = all_snaps
+        while time.time() < deadline:
+            remaining = self.fusion_aws_util.get_ebs_snapshots_for_backup(
+                backup_id, backup_record)
+            if not remaining:
+                break
             self.log.info(
-                "Step 4: Reusing target cluster {}".format(
-                    self.target_cluster_id))
-            if not self.wait_for_deployment(
-                    self.target_project_id, self.target_cluster_id):
-                self.fail(
-                    "Target cluster {} not healthy".format(
-                        self.target_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.target_cluster_id, self.target_project_id)
-            self._wait_for_cluster_healthy(
-                self.target_cluster_id, self.target_project_id,
-                timeout=self.rebalance_timeout)
-
-        self._target_original_nodes = self.get_cluster_node_count(
-            self.target_cluster_id, self.target_project_id)
-
-        # Step 5: Restore
-        self.log.info("=== Step 5: Restoring backup ===")
-        self.trigger_restore(
-            backup_id=backup_id,
-            target_cluster_id=self.target_cluster_id,
-            project_id=self.target_project_id)
-        self.wait_for_restore_complete(
-            self.target_cluster_id,
-            project_id=self.target_project_id,
-            expected_bucket_names=self.source_bucket_names)
-
-        # Step 6-7: Restore restores KV primary data only — guest volumes are
-        # regenerated by the next Fusion rebalance (restore does NOT re-apply
-        # the guest-vol snapshots). Trigger that rebalance, then verify guest
-        # volumes come back on the target.
+                "Waiting for {} snapshot(s) to be purged...".format(
+                    len(remaining)))
+            time.sleep(30)
+        if remaining:
+            self.fail(
+                "{} snapshot(s) for backup {} not purged after deletion: "
+                "{}".format(
+                    len(remaining), backup_id,
+                    [s.get("SnapshotId") for s in remaining]))
         self.log.info(
-            "=== Steps 6-7: Regenerate + verify guest vols on target ===")
-        if self.fusion_aws_util and total_guest:
-            tgt_node_vols = self.regenerate_guest_volumes_via_rebalance(
-                self.target_cluster_id, self.target_project_id)
-            tgt_total = sum(len(v) for v in tgt_node_vols.values())
-            if tgt_total == 0:
-                self.fail(
-                    "Step 6: target has 0 guest volumes even after a "
-                    "post-restore Fusion rebalance")
-            self.log.info(
-                "Step 6-7 passed: {} guest volume(s) on target after the "
-                "post-restore rebalance (source had {}). Restore does not "
-                "re-apply guest-vol snapshots, so the count/mapping need not "
-                "match the backup — data integrity (below) is the "
-                "guarantee.".format(tgt_total, total_guest))
-        else:
-            self.log.warning(
-                "Steps 6-7 skipped: AWS creds not set or 0 source guest vols")
-
-        # Step 8: Data integrity
-        self.log.info("=== Step 8: Verifying data integrity ===")
-        self.verify_data_integrity()
+            "All {} snapshots purged after backup deletion — no orphans".format(
+                len(all_snaps)))
 
         self._test_succeeded = True
         self.log.info(
-            "test_restore_recreates_guest_volumes_from_snapshots PASSED")
+            "test_guest_volume_snapshot_cleanup_after_backup_deletion PASSED")
 
     # ------------------------------------------------------------------
-    # Test 9: Fusion S3 bucket cleaned on restore
+    # Test 15: Large guest-volume inventory (multiple rebalances) backup/restore
     # ------------------------------------------------------------------
-    def test_fusion_bucket_cleaned_on_restore(self):
-        """Verify the fusion S3 log-store bucket is emptied during restore.
-
-        Test plan:
-          1.  Source (Fusion ON), populate, rebalance, create backup
-          2.  Provision target (Fusion ON), preload with data + rebalance
-              (populates target's own S3 bucket)
-          3.  Restore backup to target
-          4.  Verify target fusion S3 bucket is empty after restore
-          5.  Verify data integrity on target
+    def test_backup_large_guest_volume_inventory(self):
+        """Multiple Fusion rebalances accumulate a large guest-volume inventory;
+        the backup snapshots every attached guest volume, and the data restores
+        correctly to a target. (Set rebalance_rounds to control scale.)
         """
-        # Step 1: Source + backup
-        self.log.info(
-            "=== Step 1: Provisioning source (Fusion ON) ===")
-        if not self.source_cluster_id:
-            self.source_cluster_id, self.source_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.source_num_nodes,
-                    name_prefix="TAF_FusionSrc"))
-        else:
-            self.log.info(
-                "Step 1: Reusing source cluster {}".format(
-                    self.source_cluster_id))
-            if not self.wait_for_deployment(
-                    self.source_project_id, self.source_cluster_id):
-                self.fail(
-                    "Source cluster {} not healthy".format(
-                        self.source_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.source_cluster_id, self.source_project_id)
-            self._wait_for_cluster_healthy(
-                self.source_cluster_id, self.source_project_id,
-                timeout=self.rebalance_timeout)
+        self._provision_loaded_fusion_source()
+        rounds = int(self.input.param("rebalance_rounds", 3))
+        for r in range(rounds):
+            self.log.info("=== Fusion rebalance round {}/{} ===".format(
+                r + 1, rounds))
+            orig, _ = self.trigger_fusion_rebalance(
+                self.source_cluster_id, project_id=self.source_project_id)
+            if self._source_original_nodes is None:
+                self._source_original_nodes = orig
+            if not self.wait_for_rebalance_complete(
+                    self.source_cluster_id, project_id=self.source_project_id):
+                self.fail("Rebalance round {} did not complete".format(r + 1))
 
-        self.log.info("=== Step 1b: Populating data ===")
-        self.populate_source_buckets()
-
-        self.log.info("=== Step 1c: Fusion rebalance ===")
-        self._source_original_nodes, _ = (
-            self.trigger_fusion_rebalance(
-                self.source_cluster_id,
-                project_id=self.source_project_id))
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail("Step 1c: Rebalance did not complete")
-
-        self.log.info("=== Step 1d: Creating backup ===")
-        backup_id = self.trigger_snapshot_backup(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
-        self._last_backup_id = backup_id
-        self.wait_for_backup_complete(
-            backup_id, self.source_cluster_id,
-            project_id=self.source_project_id)
-
-        # Step 2: Target + preload (populates target S3 bucket)
-        self.log.info(
-            "=== Step 2: Provisioning target (Fusion ON) ===")
-        if not self.target_cluster_id:
-            self.target_cluster_id, self.target_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.target_num_nodes,
-                    name_prefix="TAF_FusionTgt"))
-        else:
-            self.log.info(
-                "Step 2: Reusing target cluster {}".format(
-                    self.target_cluster_id))
-            if not self.wait_for_deployment(
-                    self.target_project_id, self.target_cluster_id):
-                self.fail(
-                    "Target cluster {} not healthy".format(
-                        self.target_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.target_cluster_id, self.target_project_id)
-            self._wait_for_cluster_healthy(
-                self.target_cluster_id, self.target_project_id,
-                timeout=self.rebalance_timeout)
-
-        self._target_original_nodes = self.get_cluster_node_count(
-            self.target_cluster_id, self.target_project_id)
-
-        # Preload target with rebalance to populate target S3 bucket
-        self.log.info("=== Step 2b: Preloading target + rebalance ===")
-        self.preload_target(rebalance=True)
-
-        # Record pre-restore S3 bucket state
-        s3_pre_count = None
+        guest_vol_ids = set()
         if self.fusion_aws_util:
-            tgt_s3 = self.fusion_aws_util.find_fusion_s3_bucket(
-                self.target_cluster_id)
-            if tgt_s3:
-                s3_pre_count = self.fusion_aws_util.count_s3_objects(tgt_s3)
-                self.log.info(
-                    "Target S3 bucket '{}' has {} objects before "
-                    "restore".format(tgt_s3, s3_pre_count))
-
-        # Step 3: Restore
-        self.log.info("=== Step 3: Restoring backup ===")
-        self.trigger_restore(
-            backup_id=backup_id,
-            target_cluster_id=self.target_cluster_id,
-            project_id=self.target_project_id)
-        self.wait_for_restore_complete(
-            self.target_cluster_id,
-            project_id=self.target_project_id,
-            expected_bucket_names=self.source_bucket_names)
-
-        # Step 4: Verify S3 bucket empty after restore
-        self.log.info(
-            "=== Step 4: Verifying S3 bucket cleanup on target ===")
-        if self.fusion_aws_util:
-            tgt_s3 = self.fusion_aws_util.find_fusion_s3_bucket(
-                self.target_cluster_id)
-            if not tgt_s3:
-                self.log.info(
-                    "Step 4: No Fusion S3 bucket on target — already "
-                    "deleted (fully cleaned)")
-            else:
-                s3_post_count = self.fusion_aws_util.count_s3_objects(
-                    tgt_s3)
-                if s3_post_count == 0:
-                    self.log.info(
-                        "Step 4 passed: target S3 bucket '{}' is empty "
-                        "after restore (was {} objects)".format(
-                            tgt_s3, s3_pre_count))
-                else:
-                    # Bucket may be re-seeded with new fusion data post-
-                    # restore. If the count dropped, cleanup ran.
-                    if (s3_pre_count is not None
-                            and s3_pre_count > 0
-                            and s3_post_count < s3_pre_count):
-                        self.log.info(
-                            "Step 4: target S3 bucket '{}' dropped from "
-                            "{} to {} objects — cleanup ran, bucket "
-                            "being re-seeded".format(
-                                tgt_s3, s3_pre_count, s3_post_count))
-                    else:
-                        self.log.warning(
-                            "Step 4: target S3 bucket '{}' has {} objects "
-                            "after restore — cleanup may not have fully "
-                            "completed".format(tgt_s3, s3_post_count))
-        else:
-            self.log.warning("Step 4 skipped: AWS creds not set.")
-
-        # Step 5: Data integrity
-        self.log.info("=== Step 5: Verifying data integrity ===")
-        self.verify_data_integrity()
-
-        self._test_succeeded = True
-        self.log.info(
-            "test_fusion_bucket_cleaned_on_restore PASSED")
-
-    # ------------------------------------------------------------------
-    # Test 10: Cross-cluster restore — per-cluster bucket isolation
-    # ------------------------------------------------------------------
-    def test_backup_restore_cross_cluster_fusion(self):
-        """Restore source-A backup onto a separate target-B cluster.
-        Verify per-cluster S3 bucket isolation and correct guest-volume
-        targeting.
-
-        Test plan:
-          1.  Source A (Fusion ON), populate, rebalance, create backup
-          2.  Target B (Fusion ON), preload + its own rebalance
-              (populates target B's separate S3 bucket + guest vols)
-          3.  Restore A's backup onto B
-          4.  Verify S3 bucket cleanup targets B's bucket only
-          5.  Verify guest vols from A's backup are on B's KV nodes
-          6.  Verify data integrity on B
-        """
-        # Step 1: Source A
-        self.log.info(
-            "=== Step 1: Source A (Fusion ON) ===")
-        if not self.source_cluster_id:
-            self.source_cluster_id, self.source_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.source_num_nodes,
-                    name_prefix="TAF_FusionSrc"))
-        else:
-            self.log.info(
-                "Step 1: Reusing source cluster {}".format(
-                    self.source_cluster_id))
-            if not self.wait_for_deployment(
-                    self.source_project_id, self.source_cluster_id):
-                self.fail(
-                    "Source cluster {} not healthy".format(
-                        self.source_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.source_cluster_id, self.source_project_id)
-            self._wait_for_cluster_healthy(
-                self.source_cluster_id, self.source_project_id,
-                timeout=self.rebalance_timeout)
-
-        self.log.info("=== Step 1b: Populating data ===")
-        self.populate_source_buckets()
-
-        self.log.info("=== Step 1c: Source A rebalance ===")
-        self._source_original_nodes, _ = (
-            self.trigger_fusion_rebalance(
-                self.source_cluster_id,
-                project_id=self.source_project_id))
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail("Step 1c: Source rebalance did not complete")
-
-        self.log.info("=== Step 1d: Creating backup from Source A ===")
-        backup_id = self.trigger_snapshot_backup(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
-        self._last_backup_id = backup_id
-        self.wait_for_backup_complete(
-            backup_id, self.source_cluster_id,
-            project_id=self.source_project_id)
-
-        # Step 2: Target B — different cluster with its own S3 + guest vols
-        self.log.info(
-            "=== Step 2: Target B (Fusion ON) ===")
-        if not self.target_cluster_id:
-            self.target_cluster_id, self.target_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.target_num_nodes,
-                    name_prefix="TAF_FusionTgt"))
-        else:
-            self.log.info(
-                "Step 2: Reusing target cluster {}".format(
-                    self.target_cluster_id))
-            if not self.wait_for_deployment(
-                    self.target_project_id, self.target_cluster_id):
-                self.fail(
-                    "Target cluster {} not healthy".format(
-                        self.target_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.target_cluster_id, self.target_project_id)
-            self._wait_for_cluster_healthy(
-                self.target_cluster_id, self.target_project_id,
-                timeout=self.rebalance_timeout)
-
-        self._target_original_nodes = self.get_cluster_node_count(
-            self.target_cluster_id, self.target_project_id)
-
-        self.log.info("=== Step 2b: Target B preload + rebalance ===")
-        pre_bucket, pre_guest_vols = self.preload_target(rebalance=True)
-
-        # Record target B's S3 bucket before restore
-        tgt_s3_pre = None
-        if self.fusion_aws_util:
-            tgt_s3_pre = self.fusion_aws_util.find_fusion_s3_bucket(
-                self.target_cluster_id)
-            self.log.info(
-                "Target B S3 bucket before restore: {}".format(tgt_s3_pre))
-
-        # Step 3: Restore A's backup onto B
-        self.log.info("=== Step 3: Restoring A's backup onto B ===")
-        self.trigger_restore(
-            backup_id=backup_id,
-            target_cluster_id=self.target_cluster_id,
-            project_id=self.target_project_id)
-        self.wait_for_restore_complete(
-            self.target_cluster_id,
-            project_id=self.target_project_id,
-            expected_bucket_names=self.source_bucket_names)
-
-        # Step 4: Verify S3 cleanup targets B's bucket
-        self.log.info(
-            "=== Step 4: Verifying S3 bucket cleanup on Target B ===")
-        if self.fusion_aws_util:
-            # Source A's S3 bucket must still exist
-            src_s3 = self.fusion_aws_util.find_fusion_s3_bucket(
+            g = self.fusion_aws_util.get_guest_volumes_for_cluster(
                 self.source_cluster_id)
-            self.log.info(
-                "Step 4: Source A S3 bucket after restore: {} "
-                "(must remain — cleanup targets B only)".format(src_s3))
-            if not src_s3:
-                self.fail(
-                    "Step 4: Source A's S3 bucket missing after restore "
-                    "— cleanup mistakenly targeted A!")
-            self.log.info(
-                "Step 4 passed: Source A S3 bucket intact — cleanup "
-                "targeted B only")
-        else:
-            self.log.warning("Step 4 skipped: AWS creds not set.")
-
-        # Step 5: Guest vols from A's backup are on B
+            for k, v in g.items():
+                if k != "unattached":
+                    guest_vol_ids.update(v)
         self.log.info(
-            "=== Step 5: Verifying guest vols on Target B ===")
-        self.assert_guest_volumes_deleted(
-            self.target_cluster_id, pre_guest_vols,
-            timeout=int(self.input.param("fusion_free_timeout", 1800)))
-        self.check_preload_bucket_after_restore(pre_bucket)
+            "Source accumulated {} guest volume(s) after {} rebalances".format(
+                len(guest_vol_ids), rounds))
 
-        # Step 6: Data integrity
-        self.log.info("=== Step 6: Verifying data integrity on B ===")
-        self.verify_data_integrity()
-
-        self._test_succeeded = True
-        self.log.info(
-            "test_backup_restore_cross_cluster_fusion PASSED")
-
-    # ------------------------------------------------------------------
-    # Test 11: Same-cluster restore with existing guest volumes
-    # ------------------------------------------------------------------
-    def test_restore_same_cluster_with_existing_guest_volumes(self):
-        """Restore onto the same cluster: post-backup guest volumes must
-        be replaced by the ones from the backup snapshot.
-
-        Test plan:
-          1.  Source (Fusion ON), populate, rebalance, create backup
-          2.  Perform additional rebalances on same cluster — different
-              guest volumes now attached
-          3.  Record current (post-backup) guest volume IDs
-          4.  Restore the backup onto the same cluster
-          5.  Verify post-backup guest volumes are deleted
-          6.  Verify guest volumes from backup snapshots are recreated
-          7.  Verify data integrity
-        """
-        # Step 1: Source + backup
-        self.log.info(
-            "=== Step 1: Provisioning source (Fusion ON) ===")
-        if not self.source_cluster_id:
-            self.source_cluster_id, self.source_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.source_num_nodes,
-                    name_prefix="TAF_FusionSrc"))
-        else:
-            self.log.info(
-                "Step 1: Reusing source cluster {}".format(
-                    self.source_cluster_id))
-            if not self.wait_for_deployment(
-                    self.source_project_id, self.source_cluster_id):
-                self.fail(
-                    "Source cluster {} not healthy".format(
-                        self.source_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.source_cluster_id, self.source_project_id)
-            self._wait_for_cluster_healthy(
-                self.source_cluster_id, self.source_project_id,
-                timeout=self.rebalance_timeout)
-
-        self.log.info("=== Step 1b: Populating data ===")
-        self.populate_source_buckets()
-
-        self.log.info("=== Step 1c: Fusion rebalance ===")
-        self._source_original_nodes, scaled_nodes = (
-            self.trigger_fusion_rebalance(
-                self.source_cluster_id,
-                project_id=self.source_project_id))
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail("Step 1c: Rebalance did not complete")
-
-        self.log.info("=== Step 1d: Creating backup ===")
+        self.log.info("=== Creating snapshot backup ===")
         backup_id = self.trigger_snapshot_backup(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
+            self.source_cluster_id, project_id=self.source_project_id)
         self._last_backup_id = backup_id
-        self.wait_for_backup_complete(
+        backup_record = self.wait_for_backup_complete(
             backup_id, self.source_cluster_id,
             project_id=self.source_project_id)
 
-        # Step 2: Additional rebalances — different guest vols
-        self.log.info(
-            "=== Step 2: Post-backup rebalances on same cluster ===")
-        # Scale back to original first
-        self.trigger_fusion_rebalance(
-            self.source_cluster_id,
-            project_id=self.source_project_id,
-            target_nodes=self._source_original_nodes)
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail("Step 2: Scale-back rebalance did not complete")
-
-        # Scale up again — fresh guest vols provisioned
-        _, new_nodes = self.trigger_fusion_rebalance(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail("Step 2: Scale-up rebalance did not complete")
-
-        # Step 3: Record current (post-backup) guest volumes
-        self.log.info(
-            "=== Step 3: Recording current guest volumes ===")
-        post_backup_guest_vols = set()
-        if self.fusion_aws_util:
-            try:
-                guest = self.fusion_aws_util.get_guest_volumes_for_cluster(
-                    self.source_cluster_id)
-                for vols in guest.values():
-                    post_backup_guest_vols.update(vols)
+        self.log.info("=== Verifying every guest volume is snapshotted ===")
+        if self.fusion_aws_util and guest_vol_ids:
+            all_snaps = self.fusion_aws_util.get_ebs_snapshots_for_backup(
+                backup_id, backup_record)
+            if all_snaps:
+                guest_snaps = [
+                    s for s in all_snaps
+                    if self.fusion_aws_util.get_tag_value(
+                        s, self.fusion_aws_util.FUSION_GUEST_VOL_TAG_KEY
+                    ) == self.fusion_aws_util.FUSION_GUEST_VOL_TAG_VAL]
+                snap_vol_ids = {s.get("VolumeId") for s in guest_snaps
+                                if s.get("VolumeId")}
+                missing = guest_vol_ids - snap_vol_ids
+                if missing == guest_vol_ids:
+                    self.fail(
+                        "0 of {} guest volumes captured in backup {}".format(
+                            len(guest_vol_ids), backup_id))
+                if missing:
+                    self.fail(
+                        "{}/{} guest volumes missing from backup {}: "
+                        "{}".format(
+                            len(missing), len(guest_vol_ids), backup_id,
+                            sorted(missing)))
                 self.log.info(
-                    "Post-backup guest volumes: {}".format(
-                        sorted(post_backup_guest_vols)))
-            except NotImplementedError as e:
-                self.log.warning(
-                    "Step 3 guest-vol lookup skipped: {}".format(e))
+                    "All {} guest volumes snapshotted in backup".format(
+                        len(guest_vol_ids)))
+            else:
+                self.log.info(
+                    "0 snapshots visible from TAF account (Capella-internal) "
+                    "— skipping snapshot-count assertion")
 
-        # Step 4: Restore backup onto same cluster
-        self.log.info(
-            "=== Step 4: Restoring backup onto same cluster ===")
+        self._provision_fusion_target()
+        self.log.info("=== Restoring backup into target ===")
         self.trigger_restore(
-            backup_id=backup_id,
-            target_cluster_id=self.source_cluster_id,
-            project_id=self.source_project_id)
-        self.wait_for_restore_complete(
-            self.source_cluster_id,
-            project_id=self.source_project_id,
-            expected_bucket_names=self.source_bucket_names)
-
-        # Step 5: Post-backup guest volumes must be gone
-        self.log.info(
-            "=== Step 5: Verifying post-backup guest vols deleted ===")
-        if self.fusion_aws_util and post_backup_guest_vols:
-            self.assert_guest_volumes_deleted(
-                self.source_cluster_id, post_backup_guest_vols,
-                timeout=int(self.input.param("fusion_free_timeout", 1800)))
-        else:
-            self.log.info(
-                "Step 5: No post-backup guest vols to verify")
-
-        # Step 6: Restore restores KV primary data only; guest volumes are
-        # regenerated by the next Fusion rebalance (restore does NOT re-apply
-        # the snapshots). Trigger that rebalance and verify guest volumes come
-        # back on the (same) cluster; data integrity is the guarantee.
-        self.log.info(
-            "=== Step 6: Regenerate + verify guest vols ===")
-        if self.fusion_aws_util:
-            node_vols = self.regenerate_guest_volumes_via_rebalance(
-                self.source_cluster_id, self.source_project_id)
-            tgt_total = sum(len(v) for v in node_vols.values())
-            if tgt_total == 0:
-                self.fail(
-                    "Step 6: 0 guest volumes even after a post-restore "
-                    "Fusion rebalance")
-            self.log.info(
-                "Step 6 passed: {} guest volume(s) regenerated after the "
-                "post-restore rebalance".format(tgt_total))
-        else:
-            self.log.warning("Step 6 skipped: AWS creds not set.")
-
-        # Step 7: Data integrity
-        self.log.info("=== Step 7: Verifying data integrity ===")
-        self.verify_data_integrity()
-
-        self._test_succeeded = True
-        self.log.info(
-            "test_restore_same_cluster_with_existing_guest_volumes PASSED")
-
-    # ------------------------------------------------------------------
-    # Test 12: Restore when fusion S3 bucket is already empty
-    # ------------------------------------------------------------------
-    def test_restore_fusion_empty_bucket(self):
-        """Restore handles a fusion-enabled backup when the target's
-        fusion S3 bucket is already empty (no-op cleanup).
-
-        Test plan:
-          1.  Source (Fusion ON), populate, rebalance, create backup
-          2.  Provision target (Fusion OFF) — no S3 bucket exists yet
-          3.  Restore backup to target; the server must enable fusion
-              and create an S3 bucket, but since there are no pre-existing
-              objects, the cleanup is a no-op.
-          4.  Verify restore completes successfully
-          5.  Verify data integrity
-        """
-        # Step 1: Source + backup
-        self.log.info(
-            "=== Step 1: Source (Fusion ON) ===")
-        if not self.source_cluster_id:
-            self.source_cluster_id, self.source_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=True,
-                    num_nodes=self.source_num_nodes,
-                    name_prefix="TAF_FusionSrc"))
-        else:
-            self.log.info(
-                "Step 1: Reusing source cluster {}".format(
-                    self.source_cluster_id))
-            if not self.wait_for_deployment(
-                    self.source_project_id, self.source_cluster_id):
-                self.fail(
-                    "Source cluster {} not healthy".format(
-                        self.source_cluster_id))
-            self.enable_fusion_on_cluster(
-                self.source_cluster_id, self.source_project_id)
-            self._wait_for_cluster_healthy(
-                self.source_cluster_id, self.source_project_id,
-                timeout=self.rebalance_timeout)
-
-        self.log.info("=== Step 1b: Populating data ===")
-        self.populate_source_buckets()
-
-        self.log.info("=== Step 1c: Fusion rebalance ===")
-        self._source_original_nodes, _ = (
-            self.trigger_fusion_rebalance(
-                self.source_cluster_id,
-                project_id=self.source_project_id))
-        if not self.wait_for_rebalance_complete(
-                self.source_cluster_id,
-                project_id=self.source_project_id):
-            self.fail("Step 1c: Rebalance did not complete")
-
-        self.log.info("=== Step 1d: Creating backup ===")
-        backup_id = self.trigger_snapshot_backup(
-            self.source_cluster_id,
-            project_id=self.source_project_id)
-        self._last_backup_id = backup_id
-        self.wait_for_backup_complete(
-            backup_id, self.source_cluster_id,
-            project_id=self.source_project_id)
-
-        # Step 2: Target (Fusion OFF) — no S3 bucket
-        self.log.info(
-            "=== Step 2: Provisioning target (Fusion OFF) ===")
-        if not self.target_cluster_id:
-            self.target_cluster_id, self.target_project_id = (
-                self.acquire_cluster(
-                    fusion_enabled=False,
-                    num_nodes=self.target_num_nodes,
-                    name_prefix="TAF_FusionTgt"))
-        else:
-            self.log.info(
-                "Step 2: Reusing target cluster {}".format(
-                    self.target_cluster_id))
-            if not self.wait_for_deployment(
-                    self.target_project_id, self.target_cluster_id):
-                self.fail(
-                    "Target cluster {} not healthy".format(
-                        self.target_cluster_id))
-            self._ensure_fusion_disabled(
-                self.target_cluster_id, self.target_project_id,
-                label="target")
-
-        self._target_original_nodes = self.get_cluster_node_count(
-            self.target_cluster_id, self.target_project_id)
-
-        # Verify no S3 bucket on target
-        if self.fusion_aws_util:
-            tgt_s3 = self.fusion_aws_util.find_fusion_s3_bucket(
-                self.target_cluster_id)
-            self.log.info(
-                "Step 2: Target S3 bucket before restore: {} "
-                "(expected None — Fusion OFF)".format(tgt_s3))
-
-        # Step 3: Restore. The server must enable Fusion, create the S3
-        # bucket, and handle the cleanup gracefully even though the bucket
-        # starts empty.
-        self.log.info("=== Step 3: Restoring backup ===")
-        self.trigger_restore(
-            backup_id=backup_id,
-            target_cluster_id=self.target_cluster_id,
+            backup_id=backup_id, target_cluster_id=self.target_cluster_id,
             project_id=self.target_project_id)
         self.wait_for_restore_complete(
-            self.target_cluster_id,
-            project_id=self.target_project_id,
+            self.target_cluster_id, project_id=self.target_project_id,
             expected_bucket_names=self.source_bucket_names)
 
-        # Step 4: Verify restore completed
-        self.log.info(
-            "=== Step 4: Verifying restore completed ===")
-        self.log.info(
-            "Step 4 passed: restore to initially Fusion-OFF target succeeded")
-
-        self.log.info("=== Step 5: Verifying data integrity ===")
+        self.log.info("=== Verifying data integrity ===")
         self.verify_data_integrity()
 
         self._test_succeeded = True
         self.log.info(
-            "test_restore_fusion_empty_bucket PASSED")
+            "test_backup_large_guest_volume_inventory PASSED")

@@ -12,13 +12,15 @@ import os
 import threading
 import time
 import types
+import uuid
 
 import requests
 
 from global_vars import logger
 from TestInput import TestInputSingleton
 from pytests.Capella.RestAPIv4.api_base import APIBase
-from pytests.aGoodDoctor.fusion.fusion_aws_util import FusionAWSUtil
+from pytests.aGoodDoctor.fusion.fusion_aws_util import (
+    FusionAWSUtil, resolve_fusion_aws_credentials)
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from sirius_client_framework.sirius_setup import SiriusSetup
@@ -59,6 +61,13 @@ class FusionBackupRestoreBase(APIBase):
     # Populated lazily by acquire_cluster(); reused (not re-provisioned) by
     # later tests. Only used when pooling is active (reuse + preserve).
     _cluster_pool = {}
+
+    # Class-level registry of EVERY cluster this suite ever provisioned, id ->
+    # project_id. The reuse pool can evict a failed test's cluster (so it isn't
+    # reused), which would otherwise drop it from end-of-matrix deletion; this
+    # registry guarantees the matrix's last test can destroy every cluster it
+    # created regardless of pool state, so a full run leaves nothing behind.
+    _all_cluster_ids = {}
 
     def setUp(self):
         # The [capella] ini section is mapped to self.input.capella, not
@@ -122,6 +131,14 @@ class FusionBackupRestoreBase(APIBase):
 
         self.aws_access_key = _p("aws_access_key")
         self.aws_secret_key = _p("aws_secret_key")
+        # aws_use_iam_role=true: don't use static keys — build the boto3 clients
+        # with NO explicit credentials so boto3 resolves them from its default
+        # chain (env vars, shared config, or the Jenkins agent's IAM
+        # instance-profile / assumed role). Requires the agent to have an IAM
+        # role with EC2/S3 read perms in the CLUSTER's AWS account. This is how
+        # the EC2/S3 (guest-volume / fusion-S3) checks run without static keys.
+        self.aws_use_iam_role = str(
+            _p("aws_use_iam_role", False)).lower() == "true"
         self.aws_region = _p("aws_region", "us-east-1")
         self.num_docs = int(_p("num_docs", 100000))
         # Docs to preload into the target before restore (the non-empty-target
@@ -157,11 +174,25 @@ class FusionBackupRestoreBase(APIBase):
         # iteration) — skips create + 100 GB load, and is preserved in tearDown.
         # Only safe for tests that do NOT re-rebalance the source.
         self.preset_source_bucket_id = _p("source_bucket_id")
+        # Optional dp-agent version hash to pin on every freshly provisioned
+        # cluster (source/target/self) before any Fusion op runs — used to
+        # validate a specific data-plane agent build (e.g. a fix candidate) or
+        # to reproduce an agent-version-specific bug. None = leave the sandbox
+        # default agent in place.
+        self.dp_agent_hash = _p("dp_agent_hash", None)
         self.deploy_timeout = int(_p("deploy_timeout", 1800))      # 30 min
         self.backup_timeout = int(_p("backup_timeout", 3600))      # 1 hour
         self.restore_timeout = int(_p("restore_timeout", 3600))    # 1 hour
         # Scaling/rebalance must not exceed 30 min.
         self.rebalance_timeout = int(_p("rebalance_timeout", 1800))  # 30 min
+        # Poll cadence for the resilient CP wait loops, and how many CONSECUTIVE
+        # transient control-plane errors (wrapper sys.exit / 5xx / network) to
+        # tolerate before declaring the CP unreachable. At 15s x 40 that's ~10
+        # min of continuous failure — long enough to ride out a flaky-sandbox
+        # blip, short enough to fail fast (with a clear message) on a real CP
+        # outage instead of silently burning the whole convergence timeout.
+        self._cp_poll_interval = int(_p("cp_poll_interval", 15))
+        self._cp_error_limit = int(_p("cp_error_limit", 40))
         self.preserve_clusters = _p("preserve_clusters", True)
         self.reuse_clusters = _p("reuse_clusters", True)
         # Cluster pooling (reuse across tests) is only safe when clusters are
@@ -176,6 +207,16 @@ class FusionBackupRestoreBase(APIBase):
         self._test_succeeded = False
         self.source_num_nodes = int(_p("source_num_nodes", 3))
         self.target_num_nodes = int(_p("target_num_nodes", 3))
+        # Per-node hardware for provisioned clusters. Defaults match the
+        # original small node (4 vCPU / 16 GB, 100 GB gp3 @ 3000 IOPS). Raise
+        # these for large loads (e.g. 100 GB): kv_cpu/kv_ram must be a valid
+        # Capella AWS combo (m5 = 1:4, c5 = 1:2, r5 = 1:8 vCPU:GB), and gp3
+        # IOPS can go up to 16000. e.g. kv_cpu=16,kv_ram=64,kv_disk=500,
+        # kv_iops=8000.
+        self.kv_cpu = int(_p("kv_cpu", 4))
+        self.kv_ram = int(_p("kv_ram", 16))
+        self.kv_disk = int(_p("kv_disk", 100))
+        self.kv_iops = int(_p("kv_iops", 3000))
 
         # source_cluster_id: conf param > ini source_cluster_id > ini cluster_id
         self.source_cluster_id = (
@@ -199,9 +240,17 @@ class FusionBackupRestoreBase(APIBase):
 
         self._db_users_to_cleanup = {}
         self._clusters_created = []
+        # Clusters provisioned fresh for THIS test only (never pooled/reused):
+        # every target, plus the source of a guest-volume test (its per-test
+        # fusion rebalance mutates the source, so it can't be reused). Deleted
+        # at the end of this test in tearDown so nothing accumulates.
+        self._ephemeral_clusters = []
         self._target_bucket_ids = []
         self._source_original_nodes = None
         self._target_original_nodes = None
+        # Guest-volume count on the source at backup time (folds the
+        # count-mismatch / node-mapping validations into the matrix runner).
+        self._source_guest_vol_count = None
         # Name of the target's own pre-load bucket (its non-empty-target data),
         # preserved across runs for cluster reuse.
         self._target_preload_bucket = None
@@ -209,16 +258,53 @@ class FusionBackupRestoreBase(APIBase):
         # it. preset_backup_id is NOT deleted — it belongs to another run.
         self._last_backup_id = None
 
-        # Make Fusion available in the tenant (8.1.0 + the FUSION_* flags).
-        # Per-cluster Fusion-on/off is decided by express-scaling enable, not
-        # these flags, so we set them once here and never toggle per cluster.
-        self._set_tenant_feature_flags()
+        # Feature flags: the test does not hardcode any. It only applies flags
+        # explicitly passed by the pipeline via ff_to_update (no-op if unset).
+        self._apply_feature_flags_from_param()
 
+        # AWS access for the deep fusion checks (guest-volume presence/count,
+        # S3 log-store residue, EBS snapshot tags/counts, memcached CRITICAL
+        # scan). Resolve creds the same way the lifecycle suite does: explicit
+        # aws_access_key/aws_secret_key if given, else assume the jenkins-cp-cli
+        # role via STS (account_id from the [capella] ini + the cp-cli
+        # external_id). An auto-refreshing boto3 session keeps the clients alive
+        # after the assumed creds expire mid-test.
         self.fusion_aws_util = None
-        if self.aws_access_key and self.aws_secret_key:
+        self.aws_iam = None
+        self.aws_session_token = None
+        self.aws_boto3_session = None
+        try:
+            (self.aws_access_key, self.aws_secret_key,
+             self.aws_session_token, self.aws_iam) = \
+                resolve_fusion_aws_credentials(
+                    self.input, region=self.aws_region)
+            self.aws_boto3_session = (
+                self.aws_iam.get_boto3_session(region=self.aws_region)
+                if self.aws_iam else None)
             self.fusion_aws_util = FusionAWSUtil(
                 self.aws_access_key, self.aws_secret_key,
-                region=self.aws_region)
+                session_token=self.aws_session_token, region=self.aws_region,
+                boto3_session=self.aws_boto3_session)
+            self.log.info(
+                "AWS access enabled for fusion deep checks (guest volumes, "
+                "S3 residue, snapshots, memcached CRITICAL scan).")
+        except Exception as e:
+            # Only reached when no creds are resolvable (e.g. a local run with
+            # no keys and no account_id). Log LOUDLY — this is an explicit, not
+            # silent, skip of the EC2/S3/snapshot/memcached checks.
+            self.log.warning(
+                "AWS deep checks DISABLED — could not resolve fusion AWS "
+                "credentials ({}). Guest-volume / S3-residue / snapshot / "
+                "memcached-CRITICAL checks are SKIPPED; restore validated by "
+                "DATA INTEGRITY only. Provide aws_access_key/aws_secret_key, or "
+                "account_id in the [capella] ini (to assume jenkins-cp-cli), to "
+                "enable them.".format(e))
+        # AWS utils keyed by region (for cross-region restore, the target's
+        # guest-volume / S3 checks must run in the target's region). Default
+        # target util = source util so same-region tests are unaffected.
+        self._region_aws_utils = {self.aws_region: self.fusion_aws_util}
+        self._target_aws_util = self.fusion_aws_util
+        self._target_region = self.aws_region
 
     def tearDown(self):
         failures = []
@@ -226,6 +312,20 @@ class FusionBackupRestoreBase(APIBase):
         # Bail early if setUp raised before initializing internal state.
         if not hasattr(self, "_clusters_created"):
             APIBase.tearDown(self)
+            return
+
+        # Debug flag: preserve EVERYTHING (clusters, buckets, backup, project)
+        # so a dev can inspect a failed cluster to replicate the issue. Skips
+        # all teardown deletion and the project/API-key cleanup.
+        if self.input.param("keep_clusters", False):
+            self.log.warning(
+                "keep_clusters=True — preserving clusters/buckets/backup/"
+                "project for debugging; nothing deleted. source_cluster={} "
+                "source_project={} target_cluster={} target_project={} "
+                "backup={}".format(
+                    self.source_cluster_id, self.source_project_id,
+                    self.target_cluster_id, self.target_project_id,
+                    self._last_backup_id))
             return
 
         will_delete = (set(self._clusters_created)
@@ -238,93 +338,70 @@ class FusionBackupRestoreBase(APIBase):
         # another run and is left alone (handled inside the helper).
         self._delete_last_backup()
 
-        if not passed:
-            # The test failed/errored. Skip the remaining cleanup so buckets,
-            # loaded data and (possibly wedged) clusters are left intact for
-            # debugging. Evict acquired clusters from the pool so a later test
-            # doesn't reuse a half-broken cluster, then defer to APIBase.tearDown.
-            self.log.warning(
-                "tearDown: test did not succeed — preserving buckets and "
-                "clusters for debugging (no scale-down). Source bucket(s): {} "
-                "on {}; target bucket(s): {} on {}.".format(
-                    self.source_bucket_ids, self.source_cluster_id,
-                    self._target_bucket_ids, self.target_cluster_id))
-            if self._pooling:
-                self._release_pooled_clusters(reusable=False)
+        # Delete THIS test's fresh cluster(s) now (pass or fail): every target,
+        # plus a guest-volume source. They're never reused, so there's no reason
+        # to keep them until end-of-matrix — deleting per-test keeps the live
+        # cluster count minimal (only the one reused pooled source persists).
+        self._delete_ephemeral_clusters()
+
+        # End of the WHOLE matrix run: tear down ALL clusters (pass or fail).
+        # testrunner sets case_number (1-based) and no_of_test_identified; when
+        # they're equal this is the final test, so we delete every pooled/
+        # created cluster instead of returning them to the pool.
+        case_no = int(self.input.param("case_number", 0) or 0)
+        total = int(self.input.param("no_of_test_identified", 0) or 0)
+        if total and case_no >= total:
+            self.log.info(
+                "Last test of the matrix (case {}/{}) — tearing down ALL "
+                "clusters".format(case_no, total))
+            self._delete_all_pooled_clusters()
             if self._preset_project_id:
                 self.project_id = None
             APIBase.tearDown(self)
             return
 
-        # Buckets are NOT deleted here — they are kept for reuse on the next run.
-        # When a fresh bucket is needed, the stale same-prefix bucket is deleted
-        # first at create time (see _delete_buckets_with_prefix), so buckets
-        # never accumulate. Only the backup (above) is always removed.
+        # Delete any unhealthy source/target cluster so the next test deploys a
+        # fresh one — there's no point running a test on a wedged cluster.
+        # Healthy clusters are kept and reused. Runs on success AND failure.
+        will_delete |= self._delete_unhealthy_clusters()
 
-        scale_targets = [
-            (self.source_cluster_id,
-             self.source_project_id or self.project_id,
-             self._source_original_nodes,
-             "source"),
-            (self.target_cluster_id,
-             self.target_project_id or self.project_id,
-             self._target_original_nodes,
-             "target"),
-        ]
-        for cl_id, proj_id, orig_nodes, label in scale_targets:
-            if not cl_id or not orig_nodes or cl_id in will_delete:
-                continue
-            try:
-                # Don't try to scale a cluster that isn't healthy — a wedged or
-                # mid-operation cluster (e.g. a stalled restore) would otherwise
-                # make wait_for_rebalance_complete spin until rebalance_timeout.
-                state = None
-                try:
-                    info = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, proj_id, cl_id)
-                    if info.status_code == 200:
-                        state = (info.json().get("currentState") or "").lower()
-                except Exception:
-                    pass
-                if state != self.CLUSTER_HEALTHY:
-                    self.log.warning(
-                        "tearDown: {} cluster {} not healthy (state={!r}) — "
-                        "skipping scale-down".format(label, cl_id, state))
-                    continue
-                # Only scale back down if the cluster is currently larger than
-                # its recorded baseline — covers the target being grown by the
-                # restore as well as the source's explicit scale-up, and skips
-                # a wasteful no-op rebalance when nothing changed.
-                current_nodes = self.get_cluster_node_count(cl_id, proj_id)
-                if current_nodes is not None and current_nodes <= orig_nodes:
-                    self.log.info(
-                        "tearDown: {} cluster {} already at {} nodes "
-                        "(baseline {}) — no scale-down needed".format(
-                            label, cl_id, current_nodes, orig_nodes))
-                    continue
-                self.log.info(
-                    "tearDown: Scaling {} cluster {} back to {} nodes "
-                    "(from {})".format(
-                        label, cl_id, orig_nodes, current_nodes))
-                self.trigger_fusion_rebalance(
-                    cl_id, project_id=proj_id, target_nodes=orig_nodes)
-                if not self.wait_for_rebalance_complete(
-                        cl_id, project_id=proj_id):
-                    self.log.warning(
-                        "tearDown: scale-down of {} cluster {} did not "
-                        "complete cleanly".format(label, cl_id))
-            except Exception as exc:
-                self.log.warning(
-                    "tearDown: could not scale down {} cluster {}: {}".format(
-                        label, cl_id, exc))
+        if not passed:
+            # Test failed/errored: keep buckets + the (healthy) clusters for
+            # debugging and reuse — any unhealthy cluster was already deleted
+            # above, so the remaining healthy ones are safe to reuse.
+            self.log.warning(
+                "tearDown: test did not succeed — the fresh target was already "
+                "deleted above; preserving the reused source cluster {} and its "
+                "buckets {} for reuse. (Use keep_clusters=True to preserve the "
+                "target too for debugging.)".format(
+                    self.source_cluster_id, self.source_bucket_ids))
+            self._scale_pooled_clusters_to_baseline(will_delete)
+            if self._pooling:
+                self._release_pooled_clusters(reusable=True)
+            if self._preset_project_id:
+                self.project_id = None
+            APIBase.tearDown(self)
+            return
+
+        # Buckets are kept for reuse; only the backup is always removed.
+        self._scale_pooled_clusters_to_baseline(will_delete)
 
         for cluster_id, user_id in self._db_users_to_cleanup.items():
-            resp = self.capellaAPI.cluster_ops_apis.delete_database_user(
-                self.organisation_id, self.project_id, cluster_id, user_id)
-            if resp.status_code not in [200, 202, 204, 404]:
-                failures.append(
-                    "Could not delete DB user {} on cluster {}".format(
-                        user_id, cluster_id))
+            # Best-effort: the CapellaAPI wrapper sys.exit()s on a persistent
+            # API error, so a teardown 500 here must not crash the test (turning
+            # a passed test into an ERROR).
+            try:
+                resp = self.capellaAPI.cluster_ops_apis.delete_database_user(
+                    self.organisation_id, self.project_id, cluster_id, user_id)
+                if getattr(resp, "status_code", 200) not in [
+                        200, 202, 204, 404]:
+                    failures.append(
+                        "Could not delete DB user {} on cluster {}".format(
+                            user_id, cluster_id))
+            except BaseException as exc:
+                self.log.warning(
+                    "tearDown: delete DB user {} on {} raised {}".format(
+                        user_id, cluster_id, exc))
 
         if not self.preserve_clusters:
             for cluster_id in self._clusters_created:
@@ -352,22 +429,181 @@ class FusionBackupRestoreBase(APIBase):
 
     @classmethod
     def tearDownClass(cls):
-        """Pooled clusters are preserved across the suite run (pooling only
-        runs with preserve_clusters True). Log them so they can be reused on a
-        subsequent run or cleaned up manually, then reset the in-memory pool.
+        """Do NOT reset the in-memory pool here.
+
+        TAF runs each conf test as its own suite, so this classmethod fires
+        after EVERY test — wiping the pool here would destroy it between tests
+        and defeat reuse. The pool must persist across the whole matrix run so
+        later tests reuse earlier clusters. End-of-matrix teardown of all
+        clusters is handled in tearDown() on the final test (case_number ==
+        no_of_test_identified). We only log any leftover here as a safety net
+        (e.g. if the run was aborted before the last test).
         """
         pooled = [e["id"]
                   for entries in cls._cluster_pool.values()
                   for e in entries]
         if pooled:
             logger["test"].info(
-                "Preserving {} pooled cluster(s) after suite run (reuse via "
-                "*_cluster_id, or delete manually): {}".format(
-                    len(pooled), pooled))
-        cls._cluster_pool = {}
+                "Pooled cluster(s) still alive (deleted on the matrix's last "
+                "test, or manually if the run was aborted): {}".format(pooled))
         parent = super(FusionBackupRestoreBase, cls)
         if hasattr(parent, "tearDownClass"):
             parent.tearDownClass()
+
+    def _delete_cluster_best_effort(self, cid, project_id):
+        """Delete one cluster, tolerating the CapellaAPI wrapper's sys.exit() on
+        a persistent API error (BaseException). Returns True on a delete that
+        took (or a 404); on success, drops the cluster from the class registry
+        and this test's created-list so end-of-matrix won't retry it."""
+        try:
+            resp = self.capellaAPI.cluster_ops_apis.delete_cluster(
+                self.organisation_id, project_id or self.project_id, cid)
+            if getattr(resp, "status_code", 202) in (200, 202, 204, 404):
+                type(self)._all_cluster_ids.pop(cid, None)
+                if cid in self._clusters_created:
+                    self._clusters_created.remove(cid)
+                return True
+            self.log.warning(
+                "delete cluster {} returned {} — will be swept at "
+                "end-of-matrix".format(cid, resp.status_code))
+        except BaseException as exc:
+            self.log.warning(
+                "delete cluster {} raised {} — will be swept at "
+                "end-of-matrix".format(cid, exc))
+        return False
+
+    def _delete_ephemeral_clusters(self):
+        """Delete the fresh (never-reused) cluster(s) this test created — every
+        target, plus a guest-volume source. Runs every test (pass or fail) so
+        they don't accumulate; anything that fails to delete is swept at
+        end-of-matrix, so it's never leaked."""
+        for cid, proj in self._ephemeral_clusters:
+            if self._delete_cluster_best_effort(cid, proj):
+                self.log.info(
+                    "tearDown: deleted ephemeral cluster {}".format(cid))
+            # Forget the id so the later unhealthy-sweep doesn't re-check this
+            # now-deleting cluster and raise a false "LEAKED" alarm.
+            if cid == self.source_cluster_id:
+                self.source_cluster_id = None
+            if cid == self.target_cluster_id:
+                self.target_cluster_id = None
+        self._ephemeral_clusters = []
+
+    def _delete_pooled_sources(self, except_key=None):
+        """Delete pooled SOURCE clusters so at most one source stays alive.
+
+        Called when a fresh source is about to be stood up, or when a new source
+        spec is provisioned (except_key = the spec we're keeping). Targets are
+        never pooled, so this only ever touches sources."""
+        for pkey in list(type(self)._cluster_pool.keys()):
+            if except_key is not None and pkey == except_key:
+                continue
+            if self._is_target_prefix(pkey[2]):
+                continue
+            for entry in list(type(self)._cluster_pool[pkey]):
+                if self._delete_cluster_best_effort(
+                        entry["id"], entry.get("project_id")):
+                    self.log.info(
+                        "acquire_cluster: evicted stale pooled source {} to "
+                        "keep one source alive".format(entry["id"]))
+                type(self)._cluster_pool[pkey].remove(entry)
+                if entry in self._acquired_pool_entries:
+                    self._acquired_pool_entries.remove(entry)
+
+    def _delete_all_pooled_clusters(self):
+        """End of the whole matrix run: delete every cluster we pooled or
+        created across the suite, then clear the in-memory pool. Runs on the
+        last test regardless of pass/fail."""
+        seen = set()
+        targets = []
+        for entries in type(self)._cluster_pool.values():
+            for e in entries:
+                if e["id"] not in seen:
+                    seen.add(e["id"])
+                    targets.append((e["id"], e.get("project_id")))
+        for cid in self._clusters_created:
+            if cid not in seen:
+                seen.add(cid)
+                targets.append((cid, self.project_id))
+        # Sweep the full registry too: a fresh target from an earlier test that
+        # failed was evicted from the reuse pool and won't be in this last
+        # test's _clusters_created, so without this it would survive the run.
+        for cid, proj in type(self)._all_cluster_ids.items():
+            if cid not in seen:
+                seen.add(cid)
+                targets.append((cid, proj))
+        leaked = []
+        for cid, proj in targets:
+            try:
+                resp = self.capellaAPI.cluster_ops_apis.delete_cluster(
+                    self.organisation_id, proj or self.project_id, cid)
+                if getattr(resp, "status_code", 202) in (200, 202, 204, 404):
+                    self.log.info(
+                        "End-of-matrix: deleted cluster {}".format(cid))
+                else:
+                    leaked.append(cid)
+                    self.log.warning(
+                        "End-of-matrix: delete cluster {} returned {}: "
+                        "{}".format(cid, resp.status_code, resp.content))
+            except BaseException as exc:
+                leaked.append(cid)
+                self.log.warning(
+                    "End-of-matrix: could not delete cluster {}: {}".format(
+                        cid, exc))
+        if leaked:
+            self.log.critical(
+                "LEAKED clusters — delete failed, NOT lost (recorded in the "
+                "ledger). Remove via cleanup_fusion_clusters.py --delete or the "
+                "Capella UI: {}".format(leaked))
+        type(self)._cluster_pool = {}
+        type(self)._all_cluster_ids = {}
+        self._acquired_pool_entries = []
+
+    def _scale_pooled_clusters_to_baseline(self, will_delete):
+        """Scale source/target back to their provisioned node count so a reused
+        cluster starts at baseline. Runs on success AND failure. Skips deleted
+        or unhealthy clusters and no-ops when already at baseline."""
+        for cl_id, proj_id, orig_nodes, label in (
+                (self.source_cluster_id,
+                 self.source_project_id or self.project_id,
+                 self._source_original_nodes, "source"),
+                (self.target_cluster_id,
+                 self.target_project_id or self.project_id,
+                 self._target_original_nodes, "target")):
+            if not cl_id or not orig_nodes or cl_id in will_delete:
+                continue
+            try:
+                state = None
+                try:
+                    info = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                        self.organisation_id, proj_id, cl_id)
+                    if info.status_code == 200:
+                        state = (info.json().get("currentState") or "").lower()
+                except BaseException:
+                    pass
+                if state != self.CLUSTER_HEALTHY:
+                    self.log.warning(
+                        "tearDown: {} cluster {} not healthy (state={!r}) — "
+                        "skipping scale-down".format(label, cl_id, state))
+                    continue
+                current_nodes = self.get_cluster_node_count(cl_id, proj_id)
+                if current_nodes is not None and current_nodes <= orig_nodes:
+                    continue
+                self.log.info(
+                    "tearDown: scaling {} cluster {} back to {} nodes "
+                    "(from {})".format(
+                        label, cl_id, orig_nodes, current_nodes))
+                self.trigger_fusion_rebalance(
+                    cl_id, project_id=proj_id, target_nodes=orig_nodes)
+                if not self.wait_for_rebalance_complete(
+                        cl_id, project_id=proj_id):
+                    self.log.warning(
+                        "tearDown: scale-down of {} cluster {} did not "
+                        "complete cleanly".format(label, cl_id))
+            except BaseException as exc:
+                self.log.warning(
+                    "tearDown: could not scale down {} cluster {}: {}".format(
+                        label, cl_id, exc))
 
     @staticmethod
     def _next_cidr(cidr):
@@ -380,59 +616,206 @@ class FusionBackupRestoreBase(APIBase):
         octets[3] = "0"
         return ".".join(octets) + "/20"
 
+    def _alternate_region(self, region):
+        """Pick a different AWS region for the cross-region target, derived
+        from the chosen source region so the user only sets one region."""
+        if region == "us-east-1":
+            return "us-west-2"
+        if region == "us-west-2":
+            return "us-east-1"
+        return "us-east-1"
+
+    def _record_cluster_id(self, cid, project_id, region):
+        """Append every provisioned cluster id to a persistent ledger file so no
+        id is ever lost — even if the process dies or a later delete fails, the
+        ledger (and cleanup_fusion_clusters.py) can reap it. Path is overridable
+        via the cluster_ledger param."""
+        path = self.input.param(
+            "cluster_ledger", "/tmp/taf_fusion_cluster_ledger.txt")
+        try:
+            with open(path, "a") as f:
+                f.write("{},{},{}\n".format(
+                    cid, project_id or self.project_id, region))
+        except Exception as e:
+            self.log.warning(
+                "Could not write cluster ledger {}: {}".format(path, e))
+
+    def _validate_aws_access(self):
+        """Fail fast if AWS isn't actually reachable, so the EC2/S3 checks RUN
+        (no silent skip). Used with aws_use_iam_role=true (no static keys): a
+        minimal EC2 describe confirms boto3 resolved a working role from the
+        environment (agent instance-profile / assumed role) with EC2 access to
+        the cluster's account. If it can't, the run fails here with a clear
+        message rather than passing while skipping the guest-volume / S3 libs."""
+        try:
+            self.fusion_aws_util.ec2.ec2_client.describe_availability_zones()
+            self.log.info(
+                "AWS access via IAM role confirmed (EC2 describe succeeded) — "
+                "guest-volume / S3 checks will run.")
+        except BaseException as exc:
+            self.fail(
+                "aws_use_iam_role=true but AWS could not be reached "
+                "(EC2 describe failed: {}). No static keys and no usable IAM "
+                "role in the environment — ensure the Jenkins agent has an IAM "
+                "role (instance-profile / assumed) with EC2+S3 access to the "
+                "cluster's AWS account. Refusing to run with the EC2/S3 checks "
+                "silently disabled.".format(exc))
+
+    def _aws_util_for_region(self, region):
+        """Return a FusionAWSUtil bound to `region` (cached). None if AWS access
+        isn't configured. Used so the target's guest-volume/S3 checks run in the
+        target's region during a cross-region restore. Reuses the same resolved
+        creds (explicit keys or assumed-role) with a region-specific
+        auto-refreshing session."""
+        if self.fusion_aws_util is None:
+            return None
+        if region not in self._region_aws_utils:
+            boto3_session = (
+                self.aws_iam.get_boto3_session(region=region)
+                if self.aws_iam else None)
+            self._region_aws_utils[region] = FusionAWSUtil(
+                self.aws_access_key, self.aws_secret_key,
+                session_token=self.aws_session_token, region=region,
+                boto3_session=boto3_session)
+        return self._region_aws_utils[region]
+
+    def _scan_memcached_logs_after_restore(self, cluster_id, aws_util):
+        """Scan a restored cluster's memcached logs (and crash dir) for
+        CRITICAL errors / core dumps and FAIL the test if any are found.
+
+        Uses AWS SSM into the nodes, so it needs AWS access; when
+        fusion_aws_util is unset the scan is skipped with a loud warning (same
+        policy as the other EC2/S3 checks — no silent skip)."""
+        if aws_util is None:
+            self.log.warning(
+                "Post-restore memcached log scan SKIPPED for cluster {} — no "
+                "AWS access (fusion_aws_util unset); CRITICAL errors in "
+                "memcached logs are NOT checked.".format(cluster_id))
+            return
+        self.log.info(
+            "=== Post-restore: scanning memcached logs for CRITICAL errors on "
+            "cluster {} ===".format(cluster_id))
+        if aws_util.scan_logs_for_errors_on_cluster_instances(cluster_id):
+            self.fail(
+                "CRITICAL errors or core dumps found in memcached logs on "
+                "restored cluster {} — see the CRITICAL lines above.".format(
+                    cluster_id))
+        self.log.info(
+            "No CRITICAL memcached errors on cluster {} after restore".format(
+                cluster_id))
+
     def provision_fusion_cluster(self, fusion_enabled=True, num_nodes=3,
-                                 name_prefix="TAF_Fusion"):
-        """Deploy a Capella Dedicated cluster (data-service only) and return its id."""
+                                 name_prefix="TAF_Fusion", region=None):
+        """Deploy a Capella Dedicated cluster (data-service only) and return its
+        id. region defaults to self.aws_region; pass a different region for the
+        cross-region restore target."""
+        region = region or self.aws_region
         cluster_name = "{}_{}".format(
             name_prefix,
-            self.generate_random_string(5, special_characters=False))
-
-        cloud_provider = {
-            "type": "aws",
-            "region": self.aws_region,
-            "cidr": "10.0.0.0/20"
-        }
-        couchbase_server = {
-            "version": str(self.input.param("server_version", "8.1"))
-        }
-        service_groups = [
-            {
-                "node": {
-                    "compute": {"cpu": 4, "ram": 16},
-                    "disk": {"storage": 100, "type": "gp3", "iops": 3000}
-                },
-                "numOfNodes": num_nodes,
-                "services": ["data"]
-            }
-        ]
-        availability = {"type": "multi"}
-        support = {"plan": "enterprise", "timezone": "GMT"}
+            uuid.uuid4().hex[:5])
 
         self.log.info(
             "Provisioning cluster '{}' ({} nodes)".format(
                 cluster_name, num_nodes))
 
-        # select_CIDR retries only on one specific 422 wording; some tenants
-        # return "... overlaps with existing resource with CIDR ..." instead,
-        # which it doesn't recognize. Walk the CIDR ourselves on any CIDR-
-        # related 422 until one is free.
-        resp = self.select_CIDR(
-            self.organisation_id, self.project_id, cluster_name,
-            cloud_provider, service_groups, availability, support,
-            couchbase_server)
-        cidr_attempts = 0
-        while (resp.status_code == 422 and cidr_attempts < 40
-               and "cidr" in (resp.content or b"").decode(
-                   "utf-8", "ignore").lower()):
-            cidr_attempts += 1
-            cloud_provider["cidr"] = self._next_cidr(cloud_provider["cidr"])
+        # Dev builds (e.g. 8.1) can't deploy via the public v4 API (released
+        # versions only). When the pipeline provides a custom image, deploy via
+        # the internal customAMI endpoint; else fall back to the v4 version path.
+        image = (self.input.capella.get("image", None)
+                 or self.input.capella.get("cb_image", None))
+        if image:
+            server_ver = (self.input.param("server_version", None)
+                          or self.input.capella.get("server_version", None)
+                          or os.environ.get("cbs_version"))
+            compute_type = self.input.param("kv_compute", "c7g.4xlarge")
+            config = {
+                "cidr": "10.0.0.0/20",
+                "name": cluster_name,
+                "description": "",
+                "overRide": {
+                    "token": self._internal_support_token(),
+                    "image": image,
+                    "server": server_ver,
+                },
+                "projectId": self.project_id,
+                "provider": "hostedAWS",
+                "region": region,
+                "singleAZ": self.input.param("singleAZ", False),
+                "server": None,
+                "specs": [{
+                    "count": num_nodes,
+                    "services": [{"type": "kv"}],
+                    "compute": {"type": compute_type, "cpu": 0,
+                                "memoryInGb": 0},
+                    "disk": {"type": "gp3", "sizeInGb": self.kv_disk,
+                             "iops": self.kv_iops},
+                    "diskAutoScaling": {
+                        "enabled": self.input.param("diskAutoScaling", True)},
+                }],
+                "package": "enterprise",
+            }
             self.log.info(
-                "CIDR overlap — retrying with {}".format(
-                    cloud_provider["cidr"]))
+                "Deploy via customAMI: image={} server={} token_present={} "
+                "compute={}".format(
+                    image, server_ver,
+                    bool(config["overRide"]["token"]), compute_type))
+            resp = self.capellaAPI.create_cluster_customAMI(
+                self.organisation_id, config)
+            cidr_attempts = 0
+            while (resp.status_code == 422 and cidr_attempts < 40
+                   and "cidr" in (resp.content or b"").decode(
+                       "utf-8", "ignore").lower()):
+                cidr_attempts += 1
+                config["cidr"] = self._next_cidr(config["cidr"])
+                self.log.info(
+                    "CIDR overlap — retrying with {}".format(config["cidr"]))
+                resp = self.capellaAPI.create_cluster_customAMI(
+                    self.organisation_id, config)
+        else:
+            cloud_provider = {
+                "type": "aws",
+                "region": region,
+                "cidr": "10.0.0.0/20"
+            }
+            couchbase_server = {
+                "version": str(self.input.param("server_version", "8.1"))
+            }
+            service_groups = [
+                {
+                    "node": {
+                        "compute": {"cpu": self.kv_cpu, "ram": self.kv_ram},
+                        "disk": {"storage": self.kv_disk, "type": "gp3",
+                                 "iops": self.kv_iops}
+                    },
+                    "numOfNodes": num_nodes,
+                    "services": ["data"]
+                }
+            ]
+            availability = {"type": "multi"}
+            support = {"plan": "enterprise", "timezone": "GMT"}
+
+            # select_CIDR retries only on one specific 422 wording; some tenants
+            # return "... overlaps with existing resource with CIDR ..."
+            # instead, which it doesn't recognize. Walk the CIDR ourselves on
+            # any CIDR-related 422 until one is free.
             resp = self.select_CIDR(
                 self.organisation_id, self.project_id, cluster_name,
                 cloud_provider, service_groups, availability, support,
                 couchbase_server)
+            cidr_attempts = 0
+            while (resp.status_code == 422 and cidr_attempts < 40
+                   and "cidr" in (resp.content or b"").decode(
+                       "utf-8", "ignore").lower()):
+                cidr_attempts += 1
+                cloud_provider["cidr"] = self._next_cidr(
+                    cloud_provider["cidr"])
+                self.log.info(
+                    "CIDR overlap — retrying with {}".format(
+                        cloud_provider["cidr"]))
+                resp = self.select_CIDR(
+                    self.organisation_id, self.project_id, cluster_name,
+                    cloud_provider, service_groups, availability, support,
+                    couchbase_server)
         if resp.status_code != 202:
             self.fail(
                 "Cluster deployment failed: {} {}".format(
@@ -440,6 +823,8 @@ class FusionBackupRestoreBase(APIBase):
 
         cluster_id = resp.json()["id"]
         self._clusters_created.append(cluster_id)
+        type(self)._all_cluster_ids[cluster_id] = self.project_id
+        self._record_cluster_id(cluster_id, self.project_id, region)
         self.log.info(
             "Cluster {} created, waiting for healthy state".format(cluster_id))
 
@@ -448,6 +833,10 @@ class FusionBackupRestoreBase(APIBase):
                 "Cluster {} did not reach healthy state within {}s".format(
                     cluster_id, self.deploy_timeout))
 
+        # Pin the requested dp-agent build BEFORE any Fusion op runs, so the
+        # fusion enable, backup, restore and rebalance all execute under it.
+        self._pin_dp_agent_hash(cluster_id, self.project_id)
+
         # A cluster is Fusion-enabled only if express-scaling enable is called
         # on it; a disabled cluster simply never gets that call — there is
         # nothing to "disable". Source of truth is the cp-db dataplane.clusters
@@ -455,37 +844,152 @@ class FusionBackupRestoreBase(APIBase):
         # fusion/status endpoint — NOT the v4 `expressScaling` field (which can
         # read 'enabled' as a capability even when Fusion is off).
         if fusion_enabled:
-            self.enable_fusion_on_cluster(cluster_id, self.project_id)
-            self._wait_for_cluster_healthy(
-                cluster_id, self.project_id, timeout=self.rebalance_timeout)
+            self._enable_fusion_and_wait(cluster_id, self.project_id)
 
         self.log.info("Cluster {} ready (fusion_enabled={})".format(
             cluster_id, fusion_enabled))
         return cluster_id
 
-    def acquire_cluster(self, fusion_enabled, num_nodes, name_prefix):
+    def _pin_dp_agent_hash(self, cluster_id, project_id):
+        """Activate self.dp_agent_hash as the dp-agent build on every node of
+        the cluster, then wait for the rollout to converge. No-op when
+        dp_agent_hash is unset.
+
+        Uses the internal support endpoint
+        POST /internal/support/clusters/{id}/agent-versions/activate with
+        {"hash": <hash>}. Fails the test if activation is rejected — running the
+        scenario under the wrong agent build would make the result meaningless.
+        Convergence is best-effort verified via the agent-versions GET; if that
+        endpoint is unavailable we fall back to a fixed settle + health wait.
+        """
+        if not self.dp_agent_hash:
+            return
+        v2 = self._v2_api()
+        self.log.info("Pinning dp-agent hash {} on cluster {}".format(
+            self.dp_agent_hash, cluster_id))
+        resp = v2.upgrade_dp_agent(cluster_id, self.dp_agent_hash)
+        if resp.status_code not in [200, 201, 202]:
+            self.fail(
+                "dp-agent activate ({}) failed on cluster {}: {} {}".format(
+                    self.dp_agent_hash, cluster_id,
+                    resp.status_code, resp.content))
+
+        # Poll the agent-versions status until every node reports the desired
+        # hash, or fall back to a fixed settle if the GET endpoint is absent.
+        deadline = time.time() + self.rebalance_timeout
+        status_url = "{}/internal/support/clusters/{}/agent-versions".format(
+            v2.internal_url, cluster_id)
+        verified = False
+        get_supported = True
+        while time.time() < deadline:
+            if not get_supported:
+                break
+            try:
+                s = v2._urllib_request(
+                    status_url, method="GET",
+                    headers=v2.cbc_api_request_headers)
+            except Exception as e:
+                self.log.warning(
+                    "dp-agent status GET errored ({}); will settle-wait".format(
+                        e))
+                get_supported = False
+                break
+            if s.status_code == 404:
+                get_supported = False
+                break
+            if s.status_code != 200:
+                time.sleep(15)
+                continue
+            try:
+                body = json.loads(s.content)
+            except Exception:
+                time.sleep(15)
+                continue
+            desired = body.get("desiredHashes", {}).get("dp-agent")
+            nodes = body.get("nodes", []) or []
+            if (desired == self.dp_agent_hash and nodes and all(
+                    n.get("agentHashes", {}).get("dp-agent")
+                    == self.dp_agent_hash for n in nodes)):
+                verified = True
+                break
+            time.sleep(15)
+
+        if verified:
+            self.log.info(
+                "dp-agent hash {} active on all nodes of cluster {}".format(
+                    self.dp_agent_hash, cluster_id))
+        else:
+            # Endpoint not available (or didn't converge in time) — give the
+            # rollout a fixed window and re-confirm cluster health.
+            self.log.warning(
+                "Could not verify dp-agent rollout via API for cluster {}; "
+                "settling for 180s then re-checking health".format(cluster_id))
+            time.sleep(180)
+        self._wait_for_cluster_healthy(
+            cluster_id, project_id, timeout=self.rebalance_timeout)
+
+    @staticmethod
+    def _is_target_prefix(name_prefix):
+        """A cluster acquired as a restore target (name_prefix carries 'Tgt').
+        Targets are provisioned fresh per test (never reused) because a restore
+        leaves fusion state on them that breaks a later restore."""
+        return "Tgt" in (name_prefix or "")
+
+    def acquire_cluster(self, fusion_enabled, num_nodes, name_prefix,
+                        region=None, fresh=False):
         """Return (cluster_id, project_id) for a cluster matching
         (fusion_enabled, num_nodes).
 
-        When pooling is active (reuse_clusters and preserve_clusters), reuse a
-        free cluster of the same spec from the class-level pool, provisioning a
-        new one only if none is free; the cluster is marked in-use for this
-        test and released back to the pool in tearDown so later tests in the
-        same suite run reuse it instead of re-provisioning.
+        fresh=True (or a target) provisions a brand-new cluster for THIS test
+        that is deleted in tearDown and never reused — used for targets (a
+        restore wedges them) and for guest-volume sources (their per-test fusion
+        rebalance mutates the source, so a reused GV source drifts and later
+        restores fail to match fusion nodes).
+
+        Otherwise, when pooling is active, reuse a free cluster of the same spec
+        from the class-level pool (provisioning one only if none is free) and
+        release it back in tearDown so later tests reuse it. To cap the run at
+        ~2 live clusters (one source + one target), only a single source spec is
+        kept alive: acquiring a fresh source or a differently-specced pooled
+        source first deletes any other pooled source.
 
         When pooling is inactive, provision a fresh cluster (old behavior); the
         per-test tearDown then destroys it if preserve_clusters is False.
         """
         fusion_enabled = bool(fusion_enabled)
         num_nodes = int(num_nodes)
+        region = region or self.aws_region
+        is_target = self._is_target_prefix(name_prefix)
 
         if not self._pooling:
             cid = self.provision_fusion_cluster(
                 fusion_enabled=fusion_enabled, num_nodes=num_nodes,
-                name_prefix=name_prefix)
+                name_prefix=name_prefix, region=region)
             return cid, self.project_id
 
-        key = (fusion_enabled, num_nodes)
+        # Targets are restored INTO: a restore leaves fusion node records and
+        # guest-volume/log-store state that wedges a subsequent restore (e.g.
+        # "failed to match fusion node", stale S3 residue) — so a target is
+        # never reused. Guest-volume sources are mutated by their per-test
+        # fusion rebalance and drift the same way, so they're not reused either
+        # (fresh=True). Both are provisioned fresh and deleted at the end of
+        # THIS test (see _delete_ephemeral_clusters), so nothing piles up.
+        if is_target or fresh:
+            # Keep at most one source alive: before standing up a fresh source,
+            # drop any pooled source left over from an earlier (non-GV) group.
+            if fresh and not is_target:
+                self._delete_pooled_sources()
+            cid = self.provision_fusion_cluster(
+                fusion_enabled=fusion_enabled, num_nodes=num_nodes,
+                name_prefix=name_prefix, region=region)
+            self._ephemeral_clusters.append((cid, self.project_id))
+            return cid, self.project_id
+
+        # Key the pool by ROLE (name_prefix) and REGION as well as
+        # (fusion_enabled, num_nodes). Reuse happens freely within a source
+        # spec; a new source spec evicts the previous pooled source so only one
+        # source is ever alive.
+        key = (fusion_enabled, num_nodes, name_prefix, region)
         pool = type(self)._cluster_pool.setdefault(key, [])
 
         for entry in pool:
@@ -503,10 +1007,14 @@ class FusionBackupRestoreBase(APIBase):
             # self-heals a drifted cluster otherwise. A disabled cluster needs
             # nothing (it's disabled precisely because we don't enable it).
             if fusion_enabled:
-                self.enable_fusion_on_cluster(entry["id"], entry["project_id"])
-                self._wait_for_cluster_healthy(
-                    entry["id"], entry["project_id"],
-                    timeout=self.rebalance_timeout)
+                self._enable_fusion_and_wait(
+                    entry["id"], entry["project_id"])
+            else:
+                # A pooled cluster keyed 'disabled' may have drifted to enabled
+                # (e.g. it served as a target that a restore turned on). Force it
+                # back to Fusion-disabled before reusing it as a disabled cluster.
+                self._ensure_fusion_disabled(
+                    entry["id"], entry["project_id"], label="pooled cluster")
             entry["in_use"] = True
             self._acquired_pool_entries.append(entry)
             self.log.info(
@@ -516,13 +1024,17 @@ class FusionBackupRestoreBase(APIBase):
             return entry["id"], entry["project_id"]
 
         # No free cluster of this spec — provision and register a new one.
+        # First evict any pooled source of a DIFFERENT spec so we keep only one
+        # source alive (e.g. moving from the disabled-source group to the
+        # enabled-no-guest-volume group deletes the disabled source).
+        self._delete_pooled_sources(except_key=key)
         self.log.info(
             "acquire_cluster: no free pooled cluster for "
             "(fusion_enabled={}, nodes={}); provisioning new".format(
                 fusion_enabled, num_nodes))
         cid = self.provision_fusion_cluster(
             fusion_enabled=fusion_enabled, num_nodes=num_nodes,
-            name_prefix=name_prefix)
+            name_prefix=name_prefix, region=region)
         entry = {"id": cid, "project_id": self.project_id, "in_use": True}
         pool.append(entry)
         self._acquired_pool_entries.append(entry)
@@ -552,64 +1064,71 @@ class FusionBackupRestoreBase(APIBase):
                         entry["id"]))
         self._acquired_pool_entries = []
 
+    def _internal_support_token(self):
+        """Internal-support token: ini/param override_token, else the per-pod
+        env token (sbx/dev/stage) the pipeline injects. Needed for internal /v2
+        endpoints (custom-image deploy, express-scaling)."""
+        tok = self.input.capella.get("override_token", None) \
+            or self.input.param("override_token", None)
+        if tok:
+            return tok
+        url = self.url or ""
+        if "qe-" in url or "sbx-" in url:
+            return os.environ.get("sbx_token_for_internal_support")
+        if "dev" in url:
+            return os.environ.get("dev_token_for_internal_support")
+        if "stage" in url:
+            return os.environ.get("stage_token_for_internal_support")
+        return None
+
     def _v2_api(self):
         """Return a v2 CapellaAPI instance for internal endpoints (feature flags etc.)."""
         return CapellaAPIv2(
             "https://" + self.url, "", "",
             self.user, self.passwd,
-            self.input.capella.get("override_token", ""))
-
-    # Tenant-scoped feature flags that make Fusion *available* in the tenant
-    # (enable-eight-one-zero validates 8.1.0; the two FUSION_* flags gate
-    # Fusion). They are set on once per run. They do NOT make any individual
-    # cluster Fusion-enabled — that is decided purely by whether express-scaling
-    # enable is called on the cluster (see enable_fusion_on_cluster). A
-    # Fusion-disabled cluster is simply one we never enable express-scaling on.
-    SERVER_810_FEATURE_FLAG = "enable-eight-one-zero"
-    FUSION_FEATURE_FLAGS = [
-        "fusion-rebalances",
-        "fusion-fallback-replace",
-    ]
+            self._internal_support_token() or "")
 
     def _apply_tenant_feature_flag(self, v2, ff, value):
         """Create-or-update a single tenant feature flag to `value`."""
+        resp = v2.create_tenant_feature_flag(
+            self.organisation_id, ff, {"value": value})
+        if resp.status_code in [200, 201, 204]:
+            self.log.info("Feature flag {} set to {}".format(ff, value))
+            return
         try:
-            resp = v2.create_tenant_feature_flag(
+            err_type = json.loads(resp.content).get("errorType", "")
+        except Exception:
+            err_type = ""
+        if err_type == "FeatureFlagAlreadyExists":
+            resp = v2.update_tenant_feature_flag(
                 self.organisation_id, ff, {"value": value})
-            if resp.status_code in [200, 201, 204]:
-                self.log.info("Feature flag {} set to {}".format(ff, value))
-                return
-            try:
-                err_type = json.loads(resp.content).get("errorType", "")
-            except Exception:
-                err_type = ""
-            if err_type == "FeatureFlagAlreadyExists":
-                resp = v2.update_tenant_feature_flag(
-                    self.organisation_id, ff, {"value": value})
-                if resp.status_code not in [200, 204]:
-                    self.log.warning(
-                        "Feature flag {}={} update returned {}: {}".format(
-                            ff, value, resp.status_code, resp.content))
-                else:
-                    self.log.info(
-                        "Feature flag {} set to {} (updated)".format(ff, value))
-            else:
-                self.log.warning(
-                    "Feature flag {}={} returned {}: {}".format(
-                        ff, value, resp.status_code, resp.content))
-        except Exception as e:
-            self.log.warning(
-                "Could not set feature flag {}={}: {}".format(ff, value, e))
+        if resp.status_code not in [200, 201, 204]:
+            self.log.warning("Feature flag {}={} returned {}: {}".format(
+                ff, value, resp.status_code, resp.content))
 
-    def _set_tenant_feature_flags(self):
-        """Enable the tenant feature flags that make Fusion available (8.1.0 +
-        the two FUSION_* flags). Idempotent; called once in setUp. Per-cluster
-        Fusion state is controlled by express-scaling enable, not these flags.
-        """
+    def _apply_feature_flags_from_param(self):
+        """Apply tenant feature flags passed by the pipeline via ``ff_to_update``
+        (a.k.a. ``feature_flags``), e.g.
+        ff_to_update=fusion-rebalances=true;fusion-fallback-replace=true;enable-eight-one-zero=true
+        Pass it as ONE token (';' or ',' separators, '=' or ':' delimiters). No
+        flag is set unless passed — the test hardcodes none."""
+        raw = (self.input.param("ff_to_update", None)
+               or self.input.param("feature_flags", None))
+        if not raw:
+            return
         v2 = self._v2_api()
-        self._apply_tenant_feature_flag(v2, self.SERVER_810_FEATURE_FLAG, True)
-        for ff in self.FUSION_FEATURE_FLAGS:
-            self._apply_tenant_feature_flag(v2, ff, True)
+        for token in str(raw).replace(";", ",").split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if "=" in token:
+                name, val = token.split("=", 1)
+            elif ":" in token:
+                name, val = token.split(":", 1)
+            else:
+                name, val = token, "true"
+            value = str(val).strip().lower() in ("true", "1", "yes", "on")
+            self._apply_tenant_feature_flag(v2, name.strip(), value)
 
     def enable_fusion_on_cluster(self, cluster_id, project_id):
         """Enable Fusion on the cluster via express-scaling enable — this is the
@@ -633,6 +1152,29 @@ class FusionBackupRestoreBase(APIBase):
         else:
             self.log.info(
                 "Fusion enable triggered on cluster {}".format(cluster_id))
+
+    def _enable_fusion_and_wait(self, cluster_id, project_id):
+        """Enable Fusion and wait for the resulting rebalance to finish. enable
+        is async — the cluster stays 'healthy' briefly before entering
+        'rebalancing', so we wait for the transition to START (bounded) then for
+        it to complete. Otherwise callers hit the cluster mid-rebalance (422
+        'Temporarily unavailable while the Cluster is in the Rebalancing
+        state')."""
+        self.enable_fusion_on_cluster(cluster_id, project_id)
+        deadline = time.time() + 180
+        while time.time() < deadline:
+            try:
+                info = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, project_id, cluster_id)
+                if info.status_code == 200:
+                    st = (info.json().get("currentState") or "").lower()
+                    if st and st != self.CLUSTER_HEALTHY:
+                        break
+            except Exception:
+                pass
+            time.sleep(10)
+        self._wait_for_cluster_healthy(
+            cluster_id, project_id, timeout=self.rebalance_timeout)
 
     def disable_fusion_on_cluster(self, cluster_id, project_id):
         """Disable Fusion on the cluster via express-scaling disable.
@@ -757,7 +1299,7 @@ class FusionBackupRestoreBase(APIBase):
                 except NotImplementedError:
                     guest_total = 0
                 s3 = self.fusion_aws_util.find_fusion_s3_bucket(cluster_id)
-                s3_objs = (self.fusion_aws_util.count_s3_objects(s3)
+                s3_objs = (self.fusion_aws_util.s3.count_objects(s3)
                            if s3 else -1)
                 if guest_total == 0 and s3_objs <= 0:
                     self.log.info(
@@ -866,7 +1408,7 @@ class FusionBackupRestoreBase(APIBase):
         deadline = time.time() + timeout
         obj_count = 0
         while time.time() < deadline:
-            obj_count = self.fusion_aws_util.count_s3_objects(s3_bucket)
+            obj_count = self.fusion_aws_util.s3.count_objects(s3_bucket)
             if obj_count and obj_count > 0:
                 break
             self.log.info(
@@ -920,9 +1462,10 @@ class FusionBackupRestoreBase(APIBase):
                 cluster_id, state))
 
     def assert_fusion_free_after_restore(self, cluster_id, project_id=None,
-                                         timeout=1800):
+                                         timeout=1800, aws_util=None):
         """Verify a Fusion-enabled target converges to Fusion-FREE after
-        restoring a Fusion-DISABLED backup.
+        restoring a Fusion-DISABLED backup. aws_util defaults to the source
+        region's util; pass the target region's util for a cross-region restore.
 
         The target matches the source's Fusion state. The server MUST
         tear down Fusion infrastructure: state transitions through
@@ -935,6 +1478,7 @@ class FusionBackupRestoreBase(APIBase):
           2. Fusion S3 log-store bucket deleted
         """
         project_id = project_id or self.project_id
+        aws_util = aws_util or self.fusion_aws_util
 
         # 0) Verify the fusion/status lifecycle transition. The server must
         #    move from enabled through disabling to disabled. Poll so we catch
@@ -977,7 +1521,7 @@ class FusionBackupRestoreBase(APIBase):
                 "progress".format(cluster_id, state))
 
         # AWS-cred-less path: the internal status endpoint is the only signal.
-        if not self.fusion_aws_util:
+        if not aws_util:
             if state not in ("disabled", None, "disabling"):
                 self.fail(
                     "Target {} still reports Fusion '{}' after restoring a "
@@ -994,7 +1538,7 @@ class FusionBackupRestoreBase(APIBase):
         guest_total = None
         while time.time() < deadline:
             try:
-                guest = self.fusion_aws_util.get_guest_volumes_for_cluster(
+                guest = aws_util.get_guest_volumes_for_cluster(
                     cluster_id)
             except NotImplementedError as e:
                 self.log.warning("Guest-volume lookup unsupported: {}".format(e))
@@ -1018,16 +1562,16 @@ class FusionBackupRestoreBase(APIBase):
         #    deploy time and is not necessarily deleted when fusion is off, so
         #    "Fusion-free" means the bucket is absent OR empty — not absent.
         deadline = time.time() + timeout
-        s3_bucket = self.fusion_aws_util.find_fusion_s3_bucket(cluster_id)
-        s3_objs = (self.fusion_aws_util.count_s3_objects(s3_bucket)
+        s3_bucket = aws_util.find_fusion_s3_bucket(cluster_id)
+        s3_objs = (aws_util.s3.count_objects(s3_bucket)
                    if s3_bucket else -1)
         while s3_bucket and s3_objs > 0 and time.time() < deadline:
             self.log.info(
                 "Waiting for CP to drain the Fusion S3 bucket '{}' on {} "
                 "({} objects)...".format(s3_bucket, cluster_id, s3_objs))
             time.sleep(30)
-            s3_bucket = self.fusion_aws_util.find_fusion_s3_bucket(cluster_id)
-            s3_objs = (self.fusion_aws_util.count_s3_objects(s3_bucket)
+            s3_bucket = aws_util.find_fusion_s3_bucket(cluster_id)
+            s3_objs = (aws_util.s3.count_objects(s3_bucket)
                        if s3_bucket else -1)
         if s3_bucket and s3_objs > 0:
             self.fail(
@@ -1041,7 +1585,7 @@ class FusionBackupRestoreBase(APIBase):
 
     TARGET_PRELOAD_PREFIX = "tgt-pre-"
 
-    def preload_target(self, rebalance):
+    def preload_target(self, rebalance, aws_util=None):
         """Give the target its OWN data before the restore, so we test
         restoring into a NON-EMPTY cluster (a common customer situation).
 
@@ -1062,7 +1606,7 @@ class FusionBackupRestoreBase(APIBase):
         self._delete_buckets_with_prefix(cid, proj, self.TARGET_PRELOAD_PREFIX)
         name = "{}{}".format(
             self.TARGET_PRELOAD_PREFIX,
-            self.generate_random_string(5, special_characters=False))
+            uuid.uuid4().hex[:5])
         self.log.info(
             "Pre-loading target {} with its own bucket '{}'".format(cid, name))
         bkt_id = self.create_fusion_bucket(cid, name, project_id=proj)
@@ -1099,8 +1643,9 @@ class FusionBackupRestoreBase(APIBase):
             self.log.info(
                 "Target Fusion rebalance complete ({} -> {} nodes)".format(
                     self._target_original_nodes, new_nodes))
-            if self.fusion_aws_util:
-                guest = self.fusion_aws_util.get_guest_volumes_for_cluster(cid)
+            aws_util = aws_util or self.fusion_aws_util
+            if aws_util:
+                guest = aws_util.get_guest_volumes_for_cluster(cid)
                 for vols in guest.values():
                     vol_ids.update(vols)
                 self.log.info(
@@ -1135,23 +1680,26 @@ class FusionBackupRestoreBase(APIBase):
                     preload_bucket, present))
 
     def assert_guest_volumes_deleted(self, cluster_id, pre_vol_ids,
-                                     timeout=1800):
+                                     timeout=1800, aws_util=None):
         """Verify the restore deleted the target's pre-existing guest volumes:
         none of pre_vol_ids may remain on the cluster. Hard fail otherwise.
+        aws_util defaults to the source util; pass the target region's util for
+        a cross-region restore.
         """
+        aws_util = aws_util or self.fusion_aws_util
         if not pre_vol_ids:
             self.log.warning(
                 "No pre-restore guest volumes captured — skipping deletion "
                 "check on {}.".format(cluster_id))
             return
-        if not self.fusion_aws_util:
+        if not aws_util:
             self.log.warning(
                 "AWS creds not set — skipping guest-volume deletion check.")
             return
         deadline = time.time() + timeout
         remaining = set(pre_vol_ids)
         while remaining and time.time() < deadline:
-            guest = self.fusion_aws_util.get_guest_volumes_for_cluster(
+            guest = aws_util.get_guest_volumes_for_cluster(
                 cluster_id)
             current = set()
             for vols in guest.values():
@@ -1172,29 +1720,80 @@ class FusionBackupRestoreBase(APIBase):
             "All {} pre-restore guest volumes deleted on {} after "
             "restore".format(len(pre_vol_ids), cluster_id))
 
+    def _cp_poll(self, fn, *args, **kwargs):
+        """Call a CapellaAPI method for a poll loop and classify the outcome:
+          ('ok', resp)        -- HTTP 200
+          ('rate', resp)      -- HTTP 429 (rate limited)
+          ('notfound', reason)-- HTTP 404: the resource genuinely does not
+                                 exist (e.g. a restore never created the
+                                 bucket). This is a PRODUCT/restore signal, not
+                                 infra — callers must not conflate it with a CP
+                                 outage.
+          ('transient', reason)-- the wrapper's sys.exit() (BaseException) on a
+                                 connection error, a 5xx, or any other non-200:
+                                 the control plane is momentarily unusable.
+        Callers treat 'transient'/'notfound' as "retry WITHOUT spending the
+        convergence budget" and give up only after _cp_error_limit consecutive
+        such results, with a message that names which of the two it was."""
+        try:
+            resp = fn(*args, **kwargs)
+        except BaseException as exc:
+            return "transient", "exception: {}".format(exc)
+        code = getattr(resp, "status_code", None)
+        if code == 200:
+            return "ok", resp
+        if code == 429:
+            return "rate", resp
+        reason = "HTTP {}: {}".format(
+            code, (resp.content[:200] if getattr(resp, "content", None)
+                   else ""))
+        if code == 404:
+            return "notfound", reason
+        return "transient", reason
+
+    def _cp_giveup_msg(self, outcome, resource, count):
+        """Message when a poll loop gives up after `count` consecutive non-OK
+        results, worded by outcome so infra (5xx/network) is never confused with
+        a genuine not-found (restore did not create the resource)."""
+        secs = count * self._cp_poll_interval
+        if outcome == "notfound":
+            return ("{} not found after ~{}s ({} consecutive 404s) — the "
+                    "restore did not create it".format(resource, secs, count))
+        return ("Control plane unreachable for {} — {} consecutive errors "
+                "(~{}s)".format(resource, count, secs))
+
     def _wait_for_cluster_healthy(self, cluster_id, project_id, timeout=1800):
         """Poll cluster state until healthy or timeout.
 
-        Logs the full response body once per minute when the `currentState`
-        field is empty/missing — useful for catching cases where the v4
-        API returns a body with a renamed field during certain ops.
+        Resilient to a flaky control plane: transient CP errors (wrapper
+        sys.exit / 5xx / network) do NOT count against the convergence timeout,
+        and a sustained outage (>= _cp_error_limit consecutive) fails fast with
+        a clear "control plane unreachable" message rather than silently eating
+        the whole timeout and reporting a misleading "did not reach healthy".
         """
         deadline = time.time() + timeout
         last_state_logged = None
         last_full_log = 0
+        cp_errors = 0
         while time.time() < deadline:
-            try:
-                resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, project_id, cluster_id)
-            except BaseException as exc:
-                self.log.warning(
-                    "fetch_cluster_info transient error on {}: {} — "
-                    "retrying after 15s".format(cluster_id, exc))
-                time.sleep(15)
+            outcome, payload = self._cp_poll(
+                self.capellaAPI.cluster_ops_apis.fetch_cluster_info,
+                self.organisation_id, project_id, cluster_id)
+            if outcome in ("transient", "notfound"):
+                cp_errors += 1
+                if cp_errors >= self._cp_error_limit:
+                    self.fail(self._cp_giveup_msg(
+                        outcome, "cluster {}".format(cluster_id), cp_errors)
+                        + "; last: {}".format(payload))
+                # Don't spend the convergence budget on a CP blip / not-yet.
+                deadline += self._cp_poll_interval
+                time.sleep(self._cp_poll_interval)
                 continue
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+            cp_errors = 0
+            if outcome == "rate":
+                self.handle_rate_limit(int(payload.headers["Retry-After"]))
                 continue
+            resp = payload
             if resp.status_code == 200:
                 body = resp.json()
                 state = body.get("currentState", "")
@@ -1215,16 +1814,12 @@ class FusionBackupRestoreBase(APIBase):
                 if state == self.CLUSTER_HEALTHY:
                     return True
                 if state in ["deploymentFailed", "deletionFailed",
-                             "restoreFailed", "rebalanceFailed"]:
+                             "restoreFailed", "rebalanceFailed", "scaleFailed"]:
                     self.fail(
                         "Cluster {} reached terminal error state: {}".format(
                             cluster_id, state))
-            else:
-                self.log.warning(
-                    "fetch_cluster_info non-200: {} {}".format(
-                        resp.status_code,
-                        resp.content[:300] if resp.content else ""))
-            time.sleep(15)
+            # 200 but still converging — this DOES count against the timeout.
+            time.sleep(self._cp_poll_interval)
         self.fail(
             "Cluster {} did not reach healthy within {}s".format(
                 cluster_id, timeout))
@@ -1251,7 +1846,7 @@ class FusionBackupRestoreBase(APIBase):
             else:
                 self.log.info(
                     "tearDown: deleted backup {}".format(self._last_backup_id))
-        except Exception as exc:
+        except BaseException as exc:
             self.log.warning(
                 "tearDown: exception deleting backup {}: {}".format(
                     self._last_backup_id, exc))
@@ -1289,10 +1884,13 @@ class FusionBackupRestoreBase(APIBase):
     def populate_source_buckets(self):
         """Populate the source cluster's bucket(s) with self.num_docs docs each.
 
-        Reuse path: with source_bucket_id set, reuse that already-loaded bucket
-        (no reload). Otherwise delete any stale source bucket first, then create
-        + load fresh ones (delete-old-create-new — buckets never accumulate).
-        Records bucket ids/names in self.source_bucket_ids/source_bucket_names.
+        Reuse is the default so a 100M-doc load isn't repeated every test:
+          1. source_bucket_id set -> reuse that specific bucket (top up if short)
+          2. else, an existing fusion-bkt-* bucket on the (pooled) cluster is
+             reused as-is, topping up only if short of num_docs
+          3. else (fresh cluster) -> create + load
+        Buckets are preserved (never deleted here). Records bucket ids/names in
+        self.source_bucket_ids/source_bucket_names.
         """
         cid, proj = self.source_cluster_id, self.source_project_id
         ops = self.capellaAPI.cluster_ops_apis
@@ -1324,10 +1922,45 @@ class FusionBackupRestoreBase(APIBase):
                     create_start_index=count, create_end_index=self.num_docs)
             return
 
-        # Delete any stale source bucket(s) first so a fresh one can be created
-        # without accumulating buckets / exhausting the cluster's KV-RAM quota.
+        # Reuse usable source bucket(s) on the pooled cluster; top up if short.
+        # A stale/malformed/missing bucket falls through to create-fresh below.
+        existing = []
+        lb = ops.list_buckets(self.organisation_id, proj, cid)
+        if lb.status_code == 200:
+            for b in lb.json().get("data", []):
+                if (b.get("name", "").startswith(self.SOURCE_BUCKET_PREFIX)
+                        and b.get("id")
+                        and b.get("stats", {}).get("itemCount") is not None):
+                    existing.append(b)
+        if len(existing) >= self.num_buckets:
+            for b in existing[:self.num_buckets]:
+                name, bid = b["name"], b["id"]
+                count = b.get("stats", {}).get("itemCount", 0)
+                self.source_bucket_ids.append(bid)
+                self.source_bucket_names.append(name)
+                if count < self.num_docs:
+                    self.log.info(
+                        "Reusing source bucket '{}' ({} docs) — topping up to "
+                        "{}".format(name, count, self.num_docs))
+                    self.load_documents(
+                        cid, name, self.num_docs, project_id=proj,
+                        create_start_index=count,
+                        create_end_index=self.num_docs)
+                else:
+                    self.log.info(
+                        "Reusing source bucket '{}' ({} docs >= {}) — no "
+                        "reload".format(name, count, self.num_docs))
+            return
+
+        # No reusable bucket on this (fresh) cluster — create + load. Clear any
+        # partial leftovers first so the KV-RAM quota isn't exhausted.
         self._delete_buckets_with_prefix(cid, proj, self.SOURCE_BUCKET_PREFIX)
-        run_id = self.generate_random_string(6, special_characters=False)
+        # Use uuid, NOT generate_random_string: the doc generator calls
+        # random.seed(0) on the global RNG during loading, which makes
+        # generate_random_string deterministic — producing IDENTICAL bucket
+        # names across separate runs and cross-contaminating clusters that
+        # share a DocLoader. uuid4 is independent of the RNG seed.
+        run_id = uuid.uuid4().hex[:6]
         for i in range(self.num_buckets):
             name = "{}{}-{}".format(self.SOURCE_BUCKET_PREFIX, run_id, i)
             self.source_bucket_ids.append(
@@ -1364,17 +1997,28 @@ class FusionBackupRestoreBase(APIBase):
         return the last observed count."""
         count = 0
         deadline = time.time() + timeout
+        cp_errors = 0
         while time.time() < deadline:
-            resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(
+            outcome, payload = self._cp_poll(
+                self.capellaAPI.cluster_ops_apis.fetch_bucket_info,
                 self.organisation_id, project_id, cluster_id, bucket_id)
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+            if outcome in ("transient", "notfound"):
+                cp_errors += 1
+                if cp_errors >= self._cp_error_limit:
+                    self.fail(self._cp_giveup_msg(
+                        outcome, "bucket {}".format(bucket_id), cp_errors)
+                        + "; last: {}".format(payload))
+                deadline += self._cp_poll_interval
+                time.sleep(self._cp_poll_interval)
                 continue
-            if resp.status_code == 200:
-                count = resp.json().get("stats", {}).get("itemCount", 0)
-                if count >= target:
-                    break
-            time.sleep(15)
+            cp_errors = 0
+            if outcome == "rate":
+                self.handle_rate_limit(int(payload.headers["Retry-After"]))
+                continue
+            count = payload.json().get("stats", {}).get("itemCount", 0)
+            if count >= target:
+                break
+            time.sleep(self._cp_poll_interval)
         return count
 
     def verify_data_integrity(self):
@@ -1434,6 +2078,32 @@ class FusionBackupRestoreBase(APIBase):
                 "Data integrity OK: bucket '{}' — source={}, target={}".format(
                     name, source_count, target_count))
 
+            # Basic correctness beyond count: the restored bucket must be Magma
+            # (fusion requires Magma), and its settings are logged for
+            # post-run visibility. The Magma assertion only fires when the
+            # field is present and genuinely non-Magma, so it can't false-fail.
+            tgt = ops.fetch_bucket_info(
+                self.organisation_id, self.target_project_id,
+                self.target_cluster_id, tgt_bkt_id)
+            if tgt.status_code == 200:
+                tcfg = tgt.json()
+                scfg = src.json()
+                storage = tcfg.get("storageBackend")
+                if storage and str(storage).lower() != "magma":
+                    self.fail(
+                        "Restored bucket '{}' is not Magma (storageBackend={})"
+                        " — fusion requires Magma".format(name, storage))
+                self.log.info(
+                    "Bucket '{}' after restore: storageBackend={}, replicas={},"
+                    " durability={}, ttl={}, ramMB={} | source: replicas={}, "
+                    "durability={}, ttl={}".format(
+                        name, storage, tcfg.get("replicas"),
+                        tcfg.get("durabilityLevel"),
+                        tcfg.get("timeToLiveInSeconds"),
+                        tcfg.get("memoryAllocationInMb"),
+                        scfg.get("replicas"), scfg.get("durabilityLevel"),
+                        scfg.get("timeToLiveInSeconds")))
+
     def create_fusion_bucket(self, cluster_id, bucket_name, project_id=None):
         """Create a Magma bucket on the cluster. Returns bucket_id.
 
@@ -1443,17 +2113,26 @@ class FusionBackupRestoreBase(APIBase):
         """
         project_id = project_id or self.project_id
         ram = self.bucket_ram_quota
-        resp = self.capellaAPI.cluster_ops_apis.create_bucket(
-            self.organisation_id, project_id, cluster_id,
-            bucket_name, "couchbase", "magma",
-            ram, "seqno", "none", 1, False, 0)
-        if resp.status_code == 429:
-            self.handle_rate_limit(int(resp.headers["Retry-After"]))
+        deadline = time.time() + self.rebalance_timeout
+        while True:
             resp = self.capellaAPI.cluster_ops_apis.create_bucket(
                 self.organisation_id, project_id, cluster_id,
                 bucket_name, "couchbase", "magma",
                 ram, "seqno", "none", 1, False, 0)
-        if resp.status_code != 201:
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                continue
+            if resp.status_code == 201:
+                break
+            body = (resp.content or b"").decode("utf-8", "ignore").lower()
+            if (("rebalancing" in body or "temporarily unavailable" in body)
+                    and time.time() < deadline):
+                self.log.info(
+                    "Bucket create on {} deferred (cluster busy) — waiting for "
+                    "healthy, then retrying".format(cluster_id))
+                self._wait_for_cluster_healthy(
+                    cluster_id, project_id, timeout=self.rebalance_timeout)
+                continue
             self.fail(
                 "Bucket creation failed on cluster {}: {} {}".format(
                     cluster_id, resp.status_code, resp.content))
@@ -1476,7 +2155,7 @@ class FusionBackupRestoreBase(APIBase):
             "0.0.0.0/0", comment="TAF fusion test")
 
         username = "taf_loader_{}".format(
-            self.generate_random_string(6, special_characters=False))
+            uuid.uuid4().hex[:6])
         password = "{}P@ss1!".format(
             self.generate_random_string(8, special_characters=False))
         access = [{"privileges": ["data_reader", "data_writer"]}]
@@ -1815,35 +2494,39 @@ class FusionBackupRestoreBase(APIBase):
             "Waiting for rebalance to complete on cluster {}".format(cluster_id))
         time.sleep(30)
 
+        cp_errors = 0
         while time.time() < deadline:
-            # capellaAPI's CbcAPIError raises SystemExit (a BaseException, not
-            # Exception) on transient connection drops like RemoteDisconnected
-            # or "Connection aborted." — catch BaseException so a single
-            # network blip doesn't kill the entire polling loop.
-            try:
-                resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, project_id, cluster_id)
-            except BaseException as exc:
-                self.log.warning(
-                    "fetch_cluster_info transient error on {}: {} — "
-                    "retrying after 20s".format(cluster_id, exc))
-                time.sleep(20)
-                continue
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                continue
-            if resp.status_code == 200:
-                state = resp.json().get("currentState", "")
-                self.log.info(
-                    "Cluster {} state: {}".format(cluster_id, state))
-                if state == self.CLUSTER_HEALTHY:
-                    return True
-                if state in ["rebalanceFailed", "deploymentFailed"]:
-                    self.log.error(
-                        "Rebalance failed on cluster {}: {}".format(
-                            cluster_id, state))
+            # Resilient to a flaky CP: transient errors (wrapper sys.exit / 5xx /
+            # network) don't burn the rebalance budget; a sustained outage gives
+            # up (returns False) rather than eating the whole timeout.
+            outcome, payload = self._cp_poll(
+                self.capellaAPI.cluster_ops_apis.fetch_cluster_info,
+                self.organisation_id, project_id, cluster_id)
+            if outcome in ("transient", "notfound"):
+                cp_errors += 1
+                if cp_errors >= self._cp_error_limit:
+                    self.log.error(self._cp_giveup_msg(
+                        outcome, "cluster {}".format(cluster_id), cp_errors)
+                        + "; last: {}".format(payload))
                     return False
-            time.sleep(20)
+                deadline += self._cp_poll_interval
+                time.sleep(self._cp_poll_interval)
+                continue
+            cp_errors = 0
+            if outcome == "rate":
+                self.handle_rate_limit(int(payload.headers["Retry-After"]))
+                continue
+            state = payload.json().get("currentState", "")
+            self.log.info(
+                "Cluster {} state: {}".format(cluster_id, state))
+            if state == self.CLUSTER_HEALTHY:
+                return True
+            if state in ["rebalanceFailed", "deploymentFailed", "scaleFailed"]:
+                self.log.error(
+                    "Rebalance/scale failed on cluster {}: {} — failing fast "
+                    "(terminal state)".format(cluster_id, state))
+                return False
+            time.sleep(self._cp_poll_interval)
 
         self.log.error(
             "Rebalance did not complete within {}s".format(
@@ -1851,13 +2534,15 @@ class FusionBackupRestoreBase(APIBase):
         return False
 
     def regenerate_guest_volumes_via_rebalance(self, cluster_id,
-                                               project_id=None):
+                                               project_id=None, aws_util=None):
         """Restore brings back KV primary data but does NOT re-attach guest
         volumes from their snapshots — guest volumes regenerate on the next
         Fusion rebalance. Trigger that rebalance, wait for it, and return the
         per-node guest-volume map ({node_id: [vol_ids]}; empty if AWS creds
-        aren't set)."""
+        aren't set). aws_util defaults to the source util; pass the target
+        region's util for a cross-region restore."""
         project_id = project_id or self.project_id
+        aws_util = aws_util or self.fusion_aws_util
         self.log.info(
             "Post-restore: triggering a Fusion rebalance on {} to regenerate "
             "guest volumes (restore restores primary data only)".format(
@@ -1868,41 +2553,441 @@ class FusionBackupRestoreBase(APIBase):
             self.fail(
                 "Post-restore Fusion rebalance did not complete on {}".format(
                     cluster_id))
-        if not self.fusion_aws_util:
+        if not aws_util:
             return {}
-        try:
-            guest = self.fusion_aws_util.get_guest_volumes_for_cluster(
-                cluster_id)
-        except NotImplementedError:
-            return {}
+        return self._settle_guest_volumes(cluster_id, aws_util)
+
+    def _settle_guest_volumes(self, cluster_id, aws_util, timeout=None):
+        """Return the per-node guest-volume map, tolerating attach/tag lag.
+
+        Guest volumes attach and get tagged a little AFTER a Fusion rebalance
+        reports the cluster healthy, so a single immediate EC2 read races them
+        and yields a spurious 0 (or a partial count that varies run-to-run,
+        e.g. 0/1/3). Poll until the detected count is nonzero AND stable across
+        two consecutive reads, or until timeout. A genuine 0 (no volumes were
+        created) is still returned after the timeout, so real failures are not
+        masked — just confirmed. 'unattached' is excluded from the map."""
+        timeout = timeout or int(
+            self.input.param("guest_vol_settle_timeout", 300))
+        deadline = time.time() + timeout
+        last_total = -1
+        guest = {}
+        while time.time() < deadline:
+            try:
+                guest = aws_util.get_guest_volumes_for_cluster(cluster_id)
+            except NotImplementedError:
+                return {}
+            except BaseException as exc:
+                self.log.warning(
+                    "guest-volume read on {} errored: {} — retrying".format(
+                        cluster_id, exc))
+                time.sleep(15)
+                continue
+            attached = {n: v for n, v in guest.items() if n != "unattached"}
+            total = sum(len(v) for v in attached.values())
+            if total > 0 and total == last_total:
+                break
+            if total != last_total:
+                self.log.info(
+                    "guest-volume count on {} = {} (waiting for it to settle "
+                    "nonzero)".format(cluster_id, total))
+            last_total = total
+            time.sleep(15)
         return {n: sorted(v) for n, v in guest.items() if n != "unattached"}
 
-    def trigger_snapshot_backup(self, cluster_id, project_id=None):
-        """POST cloudsnapshotbackups and return the backup_id."""
+    def _delete_unhealthy_clusters(self):
+        """At tearDown, delete EVERY known cluster that is NOT healthy — this
+        test's source/target AND every cluster still in the reuse pool — so
+        unhealthy clusters never accumulate across the run. Health is read with
+        a couple of retries so a single transient API blip (500/network)
+        doesn't trigger a false delete; if it still does not read back healthy,
+        the cluster is torn down. Healthy clusters are left for reuse. Returns
+        the set of deleted cluster ids (also evicted from the reuse pool)."""
+        deleted = set()
+        seen = set()
+        # Candidates = this test's source/target + every pooled cluster (from
+        # earlier tests) + anything this test created. Sweeping the whole pool
+        # each teardown means an unhealthy cluster is reaped in the very next
+        # teardown, not left until the end of the matrix.
+        candidates = [(self.source_cluster_id, self.source_project_id),
+                      (self.target_cluster_id, self.target_project_id)]
+        for entries in type(self)._cluster_pool.values():
+            for e in entries:
+                candidates.append((e.get("id"), e.get("project_id")))
+        for cid in list(self._clusters_created):
+            candidates.append((cid, self.project_id))
+        for cid, proj in candidates:
+            proj = proj or self.project_id
+            if not cid or cid in seen:
+                continue
+            seen.add(cid)
+            state = None
+            for attempt in range(3):
+                try:
+                    info = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                        self.organisation_id, proj, cid)
+                    if info.status_code == 200:
+                        state = (info.json().get("currentState") or "").lower()
+                        break
+                except BaseException:
+                    pass
+                if attempt < 2:
+                    time.sleep(10)
+            if state == self.CLUSTER_HEALTHY:
+                continue
+            self.log.warning(
+                "tearDown: cluster {} not healthy (state={!r}) — deleting so "
+                "the next test deploys a fresh one".format(cid, state))
+            ok = False
+            try:
+                resp = self.capellaAPI.cluster_ops_apis.delete_cluster(
+                    self.organisation_id, proj, cid)
+                ok = getattr(resp, "status_code", 202) in (200, 202, 204, 404)
+                if not ok:
+                    self.log.warning(
+                        "tearDown: delete cluster {} returned {}: {}".format(
+                            cid, resp.status_code, resp.content))
+            except BaseException as exc:
+                self.log.warning(
+                    "tearDown: delete unhealthy cluster {} raised {}".format(
+                        cid, exc))
+            if not ok:
+                # Delete failed (e.g. mid-rebalance / API blip). Do NOT forget
+                # it — keep it tracked so the next teardown retries, and flag it
+                # loudly (it's also in the ledger) so the id is never lost.
+                self.log.critical(
+                    "LEAKED cluster {} — delete failed, kept tracked for retry "
+                    "(also in the ledger; cleanup_fusion_clusters.py can reap "
+                    "it)".format(cid))
+                continue
+            deleted.add(cid)
+            if cid in self._clusters_created:
+                self._clusters_created.remove(cid)
+            for entries in type(self)._cluster_pool.values():
+                entries[:] = [e for e in entries if e.get("id") != cid]
+            self._acquired_pool_entries = [
+                e for e in self._acquired_pool_entries if e.get("id") != cid]
+        return deleted
+
+    def run_backup_restore_case(self, *, source_fusion_enabled,
+                                source_has_guest_volumes,
+                                target_fusion_enabled,
+                                target_has_guest_volumes=False,
+                                target_transition=None,
+                                same_cluster=False,
+                                expect_target_enabled,
+                                check_pre_existing_gv_deleted=None,
+                                cross_region=False,
+                                cross_region_backup=False):
+        """Run one backup/restore matrix case end-to-end and validate it.
+
+        cross_region_backup: at snapshot time, copy the backup to the alternate
+            region (DR / "enable cross-region backups"), verify the copy landed
+            there, then provision the target in that region and restore from the
+            copied backup — mirroring the cross-region restore flow but with the
+            backup explicitly pre-positioned in the other region. Implies the
+            target is in the alternate region.
+
+        source_fusion_enabled / target_fusion_enabled: provision each cluster in
+            that fusion state.
+        source_has_guest_volumes: rebalance the source so it has guest volumes
+            (and shard data in the fusion S3 bucket) before the backup.
+        target_has_guest_volumes: preload + rebalance the target so it has its
+            OWN guest volumes before restore; those are captured and asserted
+            deleted by the restore.
+        target_transition: None | "enabling" | "disabling" — fire enable/disable
+            on the target and DO NOT wait, then restore while the target is still
+            mid-transition (tests the operation against an in-flight state).
+        same_cluster: restore into the source cluster itself (self-cluster).
+        expect_target_enabled: expected target fusion state after restore.
+        check_pre_existing_gv_deleted: defaults to target_has_guest_volumes.
+        """
+        if check_pre_existing_gv_deleted is None:
+            check_pre_existing_gv_deleted = target_has_guest_volumes
+        free_to = int(self.input.param("fusion_free_timeout", 1800))
+
+        # cross_region (restore) OR cross_region_backup: keep the source in the
+        # chosen aws_region (reused from the pool) and put the target in the
+        # alternate region. The target's guest-volume/S3 checks then run against
+        # the target region's AWS util. Same-region (default) leaves target util
+        # == source util.
+        remote_target = cross_region or cross_region_backup
+        self._target_region = (self._alternate_region(self.aws_region)
+                               if remote_target else self.aws_region)
+        self._target_aws_util = self._aws_util_for_region(self._target_region)
+        # cross_region_backup copies the snapshot to the alternate region at
+        # backup time, then restores from that copy there.
+        backup_copy_regions = [self._target_region] if cross_region_backup \
+            else None
+        if remote_target:
+            self.log.info(
+                "{}: source region {}, target region {}".format(
+                    "Cross-region backup" if cross_region_backup
+                    else "Cross-region restore",
+                    self.aws_region, self._target_region))
+
+        # --- Source ---
+        self.log.info("=== Step 1: Provisioning source cluster (fusion={}) "
+                      "===".format(source_fusion_enabled))
+        if not self.source_cluster_id:
+            self.source_cluster_id, self.source_project_id = (
+                self.acquire_cluster(
+                    fusion_enabled=source_fusion_enabled,
+                    num_nodes=self.source_num_nodes,
+                    name_prefix="TAF_FusionSrc",
+                    # A guest-volume source is mutated by its per-test fusion
+                    # rebalance (Step 3), so it can't be reused — provision it
+                    # fresh and delete it after this test.
+                    fresh=source_has_guest_volumes))
+        else:
+            if not self.wait_for_deployment(
+                    self.source_project_id, self.source_cluster_id):
+                self.fail("Source cluster not healthy at start")
+            if source_fusion_enabled:
+                self._enable_fusion_and_wait(
+                    self.source_cluster_id, self.source_project_id)
+
+        self.log.info("=== Step 2: Populating source data ===")
+        self.populate_source_buckets()
+
+        if source_has_guest_volumes:
+            self.log.info("=== Step 3: Source Fusion rebalance (guest "
+                          "volumes) ===")
+            self._source_original_nodes, _ = self.trigger_fusion_rebalance(
+                self.source_cluster_id, project_id=self.source_project_id)
+            if not self.wait_for_rebalance_complete(
+                    self.source_cluster_id, project_id=self.source_project_id):
+                self.fail("Source Fusion rebalance did not complete")
+            # Record the source guest-volume count at backup time, mapped by
+            # node — this is what the count-mismatch and node-mapping
+            # snapshot_verification tests asserted; logged here so every
+            # source-with-guest-volumes matrix case carries the same evidence.
+            if self.fusion_aws_util:
+                # Settle-poll: guest volumes attach/tag a little after the
+                # rebalance reports healthy, so a single read can race them.
+                sg = self._settle_guest_volumes(
+                    self.source_cluster_id, self.fusion_aws_util)
+                by_node = {n: len(v) for n, v in sg.items()
+                           if n != "unattached"}
+                self._source_guest_vol_count = sum(by_node.values())
+                self.log.info(
+                    "Source guest volumes at backup: {} total, by node: "
+                    "{}".format(self._source_guest_vol_count, by_node))
+
+        self.log.info("=== Step 4: Creating snapshot backup ===")
+        backup_id = self.trigger_snapshot_backup(
+            self.source_cluster_id, project_id=self.source_project_id,
+            copy_regions=backup_copy_regions)
+        self._last_backup_id = backup_id
+        backup_record = self.wait_for_backup_complete(
+            backup_id, self.source_cluster_id,
+            project_id=self.source_project_id)
+        if backup_copy_regions:
+            self.assert_backup_copied_to_regions(
+                backup_record, backup_copy_regions)
+
+        # --- Target ---
+        if same_cluster:
+            self.target_cluster_id = self.source_cluster_id
+            self.target_project_id = self.source_project_id
+            self.log.info("=== Step 5: Self-cluster restore — target = "
+                          "source {} ===".format(self.source_cluster_id))
+        else:
+            self.log.info("=== Step 5: Provisioning target cluster (fusion={}) "
+                          "===".format(target_fusion_enabled))
+            if not self.target_cluster_id:
+                self.target_cluster_id, self.target_project_id = (
+                    self.acquire_cluster(
+                        fusion_enabled=target_fusion_enabled,
+                        num_nodes=self.target_num_nodes,
+                        name_prefix="TAF_FusionTgt",
+                        region=self._target_region))
+            else:
+                if not self.wait_for_deployment(
+                        self.target_project_id, self.target_cluster_id):
+                    self.fail("Target cluster not healthy at start")
+                if target_fusion_enabled:
+                    self._enable_fusion_and_wait(
+                        self.target_cluster_id, self.target_project_id)
+            self._target_original_nodes = self.get_cluster_node_count(
+                self.target_cluster_id, self.target_project_id)
+
+        # --- Pre-existing guest volumes on the target ---
+        pre_guest_vols = set()
+        if same_cluster and source_has_guest_volumes and self.fusion_aws_util:
+            g = self._settle_guest_volumes(
+                self.source_cluster_id, self.fusion_aws_util)
+            for k, v in g.items():
+                if k != "unattached":
+                    pre_guest_vols.update(v)
+        elif target_has_guest_volumes and not same_cluster:
+            self.log.info("=== Step 6: Preload target + rebalance (target "
+                          "guest volumes) ===")
+            _pre_bucket, pre_guest_vols = self.preload_target(
+                rebalance=True, aws_util=self._target_aws_util)
+        self.log.info("Target has {} pre-existing guest volume(s) before "
+                      "restore".format(len(pre_guest_vols)))
+
+        # --- Drive the target into a transitional state (fire, do NOT wait) ---
+        if target_transition == "enabling":
+            self.log.info("=== Step 7: Trigger ENABLE on target and restore "
+                          "while still enabling (no wait) ===")
+            self.enable_fusion_on_cluster(
+                self.target_cluster_id, self.target_project_id)
+        elif target_transition == "disabling":
+            self.log.info("=== Step 7: Trigger DISABLE on target and restore "
+                          "while still disabling (no wait) ===")
+            self.disable_fusion_on_cluster(
+                self.target_cluster_id, self.target_project_id)
+
+        # --- Restore ---
+        self.log.info("=== Step 8: Restoring backup into target ===")
+        self.trigger_restore(
+            backup_id=backup_id, target_cluster_id=self.target_cluster_id,
+            project_id=self.target_project_id)
+        self.wait_for_restore_complete(
+            self.target_cluster_id, project_id=self.target_project_id,
+            expected_bucket_names=self.source_bucket_names)
+
+        # --- Validations ---
+        self.log.info("=== Step 9: Verifying data integrity ===")
+        self.verify_data_integrity()
+
+        # Every restore must leave a clean target: scan the restored cluster's
+        # memcached logs (and crash dir) for CRITICAL errors / core dumps and
+        # fail if any are found.
+        self._scan_memcached_logs_after_restore(
+            self.target_cluster_id, self._target_aws_util)
+
+        if check_pre_existing_gv_deleted and pre_guest_vols:
+            self.log.info("=== Step 10: Verifying pre-existing target guest "
+                          "volumes deleted by restore ===")
+            self.assert_guest_volumes_deleted(
+                self.target_cluster_id, pre_guest_vols, timeout=free_to,
+                aws_util=self._target_aws_util)
+
+        if expect_target_enabled and (source_has_guest_volumes or remote_target):
+            # Restoring a GUEST-VOLUME backup is a "mid-migration" restore: per
+            # the CP team, in ANY region it does NOT create fusion accelerator
+            # nodes — the restore attaches guest volumes to the active nodes,
+            # completes the restore, then a queued teardown job destroys them
+            # once the background migration finishes. So a target restored from
+            # a guest-volume backup legitimately ends with 0 persistent guest
+            # volumes (they exist only transiently mid-migration). We therefore
+            # validate the restore by DATA INTEGRITY (Step 9), not by
+            # guest-volume presence. (A non-guest-volume source is a normal
+            # backup — that path below still regenerates + asserts guest
+            # volumes, since the target builds its own.)
+            self.log.info(
+                "=== Step 11: guest-volume (mid-migration) restore — target "
+                "guest volumes are torn down post-migration by design; "
+                "validated via data integrity above, skipping guest-volume "
+                "presence check ===")
+        elif expect_target_enabled:
+            self.log.info("=== Step 11: Verifying target is Fusion-enabled "
+                          "(guest volumes regenerate on rebalance) ===")
+            if self._target_aws_util:
+                node_vols = self.regenerate_guest_volumes_via_rebalance(
+                    self.target_cluster_id, self.target_project_id,
+                    aws_util=self._target_aws_util)
+                target_total = sum(len(v) for v in node_vols.values())
+                # Node-mapping + count-mismatch evidence (folded from the
+                # snapshot_verification node_mapping / count_mismatch tests):
+                # log the per-node guest-volume distribution and compare the
+                # target's regenerated count against the source's at backup.
+                self.log.info(
+                    "Target guest volumes after post-restore rebalance: {} "
+                    "total, by node: {}".format(
+                        target_total,
+                        {n: len(v) for n, v in node_vols.items()}))
+                if self._source_guest_vol_count is not None:
+                    self.log.info(
+                        "Guest-volume counts — source@backup={}, target "
+                        "pre-existing={}, target regenerated={}".format(
+                            self._source_guest_vol_count,
+                            len(pre_guest_vols), target_total))
+                if target_total == 0:
+                    self.fail(
+                        "Target expected Fusion-enabled but 0 guest volumes "
+                        "after a post-restore rebalance")
+        else:
+            self.log.info("=== Step 11: Verifying target is Fusion-free (no "
+                          "guest volumes, S3 empty/absent) ===")
+            self.assert_fusion_free_after_restore(
+                self.target_cluster_id, project_id=self.target_project_id,
+                timeout=free_to, aws_util=self._target_aws_util)
+
+        self._test_succeeded = True
+
+    def trigger_snapshot_backup(self, cluster_id, project_id=None,
+                                copy_regions=None):
+        """POST cloudsnapshotbackups and return the backup_id.
+
+        copy_regions: when set, request the snapshot be copied to those
+        additional region(s) at backup time (cross-region backup / DR). The
+        request body field carrying the region list is configurable via the
+        ``backup_copy_regions_field`` param (default ``copyToRegions``) so the
+        exact API contract can be corrected without a code change; the copy is
+        then verified against the backup record (see run_backup_restore_case),
+        so a wrong field name fails loudly rather than silently no-op'ing."""
         project_id = project_id or self.project_id
 
-        endpoint = (
+        # The backup RECORD is the same object on both APIs, so we always
+        # list/wait via the public v4 endpoint (below and in
+        # wait_for_backup_complete).
+        v4_endpoint = (
             "/v4/organizations/{}/projects/{}/clusters/{}"
             "/cloudsnapshotbackups".format(
                 self.organisation_id, project_id, cluster_id))
 
-        self.log.info(
-            "Triggering cloud snapshot backup for cluster {}".format(cluster_id))
+        body = {}
+        if copy_regions:
+            # Confirmed contract: {"copyToRegions": [...], "retention": N}.
+            field = self.input.param(
+                "backup_copy_regions_field", "copyToRegions")
+            body[field] = list(copy_regions)
+            body["retention"] = int(self.input.param("backup_retention", 30))
 
-        resp = self.capellaAPI.cluster_ops_apis.api_post(endpoint, {})
-        if resp.status_code == 429:
-            self.handle_rate_limit(int(resp.headers["Retry-After"]))
-            resp = self.capellaAPI.cluster_ops_apis.api_post(endpoint, {})
+        if copy_regions:
+            # copyToRegions is an INTERNAL v2 feature: the public v4 schema
+            # rejects it (400 "unknown key copyToRegions") and the public host
+            # has no /v2 route (404 nginx). Go through the internal API — the
+            # same transport trigger_fusion_rebalance uses for /specs.
+            endpoint = (
+                "{}/v2/organizations/{}/projects/{}/clusters/{}"
+                "/cloudsnapshotbackups".format(
+                    self.capellaAPI.internal_url,
+                    self.organisation_id, project_id, cluster_id))
+            self.log.info(
+                "Triggering cross-region cloud snapshot backup for cluster {} "
+                "— copy to {} via internal API (body={})".format(
+                    cluster_id, copy_regions, body))
+            resp = self.capellaAPI.do_internal_request(
+                endpoint, method="POST", params=json.dumps(body))
+        else:
+            self.log.info(
+                "Triggering cloud snapshot backup for cluster {}".format(
+                    cluster_id))
+            resp = self.capellaAPI.cluster_ops_apis.api_post(v4_endpoint, body)
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.cluster_ops_apis.api_post(
+                    v4_endpoint, body)
+
         if resp.status_code not in [200, 201, 202]:
             self.fail(
                 "Cloud snapshot backup request failed for cluster {}: "
                 "{} {}".format(cluster_id, resp.status_code, resp.content))
 
-        backup_id = resp.json().get("id") or resp.json().get("backupID")
+        try:
+            backup_id = resp.json().get("id") or resp.json().get("backupID")
+        except (ValueError, AttributeError):
+            backup_id = None
         if not backup_id:
             deadline = time.time() + 120
             while time.time() < deadline:
-                list_resp = self.capellaAPI.cluster_ops_apis.api_get(endpoint)
+                list_resp = self.capellaAPI.cluster_ops_apis.api_get(
+                    v4_endpoint)
                 if list_resp.status_code == 200:
                     records = list_resp.json().get("data", [])
                     if records:
@@ -1931,6 +3016,8 @@ class FusionBackupRestoreBase(APIBase):
         terminal_failure_states = (
             "failed", "error", "cancelled", "canceled", "aborted")
 
+        # The backup record is visible on the public v4 list regardless of
+        # whether it was created via v4 or the internal v2 (cross-region).
         list_all = (
             "/v4/organizations/{}/projects/{}/clusters/{}"
             "/cloudsnapshotbackups".format(
@@ -2015,6 +3102,34 @@ class FusionBackupRestoreBase(APIBase):
             "Backup {} did not reach 100% within {}s".format(
                 backup_id, self.backup_timeout))
 
+    def assert_backup_copied_to_regions(self, record, regions):
+        """Verify a cross-region backup was actually copied to each requested
+        region by inspecting the completed backup record. The exact schema for
+        the copied-region list isn't fixed, so we scan the known candidate
+        fields AND fall back to a substring match on the whole record — either
+        way, a region we asked to copy to that does NOT appear means the copy
+        did not happen (e.g. a wrong request field), and we fail loudly with the
+        full record so the real contract is visible."""
+        blob = json.dumps(record).lower()
+        candidates = ("copyregions", "regions", "copiedregions",
+                      "crossregioncopies", "replicaregions", "copies")
+        present = []
+        for k in record.keys():
+            if k.lower() in candidates:
+                present.append((k, record[k]))
+        self.log.info(
+            "Cross-region backup {}: region fields on record = {}".format(
+                record.get("id"), present or "none found by name"))
+        missing = [r for r in regions if r.lower() not in blob]
+        if missing:
+            self.fail(
+                "Cross-region backup copy not reflected for region(s) {} — the "
+                "backup was not copied there (check the request field / API "
+                "contract). Full backup record: {}".format(missing, record))
+        self.log.info(
+            "Cross-region backup {} confirmed copied to region(s) {}".format(
+                record.get("id"), regions))
+
     def trigger_restore(self, backup_id, target_cluster_id, project_id=None):
         """Restore a snapshot backup into target_cluster_id via the v4
         /clusters/{TARGET}/cloudsnapshotbackups/{id}/restore endpoint
@@ -2074,26 +3189,46 @@ class FusionBackupRestoreBase(APIBase):
             target_cluster_id, project_id, timeout=self.restore_timeout)
 
         if expected_bucket_names:
-            deadline = time.time() + 300
+            # Use restore_timeout, not a short fixed wait: a cross-region
+            # restore does an async cross-region data transfer that can take
+            # several minutes before the buckets appear (the cluster reaches
+            # 'healthy' before the transfer completes). Same-region buckets
+            # still appear in seconds, so this returns immediately there.
+            deadline = time.time() + self.restore_timeout
+            cp_errors = 0
             while time.time() < deadline:
-                resp = self.capellaAPI.cluster_ops_apis.list_buckets(
+                # Resilient to a flaky CP: transient errors don't burn the
+                # (long, cross-region) wait budget, and a sustained outage fails
+                # fast with a clear message instead of a misleading "buckets not
+                # found".
+                outcome, payload = self._cp_poll(
+                    self.capellaAPI.cluster_ops_apis.list_buckets,
                     self.organisation_id, project_id, target_cluster_id)
-                if resp.status_code == 429:
-                    self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                if outcome in ("transient", "notfound"):
+                    cp_errors += 1
+                    if cp_errors >= self._cp_error_limit:
+                        self.fail(self._cp_giveup_msg(
+                            outcome, "target {}".format(target_cluster_id),
+                            cp_errors) + "; last: {}".format(payload))
+                    deadline += self._cp_poll_interval
+                    time.sleep(self._cp_poll_interval)
                     continue
-                if resp.status_code == 200:
-                    present = {
-                        b["name"]
-                        for b in resp.json().get("data", [])}
-                    if all(n in present for n in expected_bucket_names):
-                        self.log.info(
-                            "All expected buckets present on target {}".format(
-                                target_cluster_id))
-                        return
+                cp_errors = 0
+                if outcome == "rate":
+                    self.handle_rate_limit(int(payload.headers["Retry-After"]))
+                    continue
+                present = {
+                    b["name"]
+                    for b in payload.json().get("data", [])}
+                if all(n in present for n in expected_bucket_names):
                     self.log.info(
-                        "Buckets present: {} (waiting for: {})".format(
-                            present, expected_bucket_names))
-                time.sleep(15)
+                        "All expected buckets present on target {}".format(
+                            target_cluster_id))
+                    return
+                self.log.info(
+                    "Buckets present: {} (waiting for: {})".format(
+                        present, expected_bucket_names))
+                time.sleep(self._cp_poll_interval)
             self.fail(
                 "Expected buckets {} not found on target {} after restore".format(
                     expected_bucket_names, target_cluster_id))
@@ -2114,7 +3249,7 @@ class FusionBackupRestoreBase(APIBase):
             # analyses.
             while not stop_event.is_set():
                 try:
-                    count = self.fusion_aws_util.count_s3_objects(bucket_name)
+                    count = self.fusion_aws_util.s3.count_objects(bucket_name)
                     counts.append((time.time(), count))
                     if count == -1:
                         self.log.info(
@@ -2126,7 +3261,7 @@ class FusionBackupRestoreBase(APIBase):
                                 bucket_name, count))
                 except Exception as exc:
                     self.log.warning(
-                        "S3 monitor: count_s3_objects raised {}: {}".format(
+                        "S3 monitor: s3.count_objects raised {}: {}".format(
                             type(exc).__name__, exc))
                 stop_event.wait(poll_interval)
 
