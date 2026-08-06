@@ -112,7 +112,7 @@ def merge_reports(filespath, run_params=""):
                     testcase = {}
                     tcname = tc.getAttribute("name")
                     tctime = tc.getAttribute("time")
-                    tcresult = tc.getAttribute("result")
+                    tcresult = tc.getAttribute("result") or "not_run"
                     tcerror = tc.getElementsByTagName("error")
 
                     tcname_filtered = filter_fields(tcname, run_params)
@@ -186,6 +186,13 @@ def merge_reports(filespath, run_params=""):
                 not_run_count += 1
                 xunit_suite.add_test(name=tname, time=inttime, params=tparams,
                                      status=t_result)
+            else:
+                # Test was never actually run (e.g. job aborted/OOM-killed
+                # mid-suite) - must stay visible as unresolved, not vanish
+                # from the summary/rerun accounting.
+                not_run_count += 1
+                xunit_suite.add_test(name=tname, time=inttime, params=tparams,
+                                     status='skip')
 
         str_time = time.strftime("%y-%b-%d_%H-%M-%S", time.localtime())
         root_log_dir = os.path.join(logs_directory,
