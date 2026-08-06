@@ -683,13 +683,13 @@ class OPD:
             self.sleep(sleep,
                        "Iteration:{} waiting to kill memc on all nodes".
                        format(self.crash_count))
-            self.kill_memcached(num_kills=num_kills,
-                                graceful=graceful, wait=True,
-                                services=["kv"])
+            self.kill_services(num_kills=num_kills,
+                               graceful=graceful, wait=True,
+                               services=["kv"])
             self.check_index_pending_mutations(self.cluster)
-            self.kill_memcached(nodes, num_kills=num_kills,
-                                graceful=graceful, wait=True,
-                                services=["indexer"])
+            self.kill_services(nodes, num_kills=num_kills,
+                               graceful=graceful, wait=True,
+                               services=["indexer"])
             self.recover_indexer()
             self.check_index_pending_mutations(self.cluster)
             self.crash_count += 1
@@ -722,15 +722,22 @@ class OPD:
             self.sleep(sleep,
                        "Iteration:{} waiting to kill memc on all nodes".
                        format(self.crash_count))
-            self.kill_memcached(nodes, num_kills=num_kills,
-                                graceful=graceful, wait=True)
+            self.kill_services(nodes, num_kills=num_kills,
+                               graceful=graceful, wait=True)
             self.crash_count += 1
             if self.crash_count > self.crashes:
                 self.stop_crash = True
         self.sleep(300)
 
-    def kill_memcached(self, servers=None, num_kills=1,
-                       graceful=False, wait=True, services=["kv"]):
+    def kill_services(self, servers=None, num_kills=1,
+                      graceful=False, wait=True, services=["kv"]):
+        """
+        Kill the given `services` on each of `servers`.
+
+        Despite the historical name, this is not memcached-only: "kv" kills
+        memcached and "indexer" kills the indexer process, and `graceful`
+        restarts couchbase-server outright.
+        """
         if not servers:
             servers = self.cluster.kv_nodes
 
