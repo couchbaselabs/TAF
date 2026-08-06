@@ -1083,18 +1083,22 @@ class FusionSync(MagmaBaseTest, FusionBase):
     def test_flush_during_sync(self):
         self.log.info("Starting initial load")
         self.initial_load()
-
-        self.override_fusion_settings()
-        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
-            fusion_sync_rate_limit=self.fusion_sync_rate_limit,
-            fusion_migration_rate_limit=self.fusion_migration_rate_limit)
+        self.sleep(120, "Wait after initial load")
+        self.bucket_util.print_bucket_stats(self.cluster)
 
         self.configure_fusion()
-        self.enable_fusion()
 
-        # Wait for approximately 20GB to be synced before flushing
-        target_bytes_synced = 20 * 1024 * 1024 * 1024  # 20GB in bytes
-        self.log.info(f"Waiting for approximately 20GB ({target_bytes_synced} bytes) to be synced before flush")
+        # Enable Fusion in the background so the sync-threshold wait below
+        # starts immediately instead of blocking on the 'enabling' -> 'enabled'
+        # transition; the wait loop naturally tolerates zero bytes synced
+        # until Fusion actually reaches 'enabled' and sync begins.
+        self.log.info("Enabling Fusion asynchronously")
+        enable_thread = threading.Thread(target=self.enable_fusion)
+        enable_thread.start()
+
+        # Wait for approximately 10GB to be synced before flushing
+        target_bytes_synced = 10 * 1024 * 1024 * 1024  # 10GB in bytes
+        self.log.info(f"Waiting for approximately 10GB ({target_bytes_synced} bytes) to be synced before flush")
 
         max_wait_time = 3600  # 1 hour max wait
         start_time = time.time()
@@ -1113,34 +1117,28 @@ class FusionSync(MagmaBaseTest, FusionBase):
             self.log.info(f"Total bytes synced so far: {total_bytes_synced} bytes ({total_bytes_synced / (1024**3):.2f} GB)")
 
             if total_bytes_synced >= target_bytes_synced:
-                self.log.info(f"Target sync threshold of 20GB reached. Proceeding with flush.")
+                self.log.info(f"Target sync threshold of 10GB reached. Proceeding with flush.")
                 sync_threshold_reached = True
                 break
 
             self.sleep(30, "Waiting for more data to sync")
 
         if not sync_threshold_reached:
-            self.log.warning(f"Did not reach 20GB sync target in {max_wait_time}s. Proceeding with flush anyway.")
+            self.log.warning(f"Did not reach 10GB sync target in {max_wait_time}s. Proceeding with flush anyway.")
 
-        # Check NFS directory size before flush
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        self.log.info(f"Checking NFS directory size BEFORE flush: {self.nfs_server_path}")
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS directory size BEFORE flush: {o}")
-        ssh.disconnect()
+        # By now data has synced to the log store, so Fusion must already be
+        # 'enabled' - join is just a safety net to surface a slow/failed
+        # enable and avoid leaving the background thread dangling.
+        enable_thread.join(timeout=300)
+        if enable_thread.is_alive():
+            self.fail("Fusion enable thread did not complete within timeout")
 
-        # Capture sync stats before flush
-        stats_before_flush = {}
-        for bucket in self.cluster.buckets:
-            stats_before_flush[bucket.name] = {}
-            for node in self.cluster.nodes_in_cluster:
-                cbstats = Cbstats(node)
-                stats = cbstats.all_stats(bucket.name)
-                stats_before_flush[bucket.name][node.ip] = {
-                    'bytes_synced': int(stats['ep_fusion_bytes_synced']),
-                    'total_syncs': int(stats['ep_fusion_syncs'])
-                }
-                cbstats.disconnect()
+        # Verify log store has data before flush
+        self.log.info("Checking log files on NFS before flush (expected > 0)")
+        log_files_exist_before_flush, log_count_before_flush = self.check_log_files_on_nfs(
+            self.nfs_server, self.nfs_server_path)
+        self.assertGreater(log_count_before_flush, 0,
+                           "Expected log files on NFS before flush, found 0")
 
         # Enable flush and flush all buckets
         for bucket in self.cluster.buckets:
@@ -1148,38 +1146,20 @@ class FusionSync(MagmaBaseTest, FusionBase):
                                                     flush_enabled=Bucket.FlushBucket.ENABLED)
             self.bucket_util.flush_bucket(self.cluster, bucket)
 
-        # Wait for upload interval after flush to observe NFS state
-        sleep_time = self.fusion_upload_interval
-        self.sleep(sleep_time, "Wait after flushing buckets for upload interval")
+        # Wait for upload interval after flush for log store cleanup to catch up
+        self.sleep(self.fusion_upload_interval, "Wait after flushing buckets for upload interval")
 
-        # Validation: Check NFS directory size - it should NOT be empty/zero
-        ssh = RemoteMachineShellConnection(self.nfs_server)
-        self.log.info(f"Checking NFS directory size after flush: {self.nfs_server_path}")
-        o, e = ssh.execute_command(f"du -sh {self.nfs_server_path}")
-        self.log.info(f"NFS directory size after flush: {o}")
+        # Verify log store has no data after flush
+        self.log.info("Checking log files on NFS after flush (expected 0)")
+        log_files_exist_after_flush, log_count_after_flush = self.check_log_files_on_nfs(
+            self.nfs_server, self.nfs_server_path)
+        self.assertEqual(log_count_after_flush, 0,
+                         f"Expected 0 log files on NFS after flush, found {log_count_after_flush}")
 
-        # Verify directory exists and has some data
-        dir_check_o, dir_check_e = ssh.execute_command(f"[ -d {self.nfs_server_path} ] && echo 'exists' || echo 'not_exists'")
-        ssh.disconnect()
-
-        self.assertIn('exists', dir_check_o[0], f"Log store path should exist after flush")
-        self.log.info("Validation passed: NFS directory exists after flush (not empty/deleted)")
-
-        # Validation: Sync stats should remain same after flush
-        for bucket in self.cluster.buckets:
-            for node in self.cluster.nodes_in_cluster:
-                cbstats = Cbstats(node)
-                stats = cbstats.all_stats(bucket.name)
-                bytes_synced_after = int(stats['ep_fusion_bytes_synced'])
-                total_syncs_after = int(stats['ep_fusion_syncs'])
-                bytes_synced_before = stats_before_flush[bucket.name][node.ip]['bytes_synced']
-                total_syncs_before = stats_before_flush[bucket.name][node.ip]['total_syncs']
-
-                self.assertEqual(bytes_synced_after, bytes_synced_before,
-                    "Sync stats should remain same after flush on {0}:{1}".format(node.ip, bucket.name))
-                self.assertEqual(total_syncs_after, total_syncs_before,
-                    "Total syncs should remain same after flush on {0}:{1}".format(node.ip, bucket.name))
-                cbstats.disconnect()
+        # Verify Fusion is (still) in 'enabled' state after flush
+        fusion_enabled_after_flush = self.monitor_fusion_state_transition(state="enabled", timeout=300)
+        self.assertTrue(fusion_enabled_after_flush,
+                        "Fusion did not remain/return to 'enabled' state after flush")
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, 0)
@@ -1189,13 +1169,9 @@ class FusionSync(MagmaBaseTest, FusionBase):
         for bucket in self.cluster.buckets:
             self.bucket_util.get_updated_bucket_server_list(self.cluster, bucket)
 
-        # Load data after flush using cbc-pillowfight
-        self.log.info("Loading 100k documents after flush using cbc-pillowfight")
-        self.num_items = 100000
-        for bucket in self.cluster.buckets:
-            self.load_data_cbc_pillowfight(self.cluster.master, bucket,
-                                          self.num_items, self.doc_size,
-                                          key_prefix="post_flush", threads=4)
+        # Load data after flush using java_doc_loader
+        self.log.info("Loading 5M documents after flush using java_doc_loader")
+        self.perform_workload(0, 5000000, doc_op="create", wait=True, ops_rate=20000)
 
         sleep_time = 120 + self.fusion_upload_interval + 60
         self.sleep(sleep_time, "Wait for Fusion sync after post-flush load")
@@ -1242,11 +1218,6 @@ class FusionSync(MagmaBaseTest, FusionBase):
         """
         self.log.info("Starting initial load")
         self.initial_load()
-
-        self.override_fusion_settings()
-        ClusterRestAPI(self.cluster.master).manage_global_memcached_setting(
-            fusion_sync_rate_limit=self.fusion_sync_rate_limit,
-            fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
         self.configure_fusion()
 

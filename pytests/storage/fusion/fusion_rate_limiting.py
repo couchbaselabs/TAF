@@ -4,6 +4,7 @@ import subprocess
 import os
 from shell_util.remote_connection import RemoteMachineShellConnection
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.fusion.fusion_api import FusionRestAPI
 from storage.fusion.fusion_base import FusionBase
 from storage.magma.magma_base import MagmaBaseTest
 from cb_tools.cbstats import Cbstats
@@ -120,11 +121,28 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
     def test_fusion_upload_rate_limit_default(self):
         """
         Test Fusion uploader respects the configured rate limit in MiB/s.
+
+        Flow:
+        1. Start with Fusion disabled (requires fusion_enable=False in the conf)
+        2. Load data while Fusion is disabled, so nothing is uploaded yet
+        3. Set the global fusion_sync_rate_limit
+        4. Enable Fusion - the initial sync of the already loaded data starts here
+        5. Monitor the upload rate while Fusion is being enabled and assert it
+           never exceeds the configured limit
         """
         bucket = self.cluster.buckets[0]
         self.log.info("[TEST] Starting test_fusion_upload_rate_limit_default...")
 
-        # Load test data
+        # Fusion must be disabled at the start, so that all the data loaded below
+        # is uploaded only once Fusion is enabled
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"[TEST] Fusion status = {status}, content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "disabled",
+                         "Fusion should be disabled at the start of the test. "
+                         "Run this test with fusion_enable=False")
+
+        # Load test data with Fusion still disabled
         self.custom_data_load()
 
         # Set global Fusion sync rate limit in bytes (MiB)
@@ -133,29 +151,34 @@ class FusionUploaderRateLimitTest(MagmaBaseTest, FusionBase):
         )
         self.log.info(f"[TEST] Set global fusion_sync_rate_limit={self.rate_limit / (1024 * 1024):.2f} MiB/s")
 
-        # Idle period before uploads start
-        self.sleep(60, "Idle period before uploads start")
-
-        # Override upload interval for test
-        self.fusion_upload_interval = 10  # seconds
-        self.log.info(f"[TEST] Setting fusion_upload_interval={self.fusion_upload_interval}s")
-
-        # Apply upload interval to all buckets
-        for bkt in self.cluster.buckets:
-            self.change_fusion_settings(bkt, upload_interval=self.fusion_upload_interval)
-            self.log.info(f"[TEST] Updated fusion_upload_interval for bucket {bkt.name}")
-
         server = self.cluster.master
 
-        # Wait until upload starts
-        self.wait_for_upload_start(server, bucket, "ep_fusion_bytes_synced")
+        # Enable Fusion, uploads of the loaded data start as part of enabling
+        self.log.info("[TEST] Enabling Fusion after data load")
+        self.configure_fusion()
+        enable_fusion_th = threading.Thread(target=self.enable_fusion)
+        enable_fusion_th.start()
 
-        # Monitor upload rate, asserting it stays below the MiB limit
-        self.monitor_rate_dynamic(server,
-            bucket,
-            stat_key="ep_fusion_bytes_synced",
-            rate_limit=self.rate_limit
-        )
+        try:
+            # Wait until upload starts
+            self.wait_for_upload_start(server, bucket, "ep_fusion_bytes_synced")
+
+            # Monitor upload rate while Fusion is being enabled,
+            # asserting it stays below the MiB limit
+            self.monitor_rate_dynamic(server,
+                bucket,
+                stat_key="ep_fusion_bytes_synced",
+                rate_limit=self.rate_limit
+            )
+        finally:
+            enable_fusion_th.join()
+
+        # Fusion should have reached the 'enabled' state by now
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"[TEST] Fusion status after enabling = {status}, content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "enabled",
+                         "Fusion should be enabled after the upload completes")
 
         self.log.info("[TEST] Finished test_fusion_upload_rate_limit_default successfully")
 

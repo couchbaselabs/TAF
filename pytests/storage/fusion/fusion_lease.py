@@ -4,6 +4,7 @@ import threading
 import time
 import subprocess
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from rebalance_utils.retry_rebalance import RetryRebalanceUtil
 from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.fusion.fusion_base import FusionBase
 from storage.magma.magma_base import MagmaBaseTest
@@ -17,6 +18,7 @@ class FusionLease(MagmaBaseTest, FusionBase):
         self.fusion_output_dir = "/" + os.path.join("/".join(split_path[1:4]), "fusion_output")
         subprocess.run(f"mkdir -p {self.fusion_output_dir}", shell=True, executable="/bin/bash")
         self.volume_ids = []
+        self.retry_rebalance_util = RetryRebalanceUtil()
 
     def tearDown(self):
         super().tearDown()
@@ -163,38 +165,44 @@ class FusionLease(MagmaBaseTest, FusionBase):
         self.initial_load()
         self.sleep(30, "Wait after initial load")
 
-        self.induce_rebalance_test_condition(self.servers, delay_time=5 * 60 * 1000,test_failure_condition="delay_rebalance_start")
-        self.sleep(5, "Wait for rebalance_start delay to take effect")
-        ssh = RemoteMachineShellConnection(self.cluster.master)
+        test_failure_condition = "delay_rebalance_start"
+        self.retry_rebalance_util.induce_rebalance_test_condition(
+            self.servers, delay_time=5 * 60 * 1000, test_failure_condition=test_failure_condition)
         try:
-            rebalance_thread = threading.Thread(
-                target=self.run_rebalance,
-                kwargs={"output_dir": self.fusion_output_dir, "rebalance_count": 1},
-            )
-            rebalance_thread.start()
-            # Ensure we know the volumes to check before aborting
-            plan_file = self.wait_for_plan(ssh, rebalance_count=1, timeout=300, poll_interval=2)
-            self.volume_ids = self.extract_volume_ids_from_plan(ssh, plan_file)
-            monitor_rebalance_status_thread = threading.Thread(
-                target=self.monitor_rebalance_status,
-                args=(self.cluster, 600)
-            )
-            monitor_rebalance_status_thread.start()
-            monitor_rebalance_status_thread.join()
-            # Wait for leases to be released after abort (poll with timeout)
-            end_time = time.time() + 180
-            while True:
-                try:
-                    self.validate_leases_released(ssh)
-                    break
-                except Exception:
-                    if time.time() > end_time:
-                        # One last validate to raise detailed error
+            self.sleep(5, "Wait for rebalance_start delay to take effect")
+            ssh = RemoteMachineShellConnection(self.cluster.master)
+            try:
+                rebalance_thread = threading.Thread(
+                    target=self.run_rebalance,
+                    kwargs={"output_dir": self.fusion_output_dir, "rebalance_count": 1},
+                )
+                rebalance_thread.start()
+                # Ensure we know the volumes to check before aborting
+                plan_file = self.wait_for_plan(ssh, rebalance_count=1, timeout=300, poll_interval=2)
+                self.volume_ids = self.extract_volume_ids_from_plan(ssh, plan_file)
+                monitor_rebalance_status_thread = threading.Thread(
+                    target=self.monitor_rebalance_status,
+                    args=(self.cluster, 600)
+                )
+                monitor_rebalance_status_thread.start()
+                monitor_rebalance_status_thread.join()
+                # Wait for leases to be released after abort (poll with timeout)
+                end_time = time.time() + 180
+                while True:
+                    try:
                         self.validate_leases_released(ssh)
-                    time.sleep(2)
-            rebalance_thread.join()
+                        break
+                    except Exception:
+                        if time.time() > end_time:
+                            # One last validate to raise detailed error
+                            self.validate_leases_released(ssh)
+                        time.sleep(2)
+                rebalance_thread.join()
+            finally:
+                ssh.disconnect()
         finally:
-            ssh.disconnect()
+            self.retry_rebalance_util.delete_rebalance_test_condition(
+                self.servers, test_failure_condition)
 
     def test_lease_expiry_before_rebalance_completion(self):
         self.initial_load()
@@ -215,12 +223,27 @@ class FusionLease(MagmaBaseTest, FusionBase):
                         "rebalance_sleep_time": 900, "force_sync_during_sleep": True}
             )
             rebalance_thread.start()
-            
+
             plan_file = self.wait_for_plan(ssh, rebalance_count=1)
-            
+
+            # Drive multiple rounds of updates so the magma bucket and the
+            # fusion log store actually accumulate enough fragmentation to
+            # cross the low thresholds configured for this test; a single
+            # update pass leaves too little garbage for compaction to delete
+            # any snapshotted log files.
+            num_update_rounds = self.input.param("num_update_rounds", 3)
+            self.perform_multiple_updates(upsert_iterations=num_update_rounds, ops_rate=50000)
+
+            # Compact all buckets in parallel (rather than one at a time) so
+            # the snapshot-deleting compaction lands together while the
+            # rebalance is still mid-flight and the lease has expired.
+            compaction_tasks = list()
             for bucket in self.cluster.buckets:
-                self.task.compact_bucket(self.cluster.master, bucket)
-            
+                self.log.info(f"Compacting bucket: {bucket.name}")
+                compaction_tasks.append(self.task.async_compact_bucket(self.cluster.master, bucket))
+            for task in compaction_tasks:
+                self.task_manager.get_task_result(task)
+
             rebalance_result = True
             try:
                 rebalance_thread.join()

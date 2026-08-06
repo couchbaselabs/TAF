@@ -25,6 +25,14 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         self.num_guest_volumes = self.input.param("num_guest_volumes", None)
         self.num_log_files = self.input.param("num_log_files", 2)
 
+        # These tests intentionally corrupt/delete log files, so CRITICAL
+        # log lines in memcached logs and fusion health-check failures
+        # (read failures, DU-size deviations, etc.) are expected outcomes,
+        # not bugs. Downgrade the cb_log validation in OnPremBaseTest's
+        # tearDown to a warning and skip the full fusion health check.
+        self.crash_warning = True
+        self.skip_fusion_health_check = True
+
 
     def tearDown(self):
         super(FusionLogCorruption, self).tearDown()
@@ -324,10 +332,20 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         elif num_guest_volumes is not None:
 
             for node in self.involved_nodes:
-                node_guest_path = os.path.join(self.guest_storage_dir, node)
+                node_guest_path = os.path.join(self.guest_storage_dir, node, f"reb{rebalance_count}")
 
-                nums = random.sample(range(1, 21), int(num_guest_volumes))
-                guest_volumes = [f"guest{n}" for n in nums]
+                list_cmd = f"ls -1 {node_guest_path} 2>/dev/null | grep '^guest'"
+                o, e = shell.execute_command(list_cmd)
+                available_guest_volumes = [line.strip() for line in o if line.strip()]
+                self.log.info(f"CMD: {list_cmd}, Available guest volumes = {available_guest_volumes}")
+
+                if not available_guest_volumes:
+                    self.log.warning(f"No guest volumes found under {node_guest_path}, skipping node {node}")
+                    continue
+
+                guest_volumes = random.sample(available_guest_volumes,
+                                              min(int(num_guest_volumes), len(available_guest_volumes)))
+                self.log.info(f"Node: {node}, Random guest volumes = {guest_volumes}")
 
                 for guest in guest_volumes:
                     for bucket in self.cluster.buckets:

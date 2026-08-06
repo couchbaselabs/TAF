@@ -161,6 +161,12 @@ class FusionBase(BaseTestCase):
             # during extent migration); they set this flag to skip the migration
             # failure check in validate_fusion_health() during tearDown.
             self.skip_migration_failure_check = self.input.param("skip_migration_failure_check", False)
+            # Some tests (e.g. log corruption tests) intentionally leave the
+            # cluster/data in a state where the full fusion health check
+            # (item count, read-back validation, DU-size checks) does not
+            # apply; they set this flag to skip validate_fusion_health()
+            # entirely during tearDown.
+            self.skip_fusion_health_check = self.input.param("skip_fusion_health_check", False)
 
             self.spare_nodes = list()
 
@@ -182,12 +188,15 @@ class FusionBase(BaseTestCase):
             # remaining teardown steps (S3 cleanup, coredump check, NFS cleanup,
             # cluster shutdown in super().tearDown()) still run. The failure is
             # re-raised at the very end so the test is still reported as failed.
-            try:
-                self.validate_fusion_health()
-            except Exception as e:
-                health_check_error = e
-                self.log.error(f"Fusion health check failed during tearDown, "
-                               f"continuing with remaining teardown: {e}")
+            if getattr(self, 'skip_fusion_health_check', False):
+                self.log.info("Skipping fusion health check (skip_fusion_health_check enabled)")
+            else:
+                try:
+                    self.validate_fusion_health()
+                except Exception as e:
+                    health_check_error = e
+                    self.log.error(f"Fusion health check failed during tearDown, "
+                                   f"continuing with remaining teardown: {e}")
             if getattr(self, 'fusion_s3_test', False) and self.s3_run_prefix:
                 _, content = FusionRestAPI(self.cluster.master).get_fusion_status()
                 if content["state"] != "disabled":
@@ -1530,56 +1539,6 @@ class FusionBase(BaseTestCase):
             self.log.info("-" * 40)
 
         self.log.info("=" * 60)
-
-    def induce_rebalance_test_condition(self, servers, test_failure_condition,
-                                        bucket_name="default",
-                                        vb_num=1,
-                                        delay_time=60000):
-        if test_failure_condition == "verify_replication":
-            condition = 'fail, "{}"'.format(bucket_name)
-            set_command = 'testconditions:set(verify_replication, {' \
-                          + condition + '})'
-        elif test_failure_condition == "backfill_done":
-            condition = 'for_vb_move, "{0}", {1}, fail'.format(bucket_name, vb_num)
-            set_command = 'testconditions:set(backfill_done, {' \
-                          + condition + '})'
-        elif test_failure_condition == "delay_rebalance_start":
-            condition = 'delay, {}'.format(delay_time)
-            set_command = 'testconditions:set(rebalance_start, {' \
-                          + condition + '}).'
-        elif test_failure_condition == "delay_verify_replication":
-            condition = 'delay, "{0}", {1}'.format(bucket_name, delay_time)
-            set_command = 'testconditions:set(verify_replication, {' \
-                          + condition + '})'
-        elif test_failure_condition == "delay_backfill_done":
-            condition = 'for_vb_move, "{0}", {1}, '.format(bucket_name, vb_num)
-            sub_cond = 'delay, {}'.format(delay_time)
-            set_command = 'testconditions:set(backfill_done, {' \
-                          + condition + '{' + sub_cond + '}})'
-        elif test_failure_condition == 'delay_failover_start':
-            condition = 'delay, {}'.format(delay_time)
-            set_command = 'testconditions:set(failover_start, {' \
-                          + condition + '}).'
-        else:
-            set_command = "testconditions:set({}, fail)" \
-                          .format(test_failure_condition)
-
-        if test_failure_condition.startswith("delay_"):
-            test_failure_condition = test_failure_condition[6:]
-        get_command = "testconditions:get({})".format(test_failure_condition)
-
-        for server in servers:
-            cluster_api = ClusterRestAPI(server)
-
-            # Execute set command
-            status, content = cluster_api.diag_eval(set_command)
-            self.log.info("Set Command: {0}. Status: {1}, Return: {2}".format(
-                set_command, status, content))
-
-            # Execute get command to verify
-            status, content = cluster_api.diag_eval(get_command)
-            self.log.info("Get Command: {0}. Status: {1}, Return: {2}".format(
-                get_command, status, content))
 
     def get_otp_node(self, rest_node, target_node):
         nodes = self.cluster_util.get_nodes(rest_node)
