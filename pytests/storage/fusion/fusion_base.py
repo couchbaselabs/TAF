@@ -660,6 +660,37 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
+    def calculate_guest_volume_monitor_timeout(self, buffer_seconds=600, default_duration=1800):
+        """
+        Computes a dynamic timeout for monitor_active_guest_volumes() from the
+        total log store size (summed across all nodes in cluster and buckets)
+        and the currently configured fusion_migration_rate_limit (bytes/sec),
+        plus a fixed buffer.
+        """
+        total_log_store_size = 0
+        for server in self.cluster.nodes_in_cluster:
+            cbstats_obj = Cbstats(server)
+            for bucket in self.cluster.buckets:
+                try:
+                    result = cbstats_obj.all_stats(bucket.name)
+                    total_log_store_size += int(result.get("ep_fusion_log_store_data_size", 0))
+                except Exception as exc:
+                    self.log.warning(f"[GUEST VOLUMES] Failed to fetch log store size on "
+                                     f"{server.ip} for bucket {bucket.name}: {exc}")
+
+        if not self.fusion_migration_rate_limit:
+            self.log.warning("[GUEST VOLUMES] fusion_migration_rate_limit is 0/unset; "
+                             f"falling back to default timeout of {default_duration}s")
+            return default_duration
+
+        migration_time = total_log_store_size / self.fusion_migration_rate_limit
+        timeout = int(migration_time) + buffer_seconds
+        self.log.info(f"[GUEST VOLUMES] total_log_store_size={total_log_store_size} bytes, "
+                      f"fusion_migration_rate_limit={self.fusion_migration_rate_limit} bytes/s, "
+                      f"estimated_migration_time={migration_time:.1f}s, "
+                      f"buffer={buffer_seconds}s, timeout={timeout}s")
+        return timeout
+
     def monitor_active_guest_volumes(self, duration=1800, interval=30):
         fusion_rest = FusionRestAPI(self.cluster.master)
 

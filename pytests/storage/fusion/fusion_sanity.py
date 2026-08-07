@@ -150,7 +150,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                         manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
                 self.log.info("Monitoring active guest volumes")
-                guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+                guest_volume_timeout = self.calculate_guest_volume_monitor_timeout()
+                guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes,
+                                                   kwargs={"duration": guest_volume_timeout})
                 guest_volume_th.start()
                 guest_volume_th.join()
 
@@ -290,7 +292,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             self.doc_loading_tm.get_task_result(task)
 
         self.log.info("Monitoring active guest volumes")
-        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+        guest_volume_timeout = self.calculate_guest_volume_monitor_timeout()
+        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes,
+                                           kwargs={"duration": guest_volume_timeout})
         guest_volume_th.start()
         guest_volume_th.join()
 
@@ -982,7 +986,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
             if not aggressive_variant:
                 self.log.info("Monitoring active guest volumes")
-                guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+                guest_volume_timeout = self.calculate_guest_volume_monitor_timeout()
+                guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes,
+                                                   kwargs={"duration": guest_volume_timeout})
                 guest_volume_th.start()
                 guest_volume_th.join()
 
