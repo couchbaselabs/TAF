@@ -147,6 +147,11 @@ class Murphy(BaseTestCase, OPD):
         self.drBackup = None
         self.drContBackup = None
         self.continuous_backup_timestamps = list()
+        # Whether ClusterOpsVolume() restores at the end of each of its
+        # iterations. Tests that call it as a sub-step and own the restore
+        # themselves turn this off -- see
+        # test_30TB_10K_collections_cont_backup.
+        self.restore_in_cluster_ops = True
         self.setup_backup_locations()
 
         #######################################################################
@@ -1515,6 +1520,20 @@ class Murphy(BaseTestCase, OPD):
                 # Record timestamp for PITR
                 self.traditional_backup_and_record_timestamp_for_continuous_backup(order=["record_timestamp"])
 
+                ###################################################################
+                # Skipped when the caller owns the restore step --
+                # test_30TB_10K_collections_cont_backup runs its own restore
+                # once ClusterOpsVolume() returns, and restoring in both
+                # places would flush the dataset twice per iteration.
+                if self.restore_in_cluster_ops:
+                    self.PrintStep("Step 15.{}: Restore from backup".format(
+                        self.loop))
+                    # Both workloads are parked for the duration: the item
+                    # count captured before the flush has to be stable, and
+                    # queries against a flushed bucket are noise. They resume
+                    # from the same point once the restore is verified.
+                    self.restore_with_workloads_paused()
+
             #######################################################################
                 self.loop += 1
                 if self.loop < self.iterations:
@@ -2103,6 +2122,10 @@ class Murphy(BaseTestCase, OPD):
         # Perform cluster rebalances / Failovers
         # Always set this to 1 so the ClusterOpsVolume won't run more than once
         self.iterations = 1
+        # This test drives its own restore below, once ClusterOpsVolume() has
+        # returned and the spec-driven load has been awaited, so ClusterOpsVolume
+        # must not restore on its own.
+        self.restore_in_cluster_ops = False
 
         while loop_index < iterations:
             self.PrintStep(f"ClusterOpsVolume :: {loop_index+1}")
