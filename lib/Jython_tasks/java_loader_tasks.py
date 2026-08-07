@@ -184,7 +184,7 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                  model=None, mockVector=False, dim=128, base64=False,
                  num_vbuckets=CbServer.total_vbuckets,
                  target_vbuckets=None,
-                 stall_timeout=300, progress_poll_interval=5):
+                 stall_timeout=600, progress_poll_interval=60):
         """
         Gateway to start doc loading using Java SDK.
         Have common params for both storage_tests and regular test.
@@ -224,15 +224,17 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.track_failures = track_failures
         self.ops = ops
         self.gtm = False
+        self.iterations = iterations
+        self.target_vbuckets = target_vbuckets
+        self.vbuckets = CbServer.total_vbuckets
+
         # Stall detection: get_task_result() polls per-task progress instead of
         # blocking forever. A task_id's clock resets on any observed advance in
         # completed_ops, so this stays scale-safe regardless of task count -
         # only genuine zero-progress for stall_timeout seconds trips it.
+        # Setting either of these value=-1 will disable this feature
         self.stall_timeout = stall_timeout
         self.progress_poll_interval = progress_poll_interval
-        self.iterations = iterations
-        self.target_vbuckets = target_vbuckets
-        self.vbuckets = CbServer.total_vbuckets
 
         # Key / Doc properties
         self.key_type = key_type
@@ -532,6 +534,10 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         scale-safe (many collections/tasks progressing steadily never trips
         it) - it only fires when a task genuinely stops making progress.
         """
+
+        if self.stall_timeout == -1 or self.progress_poll_interval == -1:
+            return
+
         log = global_vars.logger.get("test")
         progress_poll_timeout = 30
         max_transient_failures = 3
