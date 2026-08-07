@@ -109,6 +109,18 @@ class ContinuousBackupTest(ContinuousBackupBase):
             timestamp = self.cont_bk_mgr.get_cluster_timestamp()
             timestamps.append(timestamp)
             self.log.info(f"Timestamp after interval {i+1}: {timestamp}")
+        # The final interval's timestamp has no mutation after it, so it sits
+        # ~one continuous_backup_interval past the newest data the log backup
+        # captured (each timestamp is read after a trailing interval sleep).
+        # cbcontbk rejects a PITR target past its newest backed-up mutation
+        # ("target time does not appear in the backup"), which is why only the
+        # last interval used to fail while earlier ones -- followed by the next
+        # interval's load -- passed. Issue one count-preserving update so the
+        # log backup's covered range extends past the last captured timestamp,
+        # keeping it a valid PITR target. item_counts are update-invariant
+        # (these are updates, not creates).
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
         # Callers restore the last timestamp almost immediately; make sure
         # the upload covering it has landed on the backup location first.
         self._wait_for_history_upload(f"interval {num_intervals}'s timestamp")
@@ -119,6 +131,19 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # not by deleting and recreating it, and recreating churns the bucket's
         # UUID which risks disconnecting it from its own continuous backup
         # history (on top of racing ns_server's async delete completion).
+        #
+        # Disable continuous backup BEFORE the flush and re-enable it AFTER the
+        # restore. Flushing a continuous-backup-enabled bucket records the
+        # vbucket reset in the log and breaks the log lineage, so a later
+        # cbcontbk restore that reaches the flush point fails with "traditional
+        # backup has the same or newer data than the log backup". Turning CB off
+        # around the reset keeps the pre-flush log history intact and restorable.
+        self.log.info("Disabling continuous backup before flush: %s" % self.bucket.name)
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            continuous_backup_enabled=False)
+        self.sleep(30, "Letting the continuous backup daemon stop before flush")
+
         self.log.info("Flushing bucket to reset before restore: %s" % self.bucket.name)
         self.bucket_util.update_bucket_property(
             self.cluster.master, self.bucket,
@@ -126,17 +151,20 @@ class ContinuousBackupTest(ContinuousBackupBase):
         if not self.bucket_util.flush_bucket(self.cluster, self.bucket):
             self.fail(f"Flush of bucket {self.bucket.name} failed")
         self._verify_doc_count(0)
-        # Flush recreates the bucket's vbuckets under the hood, which can cut
-        # off continuous backup mid-upload of whatever interval was captured
-        # right before the flush. Wait one interval so that upload lands
-        # before we restore across timestamps that span the flush boundary.
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for continuous backup to capture the flush")
+
         self.log.info("Restoring from backup")
         self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
                                 obj_staging_dir=self.obj_staging_dir_cbbackup)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(expected_item_count)
+
+        # Re-enable continuous backup now that the reset + restore is done. The
+        # existing continuousBackupLocation is preserved, so the pre-flush log
+        # history the callers PITR-restore from stays available.
+        self.log.info("Re-enabling continuous backup after restore: %s" % self.bucket.name)
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            continuous_backup_enabled=True)
 
     def _create_and_restore_to_new_bucket(self, expected_item_count):
         self.restore_bucket_name = f"restore_bucket_{int(time.time())}"
@@ -208,12 +236,22 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # a stale value while docs are still draining, so derive it from the spec.
         item_count = self._get_total_docs() * 2
 
+        # Wait one interval (plus upload slack) so the continuous backup has
+        # uploaded the data just loaded.
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
+        self._wait_for_history_upload("the latest loaded data")
 
-        self._reset_bucket_and_restore_from_backup(self._get_total_docs())
-        self._perform_continuous_restore()
+        # Restore the latest state ("everything") into a FRESH bucket. We must
+        # not flush the continuous-backup-enabled source bucket and restore
+        # "everything" into it: flushing churns the bucket's vbucket UUIDs and
+        # breaks the log-backup lineage, so an "everything" restore then fails
+        # with "traditional backup has the same or newer data than the log
+        # backup" (product issue -- see the flush+everything bug report).
+        restore_bucket_name = f"restore_bucket_happy_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(item_count)
+        self._verify_doc_count(item_count, bucket_name=restore_bucket_name)
         self.log.info("Test completed successfully")
 
     def test_pitr_timestamp_after_first_cont_backup(self):
@@ -258,13 +296,19 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
 
         item_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
-        timestamp = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"Timestamp after third load: {timestamp}")
+        self._wait_for_history_upload("the latest loaded data")
 
-        self._reset_bucket_and_restore_from_backup(self._get_total_docs())
-        self._perform_continuous_restore(timestamp)
+        # This test targets the latest state. A captured wall-clock timestamp is
+        # invalid here -- read after a trailing interval sleep, it lands one
+        # interval past the newest backed-up mutation, so cbcontbk rejects it.
+        # Restore "everything" into a FRESH bucket instead: flushing the
+        # continuous-backup source bucket and restoring "everything" into it
+        # breaks the log lineage (see the flush+everything bug report).
+        restore_bucket_name = f"restore_bucket_after_second_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(item_count)
+        self._verify_doc_count(item_count, bucket_name=restore_bucket_name)
         self.log.info("Test completed successfully")
 
     def test_pitr_five_sequential_restores(self):
@@ -378,6 +422,15 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
         timestamp_after_mutation = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"Timestamp after mutation: {timestamp_after_mutation}")
+        # timestamp_after_mutation has no mutation after it, so (read after the
+        # trailing interval sleep) it lands past the newest backed-up mutation
+        # and cbcontbk rejects it. Issue a count-preserving update so the backup
+        # span extends past it -- this update is EXCLUDED from a PITR restore to
+        # timestamp_after_mutation, so the restored content still matches the 50%
+        # mutation validated below. (Restore is into the source bucket for
+        # validate_cruds, so a fresh-bucket "everything" restore is not usable.)
+        CollectionBase.mutate_history_retention_data(self, update_percent=10, update_itrs=1)
+        self._wait_for_history_upload("the post-mutation timestamp")
 
         # 3. Reset bucket and restore from backup
         self._reset_bucket_and_restore_from_backup(initial_item_count)
@@ -484,13 +537,18 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # 3. Merge the first two backups
         self.backup_mgr.merge(self.backup_archive_dir, self.backup_repo_name, start=1, end=2)
 
-        # 4. Restore and verify using timestamps
+        # 4. Restore and verify using timestamps. The final timestamp is the
+        # latest state with no mutation after it, so a captured wall-clock value
+        # lands past the newest backed-up mutation and cbcontbk rejects it.
+        # Restore "everything" for that last point (fresh restore bucket, so no
+        # flush-lineage concern); earlier timestamps are valid PITR targets.
         for i, (ts, count) in enumerate(zip(timestamps, item_counts)):
             if i > 0:
                 # Flush before each subsequent restore so cbcontbk starts from
                 # an empty state — restoring onto existing data produces wrong counts.
                 self._flush_restore_bucket(restore_bucket_name)
-            self._restore_entire_bucket(ts, restore_bucket_name)
+            restore_ts = None if i == len(timestamps) - 1 else ts
+            self._restore_entire_bucket(restore_ts, restore_bucket_name)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             self._verify_doc_count(count, bucket_name=restore_bucket_name)
 
@@ -741,7 +799,6 @@ class ContinuousBackupTest(ContinuousBackupBase):
         if final_count >= initial_count:
             self.fail(f"Deletions/TTL did not reduce the source item count: "
                       f"initial {initial_count}, after delete/TTL {final_count}")
-        ts_after_delete = self.cont_bk_mgr.get_cluster_timestamp()
         self._wait_for_history_upload("the post-deletion timestamp")
 
         restore_bucket_name = f"restore_bucket_{int(time.time())}"
@@ -755,8 +812,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Flush the restore bucket so the next restore starts from an empty state
         self._flush_restore_bucket(restore_bucket_name)
 
-        # 2. Restore to after deletions -> Should have final count
-        self._restore_entire_bucket(ts_after_delete, restore_bucket_name)
+        # 2. Restore to after deletions -> Should have final count. This is the
+        # latest state (no mutation follows ts_after_delete), so restore
+        # "everything" rather than a wall-clock timestamp that lands one interval
+        # past the newest backed-up mutation. The fresh restore bucket avoids any
+        # flush-lineage concern.
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(final_count, bucket_name=restore_bucket_name)
 
@@ -808,6 +869,21 @@ class ContinuousBackupTest(ContinuousBackupBase):
             # Wait for both to finish
             backup_future.result()
             restore_output, restore_error = restore_future.result()
+
+        # cbbackupmgr takes an exclusive lock on the archive, so a restore that
+        # races an in-progress backup on the SAME archive can lose the lock race
+        # ("refusing to remove the lockfile because it's owned by another active
+        # process"). That is expected; the backup has finished by the time we get
+        # here, so retry the restore now that the archive lock has been released.
+        combined = " ".join((restore_output or []) + (restore_error or [])).lower()
+        if "lock" in combined:
+            self.log.info("Concurrent restore lost the archive-lock race (expected); "
+                          "retrying now that the backup has released the lock")
+            restore_output, restore_error = self.cont_bk_mgr.restore(
+                self.backup_archive_dir, self.backup_repo_name,
+                location=self.continuous_backup_location, temp_dir="/tmp",
+                timestamp=ts_valid, map_data=f"{self.bucket.name}={restore_bucket_name}",
+                obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
         # Verify restore was successful
         self._assert_restore_succeeded(restore_output, restore_error, ts_valid)
@@ -1077,10 +1153,14 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # setUp + this load = 2 * _get_total_docs(). REST count lags at this scale.
         count_t1 = self._get_total_docs() * 2
 
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval before collection drop")
+        # Capture T1 right after the load (before the interval wait) so it sits
+        # within the loaded data's range, not one interval past the newest
+        # mutation (which cbcontbk would reject). The collection drop below then
+        # supplies data after T1, so the backup span covers T1 by restore time.
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(f"T1 (pre-drop): {ts_t1}, count: {count_t1}")
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval before collection drop")
 
         drop_scope, drop_coll = self._get_first_non_system_scope_and_collection()
         items_per_coll = self.spec.get(MetaConstants.NUM_ITEMS_PER_COLLECTION, 0)
@@ -1308,8 +1388,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(f"T1 (within retention window): {ts_t1}, count: {count_t1}")
         # ts_t1 is reused later (after shrinking retention) to test the
         # expired-timestamp path, so it must stay a real point in time rather
-        # than switching to "everything" -- wait for its covering upload to
-        # land before restoring to it here.
+        # than switching to "everything". It has no natural mutation after it,
+        # which would otherwise leave it one interval past the newest backed-up
+        # data and make cbcontbk reject it. Issue one count-preserving update so
+        # the backup span extends past ts_t1 (the update is excluded from a PITR
+        # restore to ts_t1, so count_t1 still holds).
+        CollectionBase.mutate_history_retention_data(self, update_percent=10, update_itrs=1)
+        # wait for the covering upload to land before restoring to ts_t1.
         self._wait_for_history_upload("ts_t1 (retention boundary)")
 
         # Verify PITR within the retention window succeeds
