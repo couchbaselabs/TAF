@@ -195,10 +195,10 @@ class CreateDatabaseCredential(DatabaseCredentialBase):
                     "(mutually exclusive)",
             "expected_status_code": 422,
             "expected_error": {
-                "code": 422,
-                "hint": "Check the request payload and try again.",
+                "code": 8024,
+                "hint": "Create the application user roles on the cluster, or remove them from the request, before assigning them to a database credential.",
                 "httpStatusCode": 422,
-                "message": "Can not create application user. The credential type provided invalid is invalid. Please check the request and try again."
+                "message": "Can not manage the database credential as the following application user roles do not exist on this cluster: access. Please create the user roles or revise the request and try again."
             }
         })
         testcases.append({

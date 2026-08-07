@@ -476,6 +476,16 @@ class UpdateDatabaseRole(DatabaseRoleBase):
                         key, value, type(value))
                 }
                 testcase[key] = value
+                if value and not isinstance(value, str):
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 1000,
+                        "hint": "The request was malformed or invalid.",
+                        "httpStatusCode": 400,
+                        "message": "Bad Request. Error: body contains "
+                                   "incorrect JSON type for field "
+                                   "\"description\"."
+                    }
                 testcases.append(testcase)
 
         testcases.append({
