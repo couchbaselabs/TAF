@@ -122,24 +122,28 @@ class CapellaUtils(object):
 
     @staticmethod
     def create_access_secret_key(pod, tenant, name):
-        capella_api = CapellaAPI(pod.url_public,
-                                 tenant.api_secret_key,
-                                 tenant.api_access_key,
-                                 tenant.user,
-                                 tenant.pwd)
-        resp = capella_api.create_access_secret_key(name, tenant.id)
+        # The old /tokens?tenantId= route (CapellaAPI.create_access_secret_key)
+        # has been removed from the control plane -- migrated to the v2
+        # control-plane API key route, same one used by create_v4_api_key().
+        capella_api = CapellaAPIv4(pod.url_public,
+                                   tenant.api_secret_key,
+                                   tenant.api_access_key,
+                                   tenant.user,
+                                   tenant.pwd, "")
+        resp = capella_api.create_control_plane_api_key(tenant.id, name)
         if resp.status_code != 201:
             raise Exception("Creating Tenant Access/Secret Failed: %s" % resp.content)
-        return json.loads(resp.content)
+        key = json.loads(resp.content)
+        return {"access": key["id"], "secret": key["secretKey"], "id": key["id"]}
 
     @staticmethod
     def revoke_access_secret_key(pod, tenant, key_id):
-        capella_api = CapellaAPI(pod.url_public,
-                                 tenant.api_secret_key,
-                                 tenant.api_access_key,
-                                 tenant.user,
-                                 tenant.pwd)
-        resp = capella_api.revoke_access_secret_key(tenant.id, key_id)
+        capella_api = CapellaAPIv4(pod.url_public,
+                                   tenant.api_secret_key,
+                                   tenant.api_access_key,
+                                   tenant.user,
+                                   tenant.pwd, "")
+        resp = capella_api.delete_control_plane_api_key(tenant.id, key_id)
         if resp.status_code != 204:
             raise Exception(
                 "Revoking Tenant Access/Secret Failed: %s" % resp.content)

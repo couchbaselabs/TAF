@@ -111,6 +111,19 @@ class CapellaBaseTest(CouchbaseBaseTest):
             "analytics": self.input.param("cbas_nodes", 2),
             "eventing": self.input.param("eventing_nodes", 2)
             }
+
+        # When set, keeps total KV disk capacity constant as the data
+        # service scales in/out, instead of growing linearly with node count.
+        self.total_cluster_disk_size = self.input.param(
+            "total_cluster_disk_size", None)
+        if self.total_cluster_disk_size:
+            self.disk["data"] = round(
+                self.total_cluster_disk_size / self.num_nodes["data"])
+            if provider == "aws":
+                for i, storage in enumerate(aws_storage_range):
+                    if self.disk["data"] >= storage:
+                        self.iops["data"] = max(aws_min_iops[i+1], self.iops["data"])
+
         CbServer.use_https = True
 
         # initialise pod object

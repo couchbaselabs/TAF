@@ -265,6 +265,9 @@ class hostedOPD(OPD):
             service = _services[0]
             if service_group in self.rebl_services and service_group == rebl_service_group:
                 self.num_nodes[service] = self.num_nodes[service] + num
+            if service == "data" and getattr(self, "total_cluster_disk_size", None):
+                self.disk[service] = round(
+                    self.total_cluster_disk_size / self.num_nodes[service])
             spec = {
                 "count": self.num_nodes[service],
                 "compute": {
