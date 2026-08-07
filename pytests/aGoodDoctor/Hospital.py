@@ -490,57 +490,12 @@ class Murphy(BaseTestCase, OPD):
         # self.stop_stats = True
         # stat_th.join()
 
-        # Merge the backups
-        if self.drBackup is not None and self.cont_bkp_test is None:
-            output, error = self.drBackup.merge_all_backups(archive=self.backup_archive, repo=self.backup_repo)
-            self.log.info(f"Merge output: {output}\n\n Merge error: {error}")
-
-        # Restore using backup/PITR
-        if self.drBackup is not None:
-            if self.cont_bkp_test is None:
-                output, error = self.drBackup.backup(self.backup_archive, self.backup_repo,
-                                                    cluster_host=self.backup_cluster_host)
-                self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
-
-                items = self.bucket_util.get_buckets_item_count(
-                    self.cluster,
-                    self.cluster.buckets[0].name)
-                self.bucket_util.flush_all_buckets(self.cluster)
-
-
-                output, error = self.drBackup.restore(self.backup_archive, self.backup_repo,
-                                                    cluster_host=self.backup_cluster_host,
-                                                    threads=60)
-                self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
-
-                result = self.drBackup.monitor_restore(
-                    self.bucket_util, self.cluster,
-                    self.cluster.buckets[0].name, items,
-                    timeout=self.restore_timeout)
-                self.assertTrue(result, "Restore failed")
-            else:
-                # Stop continuous backup before the flush, so the deletes and
-                # the restores that follow are not themselves backed up.
-                self.toggle_continuous_backup(self.cluster.buckets[0], enable=False)
-                self.bucket_util.flush_all_buckets(self.cluster)
-                self.sleep(30, "Sleep for a while after flushing buckets and before triggering restore")
-                for timestamp, items in sorted(self.continuous_backup_timestamps, key=lambda x: x[0]):
-                    self.log.info("Restoring backup with timestamp: {}".format(timestamp))
-                    output, error = self.drContBackup.trigger_restore(cluster=self.cluster,
-                                                                      archive=self.backup_archive,
-                                                                      repo=self.backup_repo,
-                                                                      cont_backup_location=self.continuous_backup_location,
-                                                                      staging_dir="/data/tmp",
-                                                                      timestamp=timestamp,
-                                                                      threads=60)
-                    self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
-                    result = self.drContBackup.monitor_restore(self.bucket_util,
-                                                               cluster=self.cluster,
-                                                               bucket=self.cluster.buckets[0],
-                                                               items=items,
-                                                               timeout=self.restore_timeout)
-                    self.assertTrue(result, "Restore failed for backup with timestamp: {}".format(timestamp))
-                self.toggle_continuous_backup(self.cluster.buckets[0], enable=True)
+        # Restore using backup/PITR.
+        # The mutation thread started by initial_setup() is still running here
+        # -- this test never clears self.mutations -- so the workloads have to
+        # be parked before the flush, or the item count captured to verify the
+        # restore is taken while docs are still being written.
+        self.restore_with_workloads_paused()
 
     def initial_setup(self):
         if self.initial_setup_done or self.skip_init:
@@ -1306,11 +1261,8 @@ class Murphy(BaseTestCase, OPD):
                     self.end_step_checks()
 
                 # Take an incremental backup
-                if self.drBackup is not None:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+                self.traditional_backup_and_record_timestamp_for_continuous_backup(
+                    order=["traditional_backup"])
 
                 ###################################################################
                 '''
@@ -2026,11 +1978,9 @@ class Murphy(BaseTestCase, OPD):
     def test_30TB_10K_collections_cont_backup(self):
         self.initial_setup()
 
-        if self.drBackup is not None:
-            output, error = self.drBackup.backup(
-                self.backup_archive, self.backup_repo,
-                cluster_host=self.backup_cluster_host)
-            self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
+        # Take first backup
+        self.traditional_backup_and_record_timestamp_for_continuous_backup(
+            order=["traditional_backup"])
 
         self.target_disk_util = self.input.param("target_disk_usage", "50G")
         max_collections = self.input.param("max_collections",
@@ -2188,55 +2138,13 @@ class Murphy(BaseTestCase, OPD):
             doc_loading_task.stop_indefinite_doc_loading_tasks()
             self.task.jython_task_manager.get_task_result(doc_loading_task)
 
-            # Take an incremental backup, merge and restore from backup
-            if self.drBackup is not None:
-                if self.cont_bkp_test is None:
-                    output, error = self.drBackup.backup(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host)
-                    self.log.info(f"Backup Output: {output}\n\n Backup Error: {error}")
-
-                    output, error = self.drBackup.merge_all_backups(self.backup_archive, self.backup_repo)
-                    self.log.info(f"Merge Output: {output}\n\n Merge Error: {error}")
-
-                    items = self.bucket_util.get_buckets_item_count(
-                        self.cluster,
-                        self.cluster.buckets[0].name)
-                    self.bucket_util.flush_all_buckets(self.cluster)
-
-                    output, error = self.drBackup.restore(
-                        self.backup_archive, self.backup_repo,
-                        cluster_host=self.backup_cluster_host,
-                        threads=60)
-
-                    self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
-
-                    result = self.drBackup.monitor_restore(
-                        self.bucket_util, self.cluster,
-                        self.cluster.buckets[0].name, items,
-                        timeout=self.restore_timeout)
-                    self.assertTrue(result, "Restore failed")
-                else:
-                    self.toggle_continuous_backup(self.cluster.buckets[0], enable=False)
-                    self.bucket_util.flush_all_buckets(self.cluster)
-                    self.sleep(30, "Waiting for a while after flushing buckets")
-                    for timestamp, items in sorted(self.continuous_backup_timestamps, key=lambda x: x[0]):
-                        self.log.info("Restoring backup with timestamp: {}".format(timestamp))
-                        output, error = self.drContBackup.trigger_restore(cluster=self.cluster,
-                                                                          archive=self.backup_archive,
-                                                                          repo=self.backup_repo,
-                                                                          cont_backup_location=self.continuous_backup_location,
-                                                                          staging_dir="/data/tmp",
-                                                                          timestamp=timestamp,
-                                                                          threads=60)
-                        self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
-                        result = self.drContBackup.monitor_restore(self.bucket_util,
-                                                                   cluster=self.cluster,
-                                                                   bucket=self.cluster.buckets[0],
-                                                                   items=items,
-                                                                   timeout=self.restore_timeout)
-                        self.assertTrue(result, "Restore failed for backup with timestamp: {}".format(timestamp))
-                    self.toggle_continuous_backup(self.cluster.buckets[0], enable=True)
+            # Take an incremental backup, merge and restore from backup.
+            # ClusterOpsVolume() has already joined the mutation thread and
+            # the spec-driven load above is awaited, so the data side is
+            # quiescent -- but the query loads started by initial_setup() are
+            # still running, and would otherwise be querying a flushed bucket
+            # for the length of the restore.
+            self.restore_with_workloads_paused()
 
             loop_index += 1
             mutation_num += 1
