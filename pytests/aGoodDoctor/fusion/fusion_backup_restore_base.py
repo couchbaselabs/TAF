@@ -1299,8 +1299,8 @@ class FusionBackupRestoreBase(APIBase):
                 except NotImplementedError:
                     guest_total = 0
                 s3 = self.fusion_aws_util.find_fusion_s3_bucket(cluster_id)
-                s3_objs = (self.fusion_aws_util.s3.count_objects(s3)
-                           if s3 else -1)
+                s3_objs = (self.fusion_aws_util.s3.get_bucket_size(s3)
+                           .get("file_count", 0) if s3 else -1)
                 if guest_total == 0 and s3_objs <= 0:
                     self.log.info(
                         "Fusion disable confirmed on {} via AWS (0 guest "
@@ -1408,7 +1408,8 @@ class FusionBackupRestoreBase(APIBase):
         deadline = time.time() + timeout
         obj_count = 0
         while time.time() < deadline:
-            obj_count = self.fusion_aws_util.s3.count_objects(s3_bucket)
+            obj_count = self.fusion_aws_util.s3.get_bucket_size(
+                s3_bucket).get("file_count", 0)
             if obj_count and obj_count > 0:
                 break
             self.log.info(
@@ -1563,16 +1564,16 @@ class FusionBackupRestoreBase(APIBase):
         #    "Fusion-free" means the bucket is absent OR empty — not absent.
         deadline = time.time() + timeout
         s3_bucket = aws_util.find_fusion_s3_bucket(cluster_id)
-        s3_objs = (aws_util.s3.count_objects(s3_bucket)
-                   if s3_bucket else -1)
+        s3_objs = (aws_util.s3.get_bucket_size(s3_bucket)
+                   .get("file_count", 0) if s3_bucket else -1)
         while s3_bucket and s3_objs > 0 and time.time() < deadline:
             self.log.info(
                 "Waiting for CP to drain the Fusion S3 bucket '{}' on {} "
                 "({} objects)...".format(s3_bucket, cluster_id, s3_objs))
             time.sleep(30)
             s3_bucket = aws_util.find_fusion_s3_bucket(cluster_id)
-            s3_objs = (aws_util.s3.count_objects(s3_bucket)
-                       if s3_bucket else -1)
+            s3_objs = (aws_util.s3.get_bucket_size(s3_bucket)
+                       .get("file_count", 0) if s3_bucket else -1)
         if s3_bucket and s3_objs > 0:
             self.fail(
                 "Target {} Fusion S3 bucket '{}' still has {} objects after "
@@ -2160,14 +2161,22 @@ class FusionBackupRestoreBase(APIBase):
             self.generate_random_string(8, special_characters=False))
         access = [{"privileges": ["data_reader", "data_writer"]}]
 
+        # NOTE: pass name/access/password as keywords, never positionally.
+        # capellaAPI's create_database_user signature drifts across submodule
+        # versions (the "Fine Grained RBAC" change dropped the positional
+        # `access` param and moved `password` to the 5th slot). Positional args
+        # then bind `access` onto `password` and raise "got multiple values for
+        # argument 'password'". Keyword binding routes `access` to the named
+        # param on old versions and into **kwargs (forwarded to the request
+        # body) on new ones — same JSON body either way.
         resp = self.capellaAPI.cluster_ops_apis.create_database_user(
             self.organisation_id, project_id, cluster_id,
-            username, access, password=password)
+            name=username, access=access, password=password)
         if resp.status_code == 429:
             self.handle_rate_limit(int(resp.headers["Retry-After"]))
             resp = self.capellaAPI.cluster_ops_apis.create_database_user(
                 self.organisation_id, project_id, cluster_id,
-                username, access, password=password)
+                name=username, access=access, password=password)
         if resp.status_code not in [200, 201]:
             self.fail(
                 "Failed to create DB user on cluster {}: {} {}".format(
@@ -3238,7 +3247,7 @@ class FusionBackupRestoreBase(APIBase):
 
         Returns (thread, stop_event, counts) where counts is a list of
         (timestamp, object_count) tuples appended by the thread.
-        count == -1 means the bucket did not exist yet at that sample.
+        object_count is 0 when the bucket is empty or does not exist yet.
         """
         stop_event = threading.Event()
         counts = []
@@ -3249,19 +3258,15 @@ class FusionBackupRestoreBase(APIBase):
             # analyses.
             while not stop_event.is_set():
                 try:
-                    count = self.fusion_aws_util.s3.count_objects(bucket_name)
+                    count = self.fusion_aws_util.s3.get_bucket_size(
+                        bucket_name).get("file_count", 0)
                     counts.append((time.time(), count))
-                    if count == -1:
-                        self.log.info(
-                            "S3 monitor: bucket '{}' not found yet".format(
-                                bucket_name))
-                    else:
-                        self.log.info(
-                            "S3 monitor: bucket '{}' object count = {}".format(
-                                bucket_name, count))
+                    self.log.info(
+                        "S3 monitor: bucket '{}' object count = {}".format(
+                            bucket_name, count))
                 except Exception as exc:
                     self.log.warning(
-                        "S3 monitor: s3.count_objects raised {}: {}".format(
+                        "S3 monitor: s3.get_bucket_size raised {}: {}".format(
                             type(exc).__name__, exc))
                 stop_event.wait(poll_interval)
 

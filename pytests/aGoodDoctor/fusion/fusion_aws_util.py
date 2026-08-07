@@ -758,11 +758,18 @@ class FusionAWSUtil:
         Fusion guest volumes are tagged:
           couchbase-cloud-cluster-id = cluster_id
           couchbase-cloud-function = fusion-accelerator
+          couchbase-cloud-fusion-guest-volume = true
 
-        (The 'couchbase-cloud-guestvolume' tag is only set on the EBS
-        snapshots taken from these volumes — not on the live volumes
-        themselves. The proven tag pair used by fusion_cp_resource_monitor
-        is cluster-id + function=fusion-accelerator.)
+        The guest-volume tag is REQUIRED: couchbase-cloud-function=
+        fusion-accelerator alone also matches the accelerator EC2 instance's
+        own root/boot EBS volume (applied via the launch template), so
+        omitting it over-counts guest volumes and mismatches the EBS snapshot
+        count for a backup. Only genuine guest volumes carry
+        couchbase-cloud-fusion-guest-volume=true (set by FusionGuestVolumeTag()
+        in couchbase-cloud's internal/clusters/tags/tags.go). Volumes already
+        in AWS "deleting" state are excluded too — a volume mid-deletion at
+        backup time won't get a fresh snapshot. This mirrors the shared
+        fusion_cp_resource_monitor.get_current_guest_volume_ids filter.
 
         Returns {instance_id: [volume_id, ...], ...}.
         Unattached volumes map to key "unattached".
@@ -774,6 +781,7 @@ class FusionAWSUtil:
                 filters={
                     "couchbase-cloud-cluster-id": cluster_id,
                     "couchbase-cloud-function": "fusion-accelerator",
+                    "couchbase-cloud-fusion-guest-volume": "true",
                 })
         except Exception as e:
             self.log.warning(
@@ -782,6 +790,8 @@ class FusionAWSUtil:
             return {}
         result = {}
         for vol in volumes:
+            if vol.get("State") == "deleting":
+                continue
             vol_id = vol.get("VolumeId")
             attachments = vol.get("Attachments", [])
             instance_id = (
