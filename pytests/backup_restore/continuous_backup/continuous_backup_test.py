@@ -580,9 +580,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
         restore_bucket_name = f"restore_bucket_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
 
-        # 3. Verify restores from all valid PITR points
+        # 3. Verify restores from all valid PITR points. The final timestamp
+        # is the latest state with no mutation after it, so a captured
+        # wall-clock value lands past the newest backed-up mutation and
+        # cbcontbk rejects it. Restore "everything" for that last point.
         for i, (ts, count) in enumerate(zip(timestamps, item_counts[1:])):
-            self._restore_entire_bucket(ts, restore_bucket_name)
+            restore_ts = None if i == len(timestamps) - 1 else ts
+            self._restore_entire_bucket(restore_ts, restore_bucket_name)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             self._verify_doc_count(count, bucket_name=restore_bucket_name)
 
@@ -679,8 +683,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
         restore_bucket_name = f"restore_bucket_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
 
+        # The final timestamp is the latest state with no mutation after it,
+        # so a captured wall-clock value lands past the newest backed-up
+        # mutation and cbcontbk rejects it. Restore "everything" for that
+        # last point instead.
         for i, (ts, count) in enumerate(zip(timestamps, item_counts)):
-            self._restore_entire_bucket(ts, restore_bucket_name)
+            restore_ts = None if i == len(timestamps) - 1 else ts
+            self._restore_entire_bucket(restore_ts, restore_bucket_name)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             self._verify_doc_count(count, bucket_name=restore_bucket_name)
 
@@ -712,7 +721,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(f"Restore order: {restore_order}")
         max_restored_interval = -1
         for i in restore_order:
-            ts = timestamps[i]
+            # The last interval's timestamp is the latest state with no
+            # mutation after it, so a captured wall-clock value lands past
+            # the newest backed-up mutation and cbcontbk rejects it.
+            # Restore "everything" for that one regardless of where it
+            # lands in the shuffled order.
+            ts = None if i == len(timestamps) - 1 else timestamps[i]
             if i > max_restored_interval:
                 max_restored_interval = i
             self._restore_entire_bucket(ts, restore_bucket_name)
@@ -901,33 +915,67 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         initial_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.sleep(self.continuous_backup_interval * 60)
-        ts_before_flush = self.cont_bk_mgr.get_cluster_timestamp()
+        # No mutation happens between this point and disabling continuous
+        # backup below, so the log's newest data at disable time is exactly
+        # this pre-flush state -- restoring "everything" here (while CB is
+        # still disabled, before the flush's absence gets re-enabled into a
+        # new epoch) is equivalent to restoring to this instant, without
+        # relying on a captured wall-clock timestamp cbcontbk might reject
+        # as "target time does not appear in the backup".
+        self._wait_for_history_upload("the pre-flush state")
 
-        # Flush bucket
+        restore_bucket_name = f"restore_bucket_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+
+        # Disable continuous backup before flushing (flushing a CB-enabled
+        # bucket records the vbucket reset in the log and breaks the log
+        # lineage -- see _reset_bucket_and_restore_from_backup), flush, then
+        # restore the pre-flush state BEFORE re-enabling. Re-enabling takes a
+        # fresh traditional-backup baseline internally; restoring after that
+        # re-baseline makes cbcontbk see the pre-flush log as same-or-older
+        # than the new baseline and reject it with "traditional backup has
+        # the same or newer data than the log backup". Restoring first, while
+        # still disabled, keeps the original (older) baseline in play so the
+        # pre-flush log correctly fills the gap up to "everything".
+        self.log.info(f"Disabling continuous backup before flush: {self.bucket.name}")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            continuous_backup_enabled=False)
+        self.sleep(30, "Letting the continuous backup daemon stop before flush")
+
         self.log.info(f"Flushing bucket: {self.bucket.name}")
         self.bucket_util.update_bucket_property(
             self.cluster.master, self.bucket,
             flush_enabled=Bucket.FlushBucket.ENABLED)
         self.bucket_util.flush_bucket(self.cluster, self.bucket)
+        self._verify_doc_count(0)
 
-        # Wait for continuous backup to capture flush
+        self.log.info("PITR restore to before flush (continuous backup still disabled)")
+        self._restore_entire_bucket(None, restore_bucket_name)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self._verify_doc_count(initial_count, bucket_name=restore_bucket_name)
+
+        self.log.info(f"Re-enabling continuous backup after flush: {self.bucket.name}")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket,
+            continuous_backup_enabled=True,
+            continuous_backup_location=self.continuous_backup_location)
+        self.sleep(10, "Waiting for settings to apply")
+
+        # Wait for continuous backup to capture the (now empty) post-flush state
         self.sleep(self.continuous_backup_interval * 60)
         ts_after_flush = self.cont_bk_mgr.get_cluster_timestamp()
 
         # Load some new data
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.sleep(self.continuous_backup_interval * 60)
-        ts_after_new_load = self.cont_bk_mgr.get_cluster_timestamp()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         final_count = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
-
-        restore_bucket_name = f"restore_bucket_{int(time.time())}"
-        self._create_restore_bucket(restore_bucket_name)
-
-        # 1. Restore to before flush -> Should have initial count
-        self._restore_entire_bucket(ts_before_flush, restore_bucket_name)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(initial_count, bucket_name=restore_bucket_name)
+        # This is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" instead.
+        self._wait_for_history_upload("the latest loaded data")
 
         # Flush the restore bucket so the next restore starts from an empty state
         self._flush_restore_bucket(restore_bucket_name)
@@ -941,7 +989,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._flush_restore_bucket(restore_bucket_name)
 
         # 3. Restore to after new load -> Should have final count
-        self._restore_entire_bucket(ts_after_new_load, restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(final_count, bucket_name=restore_bucket_name)
 
@@ -967,10 +1015,13 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.log.info(f"Expected per-scope count (if evenly distributed): {expected_scope_count}")
 
         self.sleep(self.continuous_backup_interval * 60)
-        ts_valid = self.cont_bk_mgr.get_cluster_timestamp()
-        # Ensure history up to ts_valid is uploaded before restoring, otherwise
-        # the filtered restore reads a partial archive and the count is short.
-        self._wait_for_history_upload("ts_valid")
+        # This is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" (filtered per test case below) instead. Ensure
+        # history is uploaded before restoring, otherwise the filtered
+        # restore reads a partial archive and the count is short.
+        self._wait_for_history_upload("the latest loaded data")
 
         # Get first scope and first collection name from the bucket
         bucket_obj = self.cluster.buckets[0]
@@ -1023,7 +1074,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
                     self.log.info(f"Filtering with include_data: {test_case['include_data']}")
 
                 self._restore_entire_bucket(
-                    timestamp=ts_valid,
+                    timestamp=None,
                     target_bucket_name=restore_bucket_name,
                     include_data=test_case["include_data"],
                     map_data=test_case["map_data"]
@@ -1107,10 +1158,15 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.log.info(f"Waiting for new interval of {new_interval} minutes...")
         self.sleep(new_interval * 60)
-        ts_after_interval_change = self.cont_bk_mgr.get_cluster_timestamp()
+        # This is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" instead.
+        self._wait_for_history_upload("the post-interval-change data")
 
         self.log.info("Restoring with new interval setting")
-        self._restore_entire_bucket(ts_after_interval_change, restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_after_interval_change, bucket_name=restore_bucket_name)
         self.log.info("Restore with new interval succeeded as expected.")
@@ -1175,14 +1231,28 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for continuous backup to capture the collection drop")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_t2 = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
-        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"T2 (post-drop): {ts_t2}, count: {count_t2}")
+        self.log.info(f"T2 (post-drop) count: {count_t2}")
+        # T2 is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" instead.
+        self._wait_for_history_upload("T2 (post-drop)")
 
         # Anchor the post-drop state in a traditional backup
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and an "everything"
+        # restore fails with "traditional backup has the same or newer data
+        # than the log backup". Update-only mutations keep count_t2 intact
+        # while giving the log data newer than the traditional base.
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
+        self._wait_for_history_upload("the post-backup sentinel update")
 
         restore_bucket_name = f"restore_bucket_coll_drop_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1198,7 +1268,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         # PITR to T2: collection must still be absent
         self.log.info("PITR restore to T2 (after collection drop) — collection must remain absent")
-        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
         self.log.info(f"T2 restore verified: {count_t2} items (collection correctly absent)")
@@ -1250,13 +1320,27 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for continuous backup to capture the scope drop")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_t2 = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
-        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"T2 (post-scope-drop): {ts_t2}, count: {count_t2}")
+        self.log.info(f"T2 (post-scope-drop) count: {count_t2}")
+        # T2 is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" instead.
+        self._wait_for_history_upload("T2 (post-scope-drop)")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and an "everything"
+        # restore fails with "traditional backup has the same or newer data
+        # than the log backup". Update-only mutations keep count_t2 intact
+        # while giving the log data newer than the traditional base.
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
+        self._wait_for_history_upload("the post-backup sentinel update")
 
         restore_bucket_name = f"restore_bucket_scope_drop_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1270,7 +1354,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._flush_restore_bucket(restore_bucket_name)
 
         self.log.info("PITR restore to T2 (after scope drop) — scope must remain absent")
-        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
         self.log.info(f"T2 restore verified: {count_t2} items (scope correctly absent)")
@@ -1332,12 +1416,25 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_after_recreate = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
-        ts_t3 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(
-            f"T3 (post-recreate+load): {ts_t3}, count: {count_after_recreate}")
+            f"T3 (post-recreate+load) count: {count_after_recreate}")
+        # T3 is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" instead.
+        self._wait_for_history_upload("T3 (post-recreate+load)")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and an "everything"
+        # restore fails with "traditional backup has the same or newer data
+        # than the log backup". Update-only mutations keep the item count
+        # intact while giving the log data newer than the traditional base.
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
+        self._wait_for_history_upload("the post-backup sentinel update")
 
         restore_bucket_name = f"restore_bucket_recreate_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1355,7 +1452,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # PITR to T3: recreated collection with new maxTTL and fresh data
         self.log.info(
             f"PITR restore to T3 (after recreate, maxTTL={new_ttl_seconds}s) — new collection + data")
-        self._restore_entire_bucket(ts_t3, restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_after_recreate, bucket_name=restore_bucket_name)
         self.log.info(f"T3 restore verified: {count_after_recreate} items")
@@ -1485,17 +1582,30 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_t2 = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after retention change")
-        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(
-            f"T2 (post-retention-change): {ts_t2}, count: {count_t2}")
+        self.log.info(f"T2 (post-retention-change) count: {count_t2}")
+        # T2 is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" instead.
+        self._wait_for_history_upload("T2 (post-retention-change)")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and an "everything"
+        # restore fails with "traditional backup has the same or newer data
+        # than the log backup". Update-only mutations keep count_t2 intact
+        # while giving the log data newer than the traditional base.
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
+        self._wait_for_history_upload("the post-backup sentinel update")
 
         restore_bucket_name = f"restore_bucket_ret_change_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1508,7 +1618,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._flush_restore_bucket(restore_bucket_name)
 
         self.log.info("PITR to T2 (captured after retention change) — must succeed")
-        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
 
@@ -1560,9 +1670,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval (only bucket1 has new data)")
-        ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(
-            f"T1: {ts_t1} | {bucket1.name}={count_b1_t1}, {bucket2.name}={count_b2_t1}")
+            f"T1: {bucket1.name}={count_b1_t1}, {bucket2.name}={count_b2_t1}")
+        # bucket1 gets no further mutations before its restore below, so a
+        # captured wall-clock timestamp would land one interval past the
+        # newest backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" (scoped to bucket1 via map_data) instead.
 
         # Load data into bucket2 only
         self.log.info(f"Loading data into {bucket2.name} only")
@@ -1586,19 +1699,44 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval (only bucket2 has new data)")
-        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
         self.log.info(
-            f"T2: {ts_t2} | {bucket1.name}={count_b1_t2}, {bucket2.name}={count_b2_t2}")
+            f"T2: {bucket1.name}={count_b1_t2}, {bucket2.name}={count_b2_t2}")
+        # Same reasoning as T1 above, for bucket2's restore.
+        self._wait_for_history_upload("T2")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and an "everything"
+        # restore fails with "traditional backup has the same or newer data
+        # than the log backup" -- for EITHER bucket, since both source their
+        # restore from this same backup point. Update-only mutations keep
+        # both counts intact while giving the log data newer than the
+        # traditional base. mutate_history_retention_data's single call
+        # across test_obj.cluster.buckets hits a framework bug processing
+        # CRUD results when more than one bucket is passed at once ('update'
+        # KeyError in task:__wait_for_task_completion) -- run the same
+        # count-preserving update spec against each bucket separately instead.
+        sentinel_spec = CollectionBase.get_history_retention_load_spec(
+            self, update_percent=10, update_itrs=1)
+        CollectionBase.over_ride_doc_loading_template_params(self, sentinel_spec)
+        CollectionBase.set_retry_exceptions(sentinel_spec, self.durability_level)
+        for b in (bucket1, bucket2):
+            sentinel_task = self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, [b], sentinel_spec,
+                mutation_num=0, batch_size=500, process_concurrency=1,
+                validate_task=True)
+            self.assertTrue(sentinel_task.result,
+                            f"Hist retention sentinel load failed for {b.name}")
+        self._wait_for_history_upload("the post-backup sentinel update")
 
         # Restore buckets sequentially to avoid RAM exhaustion on small clusters.
         # Creating both at once alongside the two source buckets exceeds quota.
         restore_b1_name = f"restore_{bucket1.name}_{int(time.time())}"
         self._create_restore_bucket(restore_b1_name)
         self.log.info(f"PITR {bucket1.name} to T1 (bucket2 load excluded)")
-        self._restore_entire_bucket(ts_t1, restore_b1_name,
+        self._restore_entire_bucket(None, restore_b1_name,
                                     map_data=f"{bucket1.name}={restore_b1_name}")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_b1_t1, bucket_name=restore_b1_name)
@@ -1611,7 +1749,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         restore_b2_name = f"restore_{bucket2.name}_{int(time.time())}"
         self._create_restore_bucket(restore_b2_name)
         self.log.info(f"PITR {bucket2.name} to T2 (includes bucket2-only load)")
-        self._restore_entire_bucket(ts_t2, restore_b2_name,
+        self._restore_entire_bucket(None, restore_b2_name,
                                     map_data=f"{bucket2.name}={restore_b2_name}")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_b2_t2, bucket_name=restore_b2_name)
@@ -1670,8 +1808,11 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for bucket1 backup interval")
-        ts_b1 = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"{bucket1.name} timestamp: {ts_b1}, count: {count_b1}")
+        self.log.info(f"{bucket1.name} count: {count_b1}")
+        # bucket1 gets no further mutations before its restore below, so a
+        # captured wall-clock timestamp would land one interval past the
+        # newest backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" (scoped to bucket1 via map_data) instead.
 
         # Load data into bucket2, wait one (shorter) bucket2 interval
         doc_spec2 = self.bucket_util.get_crud_template_from_package(self.data_spec_name)
@@ -1688,23 +1829,48 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.sleep(short_interval * 60,
                    "Waiting for bucket2 (shorter) backup interval")
-        ts_b2 = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"{bucket2.name} timestamp: {ts_b2}, count: {count_b2}")
-
-        # ts_b2 is the latest timestamp; wait one full interval so both buckets'
-        # continuous-backup history is uploaded up to their timestamps before we
-        # restore. Without this, bucket2 (shorter interval) restores a partial
-        # archive whose count plateaus below count_b2.
-        self._wait_for_history_upload("ts_b2 (both buckets)")
+        self.log.info(f"{bucket2.name} count: {count_b2}")
+        # Both buckets get no further mutations before their restores below,
+        # so captured wall-clock timestamps would land past the newest
+        # backed-up mutation and cbcontbk would reject them. Restore
+        # "everything" for both instead. Also wait one full interval so both
+        # buckets' continuous-backup history is fully uploaded before we
+        # restore -- without this, bucket2 (shorter interval) restores a
+        # partial archive whose count plateaus below count_b2.
+        self._wait_for_history_upload("both buckets")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and an "everything"
+        # restore fails with "traditional backup has the same or newer data
+        # than the log backup" -- for EITHER bucket, since both source their
+        # restore from this same backup point. Update-only mutations keep
+        # both counts intact while giving the log data newer than the
+        # traditional base. mutate_history_retention_data's single call
+        # across test_obj.cluster.buckets hits a framework bug processing
+        # CRUD results when more than one bucket is passed at once ('update'
+        # KeyError in task:__wait_for_task_completion) -- run the same
+        # count-preserving update spec against each bucket separately instead.
+        sentinel_spec = CollectionBase.get_history_retention_load_spec(
+            self, update_percent=10, update_itrs=1)
+        CollectionBase.over_ride_doc_loading_template_params(self, sentinel_spec)
+        CollectionBase.set_retry_exceptions(sentinel_spec, self.durability_level)
+        for b in (bucket1, bucket2):
+            sentinel_task = self.bucket_util.run_scenario_from_spec(
+                self.task, self.cluster, [b], sentinel_spec,
+                mutation_num=0, batch_size=500, process_concurrency=1,
+                validate_task=True)
+            self.assertTrue(sentinel_task.result,
+                            f"Hist retention sentinel load failed for {b.name}")
+        self._wait_for_history_upload("the post-backup sentinel update")
 
         restore_b1_name = f"restore_b1_intv_{int(time.time())}"
         # Restore buckets sequentially to avoid RAM exhaustion on small clusters.
         self._create_restore_bucket(restore_b1_name)
-        self.log.info(f"PITR {bucket1.name} to ts_b1")
-        self._restore_entire_bucket(ts_b1, restore_b1_name,
+        self.log.info(f"PITR {bucket1.name} to latest state")
+        self._restore_entire_bucket(None, restore_b1_name,
                                     map_data=f"{bucket1.name}={restore_b1_name}")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_b1, bucket_name=restore_b1_name)
@@ -1716,8 +1882,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         restore_b2_name = f"restore_b2_intv_{int(time.time())}"
         self._create_restore_bucket(restore_b2_name)
-        self.log.info(f"PITR {bucket2.name} to ts_b2")
-        self._restore_entire_bucket(ts_b2, restore_b2_name,
+        self.log.info(f"PITR {bucket2.name} to latest state")
+        self._restore_entire_bucket(None, restore_b2_name,
                                     map_data=f"{bucket2.name}={restore_b2_name}")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_b2, bucket_name=restore_b2_name)
@@ -1752,6 +1918,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
+            self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
             count_t1 = self.bucket_util.get_buckets_item_count(
                 self.cluster, self.bucket.name)
 
@@ -1763,16 +1930,31 @@ class ContinuousBackupTest(ContinuousBackupBase):
             CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
+            self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
             count_t2 = self.bucket_util.get_buckets_item_count(
                 self.cluster, self.bucket.name)
 
             self.sleep(self.continuous_backup_interval * 60,
                        "Waiting for second backup interval")
-            ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
-            self.log.info(f"T2 (second MAJORITY load): {ts_t2}, count: {count_t2}")
+            self.log.info(f"T2 (second MAJORITY load) count: {count_t2}")
+            # T2 is the latest state with no mutation after it, so a captured
+            # wall-clock timestamp would land one interval past the newest
+            # backed-up mutation and cbcontbk would reject it. Restore
+            # "everything" instead.
+            self._wait_for_history_upload("T2 (second MAJORITY load)")
 
             self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                    obj_staging_dir=self.obj_staging_dir_cbbackup)
+            # cbcontbk restore uses the newest traditional backup <= timestamp
+            # as its base and replays log data past it. With no mutations
+            # after this backup the log has nothing newer than the base, and
+            # an "everything" restore fails with "traditional backup has the
+            # same or newer data than the log backup". Update-only mutations
+            # keep count_t2 intact while giving the log data newer than the
+            # traditional base.
+            CollectionBase.mutate_history_retention_data(
+                self, update_percent=10, update_itrs=1)
+            self._wait_for_history_upload("the post-backup sentinel update")
 
             restore_bucket_name = f"restore_majority_{int(time.time())}"
             self._create_restore_bucket(restore_bucket_name)
@@ -1786,7 +1968,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self._flush_restore_bucket(restore_bucket_name)
 
             self.log.info("PITR restore to T2 (post second MAJORITY load)")
-            self._restore_entire_bucket(ts_t2, restore_bucket_name)
+            self._restore_entire_bucket(None, restore_bucket_name)
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
             self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
@@ -1841,11 +2023,25 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
             count_t2 = self.bucket_util.get_buckets_item_count(
                 self.cluster, self.bucket.name)
-            ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
-            self.log.info(f"T2: {ts_t2}, count: {count_t2}")
+            self.log.info(f"T2 count: {count_t2}")
+            # T2 is the latest state with no mutation after it, so a captured
+            # wall-clock timestamp would land one interval past the newest
+            # backed-up mutation and cbcontbk would reject it. Restore
+            # "everything" instead.
+            self._wait_for_history_upload("T2")
 
             self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                    obj_staging_dir=self.obj_staging_dir_cbbackup)
+            # cbcontbk restore uses the newest traditional backup <= timestamp
+            # as its base and replays log data past it. With no mutations
+            # after this backup the log has nothing newer than the base, and
+            # an "everything" restore fails with "traditional backup has the
+            # same or newer data than the log backup". Update-only mutations
+            # keep count_t2 intact while giving the log data newer than the
+            # traditional base.
+            CollectionBase.mutate_history_retention_data(
+                self, update_percent=10, update_itrs=1)
+            self._wait_for_history_upload("the post-backup sentinel update")
 
             restore_bucket_name = f"restore_persist_maj_{int(time.time())}"
             self._create_restore_bucket(restore_bucket_name)
@@ -1859,7 +2055,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self._flush_restore_bucket(restore_bucket_name)
 
             self.log.info("PITR restore to T2")
-            self._restore_entire_bucket(ts_t2, restore_bucket_name)
+            self._restore_entire_bucket(None, restore_bucket_name)
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
             self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
@@ -1923,15 +2119,35 @@ class ContinuousBackupTest(ContinuousBackupBase):
         # Phase 2: subdoc counter-increment mutations via SDK
         # These produce CMD_SUBDOC_MULTI_MUTATION DCP events
         self.log.info("Performing subdoc counter-increment mutations via SDK")
-        sdk_client = SDKClient(self.cluster, self.bucket)
+        # SDKClient defaults to _default._default, which this bucket_spec
+        # leaves empty (data loads into named scope/collection pairs like
+        # schema-drop tests use via _get_first_non_system_scope_and_collection).
+        # Every subdoc call against _default._default fails with "not found"
+        # regardless of key format -- target a collection that actually has data.
+        target_scope, target_coll = self._get_first_non_system_scope_and_collection()
+        sdk_client = SDKClient(self.cluster, self.bucket,
+                               scope=target_scope, collection=target_coll)
+        num_subdoc_ops = 200
         subdoc_errors = []
         try:
-            for i in range(200):
-                doc_key = f"test_collections-0-{i}"
+            for i in range(num_subdoc_ops):
+                # Matches the default doc-key generator's format
+                # ("test_collections-" + zero-padded index, e.g.
+                # "test_collections-0004008") -- the old "test_collections-0-{i}"
+                # form never matched a real key, so every one of these calls
+                # failed silently and T1 below had no mutation after it.
+                doc_key = f"test_collections-{i:07d}"
                 try:
+                    # crud()'s "subdoc_insert" handler unpacks value as
+                    # sub_key, value = value[0], value[1] -- passing a dict
+                    # here made value[0] raise KeyError(0), which every one
+                    # of these calls hit identically (str(KeyError(0)) ==
+                    # "0", matching the uniform "First error: 0" seen
+                    # regardless of key format or target collection). Pass
+                    # the (sub_key, value) tuple the handler actually expects.
                     sdk_client.crud(
                         "subdoc_insert", doc_key,
-                        {"path": "pitr_counter", "value": 1},
+                        ("pitr_counter", 1),
                         create_path=True)
                 except Exception as e:
                     subdoc_errors.append(str(e))
@@ -1941,10 +2157,21 @@ class ContinuousBackupTest(ContinuousBackupBase):
         if subdoc_errors:
             self.log.warning(
                 f"{len(subdoc_errors)} subdoc ops had errors "
-                f"(key format may differ from spec — first: {subdoc_errors[0]})")
+                f"(some target keys may already be gone from the earlier "
+                f"20% delete — first: {subdoc_errors[0]})")
+        if len(subdoc_errors) == num_subdoc_ops:
+            # T1 below relies on at least one of these mutations landing after
+            # it so the continuous-backup span extends past T1; if every op
+            # failed that assumption is silently false and T1 would sit right
+            # at the newest backed-up mutation, one interval from being
+            # rejected by cbcontbk. Surface it here instead of downstream.
+            self.fail(
+                f"All {num_subdoc_ops} subdoc mutations failed -- T1 has no "
+                f"mutation after it. First error: {subdoc_errors[0]}")
 
         # Subdoc mutations must not change item count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
         count_after_subdoc = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
         self.assertEqual(
@@ -1954,11 +2181,19 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval to capture subdoc mutations")
-        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"T2 (post-subdoc): {ts_t2}, count: {count_after_subdoc}")
+        self.log.info(f"T2 (post-subdoc) count: {count_after_subdoc}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+        # cbcontbk restore uses the newest traditional backup <= timestamp as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and an "everything"
+        # restore fails with "traditional backup has the same or newer data
+        # than the log backup". Update-only mutations keep count_after_subdoc
+        # intact while giving the log data newer than the traditional base.
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
+        self._wait_for_history_upload("the post-backup sentinel update")
 
         restore_bucket_name = f"restore_subdoc_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
@@ -1973,9 +2208,6 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self._flush_restore_bucket(restore_bucket_name)
 
-        # No writes happen after ts_t2 was captured, so restoring everything
-        # lands on the same state ts_t2 would -- avoids relying on "now"
-        # being inside the backup's covered range.
         self.log.info("PITR restore to T2 (post-subdoc-mutations — same count expected)")
         self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
@@ -2049,7 +2281,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         Sets a tight historyRetentionBytes limit on a Magma bucket and loads
         enough data to push the history log toward that limit. Verifies that:
-          - PITR to a recent timestamp (within the byte-limited window) succeeds.
+          - PITR to the latest state (within the byte-limited window) succeeds.
           - The bucket remains healthy and does not crash under byte pressure.
 
         Note: PITR is supported only on Magma buckets. historyRetentionBytes
@@ -2073,8 +2305,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         count_recent = self.bucket_util.get_buckets_item_count(
             self.cluster, self.bucket.name)
-        ts_recent = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"Recent timestamp: {ts_recent}, count: {count_recent}")
+        self.log.info(f"Recent count: {count_recent}")
+        # This is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" into a fresh bucket instead.
+        self._wait_for_history_upload("the latest loaded data")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
@@ -2083,8 +2319,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._create_restore_bucket(restore_bucket_name)
 
         self.log.info(
-            "PITR restore to recent timestamp under historyRetentionBytes limit")
-        self._restore_entire_bucket(ts_recent, restore_bucket_name)
+            "PITR restore to latest state under historyRetentionBytes limit")
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_recent, bucket_name=restore_bucket_name)
         self.log.info("Restore under byte limit succeeded")
@@ -2129,8 +2365,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for second backup interval")
-        ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
-        self.log.info(f"T2 (ACTIVE compression): {ts_t2}, count: {count_t2}")
+        self.log.info(f"T2 (ACTIVE compression) count: {count_t2}")
+        # T2 is the latest state with no mutation after it, so a captured
+        # wall-clock timestamp would land one interval past the newest
+        # backed-up mutation and cbcontbk would reject it. Restore
+        # "everything" instead.
+        self._wait_for_history_upload("T2 (ACTIVE compression)")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
@@ -2145,8 +2385,8 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self._flush_restore_bucket(restore_bucket_name)
 
-        self.log.info("PITR restore to T2 (ACTIVE compression bucket)")
-        self._restore_entire_bucket(ts_t2, restore_bucket_name)
+        self.log.info("PITR restore to T2 (latest state, ACTIVE compression bucket)")
+        self._restore_entire_bucket(None, restore_bucket_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_t2, bucket_name=restore_bucket_name)
 

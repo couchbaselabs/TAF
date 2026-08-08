@@ -501,12 +501,13 @@ class CollectionBase(ClusterSetup, FusionBase):
 
     def _collect_backup_logs_on_failure(self):
         """
-        Collects cbbackupmgr and cbcontbk logs on test failure.
-        Only runs on Linux nodes. Logs are collected to /data/tmp on the remote
-        node and then copied to the local log path.
+        Collects cbbackupmgr/cbcontbk logs on failure to a scratch dir
+        outside data_path (a root-owned dir under data_path breaks later
+        bucket cleanup with EACCES), copies them locally, then cleans up
+        the remote scratch dir.
         """
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
-        remote_tmp_dir = "/data/tmp"
+        remote_tmp_dir = "/var/tmp/taf_backup_collectinfo"
 
         # cont_bk_mgr only exists when the test exercises continuous backup
         collectors = [
@@ -521,6 +522,7 @@ class CollectionBase(ClusterSetup, FusionBase):
         for name, mgr, collect_fn in collectors:
             if mgr is None:
                 continue
+            shell = None
             try:
                 shell = mgr.shellConn
                 os_info = shell.extract_remote_info()
@@ -540,6 +542,14 @@ class CollectionBase(ClusterSetup, FusionBase):
                         shell.get_file(remote_tmp_dir, log_file.split("/")[-1], log_path)
             except Exception as e:
                 self.log.error(f"Exception during {name} log collection: {e}")
+            finally:
+                if shell is not None:
+                    try:
+                        shell.execute_command(f"rm -rf {remote_tmp_dir}")
+                    except Exception as cleanup_err:
+                        self.log.warning(
+                            f"Failed to clean up {remote_tmp_dir} on remote "
+                            f"node: {cleanup_err}")
 
     def collection_setup(self):
         ttl_buckets = [
