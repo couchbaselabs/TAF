@@ -1111,7 +1111,18 @@ class OPD:
             self._restore_using_continuous_backup()
 
     def _restore_using_cbbackupmgr(self):
-        bucket = self.cluster.buckets[0]
+        """
+        Backup, merge and restore are per-cluster operations -- the repo is
+        configured with empty include/exclude lists, so one pass of each
+        covers every bucket. Only the pre-flush item-count capture and the
+        post-restore monitoring are per-bucket.
+        """
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
+        expected_items = {
+            bucket.name: self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
+            for bucket in self.cluster.buckets}
 
         output, error = self.drBackup.backup(
             self.backup_archive, self.backup_repo,
@@ -1130,11 +1141,9 @@ class OPD:
                           "object-store archive (%s)"
                           % type(self.drBackup.cloud_provider).__name__)
 
-        # Safe to trust this count only because the workloads are paused.
-        items = self.bucket_util.get_buckets_item_count(self.cluster,
-                                                        bucket.name)
-        self.log.info("Item count in %s before flush: %s"
-                      % (bucket.name, items))
+        # Print stats before restore
+        self.print_stats(self.cluster)
+
         self.bucket_util.flush_all_buckets(self.cluster)
 
         output, error = self.drBackup.restore(
@@ -1142,12 +1151,25 @@ class OPD:
             cluster_host=self.backup_cluster_host, threads=60)
         self.log.info(f"Restore Output: {output}\n\n Restore Error: {error}")
 
-        result = self.drBackup.monitor_restore(
-            self.bucket_util, self.cluster, bucket.name, items,
-            timeout=self.restore_timeout)
-        self.assertTrue(result,
-                        "Restore failed: %s did not reach %s items in %ss"
-                        % (bucket.name, items, self.restore_timeout))
+        # The single restore above repopulates every bucket concurrently, so
+        # the buckets share one deadline rather than getting restore_timeout
+        # each -- otherwise a hung restore would burn N * restore_timeout.
+        # The 60s floor keeps an already-restored bucket from being reported
+        # as failed without a single poll once that deadline has passed.
+        deadline = time.time() + self.restore_timeout
+        failed = list()
+        for bucket_name, items in expected_items.items():
+            result = self.drBackup.monitor_restore(
+                self.bucket_util, self.cluster, bucket_name, items,
+                timeout=max(deadline - time.time(), 60))
+            if not result:
+                failed.append("%s did not reach %s items" % (bucket_name, items))
+        self.assertFalse(failed,
+                         "Restore failed within %ss: %s"
+                         % (self.restore_timeout, ", ".join(failed)))
+
+        # Print stats after restore
+        self.print_stats(self.cluster)
 
     def _restore_using_continuous_backup(self):
         if self.drContBackup is None:
@@ -1155,28 +1177,44 @@ class OPD:
                               "never built; skipping PITR restore")
             return
 
-        bucket = self.cluster.buckets[0]
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        self.sleep(10, "Waiting for item count to stabilize after ep_queue drain")
+
         # Every recorded timestamp, every time: the flush below empties the
-        # bucket, so each restore replays from a clean slate and there is
+        # buckets, so each restore replays from a clean slate and there is
         # nothing to be gained by skipping the earlier ones.
+        #
+        # Each entry is [timestamp, {bucket_name: item_count}]. The timestamps
+        # are fixed-width ISO-8601 UTC, so ordering them lexicographically on
+        # the first element is chronological; the per-bucket counts in the
+        # second element are never compared.
         timestamps = sorted(self.continuous_backup_timestamps,
-                            key=lambda x: x[0])
+                            key=lambda entry: entry[0])
         if not timestamps:
             self.log.warning("No continuous-backup timestamps recorded; "
                              "skipping PITR restore")
             return
 
-        # Disable continuous backup before the flush, so neither the deletes
-        # the flush generates nor the writes the restores replay end up in
-        # the backup location.
-        self.toggle_continuous_backup(bucket, enable=False)
+        # Disable continuous backup on every bucket before the flush, so
+        # neither the deletes the flush generates nor the writes the restores
+        # replay end up in the backup location.
+        for bucket in self.cluster.buckets:
+            self.toggle_continuous_backup(bucket, enable=False)
+
+        # Print stats before restore
+        self.print_stats(self.cluster)
+
         self.bucket_util.flush_all_buckets(self.cluster)
         self.sleep(30, "Sleep after flushing buckets, before triggering restore")
 
+        buckets_by_name = {bucket.name: bucket for bucket in self.cluster.buckets}
         try:
-            for timestamp, items in timestamps:
+            for timestamp, items_per_bucket in timestamps:
                 self.log.info("Restoring backup with timestamp: %s "
-                              "(expected items: %s)" % (timestamp, items))
+                              "(expected items: %s)"
+                              % (timestamp, items_per_bucket))
+                # One restore per timestamp: cbcontbk replays every bucket in
+                # the repo, so this is per-cluster and not per-bucket.
                 output, error = self.drContBackup.trigger_restore(
                     cluster=self.cluster,
                     archive=self.backup_archive,
@@ -1187,16 +1225,39 @@ class OPD:
                     threads=60)
                 self.log.info(f"PITR Output: {output}\n\n PITR Error: {error}")
 
-                result = self.drContBackup.monitor_restore(
-                    self.bucket_util, cluster=self.cluster, bucket=bucket,
-                    items=items, timeout=self.restore_timeout)
-                self.assertTrue(
-                    result,
-                    "Restore failed for backup with timestamp: %s" % timestamp)
+                # Monitoring is per-bucket and sequential. The buckets share
+                # one deadline because the restore above repopulates them
+                # concurrently -- giving each its own restore_timeout would
+                # let a hung restore burn N * restore_timeout. The 60s floor
+                # keeps a bucket that is already at its count from being
+                # reported as failed without a single poll.
+                deadline = time.time() + self.restore_timeout
+                failed = list()
+                for bucket_name, items in items_per_bucket.items():
+                    bucket = buckets_by_name.get(bucket_name)
+                    if bucket is None:
+                        failed.append("%s no longer exists on the cluster"
+                                      % bucket_name)
+                        continue
+                    result = self.drContBackup.monitor_restore(
+                        self.bucket_util, cluster=self.cluster, bucket=bucket,
+                        items=items,
+                        timeout=max(deadline - time.time(), 60))
+                    if not result:
+                        failed.append("%s did not reach %s items"
+                                      % (bucket_name, items))
+                self.assertFalse(
+                    failed,
+                    "Restore failed for backup with timestamp %s: %s"
+                    % (timestamp, ", ".join(failed)))
         finally:
             # Leave continuous backup on even if a restore failed, so the
-            # bucket is not silently left unprotected for the rest of the run.
-            self.toggle_continuous_backup(bucket, enable=True)
+            # buckets are not silently left unprotected for the rest of the run.
+            for bucket in self.cluster.buckets:
+                self.toggle_continuous_backup(bucket, enable=True)
+
+            # Print stats after restore
+            self.print_stats(self.cluster)
 
     def restore_with_workloads_paused(self):
         """
@@ -1655,6 +1716,13 @@ class OPD:
         return status
 
     def record_timestamp_for_continuous_backup(self, cluster, bucket_util, continuous_backup_timestamps):
+        """
+        Record a PITR restore point as [timestamp, {bucket_name: item_count}].
+
+        The item count is captured for every bucket, since one cbcontbk
+        restore replays the whole cluster and each bucket has to be verified
+        against its own count at that timestamp.
+        """
         # Get timestamp of backup for continuous backup test
         shell = RemoteMachineShellConnection(cluster.backup_nodes[0])
         output, _ = shell.execute_command("date -u +'%Y-%m-%dT%H:%M:%SZ'")
@@ -1662,9 +1730,19 @@ class OPD:
         self.log.info("Continuous backup timestamp: {}".format(cont_bkp_timestamp))
         shell.disconnect()
 
-        items = bucket_util.get_buckets_item_count(
-            cluster,
-            cluster.buckets[0].name)
+        if cont_bkp_timestamp is None:
+            # Recording a None would both lose the restore point and break the
+            # ordering of the list it is appended to.
+            self.log.error("Could not read the timestamp off %s; this restore "
+                           "point will not be recorded"
+                           % cluster.backup_nodes[0].ip)
+            return
+
+        items = dict()
+        for bucket in cluster.buckets:
+            items[bucket.name] = bucket_util.get_buckets_item_count(
+                cluster, bucket.name)
+        self.log.info("Item count at %s: %s" % (cont_bkp_timestamp, items))
 
         continuous_backup_timestamps.append([cont_bkp_timestamp, items])
 
