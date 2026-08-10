@@ -193,9 +193,10 @@ def scan_slave(session):
                     print "checking: %s" % cbcollect_zips.rstrip()
                     print "#######################"
                 print "".join(o)
-            # Check all logs for panic
+            # Check all logs for panic. Keep the 5 following lines so the
+            # timestamps and stack around the panic are visible.
             all_log = "/root/cbcollect*/*"
-            o, _ = run("grep -i 'panic' {} --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(all_log), session)
+            o, _ = run("grep -i -A 5 'panic' {} --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(all_log), session)
             if o:
                 if flag:
                     print "#######################"
@@ -272,7 +273,9 @@ def check_server_logs(server, session, binCb, libCb):
             break
 
     print(server + " : Looking for panic in logs")
-    panicMessages = run("grep -ri 'panic' {}* --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(logsDir), session)[0]
+    # -A 5 keeps the 5 following lines so the timestamps and stack around the
+    # panic are visible.
+    panicMessages = run("grep -ri -A 5 'panic' {}* --exclude='couchbase.log*' --exclude='indexer_pprof.log*'".format(logsDir), session)[0]
     if panicMessages:
         version = run("cat /opt/couchbase/VERSION.txt", session)[0]
         version_str = "".join(version).strip()
