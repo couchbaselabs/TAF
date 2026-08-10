@@ -164,7 +164,7 @@ class CbContBk(CbCmdBase):
 
         cmd = (f"{self.cbstatCmd} restore -a {archive_path} -r {repo_name} "
                f"-c {cluster_host} -u {self.username} -p {self.password} "
-               f"-t {threads} -l {location} -d {unique_temp_dir} -T {timestamp}")
+               f"-t {threads} -l {location} -d {temp_dir} -T {timestamp}")
 
         if include_data:
             cmd += f" --include-data {include_data}"
@@ -186,7 +186,7 @@ class CbContBk(CbCmdBase):
         if not output or error:
             self.log.error(f"Continuous backup restore failed with: {error}")
 
-        self._execute_cmd(f"rm -rf {unique_temp_dir}")
+        self._execute_cmd(f"rm -rf {temp_dir}")
 
         return output, error
 
