@@ -186,8 +186,6 @@ class CbContBk(CbCmdBase):
         if not output or error:
             self.log.error(f"Continuous backup restore failed with: {error}")
 
-        self._execute_cmd(f"rm -rf {temp_dir}")
-
         return output, error
 
     def collect_logs(self, location, temp_dir, obj_staging_dir=None):
