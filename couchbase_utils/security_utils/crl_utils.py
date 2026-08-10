@@ -481,12 +481,34 @@ class CRLUtils:
         """
         url = f"https://{host}:{port}{path}"
         return requests.get(
-            url, 
-            cert=(client_cert_path, client_key_path), 
+            url,
+            cert=(client_cert_path, client_key_path),
             verify=False,
-            timeout=timeout, 
+            timeout=timeout,
             headers={"Connection": "close"}
         )
+
+    @classmethod
+    def get_identity_via_mtls(cls, host, port, client_cert_path, client_key_path,
+                              timeout=30):
+        """
+        GET /whoami over mTLS and return the parsed identity JSON.
+
+        Proves genuine cert-based identity mapping (the response's "id" field
+        matches the RBAC user the cert's CN was mapped to) rather than just a
+        TLS-layer pass followed by an unrelated response.
+
+        Raises:
+            requests.exceptions.SSLError: connection rejected at the TLS layer
+                (revoked/expired/untrusted client cert).
+            requests.exceptions.HTTPError: handshake succeeded but /whoami
+                itself returned a non-2xx status.
+        """
+        resp = cls.perform_mtls_handshake(
+            host, port, client_cert_path, client_key_path, timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     # ── Assert helpers ───────────────────────────────────────────────────────
 

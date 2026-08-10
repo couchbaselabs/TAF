@@ -190,6 +190,12 @@ class CRLTest(CRLBase):
             status,
             f"CRL signed by an untrusted CA must be rejected at upload, got: {content}",
         )
+        # Confirm rejection was actually the issuer-trust check, not a
+        # generic failure.
+        self.assertIn(
+            "issuer", str(content.get("error", "")).lower(),
+            f"Expected a CRL-issuer-not-trusted error, got: {content}",
+        )
         self.log.info("Untrusted-CA CRL correctly rejected at upload")
 
         # A CRL whose issuer name is forged to match CA-1's subject, but is
@@ -206,6 +212,12 @@ class CRLTest(CRLBase):
             status,
             f"CRL with a forged issuer/signature mismatch must be rejected at upload, "
             f"got: {content}",
+        )
+        # Same expected error as the untrusted-CA case -- the server doesn't
+        # distinguish "right name, wrong key" from "unknown issuer".
+        self.assertIn(
+            "issuer", str(content.get("error", "")).lower(),
+            f"Expected a CRL-issuer-not-trusted error, got: {content}",
         )
         self.log.info("Forged issuer/signature CRL correctly rejected at upload")
 
@@ -256,7 +268,15 @@ class CRLTest(CRLBase):
         )
         certx_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(certx_cert))
         certx_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(certx_key))
-        self.log.info(f"certX generated (serial {serialx})")
+        # certY is never revoked -- it's the control that proves CRL expiry
+        # itself triggers fail-closed (certX alone can't, since it's already
+        # rejected for being revoked regardless of expiry).
+        certy_cert, certy_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "certY"
+        )
+        certy_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(certy_cert))
+        certy_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(certy_key))
+        self.log.info(f"certX generated (serial {serialx}); certY generated (never revoked)")
 
         # Use 'enable' (optional mTLS) so our own REST API admin calls
         # (using Basic Auth) are not locked out during the test.
@@ -277,6 +297,11 @@ class CRLTest(CRLBase):
             self.rest, "temporal_not_yet_valid.pem", not_yet_valid_pem
         )
         self.assertFalse(status, f"Future thisUpdate must be rejected at upload, got: {content}")
+        # Confirm rejection was actually the date check, not a generic failure.
+        self.assertIn(
+            "not yet valid", str(content.get("error", "")).lower(),
+            f"Expected a 'not yet valid' validation error, got: {content}",
+        )
         self.log.info(f"Step 1: not-yet-valid CRL correctly rejected at upload: {content}")
 
         # Step 2: Upload a currently valid CRL that expires in 25 seconds.
@@ -298,20 +323,46 @@ class CRLTest(CRLBase):
             f"nextUpdate={next_update}"
         )
 
-        # Step 3: Verify the active CRL correctly revokes the certificate.
+        # Step 3: Verify the active CRL correctly revokes certX, and leaves
+        # certY (never revoked, same applicable CRL) alone.
         self.assertFalse(
             self._handshake_ok(certx_cert_path, certx_key_path),
             "certX should be rejected while the CRL is actively valid",
         )
-        self.log.info("Step 3: certX correctly rejected while the CRL is actively valid")
-
-        # Step 4: Verify 'Require' policy fails closed once the CRL expires.
-        self._wait_until_handshake(
-            certx_cert_path, certx_key_path,
-            expect_ok=False,
-            deadline=next_update + datetime.timedelta(seconds=15),
+        self.assertTrue(
+            self._handshake_ok(certy_cert_path, certy_key_path),
+            "certY should connect while the CRL is actively valid and it "
+            "isn't revoked",
         )
-        self.log.info("Step 4: certX still rejected once nextUpdate passed, as expected")
+        self.log.info(
+            "Step 3: certX correctly rejected, certY correctly connects, "
+            "while the CRL is actively valid"
+        )
+
+        # Step 4: Verify 'Require' fails closed once the CRL expires. Must
+        # genuinely wait for next_update to pass -- checking certX alone
+        # would pass instantly (already revoked) without proving anything
+        # about expiry.
+        remaining_seconds = (
+            next_update - datetime.datetime.now(datetime.timezone.utc)
+        ).total_seconds()
+        self.sleep(
+            max(0, remaining_seconds) + 5,
+            f"Waiting for the CRL to expire (nextUpdate={next_update})",
+        )
+        self.assertFalse(
+            self._handshake_ok(certy_cert_path, certy_key_path),
+            "Require: certY should now be rejected -- the CRL is stale, "
+            "fails closed, even though certY itself was never revoked",
+        )
+        self.assertFalse(
+            self._handshake_ok(certx_cert_path, certx_key_path),
+            "certX should still be rejected once the CRL has expired",
+        )
+        self.log.info(
+            "Step 4: certY flipped from connecting to rejected purely due to "
+            "CRL expiry; certX remains rejected"
+        )
 
         # Step 5: Verify upload behavior for a CRL that is ALREADY expired.
         stale_filename = "temporal_lifecycle_crl_stale.pem"
@@ -321,17 +372,16 @@ class CRLTest(CRLBase):
         )
         status, content = self.crl_utils.upload_file(self.rest, stale_filename, stale_pem)
 
-        if status:
-            self._track_uploaded_file(stale_filename)
-            _, diag = self.crl_utils.diagnostics_status(self.rest)
-            # Ensure that if the API accepts it, it explicitly flags it as expired.
-            self.assertIn(
-                "expired", str(diag),
-                "API accepted an expired CRL but did not flag it as 'expired' in diagnostics."
-            )
-            self.log.info(f"Step 5: already-expired CRL accepted, flagged expired: {diag}")
-        else:
-            self.log.info(f"Step 5: already-expired CRL correctly rejected outright: {content}")
+        # Deterministic: an already-expired CRL is rejected outright at
+        # upload, not accepted-and-flagged.
+        self.assertFalse(
+            status, f"An already-expired CRL must be rejected at upload, got: {content}"
+        )
+        self.assertIn(
+            "expired", str(content.get("error", "")).lower(),
+            f"Expected an 'expired' validation error, got: {content}",
+        )
+        self.log.info(f"Step 5: already-expired CRL correctly rejected outright: {content}")
 
     def test_crl_url_poll_ingestion(self):
         """Does urls/urlPollIntervalMs fetch and apply a CRL on its own timer?"""
@@ -350,6 +400,24 @@ class CRLTest(CRLBase):
             policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
         )
         self.log.info("clientCertAuth=enable, clientAuth policy=Require")
+
+        # Baseline empty CRL, uploaded directly (not via URL): without this,
+        # urlPollLeaf has no applicable CRL yet and Require would fail
+        # closed regardless of whether the poller works.
+        baseline_filename = "url_poll_baseline.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, baseline_filename,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1),
+        )
+        self.assertTrue(status, f"Baseline CRL upload failed: {content}")
+        self._track_uploaded_file(baseline_filename)
+        self.assertTrue(
+            self._handshake_ok(leaf_cert_path, leaf_key_path),
+            "urlPollLeaf should connect before the URL-polled revoking CRL "
+            "is ever fetched -- if this fails, the later rejection wouldn't "
+            "prove the URL poller did anything",
+        )
+        self.log.info("Baseline confirmed: urlPollLeaf connects before URL polling begins")
 
         env = setup_url_poll_crl_env(
             crl_utils_obj=self.crl_utils,
@@ -756,6 +824,11 @@ class CRLTest(CRLBase):
         self.assertFalse(
             status, f"Signature-tampered CRL must be rejected, got: {content}"
         )
+        # Confirm rejection was actually CRL validation, not a generic failure.
+        self.assertIn(
+            "CRL validation failed", str(content.get("error", "")),
+            f"Expected a CRL validation error, got: {content}",
+        )
         self.log.info("Signature-tampered CRL correctly rejected at upload")
 
         # A validly-signed, empty CRL: accepted, and revokes nothing.
@@ -771,7 +844,15 @@ class CRLTest(CRLBase):
             self._handshake_ok(leaf_untouched_cert_path, leaf_untouched_key_path),
             "leafUntouched should connect under an empty CRL",
         )
-        self.log.info("Empty CRL accepted; leafUntouched connects (nothing revoked)")
+        # Baseline: leafToRevoke also connects before it's actually revoked.
+        self.assertTrue(
+            self._handshake_ok(leaf_revoke_cert_path, leaf_revoke_key_path),
+            "leafToRevoke should also connect under an empty CRL, before it's revoked",
+        )
+        self.log.info(
+            "Empty CRL accepted; both leafUntouched and leafToRevoke connect "
+            "(nothing revoked yet)"
+        )
 
         # Same serial listed twice in one CRL: accepted, and revokes exactly
         # as a single entry would -- no crash, no double-counting effect.
@@ -794,4 +875,216 @@ class CRLTest(CRLBase):
         self.log.info(
             "Duplicate-serial CRL correctly revokes leafToRevoke only; "
             "leafUntouched still connects"
+        )
+
+    def test_mtls_client_cert_auth_mode_matrix(self):
+        """Optional vs Mandatory clientCertAuth x {no cert, valid cert,
+        revoked cert}."""
+        valid_user, valid_password = self._create_rbac_test_user(
+            "mtls_matrix_valid_user", "admin"
+        )
+        valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, valid_user
+        )
+        valid_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(valid_cert))
+        valid_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(valid_key))
+
+        revoked_cert, revoked_key, revoked_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "mtls_matrix_revoked_user"
+        )
+        revoked_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(revoked_cert))
+        revoked_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(revoked_key))
+
+        filename = "mtls_matrix_crl.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, revoked_serial, filename, crl_number=1
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.log.info(
+            f"Fixture ready: {valid_user} (not revoked), mtls_matrix_revoked_user "
+            f"(revoked, serial {revoked_serial})"
+        )
+
+        base_url = f"https://{self.cluster.master.ip}:{self.MGMT_PORT}"
+        auth = (valid_user, valid_password)
+
+        # ── Optional mode ────────────────────────────────────────────────────
+        self._enable_client_cert_auth(state="enable")
+
+        # No cert, password only -> succeeds via non-cert auth.
+        r = requests.get(f"{base_url}/whoami", auth=auth, verify=False, timeout=30)
+        self.assertEqual(
+            r.status_code, 200,
+            f"Optional mode: password-only auth (no cert) should succeed, got "
+            f"{r.status_code}: {r.text}",
+        )
+        self.log.info("Optional + no cert + password -> succeeded")
+
+        # Valid cert, no password header -> succeeds via cert, genuinely
+        # authenticated as valid_user (not just a TLS-layer pass).
+        whoami = self.crl_utils.get_identity_via_mtls(
+            self.cluster.master.ip, self.MGMT_PORT, valid_cert_path, valid_key_path,
+        )
+        self.assertEqual(
+            whoami.get("id"), valid_user,
+            f"Optional mode: valid cert should authenticate as {valid_user}, "
+            f"got whoami={whoami}",
+        )
+        self.log.info(f"Optional + valid cert -> authenticated as {valid_user}")
+
+        # Revoked cert presented together with a valid password -- must be
+        # hard-rejected at the TLS layer, not silently fall back to password.
+        with self.assertRaises(
+            requests.exceptions.SSLError,
+            msg="Optional mode: revoked cert must be rejected even with a valid "
+                "password available, not silently fall back to password auth",
+        ):
+            requests.get(
+                f"{base_url}/whoami",
+                cert=(revoked_cert_path, revoked_key_path),
+                auth=auth, verify=False, timeout=30,
+            )
+        self.log.info("Optional + revoked cert + password -> rejected, no fallback")
+
+        # ── Mandatory mode ───────────────────────────────────────────────────
+        # try/finally: 'mandatory' blocks password-only admin calls, so we
+        # must revert before tearDown's own cleanup needs one, even on failure.
+        self._enable_client_cert_auth(state="mandatory")
+        try:
+            # No cert at all (password-only) -> rejected, cert is
+            # non-negotiable in mandatory mode.
+            with self.assertRaises(
+                requests.exceptions.SSLError,
+                msg="Mandatory mode: a request with no client cert must be rejected",
+            ):
+                requests.get(f"{base_url}/whoami", auth=auth, verify=False, timeout=30)
+            self.log.info("Mandatory + no cert -> rejected")
+
+            # Valid, non-revoked cert -> succeeds.
+            whoami = self.crl_utils.get_identity_via_mtls(
+                self.cluster.master.ip, self.MGMT_PORT, valid_cert_path, valid_key_path,
+            )
+            self.assertEqual(
+                whoami.get("id"), valid_user,
+                f"Mandatory mode: valid cert should still authenticate as {valid_user}, "
+                f"got whoami={whoami}",
+            )
+            self.log.info("Mandatory + valid cert -> authenticated correctly")
+
+            # Revoked cert -> rejected.
+            self.assertFalse(
+                self._handshake_ok(revoked_cert_path, revoked_key_path),
+                "Mandatory mode: revoked cert should be rejected",
+            )
+            self.log.info("Mandatory + revoked cert -> rejected")
+        finally:
+            self._disable_client_cert_auth()
+
+    def test_mtls_revocation_ordering_and_cross_ca_isolation(self):
+        """Revocation checked before identity/RBAC; valid cert unaffected by
+        an unrelated CA's CRL; cross-CA isolation under a serial collision."""
+        self._enable_client_cert_auth(state="enable")
+
+        # A revoked cert mapped to a full-admin user: if revocation ran after
+        # RBAC, this would reach the HTTP layer instead of failing at TLS.
+        admin_user, _ = self._create_rbac_test_user(
+            "mtls_ordering_admin_user", "admin"
+        )
+        admin_cert, admin_key, admin_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, admin_user
+        )
+        admin_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(admin_cert))
+        admin_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(admin_key))
+
+        filename1 = "mtls_ordering_crl.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, admin_serial, filename1, crl_number=1
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename1)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+
+        with self.assertRaises(
+            requests.exceptions.SSLError,
+            msg="A revoked cert mapped to a full-admin RBAC user must still be "
+                "rejected at the TLS layer -- revocation must be checked before "
+                "identity extraction/RBAC, never after",
+        ):
+            self.crl_utils.perform_mtls_handshake(
+                self.cluster.master.ip, self.MGMT_PORT, admin_cert_path, admin_key_path,
+            )
+        self.log.info(
+            "Revoked cert mapped to a full-admin user rejected at the TLS "
+            "layer -- revocation is checked before RBAC, as required"
+        )
+
+        # A second, independently-trusted CA. leaf2 deliberately reuses
+        # admin_serial -- a serial actually revoked under CA-1 -- not an
+        # arbitrary unrevoked one, so the collision actually proves isolation.
+        ca2_cert, ca2_key = self.crl_utils.generate_ca("TestCA2MtlsIsolation")
+        self._trust_ca_on_cluster(ca2_cert)
+
+        valid_user, _ = self._create_rbac_test_user(
+            "mtls_isolation_valid_user", "admin"
+        )
+        leaf1_cert, leaf1_key, serial1 = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, valid_user
+        )
+        leaf1_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(leaf1_cert))
+        leaf1_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(leaf1_key))
+
+        leaf2_cn = "mtls_isolation_ca2_leaf"
+        leaf2_cert, leaf2_key, _ = self.crl_utils.generate_leaf_cert(
+            ca2_cert, ca2_key, leaf2_cn, serial=admin_serial
+        )
+        leaf2_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(leaf2_cert))
+        leaf2_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(leaf2_key))
+
+        filename2 = "mtls_isolation_crl2_ca2.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename2,
+            self.crl_utils.build_crl(
+                ca2_cert, ca2_key, revoked_serials=[999999], crl_number=1,
+            ),
+        )
+        self.assertTrue(status, f"CA-2 unrelated CRL upload failed: {content}")
+        self._track_uploaded_file(filename2)
+        self.log.info(
+            f"Fixture ready: leaf1 (base CA, serial {serial1}, not revoked), "
+            f"CA-2 trusted with its own CRL revoking an unrelated serial, "
+            f"leaf2 (CA-2, serial {admin_serial} -- the serial CA-1 has "
+            f"actually revoked above, not merely an arbitrary unrevoked one -- "
+            f"not itself revoked under CA-2's own CRL)"
+        )
+
+        # leaf1 unaffected by CA-2's unrelated, already-loaded CRL.
+        whoami1 = self.crl_utils.get_identity_via_mtls(
+            self.cluster.master.ip, self.MGMT_PORT, leaf1_cert_path, leaf1_key_path,
+        )
+        self.assertEqual(
+            whoami1.get("id"), valid_user,
+            f"leaf1 should authenticate normally despite CA-2's unrelated CRL "
+            f"being loaded, got whoami={whoami1}",
+        )
+        self.log.info("leaf1 connects normally; CA-2's unrelated CRL has no effect")
+
+        # leaf2 must connect -- CA-1's revocation must not leak into CA-2's
+        # domain just because the serial numbers match.
+        self.assertTrue(
+            self._handshake_ok(leaf2_cert_path, leaf2_key_path),
+            "leaf2 (different trusted CA, colliding with a serial actually "
+            "revoked under CA-1, not itself revoked) should connect -- CRL "
+            "scoping must be issuer-based, not raw serial number",
+        )
+        self.log.info(
+            "leaf2 connects despite colliding with a serial genuinely revoked "
+            "under a different CA -- cross-CA isolation holds"
         )

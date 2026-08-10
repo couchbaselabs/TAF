@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import tempfile
@@ -30,6 +31,7 @@ class CRLBase(OnPremBaseTest):
         self.rest = RestConnection(self.cluster.master)
 
         self._require_crl_supported()
+        self._self_heal_stuck_trusted_cas()
 
         # Uploaded CRL filenames created during a test — cleaned up in tearDown
         self._created_files = []
@@ -64,6 +66,10 @@ class CRLBase(OnPremBaseTest):
             self._cleanup_temp_pem_files()
         except Exception as exc:
             self.log.warning(f"Temp PEM file cleanup error: {exc}")
+        try:
+            self._cleanup_trusted_cas()
+        except Exception as exc:
+            self.log.warning(f"Trusted CA cleanup error: {exc}")
         finally:
             super().tearDown()
 
@@ -109,6 +115,45 @@ class CRLBase(OnPremBaseTest):
                 
         except requests.exceptions.RequestException:
             pass
+
+    def _self_heal_stuck_trusted_cas(self):
+        """Untrusts every CA except the node's auto-generated one, clearing
+        both the chronicle `ca_certificates` key and the inbox/CA directory
+        on disk, before this test trusts its own fresh CA. Must run after
+        super().setUp() since it needs diag/eval. Best-effort: logs, doesn't
+        raise."""
+        code = (
+            "{ok, {Certs, _Rev}} = chronicle_kv:get(kv, ca_certificates), "
+            "NewCerts = lists:filter(fun(PL) -> "
+            "proplists:get_value(id, PL) =:= 0 end, Certs), "
+            "OldCount = length(Certs), "
+            "chronicle_kv:set(kv, ca_certificates, NewCerts), "
+            "OldCount."
+        )
+        try:
+            status, old_count = self.rest.diag_eval(code)
+            if not status:
+                raise RuntimeError(f"diag/eval failed: {old_count}")
+            removed = int(old_count) - 1
+            if removed > 0:
+                self.log.warning(
+                    f"{self.cluster.master.ip} had {removed} stale trusted "
+                    f"CA(s) left over from a previous run -- untrusted all "
+                    f"of them (kept only the node's own auto-generated CA) "
+                    f"before this test starts."
+                )
+        except Exception as exc:
+            self.log.warning(f"Trusted CA self-heal error: {exc}")
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            ca_dir = self._ca_dir(shell)
+            shell.execute_command(f"rm -f {ca_dir}/*")
+        except Exception as exc:
+            self.log.warning(f"Trusted CA inbox/CA cleanup error: {exc}")
+        finally:
+            shell.disconnect()
+
     # ── EE / compat gating ───────────────────────────────────────────────────
 
     def _require_crl_supported(self):
@@ -120,6 +165,18 @@ class CRLBase(OnPremBaseTest):
             self.fail("CRL support requires an Enterprise Edition cluster.")
 
     # ── CA trust setup ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _ca_dir(shell):
+        """Returns the OS-appropriate inbox/CA path for the connected shell's host."""
+        os_type = shell.extract_remote_info().distribution_type
+        if os_type == "windows":
+            install_path = x509main.WININSTALLPATH
+        elif os_type == "Mac":
+            install_path = x509main.MACINSTALLPATH
+        else:
+            install_path = x509main.LININSTALLPATH
+        return f"{install_path}{x509main.CHAINFILEPATH}/CA"
 
     def _trust_ca_on_cluster(self, ca_cert, server=None):
         """
@@ -140,14 +197,7 @@ class CRLBase(OnPremBaseTest):
 
         shell = RemoteMachineShellConnection(server)
         try:
-            os_type = shell.extract_remote_info().distribution_type
-            if os_type == "windows":
-                install_path = x509main.WININSTALLPATH
-            elif os_type == "Mac":
-                install_path = x509main.MACINSTALLPATH
-            else:
-                install_path = x509main.LININSTALLPATH
-            ca_dir = f"{install_path}{x509main.CHAINFILEPATH}/CA"
+            ca_dir = self._ca_dir(shell)
             shell.execute_command(f"mkdir -p {ca_dir}")
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix=".pem", mode="wb"
@@ -166,6 +216,23 @@ class CRLBase(OnPremBaseTest):
         status, content = self.rest.load_trusted_CAs()
         if not status:
             self.fail(f"Failed to load trusted CAs on {server.ip}: {content}")
+
+        # Track this CA's id (matched by CN) for teardown cleanup.
+        cn_attrs = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+        cn = cn_attrs[0].value if cn_attrs else None
+        try:
+            trusted = json.loads(content)
+            matching_ids = [
+                entry.get("id") for entry in trusted
+                if cn and cn in entry.get("subject", "")
+            ]
+            if matching_ids:
+                self._trusted_ca_ids.append(max(matching_ids))
+        except (ValueError, TypeError) as exc:
+            self.log.warning(
+                f"Could not identify trusted CA id for {cn!r} -- it won't be "
+                f"auto-untrusted in tearDown: {exc}"
+            )
 
     @staticmethod
     def _ca_remote_filename(ca_cert):
@@ -282,6 +349,25 @@ class CRLBase(OnPremBaseTest):
                 self.log.warning(f"Failed to remove temp PEM file {path}: {exc}")
                 
         self._temp_pem_files = []
+
+    def _cleanup_trusted_cas(self):
+        """Untrusts every CA this test trusted via _trust_ca_on_cluster,
+        via a chronicle_kv edit (no REST endpoint exists for this).
+        Best-effort: logs, doesn't raise."""
+        if not self._trusted_ca_ids:
+            return
+        ids_literal = "[" + ",".join(str(i) for i in self._trusted_ca_ids) + "]"
+        code = (
+            "{ok, {Certs, _Rev}} = chronicle_kv:get(kv, ca_certificates), "
+            f"Ids = {ids_literal}, "
+            "NewCerts = lists:filter(fun(PL) -> "
+            "not lists:member(proplists:get_value(id, PL), Ids) end, Certs), "
+            "chronicle_kv:set(kv, ca_certificates, NewCerts)."
+        )
+        status, content = self.rest.diag_eval(code)
+        if not status:
+            self.log.warning(f"Trusted CA cleanup diag/eval failed: {content}")
+        self._trusted_ca_ids = []
 
     def _create_rbac_test_user(self, username, role, password="Couchbase@1234"):
         rbac_utils = RbacUtils(self.cluster.master)
