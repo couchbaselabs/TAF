@@ -1652,6 +1652,8 @@ class OPD:
                 "history_retention_seconds", 86400),
             default_history_retention_bytes=self.input.param(
                 "history_retention_bytes", 0),
+            continuous_backup_retention_period=self.input.param(
+                "continuous_backup_retention_period", 72),
             log=self.log)
 
     def teardown_backup_locations(self):
