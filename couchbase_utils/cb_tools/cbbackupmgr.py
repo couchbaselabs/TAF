@@ -265,10 +265,16 @@ class CbBackupMgr(CbCmdBase):
                 map_gsi_indexes=True, map_ft_indexes=True,
                 map_analytics=True, map_eventing=True,
                 filter_keys=None, filter_values=None,
-                allow_non_worm=False,
+                allow_non_worm=False, force_updates=False,
                 include_data=None, obj_staging_dir=None):
         """
         Execute cbbackupmgr restore command
+        :param force_updates bool: If True, pass --force-updates so restored
+                                   documents get fresh CAS values instead of
+                                   reusing ones that may already exist in the
+                                   bucket's history (e.g. restoring into a
+                                   bucket that was previously flushed while
+                                   continuous backup was enabled)
         """
         if cluster_host is None:
             if CbServer.use_https:
@@ -317,6 +323,9 @@ class CbBackupMgr(CbCmdBase):
 
         if allow_non_worm:
             cmd += " --allow-non-worm"
+
+        if force_updates:
+            cmd += " --force-updates"
 
         cmd += self.cli_flags
 

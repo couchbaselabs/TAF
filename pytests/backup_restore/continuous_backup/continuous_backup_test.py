@@ -153,8 +153,15 @@ class ContinuousBackupTest(ContinuousBackupBase):
         self._verify_doc_count(0)
 
         self.log.info("Restoring from backup")
+        # force_updates=True regenerates CAS on restore. Per MB-73198, the
+        # subsequent "overlapping histories for target time" PITR restore
+        # failure is expected behavior: this traditional restore replays CAS
+        # values that already exist in the bucket's continuous-backup
+        # history, so the newly re-enabled log branch collides with the old
+        # one. Forcing fresh CAS values avoids the collision.
         self.backup_mgr.restore(self.backup_archive_dir, self.backup_repo_name,
-                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+                                obj_staging_dir=self.obj_staging_dir_cbbackup,
+                                force_updates=True)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(expected_item_count)
 

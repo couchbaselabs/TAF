@@ -256,6 +256,7 @@ class ContinuousBackupUtil(object):
                                  continuous_backup_cloud_storage_cred_id=None,
                                  continuous_backup_km_key_url=None,
                                  continuous_backup_km_cred_id=None,
+                                 continuous_backup_retention_period=1440,
                                  default_history_retention_seconds=86400,
                                  default_history_retention_bytes=0,
                                  log=None):
@@ -284,6 +285,14 @@ class ContinuousBackupUtil(object):
                 encryption-at-rest of the continuous backup
             continuous_backup_km_cred_id: Credential Store cred_id holding the
                 KMS credentials for that key
+            continuous_backup_retention_period: Retention period in hours.
+                Defaults to the server-enforced max (1440h = 60 days): the
+                server currently rejects 0 ("must be in the range 1 to 1440
+                inclusive") despite the design doc describing 0 as "off", so
+                there is no real way to disable retention -- the max is the
+                practical equivalent for a test that runs in minutes, and
+                avoids retention deleting continuous-backup data/logs
+                mid-test (see MB-73171).
         Returns:
             list of bucket names continuous backup was enabled on
         """
@@ -319,6 +328,7 @@ class ContinuousBackupUtil(object):
                 continuous_backup_enabled=True,
                 continuous_backup_location=continuous_backup_location,
                 continuous_backup_interval=continuous_backup_interval,
+                continuous_backup_retention_period=continuous_backup_retention_period,
                 continuous_backup_cloud_storage_cred_id=continuous_backup_cloud_storage_cred_id,
                 continuous_backup_km_key_url=continuous_backup_km_key_url,
                 continuous_backup_km_cred_id=continuous_backup_km_cred_id,
