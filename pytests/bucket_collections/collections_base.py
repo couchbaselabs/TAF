@@ -1128,8 +1128,10 @@ class CollectionBase(ClusterSetup, FusionBase):
                             "Encryption at rest kept disabled  for ephemeral "
                             "bucket: %s" % bucket)
 
-        test_obj.bucket_util.create_buckets_using_json_data(
+        buckets_created = test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
+        if buckets_created is False:
+            test_obj.fail("Bucket creation from spec failed")
 
         if hasattr(test_obj, "upgrade_chain") and \
                     float(test_obj.upgrade_chain[0][:3]) < 7.6:
