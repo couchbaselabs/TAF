@@ -65,7 +65,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
     def test_valid_configuration_ranges(self):
         """TC-CONF-02: Valid Configuration Ranges"""
         self.log.info("Testing valid configuration ranges for continuousBackupRetentionPeriod")
-        valid_ranges = [1, 24, 876000]
+        valid_ranges = [1, 24, 1440]
 
         for period in valid_ranges:
             self.log.info(f"Setting retention period to {period} hours")
@@ -88,7 +88,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
     def test_invalid_configuration(self):
         """TC-CONF-03: Invalid Configuration"""
         self.log.info("Testing invalid configuration for continuousBackupRetentionPeriod")
-        invalid_ranges = [-1, "abc", 2.5]
+        invalid_ranges = [-1, "abc", 2.5, 1441, 0]
 
         for period in invalid_ranges:
             self.log.info(f"Attempting to set retention period to {period}")

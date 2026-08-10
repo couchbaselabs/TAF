@@ -106,14 +106,19 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
 
     def _pitr_restore_to_new_bucket(self, restore_bucket_name, timestamp=None):
         """Restore the primary bucket to a new bucket at the given timestamp.
-        timestamp=None restores everything cbcontbk has (the latest state)."""
-        self.cont_bk_mgr.restore(
+        timestamp=None restores everything cbcontbk has (the latest state).
+
+        cbcontbk.restore() only logs failures and returns (output, error), so
+        an unchecked call lets a failed/partial restore surface much later as
+        a doc-count mismatch. Assert here with the cbcontbk output instead."""
+        output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
             temp_dir="/data/tmp",
             timestamp=timestamp,
             map_data=f"{self.bucket.name}={restore_bucket_name}",
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
+        self._assert_restore_succeeded(output, error, timestamp)
 
     def _load_data_and_get_count(self, mutation_num=0):
         """Load data from spec and return the resulting item count."""
@@ -187,6 +192,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
 
+        # cbcontbk's "-T everything" (latest) restore requires the continuous
+        # log to have data newer than this traditional backup snapshot, or it
+        # fails with "traditional backup has the same or newer data than the
+        # log backup" (confirmed expected/documented behavior, not a bug, by
+        # the backup team). Mutate and wait one interval so the log has
+        # something newer than the backup before restoring "everything".
+        count_c3 = self._load_data_and_get_count()
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+
         restore_name = f"restore_rbl_in_{int(time.time())}"
         self._create_restore_bucket(restore_name)
 
@@ -199,11 +214,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._delete_restore_bucket(restore_name)
         self._create_restore_bucket(restore_name)
 
-        self.log.info("PITR to T2 (post-rebalance-in)")
+        self.log.info("PITR to everything (latest, post-traditional-backup mutation)")
         self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_c2, bucket_name=restore_name)
-        self.log.info(f"T2 restore verified: {count_c2} items")
+        self._verify_doc_count(count_c3, bucket_name=restore_name)
+        self.log.info(f"Everything restore verified: {count_c3} items")
 
         self.log.info("Test completed successfully")
 
@@ -238,6 +253,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
 
+        # cbcontbk's "-T everything" (latest) restore requires the continuous
+        # log to have data newer than this traditional backup snapshot, or it
+        # fails with "traditional backup has the same or newer data than the
+        # log backup" (confirmed expected/documented behavior, not a bug, by
+        # the backup team). Mutate and wait one interval so the log has
+        # something newer than the backup before restoring "everything".
+        count_c3 = self._load_data_and_get_count()
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+
         restore_name = f"restore_rbl_out_{int(time.time())}"
         self._create_restore_bucket(restore_name)
 
@@ -249,10 +274,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._delete_restore_bucket(restore_name)
         self._create_restore_bucket(restore_name)
 
-        self.log.info("PITR to T2 (post-rebalance-out)")
+        self.log.info("PITR to everything (latest, post-traditional-backup mutation)")
         self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_c2, bucket_name=restore_name)
+        self._verify_doc_count(count_c3, bucket_name=restore_name)
 
         self.log.info("Test completed successfully")
 
@@ -290,6 +315,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
 
+        # cbcontbk's "-T everything" (latest) restore requires the continuous
+        # log to have data newer than this traditional backup snapshot, or it
+        # fails with "traditional backup has the same or newer data than the
+        # log backup" (confirmed expected/documented behavior, not a bug, by
+        # the backup team). Mutate and wait one interval so the log has
+        # something newer than the backup before restoring "everything".
+        count_c3 = self._load_data_and_get_count()
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+
         restore_name = f"restore_swap_{int(time.time())}"
         self._create_restore_bucket(restore_name)
 
@@ -301,10 +336,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._delete_restore_bucket(restore_name)
         self._create_restore_bucket(restore_name)
 
-        self.log.info("PITR to T2 (post-swap-rebalance)")
+        self.log.info("PITR to everything (latest, post-traditional-backup mutation)")
         self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_c2, bucket_name=restore_name)
+        self._verify_doc_count(count_c3, bucket_name=restore_name)
 
         self.log.info("Test completed successfully")
 
@@ -349,6 +384,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
 
+        # cbcontbk's "-T everything" (latest) restore requires the continuous
+        # log to have data newer than this traditional backup snapshot, or it
+        # fails with "traditional backup has the same or newer data than the
+        # log backup" (confirmed expected/documented behavior, not a bug, by
+        # the backup team). Mutate and wait one interval so the log has
+        # something newer than the backup before restoring "everything".
+        count_c3 = self._load_data_and_get_count()
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+
         restore_name = f"restore_graceful_fo_{int(time.time())}"
         self._create_restore_bucket(restore_name)
 
@@ -360,10 +405,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._delete_restore_bucket(restore_name)
         self._create_restore_bucket(restore_name)
 
-        self.log.info("PITR to T2 (post-graceful-failover)")
+        self.log.info("PITR to everything (latest, post-traditional-backup mutation)")
         self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_c2, bucket_name=restore_name)
+        self._verify_doc_count(count_c3, bucket_name=restore_name)
 
         self.log.info("Test completed successfully")
 
@@ -409,6 +454,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
 
+        # cbcontbk's "-T everything" (latest) restore requires the continuous
+        # log to have data newer than this traditional backup snapshot, or it
+        # fails with "traditional backup has the same or newer data than the
+        # log backup" (confirmed expected/documented behavior, not a bug, by
+        # the backup team). Mutate and wait one interval so the log has
+        # something newer than the backup before restoring "everything".
+        count_c3 = self._load_data_and_get_count()
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+
         restore_name = f"restore_hard_fo_{int(time.time())}"
         self._create_restore_bucket(restore_name)
 
@@ -420,10 +475,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._delete_restore_bucket(restore_name)
         self._create_restore_bucket(restore_name)
 
-        self.log.info("PITR to T2 (post-hard-failover)")
+        self.log.info("PITR to everything (latest, post-traditional-backup mutation)")
         self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_c2, bucket_name=restore_name)
+        self._verify_doc_count(count_c3, bucket_name=restore_name)
 
         self.log.info("Test completed successfully")
 
@@ -490,6 +545,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
 
+        # cbcontbk's "-T everything" (latest) restore requires the continuous
+        # log to have data newer than this traditional backup snapshot, or it
+        # fails with "traditional backup has the same or newer data than the
+        # log backup" (confirmed expected/documented behavior, not a bug, by
+        # the backup team). Mutate and wait one interval so the log has
+        # something newer than the backup before restoring "everything".
+        count_c3 = self._load_data_and_get_count()
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+
         restore_name = f"restore_quorum_loss_{int(time.time())}"
         self._create_restore_bucket(restore_name)
 
@@ -502,11 +567,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._delete_restore_bucket(restore_name)
         self._create_restore_bucket(restore_name)
 
-        self.log.info("PITR to T2 (post-quorum-loss recovery)")
+        self.log.info("PITR to everything (latest, post-traditional-backup mutation)")
         self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_c2, bucket_name=restore_name)
-        self.log.info(f"T2 restore verified: {count_c2} items")
+        self._verify_doc_count(count_c3, bucket_name=restore_name)
+        self.log.info(f"Everything restore verified: {count_c3} items")
 
         self.log.info("Test completed successfully")
 
@@ -564,6 +629,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
 
+        # cbcontbk's "-T everything" (latest) restore requires the continuous
+        # log to have data newer than this traditional backup snapshot, or it
+        # fails with "traditional backup has the same or newer data than the
+        # log backup" (confirmed expected/documented behavior, not a bug, by
+        # the backup team). Mutate and wait one interval so the log has
+        # something newer than the backup before restoring "everything".
+        count_c3 = self._load_data_and_get_count()
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+
         restore_name = f"restore_kv_restart_{int(time.time())}"
         self._create_restore_bucket(restore_name)
 
@@ -577,14 +652,15 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._delete_restore_bucket(restore_name)
         self._create_restore_bucket(restore_name)
 
-        # PITR to T2 (after restart) must also succeed — this is the key assertion:
-        # it confirms the DCP stream reconnected without leaving a gap in the log
+        # PITR to everything (latest, after the post-backup mutation) must also
+        # succeed — this is the key assertion: it confirms the DCP stream
+        # reconnected without leaving a gap in the continuous backup log
         self.log.info(
-            "PITR to T2 (post-KV-restart) — validates no gap in continuous backup log")
+            "PITR to everything (latest) — validates no gap in continuous backup log")
         self._pitr_restore_to_new_bucket(restore_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        self._verify_doc_count(count_c2, bucket_name=restore_name)
+        self._verify_doc_count(count_c3, bucket_name=restore_name)
         self.log.info(
-            f"T2 restore verified: {count_c2} items — DCP stream resumed without gaps")
+            f"Everything restore verified: {count_c3} items — DCP stream resumed without gaps")
 
         self.log.info("Test completed successfully")
