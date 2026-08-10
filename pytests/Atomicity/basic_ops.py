@@ -16,7 +16,7 @@ class basic_ops(ClusterSetup):
         super(basic_ops, self).setUp()
         self.bucket_size = self.input.param("bucket_size", 256)
         if self.num_buckets:
-            self.bucket_util.create_multiple_buckets(
+            buckets_created = self.bucket_util.create_multiple_buckets(
                 self.cluster,
                 self.num_replicas,
                 bucket_count=self.num_buckets,
@@ -24,6 +24,7 @@ class basic_ops(ClusterSetup):
                 ram_quota=self.bucket_size,
                 storage=self.bucket_storage,
                 eviction_policy=self.bucket_eviction_policy)
+            self.assertTrue(buckets_created, "Unable to create multiple buckets")
         else:
             self.create_bucket(self.cluster)
 

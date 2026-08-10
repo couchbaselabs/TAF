@@ -290,8 +290,12 @@ class XDCRUtils:
 
     def create_buckets(self):
         for cluster in self.__cb_clusters:
-            cluster.bucket_util.create_multiple_buckets(cluster,
-                                                        self._num_replicas)
+            buckets_created = cluster.bucket_util.create_multiple_buckets(
+                cluster, self._num_replicas)
+            if buckets_created is False:
+                raise XDCRException(
+                    "Unable to create multiple buckets on cluster %s"
+                    % cluster.name)
 
     def get_goxdcr_log_dir(self, node):
         """Gets couchbase log directory, even for cluster_run

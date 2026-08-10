@@ -1447,8 +1447,10 @@ class UpgradeBase(BaseTestCase):
 
         CollectionBase.over_ride_bucket_template_params(
             self, self.bucket_storage, bucket_spec)
-        self.bucket_util.create_buckets_using_json_data(
+        buckets_created = self.bucket_util.create_buckets_using_json_data(
             self.cluster, bucket_spec)
+        if buckets_created is False:
+            self.fail("Bucket creation from spec failed")
 
         if float(self.upgrade_chain[0][:3]) < 7.6:
             for bucket in self.cluster.buckets:

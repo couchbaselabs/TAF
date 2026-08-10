@@ -925,8 +925,10 @@ class DocHistoryRetention(ClusterSetup):
         # Process params to over_ride values if required
         CollectionBase.over_ride_bucket_template_params(
             self, Bucket.StorageBackend.magma, buckets_spec)
-        self.bucket_util.create_buckets_using_json_data(self.cluster,
-                                                        buckets_spec)
+        buckets_created = self.bucket_util.create_buckets_using_json_data(
+            self.cluster, buckets_spec)
+        if buckets_created is False:
+            self.fail("Bucket creation from spec failed")
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.validate_retention_settings_on_all_nodes()
