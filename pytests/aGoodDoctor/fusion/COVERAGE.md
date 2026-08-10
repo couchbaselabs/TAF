@@ -206,16 +206,29 @@ hooks, or TB-scale / multi-region setups). Listed so the gap is explicit:
 | | | `test_kill_memcached_during_extent_migration` | ✅ |
 | | | `test_accelerator_node_termination_resilience` (moved from lifecycle) | ✅ |
 | | | `test_accelerator_stopped_mid_download` | ✅ |
-| | | `test_asg_cannot_launch_replacement` | ✅ |
-| | | `test_accelerator_disk_full_during_download` | ✅ |
 | | | `test_accelerator_volume_detached_during_download` | ✅ |
-| | | `test_guest_volume_detached_during_transfer` | ✅ |
+| | | `test_download_rate_limit_expires_lease_falls_back_to_dcp` | ✅ |
 | `fusion_fallback_test.py` | `FusionFallbackInstanceTypeTests` | `test_fallback_when_top_n_instance_types_unavailable` | ✅ |
 | | | `test_fallback_exhausts_all_arm_types_falls_back_to_x86` | ✅ |
 | | | `test_no_public_ip_on_accelerator_nodes` | ✅ |
 | *(no file yet)* | — | Log file variants: large count (slow mutations) | ⬜ |
 | *(no file yet)* | — | Log file variants: large size (post log cleaning) | ⬜ |
 | | | `test_accelerator_instance_count_matches_data_size` | ✅ |
+
+---
+
+## Fusion Accelerator Chaos
+
+| TAF File | TAF Class | TAF Method | Status |
+|---|---|---|---|
+| `fusion_accelerator_chaos_test.py` | `FusionAcceleratorChaosTest` | `test_remove_node_with_attached_guest_volumes` | ✅ |
+| | | `test_slot_exhaustion_triggers_fallback_replacement` | ✅ |
+| | | `test_abort_rebalance_invalidates_manifest` | ✅ |
+| | | `test_kill_memcached_during_extent_migration` | ✅ |
+| | | `test_accelerator_node_termination_resilience` | ✅ |
+| | | `test_accelerator_stopped_mid_download` | ✅ |
+| | | `test_accelerator_volume_detached_during_download` | ✅ |
+| | | `test_download_rate_limit_expires_lease_falls_back_to_dcp` | ✅ |
 
 ---
 

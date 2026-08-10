@@ -213,7 +213,9 @@ class FusionAWSUtil:
 
         Retrieves instances matching filters and returns only those with fusion accelerator
         instances (identified by FUSION_ACCELERATOR_IOPS = 16000). Logs detailed information
-        including instance count and warnings for instances awaiting termination.
+        including instance count, and a warning listing any tagged instance that currently
+        has no guest volume at that IOPS attached (still launching, mid-detach, or winding
+        down after its volume was reclaimed).
 
         :param filters: List of EC2 filter dictionaries
         :param log: Custom log prefix (default: "Fusion Accelerator")
@@ -283,9 +285,16 @@ class FusionAWSUtil:
         if table.rowcount > 0:
             self.log.info(f"{log}{' Count: ' + str(len(return_instances)) if len(return_instances) > 0 else ''} - Details: \n {table}")
 
-        # Warning for instances that are not yet terminated (likely in cleanup process)
+        # Note: an accelerator instance has no volume at FUSION_ACCELERATOR_IOPS while it
+        # is still launching (guest volume not attached yet), mid-detach (a chaos fault,
+        # or the CP replacing it), or winding down after its guest volume was reclaimed —
+        # not necessarily "about to be terminated".
         if len(return_instances) != len(instances):
-            self.log.warning(f"{log}: Watch out for accelerator instances which are yet to be terminated ({len(instances) - len(return_instances)})")
+            self.log.warning(
+                f"{log}: {len(instances) - len(return_instances)} accelerator instance(s) "
+                f"currently have no {self.FUSION_ACCELERATOR_IOPS}-IOPS guest volume "
+                f"attached (still launching, mid-detach, or winding down) — excluded from "
+                f"the returned count")
 
         return return_instances
 

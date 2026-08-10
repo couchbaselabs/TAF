@@ -886,30 +886,45 @@ class EC2Lib(AWSBase):
         Suspend the Launch scaling process on the given ASGs so that Auto Scaling
         makes no RunInstances calls until the process is resumed.
 
+        Each ASG is suspended independently: one missing/already-deleted ASG must
+        not abort the loop and leave the remaining, still-live ASGs unsuspended.
+
         :param asg_names: List of ASG names to suspend Launch on
         """
         asg_client = self.create_service_client(service_name="autoscaling", region=self.region)
         for name in asg_names:
             self.logger.info(f"Suspending Launch process on ASG {name}")
-            asg_client.suspend_processes(
-                AutoScalingGroupName=name,
-                ScalingProcesses=["Launch"],
-            )
+            try:
+                asg_client.suspend_processes(
+                    AutoScalingGroupName=name,
+                    ScalingProcesses=["Launch"],
+                )
+            except Exception as e:
+                self.logger.error(f"Could not suspend Launch process on ASG {name}: {e}")
 
     def resume_asg_launch_process(self, asg_names: List[str]) -> None:
         """
         Resume the Launch scaling process on the given ASGs so that Auto Scaling
         resumes making RunInstances calls.
 
+        Each ASG is resumed independently: the CP may have deleted one of these
+        ASGs while Launch was suspended (e.g. redeploying a node it gave up on),
+        and that one missing ASG must not stop the rest — still-live ASGs left
+        permanently Launch-suspended can never self-heal or complete a rebalance
+        again, hanging every subsequent wait on this cluster indefinitely.
+
         :param asg_names: List of ASG names to resume Launch on
         """
         asg_client = self.create_service_client(service_name="autoscaling", region=self.region)
         for name in asg_names:
             self.logger.info(f"Resuming Launch process on ASG {name}")
-            asg_client.resume_processes(
-                AutoScalingGroupName=name,
-                ScalingProcesses=["Launch"],
-            )
+            try:
+                asg_client.resume_processes(
+                    AutoScalingGroupName=name,
+                    ScalingProcesses=["Launch"],
+                )
+            except Exception as e:
+                self.logger.error(f"Could not resume Launch process on ASG {name}: {e}")
 
     def describe_subnets(self, subnet_ids: List[str]) -> List[Dict[str, Any]]:
         """

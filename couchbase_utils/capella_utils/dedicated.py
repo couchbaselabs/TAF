@@ -966,7 +966,12 @@ class CapellaUtils(object):
                 "Getting fusion config failed for resource {}: {}".format(
                     resource_id, resp.status_code))
             raise Exception("Getting fusion config failed: {}".format(resp.content))
-        return json.loads(resp.content) if resp.content else {}
+        config = json.loads(resp.content) if resp.content else {}
+        # The config service returns the stored document under "value" on some
+        # routes and bare on others; callers only ever want the config itself.
+        if isinstance(config, dict) and set(config) == {"value"}:
+            config = config["value"] or {}
+        return config
 
     @staticmethod
     def _build_fusion_config(min_split_size=None, max_slots=None,

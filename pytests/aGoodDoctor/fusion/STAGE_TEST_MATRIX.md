@@ -196,12 +196,10 @@ the CP recovers, fails cleanly, or the safety invariant holds.
 | A→B | accelerator instance terminated mid-download | `test_accelerator_node_termination_resilience` (chaos) | ✅ |
 | A→B | accelerator instance STOPPED mid-download (stays an ASG member, fails health check) | `test_accelerator_stopped_mid_download` (chaos) | ✅ |
 | A | ASG can't launch (instance type unavailable) → fallback | `test_fallback_*` (fusion_fallback_test.py) | ✅ |
-| A | ASG Launch process suspended → fleet cannot self-heal | `test_asg_cannot_launch_replacement` (chaos) | ✅ |
 | B | S3 object deleted / network disrupted mid-download | `test_s3_disrupt_during_download` (FIS network) | gap |
 | B | download volume force-detached from its accelerator mid-download → re-attach or redeploy + retry | `test_accelerator_volume_detached_during_download` (chaos) | ✅ |
-| B | accelerator EBS disk full during download | `test_accelerator_disk_full_during_download` (chaos) | ✅ — needs SSM on the accelerator; the test checks `is_instance_ssm_ready` and fails with that diagnosis if not, which settles whether accelerator-side faults are injectable at all |
-| B | dp-accelerator agent crashes mid-download | `test_dp_accelerator_crash_during_download` | ⬜ — unblocked *if* `test_accelerator_disk_full_during_download` shows accelerators are SSM-reachable; same mechanism (`pkill` over SSM) |
-| B→C | guest volume force-detached from its KV node while mounted | `test_guest_volume_detached_during_transfer` (chaos) | ✅ |
+| B | dp-accelerator agent crashes mid-download | `test_dp_accelerator_crash_during_download` | ⬜ — needs SSM on the accelerator (`pkill` over SSM). Whether the accelerator AMI runs the SSM agent with a permitting instance profile is untested; nothing in the suite establishes it |
+| B | S3 download throttled below the log-file lease TTL → leases expire mid-download → DCP fallback | `test_download_rate_limit_expires_lease_falls_back_to_dcp` (chaos) | ✅ — `accelerator.download.rateLimit` on the fusion support config; ~25 GiB at 2.5 MiB/s against a 1-hour lease |
 | B→C | EBS attach to KV node stalls | `test_ebs_pause_io_during_hydration` (FIS) | **blocked** — `FISLib.create_ebs_mount_failure_experiment` and `simulate_volume_attach_failure` both raise NotImplementedError |
 | C | guest-volume files deleted after attach, before rebalance | `test_delete_guest_volumes_during_migration` | ⬜ |
 | C | guest-volume files corrupted (junk bytes) | `test_corrupt_guest_volume_files` | ⬜ |
@@ -218,18 +216,21 @@ the CP recovers, fails cleanly, or the safety invariant holds.
 | F | teardown before RebalanceInitiated → safety gate must REFUSE | `test_teardown_blocked_before_rebalance_initiated` | gap |
 
 **Implemented chaos suite.** `fusion_accelerator_chaos_test.py` /
-`conf/fusion/cloud/fusion_accelerator_chaos_test.conf` cover ten of these boundaries —
+`conf/fusion/cloud/fusion_accelerator_chaos_test.conf` cover eight of these boundaries —
 four at the CP/CBS layer (C→D slot exhaustion, D aborted rebalance, E node removal, E
-memcached kill) and six AWS-infrastructure faults (accelerator terminated, accelerator
-stopped, ASG Launch suspended, download volume filled to 100%, download volume
-force-detached, guest volume force-detached from a KV node). It subclasses
+memcached kill), three AWS-infrastructure faults (accelerator terminated, accelerator
+stopped, download volume force-detached from its accelerator) and one config-only fault (B
+download throttled past the log-file lease). It subclasses
 `FusionAcceleratorLifecycleTest`, so every `_validate_*` helper, the migration freeze/resume
 lever and the soft-fail `_stage` machinery are reused rather than reimplemented.
 
 Every chaos test freezes background migration before injecting its fault. Guest volumes are
 deleted per shard as migration completes, so without the freeze the resource the fault targets
 may already be gone — the freeze makes the fault land on a known, complete set of resources,
-and the test then resumes migration and asserts the cluster still reclaims everything.
+and the test then resumes migration and asserts the cluster still reclaims everything. In the
+lease-expiry test the freeze serves the mirror-image purpose: nothing should reach a KV node at
+all, and the freeze is what makes "no guest volume was ever attached to one" — its verdict for
+whether the DCP path was taken — an observation rather than a poll-timing race.
 
 Rows marked **blocked** above are not scheduling decisions — the primitive does not exist.
 Three need shell access to an accelerator (which this framework does not have) or an

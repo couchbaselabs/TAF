@@ -67,6 +67,7 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         self._prior_fusion_config = None
         self._fusion_min_split_size_gb = None
         self._fusion_max_slots = None
+        self._fusion_download_rate_limit = None
         self._cached_data_path = None
         # Fusion state watcher (see _start_fusion_state_watcher).
         self._fusion_state_thread = None
@@ -128,13 +129,32 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         if needs_restore:
             delta = self.initial_kv_nodes - self.num_nodes["data"]
             self.compute["data"] = self.initial_kv_compute
+            reset_timeout = int(self.input.param("topology_reset_timeout", 1800))
             try:
                 CapellaAPI.wait_until_done(
                     self.pod, self.tenant, self.cluster.id,
-                    "Wait for healthy state before topology reset", timeout=1800)
-                self.wait_for_rebalances([self.task.async_rebalance_capella(
-                    self.pod, self.tenant, self.cluster,
-                    self.rebalance_config("data", delta), timeout=self.rebalance_timeout)])
+                    "Wait for healthy state before topology reset",
+                    timeout=reset_timeout)
+                # wait_until_done returns on timeout rather than raising, so the state has
+                # to be checked explicitly. A cluster still stuck mid-rebalance rejects
+                # every spec update, and attempting the reset anyway is what turns a failed
+                # test into a multi-day run (see CapellaUtils.scale).
+                state = CapellaAPI.get_cluster_state(
+                    self.pod, self.tenant, self.cluster.id)
+                if state.lower() != "healthy":
+                    self.log.error(
+                        f"Skipping the topology reset: cluster {self.cluster.id} is "
+                        f"'{state}', not healthy, after waiting {reset_timeout}s. It will "
+                        f"not accept a spec update, so the reset is abandoned rather than "
+                        f"retried. The cluster is left at {self.num_nodes['data']} data "
+                        f"node(s) / {self.compute['data']} and needs manual attention "
+                        f"before reuse.")
+                else:
+                    self.wait_for_rebalances([self.task.async_rebalance_capella(
+                        self.pod, self.tenant, self.cluster,
+                        self.rebalance_config("data", delta),
+                        timeout=self.rebalance_timeout)],
+                        timeout=self.rebalance_timeout)
             except Exception as e:
                 self.log.error(
                     f"Failed to reset topology to {self.initial_kv_nodes} nodes / "
@@ -697,25 +717,35 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
     def _apply_fusion_config_from_params(self):
         """Apply the fusion support-config overrides given as params; return (gb, slots).
 
-        Either or both may be set by a conf line:
+        Any of these may be set by a conf line:
           fusion_min_split_size_gb — manifest.minSplitSize (CP default 50 GB), the minimum
               shard size. Lowering it splits the same data into more shards, so more
               accelerators, ASGs and guest volumes.
           fusion_max_slots — manifest.maxSlots (CP default 22), the cap on shards per host.
               Lowering it forces the same data into fewer, therefore BIGGER, volumes; at 1
               each host gets a single volume holding all its data.
+          fusion_download_rate_limit — accelerator.download.rateLimit in BYTES PER SECOND,
+              the throttle on the accelerator agent's S3 download (phase 5). Unset/0 means
+              unlimited. Lowering it stretches the download out in wall-clock time, which
+              is what test_download_rate_limit_expires_lease_falls_back_to_dcp needs.
 
         The CP creates min(ceil(hostData / minSplitSize), maxSlots) shards per host, so
-        between them the two knobs decide whether extra data becomes more volumes or
-        bigger ones. Both go out in a single PUT — see _apply_fusion_config_overrides.
+        between them the first two knobs decide whether extra data becomes more volumes or
+        bigger ones. All go out in a single PUT — see _apply_fusion_config_overrides.
+
+        The return value stays (split_gb, max_slots) for the callers that unpack it; the
+        applied rate limit is available as self._fusion_download_rate_limit.
         """
         split = self.input.param("fusion_min_split_size_gb", None)
         slots = self.input.param("fusion_max_slots", None)
+        rate = self.input.param("fusion_download_rate_limit", None)
         return self._apply_fusion_config_overrides(
             min_split_size_gb=float(split) if split else None,
-            max_slots=int(slots) if slots else None)
+            max_slots=int(slots) if slots else None,
+            download_rate_limit=int(rate) if rate else None)
 
-    def _apply_fusion_config_overrides(self, min_split_size_gb=None, max_slots=None):
+    def _apply_fusion_config_overrides(self, min_split_size_gb=None, max_slots=None,
+                                       download_rate_limit=None):
         """Apply fusion support-config overrides in ONE PUT; return (split_gb, max_slots).
 
         set_fusion_config replaces the whole config, so every override must go in the same
@@ -726,11 +756,15 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         only once the cap binds does per-shard size have to grow. Pinning maxSlots low is
         therefore the only practical way to observe volume size scaling with data (see
         test_guest_volume_size_scales_with_data).
+
+        download_rate_limit lands under accelerator.download.rateLimit rather than
+        manifest.*: it does not change how the data is split, only how fast the agent is
+        allowed to pull each shard out of S3.
         """
-        if not min_split_size_gb and not max_slots:
+        if not min_split_size_gb and not max_slots and not download_rate_limit:
             self.log.info(
                 "No fusion config overrides requested — leaving the config alone (CP "
-                "defaults: minSplitSize 50 GB, maxSlots 22)")
+                "defaults: minSplitSize 50 GB, maxSlots 22, download rate unlimited)")
             return None, None
 
         try:
@@ -744,14 +778,19 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         min_split_bytes = int(min_split_size_gb * (1024 ** 3)) if min_split_size_gb else None
         CapellaAPI.set_fusion_config(
             self.pod, self.tenant, self.cluster.id,
-            min_split_size=min_split_bytes, max_slots=max_slots)
+            min_split_size=min_split_bytes, max_slots=max_slots,
+            download_rate_limit=download_rate_limit)
         self._fusion_config_modified = True
         self._fusion_min_split_size_gb = min_split_size_gb
         self._fusion_max_slots = max_slots
+        self._fusion_download_rate_limit = download_rate_limit
         self.log.info(
             f"Set fusion config for cluster {self.cluster.id}: "
             f"minSplitSize={min_split_size_gb} GB ({min_split_bytes} bytes), "
-            f"maxSlots={max_slots}")
+            f"maxSlots={max_slots}, "
+            f"download rateLimit={download_rate_limit} B/s"
+            + (f" ({download_rate_limit / (1024 ** 2):.2f} MiB/s)"
+               if download_rate_limit else ""))
 
         # Read back so the run log records what the CP actually stored.
         try:
@@ -759,6 +798,13 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
                 self.pod, self.tenant, self.cluster.id)
             self.log.info(f"Fusion config after override: {applied}")
             manifest = applied.get("manifest") or {}
+            download = (applied.get("accelerator") or {}).get("download") or {}
+            if download_rate_limit is not None:
+                self.assertEqual(
+                    download.get("rateLimit"), download_rate_limit,
+                    f"Fusion config read-back shows accelerator.download.rateLimit="
+                    f"{download.get('rateLimit')}, expected {download_rate_limit} B/s — "
+                    f"the throttle was not stored, so the download will run at full speed")
             if min_split_bytes is not None:
                 self.assertEqual(
                     manifest.get("minSplitSize"), min_split_bytes,
@@ -787,14 +833,17 @@ class FusionAcceleratorLifecycleTest(_FusionTestBase):
         try:
             prior = getattr(self, "_prior_fusion_config", None) or {}
             manifest = prior.get("manifest") or {}
-            guest_volumes = (prior.get("accelerator") or {}).get("guestVolumes") or {}
-            if manifest or guest_volumes:
+            accelerator = prior.get("accelerator") or {}
+            guest_volumes = accelerator.get("guestVolumes") or {}
+            download = accelerator.get("download") or {}
+            if manifest or guest_volumes or download:
                 CapellaAPI.set_fusion_config(
                     self.pod, self.tenant, self.cluster.id,
                     min_split_size=manifest.get("minSplitSize"),
                     max_slots=manifest.get("maxSlots"),
                     iops=guest_volumes.get("iops"),
-                    throughput=guest_volumes.get("throughput"))
+                    throughput=guest_volumes.get("throughput"),
+                    download_rate_limit=download.get("rateLimit"))
                 self.log.info(f"Restored the prior fusion config: {prior}")
             else:
                 CapellaAPI.delete_fusion_config(
