@@ -266,7 +266,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
             self.backup_archive_dir, self.backup_repo_name,
             cluster_host=cluster_host,
             location=self.continuous_backup_location,
-            temp_dir="/tmp",
+            temp_dir="/data/tmp",
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self._verify_doc_count(count_with_new_docs)
@@ -283,7 +283,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
             self.backup_archive_dir, self.backup_repo_name,
             cluster_host=cluster_host,
             location=self.continuous_backup_location,
-            temp_dir="/tmp",
+            temp_dir="/data/tmp",
             timestamp=t_before_add,
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)

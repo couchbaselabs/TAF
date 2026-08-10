@@ -405,7 +405,7 @@ class ContinuousBackupUtil(object):
                     backup_archive_dir, backup_repo_name,
                     cluster_host=cluster_host,
                     location=continuous_backup_location,
-                    temp_dir="/tmp",
+                    temp_dir="/data/tmp",
                     timestamp=None,
                     map_data=f"{bucket.name}={restore_bucket_name}",
                     obj_staging_dir=obj_staging_dir)

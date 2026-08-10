@@ -95,7 +95,7 @@ class ContinuousBackupBase(CollectionBase):
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
-            temp_dir="/tmp",
+            temp_dir="/data/tmp",
             timestamp=timestamp,
             include_data=include_data,
             map_data=map_data,

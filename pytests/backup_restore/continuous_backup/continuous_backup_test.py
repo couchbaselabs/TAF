@@ -85,7 +85,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
-            temp_dir="/tmp",
+            temp_dir="/data/tmp",
             timestamp=timestamp,
             map_data=map_data,
             obj_staging_dir=self.obj_staging_dir_cont_bkp
@@ -1526,7 +1526,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
-            temp_dir="/tmp",
+            temp_dir="/data/tmp",
             timestamp=ts_t1,
             map_data=f"{self.bucket.name}={restore_bucket_name}",
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
@@ -2245,7 +2245,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             output, error = self.cont_bk_mgr.restore(
                 self.backup_archive_dir, self.backup_repo_name,
                 location=self.continuous_backup_location,
-                temp_dir="/tmp",
+                temp_dir="/data/tmp",
                 timestamp=ts_value,
                 map_data=f"{self.bucket.name}={restore_bucket_name}",
                 obj_staging_dir=self.obj_staging_dir_cont_bkp)

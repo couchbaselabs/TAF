@@ -162,11 +162,6 @@ class CbContBk(CbCmdBase):
         if timestamp is None:
             timestamp = "everything"
 
-        unique_temp_dir = f"{temp_dir}/restore_{int(time.time() * 1000)}"
-        _, mk_err = self._execute_cmd(f"mkdir -p {unique_temp_dir}")
-        if mk_err:
-            raise Exception(f"Failed to create unique temp dir {unique_temp_dir}: {mk_err}")
-
         cmd = (f"{self.cbstatCmd} restore -a {archive_path} -r {repo_name} "
                f"-c {cluster_host} -u {self.username} -p {self.password} "
                f"-t {threads} -l {location} -d {unique_temp_dir} -T {timestamp}")
