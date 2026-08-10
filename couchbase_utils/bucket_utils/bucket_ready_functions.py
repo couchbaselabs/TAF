@@ -240,7 +240,8 @@ class JavaDocLoaderUtils(object):
                         suppress_error_table=suppress_error_table,
                         track_failures=track_failures,
                         mutate=mutate,
-                        elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64)
+                        elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64,
+                        stall_timeout=-1)
                     loader_map.update({bucket.name+scope+collection: loader})
         return loader_map
 
@@ -361,7 +362,8 @@ class JavaDocLoaderUtils(object):
                         mutate=mutate,
                         elastic=False, model=model, mockVector=mockVector, dim=dim, base64=base64,
                         base_vectors_file_path=bucket.loadDefn.get("baseFilePath", "/root/bigann_base.bvecs.gz"),
-                        sift_url="ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz")
+                        sift_url="ftp://ftp.irisa.fr/local/texmex/corpus/bigann_base.bvecs.gz",
+                        stall_timeout=-1)
                     loader.create_doc_load_task()
                     JavaDocLoaderUtils.doc_loading_tm.add_new_task(loader)
                     tasks.append(loader)
