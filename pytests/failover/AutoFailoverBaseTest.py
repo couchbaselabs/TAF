@@ -939,6 +939,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         self.log.info("Cleanup the cluster and set the data location "
                       "to the one specified by the test.")
+        self.original_data_devices = {}
         for server in self.cluster.servers:
             self._create_data_locations(server)
             if server == self.cluster.master:
@@ -1033,12 +1034,31 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.log.info("=========Starting Diskautofailover teardown ==========")
         self.bucket_util.print_bucket_stats(self.cluster)
         self.targetMaster = True
+        restore_errors = []
         if hasattr(self, "original_data_path"):
             self.bring_back_failed_nodes_up()
             for server in self.cluster.servers:
+                shell = RemoteMachineShellConnection(server)
+                try:
+                    shell.stop_couchbase()
+                    shell.restore_partition(
+                        self.disk_location,
+                        self.original_data_devices.get(server.ip))
+                except Exception as e:
+                    restore_errors.append("{0}: {1}".format(server.ip, e))
+                    self.log.error(
+                        "Failed to restore {0} on {1}: {2}"
+                        .format(self.disk_location, server.ip, e))
+                finally:
+                    shell.start_couchbase()
+                    shell.disconnect()
                 self._initialize_node_with_new_data_location(
                     server, self.original_data_path)
         super(DiskAutoFailoverBasetest, self).tearDown()
+        if restore_errors:
+            self.fail(
+                "Failed to restore original data partition on: {0}"
+                .format("; ".join(restore_errors)))
 
     def enable_disk_autofailover(self):
         if self.disk_timeout < 5:
@@ -1099,6 +1119,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
     def _create_data_locations(self, server):
         shell = RemoteMachineShellConnection(server)
+        self.original_data_devices[server.ip] = shell.get_mount_source(
+            self.disk_location)
         shell.create_new_partition(self.disk_location, self.disk_location_size)
         shell.create_directory(self.data_location)
         shell.give_directory_permissions_to_couchbase(self.data_location)
