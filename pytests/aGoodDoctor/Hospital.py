@@ -610,6 +610,12 @@ class Murphy(BaseTestCase, OPD):
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
 
+        # Rotate query plan stability (prepared_only -> ad_hoc ->
+        # ad_hoc_read_only -> off -> ...) every 2h for the rest of the run.
+        if self.cluster.query_nodes and \
+                self.input.param("rotate_plan_stability", True):
+            self.start_plan_stability_rotation()
+
         '''
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)

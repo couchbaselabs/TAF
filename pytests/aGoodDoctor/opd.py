@@ -30,6 +30,7 @@ from couchbase_utils.backup_utils.backup_utils import BackupLocation, \
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
 from TestInput import TestInputServer, TestInputSingleton
 from gsiLib.gsiHelper import GsiHelper
+from cb_server_rest_util.query.query_api import QueryRestAPI
 from collections import defaultdict
 
 
@@ -57,6 +58,15 @@ class OPD:
     }
     NFS_BACKUP_ARCHIVE = f"{NfsUtil.MOUNT_POINT}/test_volume_backups"
     NFS_CONT_BKP_LOCATION = f"{NfsUtil.MOUNT_POINT}/test_volume"
+
+    # Plan stability modes, in the order the rotation thread walks them.
+    # The run starts on prepared_only and wraps around from the last entry.
+    PLAN_STABILITY_MODES = ["prepared_only", "ad_hoc", "ad_hoc_read_only",
+                            "off"]
+    # Defaults live on the class because OPD is a mixin whose __init__ is a
+    # no-op -- the sub-class' setUp never initialises these.
+    plan_stability_thread = None
+    stop_plan_stability = False
 
     def __init__(self):
         pass
@@ -1420,6 +1430,101 @@ class OPD:
 
         query_monitor = threading.Thread(target=check_query_stats)
         query_monitor.start()
+
+    def _execute_query_rest(self, query, timeout=300):
+        """Run a N1QL statement against a query node over REST
+
+        The SDK-based query path in n1ql.py is per-bucket and tuned for the
+        workload queries; cluster-wide statements (system:settings and the
+        like) go directly to the query service instead.
+
+        Returns: (status, results, response)
+        """
+        if not self.cluster.query_nodes:
+            raise Exception("No query nodes in the cluster to run: %s" % query)
+        node = random.choice(self.cluster.query_nodes)
+        client = QueryRestAPI(node)
+        status, response = client.run_query(params={"statement": query},
+                                            timeout=timeout)
+        results = None
+        if isinstance(response, dict):
+            results = response.get("results")
+        return status, results, response
+
+    def set_plan_stability(self, mode="prepared_only"):
+        """Configure plan stability mode for the cluster
+
+        Args:
+            mode: Plan stability mode - "prepared_only", "ad_hoc",
+                  "ad_hoc_read_only", or "off"
+        """
+        if mode not in self.PLAN_STABILITY_MODES:
+            raise ValueError("Invalid plan stability mode: %s. Must be one of %s"
+                             % (mode, self.PLAN_STABILITY_MODES))
+
+        query = 'UPDATE system:settings SET plan_stability.mode = "%s"' % mode
+        self.log.info("Running plan stability query: %s" % query)
+        status, results, response = self._execute_query_rest(query)
+        if not status:
+            raise Exception("Failed to set plan stability: %s" % response)
+
+        # Verify plan stability settings
+        verify_query = "SELECT plan_stability FROM system:settings"
+        self.log.info("Verifying plan stability settings")
+        status, results, response = self._execute_query_rest(verify_query)
+        self.log.info("Current plan stability settings: %s" % results)
+
+    def start_plan_stability_rotation(self, interval=None):
+        """Rotate the cluster's plan stability mode in a background thread
+
+        Starts at "prepared_only" and moves to the next mode in
+        PLAN_STABILITY_MODES every `interval` seconds (2h by default), wrapping
+        around forever so a long volume run exercises every mode repeatedly.
+
+        The thread is a daemon and also watches self.stop_run, so tearDown
+        (which flips stop_run) does not have to wait out a full interval.
+        """
+        if interval is None:
+            interval = self.input.param("plan_stability_interval", 7200)
+        if self.plan_stability_thread and self.plan_stability_thread.is_alive():
+            self.log.info("Plan stability rotation thread is already running")
+            return self.plan_stability_thread
+
+        self.stop_plan_stability = False
+
+        def rotate():
+            index = 0
+            while not self.stop_run and not self.stop_plan_stability:
+                mode = self.PLAN_STABILITY_MODES[
+                    index % len(self.PLAN_STABILITY_MODES)]
+                try:
+                    self.set_plan_stability(mode)
+                except Exception as e:
+                    # A rotation failure must not kill the volume run; log it
+                    # and retry with the next mode after the usual interval.
+                    self.log.critical(
+                        "Failed to set plan stability mode %s: %s" % (mode, e))
+                index += 1
+                # Sleep in slices so stop_run/stop_plan_stability is honoured
+                # within seconds instead of after the full interval.
+                slept = 0
+                while slept < interval and not self.stop_run \
+                        and not self.stop_plan_stability:
+                    time.sleep(min(10, interval - slept))
+                    slept += 10
+            self.log.info("Plan stability rotation thread exiting")
+
+        self.plan_stability_thread = threading.Thread(
+            target=rotate, name="plan_stability_rotator")
+        self.plan_stability_thread.daemon = True
+        self.plan_stability_thread.start()
+        self.log.info("Started plan stability rotation: %s every %ss"
+                      % (self.PLAN_STABILITY_MODES, interval))
+        return self.plan_stability_thread
+
+    def stop_plan_stability_rotation(self):
+        """Signal the plan stability rotation thread to exit"""
+        self.stop_plan_stability = True
 
     def refresh_cluster(self, tenant, cluster, type="dedicated"):
         while True:
