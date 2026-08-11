@@ -23,6 +23,7 @@ from Columnar.templates.crudTemplate.docgen_template import Hotel
 from Columnar.templates.crudTemplate.heterogeneous_docgen_template import Person
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from Columnar.templates.crudTemplate.unlimited_columns_docgen_template import Column
+from Columnar.templates.crudTemplate.multi_vec_docgen_template import MultiVecProduct
 from global_vars import logger
 from SecurityLib.rbac import RbacUtil
 from CbasLib.CBASOperations import CBASHelper
@@ -3460,6 +3461,14 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self.log.error(str(err))
         return doc
 
+    def generate_multi_vec_docs(self, generator):
+        doc = None
+        try:
+            doc = generator.generate_document()
+        except Exception as err:
+            self.log.error(str(err))
+        return doc
+
     def doc_operations_standalone_collection_sirius(self, task_manager, collection_name, dataverse_name, database_name,
                                                     connection_string, start, end, sdk_batch_size=25, doc_size=1024,
                                                     template="product", username=None, password=None,
@@ -3495,11 +3504,14 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             column = Column(no_of_columns=doc_template_params["no_of_columns"], no_of_levels=doc_template_params["no_of_levels"], sparse=doc_template_params["sparse"], allArrays=doc_template_params["allArrays"])
         elif doc_template == "heterogeneous":
             person = Person(heterogeneity=doc_template_params["heterogeneity"])
+        elif doc_template == "multi_vec":
+            multi_vec_gen = MultiVecProduct(**(doc_template_params or {}))
 
         doc_generator = {
                 "hotel": lambda: self.generate_docs(document_size, country_type, include_country, nested_level),
                 "heterogeneous": lambda: self.generate_heterogeneous_docs(person),
-                "unlimited_columns": lambda: self.generate_unlimited_columns_docs(column)
+                "unlimited_columns": lambda: self.generate_unlimited_columns_docs(column),
+                "multi_vec": lambda: self.generate_multi_vec_docs(multi_vec_gen)
             }
 
 
@@ -5110,6 +5122,7 @@ class Index_Util(View_Util):
         executing the query.
         """
         statement = 'EXPLAIN %s' % statement
+        self.log.debug("Executing cmd - \n{0}\n".format(statement))
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, statement)
         if status == 'success':
@@ -5271,6 +5284,381 @@ class Index_Util(View_Util):
                 return False
             else:
                 return True
+
+    def get_index_metadata_row(
+            self, cluster, dataset_name, index_structure=None,
+            index_name=None, dataverse_name=None, extra_filters=None):
+        """
+        Fetch a single row from Metadata.`Index` for dataset_name,
+        optionally narrowed down further by index_structure/index_name/
+        dataverse_name/extra_filters. Shared low-level fetch used by
+        every Metadata.Index lookup (SAMPLE index, VTREE/vector index,
+        etc.) so the query-building/error-handling isn't duplicated per
+        index type.
+        :param dataset_name str, (unqualified) name of the dataset.
+        :param index_structure str, e.g. "SAMPLE" or "VTREE". When
+            omitted, matches any non-primary index structure.
+        :param index_name str, exact index name to match. When omitted,
+            matches any index name (useful when at most one index of
+            index_structure is expected on the dataset, e.g. SAMPLE).
+        :param dataverse_name str, name of the dataverse.
+        :param extra_filters dict, additional {ColumnName: value}
+            equality filters appended to the WHERE clause (e.g.
+            {"SampleMethod": "random"}).
+        :return dict, the first matching Metadata.Index row, or None if
+            not found/on failure.
+        """
+        query = ("select i.* from Metadata.`Index` i where IsPrimary=false "
+                 "and DatasetName=\"{0}\"".format(
+                     self.unformat_name(dataset_name)))
+        if index_structure:
+            query += " and IndexStructure=\"{0}\"".format(index_structure)
+        if index_name:
+            query += " and IndexName=\"{0}\"".format(
+                self.unformat_name(index_name))
+        if dataverse_name:
+            query += " and DataverseName=\"{0}\"".format(
+                self.metadata_format(dataverse_name))
+        if extra_filters:
+            for column, value in extra_filters.items():
+                query += " and {0}=\"{1}\"".format(column, value)
+        query += ";"
+
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, query)
+        if status != "success" or not results:
+            self.log.error(
+                "No {0} index found in Metadata.Index for {1}: {2}".format(
+                    index_structure or "matching", dataset_name, errors))
+            return None
+        return results[0]
+
+    def verify_index_metadata_fields(self, row, index_label, expected_fields):
+        """
+        Compares columns of a Metadata.Index row (as returned by
+        get_index_metadata_row) against expected values. Shared by
+        every Metadata.Index verifier so the compare/log/return-False
+        boilerplate isn't duplicated per index type.
+        :param row dict, a Metadata.Index row.
+        :param index_label str, name used only for log messages on
+            mismatch.
+        :param expected_fields dict, {column_name: expected_value} for
+            plain equality checks (compared as strings, so numbers/
+            numeric-strings compare equal), or
+            {column_name: (expected_value, comparator)} where
+            comparator is a callable(actual_value, expected_value) ->
+            bool for columns needing custom comparison (e.g. list-
+            shaped columns like IncludeFields). Keys with a None
+            expected_value are skipped.
+        :return bool, True only if every provided expected value
+            matches.
+        """
+        for column, expected in expected_fields.items():
+            if isinstance(expected, tuple):
+                expected_value, comparator = expected
+            else:
+                expected_value, comparator = expected, None
+            if expected_value is None:
+                continue
+
+            actual_value = row.get(column)
+            matched = comparator(actual_value, expected_value) if comparator \
+                else str(actual_value) == str(expected_value)
+            if not matched:
+                self.log.error(
+                    "{0} mismatch for {1}: expected {2}, got {3}".format(
+                        column, index_label, expected_value, actual_value))
+                return False
+        return True
+
+    def create_vector_index(
+            self, cluster, index_name, dataset_name, vector_field,
+            dimension, similarity, index_type="VTREE", include_fields=None,
+            train_list_fraction=None, quantization=None, epsilon=None,
+            num_clusters=None, cross_pollination_m=None, rng_factor=None,
+            extra_with_params=None, validate_error_msg=False,
+            expected_error=None, username=None, password=None,
+            timeout=300, analytics_timeout=300, error_holder=None):
+        """
+        Create a vector index (e.g. "CREATE INDEX <index_name> ON
+        <dataset_name>(<vector_field> VECTOR) [INCLUDE (...)]
+        TYPE <index_type> WITH {...} [EXCLUDE UNKNOWN KEY];") on
+        dataset_name.
+        :param index_name str, name of the vector index to be created.
+        :param dataset_name str, fully qualified name of the dataset on
+            which the index is to be created.
+        :param vector_field str, name of the field annotated as VECTOR.
+        :param dimension int, WITH clause "dimension" value.
+        :param similarity str, WITH clause "similarity" value (e.g.
+            "euclidean_squared").
+        :param index_type str, index structure, defaults to "VTREE".
+        :param include_fields list, optional list of field names to be
+            added in the INCLUDE (...) clause.
+        :param train_list_fraction float, optional WITH clause
+            "train_list_fraction" value. Must be in (0, 1] server-side.
+        :param quantization str, optional WITH clause "quantization"
+            value (e.g. "SQ4"/"SQ8").
+        :param epsilon float, optional WITH clause "epsilon" value.
+            Must be in [0, 1] server-side.
+        :param num_clusters int, optional WITH clause "num_clusters"
+            value. Must be an integer > 0 server-side.
+        :param cross_pollination_m int, optional WITH clause
+            "cross_pollination_m" value. Must be an integer in
+            [1, 1024] server-side.
+        :param rng_factor float, optional WITH clause "rng_factor"
+            value. Must be a positive finite number server-side.
+        :param extra_with_params dict, additional/arbitrary
+            {key: value} entries merged into the WITH clause as-is,
+            for negative-testing things like unknown fields.
+        :param validate_error_msg : boolean, validate error while
+            creating the index
+        :param expected_error : str, error msg
+        :param error_holder dict, optional - when passed, populated
+            with {"status": status, "errors": errors} from the
+            create's response so the caller can inspect/log the
+            actual error regardless of validate_error_msg.
+        """
+        create_idx_statement = "CREATE INDEX {0}\nON {1}({2} VECTOR)".format(
+            index_name, dataset_name, vector_field)
+        if include_fields:
+            create_idx_statement += "\nINCLUDE ({0})".format(
+                ",".join("`{0}`".format(field) for field in include_fields))
+
+        with_clause = {"dimension": dimension, "similarity": similarity}
+        optional_with_params = {
+            "train_list_fraction": train_list_fraction,
+            "quantization": quantization,
+            "epsilon": epsilon,
+            "num_clusters": num_clusters,
+            "cross_pollination_m": cross_pollination_m,
+            "rng_factor": rng_factor,
+        }
+        for key, value in optional_with_params.items():
+            if value is not None:
+                with_clause[key] = value
+        if extra_with_params:
+            with_clause.update(extra_with_params)
+
+        create_idx_statement += "\nTYPE {0}\nWITH {1}".format(
+            index_type, json.dumps(with_clause))
+        create_idx_statement += ";"
+
+        self.log.info("Executing cmd - \n{0}\n".format(create_idx_statement))
+
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
+            cluster, create_idx_statement, username=username,
+            password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+
+        if error_holder is not None:
+            error_holder.update(status=status, errors=errors)
+
+        if validate_error_msg:
+            return self.validate_error_and_warning_in_response(
+                status, errors, expected_error)
+
+        if status != "success":
+            self.log.error(str(errors))
+            return False
+        return True
+
+    def verify_vector_index_present_in_Metadata(
+            self, cluster, dataset_name, index_name, dataverse_name=None,
+            dimension=None, similarity=None, include_fields=None,
+            train_list_fraction=None, quantization=None, epsilon=None,
+            num_clusters=None, cross_pollination_m=None, rng_factor=None):
+        """
+        Verifies a VTREE (vector) index row for index_name/dataset_name
+        exists in Metadata.`Index` and, when expected values are passed
+        in, that the row's dimension/similarity/IncludeFields (and any
+        of the optional quantization-related WITH clause fields) match
+        them.
+        :param dataset_name str, (unqualified) name of the dataset.
+        :param index_name str, name of the vector index.
+        :param dataverse_name str, name of the dataverse.
+        :param dimension int, expected "dimension" WITH clause value.
+        :param similarity str, expected "similarity" WITH clause value.
+        :param include_fields list, expected INCLUDE (...) field names.
+        :param train_list_fraction float, expected "train_list_fraction"
+            WITH clause value.
+        :param quantization str, expected "quantization" WITH clause
+            value.
+        :param epsilon float, expected "epsilon" WITH clause value.
+        :param num_clusters int, expected "num_clusters" WITH clause
+            value.
+        :param cross_pollination_m int, expected "cross_pollination_m"
+            WITH clause value.
+        :param rng_factor float, expected "rng_factor" WITH clause
+            value.
+        :return bool, True only if a matching VTREE index row is found
+            and every expected value provided actually matches.
+        """
+        row = self.get_index_metadata_row(
+            cluster, dataset_name, index_structure="VTREE",
+            index_name=index_name, dataverse_name=dataverse_name)
+        if not row:
+            return False
+
+        self.log.info("Found VTREE index row for {0}.{1}: {2}".format(
+            dataset_name, index_name, row))
+
+        def _compare_include_fields(actual, expected):
+            actual_fields = [
+                field[0] if isinstance(field, list) else field
+                for field in (actual or [])]
+            return sorted(actual_fields) == sorted(expected)
+
+        expected_fields = {}
+        if dimension is not None:
+            expected_fields["dimension"] = dimension
+        if similarity is not None:
+            similarity = {"l2": "euclidean", "l2_squared": "euclidean_squared"}.get(similarity, similarity)
+            expected_fields["similarity"] = similarity
+        if include_fields is not None:
+            expected_fields["IncludeFields"] = (
+                include_fields, _compare_include_fields)
+        if train_list_fraction is not None:
+            expected_fields["train_list_fraction"] = train_list_fraction
+        if quantization is not None:
+            expected_fields["quantization"] = quantization
+        if epsilon is not None:
+            expected_fields["epsilon"] = epsilon
+        if num_clusters is not None:
+            expected_fields["num_clusters"] = num_clusters
+        if cross_pollination_m is not None:
+            expected_fields["cross_pollination_m"] = cross_pollination_m
+        if rng_factor is not None:
+            expected_fields["rng_factor"] = rng_factor
+
+        return self.verify_index_metadata_fields(
+            row, index_name, expected_fields)
+
+    def knn_distance(
+            self, cluster, dataset_name, vector_field, qvec, k,
+            function_name="vector_distance", distance_function=None,
+            where_clause=None, username=None, password=None,
+            timeout=300, analytics_timeout=300):
+        """
+        Runs an exact KNN vector search:
+        LET qvec = [...]
+        SELECT VALUE i.id
+        FROM <dataset_name> i
+        [WHERE <where_clause>]
+        ORDER BY <distance_expr>
+        LIMIT <k>;
+
+        :param dataset_name str, fully qualified name of the dataset to
+            search.
+        :param vector_field str, name of the field annotated as VECTOR.
+        :param qvec list, query vector.
+        :param k int, LIMIT value / number of nearest neighbours.
+        :param function_name str, either "vector_distance" (default) or
+            one of the distance-specific function names -
+            cosine_similarity, dot_product, euclidean_distance,
+            l2_distance, euclidean_squared_distance,
+            l2_squared_distance. When "vector_distance" is used, the
+            distance_function arg is passed in as the 3rd positional
+            argument, e.g. vector_distance(i.<field>, qvec,
+            "<distance_function>"). Otherwise the query uses the
+            2-arg form, e.g. cosine_similarity(i.<field>, qvec).
+        :param distance_function str, similarity metric name (e.g.
+            "euclidean_squared"), only used when function_name is
+            "vector_distance".
+        :param where_clause str, optional raw WHERE clause predicate.
+        :return tuple, same as execute_statement_on_cbas_util - i.e.
+            (status, metrics, errors, results, handle, warnings).
+        """
+        if function_name.lower() == "vector_distance":
+            distance_expr = 'vector_distance(i.{0}, qvec, "{1}")'.format(
+                vector_field, distance_function)
+        else:
+            distance_expr = '{0}(i.{1}, qvec)'.format(
+                function_name, vector_field)
+
+        statement = (
+            'LET qvec = {0}\n'
+            'SELECT VALUE i.id\n'
+            'FROM {1} i\n'
+            '{2}'
+            'ORDER BY {3}\n'
+            'LIMIT {4};'
+        ).format(
+            json.dumps(qvec), dataset_name,
+            'WHERE {0}\n'.format(where_clause) if where_clause else '',
+            distance_expr, k)
+
+        self.log.info("Executing cmd - \n{0}\n".format(statement))
+
+        return self.execute_statement_on_cbas_util(
+            cluster, statement, username=username, password=password,
+            timeout=timeout, analytics_timeout=analytics_timeout)
+
+    def ann_distance(
+            self, cluster, dataset_name, vector_field, qvec, k,
+            distance_function="euclidean_squared",
+            min_probe_fraction=None, k_multiplier=None,
+            where_clause=None, field="id", username=None, password=None,
+            timeout=300, analytics_timeout=300):
+        """
+        Runs an ANN vector search:
+        LET qvec = [...]
+        SELECT VALUE i.<field>
+        FROM <dataset_name> i
+        [WHERE <where_clause>]
+        ORDER BY ann_distance(i.<vector_field>, qvec,
+            "<distance_function>"[, min_probe_fraction[, k_multiplier]])
+        LIMIT <k>;
+
+        No vector index is required to run/validate this function -
+        this is meant to validate the ann_distance() function and its
+        parameters, not ANN search recall/quality.
+
+        :param dataset_name str, fully qualified name of the dataset to
+            search.
+        :param vector_field str, name of the field annotated as VECTOR.
+        :param qvec list, query vector.
+        :param k int, LIMIT value / number of nearest neighbours.
+        :param distance_function str, similarity metric name (e.g.
+            "euclidean_squared").
+        :param min_probe_fraction float, optional ann_distance()
+            "min_probe_fraction" argument (clusters to probe). Only
+            included in the call when not None.
+        :param k_multiplier int, optional ann_distance() "k_multiplier"
+            argument. Only included in the call when not None, and
+            only when min_probe_fraction is also provided (positional
+            argument ordering).
+        :param where_clause str, optional raw WHERE clause predicate.
+        :param field str, name of the field to project in the
+            SELECT VALUE clause, defaults to "id". Pass an INCLUDE'd
+            scalar facet field (e.g. "color") to select that instead.
+        :return tuple, same as execute_statement_on_cbas_util - i.e.
+            (status, metrics, errors, results, handle, warnings).
+        """
+        args = [
+            'i.{0}'.format(vector_field), 'qvec',
+            '"{0}"'.format(distance_function)]
+        if min_probe_fraction is not None:
+            args.append(str(min_probe_fraction))
+            if k_multiplier is not None:
+                args.append(str(k_multiplier))
+        distance_expr = 'ann_distance({0})'.format(', '.join(args))
+
+        statement = (
+            'LET qvec = {0}\n'
+            'SELECT VALUE i.{1}\n'
+            'FROM {2} i\n'
+            '{3}'
+            'ORDER BY {4}\n'
+            'LIMIT {5};'
+        ).format(
+            json.dumps(qvec), field, dataset_name,
+            'WHERE {0}\n'.format(where_clause) if where_clause else '',
+            distance_expr, k)
+
+        self.log.info("Executing cmd - \n{0}\n".format(statement))
+
+        return self.execute_statement_on_cbas_util(
+            cluster, statement, username=username, password=password,
+            timeout=timeout, analytics_timeout=analytics_timeout)
 
     def get_all_index_objs(self):
         """
@@ -5809,21 +6197,16 @@ class CBOUtil(UDFUtil):
         :return bool, True only if a matching SAMPLE index row is found
             and every expected value provided actually matches.
         """
-        query = "select i.* from Metadata.`Index` i where IsPrimary=false and IndexStructure=\"SAMPLE\" and DatasetName= \"%s\"" % dataset_name
-        if dataverse_name:
-            query += " and DataverseName=\"%s\"" % CBASHelper.metadata_format(dataverse_name)
-        if sample_method:
-            query += " and SampleMethod=\"%s\"" % sample_method
-        query += ";"
-        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, query)
-        if status != "success" or not results:
-            self.log.error("No SAMPLE index found in Metadata.Index for "
-                           "{0}: {1}".format(dataset_name, errors))
+        extra_filters = {"SampleMethod": sample_method} if sample_method else None
+        row = self.get_index_metadata_row(
+            cluster, dataset_name, index_structure="SAMPLE",
+            dataverse_name=dataverse_name, extra_filters=extra_filters)
+        if not row:
             return False
 
-        row = results[0]
         self.log.info("Found SAMPLE index row for {0}: {1}".format(dataset_name, row))
 
+        expected_fields = {}
         if sample_size is not None:
             expected_target = {"low": 1063, "medium": 4252, "high": 17008}.get(
                 str(sample_size).lower())
@@ -5834,22 +6217,13 @@ class CBOUtil(UDFUtil):
                         "sample_size {0} is out of allowed range "
                         "[1063, 68032]".format(expected_target))
                     return False
-            if row.get("SampleCardinalityTarget") != expected_target:
-                self.log.error(
-                    "SampleCardinalityTarget mismatch for {0}: expected {1} "
-                    "(sample={2}), got {3}".format(
-                        dataset_name, expected_target, sample_size,
-                        row.get("SampleCardinalityTarget")))
-                return False
+            expected_fields["SampleCardinalityTarget"] = expected_target
 
         if sample_seed is not None:
-            if str(row.get("SampleSeed")) != str(sample_seed):
-                self.log.error(
-                    "SampleSeed mismatch for {0}: expected {1}, got {2}"
-                    .format(dataset_name, sample_seed, row.get("SampleSeed")))
-                return False
+            expected_fields["SampleSeed"] = sample_seed
 
-        return True
+        return self.verify_index_metadata_fields(
+            row, dataset_name, expected_fields)
 
     def get_sample_index_metadata(self, cluster, dataset_name, dataverse_name=None):
         """
@@ -5859,16 +6233,9 @@ class CBOUtil(UDFUtil):
         :param dataverse_name str Name of the dataverse.
         :return dict, the SAMPLE index row, or None if not found/on failure.
         """
-        query = "select i.* from Metadata.`Index` i where IsPrimary=false and IndexStructure=\"SAMPLE\" and DatasetName=\"%s\"" % dataset_name
-        if dataverse_name:
-            query += " and DataverseName=\"%s\"" % CBASHelper.metadata_format(dataverse_name)
-        query += ";"
-        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, query)
-        if status != "success" or not results:
-            self.log.error("Failed to fetch SAMPLE index metadata for {0}: {1}"
-                           .format(dataset_name, errors))
-            return None
-        return results[0]
+        return self.get_index_metadata_row(
+            cluster, dataset_name, index_structure="SAMPLE",
+            dataverse_name=dataverse_name)
 
     def get_dump_index_count(self, cluster, dataset_name, index_name,
                              dataverse_name="Default", where_clause=None):

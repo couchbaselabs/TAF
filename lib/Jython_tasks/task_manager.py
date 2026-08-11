@@ -33,6 +33,12 @@ class TaskManager(object):
     def get_task_result(self, task, timeout=None):
         self.log.debug("Getting task result for %s" % task.thread_name)
         if isinstance(task, SiriusCouchbaseLoader) or isinstance(task, SiriusJavaMongoLoader):
+            if task.thread_name is None:
+                msg = ("Task was never created on Sirius (thread_name is "
+                      "None) - create_doc_load_task() failed before any "
+                      "task_ids were assigned, so no docs were loaded")
+                self.log.critical(msg)
+                raise Exception(msg)
             # `timeout` is intentionally NOT forwarded here. A flat deadline
             # would fail large-but-healthy loads (e.g. thousands of
             # collections) that legitimately take longer than any fixed

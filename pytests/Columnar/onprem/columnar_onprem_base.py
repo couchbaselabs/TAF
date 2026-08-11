@@ -43,7 +43,9 @@ class ColumnarOnPremBase(CBASBaseTest):
                                 create_percent=100, read_percent=0, update_percent=0,
                                 delete_percent=0, expiry_percent=0,
                                 wait_for_completion=True,
-                                template="Hotel"):
+                                template="Hotel",
+                                process_concurrency=1,
+                                base_vectors_file_path=None):
         buckets = buckets or cluster.buckets
         thread_count = 0
         for bucket in buckets:
@@ -53,6 +55,18 @@ class ColumnarOnPremBase(CBASBaseTest):
                 for collection in bucket.scopes[scope].collections.keys():
                     thread_count += 1
         per_coll_ops = self.input.param("ops_rate", 20000)//thread_count
+        range_deltas = [
+            end - start
+            for percent, start, end in (
+                (create_percent, create_start_index, create_end_index),
+                (read_percent, read_start_index, read_end_index),
+                (update_percent, update_start_index, update_end_index),
+                (delete_percent, delete_start_index, delete_end_index),
+                (expiry_percent, expiry_start_index, expiry_end_index))
+            if percent > 0 and start is not None and end is not None]
+        if range_deltas:
+            per_coll_ops = min(per_coll_ops, sum(range_deltas))
+
         tasks = list()
 
         for bucket in buckets:
@@ -76,11 +90,12 @@ class ColumnarOnPremBase(CBASBaseTest):
                         update_start_index=update_start_index, update_end_index=update_end_index,
                         delete_start_index=delete_start_index, delete_end_index=delete_end_index,
                         expiry_start_index=expiry_start_index, expiry_end_index=expiry_end_index,
-                        process_concurrency=1, task_identifier="", ops=per_coll_ops,
+                        process_concurrency=process_concurrency, task_identifier="", ops=per_coll_ops,
                         suppress_error_table=False,
                         track_failures=True,
                         mutate=0,
-                        elastic=False, model=self.model, mockVector=self.mockVector, dim=self.dim, base64=self.base64)
+                        elastic=False, model=self.model, mockVector=self.mockVector, dim=self.dim, base64=self.base64,
+                        base_vectors_file_path=base_vectors_file_path)
                     loader.create_doc_load_task()
                     self.task_manager.add_new_task(loader)
                     tasks.append(loader)
@@ -89,26 +104,47 @@ class ColumnarOnPremBase(CBASBaseTest):
         return tasks
 
     def wait_for_completion(self, tasks):
+        # NOTE: create_end_index/delete_end_index are None whenever that op
+        # wasn't the one requested (e.g. a delete-only mutation leaves
+        # create_end_index=None) - a plain equality/subtraction against None
+        # would either misfire or crash, so every branch below is gated on
+        # the corresponding *_percent actually being set for this loader.
         for loader in tasks:
             loader.result = self.task_manager.get_task_result(loader)
-            if loader.fail_count == loader.create_end_index:
+            collection = loader.bucket.scopes[loader.scope].collections[
+                loader.collection]
+            is_create_load = (loader.create_percent > 0
+                              and loader.create_end_index is not None)
+            is_delete_load = (loader.delete_percent > 0
+                              and loader.delete_end_index is not None)
+
+            if is_create_load and loader.fail_count == loader.create_end_index:
                 self.fail("Doc loading failed for {0}.{1}.{2}"
                             .format(loader.bucket.name,
                                     loader.scope,
                                     loader.collection))
-            else:
-                if loader.fail_count > 0:
-                    self.log.error(
-                        "{0} Docs failed to load "
-                        "for {1}.{2}.{3}"
-                        .format(loader.fail_count,
-                                loader.bucket.name, loader.scope,
-                                loader.collection))
-                    loader.bucket.scopes[loader.scope].collections[loader.collection].num_items = (
-                            loader.create_end_index -
-                            loader.fail_count)
-                else:
-                    loader.bucket.scopes[loader.scope].collections[loader.collection].num_items = loader.create_end_index
+            elif loader.fail_count > 0:
+                self.log.error(
+                    "{0} Docs failed to load "
+                    "for {1}.{2}.{3}"
+                    .format(loader.fail_count,
+                            loader.bucket.name, loader.scope,
+                            loader.collection))
+                if is_create_load:
+                    collection.num_items = (
+                            loader.create_end_index - loader.fail_count)
+                elif is_delete_load:
+                    deleted = (loader.delete_end_index -
+                              loader.delete_start_index - loader.fail_count)
+                    collection.num_items -= deleted
+                # else: upsert/read-only loads don't change the doc count,
+                # partial failures included - nothing to adjust.
+            elif is_create_load:
+                collection.num_items = loader.create_end_index
+            elif is_delete_load:
+                collection.num_items -= (
+                        loader.delete_end_index - loader.delete_start_index)
+            # else: upsert/read-only load - doc count is unchanged.
 
     """
     This method populates the columnar spec that will be used create 
