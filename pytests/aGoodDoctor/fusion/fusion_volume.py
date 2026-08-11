@@ -357,7 +357,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
             "fusion_migration_rate_limit": self.fusion_migration_rate_limit,
             "fusion_num_migrator_threads": self.fusion_num_migrator_threads,
         }
-        settings = {k: v for k, v in settings.items() if v}
+        settings = {k: v for k, v in settings.items() if v is not None}
         if not settings:
             return
         for tenant in self.tenants:

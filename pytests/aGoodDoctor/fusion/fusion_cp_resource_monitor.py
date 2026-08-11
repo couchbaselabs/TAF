@@ -656,8 +656,19 @@ class FusionCPResourceMonitor:
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
+        # _cluster_filter(cluster.id) alone matches every instance tagged with
+        # this cluster ID, which includes transient fusion accelerator
+        # instances (see verify_guest_volumes_attached_to_cluster) as well as
+        # real couchbase server nodes. `data_path` is the KV node's
+        # persistent-data mount, so this filters to couchbase-cloud-function=
+        # couchbase instances only -- otherwise an accelerator's (unrelated/
+        # missing) mount would pollute the returned per-instance usage map
+        # and any average computed over it (same tag used by
+        # FusionMonitorUtil.get_current_instance_ids for the same purpose).
         instances = self.fusion_aws_util.list_instances(
-            self.fusion_aws_util._cluster_filter(cluster.id),
+            self.fusion_aws_util._cluster_filter(
+                cluster.id,
+                [{'Name': 'tag:couchbase-cloud-function', 'Values': ['couchbase']}]),
             log="Couchbase Cluster Instances", suppress_log=True)
 
         data_path = data_path or self.resolve_data_path(cluster)
@@ -1052,6 +1063,12 @@ class FusionCPResourceMonitor:
         transferred to it (see get_guest_volume_counts_by_attached_instance
         for the accelerator -> KV-node attachment lifecycle).
 
+        The maxSlots cap is a per-KV-host limit, so on every sample only
+        instances currently tagged couchbase-cloud-function=couchbase (real
+        KV nodes) are tracked in `peak_counts` -- counts for any instance
+        still a fusion accelerator (transient infra used only during the
+        S3 download/hydration phase) are dropped.
+
         :param cluster: Cluster object
         :param stop_run_event: threading.Event signalling when to stop polling
         :param peak_counts: dict to mutate in place -> {instance_id: max_count_seen}
@@ -1060,7 +1077,23 @@ class FusionCPResourceMonitor:
         while not stop_run_event.is_set():
             try:
                 counts = self.get_guest_volume_counts_by_attached_instance(cluster)
+                # Positively identify real couchbase server (KV) instances --
+                # same tag FusionMonitorUtil.get_current_instance_ids() uses --
+                # rather than fetching accelerator instances and excluding
+                # them, so a volume still (or currently) attached to a
+                # transient accelerator never pollutes the KV-node peak-count.
+                couchbase_instance_ids = {
+                    instance.get('InstanceId')
+                    for instance in self.fusion_aws_util.list_instances(
+                        self.fusion_aws_util._cluster_filter(
+                            cluster.id,
+                            [{'Name': 'tag:couchbase-cloud-function', 'Values': ['couchbase']}]),
+                        log="Couchbase Cluster Instances", suppress_log=True,
+                    )
+                }
                 for instance_id, count in counts.items():
+                    if instance_id not in couchbase_instance_ids:
+                        continue
                     if count > peak_counts.get(instance_id, 0):
                         peak_counts[instance_id] = count
                         self.log.info(
