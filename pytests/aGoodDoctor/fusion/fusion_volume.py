@@ -131,6 +131,10 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # stock 50GB/22-slot behaviour).
         self.fusion_min_split_size_mb = self.input.param("fusion_min_split_size_mb", None)
         self.fusion_max_slots_override = self.input.param("fusion_max_slots_override", None)
+        # Off switch for the background dp-agent journal error scanner --
+        # off by default, enable for runs where its periodic SSM polling
+        # is needed.
+        self.scan_dp_agent_logs = self.input.param("scan_dp_agent_logs", False)
         self.expected_max_guest_volume_slots = self.input.param(
             "expected_max_guest_volume_slots",
             self.fusion_max_slots_override if self.fusion_max_slots_override else 22)
@@ -850,14 +854,17 @@ class VolumeTest(BaseTestCase, hostedOPD):
                     peak_tracker_thread.start()
                     ebs_available_threads.append(peak_tracker_thread)
 
-        all_clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
-        dp_agent_log_thread = threading.Thread(
-            target=self.cp_monitor.scan_dp_agent_logs_for_errors,
-            kwargs={"clusters": all_clusters, "stop_run_event": self.stop_run_event},
-            name="dp-agent-log-scanner",
-            daemon=True
-        )
-        dp_agent_log_thread.start()
+        if self.scan_dp_agent_logs:
+            all_clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
+            dp_agent_log_thread = threading.Thread(
+                target=self.cp_monitor.scan_dp_agent_logs_for_errors,
+                kwargs={"clusters": all_clusters, "stop_run_event": self.stop_run_event},
+                name="dp-agent-log-scanner",
+                daemon=True
+            )
+            dp_agent_log_thread.start()
+        else:
+            self.log.info("scan_dp_agent_logs=False -- skipping dp-agent log scanner thread")
 
         self.services = self.input.param("services", "data")
         self.rebl_services = self.input.param("rebl_services", self.services).split("-")

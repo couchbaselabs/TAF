@@ -140,6 +140,16 @@ class FusionCPResourceMonitor:
         ebs_cleanup_start_time = time.time()
         volume_transition_started = False
 
+        # Refresh cluster.master before resolving IPs -- during horizontal
+        # scaling the node held as cluster.master can itself be replaced
+        # mid-rebalance, leaving its hostname permanently unresolvable and
+        # crashing this call (this method runs in a daemon thread with no
+        # caller-side exception handling, so that crash was silently
+        # swallowed and only showed up as monitor_fusion_guest_volumes_complete
+        # never getting set). Mirrors guest_volume_attached_vs_ns_server_reported.
+        if find_master_func:
+            find_master_func(tenant, cluster)
+
         # Get network mapping for cluster node IP resolution
         fusion_monitor_util.get_hostname_public_ip_mapping(cluster)
 
