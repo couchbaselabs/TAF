@@ -54,7 +54,7 @@ check_and_build_testrunner_install_docker() {
 NATIVE_TEST_INFRA_DIR="$WORKSPACE/test_infra_runner"
 NATIVE_PYENV_VERSION="3.10.14"
 use_native_testrunner=false
-if [[ "$NODE_LABELS" == *"deb12_jython_slave"* ]]; then
+if [[ "$NODE_LABELS" == *"deb12_jython_slave"* ]] && [ "$component" != "analytics" ]; then
   use_native_testrunner=true
 fi
 
