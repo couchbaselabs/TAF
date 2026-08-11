@@ -887,6 +887,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
         self.log.info("Cleanup the cluster and set the data location "
                       "to the one specified by the test.")
+        self.original_data_devices = {}
         for server in self.cluster.servers:
             self._create_data_locations(server)
             if server == self.cluster.master:
@@ -949,6 +950,11 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         if hasattr(self, "original_data_path"):
             self.bring_back_failed_nodes_up()
             for server in self.cluster.servers:
+                shell = RemoteMachineShellConnection(server)
+                shell.restore_partition(
+                    self.disk_location,
+                    self.original_data_devices.get(server))
+                shell.disconnect()
                 self._initialize_node_with_new_data_location(
                     server, self.original_data_path)
         super(DiskAutoFailoverBasetest, self).tearDown()
@@ -1013,6 +1019,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
 
     def _create_data_locations(self, server):
         shell = RemoteMachineShellConnection(server)
+        self.original_data_devices[server] = shell.get_mount_source(
+            self.disk_location)
         shell.create_new_partition(self.disk_location, self.disk_location_size)
         shell.create_directory(self.data_location)
         shell.give_directory_permissions_to_couchbase(self.data_location)

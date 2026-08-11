@@ -5048,6 +5048,24 @@ class RemoteMachineShellConnection:
         command = "chmod 777 {0}".format(location)
         output, error = self.execute_command(command)
 
+    def get_mount_source(self, location):
+        """
+        Return the device backing 'location' if it is currently a
+        dedicated mountpoint distinct from the root filesystem, else None.
+        Used to remember what to restore after create_new_partition()
+        replaces 'location' with a loopback filesystem.
+        :param location: Path to check (e.g. /data)
+        :return: Device path (str) or None
+        """
+        command = ("root_dev=$(findmnt -no SOURCE /); "
+                  "loc_dev=$(findmnt -no SOURCE --target {0} 2>/dev/null); "
+                  "[ \"$loc_dev\" != \"$root_dev\" ] && echo \"$loc_dev\""
+                  ).format(location)
+        output, error = self.execute_command(command)
+        if output and output[0].strip():
+            return output[0].strip()
+        return None
+
     def create_new_partition(self, location, size=None):
         """
         Create a new partition at the location specified and of
@@ -5080,6 +5098,30 @@ class RemoteMachineShellConnection:
         output, error = self.execute_command(command)
         command = "chmod 777 {0}".format(location)
         output, error = self.execute_command(command)
+
+    def restore_partition(self, location, original_device=None):
+        """
+        Undo create_new_partition(): drop the loopback quota filesystem
+        mounted at 'location' and, if 'location' was backed by a real
+        dedicated device before create_new_partition() was called,
+        remount that device. The loopback image always lives on the
+        root filesystem, so this never touches 'location's original
+        device beyond a plain mount.
+        :param location: Mount location previously passed to
+                         create_new_partition()
+        :param original_device: Device returned by get_mount_source()
+                                before create_new_partition() was called,
+                                or None if 'location' was not a dedicated
+                                mountpoint at that time.
+        :return: Nothing
+        """
+        command = "umount -l {0}".format(location)
+        output, error = self.execute_command(command)
+        command = "rm -f /usr/disk-img/disk-quota.ext3"
+        output, error = self.execute_command(command)
+        if original_device:
+            command = "mount {0} {1}".format(original_device, location)
+            output, error = self.execute_command(command)
 
     def mount_partition(self, location):
         """
