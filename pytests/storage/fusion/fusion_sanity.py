@@ -1516,9 +1516,10 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                               "(guest volumes) to drain")
                 self.monitor_active_guest_volumes()
 
-            # Join the background workload for this iteration
+            # Stop the background workload for this iteration - no need to
+            # wait for it to fully complete once rebalance / migration is done
             for task in workload_tasks:
-                self.doc_loading_tm.get_task_result(task)
+                self.doc_loading_tm.stop_task(task)
 
             self.cluster_util.print_cluster_stats(self.cluster)
 

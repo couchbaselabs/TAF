@@ -1,3 +1,5 @@
+import json
+
 from cb_server_rest_util.connection import CBRestConnection
 
 class FusionFunctions(CBRestConnection):
@@ -90,4 +92,35 @@ class FusionFunctions(CBRestConnection):
         """
         api = self.base_url + "/controller/fusion/syncLogStore"
         status, content, _ = self.request(api, CBRestConnection.POST)
+        return status, content
+
+    def prepare_snapshot_restore(self, buckets):
+        """
+        POST :: /controller/fusion/prepareSnapshotRestore
+
+        buckets: list of {"config": {"name", "replicaNumber", "ramQuota"},
+                          "manifest": <accelerator-cli generate-manifest output>}
+        Returns (status, content); content carries the plan's "planUUID" plus
+        the per-node manifest that accelerator-cli split-manifest consumes.
+        """
+        api = self.base_url + "/controller/fusion/prepareSnapshotRestore"
+        headers = self.get_headers_for_content_type_json()
+        body = json.dumps({"buckets": buckets})
+        status, content, _ = self.request(api, CBRestConnection.POST, body,
+                                          headers=headers)
+        return status, content
+
+    def restore_snapshot(self, plan_uuid, nodes):
+        """
+        POST :: /controller/fusion/restoreSnapshot?planUUID=<plan_uuid>
+
+        nodes: list of {"name": <otpNode>, "guestVolumePaths": [<path>, ...]}
+        Synchronous: the request blocks until the restore completes.
+        """
+        api = "{0}/controller/fusion/restoreSnapshot?planUUID={1}".format(
+            self.base_url, plan_uuid)
+        headers = self.get_headers_for_content_type_json()
+        body = json.dumps({"nodes": nodes})
+        status, content, _ = self.request(api, CBRestConnection.POST, body,
+                                          headers=headers, timeout=3600)
         return status, content
