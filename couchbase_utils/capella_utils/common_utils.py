@@ -95,12 +95,19 @@ class Pod:
 
 class Tenant:
     def __init__(self, id, user, pwd,
-                 secret=None, access=None):
+                 secret=None, access=None, account_id=None):
         self.id = id
         self.user = user
         self.pwd = pwd
         self.api_secret_key = secret
         self.api_access_key = access
+        # AWS account this tenant's clusters live in (dedicated multi-tenant
+        # deployments can put different tenants in different AWS sub-
+        # accounts). Optional - None unless explicitly supplied (e.g. via the
+        # [capella] account_id CSV in dedicatedbasetestcase.py). Used by
+        # fusion tests to assume a per-tenant AWS role instead of a single
+        # global one - see fusion_aws_util.resolve_fusion_aws_credentials.
+        self.account_id = account_id
         # This will be used to destroy the key in teardown.
         self.api_key_id = None
         self.projects = []

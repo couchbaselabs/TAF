@@ -2,7 +2,7 @@
 # Script to download fusion logs from S3, unzip them, and display stats
 #
 # Usage: ./download_accelerator_logs.sh [S3_BUCKET] [LOCAL_DIR] [TIME_FILTER]
-#   S3_BUCKET:   S3 bucket name (default: cbc-storage-ea5498)
+#   S3_BUCKET:   S3 bucket name (cbc-storage-<full-cluster-id>, required)
 #   LOCAL_DIR:   Local directory to download to (default: ~/Downloads/fusion_logs)
 #   TIME_FILTER: Filter files modified within this time window (e.g., "1h", "30m", "2h")
 #                Supports: Nh (hours) or Nm (minutes). Empty = no filter.
@@ -25,7 +25,7 @@ export AWS_ACCESS_KEY_ID="$1"
 export AWS_SECRET_ACCESS_KEY="$2"
 export AWS_REGION="$3"
 
-S3_BUCKET="${4:-cbc-storage-ea5498}"
+S3_BUCKET="${4:?S3 bucket required (cbc-storage-<full-cluster-id>)}"
 # Rebalance ID filter (optional, set via env var)
 REBALANCE_ID="${5:-}"
 LOCAL_DIR="${6:-./fusion_logs/${REBALANCE_ID}}"

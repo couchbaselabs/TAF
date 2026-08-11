@@ -881,7 +881,7 @@ class FusionCPResourceMonitor:
             env.pop("AWS_SESSION_TOKEN", None)
 
         for cluster in clusters:
-            bucket_name = f"cbc-storage-{str(cluster.id)[-6:]}"
+            bucket_name = f"cbc-storage-{cluster.id}"
             rebalance_id = fusion_rebalances[-1]
             log_script = os.path.join(os.path.dirname(__file__), "download_accelerator_logs.sh")
             cmd = [

@@ -100,8 +100,20 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
         self.aws_region = self.input.param("region", "us-east-1")
+        # Use the first tenant's own (already CSV-parsed) account_id, not the
+        # raw [capella] ini value, for this "global" default credential set.
+        # A multi-account ini defines account_id as a CSV (1-1 with
+        # tenant_id) -- passing that raw string straight through would
+        # produce a malformed role ARN like
+        # "arn:aws:iam::111111111111,222222222222:role/jenkins-cp-cli"
+        # instead of assuming each tenant's role separately. Tenants each
+        # still get their own account assumed independently via
+        # _aws_creds_for_tenant() below; this is only the single-account
+        # fallback used when a tenant has no account_id of its own.
+        default_account_id = self.tenants[0].account_id if self.tenants else None
         self.aws_access_key, self.aws_secret_key, self.aws_session_token, self.aws_iam = \
-            resolve_fusion_aws_credentials(self.input, region=self.aws_region)
+            resolve_fusion_aws_credentials(self.input, region=self.aws_region,
+                                            account_id=default_account_id)
         # Assumed-role credentials expire mid-test — a single auto-refreshing
         # boto3.Session (built once here) keeps every AWS client below working
         # for the life of the run instead of failing with ExpiredToken.
@@ -114,6 +126,23 @@ class VolumeTest(BaseTestCase, hostedOPD):
         self.fusion_monitor = FusionMonitorUtil(self.log, self.fusion_aws_util,
                                                 num_vbuckets=self.input.param("numVBuckets", 128))
         self.cp_monitor = FusionCPResourceMonitor(self.log, self.fusion_aws_util)
+
+        # Per-tenant AWS credentials/util/monitor caches, keyed by
+        # tenant.account_id. Capella's dedicated multi-tenant architecture can
+        # put different tenants' clusters in different AWS sub-accounts, so a
+        # single global fusion_aws_util (above) can't reach every tenant's
+        # EC2/S3/FIS/guest-volume resources. Tenants with no account_id set
+        # (the common single-account case, including every existing
+        # single-tenant ini config) transparently fall back to the global
+        # fusion_aws_util/fusion_monitor/cp_monitor above via the
+        # _*_for_tenant() helpers below — zero extra STS calls, unchanged
+        # behaviour. Tenants sharing the same non-empty account_id share one
+        # assumed-role session and one FusionMonitorUtil/FusionCPResourceMonitor
+        # (cached here), rather than assuming the role once per tenant.
+        self._tenant_aws_creds_cache = {}      # account_id -> (access_key, secret_key, session_token, iam)
+        self._tenant_aws_util_cache = {}       # account_id -> FusionAWSUtil
+        self._tenant_fusion_monitor_cache = {} # account_id -> FusionMonitorUtil
+        self._tenant_cp_monitor_cache = {}     # account_id -> FusionCPResourceMonitor
         self.steady_state_workload_sleep = self.input.param("steady_state_workload_sleep", 1800)
         self.cloudtrail = None
         self.cloudtrail_targets = []
@@ -218,14 +247,79 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         BaseTestCase.tearDown(self)
 
-    def get_hostname_public_ip_mapping(self, cluster, suppress_log=False):
-        """Get hostname to public IP mapping for cluster nodes using fusion monitor."""
-        self.fusion_monitor.get_hostname_public_ip_mapping(cluster, suppress_log)
+    def _aws_creds_for_tenant(self, tenant):
+        """
+        Return (access_key, secret_key, session_token, iam) for `tenant`.
+
+        Falls back to the global self.aws_* creds resolved in setUp when the
+        tenant has no account_id set (single-account default). Otherwise
+        assumes the per-tenant role once and caches the result by account_id,
+        so tenants sharing an account_id share one assumed-role session.
+        """
+        account_id = getattr(tenant, "account_id", None)
+        if not account_id:
+            return (self.aws_access_key, self.aws_secret_key,
+                    self.aws_session_token, self.aws_iam)
+        if account_id not in self._tenant_aws_creds_cache:
+            self._tenant_aws_creds_cache[account_id] = resolve_fusion_aws_credentials(
+                self.input, region=self.aws_region, account_id=account_id)
+        return self._tenant_aws_creds_cache[account_id]
+
+    def _fusion_aws_util_for_tenant(self, tenant):
+        """Return the FusionAWSUtil to use for `tenant` (global default or a
+        cached per-account_id one — see setUp for the caching rationale)."""
+        account_id = getattr(tenant, "account_id", None)
+        if not account_id:
+            return self.fusion_aws_util
+        if account_id not in self._tenant_aws_util_cache:
+            access_key, secret_key, session_token, iam = self._aws_creds_for_tenant(tenant)
+            boto3_session = iam.get_boto3_session(region=self.aws_region) if iam else None
+            self._tenant_aws_util_cache[account_id] = FusionAWSUtil(
+                access_key, secret_key, session_token=session_token,
+                region=self.aws_region, boto3_session=boto3_session)
+        return self._tenant_aws_util_cache[account_id]
+
+    def _fusion_monitor_for_tenant(self, tenant):
+        """Return the FusionMonitorUtil to use for `tenant` (global default or
+        a cached per-account_id one — see setUp for the caching rationale)."""
+        account_id = getattr(tenant, "account_id", None)
+        if not account_id:
+            return self.fusion_monitor
+        if account_id not in self._tenant_fusion_monitor_cache:
+            self._tenant_fusion_monitor_cache[account_id] = FusionMonitorUtil(
+                self.log, self._fusion_aws_util_for_tenant(tenant),
+                num_vbuckets=self.input.param("numVBuckets", 128))
+        return self._tenant_fusion_monitor_cache[account_id]
+
+    def _cp_monitor_for_tenant(self, tenant):
+        """Return the FusionCPResourceMonitor to use for `tenant` (global
+        default or a cached per-account_id one — see setUp for the caching
+        rationale)."""
+        account_id = getattr(tenant, "account_id", None)
+        if not account_id:
+            return self.cp_monitor
+        if account_id not in self._tenant_cp_monitor_cache:
+            self._tenant_cp_monitor_cache[account_id] = FusionCPResourceMonitor(
+                self.log, self._fusion_aws_util_for_tenant(tenant))
+        return self._tenant_cp_monitor_cache[account_id]
+
+    def get_hostname_public_ip_mapping(self, cluster, suppress_log=False, tenant=None):
+        """Get hostname to public IP mapping for cluster nodes using fusion monitor.
+
+        `tenant` is optional (defaults to the global fusion_monitor) so
+        existing single-tenant callers (e.g. FusionBackupRestoreVolumeTest)
+        keep working unchanged; pass it when called from within a
+        `for tenant in self.tenants` loop to route through that tenant's
+        AWS account.
+        """
+        self._fusion_monitor_for_tenant(tenant).get_hostname_public_ip_mapping(cluster, suppress_log)
 
     def check_asg_cleanup_after_rebalance(self):
-        """Check if ASG cleanup is running for all clusters."""
-        clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
-        self.cp_monitor.check_asg_cleanup_after_rebalance(clusters)
+        """Check if ASG cleanup is running for all clusters, grouped by
+        tenant so each tenant's clusters are checked via that tenant's own
+        AWS account/session."""
+        for tenant in self.tenants:
+            self._cp_monitor_for_tenant(tenant).check_asg_cleanup_after_rebalance(tenant.clusters)
 
     def apply_fusion_config_overrides(self):
         """
@@ -367,7 +461,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 for key, value in settings.items():
-                    self.fusion_monitor.set_memcached_global_setting(cluster, key, value)
+                    self._fusion_monitor_for_tenant(tenant).set_memcached_global_setting(cluster, key, value)
 
     def assert_max_guest_volume_slots_reached(self, cluster):
         """
@@ -428,8 +522,9 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # nodes) surfaces immediately with its exact per-attempt error trail,
         # instead of only being discoverable after the fact via Datadog once
         # the generic rebalance timeout above has already elapsed.
+        cp_monitor = self._cp_monitor_for_tenant(tenant)
         deployment_job_thread = threading.Thread(
-            target=lambda res, clus: res.update({"deployment_job_success": self.cp_monitor.wait_for_deployment_job(
+            target=lambda res, clus: res.update({"deployment_job_success": cp_monitor.wait_for_deployment_job(
                 self.pod, tenant, clus, rebalance_start_time_utc, timeout=3600)}),
             args=(result, cluster), daemon=True)
         deployment_job_thread.start()
@@ -437,7 +532,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         # Monitor accelerator instances
         accelerator_thread = threading.Thread(
-            target=lambda res, clus: res.update({"monitor_cluster_accelerator_intances_complete": self.cp_monitor.monitor_cluster_accelerator_instances(clus, rebalance_task, self.fusion_rebalances, timeout=self.fusion_infra_timeout)}),
+            target=lambda res, clus: res.update({"monitor_cluster_accelerator_intances_complete": cp_monitor.monitor_cluster_accelerator_instances(clus, rebalance_task, self.fusion_rebalances, timeout=self.fusion_infra_timeout)}),
             args=(result, cluster), daemon=True)
         accelerator_thread.start()
         accelerator_thread.join()
@@ -450,8 +545,8 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # Monitor fusion guest volumes
         thread = threading.Thread(
             target=lambda res, clus: res.update(
-                {"monitor_fusion_guest_volumes_complete": self.cp_monitor.monitor_fusion_guest_volumes(
-                    tenant, clus, rebalance_task, self.fusion_monitor, self.fusion_rebalances,
+                {"monitor_fusion_guest_volumes_complete": cp_monitor.monitor_fusion_guest_volumes(
+                    tenant, clus, rebalance_task, self._fusion_monitor_for_tenant(tenant), self.fusion_rebalances,
                     self.wait_for_hydration_complete, timeout=self.gv_launch_timeout, find_master_func=self.find_master)}),
             args=(result, cluster), daemon=True)
         thread.start()
@@ -475,36 +570,53 @@ class VolumeTest(BaseTestCase, hostedOPD):
             f"total={elapsed_str}"
         )
 
-    def check_ebs_cleanup_for_cluster(self, cluster):
-        """Check EBS cleanup for a specific cluster."""
-        return self.cp_monitor.monitor_ebs_cleanup(cluster, self.stop_run_event, timeout=self.hydration_timeout)
+    def check_ebs_cleanup_for_cluster(self, cluster, tenant=None):
+        """Check EBS cleanup for a specific cluster.
 
-    def scan_memcahced_logs(self, cluster):
-        """Scan memcached logs for errors on the given cluster."""
-        errors_found = self.cp_monitor.scan_memcached_logs_for_errors(cluster)
+        `tenant` is optional (defaults to the global cp_monitor) so existing
+        single-tenant callers (e.g. FusionBackupRestoreVolumeTest,
+        FusionBillingVolumeTest) keep working unchanged; pass it when called
+        from within a `for tenant in self.tenants` loop to route through that
+        tenant's AWS account.
+        """
+        return self._cp_monitor_for_tenant(tenant).monitor_ebs_cleanup(
+            cluster, self.stop_run_event, timeout=self.hydration_timeout)
+
+    def scan_memcahced_logs(self, cluster, tenant=None):
+        """Scan memcached logs for errors on the given cluster.
+
+        `tenant` is optional (defaults to the global cp_monitor) — see
+        check_ebs_cleanup_for_cluster's docstring for why.
+        """
+        errors_found = self._cp_monitor_for_tenant(tenant).scan_memcached_logs_for_errors(cluster)
         self.assertFalse(errors_found, f"Errors found in memcached logs on cluster {cluster.id}")
 
-    def parse_accelerator_logs_for_clusters(self, clusters):
-        """Parse accelerator logs for all clusters."""
+    def parse_accelerator_logs_for_clusters(self, clusters, tenant=None):
+        """Parse accelerator logs for all clusters.
+
+        `tenant` is optional (defaults to the global cp_monitor/creds) — see
+        check_ebs_cleanup_for_cluster's docstring for why. All of `clusters`
+        must belong to the same tenant/AWS account when `tenant` is given.
+        """
         # This shells out to a script rather than using a boto3 client, so it
         # can't benefit from the auto-refreshing boto3.Session — fetch fresh
         # (refreshed-if-expiring) creds right before use instead, in case the
         # ones cached at setUp time have since expired.
-        access_key, secret_key, session_token = (
-            self.aws_access_key, self.aws_secret_key, self.aws_session_token)
-        if self.aws_iam:
-            creds = self.aws_iam.get_credentials()
+        access_key, secret_key, session_token, iam = self._aws_creds_for_tenant(tenant)
+        if iam:
+            creds = iam.get_credentials()
             access_key, secret_key, session_token = (
                 creds["AccessKeyId"], creds["SecretAccessKey"], creds["SessionToken"])
-        self.cp_monitor.parse_accelerator_logs(clusters, self.fusion_rebalances,
-                                              access_key, secret_key,
-                                              self.aws_region, session_token=session_token)
+        self._cp_monitor_for_tenant(tenant).parse_accelerator_logs(
+            clusters, self.fusion_rebalances, access_key, secret_key,
+            self.aws_region, session_token=session_token)
 
     def initial_setup(self):
         # Enable fusion using Capella API
         for tenant in self.tenants:
             for cluster in tenant.clusters:
-                self.fusion_monitor.set_admin_credentials(cluster)
+                fusion_monitor = self._fusion_monitor_for_tenant(tenant)
+                fusion_monitor.set_admin_credentials(cluster)
                 status, fusion_state = FusionRestAPI(cluster.master).get_fusion_status()
                 self.log.info(f"Fusion state for cluster {cluster.id}: {fusion_state}")
                 if status and fusion_state.get('state') == "enabled":
@@ -512,9 +624,9 @@ class VolumeTest(BaseTestCase, hostedOPD):
                     continue
                 resp = CapellaAPI.enable_fusion(self.pod, tenant, cluster.id)
                 self.log.info(f"Enable Fusion response for cluster {cluster.id}: {resp.status_code}")
-                self.assertTrue(resp.status_code == 200, f"Failed to enable Fusion on cluster {cluster.id}: {resp.status_code}") 
-                self.fusion_monitor.wait_for_fusion_status(cluster, state="enabled")
-                self.get_hostname_public_ip_mapping(cluster)
+                self.assertTrue(resp.status_code == 200, f"Failed to enable Fusion on cluster {cluster.id}: {resp.status_code}")
+                fusion_monitor.wait_for_fusion_status(cluster, state="enabled")
+                self.get_hostname_public_ip_mapping(cluster, tenant=tenant)
 
         # Apply min_split_size/max_slots overrides (if configured) before any
         # scaling rebalance runs, so the very first fusion rebalance already
@@ -594,7 +706,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 for cluster in tenant.clusters:
                     for bucket in cluster.buckets:
                         try:
-                            uri = self.fusion_monitor.get_fusion_s3_uri(cluster, bucket.name)
+                            uri = self._fusion_monitor_for_tenant(tenant).get_fusion_s3_uri(cluster, bucket.name)
                             if uri:
                                 uri = uri.split("?")[0] if uri else None
                             if not uri or len(uri.split("/")) < 3:
@@ -629,7 +741,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
         # Get fusion uploader maps for all clusters
         for tenant in self.tenants:
             for cluster in tenant.clusters:
-                self.fusion_monitor.get_fusion_uploader_map(tenant, cluster, self.find_master)
+                self._fusion_monitor_for_tenant(tenant).get_fusion_uploader_map(tenant, cluster, self.find_master)
         '''
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
@@ -730,34 +842,39 @@ class VolumeTest(BaseTestCase, hostedOPD):
     def log_rebalance_report(self):
         """Fetch and log NS Server rebalance report for all clusters."""
         for tenant in self.tenants:
+            fusion_monitor = self._fusion_monitor_for_tenant(tenant)
             for cluster in tenant.clusters:
-                self.fusion_monitor.log_rebalance_report(cluster)
+                fusion_monitor.log_rebalance_report(cluster)
 
     def parse_accelerator_logs(self):
-        """Parse accelerator logs for all clusters using control plane monitor."""
-        clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
-        self.parse_accelerator_logs_for_clusters(clusters)
+        """Parse accelerator logs for all clusters using control plane
+        monitor, grouped per tenant so each tenant's clusters are parsed
+        against their own AWS account's accelerator log store."""
+        for tenant in self.tenants:
+            self.parse_accelerator_logs_for_clusters(tenant.clusters, tenant=tenant)
 
     def log_fusion_log_store_data_size(self):
-        """Log fusion log store data size for all clusters and buckets using fusion monitor."""
-        clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
-        self.fusion_monitor.log_fusion_log_store_data_size(clusters)
+        """Log fusion log store data size for all clusters and buckets using
+        fusion monitor, grouped per tenant."""
+        for tenant in self.tenants:
+            self._fusion_monitor_for_tenant(tenant).log_fusion_log_store_data_size(tenant.clusters)
 
     def log_fusion_pending_bytes(self):
         """Log fusion pending bytes for all clusters using fusion monitor."""
         for tenant in self.tenants:
-            self.fusion_monitor.log_fusion_pending_bytes(tenant, tenant.clusters, self.find_master)
+            self._fusion_monitor_for_tenant(tenant).log_fusion_pending_bytes(tenant, tenant.clusters, self.find_master)
 
     def log_fusion_dcp_items_remaining(self):
-        """Log DCP items remaining for all clusters using fusion monitor."""
+        """Log DCP items remaining for all clusters using fusion monitor,
+        grouped per tenant."""
         self._log_dcp_items_stop_event = threading.Event()
         deadline = time.time() + 7200  # 2-hour absolute cap; guards against missed stop signal
         while not self._log_dcp_items_stop_event.is_set():
             if time.time() > deadline:
                 self.log.warning("log_fusion_dcp_items_remaining: absolute timeout reached, stopping loop")
                 break
-            clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
-            self.fusion_monitor.log_fusion_dcp_items_remaining(clusters)
+            for tenant in self.tenants:
+                self._fusion_monitor_for_tenant(tenant).log_fusion_dcp_items_remaining(tenant.clusters)
             self._log_dcp_items_stop_event.wait(300)  # Wait for 5 minutes before next
 
     def test_volume_scaling(self):
@@ -827,16 +944,18 @@ class VolumeTest(BaseTestCase, hostedOPD):
         ebs_cleanup_threads = list()
         ebs_available_threads = list()
         for tenant in self.tenants:
+            cp_monitor = self._cp_monitor_for_tenant(tenant)
+            fusion_monitor = self._fusion_monitor_for_tenant(tenant)
             for cluster in tenant.clusters:
                 ebs_cleanup_thread = threading.Thread(
-                    target=self.cp_monitor.check_ebs_guest_vol_deletion,
-                    kwargs={"tenant": tenant, "cluster": cluster, "fusion_monitor_util": self.fusion_monitor, "stop_run_event": self.stop_run_event, "find_master_func": self.find_master},
+                    target=cp_monitor.check_ebs_guest_vol_deletion,
+                    kwargs={"tenant": tenant, "cluster": cluster, "fusion_monitor_util": fusion_monitor, "stop_run_event": self.stop_run_event, "find_master_func": self.find_master},
                     daemon=True)
                 ebs_cleanup_thread.start()
                 ebs_cleanup_threads.append(ebs_cleanup_thread)
 
                 ebs_available_thread = threading.Thread(
-                    target=self.cp_monitor.monitor_available_volumes_by_fusion_rebalance,
+                    target=cp_monitor.monitor_available_volumes_by_fusion_rebalance,
                     kwargs={"cluster": cluster, "fusion_rebalances": self.fusion_rebalances, "stop_run_event": self.stop_run_event},
                     daemon=True)
                 ebs_available_thread.start()
@@ -847,7 +966,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                 if self.fusion_min_split_size_mb is not None or self.fusion_max_slots_override is not None:
                     self.peak_guest_volume_slot_counts.setdefault(cluster.id, {})
                     peak_tracker_thread = threading.Thread(
-                        target=self.cp_monitor.track_peak_guest_volumes_per_instance,
+                        target=cp_monitor.track_peak_guest_volumes_per_instance,
                         kwargs={"cluster": cluster, "stop_run_event": self.stop_run_event,
                                 "peak_counts": self.peak_guest_volume_slot_counts[cluster.id]},
                         daemon=True)
@@ -855,14 +974,20 @@ class VolumeTest(BaseTestCase, hostedOPD):
                     ebs_available_threads.append(peak_tracker_thread)
 
         if self.scan_dp_agent_logs:
-            all_clusters = [cluster for tenant in self.tenants for cluster in tenant.clusters]
-            dp_agent_log_thread = threading.Thread(
-                target=self.cp_monitor.scan_dp_agent_logs_for_errors,
-                kwargs={"clusters": all_clusters, "stop_run_event": self.stop_run_event},
-                name="dp-agent-log-scanner",
-                daemon=True
-            )
-            dp_agent_log_thread.start()
+            # One dp-agent log scanner thread per tenant, so each tenant's
+            # clusters are scanned via that tenant's own AWS account/session
+            # instead of a single global one that can't reach every tenant's
+            # instances.
+            dp_agent_log_threads = list()
+            for tenant in self.tenants:
+                dp_agent_log_thread = threading.Thread(
+                    target=self._cp_monitor_for_tenant(tenant).scan_dp_agent_logs_for_errors,
+                    kwargs={"clusters": tenant.clusters, "stop_run_event": self.stop_run_event},
+                    name=f"dp-agent-log-scanner-{tenant.id}",
+                    daemon=True
+                )
+                dp_agent_log_thread.start()
+                dp_agent_log_threads.append(dp_agent_log_thread)
         else:
             self.log.info("scan_dp_agent_logs=False -- skipping dp-agent log scanner thread")
 
@@ -894,11 +1019,11 @@ class VolumeTest(BaseTestCase, hostedOPD):
                         # Start polling thread for each rebalance pass
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         # Check for fusion accelerator node to be 0
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
+                            result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         # Validate the min_split_size/max_slots override (if any) actually
                         # drove a couchbase server node's guest-volume slots up to the
@@ -907,7 +1032,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
                             self.assert_max_guest_volume_slots_reached(rebalance_task.cluster)
                         self.log_rebalance_report()
                         for rt in rebalance_tasks:
-                            self.scan_memcahced_logs(rt.cluster)
+                            self.scan_memcahced_logs(rt.cluster, tenant=rt.tenant)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     # turn cluster off and back on
@@ -929,15 +1054,15 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         # Check for fusion accelerator node to be 0
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
+                            result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         for rt in rebalance_tasks:
-                            self.scan_memcahced_logs(rt.cluster)
+                            self.scan_memcahced_logs(rt.cluster, tenant=rt.tenant)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                 # turn cluster off and back on
@@ -977,14 +1102,14 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
+                            result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         for rt in rebalance_tasks:
-                            self.scan_memcahced_logs(rt.cluster)
+                            self.scan_memcahced_logs(rt.cluster, tenant=rt.tenant)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     if self.backup_restore:
@@ -1022,14 +1147,14 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
+                            result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         for rt in rebalance_tasks:
-                            self.scan_memcahced_logs(rt.cluster)
+                            self.scan_memcahced_logs(rt.cluster, tenant=rt.tenant)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     if self.backup_restore:
@@ -1075,14 +1200,14 @@ class VolumeTest(BaseTestCase, hostedOPD):
                                 rebalance_tasks.append(rebalance_task)
                         for rebalance_task in rebalance_tasks:
                             self.monitor_cluster_status(rebalance_task.tenant, rebalance_task.cluster, rebalance_task)
-                            self.fusion_monitor.get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
+                            self._fusion_monitor_for_tenant(rebalance_task.tenant).get_fusion_uploader_map(rebalance_task.tenant, rebalance_task.cluster, self.find_master)
                         self.sleep(60, "Sleep for 60s after rebalance")
                         for rebalance_task in rebalance_tasks:
-                            result = self.cp_monitor.monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
+                            result = self._cp_monitor_for_tenant(rebalance_task.tenant).monitor_fusion_accelerator_nodes_killed_after_rebalance(rebalance_task.cluster, timeout=self.fusion_infra_timeout)
                             self.assertTrue(result, "Fusion Accelerator nodes not killed after rebalance")
                         self.log_rebalance_report()
                         for rt in rebalance_tasks:
-                            self.scan_memcahced_logs(rt.cluster)
+                            self.scan_memcahced_logs(rt.cluster, tenant=rt.tenant)
                         self.parse_accelerator_logs()
                         self.check_asg_cleanup_after_rebalance()
                     if self.backup_restore:
@@ -1115,7 +1240,7 @@ class VolumeTest(BaseTestCase, hostedOPD):
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
-                result = self.check_ebs_cleanup_for_cluster(cluster)
+                result = self.check_ebs_cleanup_for_cluster(cluster, tenant=tenant)
                 self.assertTrue(result, f"check_ebs_cleanup_for_cluster failed for cluster {cluster.id}")
                 self.log.info(f"EBS cleanup completed successfully for cluster {cluster.id}")
 

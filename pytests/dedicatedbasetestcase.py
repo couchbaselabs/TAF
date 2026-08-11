@@ -157,6 +157,9 @@ class CapellaBaseTest(CouchbaseBaseTest):
             secret_keys = self.__broadcast(
                 self.__parse_csv(self.input.capella.get("secret_key")),
                 len(tenant_ids), "secret_key")
+            account_ids = self.__broadcast(
+                self.__parse_csv(self.input.capella.get("account_id")),
+                len(tenant_ids), "account_id")
             # Projects in the ini map 1-1 onto tenant_id entries, in order.
             # Any tenant left without a mapped project gets new project(s)
             # created for it below.
@@ -169,7 +172,8 @@ class CapellaBaseTest(CouchbaseBaseTest):
 
             for i, tenant_id in enumerate(tenant_ids):
                 tenant = Tenant(tenant_id, capella_users[i], capella_pwds[i],
-                                secret_keys[i], access_keys[i])
+                                secret_keys[i], access_keys[i],
+                                account_id=account_ids[i])
                 tenant.name = capella_users[i].split("@")[0]
                 if not (access_keys[i] and secret_keys[i]):
                     self.log.info("Creating API keys for tenant...")

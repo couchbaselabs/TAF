@@ -27,7 +27,7 @@ ERROR_LOG_CONFIG_PATH = os.path.join(
 FUSION_ASSUME_ROLE_NAME = "jenkins-cp-cli"
 
 
-def resolve_fusion_aws_credentials(test_input, region='us-east-1'):
+def resolve_fusion_aws_credentials(test_input, region='us-east-1', account_id=None):
     """
     Resolve the AWS credentials fusion tests should use for EC2/S3/Secrets
     Manager/FIS access.
@@ -39,14 +39,23 @@ def resolve_fusion_aws_credentials(test_input, region='us-east-1'):
     temporary credentials are returned instead.
 
     The role ARN defaults to arn:aws:iam::{account_id}:role/jenkins-cp-cli,
-    where account_id is read from the [capella] ini section (same
-    self.input.capella.get("account_id") convention used elsewhere in the
-    framework, e.g. dedicatedbasetestcase.py). Pass aws_assume_role_arn as a
-    test param to override this default (e.g. for a differently-named role).
+    where account_id is the `account_id` param if one was passed in, else
+    read from the [capella] ini section (same self.input.capella.get(
+    "account_id") convention used elsewhere in the framework, e.g.
+    dedicatedbasetestcase.py). Pass aws_assume_role_arn as a test param to
+    override this default (e.g. for a differently-named role).
 
     :param test_input: TestInputSingleton.input (or equivalent) — needs
                         .param(name, default) and .capella.get("account_id")
     :param region: AWS region to assume the role in
+    :param account_id: Explicit AWS account id to assume the role in,
+                        overriding the ini-wide [capella] account_id. Pass
+                        a tenant's own account_id here when a test drives
+                        multiple tenants whose clusters live in different
+                        AWS accounts (e.g. VolumeTest's per-tenant AWS util
+                        cache) — leave as None to keep using the single
+                        ini-wide account_id (the default, single-account
+                        behaviour every other caller relies on).
     :return: (access_key, secret_key, session_token, iam) tuple. session_token
              and iam are None when explicit long-lived aws_access_key/aws_secret_key
              were used. Otherwise iam is the IAMLib instance that assumed the
@@ -62,7 +71,7 @@ def resolve_fusion_aws_credentials(test_input, region='us-east-1'):
 
     role_arn = test_input.param("aws_assume_role_arn", None)
     if not role_arn:
-        account_id = test_input.capella.get("account_id")
+        account_id = account_id or test_input.capella.get("account_id")
         if not account_id:
             raise ValueError(
                 "Either aws_access_key/aws_secret_key, or aws_assume_role_arn, "
