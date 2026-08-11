@@ -693,6 +693,8 @@ class Murphy(BaseTestCase, OPD):
                     self.ql.append(ql)
             self.drIndex.start_update_stats(self.cluster)
             self.drIndex.start_index_stats(self.cluster)
+            if self.input.param("configure_awr_aus", True):
+                self.set_awr_aus()
 
         if self.cluster.fts_nodes:
             self.drFTS.create_fts_indexes(self.cluster, dims=self.dim,

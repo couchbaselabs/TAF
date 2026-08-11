@@ -68,6 +68,16 @@ class OPD:
     plan_stability_thread = None
     stop_plan_stability = False
 
+    # AUS (Automatic Update Statistics) runs on a fixed daily window rather
+    # than a computed one, so a rerun schedules the same window every time.
+    AUS_START_TIME = "18:00"
+    AUS_END_TIME = "21:00"
+    AUS_TIMEZONE = "Asia/Calcutta"
+    AUS_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                "Saturday", "Sunday"]
+    AWR_INTERVAL = "60m"
+    AWR_THRESHOLD = "30s"
+
     def __init__(self):
         pass
 
@@ -1525,6 +1535,63 @@ class OPD:
     def stop_plan_stability_rotation(self):
         """Signal the plan stability rotation thread to exit"""
         self.stop_plan_stability = True
+
+    def set_awr_aus(self):
+        """Configure AWR and AUS settings for the cluster with fixed scheduling
+
+        AUS runs on a fixed 6 PM - 9 PM IST window every day, so a volume run
+        long enough to cross that window exercises the update-statistics path.
+        AWR reports into the first bucket of the run.
+        """
+        start_time_str = self.AUS_START_TIME
+        end_time_str = self.AUS_END_TIME
+        self.log.info("AUS start time: %s, AUS end time: %s"
+                      % (start_time_str, end_time_str))
+
+        # Configure AUS (Automatic Update Statistics)
+        aus_query = (
+            'UPDATE system:aus SET enable = true, change_percentage = 20, '
+            'all_buckets = true, schedule = {"start_time": "%s", '
+            '"end_time": "%s", "timezone": "%s", "days": %s}'
+            % (start_time_str, end_time_str, self.AUS_TIMEZONE,
+               json.dumps(self.AUS_DAYS)))
+
+        # Configure AWR location and interval (single quotes for Query
+        # Workbench compatibility)
+        bucket_name = self.cluster.buckets[0].name
+        awr_config_query = (
+            "UPDATE system:awr SET location = '%s', interval = '%s', "
+            "threshold = '%s'"
+            % (bucket_name, self.AWR_INTERVAL, self.AWR_THRESHOLD))
+
+        # Enable AWR
+        awr_enable_query = "UPDATE system:awr SET enabled = true"
+
+        try:
+            self.log.info("Running AUS query: %s" % aus_query)
+            self._execute_query_rest(aus_query)
+            self.sleep(30, "Wait for AUS settings to take effect")
+
+            # Verify AUS settings
+            _, aus_settings, _ = self._execute_query_rest(
+                "SELECT * FROM system:aus")
+            self.log.info("Current AUS settings: %s" % aus_settings)
+
+            self.log.info("Running AWR config query: %s" % awr_config_query)
+            self._execute_query_rest(awr_config_query)
+            self.sleep(30, "Wait for AWR config to take effect")
+
+            self.log.info("Running AWR enable query: %s" % awr_enable_query)
+            self._execute_query_rest(awr_enable_query)
+            self.sleep(30, "Wait for AWR to be enabled")
+
+            # Verify AWR settings
+            _, awr_settings, _ = self._execute_query_rest(
+                "SELECT * FROM system:awr")
+            self.log.info("Current AWR settings: %s" % awr_settings)
+        except Exception as e:
+            self.log.error("Error configuring AWR/AUS settings: %s" % str(e))
+            raise
 
     def refresh_cluster(self, tenant, cluster, type="dedicated"):
         while True:
