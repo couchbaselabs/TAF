@@ -1130,7 +1130,12 @@ class ContinuousBackupTest(ContinuousBackupBase):
             self._load_data_tolerating_stat_validation()
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             count_before_disable = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
-            self.sleep(self.continuous_backup_interval * 60, f"Waiting for {self.continuous_backup_interval} minutes...")
+            # Ensure all pre-disable data is uploaded to the backup location
+            # before disabling. Disabling stops further uploads, so any tail
+            # not yet uploaded when we disable is lost from the backup and the
+            # restore falls short of count_before_disable. A bare one-interval
+            # sleep can race the upload; wait one interval plus slack instead.
+            self._wait_for_history_upload("the pre-disable data")
 
             self.log.info("Disabling continuous backup")
             self.bucket_util.update_bucket_property(self.cluster.master, self.bucket, continuous_backup_enabled=False)
@@ -2321,6 +2326,20 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
                                obj_staging_dir=self.obj_staging_dir_cbbackup)
+
+        # cbcontbk restore "everything" uses the newest traditional backup as
+        # its base and replays log data past it. With no mutations after this
+        # backup the log has nothing newer than the base, and the restore
+        # fails with "traditional backup has the same or newer data than the
+        # log backup". Update-only mutations keep count_recent intact while
+        # giving the log backup data newer than the traditional base.
+        CollectionBase.mutate_history_retention_data(
+            self, update_percent=10, update_itrs=1)
+        self.sleep(self.continuous_backup_interval * 60,
+                   "Waiting for backup interval after traditional backup")
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
+        self._wait_for_history_upload("the post-backup mutation")
 
         restore_bucket_name = f"restore_bytes_limit_{int(time.time())}"
         self._create_restore_bucket(restore_bucket_name)
