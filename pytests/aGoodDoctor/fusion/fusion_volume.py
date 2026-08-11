@@ -636,15 +636,19 @@ class VolumeTest(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 if not self.skip_init:
-                    tasks = JavaDocLoaderUtils.load_data(cluster=cluster,
+                    cluster_tasks = JavaDocLoaderUtils.load_data(cluster=cluster,
                                         buckets=cluster.buckets,
                                         overRidePattern={"create": 100, "read": 0, "update": 0, "delete": 0, "expiry": 0},
                                         validate_data=False,
-                                        wait_for_stats=False)
+                                        wait_for_stats=False,
+                                        wait_for_load=False)
+                    tasks.append((cluster, cluster_tasks))
                     if self.xdcr_remote_clusters > 0:
                         self.drXDCR.set_up_replication(tenant, source_cluster=cluster, destination_cluster=tenant.xdcr_clusters[i],
                                         source_bucket=cluster.buckets[0].name,
                                         destination_bucket=tenant.xdcr_clusters[i].buckets[0].name,)
+        for cluster, cluster_tasks in tasks:
+            JavaDocLoaderUtils.wait_for_doc_load_completion(cluster, cluster_tasks, wait_for_stats=False)
 
         i = 0
         for tenant in self.tenants:
