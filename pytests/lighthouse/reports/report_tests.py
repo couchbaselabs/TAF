@@ -28,7 +28,10 @@ from lighthouse.response import UCPResponse
 from lighthouse.ucp_helper_methods import (
     create_session,
     get_session_cookie,
+    open_local_user_session,
+    safe_delete_user,
 )
+from unified_control_plane.constants import ROLE_SYSTEM_VIEWER
 
 
 class UsageReportTests(LighthouseBase):
@@ -40,12 +43,34 @@ class UsageReportTests(LighthouseBase):
         self.report_format = self.input.param("report_format", "pdf")
         self.invalid_report_format = self.input.param(
             "invalid_report_format", "xml")
+        # Viewer identity for the RBAC-flavoured case; provisioned only by
+        # the test that needs it (see gotcha 13/14 in LIGHTHOUSE_CONTEXT.md
+        # for the 3-step flow and the password policy).
+        self.viewer_id = self.input.param("viewer_id", "report_viewer_112")
+        self.viewer_temp_password = self.input.param(
+            "viewer_temp_password", "TempView#2026xyz")
+        self.viewer_password = self.input.param(
+            "viewer_password", "Viewer#2026xyz")
+        self.viewer_client = None
         status, content, _ = create_session(
             self.ucp_client, self.ucp_portal.username,
             self.ucp_portal.password)
         self.assertTrue(status, "Admin login failed: %s" % content)
 
     def tearDown(self):
+        if self.viewer_client is not None:
+            try:
+                if get_session_cookie(self.viewer_client):
+                    self.viewer_client.session_logout()
+            except Exception as e:
+                self.log.warning("tearDown: viewer logout failed: %s" % e)
+            try:
+                if not get_session_cookie(self.ucp_client):
+                    create_session(self.ucp_client, self.ucp_portal.username,
+                                   self.ucp_portal.password)
+                safe_delete_user(self.ucp_client, self.viewer_id)
+            except Exception as e:
+                self.log.warning("tearDown: viewer cleanup failed: %s" % e)
         try:
             if get_session_cookie(self.ucp_client):
                 self.ucp_client.session_logout()
@@ -116,3 +141,58 @@ class UsageReportTests(LighthouseBase):
         self.log.info(
             "PASS -- report downloaded as %s, %s, %d bytes"
             % (content_type, disposition, len(content)))
+
+    def test_system_viewer_can_generate_and_download_report(self):
+        """
+        Case 112: a system_viewer -- not just an admin -- can generate and
+        download a usage report.
+
+        Reporting is a read-only operation, so the role that exists to read
+        must be able to perform it; this is the positive counterpart to the
+        system_viewer 403 cases in users/user_rbac_tests.py. The body and
+        headers are checked as well as the status: a 200 carrying an empty
+        or non-PDF body would not be a usable report for that role.
+        """
+        viewer_client, err = open_local_user_session(
+            self.ucp_portal, self.ucp_client, self.viewer_id,
+            self.viewer_temp_password, self.viewer_password,
+            [ROLE_SYSTEM_VIEWER])
+        self.assertIsNone(
+            err, "Could not provision a system_viewer session: %s" % err)
+        self.viewer_client = viewer_client
+
+        status, content, header = self.viewer_client.generate_usage_report(
+            format_type=self.report_format)
+        response = UCPResponse(status, content, header)
+        self.assertTrue(
+            status,
+            "system_viewer could not generate a report (HTTP %s): %s"
+            % (response.status_code, content))
+
+        content_type = response.get_header('Content-Type')
+        self.assertIsNotNone(
+            content_type,
+            "system_viewer report download carried no Content-Type header. "
+            "Headers were: %s" % response.headers)
+        self.assertIn(
+            'application/pdf', content_type,
+            "system_viewer report Content-Type should be application/pdf, "
+            "got %r" % content_type)
+
+        disposition = response.get_header('Content-Disposition')
+        self.assertIsNotNone(
+            disposition,
+            "system_viewer report download carried no Content-Disposition "
+            "header. Headers were: %s" % response.headers)
+        self.assertIn(
+            'attachment', disposition.lower(),
+            "system_viewer report Content-Disposition should mark the body "
+            "as an attachment, got %r" % disposition)
+
+        self.assertTrue(
+            content,
+            "system_viewer report download returned the correct headers but "
+            "an empty body")
+        self.log.info(
+            "PASS -- system_viewer generated and downloaded a report (%s, "
+            "%d bytes)" % (content_type, len(content)))
