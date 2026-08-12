@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 
@@ -187,6 +188,47 @@ class CbContBk(CbCmdBase):
             self.log.error(f"Continuous backup restore failed with: {error}")
 
         return output, error
+
+    def info(self, location):
+        """
+        Returns cbcontbk's own authoritative view of what has been captured
+        at `location`, as {bucket_name: bucket_info_dict}, where
+        bucket_info_dict["range"]["end"] (ISO-8601) is how far the
+        continuous log actually extends for that bucket.
+
+        This is real bookkeeping from cbcontbk itself, not an inference
+        from the log store's own object timestamps -- the latter can
+        plateau for minutes while cbcontbk is still catching up (confirmed
+        against a real CI failure: object uploads went quiet for 45s+ while
+        cbcontbk's own `info` showed the log was still ~8 minutes from
+        actually catching up).
+
+        Returns None if the command fails or the output isn't valid JSON.
+        """
+        cmd = f"{self.cbstatCmd} info -l {location} --json"
+        cmd += self.cli_flags
+        cmd = self._append_obj_store_flags(cmd)
+
+        self.log.debug(f"Executing command: {cmd}")
+
+        output, error = self._execute_cmd(cmd)
+
+        self.log.debug(f"Command output: {output}")
+
+        if error or not output:
+            self.log.error(f"cbcontbk info failed: {error}")
+            return None
+
+        try:
+            parsed = json.loads("".join(output))
+        except ValueError as e:
+            self.log.error(
+                f"cbcontbk info returned unparseable JSON: {e}. "
+                f"Output: {output}")
+            return None
+
+        return {bucket["name"]: bucket
+               for bucket in parsed.get("buckets", [])}
 
     def collect_logs(self, location, temp_dir, obj_staging_dir=None):
         """

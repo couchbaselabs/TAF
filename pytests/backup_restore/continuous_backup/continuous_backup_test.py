@@ -1127,15 +1127,16 @@ class ContinuousBackupTest(ContinuousBackupBase):
             # needs an empty bucket to produce the full expected count,
             # otherwise iteration 2+ lands on top of the prior cycle's docs.
             self._flush_restore_bucket(restore_bucket_name)
+            mutation_time = time.time()
             self._load_data_tolerating_stat_validation()
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
             count_before_disable = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
             # Ensure all pre-disable data is uploaded to the backup location
             # before disabling. Disabling stops further uploads, so any tail
             # not yet uploaded when we disable is lost from the backup and the
-            # restore falls short of count_before_disable. A bare one-interval
-            # sleep can race the upload; wait one interval plus slack instead.
-            self._wait_for_history_upload("the pre-disable data")
+            # restore falls short of count_before_disable. Poll for catch-up
+            # rather than a fixed interval sleep, which can race the upload.
+            self._wait_for_continuous_backup_catchup(mutation_time)
 
             self.log.info("Disabling continuous backup")
             self.bucket_util.update_bucket_property(self.cluster.master, self.bucket, continuous_backup_enabled=False)
@@ -1164,17 +1165,16 @@ class ContinuousBackupTest(ContinuousBackupBase):
                                                 continuous_backup_location=self.continuous_backup_location)
         self.continuous_backup_interval = new_interval
 
+        mutation_time = time.time()
         self._load_data_tolerating_stat_validation()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         count_after_interval_change = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
-        self.log.info(f"Waiting for new interval of {new_interval} minutes...")
-        self.sleep(new_interval * 60)
         # This is the latest state with no mutation after it, so a captured
         # wall-clock timestamp would land one interval past the newest
         # backed-up mutation and cbcontbk would reject it. Restore
-        # "everything" instead.
-        self._wait_for_history_upload("the post-interval-change data")
+        # "everything" instead, once the log has actually caught up.
+        self._wait_for_continuous_backup_catchup(mutation_time)
 
         self.log.info("Restoring with new interval setting")
         self._flush_restore_bucket(restore_bucket_name)

@@ -1,4 +1,6 @@
+import re
 import time
+from datetime import datetime, timezone
 
 from BucketLib.bucket import Bucket
 from backup_restore.continuous_backup.encrypted_file_validator import (
@@ -43,6 +45,102 @@ class ContinuousBackupBase(CollectionBase):
             self.log.error("Exception during removing shell: %s" % str(e))
 
         super(ContinuousBackupBase, self).tearDown()
+
+    @staticmethod
+    def _parse_cbcontbk_timestamp(ts_str):
+        """cbcontbk emits Go-formatted timestamps that Python's
+        datetime.fromisoformat() (<3.11) can't parse as-is in two ways:
+
+        1. Fractional seconds beyond 6 digits (e.g. nanoseconds:
+           "...T01:24:12.32134144-07:00") -- fromisoformat only accepts
+           exactly 0, 3, or 6 fractional digits. Normalize to 6 (truncate
+           or zero-pad).
+        2. A bare "Z" UTC suffix (e.g. Go's zero-time sentinel for "no data
+           yet": "0001-01-01T00:00:00Z") -- fromisoformat before 3.11 only
+           accepts an explicit "+00:00" offset, not "Z". Normalize "Z" to
+           "+00:00". The zero-time sentinel then parses to year 1, which
+           correctly compares as always-older-than-since, so callers don't
+           need to special-case it separately -- it just means "keep
+           polling" like any other range.end that hasn't reached since yet.
+        """
+        def _fix_frac(match):
+            return "." + (match.group(1) + "000000")[:6]
+        ts_str = re.sub(r'\.(\d+)', _fix_frac, ts_str)
+        if ts_str.endswith("Z"):
+            ts_str = ts_str[:-1] + "+00:00"
+        return datetime.fromisoformat(ts_str)
+
+    def _wait_for_continuous_backup_catchup(self, since_timestamp,
+                                            timeout=1200, poll_interval=15,
+                                            quiet_checkpoints=2):
+        """
+        Wait for the continuous-backup log to actually cover
+        `since_timestamp` (unix epoch seconds) before attempting an
+        "everything" (latest) restore.
+
+        Polls `cbcontbk info -l <location> --json`, which reports
+        range.end -- cbcontbk's own authoritative bookkeeping of how far
+        the continuous log extends for a bucket -- rather than inferring
+        completeness from the log store's own object upload timestamps.
+        The latter was tried first and found unreliable: in a real CI run
+        (build 246480, test_pitr_timestamps_across_rebalance_in) object
+        uploads went quiet for 45s+ while `cbcontbk info` run retrospectively
+        against that same location showed the log was still ~8 minutes from
+        actually catching up -- a heuristic "quiet period" can't distinguish
+        a genuine mid-flush lull (128 vbuckets flushing independently) from
+        real completion, but cbcontbk's own range.end always can.
+
+        A single crossing of range.end >= since_timestamp is NOT enough,
+        though (see docs/agent-context/backup-restore/
+        BUG-contbk-info-range-end-lags-actual-data.md): two CI runs restored
+        ~3% short even after range.end first confirmed since_timestamp was
+        covered, because range.end itself kept climbing for ~11 more
+        minutes before settling -- inspecting the collect-logs bundle
+        showed every one of 128 vbuckets converges on the identical
+        checkpoint instant (not a per-vbucket straggler issue), i.e.
+        range.end is published on its own periodic cycle rather than
+        continuously. So this waits for range.end to both cover
+        since_timestamp AND stop changing for `quiet_checkpoints` full
+        continuous_backup_intervals in a row before trusting it -- the same
+        quiet-period principle as the discarded object-timestamp heuristic,
+        but applied to cbcontbk's own authoritative signal instead of raw
+        S3/NFS mtimes, so a genuine multi-cycle climb (as observed) can't
+        be mistaken for settling the way a single crossing can.
+        """
+        since_dt = datetime.fromtimestamp(since_timestamp, tz=timezone.utc)
+        quiet_period = quiet_checkpoints * self.continuous_backup_interval * 60
+        deadline = time.time() + timeout
+        last_range_end_str = None
+        last_range_end_dt = None
+        quiet_since = None
+        while time.time() < deadline:
+            info = self.cont_bk_mgr.info(self.continuous_backup_location)
+            bucket_info = (info or {}).get(self.bucket.name, {})
+            range_end_str = bucket_info.get("range", {}).get("end")
+            if range_end_str:
+                range_end_dt = self._parse_cbcontbk_timestamp(range_end_str)
+                last_range_end_str = range_end_str
+                if range_end_dt >= since_dt:
+                    if range_end_dt != last_range_end_dt:
+                        last_range_end_dt = range_end_dt
+                        quiet_since = time.time()
+                    elif time.time() - quiet_since >= quiet_period:
+                        self.log.info(
+                            f"Continuous backup log confirmed caught up "
+                            f"via cbcontbk info: range.end={range_end_str} "
+                            f">= since={since_dt.isoformat()}, unchanged "
+                            f"for {quiet_period}s ({quiet_checkpoints} "
+                            f"checkpoint cycles)")
+                        return
+            self.sleep(
+                poll_interval,
+                f"Waiting for continuous backup log to catch up and "
+                f"settle (cbcontbk info range.end={last_range_end_str}, "
+                f"since={since_dt.isoformat()})")
+        self.fail(
+            f"Continuous backup log did not catch up to "
+            f"{since_dt.isoformat()} within {timeout}s (last cbcontbk info "
+            f"range.end: {last_range_end_str})")
 
     def _verify_doc_count(self, expected_count, bucket_name=None, timeout=300):
         if bucket_name is None:

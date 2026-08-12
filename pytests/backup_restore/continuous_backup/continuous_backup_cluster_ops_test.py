@@ -172,10 +172,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
           4. PITR restore to T1 -> verify count == C1.
           5. PITR restore to T2 -> verify count == C2.
         """
-        count_c1 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before rebalance-in")
+        # Capture count right alongside the timestamp, not before the sleep --
+        # otherwise stragglers from the load that land during the sleep
+        # inflate the actual restore beyond the pre-sleep count.
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-rebalance-in): {ts_t1}, count: {count_c1}")
 
         spare = self._get_spare_node()
@@ -183,10 +187,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         rebalance = self.task.async_rebalance(self.cluster, [spare], [])
         self._wait_for_rebalance(rebalance)
 
-        count_c2 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after rebalance-in")
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-rebalance-in): {ts_t2}, count: {count_c2}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
@@ -196,11 +201,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # log to have data newer than this traditional backup snapshot, or it
         # fails with "traditional backup has the same or newer data than the
         # log backup" (confirmed expected/documented behavior, not a bug, by
-        # the backup team). Mutate and wait one interval so the log has
-        # something newer than the backup before restoring "everything".
-        count_c3 = self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval after traditional backup")
+        # the backup team). Mutate, then poll the log store until it has
+        # caught up (rather than a fixed interval sleep -- operations that
+        # force a DCP reconnect, like failover, can make the flush take far
+        # longer than one interval) before restoring "everything".
+        mutation_time = time.time()
+        self._load_data_and_get_count()
+        self._wait_for_continuous_backup_catchup(mutation_time)
+        count_c3 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         restore_name = f"restore_rbl_in_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -233,10 +241,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
 
         Note: PITR is supported only on Magma buckets.
         """
-        count_c1 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before rebalance-out")
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-rebalance-out): {ts_t1}, count: {count_c1}")
 
         remove_node = self._get_removable_kv_node()
@@ -244,10 +253,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         rebalance = self.task.async_rebalance(self.cluster, [], [remove_node])
         self._wait_for_rebalance(rebalance)
 
-        count_c2 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after rebalance-out")
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-rebalance-out): {ts_t2}, count: {count_c2}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
@@ -257,11 +267,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # log to have data newer than this traditional backup snapshot, or it
         # fails with "traditional backup has the same or newer data than the
         # log backup" (confirmed expected/documented behavior, not a bug, by
-        # the backup team). Mutate and wait one interval so the log has
-        # something newer than the backup before restoring "everything".
-        count_c3 = self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval after traditional backup")
+        # the backup team). Mutate, then poll the log store until it has
+        # caught up (rather than a fixed interval sleep -- operations that
+        # force a DCP reconnect, like failover, can make the flush take far
+        # longer than one interval) before restoring "everything".
+        mutation_time = time.time()
+        self._load_data_and_get_count()
+        self._wait_for_continuous_backup_catchup(mutation_time)
+        count_c3 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         restore_name = f"restore_rbl_out_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -292,10 +305,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
 
         Note: PITR is supported only on Magma buckets.
         """
-        count_c1 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before swap rebalance")
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-swap): {ts_t1}, count: {count_c1}")
 
         spare = self._get_spare_node()
@@ -306,10 +320,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
             self.cluster, [spare], [remove_node])
         self._wait_for_rebalance(rebalance)
 
-        count_c2 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after swap rebalance")
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-swap): {ts_t2}, count: {count_c2}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
@@ -319,11 +334,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # log to have data newer than this traditional backup snapshot, or it
         # fails with "traditional backup has the same or newer data than the
         # log backup" (confirmed expected/documented behavior, not a bug, by
-        # the backup team). Mutate and wait one interval so the log has
-        # something newer than the backup before restoring "everything".
-        count_c3 = self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval after traditional backup")
+        # the backup team). Mutate, then poll the log store until it has
+        # caught up (rather than a fixed interval sleep -- operations that
+        # force a DCP reconnect, like failover, can make the flush take far
+        # longer than one interval) before restoring "everything".
+        mutation_time = time.time()
+        self._load_data_and_get_count()
+        self._wait_for_continuous_backup_catchup(mutation_time)
+        count_c3 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         restore_name = f"restore_swap_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -353,10 +371,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
 
         Note: PITR is supported only on Magma buckets.
         """
-        count_c1 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before graceful failover")
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-failover): {ts_t1}, count: {count_c1}")
 
         failover_node = self._get_removable_kv_node()
@@ -375,10 +394,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._wait_for_rebalance(rebalance)
         self._failed_over_nodes.remove(failover_node)
 
-        count_c2 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after graceful failover")
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-failover): {ts_t2}, count: {count_c2}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
@@ -388,11 +408,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # log to have data newer than this traditional backup snapshot, or it
         # fails with "traditional backup has the same or newer data than the
         # log backup" (confirmed expected/documented behavior, not a bug, by
-        # the backup team). Mutate and wait one interval so the log has
-        # something newer than the backup before restoring "everything".
-        count_c3 = self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval after traditional backup")
+        # the backup team). Mutate, then poll the log store until it has
+        # caught up (rather than a fixed interval sleep -- operations that
+        # force a DCP reconnect, like failover, can make the flush take far
+        # longer than one interval) before restoring "everything".
+        mutation_time = time.time()
+        self._load_data_and_get_count()
+        self._wait_for_continuous_backup_catchup(mutation_time)
+        count_c3 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         restore_name = f"restore_graceful_fo_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -423,10 +446,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
 
         Note: PITR is supported only on Magma buckets.
         """
-        count_c1 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before hard failover")
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-hard-failover): {ts_t1}, count: {count_c1}")
 
         failover_node = self._get_removable_kv_node()
@@ -445,10 +469,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._wait_for_rebalance(rebalance)
         self._failed_over_nodes.remove(failover_node)
 
-        count_c2 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after hard failover")
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-hard-failover): {ts_t2}, count: {count_c2}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
@@ -458,11 +483,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # log to have data newer than this traditional backup snapshot, or it
         # fails with "traditional backup has the same or newer data than the
         # log backup" (confirmed expected/documented behavior, not a bug, by
-        # the backup team). Mutate and wait one interval so the log has
-        # something newer than the backup before restoring "everything".
-        count_c3 = self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval after traditional backup")
+        # the backup team). Mutate, then poll the log store until it has
+        # caught up (rather than a fixed interval sleep -- operations that
+        # force a DCP reconnect, like failover, can make the flush take far
+        # longer than one interval) before restoring "everything".
+        mutation_time = time.time()
+        self._load_data_and_get_count()
+        self._wait_for_continuous_backup_catchup(mutation_time)
+        count_c3 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         restore_name = f"restore_hard_fo_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -501,10 +529,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
                 "Quorum loss test requires at least 4 KV nodes; "
                 f"cluster has {len(self.cluster.kv_nodes)}")
 
-        count_c1 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before quorum loss")
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-quorum-loss): {ts_t1}, count: {count_c1}")
 
         # Select two non-master KV nodes to fail over (simulates quorum loss)
@@ -536,10 +565,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
             if node in self._failed_over_nodes:
                 self._failed_over_nodes.remove(node)
 
-        count_c2 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after quorum loss recovery")
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-quorum-loss): {ts_t2}, count: {count_c2}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
@@ -549,11 +579,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # log to have data newer than this traditional backup snapshot, or it
         # fails with "traditional backup has the same or newer data than the
         # log backup" (confirmed expected/documented behavior, not a bug, by
-        # the backup team). Mutate and wait one interval so the log has
-        # something newer than the backup before restoring "everything".
-        count_c3 = self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval after traditional backup")
+        # the backup team). Mutate, then poll the log store until it has
+        # caught up (rather than a fixed interval sleep -- operations that
+        # force a DCP reconnect, like failover, can make the flush take far
+        # longer than one interval) before restoring "everything".
+        mutation_time = time.time()
+        self._load_data_and_get_count()
+        self._wait_for_continuous_backup_catchup(mutation_time)
+        count_c3 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         restore_name = f"restore_quorum_loss_{int(time.time())}"
         self._create_restore_bucket(restore_name)
@@ -595,10 +628,11 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         Note: PITR is supported only on Magma buckets.
         """
         # Phase 1: load data and capture pre-restart state
-        count_c1 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval before KV restart")
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-KV-restart): {ts_t1}, count: {count_c1}")
 
         # Kill memcached on one non-master KV node
@@ -619,11 +653,12 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self.log.info("Memcached restarted and bucket warmed up")
 
         # Phase 2: load data after restart; continuous backup must resume seamlessly
-        count_c2 = self._load_data_and_get_count()
+        self._load_data_and_get_count()
         self.sleep(self.continuous_backup_interval * 60,
                    "Waiting for backup interval after KV restart "
                    "(DCP stream must have reconnected)")
         ts_t2 = self.cont_bk_mgr.get_cluster_timestamp()
+        count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-KV-restart): {ts_t2}, count: {count_c2}")
 
         self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
@@ -633,11 +668,14 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         # log to have data newer than this traditional backup snapshot, or it
         # fails with "traditional backup has the same or newer data than the
         # log backup" (confirmed expected/documented behavior, not a bug, by
-        # the backup team). Mutate and wait one interval so the log has
-        # something newer than the backup before restoring "everything".
-        count_c3 = self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval after traditional backup")
+        # the backup team). Mutate, then poll the log store until it has
+        # caught up (rather than a fixed interval sleep -- operations that
+        # force a DCP reconnect, like failover, can make the flush take far
+        # longer than one interval) before restoring "everything".
+        mutation_time = time.time()
+        self._load_data_and_get_count()
+        self._wait_for_continuous_backup_catchup(mutation_time)
+        count_c3 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
 
         restore_name = f"restore_kv_restart_{int(time.time())}"
         self._create_restore_bucket(restore_name)

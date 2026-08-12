@@ -19,6 +19,18 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
 
     def tearDown(self):
         super(ContinuousBackupRetentionTest, self).tearDown()
+        # onPrem_basetestcase only resets CB_CONTBK_RETENTION_* env vars when
+        # cluster.vbuckets != 1024, which is never true for these on-prem
+        # clusters -- so the unsafe retention window this class sets on the
+        # node's couchbase-server environment would otherwise persist onto
+        # every later test that reuses the same nodes without going through
+        # initialize_cluster() again (e.g. ContinuousBackupTest, which runs
+        # right after this class and defaults skip_cluster_reset=True).
+        # Reset unconditionally here so no test outside this class can ever
+        # inherit it.
+        if self.retention_test:
+            for cluster in self.cb_clusters.values():
+                self.cluster_util.reset_env_variables(cluster)
 
     def _load_data_and_get_task(self, data_spec_name):
         self.log.info("Load docs using spec file %s" % data_spec_name)
@@ -45,20 +57,29 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
 
     # 3.1 Configuration & Scheduling Tests
     def test_default_state(self):
-        """TC-CONF-01: Default State"""
-        self.log.info("Testing default state (retention off)")
+        """TC-CONF-01: Default State
+
+        The design doc describes retention as "off by default", but the
+        server currently rejects 0 outright (must be 1-1440) -- see
+        MB-73171/contbk-retention-default-bug -- so TAF's own
+        enable_continuous_backup() defaults continuous_backup_retention_period
+        to the max, 1440h, instead of leaving it unset. This test therefore
+        checks what TAF actually configures, not the server's own true
+        (currently unusable) unset default.
+        """
+        self.log.info("Testing default state (retention = TAF's default of 1440h)")
         params = self.bucket_util.get_continuous_backup_params(self.cluster, self.bucket.name)
 
         retention_period = params.get("continuousBackupRetentionPeriod")
         self.log.info(f"Retrieved continuousBackupRetentionPeriod: {retention_period}")
 
-        # Normalise to int to handle both numeric 0 and string "0" from the REST layer
+        # Normalise to int to handle both numeric 1440 and string "1440" from the REST layer
         try:
-            normalised = int(retention_period) if retention_period is not None else 0
+            normalised = int(retention_period) if retention_period is not None else None
         except (ValueError, TypeError):
             normalised = retention_period
-        if normalised not in (0, None):
-            self.fail(f"Expected retention period to be off (0 or None), but got {retention_period}")
+        if normalised != 1440:
+            self.fail(f"Expected retention period to be TAF's default of 1440, but got {retention_period}")
 
         self.log.info("Test completed successfully")
 
@@ -243,6 +264,7 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.log.info(f"Timestamp before adding docs: {t_before_add}")
 
         # 2. Load additional docs
+        mutation_time = time.time()
         self._load_data_and_get_task(self.data_spec_name)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         count_with_new_docs = self.bucket_util.get_buckets_item_count(
@@ -251,10 +273,10 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         self.assertGreater(count_with_new_docs - original_count, 0,
                            "No new docs were added; check the data spec")
 
-        # 3. Wait for continuous backup to capture the new docs
-        backup_wait_secs = self.continuous_backup_interval * 60 + 30
-        self.sleep(backup_wait_secs,
-                   f"Waiting {backup_wait_secs}s for continuous backup to capture new docs")
+        # 3. Wait for continuous backup to catch up to the new docs. Poll
+        # rather than a fixed sleep -- see _wait_for_continuous_backup_catchup
+        # for why a fixed interval isn't always enough.
+        self._wait_for_continuous_backup_catchup(mutation_time)
 
         # 4. Delete and recreate bucket, restore everything → expect original + new docs.
         # No further writes happen after count_with_new_docs was captured, so
