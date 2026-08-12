@@ -144,7 +144,20 @@ def merge_reports(filespath, run_params=""):
         os.mkdir(logs_directory)
     except Exception as e:
         log.info(e)
-        return {}
+        # Restore the original reports (best-effort) instead of leaving
+        # them stranded under job_logs/ with no logs/ dir behind, then
+        # re-raise. Swallowing this and returning {} used to make
+        # should_rerun_tests() see zero failures and let rerun_jobs.py
+        # exit 0, silently reporting real test failures (e.g. this
+        # directory rotation failing because the disk was full) as a
+        # successful build.
+        if os.path.exists(move_logs_directory) and not \
+                os.path.exists(logs_directory):
+            try:
+                os.rename(move_logs_directory, logs_directory)
+            except Exception:
+                pass
+        raise
     log.info("\nNumber of TestSuites=" + str(len(testsuites)))
     tsindex = 0
     for tskey in testsuites.keys():

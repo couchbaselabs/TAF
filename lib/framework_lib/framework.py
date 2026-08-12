@@ -325,7 +325,16 @@ class HelperLib(object):
                 return True, t
         return False, ""
 
-    def filter_fields(self, testname):
+    def filter_fields(self, testname, run_params=""):
+        # Fields whose values come from this run's own global '-p'/
+        # run_params rather than identifying a specific test case. When
+        # a test name is recycled from a previous run's report (-d
+        # failed=<url>/passed=<url>), these must be dropped so the
+        # current run's own global values aren't duplicated/left stale
+        # alongside them, which otherwise desyncs merge_reports.py's
+        # dedup key between rerun generations.
+        run_param_fields = [param.split("=")[0].strip()
+                            for param in run_params.split(",") if param]
         if "logs_folder:" in testname:
             testwords = testname.split(",")
             line = ""
@@ -339,7 +348,9 @@ class HelperLib(object):
                         and not fw.startswith("spec:") \
                         and not fw.startswith("get-cbcollect-info:") \
                         and not fw.startswith("infra_log_level:") \
-                        and not fw.startswith("log_level:"):
+                        and not fw.startswith("log_level:") \
+                        and not any(fw.startswith(rp + ":")
+                                    for rp in run_param_fields):
                     line = line + fw.replace(":", "=", 1)
                     if fw != testwords[-1]:
                         line = line + ","
@@ -357,14 +368,17 @@ class HelperLib(object):
                         and not fw.startswith("spec=")\
                         and not fw.startswith("get-cbcollect-info=") \
                         and not fw.startswith("infra_log_level=") \
-                        and not fw.startswith("log_level="):
+                        and not fw.startswith("log_level=") \
+                        and not any(fw.startswith(rp + "=")
+                                    for rp in run_param_fields):
                     line.append(fw)
             return ",".join(line)
 
-    def transform_and_write_to_file(self, tests_list, filename):
+    def transform_and_write_to_file(self, tests_list, filename,
+                                    run_params=""):
         new_test_list = []
         for test in tests_list:
-            line = self.filter_fields(test)
+            line = self.filter_fields(test, run_params)
             line = line.rstrip(",")
             isexisted, _ = self.check_if_exists(new_test_list, line)
             if not isexisted:
@@ -375,10 +389,10 @@ class HelperLib(object):
                 fp.writelines(line + "\n")
         return new_test_list
 
-    def parse_junit_result_xml(self, filepath=""):
+    def parse_junit_result_xml(self, filepath="", run_params=""):
         if filepath.startswith("http://") or filepath.startswith(
                 "https://"):
-            return self.parse_testreport_result_xml(filepath)
+            return self.parse_testreport_result_xml(filepath, run_params)
         if filepath == "":
             filepath = "logs/**/*.xml"
         print("Loading result data from " + filepath)
@@ -403,11 +417,11 @@ class HelperLib(object):
 
         if failed_tests:
             failed_tests = self.transform_and_write_to_file(
-                failed_tests, "failed_tests.conf")
+                failed_tests, "failed_tests.conf", run_params)
 
         if passed_tests:
             passed_tests = self.transform_and_write_to_file(
-                passed_tests, "passed_tests.conf")
+                passed_tests, "passed_tests.conf", run_params)
         return passed_tests, failed_tests
 
     def get_node_text(self, nodes):
@@ -417,9 +431,50 @@ class HelperLib(object):
                 rc.append(node.data)
         return ''.join(rc)
 
-    def parse_testreport_result_xml(self, filepath=""):
+    # cb-logs-qe mirrors every build's testresult.xml here independent of
+    # Jenkins' own build-retention, which is what scripts/rerun_jobs.py's
+    # own S3 fallback (get_from_aws) already points at.
+    AWS_LINK = 'http://cb-logs-qe.s3-website-us-west-2.amazonaws.com'
+
+    @staticmethod
+    def _get_build_version(run_params):
+        for param in (run_params or "").split(","):
+            if param.startswith("upgrade_version="):
+                return param.split("=", 1)[1]
+        return None
+
+    def _download_from_s3(self, filepath, run_params):
+        build = self._get_build_version(run_params)
+        if not build:
+            print("Could not determine the build version (no "
+                  "upgrade_version in run params) - skipping S3 fallback")
+            return None
+        job_name = filepath.split('/')[-2]
+        job_build_number = filepath.split('/')[-1]
+        aws_link = '{0}/{1}/jenkins_logs/{2}/{3}/testresult.xml'.format(
+            self.AWS_LINK, build, job_name, job_build_number)
+        print("Trying to get the test report from S3: " + aws_link)
+        try:
+            req = requests.get(aws_link, allow_redirects=True)
+            if req.status_code != 200:
+                print("Could not get the test report from S3 "
+                      "(HTTP %s)" % req.status_code)
+                return None
+            return req.content
+        except Exception as ex:
+            print("Error:: " + str(
+                ex) + "! Could not reach S3 URL " + aws_link)
+            return None
+
+    def parse_testreport_result_xml(self, filepath="", run_params=""):
         if filepath.startswith("http://") or filepath.startswith(
                 "https://"):
+            # Job URLs always carry a trailing slash (e.g. Jenkins'
+            # BUILD_URL); without stripping it here first, this becomes
+            # ".../<build>//testReport/..." - a malformed, double-slash
+            # path that Jenkins answers with an error page instead of
+            # the JUnit-style testReport xml, which then fails to parse.
+            filepath = filepath.rstrip("/")
             url_path = filepath + "/testReport/api/xml?pretty=true"
             jobnamebuild = filepath.split('/')
             if not exists('logs'):
@@ -427,17 +482,33 @@ class HelperLib(object):
             newfilepath = 'logs' + ''.join(os.sep) + '_'.join(
                 jobnamebuild[-3:]) + "_testresult.xml"
             print("Downloading " + url_path + " to " + newfilepath)
+            content = None
             try:
                 req = requests.get(url_path, allow_redirects=True)
-                filepath = newfilepath
-                with open(filepath, 'wb') as fp:
-                    fp.write(req.content)
+                if req.status_code == 200:
+                    content = req.content
+                else:
+                    # The referenced build has commonly just been rotated
+                    # out of this (shared, high-churn) executor job's
+                    # retention window by the time a rerun looks it up,
+                    # which Jenkins answers with a 404 html page rather
+                    # than a request exception.
+                    print("Could not get the test report from Jenkins "
+                          "(HTTP %s) - build may have been rotated/"
+                          "deleted" % req.status_code)
             except Exception as ex:
                 print("Error:: " + str(
                     ex) + "! Please check if " + url_path + " URL is "
                                                             "accessible!!")
-                print("Running all the tests instead for now.")
+            if content is None:
+                content = self._download_from_s3(filepath, run_params)
+            if content is None:
+                print("Could not get the test report from Jenkins or S3. "
+                      "Running all the tests instead for now.")
                 return None, None
+            filepath = newfilepath
+            with open(filepath, 'wb') as fp:
+                fp.write(content)
         if filepath == "":
             filepath = "logs/**/*.xml"
         print("Loading result data from " + filepath)
@@ -463,11 +534,11 @@ class HelperLib(object):
 
         if failed_tests:
             failed_tests = self.transform_and_write_to_file(
-                failed_tests, "failed_tests.conf")
+                failed_tests, "failed_tests.conf", run_params)
 
         if passed_tests:
             passed_tests = self.transform_and_write_to_file(
-                passed_tests, "passed_tests.conf")
+                passed_tests, "passed_tests.conf", run_params)
 
         return passed_tests, failed_tests
 
@@ -495,15 +566,19 @@ class HelperLib(object):
                 if len(passfail) == 2:
                     if passfail[1].startswith("http://") \
                             or passfail[1].startswith("https://"):
-                        tp, tf = self.parse_testreport_result_xml(passfail[1])
+                        tp, tf = self.parse_testreport_result_xml(
+                            passfail[1], options.params)
                     else:
-                        tp, tf = self.parse_junit_result_xml(passfail[1])
+                        tp, tf = self.parse_junit_result_xml(
+                            passfail[1], options.params)
                 elif option.startswith("http://") \
                         or option.startswith("https://"):
-                    tp, tf = self.parse_testreport_result_xml(option)
+                    tp, tf = self.parse_testreport_result_xml(
+                        option, options.params)
                     tests_list = tp + tf
                 else:
-                    tp, tf = self.parse_junit_result_xml()
+                    tp, tf = self.parse_junit_result_xml(
+                        run_params=options.params)
                 if tp is None and tf is None:
                     return tests
                 if option.startswith('failed') and tf:

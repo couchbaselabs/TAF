@@ -382,11 +382,11 @@ if [ "$?" -eq 0 ]; then
   # total_tests=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
   # echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
 
-  if [ status -ne 0 ]; then
+  if [ $status -ne 0 ]; then
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     echo "Non-zero exit while running rerun_jobs.py"
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    exit status
+    exit $status
   fi
 else
   echo Desc: $desc
