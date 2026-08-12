@@ -5,6 +5,8 @@ Helper functions for building API payloads, parsing timestamps,
 and constructing request bodies for Unified Control Plane tests.
 """
 import json
+import socket
+import threading
 from datetime import datetime, timedelta
 
 from unified_control_plane import UnifiedControlPlaneClient
@@ -277,6 +279,176 @@ def post_raw_body(client, path, raw_body):
     api = client.baseUrl + path
     return client._http_request(api, 'POST', raw_body,
                                 headers=client._json_headers())
+
+def new_anonymous_client(portal):
+    """
+    Build a UCP client that has never logged in -- no session cookie.
+
+    This is the collector's view of the portal: the ingest endpoint is
+    unauthenticated (confirmed live 2026-08-12 -- an ingest POST with no
+    cookie reaches payload validation), so a client with no session is
+    exactly the identity a rogue or ordinary collector would have. Tests
+    that assert what that identity may NOT reach must not reuse the admin
+    client, whose cookie would grant access the collector never has.
+    Args:
+        portal: LighthousePortal config object
+    Returns:
+        A new, unauthenticated UnifiedControlPlaneClient.
+    """
+    return UnifiedControlPlaneClient(portal)
+
+def plain_http_request(host, port, path, method='POST', body=None):
+    """
+    Send a cleartext (non-TLS) HTTP request straight over a socket and
+    return the parsed response status.
+
+    Needed because the typed client always speaks HTTPS -- proving the
+    portal rejects plaintext requires bypassing it entirely and writing raw
+    bytes to the TLS port. A TLS server answering a plaintext request either
+    replies with an HTTP error or drops the connection; both are a
+    rejection, so the caller gets both the code and the transport error and
+    asserts on whichever occurred.
+    Args:
+        host:   portal ip or hostname
+        port:   portal port (the TLS port, deliberately spoken to in clear)
+        path:   request path, e.g. "/api/v1/ingest/telemetry"
+        method: HTTP method string
+        body:   dict to JSON-encode as the request body, or None
+    Returns:
+        Tuple (status_code, status_line, error).
+          status_code: int parsed from the status line, or None if nothing
+                       came back or the line was unparseable
+          status_line: the raw first response line (kept for assertion
+                       messages), or None
+          error:       a string describing a connection/transport failure,
+                       or None if the exchange completed
+    """
+    payload = json.dumps(body) if body is not None else ''
+    request = (
+        "%s %s HTTP/1.1\r\n"
+        "Host: %s:%s\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %d\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+        "%s" % (method, path, host, port, len(payload), payload))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(30)
+    try:
+        sock.connect((host, int(port)))
+        data = request.encode('utf-8') if hasattr(request, 'encode') \
+            else request
+        sock.sendall(data)
+        raw = sock.recv(4096)
+    except Exception as e:
+        return None, None, "%s: %s" % (type(e).__name__, e)
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    if not raw:
+        return None, None, "connection closed without a response"
+    if hasattr(raw, 'decode'):
+        raw = raw.decode('utf-8', 'ignore')
+    status_line = raw.split('\r\n')[0].strip()
+    parts = status_line.split(' ')
+    status_code = None
+    if len(parts) > 1:
+        try:
+            status_code = int(parts[1])
+        except ValueError:
+            status_code = None
+    return status_code, status_line, None
+
+def is_tcp_port_open(host, port, timeout=10):
+    """
+    Report whether a TCP connection to host:port can be established.
+
+    Used to prove the portal exposes no cleartext listener at all on a
+    given port -- a refused connection is a stronger result than an HTTP
+    error, and the two must be distinguished rather than lumped together.
+    Args:
+        host:    portal ip or hostname
+        port:    port to probe
+        timeout: connect timeout in seconds
+    Returns:
+        True if the connection succeeded, False otherwise.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((host, int(port)))
+        return True
+    except Exception:
+        return False
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+# ==================== Ingest Helper Methods ====================
+def count_history_snapshots_at(client, cluster_uuid, collected_at):
+    """
+    Count the telemetry-history snapshots stored for a cluster at exactly
+    one collectedAt instant.
+
+    Idempotency is asserted per-instant, not on the history total: the
+    portal keeps one entry per (clusterUuid, collectedAt), and a synthetic
+    cluster reused across runs legitimately accumulates entries at other
+    instants. Counting only this run's instant keeps the assertion exact.
+    Args:
+        client:       UnifiedControlPlaneClient instance (authenticated)
+        cluster_uuid: cluster UUID to read history for
+        collected_at: the collectedAt value to match, as sent on ingest
+    Returns:
+        Number of history items whose collectedAt equals collected_at, or
+        0 if the cluster has no history at all (a failed read is reported
+        as 0 so the caller's assertion, not an exception, describes it).
+    """
+    status, content, header = client.get_cluster_history(cluster_uuid)
+    if not status:
+        return 0
+    response = UCPResponse(status, content, header)
+    return len([item for item in response.items
+                if item.get('collectedAt') == collected_at])
+
+def ingest_concurrently(client, payload, thread_count):
+    """
+    POST the same ingest payload from several threads at once.
+
+    Sequential duplicate posts only prove last-write-wins; firing them
+    simultaneously is what exercises the portal's upsert under a real
+    write-write race.
+    Args:
+        client:       UnifiedControlPlaneClient instance (a session is not
+                      required -- ingest is unauthenticated)
+        payload:      telemetry payload dict, posted identically by every
+                      thread
+        thread_count: number of concurrent POSTs
+    Returns:
+        List of (status, content) tuples, one per thread, in thread-start
+        order. A thread that raised contributes (False, "<exception>").
+    """
+    results = [None] * thread_count
+    barrier_lock = threading.Lock()
+
+    def _post(index):
+        try:
+            status, content, _ = client.ingest_telemetry(payload)
+            outcome = (status, content)
+        except Exception as e:
+            outcome = (False, "%s: %s" % (type(e).__name__, e))
+        with barrier_lock:
+            results[index] = outcome
+
+    threads = [threading.Thread(target=_post, args=(i,))
+               for i in range(thread_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return results
 # ==================== User Helper Methods ====================
 def get_user_with_etag(client, user_id):
     """
@@ -408,7 +580,8 @@ def build_node_telemetry(hostname, cpu_physical_cores, cpu_logical_cores,
         node['uptimeSeconds'] = uptime_seconds
     return node
 
-def build_minimal_ingest_payload(cluster_uuid, product=None):
+def build_minimal_ingest_payload(cluster_uuid, product=None,
+                                 collected_at=None):
     """
     Build a well-formed single-node telemetry ingest payload.
 
@@ -422,6 +595,11 @@ def build_minimal_ingest_payload(cluster_uuid, product=None):
     'edition'.  Hardware values are arbitrary but valid positive integers --
     the ingest endpoint is being exercised for input handling here, not for
     telemetry accuracy.
+
+    collected_at defaults to now. Idempotency tests pin it to one explicit
+    instant so that every duplicate post carries the same upsert key; note
+    the portal rejects a collectedAt more than an hour in the future
+    (confirmed live 2026-08-12), so a pinned value must stay near now.
     """
     if product is None:
         product = {
@@ -436,8 +614,10 @@ def build_minimal_ingest_payload(cluster_uuid, product=None):
         storage_bytes_total=107374182400, storage_bytes_used=10737418240,
         services=['data'], os='linux', uptime_seconds=3600)
     node['edition'] = 'enterprise'
+    if collected_at is None:
+        collected_at = get_current_iso8601_timestamp()
     return build_telemetry_payload(
-        collected_at=get_current_iso8601_timestamp(),
+        collected_at=collected_at,
         cluster_uuid=cluster_uuid,
         product=product,
         nodes=[node])
