@@ -308,6 +308,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             # Subdoc_delete and verify
             sub_doc_op = "subdoc_delete"
+            # Same dedupe guard as the loop above: this delete mutates the
+            # same key as the preceding subdoc_replace, and back-to-back
+            # mutations get deduped into a single ops_update in
+            # cbstats vbucket-details
+            self.sleep(0.2, "Sleep to avoid dedupe "
+                            "resulting in stats mismatch")
             _, fail = client.crud(sub_doc_op, key, sub_doc_key)
             if key in fail and 'value' in fail[key] and sub_doc_key in fail[key]['value']:
                 if SDKException.check_if_exception_exists(
@@ -667,12 +673,21 @@ class BucketDurabilityTests(BucketDurabilityBase):
             target_vb_type, simulate_error = \
                 self.durability_helper.get_vb_and_error_type(bucket_durability)
 
-            # Pick a random node to perform error sim and load
-            random_node = choice(list(self.vbs_in_node.keys()))
-            error_sim = CouchbaseError(
-                self.log,
-                self.vbs_in_node[random_node]["shell"],
-                node=random_node)
+            # Pick a random node to perform error sim and load.
+            # cluster.master is excluded on purpose: the framework pins both
+            # its REST calls and the Java doc_loader's SDK client pool to it,
+            # so SIGSTOPing its memcached stalls framework plumbing instead of
+            # exercising the scenario under test. Same convention as
+            # DurabilityTestsBase.getTargetNodes(), which skips index 0
+            candidate_nodes = [node for node in self.vbs_in_node
+                               if node.ip != self.cluster.master.ip]
+            if not candidate_nodes:
+                self.fail("Need at least one non-master KV node to simulate "
+                          "'%s' on" % simulate_error)
+            random_node = choice(candidate_nodes)
+
+            # Guaranteed responsive, since random_node is never the master
+            rest_node = self.cluster.master
 
             target_vbs = self.vbs_in_node[random_node][target_vb_type]
             doc_gen = doc_generator(self.key, 0, 1,
@@ -684,37 +699,49 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 durability=SDKConstants.DurabilityLevel.NONE,
                 timeout_secs=60, start_task=False)
 
+            error_sim = CouchbaseError(
+                self.log,
+                self.vbs_in_node[random_node]["shell"],
+                node=random_node)
+
             # Simulate target error condition
             error_sim.create(simulate_error)
-            self.sleep(5, "Wait before starting doc_op")
-            self.task_manager.add_new_task(doc_load_task)
+            try:
+                self.sleep(5, "Wait before starting doc_op")
+                self.task_manager.add_new_task(doc_load_task)
 
-            new_d_level = self.get_bucket_durability_level(bucket_durability)
-            self.sleep(5, "Wait before updating bucket level "
-                          "durability=%s" % new_d_level)
+                new_d_level = \
+                    self.get_bucket_durability_level(bucket_durability)
+                self.sleep(5, "Wait before updating bucket level "
+                              "durability=%s" % new_d_level)
 
-            self.bucket_util.update_bucket_property(
-                self.cluster.master,
-                bucket_obj,
-                bucket_durability=new_d_level)
-            self.bucket_util.print_bucket_stats(self.cluster)
+                self.bucket_util.update_bucket_property(
+                    rest_node,
+                    bucket_obj,
+                    bucket_durability=new_d_level)
+                self.bucket_util.print_bucket_stats(self.cluster,
+                                                    cluster_node=rest_node)
 
-            self.cluster.buckets = list()
-            self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
-            if self.cluster.buckets[0].durabilityMinLevel != new_d_level:
-                self.log_failure("Failed to update bucket_d_level to %s"
-                                 % new_d_level)
-            self.summary.add_step("Set bucket-durability=%s" % new_d_level)
+                self.cluster.buckets = list()
+                self.cluster.buckets = self.bucket_util.get_all_buckets(
+                    self.cluster, cluster_node=rest_node)
+                if self.cluster.buckets[0].durabilityMinLevel != new_d_level:
+                    self.log_failure("Failed to update bucket_d_level to %s"
+                                     % new_d_level)
+                self.summary.add_step("Set bucket-durability=%s"
+                                      % new_d_level)
 
-            if prev_d_level == SDKConstants.DurabilityLevel.NONE:
-                if not doc_load_task.completed:
-                    self.log_failure("Doc-op still pending for d_level 'NONE'")
-            elif doc_load_task.completed:
-                self.log_failure("Doc-op completed before reverting the "
-                                 "error condition: %s" % simulate_error)
-
-            # Revert the induced error condition
-            error_sim.revert(simulate_error)
+                if prev_d_level == SDKConstants.DurabilityLevel.NONE:
+                    if not doc_load_task.completed:
+                        self.log_failure(
+                            "Doc-op still pending for d_level 'NONE'")
+                elif doc_load_task.completed:
+                    self.log_failure("Doc-op completed before reverting the "
+                                     "error condition: %s" % simulate_error)
+            finally:
+                # Revert the induced error condition even if the steps above
+                # failed, else the node stays unusable for the whole suite
+                error_sim.revert(simulate_error)
 
             self.task_manager.get_task_result(doc_load_task)
             if doc_load_task.fail:
@@ -824,74 +851,79 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                            node=node)
                 error_sim.create(simulate_error,
                                  bucket_name=bucket.name)
-            self.sleep(5, "Wait for error simulation to take effect")
+            try:
+                self.sleep(5, "Wait for error simulation to take effect")
 
-            self.task_manager.add_new_task(doc_loader_task)
-            self.sleep(5, "Wait for task_1 CRUDs to reach server")
+                self.task_manager.add_new_task(doc_loader_task)
+                self.sleep(5, "Wait for task_1 CRUDs to reach server")
 
-            # Perform specified CRUD operation on sync_write docs
-            tem_gen = deepcopy(gen_loader_2)
-            while tem_gen.has_next():
-                key, value = tem_gen.next()
-                sdk_retry_strategy = SDKConstants.RetryStrategy.BEST_EFFORT
-                if with_sync_write_val:
-                    fail = client.crud(doc_ops[1], key, value=value,
-                                       exp=0,
-                                       durability=with_sync_write_val,
-                                       timeout=3, time_unit="seconds",
-                                       sdk_retry_strategy=sdk_retry_strategy)
-                else:
-                    fail = client.crud(doc_ops[1], key, value=value,
-                                       exp=0,
-                                       timeout=3, time_unit="seconds",
-                                       sdk_retry_strategy=sdk_retry_strategy)
+                # Perform specified CRUD operation on sync_write docs
+                tem_gen = deepcopy(gen_loader_2)
+                while tem_gen.has_next():
+                    key, value = tem_gen.next()
+                    sdk_retry_strategy = \
+                        SDKConstants.RetryStrategy.BEST_EFFORT
+                    if with_sync_write_val:
+                        fail = client.crud(
+                            doc_ops[1], key, value=value, exp=0,
+                            durability=with_sync_write_val,
+                            timeout=3, time_unit="seconds",
+                            sdk_retry_strategy=sdk_retry_strategy)
+                    else:
+                        fail = client.crud(
+                            doc_ops[1], key, value=value, exp=0,
+                            timeout=3, time_unit="seconds",
+                            sdk_retry_strategy=sdk_retry_strategy)
 
-                expected_exception = SDKException.AmbiguousTimeoutException
-                retry_reason = \
-                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
-                if sdk_retry_strategy == SDKConstants.RetryStrategy.FAIL_FAST:
-                    expected_exception = \
-                        SDKException.RequestCanceledException
+                    expected_exception = SDKException.AmbiguousTimeoutException
                     retry_reason = \
-                        SDKException.RetryReason \
-                        .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
+                        SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
+                    if sdk_retry_strategy == \
+                            SDKConstants.RetryStrategy.FAIL_FAST:
+                        expected_exception = \
+                            SDKException.RequestCanceledException
+                        retry_reason = \
+                            SDKException.RetryReason \
+                            .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
 
-                # Validate the returned error from the SDK
-                err_found = False
-                for exception in expected_exception:
-                    if exception in str(fail["error"]):
-                        err_found = True
-                        break
-                if not err_found:
-                    self.log_failure("Invalid exception for {0}: {1}"
-                                     .format(key, fail["error"]))
+                    # Validate the returned error from the SDK
+                    err_found = False
+                    for exception in expected_exception:
+                        if exception in str(fail["error"]):
+                            err_found = True
+                            break
+                    if not err_found:
+                        self.log_failure("Invalid exception for {0}: {1}"
+                                         .format(key, fail["error"]))
 
-                if retry_reason not in str(fail["error"]):
-                    self.log_failure("Invalid retry reason for {0}: {1}"
-                                     .format(key, fail["error"]))
+                    if retry_reason not in str(fail["error"]):
+                        self.log_failure("Invalid retry reason for {0}: {1}"
+                                         .format(key, fail["error"]))
 
-                # Try reading the value in SyncWrite in-progress state
-                fail = client.crud("read", key)
-                if doc_ops[0] == "create":
-                    # Expected KeyNotFound in case of CREATE operation
-                    if fail["status"] is True:
-                        self.log_failure(
-                            "%s returned value during SyncWrite state: %s"
-                            % (key, fail))
-                else:
-                    # Expects prev value in case of other operations
-                    if fail["status"] is False:
-                        self.log_failure(
-                            "Key %s read failed for previous value: %s"
-                            % (key, fail))
-
-            # Revert the introduced error condition
-            for node in target_nodes:
-                error_sim = CouchbaseError(self.log,
-                                           self.vbs_in_node[node]["shell"],
-                                           node=node)
-                error_sim.revert(simulate_error,
-                                 bucket_name=bucket.name)
+                    # Try reading the value in SyncWrite in-progress state
+                    fail = client.crud("read", key)
+                    if doc_ops[0] == "create":
+                        # Expected KeyNotFound in case of CREATE operation
+                        if fail["status"] is True:
+                            self.log_failure(
+                                "%s returned value during SyncWrite state: %s"
+                                % (key, fail))
+                    else:
+                        # Expects prev value in case of other operations
+                        if fail["status"] is False:
+                            self.log_failure(
+                                "Key %s read failed for previous value: %s"
+                                % (key, fail))
+            finally:
+                # Revert the introduced error condition even on failure, else
+                # the node stays unusable for the rest of the suite
+                for node in target_nodes:
+                    error_sim = CouchbaseError(
+                        self.log,
+                        self.vbs_in_node[node]["shell"],
+                        node=node)
+                    error_sim.revert(simulate_error,
+                                     bucket_name=bucket.name)
 
             # Wait for doc_loader_task to complete
             self.task.jython_task_manager.get_task_result(doc_loader_task)
@@ -992,8 +1024,10 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
                 self.summary.add_step(crud_desc)
                 old_cas = result["cas"]
-                if d_level == SDKConstants.DurabilityLevel.MAJORITY:
-                    self.sleep(1, "wait for vb stats to get updated")
+                # Every op here mutates the same key, and consecutive
+                # mutations get deduped into a single ops_update in
+                # cbstats vbucket-details
+                self.sleep(1, "Wait for vb stats to get updated")
             client.close()
 
         doc_gen = doc_generator("test_key", 0, 1, mutate=0)

@@ -3373,9 +3373,12 @@ class BucketUtils(ScopeUtils):
                 break
         return bucket_obj
 
-    def __print_on_prem_bucket_stats(self, cluster):
+    def __print_on_prem_bucket_stats(self, cluster, cluster_node=None):
+        # Allows the caller to avoid an unresponsive node (eg: a node under
+        # error simulation), since every REST call below would block on it
+        cluster_node = cluster_node or cluster.master
         table = TableView(self.log.info)
-        buckets = self.get_all_buckets(cluster)
+        buckets = self.get_all_buckets(cluster, cluster_node=cluster_node)
         if len(buckets) == 0:
             table.add_row(["No buckets"])
         else:
@@ -3390,7 +3393,7 @@ class BucketUtils(ScopeUtils):
                 if bucket.bucketType == Bucket.Type.MEMBASE:
                     storage_backend = bucket.storageBackend
                     try:
-                        resident_ratio = BucketHelper(cluster.master).fetch_bucket_stats(
+                        resident_ratio = BucketHelper(cluster_node).fetch_bucket_stats(
                             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
                     except KeyError:
                         resident_ratio = 100
@@ -3429,11 +3432,16 @@ class BucketUtils(ScopeUtils):
                 table.add_row(bucket_data)
         table.display("Bucket statistics")
 
-    def print_bucket_stats(self, cluster):
+    def print_bucket_stats(self, cluster, cluster_node=None):
+        """
+        :param cluster_node: Node to fetch the stats from. Defaults to
+                             cluster.master. Pass an explicit node when the
+                             master is known to be unresponsive
+        """
         if cluster.type == "serverless":
             self.__print_serverless_bucket_stats(cluster)
         else:
-            self.__print_on_prem_bucket_stats(cluster)
+            self.__print_on_prem_bucket_stats(cluster, cluster_node)
 
     @staticmethod
     def get_vbucket_num_for_key(doc_key, total_vbuckets=1024):
