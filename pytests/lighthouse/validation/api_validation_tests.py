@@ -406,9 +406,7 @@ class ApiValidationTests(LighthouseBase):
             400 <= response.status_code < 500,
             "oversized payload: expected a 4xx client error (clean rejection),"
             " got %s: %s" % (response.status_code, content))
-
-        # Service must still be alive after rejecting the oversized body.
-        health_status, health_content, _ = self.ucp_client.ingest_health()
+        health_status, health_content, _ = self.ucp_client.health()
         self.assertTrue(
             health_status,
             "ingest service did not stay healthy after an oversized payload: "
