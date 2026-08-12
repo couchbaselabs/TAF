@@ -27,6 +27,7 @@ from lighthouse.collector_helper_methods import (
     set_lighthouse_ns_config_via_diag_eval,
     set_lighthouse_interval_via_diag_eval,
     get_cb_cluster_aggregate_hardware,
+    get_cb_node_core_counts,
     get_cb_cluster_services_union,
     assert_within_tolerance,
     get_collector_metrics,
@@ -36,7 +37,7 @@ from lighthouse.collector_helper_methods import (
 )
 from unified_control_plane import LighthouseCollectorClient
 
-# RFC 5737 TEST-NET-1 — documentation-reserved block, guaranteed unreachable
+# RFC 5737 TEST-NET-1 -- documentation-reserved block, guaranteed unreachable
 _UNREACHABLE_HOST = '192.0.2.1'
 
 
@@ -557,6 +558,144 @@ class CollectorTests(LighthouseBase):
             self.ucp_client.session_logout()
             self.log.info("Portal logout complete")
 
+    def test_hyperthreading_logical_and_physical_cores(self):
+        """
+        Case 8: physical and logical core counts are reported per node as two
+        distinct values, so a hyper-threaded node reports its logical count
+        (e.g. 8 physical + HT -> 16 logical) and not its physical count.
+
+        On a node without hyper-threading the two numbers are legitimately
+        equal, which would let a portal that reported the same number twice
+        pass unnoticed. The test therefore does both things: it asserts both
+        values against the OS on every node, and separately reports whether
+        any hyper-threaded node existed to exercise the distinction. If none
+        did, that is logged explicitly rather than passing silently -- the
+        HT-specific expectation was untested on this topology, and the log
+        says so.
+
+        Unlike the other telemetry tests this one changes ONLY the reporting
+        interval via diag/eval. The configured endpoint is left exactly as
+        the cluster already has it, so the test never repoints a node at a
+        different portal.
+        """
+        status, content, _ = self.ucp_client.session_login(
+            self.ucp_portal.username, self.ucp_portal.password)
+        self.assertTrue(status, "Portal login failed: %s" % content)
+        self.log.info("Portal login successful")
+
+        hyperthreaded_nodes = []
+        try:
+            for i, cluster in enumerate(self.clusters):
+                cluster_uuid = get_cb_cluster_uuid(cluster.master)
+                self.assertIsNotNone(
+                    cluster_uuid,
+                    "Cluster %d: could not retrieve UUID from /pools" % i)
+
+                cb_cores = get_cb_node_core_counts(cluster)
+                self.assertIsNotNone(
+                    cb_cores,
+                    "Cluster %d: could not read core counts from one or more "
+                    "nodes" % i)
+                self.log.info("Cluster %d OS core counts: %s"
+                              % (i, cb_cores))
+
+                # Trigger a report: interval only, endpoint untouched.
+                diag_status, diag_content = \
+                    set_lighthouse_interval_via_diag_eval(
+                        cluster.master, 1 / 3600.0)
+                self.assertTrue(
+                    diag_status,
+                    "Cluster %d: diag/eval interval change failed: %s"
+                    % (i, diag_content))
+                self.sleep(10, "waiting for a report to fire")
+                restore_status, restore_content = \
+                    set_lighthouse_interval_via_diag_eval(cluster.master, 2)
+                self.assertTrue(
+                    restore_status,
+                    "Cluster %d: failed to restore interval to 2 h: %s"
+                    % (i, restore_content))
+
+                appeared = wait_for_cluster_on_portal(
+                    self.ucp_client, cluster_uuid, timeout=60,
+                    poll_interval=5)
+                self.assertTrue(
+                    appeared,
+                    "Cluster %d: UUID '%s' did not appear on the portal "
+                    "within 60 s" % (i, cluster_uuid))
+
+                portal_nodes = get_portal_cluster_nodes(
+                    self.ucp_client, cluster_uuid)
+                self.assertTrue(
+                    portal_nodes,
+                    "Cluster %d: portal telemetry has no nodes" % i)
+
+                for portal_node in portal_nodes:
+                    hostname = portal_node.get('hostname', '')
+                    node_ip = hostname.split(':')[0]
+                    expected = cb_cores.get(node_ip)
+                    self.assertIsNotNone(
+                        expected,
+                        "Cluster %d: portal node '%s' has no matching CB "
+                        "node (known nodes: %s)"
+                        % (i, hostname, sorted(cb_cores.keys())))
+
+                    portal_physical = portal_node.get('cpuPhysicalCores')
+                    portal_logical = portal_node.get('cpuLogicalCores')
+                    self.assertEqual(
+                        portal_physical, expected['cpu_physical_cores'],
+                        "Cluster %d node %s: portal cpuPhysicalCores=%s, OS "
+                        "reports %s" % (i, node_ip, portal_physical,
+                                        expected['cpu_physical_cores']))
+                    self.assertEqual(
+                        portal_logical, expected['cpu_logical_cores'],
+                        "Cluster %d node %s: portal cpuLogicalCores=%s, OS "
+                        "reports %s" % (i, node_ip, portal_logical,
+                                        expected['cpu_logical_cores']))
+                    self.assertGreaterEqual(
+                        portal_logical, portal_physical,
+                        "Cluster %d node %s: logical cores (%s) cannot be "
+                        "fewer than physical cores (%s)"
+                        % (i, node_ip, portal_logical, portal_physical))
+
+                    if expected['cpu_logical_cores'] > \
+                            expected['cpu_physical_cores']:
+                        hyperthreaded_nodes.append(node_ip)
+                        self.assertNotEqual(
+                            portal_logical, portal_physical,
+                            "Cluster %d node %s is hyper-threaded (%s "
+                            "physical / %s logical) but the portal reported "
+                            "the same value for both -- the logical count "
+                            "must reflect the threads, not the cores"
+                            % (i, node_ip, expected['cpu_physical_cores'],
+                               expected['cpu_logical_cores']))
+                    self.log.info(
+                        "Cluster %d node %s: PASS - physical=%s logical=%s"
+                        % (i, node_ip, portal_physical, portal_logical))
+
+            if hyperthreaded_nodes:
+                self.log.info(
+                    "PASS -- core counts match the OS on every node; "
+                    "hyper-threading exercised on: %s"
+                    % hyperthreaded_nodes)
+            else:
+                self.log.info(
+                    "PASS -- core counts match the OS on every node. NOTE: "
+                    "no node in this topology has hyper-threading enabled "
+                    "(logical == physical everywhere), so the HT-specific "
+                    "expectation was not exercised. Run this on HT-enabled "
+                    "hardware to cover it.")
+        finally:
+            for cluster in self.clusters:
+                try:
+                    set_lighthouse_interval_via_diag_eval(cluster.master, 2)
+                except Exception as e:
+                    self.log.warning(
+                        "Finally: could not restore interval: %s" % e)
+            try:
+                self.ucp_client.session_logout()
+            except Exception as e:
+                self.log.warning("Finally: portal logout failed: %s" % e)
+
     def test_node_rebalance_reflected_on_portal(self):
         """
         Verify that rebalancing a node out of the primary cluster is reflected
@@ -840,20 +979,20 @@ class CollectorTests(LighthouseBase):
         cm_telemetry_sends_count{result="failure"} Prometheus metrics increment
         correctly, and that the reporting interval is respected.
 
-        Part 1 — Success path (30 s interval, 2 min window):
+        Part 1 -- Success path (30 s interval, 2 min window):
             Set reporting_interval_hours = 30 s via diag/eval so the interval
             timer fires ~4 times in 2 minutes.  Assert the success counter grew
             by >= 3 and the failure counter is unchanged.
             diag/eval is used (not REST POST) so no extra immediate report fires
-            — only the periodic timer drives the count.
+            -- only the periodic timer drives the count.
 
-        Part 2 — Failure path + interval validation (60 s interval, 2 min window):
+        Part 2 -- Failure path + interval validation (60 s interval, 2 min window):
             Switch to an unreachable endpoint (192.0.2.1, RFC 5737 TEST-NET-1)
             and set interval to 60 s.  With the default reportTimeoutSeconds=1,
             each attempt fails within ~1 s.  After 2 minutes, assert the failure
-            counter grew by 1–3 (≈ 2 expected at 60 s cadence).  The upper bound
+            counter grew by 1-3 (~ 2 expected at 60 s cadence).  The upper bound
             of 3 distinguishes a 60 s interval from a 30 s interval, which would
-            produce ~4 failures — validating that the changed interval is respected.
+            produce ~4 failures -- validating that the changed interval is respected.
             Assert success counter unchanged.
 
         RULE: domain is restored to couchbase.fleetmanager.internal before exit.
@@ -900,7 +1039,7 @@ class CollectorTests(LighthouseBase):
                 "Part 1 result: success_delta=%d failure_delta=%d"
                 % (success_delta_1, failure_delta_1))
 
-            # 30s interval over 2 min → ~4 reports; require at least 3
+            # 30s interval over 2 min -> ~4 reports; require at least 3
             self.assertGreaterEqual(
                 success_delta_1, 3,
                 "Part 1: expected >= 3 successes at 30s interval over 2 min, "
@@ -920,7 +1059,7 @@ class CollectorTests(LighthouseBase):
 
             # Set bad domain + 60s interval via diag/eval.
             # diag/eval does NOT trigger an immediate report, so only the
-            # periodic timer drives the count — making the delta a clean
+            # periodic timer drives the count -- making the delta a clean
             # measure of how many intervals fit in the window.
             diag_status, diag_content = set_lighthouse_ns_config_via_diag_eval(
                 server,
@@ -961,9 +1100,9 @@ class CollectorTests(LighthouseBase):
                 "Part 2 result: success_delta=%d failure_delta=%d"
                 % (success_delta_2, failure_delta_2))
 
-            # 60s interval over 2 min → ~2 failures; [1, 3] tolerates jitter.
+            # 60s interval over 2 min -> ~2 failures; [1, 3] tolerates jitter.
             # Upper bound of 3 distinguishes from 30s interval (~4 failures)
-            # — this is the interval-respected assertion.
+            # -- this is the interval-respected assertion.
             self.assertGreaterEqual(
                 failure_delta_2, 1,
                 "Part 2: expected >= 1 failure against unreachable endpoint, "
@@ -993,7 +1132,7 @@ class CollectorTests(LighthouseBase):
 
         finally:
             # Always restore domain to couchbase.fleetmanager.internal and
-            # interval to 2h — tearDown handles the REST API settings,
+            # interval to 2h -- tearDown handles the REST API settings,
             # this covers the diag/eval ns_config layer.
             try:
                 set_lighthouse_ns_config_via_diag_eval(
