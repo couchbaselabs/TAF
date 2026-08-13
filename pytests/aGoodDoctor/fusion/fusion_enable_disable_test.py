@@ -283,7 +283,10 @@ class FusionEnableDisableTests(_FusionTestBase):
         "enabled" state.
 
         Validates:
-        - Enable is triggered
+        - Enable is triggered and reaches "enabling" state before the fault is injected
+          (mirrors the state-polling pattern in test_enable_fusion_cancel_leaves_empty_s3_bucket
+          and test_stop_fusion_during_enable — injecting unconditionally right after the enable
+          call risks landing before CP has even started the enable sequence)
         - memcached is killed on all cluster nodes via SSM while enable is in-flight
         - CP retries and eventually brings fusion to "enabled" state
         - S3 bucket is created and URI is set after retry succeeds
@@ -298,23 +301,45 @@ class FusionEnableDisableTests(_FusionTestBase):
         resp = CapellaAPI.enable_fusion(self.pod, self.tenant, self.cluster.id)
         self.assertEqual(resp.status_code, 200)
 
-        self.log.info("Killing memcached on all cluster nodes during enable")
-        instances = self.fusion_aws_util.list_instances(
-            self.fusion_aws_util._cluster_filter(self.cluster.id)
-        )
-        kill_threads = []
-        for instance in instances:
-            instance_id = instance.get("InstanceId")
-            self.log.info(f"Killing memcached on instance {instance_id}")
-            t = threading.Thread(
-                target=self.fusion_aws_util.ec2.run_shell_command,
-                args=(instance_id, "sudo kill -9 $(pgrep memcached) || true"),
-                daemon=True,
-            )
-            t.start()
-            kill_threads.append(t)
-        for t in kill_threads:
-            t.join(timeout=30)
+        deadline = time.time() + 120
+        injected = False
+        while time.time() < deadline:
+            state_resp = CapellaAPI.get_fusion_status(self.pod, self.tenant, self.cluster.id)
+            state = state_resp.get("state", "")
+            self.log.info(f"Cluster {self.cluster.id} fusion state: {state}")
+
+            if state == "enabling":
+                self.log.info("Killing memcached on all cluster nodes during enable")
+                instances = self.fusion_aws_util.list_instances(
+                    self.fusion_aws_util._cluster_filter(self.cluster.id)
+                )
+                kill_threads = []
+                for instance in instances:
+                    instance_id = instance.get("InstanceId")
+                    self.log.info(f"Killing memcached on instance {instance_id}")
+                    t = threading.Thread(
+                        target=self.fusion_aws_util.ec2.run_shell_command,
+                        args=(instance_id, "sudo kill -9 $(pgrep memcached) || true"),
+                        daemon=True,
+                    )
+                    t.start()
+                    kill_threads.append(t)
+                for t in kill_threads:
+                    t.join(timeout=30)
+                injected = True
+                break
+
+            if state == "enabled":
+                self.log.warning(
+                    "Fusion enabled before the memcached kill could be "
+                    "injected during 'enabling' state")
+                break
+            time.sleep(2)
+
+        if not injected:
+            self.fail(
+                "Fusion enabled too fast to inject the memcached kill "
+                "during 'enabling' state; adjust cluster size or retry")
 
         self.log.info("Waiting for CP to retry and reach enabled state")
         self._wait_for_fusion_state(self.tenant, self.cluster, "enabled")
