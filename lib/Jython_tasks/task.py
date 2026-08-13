@@ -5419,7 +5419,10 @@ class MutateDocsFromSpecTask(Task):
                     skip_read_success_results=op_data[
                         "skip_read_success_results"],
                     iterations=iterations)
-                self.load_gen_tasks.append(load_task)
+                # Track under cont_load_gen_tasks (not load_gen_tasks) so the
+                # 'cont_<op>' key is used while updating loader_spec and
+                # stop_indefinite_doc_loading_tasks() can end iterations=-1
+                self.cont_load_gen_tasks.append(load_task)
         elif self.load_using == "sirius_java_sdk":
             load_task = SiriusCouchbaseLoader(
                 self.cluster.master.ip, self.cluster.master.port,

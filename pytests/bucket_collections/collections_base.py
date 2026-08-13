@@ -1058,7 +1058,9 @@ class CollectionBase(ClusterSetup, FusionBase):
         cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
             test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
             load_spec, mutation_num=0, async_load=False,
-            batch_size=500, process_concurrency=1, validate_task=True)
+            batch_size=500, process_concurrency=1,
+            load_using=test_obj.load_docs_using,
+            validate_task=True)
         test_obj.assertTrue(cont_doc_load.result, "Hist retention load failed")
         return cont_doc_load
 
