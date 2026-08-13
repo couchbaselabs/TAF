@@ -19,6 +19,14 @@ class FusionFailoverRebalance(MagmaBaseTest, FusionBase):
         super(FusionFailoverRebalance, self).tearDown()
 
 
+    def wait_for_rebalance_to_complete(self, task, wait_step=120):
+        """Wait for rebalance task to complete"""
+        self.task.jython_task_manager.get_task_result(task)
+        if not task.result:
+            self.task.jython_task_manager.abort_all_tasks()
+        self.assertTrue(task.result, "Rebalance Failed")
+
+
     def test_fusion_magma_couchstore(self):
 
         self.enable_magma_bucket_count = self.input.param("enable_magma_bucket_count", self.magma_buckets)
@@ -123,15 +131,23 @@ class FusionFailoverRebalance(MagmaBaseTest, FusionBase):
         elif post_failover_step == "rebalance_out":
             self.num_nodes_to_rebalance_out = 1
 
-        # Perform a Fusion Recovery Rebalance
-        self.log.info("Running a Fusion rebalance")
-        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                              rebalance_count=1,
-                                              rebalance_sleep_time=60)
-        self.log.info("Monitoring active guest volumes")
-        guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
-        guest_volume_th.start()
-        guest_volume_th.join()
+        if post_failover_step == "recovery" and recovery_type == "delta":
+            # Delta recovery is a DCP based recovery (no extent migration
+            # involved), so drive it via a plain rebalance instead of a
+            # Fusion rebalance.
+            self.log.info("Running a DCP recovery rebalance")
+            operation = self.task.async_rebalance(self.cluster, [], [], services=["kv"])
+            self.wait_for_rebalance_to_complete(operation)
+        else:
+            # Perform a Fusion Recovery Rebalance
+            self.log.info("Running a Fusion rebalance")
+            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                                  rebalance_count=1,
+                                                  rebalance_sleep_time=60)
+            self.log.info("Monitoring active guest volumes")
+            guest_volume_th = threading.Thread(target=self.monitor_active_guest_volumes)
+            guest_volume_th.start()
+            guest_volume_th.join()
 
         # Get Uploader Map after recovery
         self.get_fusion_uploader_info()
@@ -143,6 +159,11 @@ class FusionFailoverRebalance(MagmaBaseTest, FusionBase):
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
+
+        tmp_spare_nodes = [n for n in self.cluster.servers if n not in self.cluster.nodes_in_cluster]
+        nodes_in_cluster = self.cluster.nodes_in_cluster
+        kv_nodes = self.cluster.kv_nodes
+        self.log.info(f"Spare nodes = {tmp_spare_nodes}, Nodes in cluster = {nodes_in_cluster}, KV nodes = {kv_nodes}")
 
         self.log.info("Start a Fusion rebalance process")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
@@ -159,12 +180,24 @@ class FusionFailoverRebalance(MagmaBaseTest, FusionBase):
         self.sleep(20, "Wait after crashing")
         RebalanceUtil(self.cluster).print_ui_logs()
 
+        if self.num_nodes_to_rebalance_out > 0:
+            self.log.info("Rebalance failed due to memcached crash. Re-setting the cluster nodes to pre-rebalance state")
+            self.cluster.nodes_in_cluster = nodes_in_cluster
+            self.cluster.kv_nodes = kv_nodes
+        elif self.num_nodes_to_swap_rebalance > 0:
+            self.log.info("Rebalance failed due to memcached crash. Re-setting the cluster nodes to pre-rebalance state and adding spare nodes for re-try")
+            self.cluster.nodes_in_cluster = nodes_in_cluster + tmp_spare_nodes[:self.num_nodes_to_swap_rebalance]
+            self.cluster.kv_nodes = self.cluster.nodes_in_cluster
+            self.num_nodes_to_rebalance_out = self.num_nodes_to_swap_rebalance
+            self.num_nodes_to_swap_rebalance = 0
+        else:
+            self.num_nodes_to_rebalance_in = 0
+            self.num_nodes_to_rebalance_out = 0
+            self.num_nodes_to_swap_rebalance = 0
+
         self.sleep(20, "Wait before retrying rebalance")
 
         self.log.info("Re-trying Fusion rebalance process")
-        self.num_nodes_to_rebalance_in = 0
-        self.num_nodes_to_rebalance_out = 0
-        self.num_nodes_to_swap_rebalance = 0
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
                                               rebalance_count=2,
                                               rebalance_sleep_time=30)

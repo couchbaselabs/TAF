@@ -845,8 +845,7 @@ class FusionSync(MagmaBaseTest, FusionBase):
     def monitor_fusion_sync_stats(self, bucket, interval=10):
 
         stats_to_monitor = ["ep_fusion_bytes_synced", "ep_fusion_log_store_data_size",
-                            "ep_fusion_sync_failures", "ep_fusion_sync_session_completed_bytes",
-                            "ep_fusion_sync_session_total_bytes", "ep_fusion_syncs"]
+                            "ep_fusion_sync_failures", "ep_fusion_syncs"]
 
         self.monitor_stats = True
 
@@ -996,13 +995,10 @@ class FusionSync(MagmaBaseTest, FusionBase):
                 stats = cbstats.all_stats(bucket.name)
                 self.log.info("Node {0}, Bucket {1}: "
                             "bytes_synced={2}, log_store_size={3}, "
-                            "sync_session_completed={4}, sync_session_total={5}, "
-                            "total_syncs={6}, sync_failures={7}".format(
+                            "total_syncs={4}, sync_failures={5}".format(
                                 node.ip, bucket.name,
                                 stats['ep_fusion_bytes_synced'],
                                 stats['ep_fusion_log_store_data_size'],
-                                stats['ep_fusion_sync_session_completed_bytes'],
-                                stats['ep_fusion_sync_session_total_bytes'],
                                 stats['ep_fusion_syncs'],
                                 stats['ep_fusion_sync_failures']))
                 cbstats.disconnect()
@@ -1147,7 +1143,8 @@ class FusionSync(MagmaBaseTest, FusionBase):
             self.bucket_util.flush_bucket(self.cluster, bucket)
 
         # Wait for upload interval after flush for log store cleanup to catch up
-        self.sleep(self.fusion_upload_interval, "Wait after flushing buckets for upload interval")
+        sleep_time = 120 + self.fusion_upload_interval + 60
+        self.sleep(sleep_time, "Wait after flushing buckets for upload interval")
 
         # Verify log store has no data after flush
         self.log.info("Checking log files on NFS after flush (expected 0)")
@@ -1173,7 +1170,6 @@ class FusionSync(MagmaBaseTest, FusionBase):
         self.log.info("Loading 5M documents after flush using java_doc_loader")
         self.perform_workload(0, 5000000, doc_op="create", wait=True, ops_rate=20000)
 
-        sleep_time = 120 + self.fusion_upload_interval + 60
         self.sleep(sleep_time, "Wait for Fusion sync after post-flush load")
 
         # Check log files before disabling Fusion

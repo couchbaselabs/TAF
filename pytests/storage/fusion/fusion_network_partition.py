@@ -246,9 +246,7 @@ class FusionNetworkPartition(MagmaBaseTest, FusionBase):
             "fusion_sync_rate_limit",
             "ep_fusion_syncs",
             "ep_fusion_bytes_synced",
-            "ep_fusion_sync_failures",
-            "ep_fusion_sync_session_completed_bytes",
-            "ep_fusion_sync_session_total_bytes"
+            "ep_fusion_sync_failures"
         ]
 
         self.log.info("=" * 80)

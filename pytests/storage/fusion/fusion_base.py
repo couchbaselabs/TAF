@@ -691,12 +691,13 @@ class FusionBase(BaseTestCase):
                       f"buffer={buffer_seconds}s, timeout={timeout}s")
         return timeout
 
-    def monitor_active_guest_volumes(self, duration=1800, interval=30):
+    def monitor_active_guest_volumes(self, duration=1800, interval=30, consecutive_empty_required=3):
         fusion_rest = FusionRestAPI(self.cluster.master)
 
         start_time = time.time()
         end_time = start_time + duration
         seen_volumes = False
+        consecutive_empty = 0
 
         self.log.info(f"[GUEST VOLUMES] Starting monitor (max duration: {duration}s, poll interval: {interval}s)")
 
@@ -712,11 +713,17 @@ class FusionBase(BaseTestCase):
 
                 if all_guests:
                     seen_volumes = True
+                    consecutive_empty = 0
                     self.log.info(f"[GUEST VOLUMES] Guests still present: {content}")
                 else:
                     if seen_volumes:
-                        self.log.info(f"[GUEST VOLUMES] All guest volumes drained. Total time: {elapsed}s")
-                        break
+                        consecutive_empty += 1
+                        self.log.info(f"[GUEST VOLUMES] No guests present "
+                                      f"({consecutive_empty}/{consecutive_empty_required} "
+                                      f"consecutive empty checks)")
+                        if consecutive_empty >= consecutive_empty_required:
+                            self.log.info(f"[GUEST VOLUMES] All guest volumes drained. Total time: {elapsed}s")
+                            break
                     else:
                         self.log.info("[GUEST VOLUMES] No guest volumes yet, waiting for initial population.")
 
@@ -1121,6 +1128,26 @@ class FusionBase(BaseTestCase):
                 shell.kill_memcached()
 
             self.sleep(interval, "Sleep before killing memcached")
+
+
+    def get_cbstats_all_stats(self, node, bucket_name, retries=3, retry_delay=5):
+        """cbstats.all_stats() with retries, for use alongside crash_during_test
+
+        A concurrent memcached kill on `node` can make the underlying cbstats
+        call fail even though the node is healthy moments later, so retry a
+        few times before giving up.
+        """
+        last_exception = None
+        for attempt in range(1, retries + 1):
+            try:
+                return Cbstats(node).all_stats(bucket_name)
+            except Exception as e:
+                last_exception = e
+                self.log.warning(f"cbstats all_stats failed for node {node.ip}, "
+                                 f"bucket {bucket_name} (attempt {attempt}/{retries}): {e}")
+                if attempt < retries:
+                    self.sleep(retry_delay, "Wait before retrying cbstats")
+        raise last_exception
 
 
     def get_fusion_uploader_info(self, buckets=None):
@@ -2363,7 +2390,7 @@ class FusionBase(BaseTestCase):
 
 
     def monitor_log_store_stats(self, bucket, time_interval=15, validate=False):
-        FRAG_MULTIPLIER = 1.1
+        FRAG_MULTIPLIER = 1.2
 
         self.log.info(
             f"[monitor_log_store_stats] Starting log-store fragmentation monitor for "

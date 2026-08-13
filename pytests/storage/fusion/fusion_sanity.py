@@ -238,10 +238,9 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                               f"{reb_dir} = {guest_log_count}")
 
                 # Sum ep_fusion_logs_migrated across all buckets on this node.
-                cbstats_obj = Cbstats(node)
                 cbstats_logs_migrated = 0
                 for bucket in self.cluster.buckets:
-                    stats = cbstats_obj.all_stats(bucket.name)
+                    stats = self.get_cbstats_all_stats(node, bucket.name)
                     migrated = int(stats.get("ep_fusion_logs_migrated", 0))
                     mounted = int(stats.get("ep_fusion_num_logs_mounted", 0))
                     self.log.info(f"[{node_id}] bucket {bucket.name} "
@@ -933,11 +932,11 @@ class FusionSanity(MagmaBaseTest, FusionBase):
         self.log.info("Performing Write Workload during rebalance")
 
         write_load_th = threading.Thread(target=self.run_workload_custom,
-                                         args=[num_bucket_batch_size, self.num_items, self.num_items * 2, 1000, 0, "create"])
+                                         args=[num_bucket_batch_size, self.num_items, self.num_items * 2, self.ops_rate, 0, "create"])
         write_load_th.start()
 
         read_load_th = threading.Thread(target=self.run_workload_custom,
-                                         args=[num_bucket_batch_size, 0, self.num_items, 2500, 0, "read"])
+                                         args=[num_bucket_batch_size, 0, self.num_items, self.read_ops_rate, 0, "read"])
         read_load_th.start()
 
         self.num_rebalance_count = 1
@@ -1141,8 +1140,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             self.fusion_read_stats[bucket.name] = dict()
             for node in self.cluster.nodes_in_cluster:
                 self.fusion_read_stats[bucket.name][node.ip] = dict()
-                cbstats = Cbstats(node)
-                result = cbstats.all_stats(bucket.name)
+                result = self.get_cbstats_all_stats(node, bucket.name)
                 for stat in ["ep_fusion_log_store_reads", "ep_fusion_log_store_remote_deletes",
                              "ep_fusion_log_store_remote_gets", "ep_fusion_log_store_remote_lists",
                              "ep_fusion_log_store_remote_puts"]:

@@ -546,6 +546,7 @@ class FusionMagmaScenarios(MagmaBaseTest, FusionBase):
                                              coll_to_drop)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.sleep(30, "Wait after dropping collections")
+        self.num_items = 0
 
         if recreate_coll:
             self.sleep(60, "Wait before re-creating collections")

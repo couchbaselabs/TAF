@@ -32,30 +32,23 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         end_time = time.time() + timeout
         cbstats_obj = Cbstats(server)
-        sync_complete = False
 
         while time.time() < end_time:
 
             try:
                 result = cbstats_obj.all_stats(bucket.name)
-                completed_bytes = result["ep_fusion_sync_session_completed_bytes"]
-                total_bytes = result["ep_fusion_sync_session_total_bytes"]
+                bytes_synced = result["ep_fusion_bytes_synced"]
+                syncs = result["ep_fusion_syncs"]
 
                 self.log.info(f"Server: {server.ip}, Bucket: {bucket.name}, "
-                            f"Completed bytes: {completed_bytes}, Total bytes: {total_bytes}")
+                            f"Bytes synced: {bytes_synced}, Syncs: {syncs}")
 
-                if int(completed_bytes) == int(total_bytes) and int(total_bytes) != 0:
-                    sync_complete = True
-                    break
                 time.sleep(2)
 
             except Exception as e:
                 self.log.info(f"Cbstats exception: {e}")
 
-        if sync_complete:
-            self.log.info(f"Sync complete for bucket: {bucket.name} on server: {server.ip}")
-        else:
-            self.log.info(f"Sync not complete for bucket: {bucket.name} on server: {server.ip} even after {timeout} seconds")
+        self.log.info(f"Finished monitoring sync stats for bucket: {bucket.name} on server: {server.ip}")
 
 
     def test_fusion_enable_midway(self):
@@ -242,11 +235,6 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
     def test_disable_fusion_during_extent_migration(self):
 
-        ###
-        # Set a low migration rate limit so that it takes longer to finish
-        # e.g: 10MB/s
-        ###
-
         self.log.info("Verifying that Fusion is enabled initially")
         status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
         self.log.info(f"Status = {status}, Content = {content}")
@@ -264,6 +252,11 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.assertFalse(e, f"DU command failed with error: {e}")
         self.assertGreater(initial_size, 0, "Log store should contain data initially")
 
+        # Set Migration Rate Limit to 0 so that extent migration doesn't
+        # complete before we get a chance to disable Fusion mid-migration
+        ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_migration_rate_limit=0)
+
         # Perform a Fusion Rebalance
         self.log.info("Running a Fusion rebalance")
         nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
@@ -276,18 +269,46 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
 
         self.sleep(30, "Wait before disabling Fusion")
 
-        # Disable Fusion during extent migration
+        # Disabling Fusion during extent migration should succeed and move
+        # Fusion into the 'disabling' state; it only becomes 'disabled' once
+        # all guest volumes have drained.
         status, content = FusionRestAPI(self.cluster.master).disable_fusion()
         self.log.info(f"Status = {status}, Content = {content}")
-        self.assertFalse(status, "Disabling Fusion during extent migration succeeded")
+        self.assertTrue(status, "Disabling Fusion during extent migration failed")
+
+        status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+        self.log.info(f"Status = {status}, Content = {content}")
+        self.assertTrue(status, "Failed to get Fusion status")
+        self.assertEqual(content.get("state"), "disabling",
+                         "Fusion should be 'disabling' while guest volumes are still draining")
 
         monitor_fusion_th = threading.Thread(target=self.get_fusion_status_info)
         monitor_fusion_th.start()
+
+        # Restore the Migration Rate Limit so guest volumes can actually drain
+        ClusterRestAPI(self.cluster.master).\
+            manage_global_memcached_setting(fusion_migration_rate_limit=self.fusion_migration_rate_limit)
 
         guest_volume_th.join()
 
         self.monitor_fusion_info = False
         monitor_fusion_th.join()
+
+        # Guest volumes have fully drained -- Fusion should now transition to
+        # disabled; give it up to 10 minutes to make that transition.
+        state = None
+        end_time = time.time() + 600
+        while time.time() < end_time:
+            status, content = FusionRestAPI(self.cluster.master).get_fusion_status()
+            self.log.info(f"Status = {status}, Content = {content}")
+            self.assertTrue(status, "Failed to get Fusion status")
+            state = content.get("state")
+            if state == "disabled":
+                break
+            self.sleep(30, "Wait for Fusion to become disabled")
+
+        self.assertEqual(state, "disabled",
+                         "Fusion should be 'disabled' once guest volumes have drained")
 
 
     def test_disable_fusion_during_rebalance(self):
@@ -1759,44 +1780,24 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         if available_spare_nodes < len(original_nodes):
             self.fail(f"Not enough spare nodes. Required: {len(original_nodes)}, Available: {available_spare_nodes}")
 
-        self.spare_nodes = [s for s in self.cluster.servers if s not in self.cluster.nodes_in_cluster]
-        if not self.spare_nodes:
-            self.fail("No spare nodes available")
-
+        self.log.info("Swapping every original node out via DCP rebalance so each one "
+                      "is re-added on the Magma backend")
         for swap_count, node_to_remove in enumerate(nodes_to_migrate):
             if node_to_remove.ip not in original_node_ips:
                 self.fail(f"ERROR: Attempting to remove non-original node {node_to_remove.ip}")
 
-            self.log.info(f"Swap rebalance {swap_count + 1}/{len(nodes_to_migrate)}: removing {node_to_remove.ip}")
+            spare_nodes = [s for s in self.cluster.servers if s not in self.cluster.nodes_in_cluster]
+            if not spare_nodes:
+                self.fail("No spare nodes available")
+            node_to_add = spare_nodes[0]
 
-            current_cluster_nodes = list(self.cluster.nodes_in_cluster)
-            reordered_cluster = []
+            self.log.info(f"DCP swap rebalance {swap_count + 1}/{len(nodes_to_migrate)}: "
+                          f"removing {node_to_remove.ip}, adding {node_to_add.ip}")
 
-            for node in current_cluster_nodes:
-                if node.ip == self.cluster.master.ip:
-                    reordered_cluster.append(node)
-                    break
-
-            for node in current_cluster_nodes:
-                if node.ip == node_to_remove.ip:
-                    reordered_cluster.append(node)
-                    break
-
-            for node in current_cluster_nodes:
-                if node.ip not in [n.ip for n in reordered_cluster]:
-                    reordered_cluster.append(node)
-
-            self.cluster.nodes_in_cluster = reordered_cluster
-
-            self.num_nodes_to_rebalance_in = 0
-            self.num_nodes_to_rebalance_out = 0
-            self.num_nodes_to_swap_rebalance = 1
-
-            nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
-                                                  rebalance_count=swap_count + 1,
-                                                  wait_for_rebalance_to_complete=True,
-                                                  rebalance_master=False,
-                                                  log_store=self.log_store)
+            result = self.task.rebalance(self.cluster, [node_to_add], [node_to_remove],
+                                         services=["kv"],
+                                         retry_get_process_num=self.retry_get_process_num)
+            self.assertTrue(result, f"DCP swap rebalance {swap_count + 1} failed")
 
             current_cluster_ips = [n.ip for n in self.cluster.nodes_in_cluster]
             if node_to_remove.ip in current_cluster_ips:
@@ -1808,9 +1809,10 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
             mixed_mode = self.check_bucket_mixed_mode(test_bucket)
             self.log.info(f"Mixed mode after swap {swap_count + 1}: {mixed_mode}")
 
-
         mixed_mode = self.check_bucket_mixed_mode(test_bucket)
         self.log.info(f"Final mixed mode: {mixed_mode}")
+        self.assertFalse(mixed_mode, "Bucket should be fully migrated to Magma after all "
+                         "original nodes have been swapped out")
 
         self.log.info("Verifying first Fusion upload completes")
         sleep_time = 120 + self.fusion_upload_interval + 30
@@ -1822,6 +1824,19 @@ class FusionEnableDisable(MagmaBaseTest, FusionBase):
         self.assertGreater(upload_size, 0, "Log store should contain data after Fusion upload")
 
         self.get_fusion_uploader_info()
+
+        self.log.info("Cluster is fully migrated to Magma with data on the log store -- "
+                      "running a Fusion rebalance to verify")
+        self.num_nodes_to_rebalance_in = 0
+        self.num_nodes_to_rebalance_out = 0
+        self.num_nodes_to_swap_rebalance = 1
+
+        nodes_to_monitor = self.run_rebalance(output_dir=self.fusion_output_dir,
+                                              rebalance_count=1,
+                                              wait_for_rebalance_to_complete=True,
+                                              rebalance_master=False,
+                                              log_store=self.log_store)
+
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
