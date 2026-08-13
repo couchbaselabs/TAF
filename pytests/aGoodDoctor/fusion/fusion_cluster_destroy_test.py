@@ -49,6 +49,20 @@ from .awslib.s3_lib import S3Lib
 from .fusion_enable_disable_test import _FusionTestBase
 
 
+class _ClusterDestroyTimeoutError(Exception):
+    """Raised by _ensure_cluster_destroyed when the cluster cannot be
+    confirmed destroyed within teardown_force_destroy_timeout.
+
+    Kept distinct from generic exceptions so tearDown can still let
+    BaseTestCase.tearDown's fallback destroy attempt run (best-effort
+    cleanup), while telling the two failure modes apart: this one means
+    the cluster is genuinely stuck/leaked (e.g. a stranded AWS resource
+    blocking teardown) and must fail the test, whereas an unexpected
+    error elsewhere in _ensure_cluster_destroyed should not mask
+    tearDown's fallback attempt.
+    """
+
+
 class FusionClusterDestroyTest(_FusionTestBase):
     """
     Tests for cluster destruction at various stages of a fusion rebalance.
@@ -107,8 +121,14 @@ class FusionClusterDestroyTest(_FusionTestBase):
         # Overall budget for tearDown's own force-destroy safety net (see
         # _ensure_cluster_destroyed) to get the cluster into a destroyable
         # state and destroyed, regardless of how/where the test itself failed.
+        # Deliberately capped at 10 minutes: this only covers tearDown's own
+        # checking (the test's own in-test destroy/wait calls, if any, are
+        # not counted against this budget) -- if the cluster still isn't
+        # confirmed destroyed after 10 minutes of tearDown retrying, it's
+        # stuck (a CP bug, e.g. a stranded AWS resource), not slow, and
+        # tearDown should fail fast rather than keep polling.
         self.teardown_force_destroy_timeout = self.input.param(
-            "teardown_force_destroy_timeout", 2400)
+            "teardown_force_destroy_timeout", 600)
         self.load_defn = [Hotel]
 
         JavaDocLoaderUtils(self.bucket_util, self.cluster_util)
@@ -128,8 +148,29 @@ class FusionClusterDestroyTest(_FusionTestBase):
         if hasattr(self, "stop_run_event"):
             self.stop_run_event.set()
         self.stop_run = True
+        destroy_timeout_error = None
         try:
             self._ensure_cluster_destroyed()
+        except _ClusterDestroyTimeoutError as e:
+            self.log.critical(f"[tearDown] {e}")
+            destroy_timeout_error = e
+            # We already spent the full teardown_force_destroy_timeout
+            # (10 min) confirming this cluster is stuck, not just slow --
+            # BaseTestCase.tearDown's own destroy loop below would just
+            # retry the same doomed call for up to another ~30 min with an
+            # unbounded join. Pull the cluster out of tenant.clusters so
+            # that loop skips it entirely: teardown must not check for more
+            # than 10 minutes total. Other cleanup below (task manager, SDK
+            # pools, any other cluster) still runs; this cluster is left for
+            # manual/out-of-band AWS cleanup, with its id in the failure
+            # message below.
+            if hasattr(self, "tenant") and hasattr(self, "cluster") \
+                    and self.cluster in self.tenant.clusters:
+                self.log.critical(
+                    f"[tearDown] Excluding cluster {self.cluster.id} from "
+                    f"BaseTestCase.tearDown's destroy loop -- it needs "
+                    f"manual/out-of-band cleanup, not another retry.")
+                self.tenant.clusters.remove(self.cluster)
         except Exception as e:
             # Must never propagate -- a leaked cluster is far worse than a
             # noisy log line, and BaseTestCase.tearDown below is still a
@@ -143,6 +184,8 @@ class FusionClusterDestroyTest(_FusionTestBase):
         # it only serves as a final fallback if the explicit destroy above
         # still failed.
         BaseTestCase.tearDown(self)
+        if destroy_timeout_error is not None:
+            self.fail(str(destroy_timeout_error))
 
     def _ensure_cluster_destroyed(self):
         """
@@ -161,7 +204,11 @@ class FusionClusterDestroyTest(_FusionTestBase):
             finishes) -- rejected with ErrClusterIsTheSourceForRestore (409),
             so just retry after a short wait for the restore job to settle.
 
-        Bounded by self.teardown_force_destroy_timeout overall; never raises.
+        Bounded by self.teardown_force_destroy_timeout overall. Raises
+        _ClusterDestroyTimeoutError if that budget is exhausted without
+        confirming the cluster destroyed -- callers should still run their
+        own fallback destroy attempt on this specific exception, but it is
+        expected to eventually fail the test (see tearDown).
         """
         if not hasattr(self, "tenant") or not hasattr(self, "cluster"):
             # setUp failed before tenant/cluster were even assigned --
@@ -194,13 +241,19 @@ class FusionClusterDestroyTest(_FusionTestBase):
                     f"double-destroy race")
                 thread.join(timeout=max(0, deadline - time.time()))
                 if thread.is_alive():
-                    self.log.critical(
-                        f"[tearDown] In-flight destroy_cluster thread for "
+                    # Don't fire a second destroy_cluster call here -- the
+                    # in-flight one is still running and doing so risks the
+                    # concurrent double-destroy race described above. But
+                    # this is not a silent no-op: it means the cluster
+                    # cannot be confirmed destroyed within budget, so it
+                    # must still fail the test via the same path as the
+                    # retry-loop timeout below.
+                    raise _ClusterDestroyTimeoutError(
+                        f"In-flight destroy_cluster thread for "
                         f"{self.cluster.id} did not finish within "
                         f"{self.teardown_force_destroy_timeout}s — giving up "
                         f"here rather than risk a concurrent double-destroy "
                         f"race; check AWS/Capella for a leaked cluster.")
-                    return
             if result.get("failed"):
                 self.log.warning(
                     f"[tearDown] In-flight destroy_cluster for "
@@ -255,12 +308,14 @@ class FusionClusterDestroyTest(_FusionTestBase):
                     break
                 time.sleep(30)
 
-        self.log.critical(
-            f"[tearDown] Cluster {self.cluster.id} could NOT be confirmed "
-            f"destroyed within {self.teardown_force_destroy_timeout}s across "
+        raise _ClusterDestroyTimeoutError(
+            f"Cluster {self.cluster.id} could NOT be confirmed destroyed "
+            f"within {self.teardown_force_destroy_timeout}s across "
             f"{attempt} attempt(s) — falling back to BaseTestCase.tearDown's "
-            f"destroy loop as a last resort; check AWS/Capella for a leaked "
-            f"cluster if that also fails.")
+            f"destroy loop as a last resort, then failing this test; check "
+            f"AWS/Capella for a leaked cluster (a stranded AWS resource -- "
+            f"e.g. an orphaned fusion accelerator instance/ENI blocking "
+            f"subnet teardown -- is a common cause).")
 
     # ------------------------------------------------------------------
     # Private helpers
