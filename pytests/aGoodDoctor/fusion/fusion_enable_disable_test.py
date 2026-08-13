@@ -45,6 +45,16 @@ class FusionEnableDisableTests(_FusionTestBase):
                 self.pod, self.tenant, self.cluster.id,
                 "Wait for healthy cluster state before bucket cleanup", timeout=600)
         self.initial_kv_nodes = self.input.param("kv_nodes", 3)
+        # Global memcached settings (see couchbase-cloud internal/clusters/
+        # settings/settings.go FusionNumUploaderThreads/FusionSyncRateLimit),
+        # applied via _apply_fusion_upload_speed_settings() before any wait
+        # for fusion pending bytes to drain to 0 -- same mechanism/defaults
+        # as VolumeTest.apply_fusion_memcached_settings() in fusion_volume.py.
+        # Without this, wait_for_fusion_pending_byte_zero can take far longer
+        # than necessary (or time out) under the cluster's default upload
+        # throughput. Set to 0/None to leave the default settings untouched.
+        self.fusion_num_uploader_threads = self.input.param("fusion_num_uploader_threads", 64)
+        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 300971520)
         for bucket in self.cluster.buckets:
             try:
                 self._delete_bucket_with_s3_cleanup(bucket)
@@ -94,6 +104,23 @@ class FusionEnableDisableTests(_FusionTestBase):
         # still runs; orphaned S3 objects break later bucket-empty checks.
         if cleanup_errors:
             self.fail(f"[tearDown] Bucket/S3 cleanup failed: {cleanup_errors}")
+
+    def _apply_fusion_upload_speed_settings(self):
+        """
+        Apply fusion_num_uploader_threads/fusion_sync_rate_limit via
+        FusionMonitorUtil.set_memcached_global_setting, whichever are
+        configured -- a no-op if both are None. Best-effort: failures are
+        logged by set_memcached_global_setting, not raised. Call this before
+        any wait_for_fusion_pending_byte_zero() so the wait converges under
+        the cluster's default (slower) upload throughput.
+        """
+        settings = {
+            "fusion_num_uploader_threads": self.fusion_num_uploader_threads,
+            "fusion_sync_rate_limit": self.fusion_sync_rate_limit,
+        }
+        for key, value in settings.items():
+            if value is not None:
+                self.fusion_monitor.set_memcached_global_setting(self.cluster, key, value)
 
     def test_enable_fusion_on_existing_cluster(self):
         """
@@ -348,6 +375,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self.assertIsNotNone(s3_uri,
                              "S3 URI not found after CP retry — enable did not complete")
         self.log.info(f"Fusion enabled after memcached kill. S3 URI: {s3_uri}")
+        self._apply_fusion_upload_speed_settings()
         self.fusion_monitor.wait_for_fusion_pending_byte_zero(self.cluster)
 
 
@@ -373,6 +401,7 @@ class FusionEnableDisableTests(_FusionTestBase):
         self._load_data(self.cluster)
 
         self.log.info("Allowing data to sync before stop")
+        self._apply_fusion_upload_speed_settings()
         self.fusion_monitor.wait_for_fusion_pending_byte_zero(self.cluster)
 
         bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
