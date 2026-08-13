@@ -15,6 +15,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from pytests.basetestcase import BaseTestCase
 from py_constants.cb_constants.CBServer import CbServer
+from sdk_client3 import SDKClientPool
 from .cbas import CBASQueryLoad
 from .cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
@@ -503,6 +504,16 @@ class Murphy(BaseTestCase, OPD):
         self.restore_with_workloads_paused()
 
     def initial_setup(self):
+        if self.cluster.sdk_client_pool is None:
+            # Make sure we have atleast one python Client
+            # for doing any validation / cluster operations from test
+            self.cluster.sdk_client_pool = SDKClientPool()
+            for bucket in self.cluster.buckets:
+                self.cluster.sdk_client_pool.create_clients(
+                    self.cluster, bucket=bucket,
+                    servers=[self.cluster.master],
+                    req_clients=1)
+
         if self.initial_setup_done or self.skip_init:
             return
 
