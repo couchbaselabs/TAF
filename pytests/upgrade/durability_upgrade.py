@@ -1,6 +1,7 @@
 import random
 import threading
 import time
+import uuid
 from random import choice
 from threading import Thread
 
@@ -23,6 +24,10 @@ from constants.sdk_constants.java_client import SDKConstants
 from collections_helper.collections_spec_constants import MetaCrudParams, MetaConstants
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
+from couchbase_utils.backup_utils.backup_utils import \
+    CLOUD_PROVIDER_CLASSES, ContinuousBackupUtil
+from couchbase_utils.security_utils.credential_store_utils import \
+    CredentialStoreUtils
 from gsiLib.gsiHelper import GsiHelper
 from membase.api.rest_client import RestConnection
 from scenario_plugins.ns_server_scenarios import NsServerFeaturePlugins
@@ -46,6 +51,11 @@ class UpgradeTests(UpgradeBase):
         self.pitr_timestamps = dict()
 
     def tearDown(self):
+        # First, ahead of the range-scan assert below: a failing assert would
+        # skip the rest of tearDown and strand the cloud KMS key. Also has to
+        # precede super().tearDown(), which drops the buckets -- ns_server
+        # refuses to delete a secret while a bucket still references it.
+        self.teardown_backup_encryption()
         if self.range_scan_collections > 0:
             self.range_scan_task.stop_task = True
             self.task_manager.get_task_result(self.range_scan_task)
@@ -1426,23 +1436,187 @@ class UpgradeTests(UpgradeBase):
             self.log.info(
                 "History start sequence numbers verified for all 1024 vbuckets")
 
+    def setup_backup_encryption(self):
+        """
+        Opt in to encryption-at-rest for the backup tools, per `ear_contbk`
+        (cbcontbk) and `ear_bk` (cbbackupmgr archive).
+
+        Three steps, in order:
+          1. Provision an external KMS key.
+          2. Upload its credentials to the Credential Store and grant the
+             backup service the role to read them, so the service can reach
+             the key.
+          3. Attach the KMS provider to whichever CLI wrapper asked for it.
+
+        Runs before continuous backup is switched on, since the bucket-level
+        continuousBackupKm* settings reference the key created here. Unlike
+        the volume tests, `ear_contbk` is mandatory rather than opt-in: this
+        path exists only to exercise encrypted continuous backup.
+        """
+        self.ear_bk = self.input.param("ear_bk", False)
+        self.ear_contbk = self.input.param("ear_contbk", False)
+        self.kms_provider = None
+        self.km_cred_store_id = None
+
+        if not self.ear_contbk:
+            self.fail("Continuous backup encryption at rest requires "
+                      "ear_contbk=True; got ear_contbk=%s" % self.ear_contbk)
+
+        km_provider_name = self.input.param("km_provider", "AWS")
+        if km_provider_name not in CLOUD_PROVIDER_CLASSES:
+            self.fail(f"Invalid km_provider {km_provider_name!r}. Expected "
+                      f"one of {list(CLOUD_PROVIDER_CLASSES)}.")
+        self.kms_provider = CLOUD_PROVIDER_CLASSES[km_provider_name](
+            log=self.log)
+        self.kms_provider.create_kms_key(
+            alias=self.input.param("km_key_alias", None))
+        self.log.info(f"KMS key provisioned for EaR: "
+                      f"{self.kms_provider.km_key_url}")
+
+        rest = RestConnection(self.cluster.master)
+        self.km_cred_store_id = f"km_cred_{uuid.uuid4()}"
+        self.kms_provider.create_kms_credential_store(
+            rest, cred_id=self.km_cred_store_id,
+            description="KMS credential for cbcontbk EaR upgrade tests")
+        self.log.info(f"Created credential store for KMS with ID: "
+                      f"{self.km_cred_store_id}")
+
+        # The continuous backup location here is NFS, so there is no
+        # object-store credential to grant alongside the KMS one -- read it
+        # via getattr in case an object-store backing is added later.
+        roles = [f"credential_consumer[{self.km_cred_store_id}]"]
+        cont_bkp_cred_id = getattr(self, "cont_bkp_credential_store_id", None)
+        if cont_bkp_cred_id:
+            roles.append(f"credential_consumer[{cont_bkp_cred_id}]")
+        CredentialStoreUtils().put_service_roles(
+            rest, service_name="backup", roles=roles)
+
+        # Attach the provider only to the required CLI wrapper
+        if self.ear_bk:
+            self.backup_mgr.kms_provider = self.kms_provider
+        if self.ear_contbk:
+            self.cont_bk_mgr.kms_provider = self.kms_provider
+
+    def teardown_backup_encryption(self):
+        """
+        Reverse setup_backup_encryption(): drop the KMS key, its Credential
+        Store entry, and the bucket-encryption secret.
+
+        Runs on both the success and failure paths — cloud KMS keys carry
+        ongoing cost and must never be left orphaned. On failure everything a
+        human needs to find the key in the provider's console is logged first:
+        the scheduled-delete window (AWS: 7 days pending; Azure: 90-day soft
+        delete; GCP: destroys versions only) gives investigators time to
+        cancel deletion if the key is still needed for post-mortem.
+
+        Every step swallows its own exceptions so one failure cannot strand
+        the resources after it.
+
+        Read through getattr because setup_backup_encryption() only runs on
+        the continuous-backup path, and tearDown() runs even when setUp died
+        before it (or never reached it at all).
+        """
+        if not (getattr(self, "ear_bk", False)
+                or getattr(self, "ear_contbk", False)):
+            return
+
+        if self.is_test_failed() and self.kms_provider is not None:
+            key_details = {
+                "provider": type(self.kms_provider).__name__,
+                "km_key_url": self.kms_provider.km_key_url,
+                # AWS uses (_km_key_id, _km_alias_name); GCP/Azure use
+                # _km_key_name. Read via getattr so the log line is
+                # provider-agnostic.
+                "km_key_id": getattr(self.kms_provider, "_km_key_id", None),
+                "km_alias_name": getattr(
+                    self.kms_provider, "_km_alias_name", None),
+                "km_key_name": getattr(
+                    self.kms_provider, "_km_key_name", None),
+                "km_created_by_this_run": getattr(
+                    self.kms_provider, "_km_created_by_us", None),
+                "km_cred_store_id": self.km_cred_store_id,
+            }
+            self.log.warning(f"EaR test failed — KMS resources scheduled for "
+                             f"deletion below. Details for post-mortem "
+                             f"lookup: {key_details}")
+
+        if self.kms_provider is not None:
+            try:
+                self.kms_provider.delete_kms_key()
+            except Exception as e:
+                self.log.warning(
+                    f"Failed to delete KMS key during teardown: {e}")
+
+        if self.km_cred_store_id is not None:
+            try:
+                CredentialStoreUtils().delete_credential(
+                    RestConnection(self.cluster.master),
+                    self.km_cred_store_id)
+            except Exception as e:
+                self.log.error(f"Exception while deleting KMS credential "
+                               f"store entry: {e}")
+
+        self._delete_bucket_encryption_secret()
+
+    def _delete_bucket_encryption_secret(self):
+        """
+        Delete the server-managed ns_server secret behind bucket-level EaR.
+
+        ns_server rejects delete_secret while any bucket still references the
+        secret via encryptionAtRestKeyId, and super().tearDown() -- which
+        drops the buckets -- runs after this. So unbind every bucket first by
+        setting encryptionAtRestKeyId=-1.
+        """
+        if not getattr(self, "encryption_at_rest_id", None):
+            return
+
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            try:
+                bucket_helper.change_bucket_props(
+                    bucket, encryptionAtRestKeyId=-1)
+            except Exception as e:
+                self.log.warning(
+                    f"Failed to unbind bucket '{bucket.name}' from EaR "
+                    f"secret id={self.encryption_at_rest_id} before "
+                    f"delete: {e}")
+
+        try:
+            status, response = RestConnection(
+                self.cluster.master).delete_secret(self.encryption_at_rest_id)
+            if not status:
+                self.log.warning(f"Failed to delete EaR bucket secret "
+                                 f"id={self.encryption_at_rest_id}: "
+                                 f"{response}")
+        except Exception as e:
+            self.log.warning(f"Exception deleting EaR bucket secret "
+                             f"id={self.encryption_at_rest_id}: {e}")
+
     def _enable_continuous_backup_and_capture_initial_state(self):
         """
         Enable continuous backup on all Magma buckets, create backup repository,
         perform initial backup, and capture initial timestamp/item counts.
         """
+        # The buckets reference the KMS key below, so it has to exist first.
+        self.setup_backup_encryption()
+
         self.PrintStep("Enabling continuous backup on all buckets post upgrade")
-        for bucket in self.cluster.buckets:
-            if bucket.storageBackend == Bucket.StorageBackend.magma:
-                self.bucket_util.update_bucket_property(
-                    self.cluster.master, bucket,
-                    history_retention_seconds=max(2 * self.continuous_backup_interval * 60, 900),
-                    history_retention_bytes=0,
-                    continuous_backup_interval=self.continuous_backup_interval,
-                    continuous_backup_location=self.continuous_backup_location,
-                    continuous_backup_enabled=True,
-                    continuous_backup_retention_period=self.continuous_backup_retention_period)
-                self.log.info("Continuous backup enabled for bucket: %s" % bucket.name)
+        ContinuousBackupUtil.enable_continuous_backup(
+            self.bucket_util, self.cluster, self.cluster.buckets,
+            continuous_backup_location=self.continuous_backup_location,
+            continuous_backup_interval=self.continuous_backup_interval,
+            continuous_backup_cloud_storage_cred_id=getattr(
+                self, "cont_bkp_credential_store_id", None),
+            continuous_backup_retention_period=self.continuous_backup_retention_period,
+            continuous_backup_km_key_url=(
+                self.kms_provider.km_key_url if self.ear_contbk else None),
+            continuous_backup_km_cred_id=(
+                self.km_cred_store_id if self.ear_contbk else None),
+            default_history_retention_seconds=self.input.param(
+                "history_retention_seconds", 86400),
+            default_history_retention_bytes=self.input.param(
+                "history_retention_bytes", 0),
+            log=self.log)
 
         self.sleep(self.continuous_backup_interval * 60,
                    f"Waiting for {self.continuous_backup_interval} minutes after enabling continuous backup")
