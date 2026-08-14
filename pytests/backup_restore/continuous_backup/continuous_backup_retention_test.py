@@ -532,4 +532,234 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
             f"stdout: {output}\nstderr: {error}")
         self.log.info("Restore failed with the expected retention message")
 
+    def test_retention_deletes_old_data_after_cont_bkp_re_enabled(self):
+        """Retention must resume deleting pre-disable data once continuous
+        backup is re-enabled.
 
+        While continuous backup is disabled nothing is deleted (that is
+        test_no_deletion_when_cont_bkp_disabled / MB-70628). This test covers
+        the other half: after it is switched back on, retention must catch up
+        and delete the data that aged out during the disabled stretch -- so a
+        restore into that aged-out window has to fail rather than silently
+        returning a partial dataset.
+
+        Flow (R = effective retention period, e.g. 60 min):
+          1. Load 3 times, sleeping 10 min after each, then idle out the rest
+             of a 0.75 * R (45 min) window. A timestamp is captured after the
+             first load -- data that will be well past R by the end.
+          2. Disable continuous backup at the 0.75 * R mark.
+          3. Wait 0.25 * R + 30 min, so total elapsed is R + 30 min: everything
+             from step 1 is now older than the retention period.
+          4. Re-enable continuous backup and load one more cycle, then wait for
+             a retention check cycle so retention runs on the older data.
+          5. Restore at the early timestamp. It must FAIL with:
+             "cannot restore as retention has run on the continuous backup
+             and deleted data since the last traditional backup".
+        """
+
+        def as_text(value):
+            """Flatten cbcontbk output/error (list of lines or str) into one str."""
+            if value is None:
+                return ""
+            if isinstance(value, (list, tuple)):
+                return "\n".join(str(item) for item in value)
+            return str(value)
+
+        def sum_metric(lines, metric_name, labels=None):
+            """Sum a Prometheus counter across every KV node's metric lines.
+
+            _get_metric_value() returns only the first match, but each KV node
+            reports its own copy of the counter, so a per-node total is needed
+            here. Returns (total, matched_lines).
+            """
+            total = 0.0
+            matched = []
+            for line in lines:
+                if not line.startswith(metric_name):
+                    continue
+                # Guard against prefix collisions (contbk_retention_runs vs
+                # contbk_retention_run_time_count): whatever follows the name
+                # must open the label block or be the value separator.
+                suffix = line[len(metric_name):]
+                if suffix and suffix[0] not in "{ ":
+                    continue
+                if labels and not all(f'{k}="{v}"' in line
+                                      for k, v in labels.items()):
+                    continue
+                parts = line.rsplit(" ", 1)
+                if len(parts) != 2:
+                    continue
+                try:
+                    total += float(parts[1])
+                except ValueError:
+                    continue
+                matched.append(line)
+            return total, matched
+
+        # continuousBackupRetentionPeriod is in hours.
+        retention_secs = self.continuous_backup_retention_period * 60 * 60
+        overshoot_secs = self.input.param("retention_overshoot_mins", 30) * 60
+        load_window_secs = retention_secs * 0.75
+        # Land at R + overshoot from the start of loading: the 0.75 * R already
+        # spent loading plus 0.25 * R gets to R, then the overshoot on top.
+        disabled_wait_secs = retention_secs * 0.25 + overshoot_secs
+        self.log.info(
+            f"Effective retention {int(retention_secs / 60)} min: loading for "
+            f"{int(load_window_secs / 60)} min, then waiting "
+            f"{int(disabled_wait_secs / 60)} min with continuous backup "
+            f"disabled ({int(overshoot_secs / 60)} min past the retention "
+            f"period)")
+
+        # 1. Three loads, 10 min apart, then idle out the rest of the
+        #    0.75 * retention window. The deadline is anchored before the first
+        #    load so the whole window is exactly 0.75 * retention regardless of
+        #    how long the loads themselves take.
+        #    The timestamp is taken after the first load's sleep, once
+        #    continuous backup has captured it -- the oldest point that has
+        #    data, i.e. the "10th minute" of a 60 min retention period.
+        load_deadline = time.time() + load_window_secs
+        # The sleep doubles as the window in which continuous backup captures
+        # the batch, so it can never be shorter than one backup interval.
+        load_sleep_secs = max(self.input.param("load_sleep_mins", 10) * 60,
+                              self.continuous_backup_interval * 60 + 30)
+        t_early = None
+        for iteration in range(1, 4):
+            self.log.info(f"[pre-disable] Load {iteration}/3 "
+                          f"({int(load_deadline - time.time())}s left in window)")
+            self._load_data_and_get_task(self.data_spec_name)
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.sleep(load_sleep_secs,
+                       f"[pre-disable] Sleeping {int(load_sleep_secs / 60)} min "
+                       f"after load {iteration}/3 so continuous backup captures it")
+            if iteration == 1:
+                t_early = self.cont_bk_mgr.get_cluster_timestamp()
+                self.log.info(f"Captured early timestamp (restore target): "
+                              f"{t_early}")
+
+        # Idle for whatever is left of the 0.75 * retention window.
+        remaining_secs = load_deadline - time.time()
+        if remaining_secs > 0:
+            self.sleep(int(remaining_secs),
+                       f"Waiting out the remaining {int(remaining_secs / 60)} min "
+                       f"of the {int(load_window_secs / 60)} min load window")
+        else:
+            self.log.warning(
+                f"The 3 loads and their sleeps took "
+                f"{int((time.time() - load_deadline + load_window_secs) / 60)} min, "
+                f"overrunning the {int(load_window_secs / 60)} min load window; "
+                f"continuous backup is being disabled later than 0.75 * the "
+                f"retention period")
+
+        # Premise check, on what retention actually did rather than on the
+        # clock: nothing has aged out at the 0.75 * R mark, so retention must
+        # not have reclaimed a single file yet. If it has, the step 1 data may
+        # already be gone and the step 5 restore failure could no longer be
+        # attributed to retention resuming after the re-enable.
+        lines = self._get_contbk_metrics()
+        self.assertTrue(lines, "No contbk_* metrics found on any KV node "
+                               "before disabling continuous backup")
+        # Matched on the bucket label alone, so this holds whether or not the
+        # metric also carries a status label like its sibling counters.
+        files_deleted, files_deleted_lines = sum_metric(
+            lines, "contbk_retention_files_deleted",
+            labels={"bucket": self.bucket.name})
+        self.log.info(f"contbk_retention_files_deleted before disabling "
+                      f"continuous backup: {files_deleted}")
+        if files_deleted > 0:
+            self.fail(
+                f"contbk_retention_files_deleted is {files_deleted} before "
+                f"continuous backup was disabled: retention already reclaimed "
+                f"data inside the load window, so a later restore failure "
+                f"would not prove retention resumed after the re-enable. "
+                f"Shorten the load phase (load_sleep_mins) or lengthen the "
+                f"retention period (continuous_backup_retention_period).\n"
+                f"contbk_retention_files_deleted lines: {files_deleted_lines}")
+
+        # 2. Disable continuous backup at the 0.75 * retention mark.
+        self.log.info(f"Disabling continuous backup on bucket {self.bucket.name}")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket, continuous_backup_enabled=False)
+
+        # 3. Wait until we are `overshoot` past the retention period.
+        self.sleep(int(disabled_wait_secs),
+                   f"Waiting {int(disabled_wait_secs / 60)} min with continuous "
+                   f"backup disabled so the step 1 data ages past the "
+                   f"{int(retention_secs / 60)} min retention period")
+
+        # 4. Re-enable continuous backup and load one more cycle. Only the
+        #    enabled flag was toggled, so location/interval/retention on the
+        #    bucket are still in place.
+        self.log.info(f"Re-enabling continuous backup on bucket {self.bucket.name}")
+        self.bucket_util.update_bucket_property(
+            self.cluster.master, self.bucket, continuous_backup_enabled=True)
+        self.sleep(30, "Wait for continuous backup to be re-enabled")
+
+        self._load_data_and_get_task(self.data_spec_name)
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.sleep(self.continuous_backup_interval * 60 + 30,
+                   f"Waiting {self.continuous_backup_interval} min(s) for "
+                   f"continuous backup to capture the post-re-enable load")
+
+        # Retention has to actually run on the now-stale data before the
+        # restore is attempted, otherwise this asserts nothing.
+        retention_wait_secs = self.retention_check_mins * 60 + 30
+        self.sleep(retention_wait_secs,
+                   f"Waiting {retention_wait_secs}s for a retention check cycle "
+                   f"to run over the pre-disable data")
+
+        # 5. Restore at the early timestamp -- must fail, retention deleted it.
+        restore_bucket_name = f"restore_bucket_{int(time.time())}"
+        self._create_restore_bucket(restore_bucket_name)
+        self._flush_restore_bucket(restore_bucket_name)
+
+        output, error = self._restore_entire_bucket(
+            t_early, restore_bucket_name, assert_success=False)
+
+        expected_msg = ("cannot restore as retention has run on the continuous "
+                        "backup and deleted data since the last traditional "
+                        "backup")
+        combined = as_text(output) + "\n" + as_text(error)
+        self.assertIn(
+            expected_msg, combined,
+            f"Restore at the early timestamp {t_early} did not fail with the "
+            f"expected retention message, so retention did not delete the "
+            f"pre-disable data after continuous backup was re-enabled.\n"
+            f"Expected substring: {expected_msg!r}\n"
+            f"stdout: {output}\nstderr: {error}")
+        self.log.info("Restore failed with the expected retention message: "
+                      "retention resumed over the older data after continuous "
+                      "backup was re-enabled")
+
+        # 6. Retention must have actually run by now -- the SSTable deletion,
+        #    the metadata consolidation that reflects it, and the file count
+        #    proving files really were reclaimed rather than a run just being
+        #    counted.
+        lines = self._get_contbk_metrics()
+        self.assertTrue(lines, "No contbk_* metrics found on any KV node at the "
+                               "end of the test")
+        labels = {"bucket": self.bucket.name, "status": "succeeded"}
+        runs, run_lines = sum_metric(lines, "contbk_retention_runs", labels)
+        consolidations, consolidation_lines = sum_metric(
+            lines, "contbk_retention_consolidation_runs", labels)
+        # Bucket-only label, matching the pre-disable check above.
+        files_deleted, files_deleted_lines = sum_metric(
+            lines, "contbk_retention_files_deleted",
+            labels={"bucket": self.bucket.name})
+        self.log.info(f"Retention activity at the end of the test: "
+                      f"contbk_retention_runs={runs}, "
+                      f"contbk_retention_consolidation_runs={consolidations}, "
+                      f"contbk_retention_files_deleted={files_deleted}")
+        self.assertGreater(
+            runs, 0,
+            f"contbk_retention_runs is {runs}: retention never deleted any "
+            f"SSTables after continuous backup was re-enabled. Lines: {run_lines}")
+        self.assertGreater(
+            consolidations, 0,
+            f"contbk_retention_consolidation_runs is {consolidations}: "
+            f"retention never consolidated the metadata after continuous backup "
+            f"was re-enabled. Lines: {consolidation_lines}")
+        self.assertGreater(
+            files_deleted, 0,
+            f"contbk_retention_files_deleted is {files_deleted}: retention ran "
+            f"but reclaimed no files at all after continuous backup was "
+            f"re-enabled. Lines: {files_deleted_lines}")
