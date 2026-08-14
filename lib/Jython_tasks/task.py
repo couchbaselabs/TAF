@@ -5338,6 +5338,8 @@ class MutateDocsFromSpecTask(Task):
                 timeout=op_data["sdk_timeout"],
                 process_concurrency=self.process_concurrency,
                 iterations=iterations,
+                suppress_error_table=op_data["suppress_error_table"],
+                track_failures=track_failures,
                 ops=self.ops_rate)
             load_task.create_doc_load_task()
             self.load_gen_tasks.append(load_task)
