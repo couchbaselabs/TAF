@@ -606,6 +606,7 @@ class CollectionBase(ClusterSetup, FusionBase):
                 continuous_backup_location=self.continuous_backup_location,
                 continuous_backup_interval=self.continuous_backup_interval,
                 continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
+                continuous_backup_retention_period=self.continuous_backup_retention_period,
                 continuous_backup_km_key_url=(
                     self.kms_provider.km_key_url if self.ear_contbk else None),
                 continuous_backup_km_cred_id=(

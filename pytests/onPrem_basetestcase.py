@@ -221,6 +221,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.retention_period_unsafe = self.input.param("retention_period_unsafe", "5m")
         self.continuous_backup_enabled = self.input.param("continuous_backup_enabled", False)
         self.continuous_backup_interval = self.input.param("continuous_backup_interval", 5)
+        self.continuous_backup_retention_period = self.input.param("continuous_backup_retention_period", 1440)
         # Location where continuous backup files will be stored. This can be local path or NFS mount depending on the test configuration
         # Will be overriden in collection base if NFS is being used as the continuous backup location for the test
         self.continuous_backup_location = self.input.param(
