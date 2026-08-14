@@ -1,3 +1,4 @@
+import concurrent.futures
 import datetime
 import time
 import uuid
@@ -1087,4 +1088,233 @@ class CRLTest(CRLBase):
         self.log.info(
             "leaf2 connects despite colliding with a serial genuinely revoked "
             "under a different CA -- cross-CA isolation holds"
+        )
+
+    def test_crl_diagnostics_endpoints(self):
+        """diagnostics/status shape, concurrent reloadCrl idempotency,
+        per-node behaviour when one node is down, and diagnostics/validate
+        (real 4-value enum, untrusted-issuer, policy override, cert-count
+        boundary, no-certs cluster-cert mode, CA untrusted after its CRL
+        was already loaded)."""
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+        )
+        revoked_cert, _, revoked_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "diagRevoked"
+        )
+        valid_cert, _, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "diagValid"
+        )
+        valid_pem = self.crl_utils.cert_to_pem(valid_cert).decode()
+        revoked_pem = self.crl_utils.cert_to_pem(revoked_cert).decode()
+
+        filename = "diag_endpoint.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [revoked_serial], filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        node_key = f"{self.cluster.master.ip}:8091"
+
+        def _file_entry(diag_content):
+            return next(
+                (f for f in diag_content[node_key]["crlFiles"]
+                 if f["filename"] == filename),
+                None,
+            )
+
+        # -- diagnostics/status: full response-shape assertion --
+        status, content = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status, f"diagnostics/status failed: {content}")
+        entry = _file_entry(content)
+        self.assertIsNotNone(entry, f"Uploaded file missing from status: {content}")
+        for key in ("filename", "source", "cacheStatus", "entries", "lastReload"):
+            self.assertIn(key, entry, f"Missing key {key!r} in file status: {entry}")
+        for reload_key in ("result", "time", "errors"):
+            self.assertIn(reload_key, entry["lastReload"])
+        self.assertEqual(entry["cacheStatus"], "active")
+        self.log.info("diagnostics/status response shape correct")
+
+        # -- Concurrent reloadCrl: idempotent, byte-identical results --
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            results = list(
+                pool.map(lambda _: self.crl_utils.reload_crl(self.rest), range(10))
+            )
+        for ok, resp in results:
+            self.assertTrue(ok, f"Concurrent reloadCrl failed: {resp}")
+        first = results[0][1]
+        for ok, resp in results[1:]:
+            self.assertEqual(resp, first, "Concurrent reloadCrl responses diverged")
+        self.log.info("10 concurrent reloadCrl calls returned identical results")
+
+        # -- diagnostics/validate: baseline valid/revoked, real 4-value enum --
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[valid_pem]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(content["results"][0]["status"], "valid")
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[revoked_pem]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(content["results"][0]["status"], "revoked")
+
+        # A cert from a CA that was never trusted at all collapses to the
+        # same "undetermined" status as a genuinely missing CRL -- there is
+        # no distinct "untrusted issuer" value in the real (4-value) enum.
+        untrusted_ca_cert, untrusted_ca_key = self.crl_utils.generate_ca(
+            "DiagCAUntrusted"
+        )
+        untrusted_cert, _, _ = self.crl_utils.generate_leaf_cert(
+            untrusted_ca_cert, untrusted_ca_key, "diagUntrustedIssuer"
+        )
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require",
+            certs=[self.crl_utils.cert_to_pem(untrusted_cert).decode()],
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(content["results"][0]["status"], "undetermined")
+        self.log.info(
+            "Baseline valid/revoked correct; untrusted-issuer cert reports "
+            "'undetermined' -- confirms the real 4-value enum"
+        )
+
+        # -- policy override actually overrides the cluster's real policy;
+        #    Disabled is rejected outright (nothing to test with it) --
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[revoked_pem]
+        )
+        self.assertTrue(status)
+        self.assertEqual(
+            content["results"][0]["status"], "revoked",
+            "policy override must reflect the supplied policy, not the "
+            "cluster's actually-configured Disabled policy",
+        )
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Disabled", certs=[revoked_pem]
+        )
+        self.assertFalse(status, f"policy=Disabled should be rejected, got: {content}")
+        self.log.info("Policy override works; policy=Disabled correctly rejected")
+
+        # -- omitting certs evaluates the cluster's own installed certs --
+        status, content = self.crl_utils.diagnostics_validate(self.rest, policy="Require")
+        self.assertTrue(status, f"diagnostics/validate (no certs) failed: {content}")
+        self.assertTrue(
+            content.get("usingClusterCertificates"),
+            f"Expected usingClusterCertificates=true: {content}",
+        )
+        cert_types = {r["certificateType"] for r in content["results"]}
+        self.assertIn("client_cert", cert_types)
+        self.assertIn("node_cert", cert_types)
+        self.log.info("No-certs mode evaluates the cluster's own client_cert+node_cert")
+
+        # -- cert-count boundary: 100 accepted, 101 rejected --
+        hundred_certs = [valid_pem] * 100
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=hundred_certs
+        )
+        self.assertTrue(status, f"100 certs should be accepted: {content}")
+        self.assertEqual(len(content["results"]), 100)
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=hundred_certs + [valid_pem]
+        )
+        self.assertFalse(status, f"101 certs should be rejected, got: {content}")
+        self.log.info("100/101-cert boundary enforced correctly")
+
+        # -- CA untrusted after its CRL was already loaded/applied: status
+        #    flips to "untrusted", and diagnostics/validate's free-text
+        #    details distinguish a rejected CRL from one that never existed --
+        status, content = self.crl_utils.untrust_ca_by_cn(self.rest, "TestCA1")
+        self.assertTrue(status, f"Untrust-by-CN diag/eval failed: {content}")
+        try:
+            status, content = self.crl_utils.diagnostics_status(self.rest)
+            self.assertTrue(status)
+            entry = _file_entry(content)
+            self.assertIsNotNone(entry)
+            self.assertEqual(
+                entry["cacheStatus"], "untrusted",
+                "CRL's issuing CA is no longer trusted -- status should flip",
+            )
+            status, content = self.crl_utils.diagnostics_validate(
+                self.rest, policy="Require", certs=[revoked_pem]
+            )
+            self.assertTrue(status)
+            result = content["results"][0]
+            self.assertEqual(result["status"], "undetermined")
+            self.assertIn(
+                "rejected", result.get("details", "").lower(),
+                f"Expected details to distinguish a rejected (untrusted) CRL "
+                f"from a genuinely missing one, got: {result}",
+            )
+        finally:
+            self._trust_ca_on_cluster(self.ca_cert)
+        self.log.info(
+            "CA untrusted after CRL load: cacheStatus flips to 'untrusted', "
+            "diagnostics/validate details distinguish rejected-CRL from missing-CRL"
+        )
+
+        # -- per-node behaviour when one node is down: explicit `nodes` list
+        #    surfaces it as an error entry; the default (no explicit nodes)
+        #    call silently omits it instead -- known gap, asserting the
+        #    current actual behaviour per CRL_AGENTS.md's known-bug convention --
+        second = next(
+            s for s in self.cluster.servers[:self.nodes_init]
+            if s.ip != self.cluster.master.ip
+        )
+        second_key = f"{second.ip}:8091"
+        # Fetched once while still healthy -- only its .id is needed for the
+        # later status polls, and that stays stable regardless of health.
+        second_otp_node = next(
+            n for n in self.cluster_util.get_otp_nodes(self.cluster.master)
+            if n.ip == second.ip
+        )
+        shell = RemoteMachineShellConnection(second)
+        try:
+            shell.stop_couchbase()
+            self.assertTrue(
+                self.cluster_util.wait_for_node_status(
+                    self.cluster, second_otp_node, "unhealthy",
+                    timeout_in_seconds=180,
+                ),
+                f"{second.ip} never reached status=unhealthy",
+            )
+
+            status, content = self.crl_utils.diagnostics_status(
+                self.rest, nodes=[node_key, second_key]
+            )
+            self.assertTrue(status, f"Explicit-nodes diagnostics/status failed: {content}")
+            self.assertIn(node_key, content)
+            self.assertIn(second_key, content)
+            self.assertIn(
+                "error", content[second_key],
+                f"Down node should surface as an error entry, got: {content[second_key]}",
+            )
+
+            status, content = self.crl_utils.diagnostics_status(self.rest)
+            self.assertTrue(status, f"Default diagnostics/status failed: {content}")
+            self.assertIn(node_key, content)
+            self.assertNotIn(
+                second_key, content,
+                "Known gap (CRL_MANUAL_TEST_RESULTS.md #E1): the down node is "
+                "silently dropped from the default (no explicit nodes) "
+                "diagnostics/status response instead of surfacing as an "
+                "error entry. If this assertion now fails, the gap has been "
+                "fixed -- flip it to assertIn + assert an error entry.",
+            )
+        finally:
+            shell.start_couchbase()
+            shell.disconnect()
+            self.assertTrue(
+                self.cluster_util.wait_for_node_status(
+                    self.cluster, second_otp_node, "healthy",
+                    timeout_in_seconds=180,
+                ),
+                f"{second.ip} never recovered to status=healthy",
+            )
+        self.log.info(
+            "Down node: explicit nodes list surfaces it as an error entry; "
+            "default call silently omits it (known gap, asserted as-is)"
         )

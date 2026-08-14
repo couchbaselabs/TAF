@@ -447,6 +447,24 @@ class CRLUtils:
         pem = self.build_crl(ca_cert, ca_key, revoked_serials=serials, **crl_kwargs)
         return self.upload_file(rest, filename, pem, timeout=timeout)
 
+    def untrust_ca_by_cn(self, rest, cn):
+        """
+        Untrusts every currently-trusted CA whose subject contains `cn`, via
+        a chronicle_kv edit (no REST endpoint exists for this). Uses
+        `rest.diag_eval` directly, not the CRLAPI shim.
+
+        Returns (status_bool, content).
+        """
+        code = (
+            "{ok, {Certs, _Rev}} = chronicle_kv:get(kv, ca_certificates), "
+            f"Cn = <<\"{cn}\">>, "
+            "NewCerts = lists:filter(fun(PL) -> "
+            "binary:match(proplists:get_value(subject, PL, <<>>), Cn) "
+            "=:= nomatch end, Certs), "
+            "chronicle_kv:set(kv, ca_certificates, NewCerts)."
+        )
+        return rest.diag_eval(code)
+
     # ── mTLS handshake helper ────────────────────────────────────────────────
 
     @staticmethod

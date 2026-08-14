@@ -13,11 +13,11 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from couchbase_utils.security_utils.crl_utils import CRLUtils
 from couchbase_utils.security_utils.x509main import x509main
-from pytests.onPrem_basetestcase import OnPremBaseTest
+from pytests.onPrem_basetestcase import ClusterSetup
 from TestInput import TestInputSingleton
 
 
-class CRLBase(OnPremBaseTest):
+class CRLBase(ClusterSetup):
     """
     Base class for CRL (Certificate Revocation List) tests against Couchbase
     Server Enterprise.
