@@ -41,6 +41,16 @@ class FusionBucketOpsTest(_FusionTestBase):
             self.pod, self.tenant, self.cluster.id,
             "Wait for healthy cluster before bucket cleanup", timeout=600)
         self.initial_kv_nodes = self.input.param("kv_nodes", 3)
+        # Global memcached settings (see couchbase-cloud internal/clusters/
+        # settings/settings.go FusionNumUploaderThreads/FusionSyncRateLimit),
+        # applied via _apply_fusion_upload_speed_settings() before any wait
+        # for fusion S3 sync -- same mechanism/defaults as VolumeTest's
+        # apply_fusion_memcached_settings() in fusion_volume.py. Without
+        # this, _wait_for_s3_data_synced() can time out (or return too
+        # early, before enough bulk data has actually synced) under the
+        # cluster's default upload throughput.
+        self.fusion_num_uploader_threads = self.input.param("fusion_num_uploader_threads", 64)
+        self.fusion_sync_rate_limit = self.input.param("fusion_sync_rate_limit", 300971520)
         for bucket in self.cluster.buckets:
             try:
                 self._delete_bucket_with_s3_cleanup(bucket)
@@ -77,6 +87,23 @@ class FusionBucketOpsTest(_FusionTestBase):
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _apply_fusion_upload_speed_settings(self):
+        """
+        Apply fusion_num_uploader_threads/fusion_sync_rate_limit via
+        FusionMonitorUtil.set_memcached_global_setting, whichever are
+        configured -- a no-op if both are None. Best-effort: failures are
+        logged by set_memcached_global_setting, not raised. Call this before
+        any wait for fusion S3 sync so the wait converges under the faster
+        upload settings instead of the cluster's default throughput.
+        """
+        settings = {
+            "fusion_num_uploader_threads": self.fusion_num_uploader_threads,
+            "fusion_sync_rate_limit": self.fusion_sync_rate_limit,
+        }
+        for key, value in settings.items():
+            if value is not None:
+                self.fusion_monitor.set_memcached_global_setting(self.cluster, key, value)
 
     def _trigger_scale_out(self):
         """Trigger a +1 data-node scale-out rebalance and return the async task."""
@@ -739,6 +766,7 @@ class FusionBucketOpsTest(_FusionTestBase):
 
         create_end = self.input.param("create_end", 5_000_000)
         self._load_data(self.cluster, create_start=0, create_end=create_end)
+        self._apply_fusion_upload_speed_settings()
         self._wait_for_s3_data_synced(self.cluster, timeout=self.sync_wait_timeout)
 
         s3_bucket_name = self._get_s3_bucket_name_from_uri(self.cluster)
@@ -747,21 +775,37 @@ class FusionBucketOpsTest(_FusionTestBase):
         # Confirm each bucket's S3 prefix has > 1 GB of data before flush.
         # A size-based check is more reliable than a count check because magma
         # metadata files are always present; we want to confirm bulk data synced.
+        # Retried rather than one-shot: _wait_for_s3_data_synced() above can
+        # return before every bucket's prefix has individually caught up
+        # (seen live: 0.26 GB/128 objects at first check), so poll for up to
+        # presync_timeout instead of failing on the first read.
+        presync_timeout = self.input.param("presync_timeout", 600)
         for bucket in self.cluster.buckets:
             self.assertIsNotNone(
                 getattr(bucket, "bucket_uuid", None),
                 f"Bucket '{bucket.name}' has no UUID — cannot verify per-prefix cleanup")
             prefix = f"kv/{bucket.bucket_uuid}"
-            stats_before = self.s3.get_bucket_size(s3_bucket_name, prefix=prefix)
-            size_before_gb = stats_before.get("total_size_gb", 0)
-            self.assertGreater(
-                size_before_gb, 1.0,
-                f"Bucket '{bucket.name}' prefix {prefix} has only {size_before_gb:.2f} GB "
-                f"({stats_before.get('file_count', 0)} objects) before flush — "
-                f"expected > 1 GB of synced data")
-            self.log.info(
-                f"Bucket '{bucket.name}': {size_before_gb:.2f} GB "
-                f"({stats_before.get('file_count', 0)} objects) in prefix {prefix}")
+            deadline = time.time() + presync_timeout
+            while True:
+                stats_before = self.s3.get_bucket_size(s3_bucket_name, prefix=prefix)
+                size_before_gb = stats_before.get("total_size_gb", 0)
+                if size_before_gb > 1.0:
+                    self.log.info(
+                        f"Bucket '{bucket.name}': {size_before_gb:.2f} GB "
+                        f"({stats_before.get('file_count', 0)} objects) in prefix {prefix}")
+                    break
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    self.fail(
+                        f"Bucket '{bucket.name}' prefix {prefix} has only "
+                        f"{size_before_gb:.2f} GB ({stats_before.get('file_count', 0)} "
+                        f"objects) before flush after {presync_timeout}s — "
+                        f"expected > 1 GB of synced data")
+                self.log.info(
+                    f"Bucket '{bucket.name}' prefix {prefix}: {size_before_gb:.2f} GB "
+                    f"({stats_before.get('file_count', 0)} objects) so far — "
+                    f"{int(remaining)}s remaining")
+                time.sleep(30)
 
         for bucket in self.cluster.buckets:
             self.log.info(f"Flushing bucket '{bucket.name}'")
