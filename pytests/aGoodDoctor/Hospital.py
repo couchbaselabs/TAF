@@ -344,13 +344,31 @@ class Murphy(BaseTestCase, OPD):
                                       if servs not in self.cluster.index_nodes]
 
         if self.cluster.index_nodes:
-            self.enableShardAffinity = self.input.param("enableShardAffinity", True)
-            _ = self.rest.set_indexer_params(redistributeIndexes='true', enableShardAffinity='true',
-                                             indexerThreads=72,
-                                             storageMode=storageModeGSI) \
-            if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true',
-                                                                          indexerThreads=72,
-                                                                          storageMode=storageModeGSI)
+            redistribute_indexes = self.input.param("redistribute_indexes", True)
+            index_replica = self.input.param("index_replica", 0)
+            enable_page_bloom_filter = self.input.param("enable_page_bloom_filter", False)
+            indexer_threads = self.input.param("indexer_threads", 72)
+            memory_snapshot_interval = self.input.param("memory_snapshot_interval", 200)
+            stable_snapshot_interval = self.input.param("stable_snapshot_interval", 5000)
+            max_rollback_points = self.input.param("max_rollback_points", 2)
+            index_log_level = self.input.param("index_log_level", "info")
+            enable_shard_affinity = self.input.param("enableShardAffinity", True)
+            redistribute_indexes = str(redistribute_indexes).lower()
+            enable_page_bloom_filter = str(enable_page_bloom_filter).lower()
+            enable_shard_affinity = str(enable_shard_affinity).lower()
+
+            self.log.info("Setting indexer params")
+            self.rest.set_indexer_params(redistributeIndexes=redistribute_indexes,
+                                         numReplica=index_replica,
+                                         enablePageBloomFilter=enable_page_bloom_filter,
+                                         indexerThreads=indexer_threads,
+                                         memorySnapshotInterval=memory_snapshot_interval,
+                                         stableSnapshotInterval=stable_snapshot_interval,
+                                         maxRollbackPoints=max_rollback_points,
+                                         logLevel=index_log_level,
+                                         storageMode=storageModeGSI,
+                                         enableShardAffinity=enable_shard_affinity)
+
             self.gsi_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
             enableInMemoryCompression = self.input.param("enableInMemoryCompression", False)
             if enableInMemoryCompression is False:
