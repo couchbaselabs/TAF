@@ -226,6 +226,9 @@ class Murphy(BaseTestCase, OPD):
             self.bucket_util.change_max_buckets(self.cluster.master,
                                                 self.num_buckets)
         if not self.skip_init:
+            # The encryption key has to exist before the buckets that
+            # reference it are created.
+            self.create_encryption_at_rest_key(self.cluster)
             self.create_required_buckets(self.cluster)
         else:
             for i, bucket in enumerate(self.cluster.buckets):
@@ -276,6 +279,7 @@ class Murphy(BaseTestCase, OPD):
         #                     self.esClient.createESIndex(collection.lower())
         if self.xdcr_remote_nodes > 0:
             self.PrintStep("Step 2*: Create required buckets and collections on XDCR remote.")
+            self.create_encryption_at_rest_key(self.xdcr_remote_cluster)
             self.create_required_buckets(cluster=self.xdcr_remote_cluster)
             # Increase number of collections to increase number of replicated docs
             self.drXDCR = DoctorXDCR(self.cluster, self.xdcr_remote_cluster)

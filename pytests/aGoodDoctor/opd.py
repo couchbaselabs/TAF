@@ -92,6 +92,54 @@ class OPD:
         self.PrintStep("RAM FootPrint: %s" % str(mem))
         return mem
 
+    def create_encryption_at_rest_key(self, cluster):
+        """Create a cluster-managed AES-256 key for bucket encryption at rest.
+
+        Called before the buckets exist, so the key is registered against the
+        wildcard `bucket-encryption-*` usage rather than a named bucket --
+        every bucket the run creates has to be able to use it.
+
+        The id is stashed on the cluster object rather than on self because
+        each cluster has its own key namespace (the XDCR remote needs a key of
+        its own); create_required_buckets() reads it back per cluster.
+        """
+        if not self.enable_encryption_at_rest:
+            return None
+
+        # An id passed on the command line refers to a key that already exists
+        # on the cluster, so there is nothing to create.
+        if self.encryption_at_rest_id:
+            cluster.encryption_at_rest_id = self.encryption_at_rest_id
+            self.log.info("Using pre-existing encryption at rest key ID=%s"
+                          % self.encryption_at_rest_id)
+            return self.encryption_at_rest_id
+
+        rest = RestConnection(cluster.master)
+        bucket_helper = BucketHelper(cluster.master)
+        params = bucket_helper.create_secret_params(
+            secret_type="cb-server-managed-aes-key-256",
+            name="VolumeTestBucketEncryptionKey",
+            usage=["bucket-encryption-*"],
+            autoRotation=True,
+            rotationIntervalInSeconds=self.rotationIntervalInSeconds,
+            port=None)
+        self.log.info("Sending request to create secret with params: %s" % params)
+        status, response = rest.create_secret(params)
+        self.log.info("Secret creation status=%s, response=%s"
+                      % (status, response))
+        if not status:
+            self.fail("Encryption at rest key creation failed on %s: %s"
+                      % (cluster.master.ip, response))
+
+        secret_id = json.loads(response).get("id")
+        if secret_id is None:
+            self.fail("Encryption at rest key created on %s but no id was "
+                      "returned: %s" % (cluster.master.ip, response))
+        cluster.encryption_at_rest_id = secret_id
+        self.log.info("Created secret ID=%s on %s"
+                      % (secret_id, cluster.master.ip))
+        return secret_id
+
     def create_required_buckets(self, cluster, sdk_init=True):
         self.log.info("Get the available memory quota")
         rest = RestConnection(cluster.master)
@@ -115,27 +163,42 @@ class OPD:
         compression_mode = self.compression_mode.split(';')*self.num_buckets
         self.bucket_eviction_policy = self.bucket_eviction_policy
 
+        # Encryption at rest: the key is created on this cluster just before
+        # this call (Hospital.create_encryption_at_rest_key), so every bucket
+        # created below references the same key.
+        encryption_key_id = getattr(cluster, "encryption_at_rest_id", None)
+
         for i in range(self.num_buckets):
             num_vb = CbServer.total_vbuckets
             if bucket_type[i] in ("membase", "couchbase") \
                     and self.bucket_storage == "magma":
                 num_vb = CbServer.magma_default_vbuckets
-            bucket = Bucket(
-                {Bucket.name: buckets[i] + str(i),
-                 Bucket.ramQuotaMB: ramQuota//self.num_buckets,
-                 Bucket.numVBuckets: num_vb,
-                 Bucket.maxTTL: self.bucket_expiry,
-                 Bucket.replicaNumber: self.num_replicas,
-                 Bucket.storageBackend: self.bucket_storage,
-                 Bucket.evictionPolicy: self.bucket_eviction_policy,
-                 Bucket.bucketType: bucket_type[i],
-                 Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
-                 Bucket.compressionMode: compression_mode[i],
-                 Bucket.fragmentationPercentage: self.fragmentation,
-                 Bucket.width: self.bucket_width,
-                 Bucket.weight: self.bucket_weight,
-                 Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
-                 Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
+            bucket_params = {
+                Bucket.name: buckets[i] + str(i),
+                Bucket.ramQuotaMB: ramQuota//self.num_buckets,
+                Bucket.numVBuckets: num_vb,
+                Bucket.maxTTL: self.bucket_expiry,
+                Bucket.replicaNumber: self.num_replicas,
+                Bucket.storageBackend: self.bucket_storage,
+                Bucket.evictionPolicy: self.bucket_eviction_policy,
+                Bucket.bucketType: bucket_type[i],
+                Bucket.flushEnabled: Bucket.FlushBucket.ENABLED,
+                Bucket.compressionMode: compression_mode[i],
+                Bucket.fragmentationPercentage: self.fragmentation,
+                Bucket.width: self.bucket_width,
+                Bucket.weight: self.bucket_weight,
+                Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
+                Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds}
+            # Ephemeral buckets have nothing on disk to encrypt, so the server
+            # rejects the key params for them.
+            if encryption_key_id and bucket_type[i] != Bucket.Type.EPHEMERAL:
+                bucket_params.update({
+                    Bucket.encryptionAtRestKeyId: encryption_key_id,
+                    Bucket.encryptionAtRestDekRotationInterval:
+                        self.encryptionAtRestDekRotationInterval,
+                    Bucket.encryptionAtRestDekLifetime:
+                        self.encryption_at_rest_dek_lifetime})
+            bucket = Bucket(bucket_params)
             bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
             if bucket.loadDefn.get("name"):
                 bucket.name = bucket.loadDefn.get("name")
