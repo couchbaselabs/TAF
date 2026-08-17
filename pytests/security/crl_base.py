@@ -375,6 +375,15 @@ class CRLBase(ClusterSetup):
         self._rbac_users.append(username)
         return username, password
 
+    def _grant_rbac_role(self, username, role, password="Couchbase@1234"):
+        """Changes an already-created test user's role in place (e.g. to
+        test a live downgrade taking effect). Unlike _create_rbac_test_user,
+        doesn't re-track the username -- it's assumed to already be tracked
+        from the original _create_rbac_test_user call."""
+        RbacUtils(self.cluster.master)._create_user_and_grant_role(
+            username, role, password=password
+        )
+
     def _cleanup_rbac_users(self):
         for username in self._rbac_users:
             try:

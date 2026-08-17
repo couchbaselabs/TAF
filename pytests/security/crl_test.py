@@ -1681,3 +1681,140 @@ class CRLTest(CRLBase):
             self.assertIn("cm_alerts_triggered_total", all_metrics)
         finally:
             shell.disconnect()
+
+    def test_crl_rbac_permission_boundaries(self):
+        """RBAC across every CRL endpoint: a full-access security role
+        reaches business logic everywhere; a read-only variant succeeds on
+        read-shaped endpoints and is cleanly denied on write-shaped ones;
+        a zero-permission user is denied everywhere; unauthenticated and
+        invalid-credential requests get 401, distinct from an
+        authenticated-but-unauthorized 403; and a live role downgrade
+        takes effect on the very next request, no caching.
+
+        Note: a denied action's own audit trail (via the generic
+        access-forbidden event) is already covered by
+        test_crl_auditing_logs_and_metrics -- not re-tested here.
+        """
+        base = f"http://{self.cluster.master.ip}:8091"
+
+        def hit(method, path, auth, json_body=None, upload=False):
+            url = base + path
+            if upload:
+                resp = requests.request(
+                    method, url, auth=auth,
+                    files={"file": ("rbac_probe.pem",
+                                    self.crl_utils.build_crl(self.ca_cert, self.ca_key,
+                                                             crl_number=1))},
+                    timeout=30,
+                )
+            elif json_body is not None:
+                resp = requests.request(
+                    method, url, auth=auth,
+                    headers={"Content-Type": "application/json"},
+                    json=json_body, timeout=30,
+                )
+            else:
+                resp = requests.request(method, url, auth=auth, timeout=30)
+            return resp.status_code
+
+        # Every CRL endpoint, split by whether the code gates it on the
+        # read or write half of the {[admin,security], read|write}
+        # permission -- upload is handled separately below (multipart).
+        read_endpoints = [
+            ("GET", "/settings/crl", None),
+            ("GET", "/settings/crl/files", None),
+            ("GET", "/settings/crl/diagnostics/status", None),
+            ("POST", "/settings/crl/diagnostics/status", {}),
+            ("POST", "/settings/crl/diagnostics/validate", {"policy": "Require"}),
+        ]
+        write_endpoints = [
+            ("POST", "/settings/crl", {"policyPerScope": {"clientAuth": "Disabled"}}),
+            ("DELETE", "/settings/crl/files/rbac_nonexistent.pem", None),
+            ("POST", "/node/controller/reloadCrl", None),
+        ]
+
+        full_user, full_pass = self._create_rbac_test_user(
+            "rbac_full_admin", "security_admin"
+        )
+        ro_user, ro_pass = self._create_rbac_test_user(
+            "rbac_ro_admin", "ro_security_admin"
+        )
+        zero_user, zero_pass = self._create_rbac_test_user(
+            "rbac_zero_perm", "views_admin[*]"
+        )
+
+        # A full-access role reaches business logic on every endpoint --
+        # never blocked at the authorization gate, whatever the actual
+        # outcome (200/400/404) turns out to be.
+        for method, path, body in read_endpoints + write_endpoints:
+            code = hit(method, path, (full_user, full_pass), body)
+            self.assertNotIn(
+                code, (401, 403),
+                f"{method} {path} as a full-access role should not be "
+                f"blocked, got {code}",
+            )
+        upload_code = hit("POST", "/settings/crl/files", (full_user, full_pass), upload=True)
+        self.assertNotIn(
+            upload_code, (401, 403),
+            f"Upload as a full-access role should not be blocked, got {upload_code}",
+        )
+        self._track_uploaded_file("rbac_probe.pem")
+        self.log.info("Full-access role reaches business logic on all 9 endpoints")
+
+        # A read-only role succeeds on every read-shaped endpoint and is
+        # cleanly denied on every write-shaped one -- no over- or
+        # under-granting.
+        for method, path, body in read_endpoints:
+            code = hit(method, path, (ro_user, ro_pass), body)
+            self.assertEqual(
+                code, 200, f"{method} {path} as a read-only role should succeed, got {code}"
+            )
+        for method, path, body in write_endpoints:
+            code = hit(method, path, (ro_user, ro_pass), body)
+            self.assertEqual(
+                code, 403, f"{method} {path} as a read-only role should be denied, got {code}"
+            )
+        upload_code = hit("POST", "/settings/crl/files", (ro_user, ro_pass), upload=True)
+        self.assertEqual(
+            upload_code, 403, f"Upload as a read-only role should be denied, got {upload_code}"
+        )
+        self.log.info("Read-only role: read endpoints succeed, write endpoints denied")
+
+        # A user with no relevant permission at all is denied everywhere.
+        for method, path, body in read_endpoints + write_endpoints:
+            code = hit(method, path, (zero_user, zero_pass), body)
+            self.assertEqual(
+                code, 403, f"{method} {path} with no relevant permission should be denied, got {code}"
+            )
+        upload_code = hit("POST", "/settings/crl/files", (zero_user, zero_pass), upload=True)
+        self.assertEqual(upload_code, 403)
+        self.log.info("Zero-permission user denied on all 9 endpoints")
+
+        # A fully unauthenticated request gets 401, distinct from the 403
+        # an authenticated-but-unauthorized user gets above.
+        code = hit("GET", "/settings/crl", None)
+        self.assertEqual(code, 401, f"Unauthenticated request should get 401, got {code}")
+
+        # Invalid credentials (wrong password; nonexistent username) also
+        # get 401, not a 403 and not a hang/500.
+        code = hit("GET", "/settings/crl", (ro_user, "totally-wrong-password"))
+        self.assertEqual(code, 401, f"Wrong password should get 401, got {code}")
+        code = hit("GET", "/settings/crl", ("rbac_nonexistent_user_xyz", "whatever"))
+        self.assertEqual(code, 401, f"Nonexistent user should get 401, got {code}")
+        self.log.info(
+            "Unauthenticated and invalid-credential requests correctly get "
+            "401, not 403"
+        )
+
+        # A live role downgrade takes effect on the very next request --
+        # no re-login, no caching window.
+        code = hit("GET", "/settings/crl", (ro_user, ro_pass))
+        self.assertEqual(code, 200, "Baseline: read-only role should succeed before downgrade")
+        self._grant_rbac_role(ro_user, "views_admin[*]", password=ro_pass)
+        code = hit("GET", "/settings/crl", (ro_user, ro_pass))
+        self.assertEqual(
+            code, 403,
+            "Downgraded role should take effect on the very next request, "
+            "not after some caching delay",
+        )
+        self.log.info("Live role downgrade took effect immediately, no staleness")
