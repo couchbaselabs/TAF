@@ -748,16 +748,23 @@ class MagmaBaseTest(StorageBase):
                 self.log.info("DU of {0} = {1}".format(kvstore_path, kvstore_du))
 
 
-    def perform_batch_reads(self, num_docs_to_validate=None, batch_size=None, validate_docs=True):
+    def perform_batch_reads(self, num_docs_to_validate=None, batch_size=None, validate_docs=True,
+                            start=0):
 
         num_docs_to_validate = num_docs_to_validate or self.num_docs_to_validate
         validate_batch_size = batch_size or self.validate_batch_size
 
-        self.log.info(f"Performing batch reads, Total docs: {num_docs_to_validate}, Batch Size: {validate_batch_size}")
+        # num_docs_to_validate is a count relative to 'start', not an absolute
+        # key bound. Callers that have deleted a prefix of the keyspace pass
+        # the oldest still-live key as 'start' so the reads do not hit docs
+        # that were intentionally deleted.
+        read_limit = start + num_docs_to_validate
+
+        self.log.info(f"Performing batch reads, Start: {start}, Total docs: {num_docs_to_validate}, Batch Size: {validate_batch_size}")
         self.doc_ops = "read"
         self.reset_doc_params()
-        read_start, read_end = 0, min(num_docs_to_validate, validate_batch_size)
-        while read_start < num_docs_to_validate:
+        read_start, read_end = start, min(read_limit, start + validate_batch_size)
+        while read_start < read_limit:
             self.read_start = read_start
             self.read_end = read_end
             self.generate_docs()
@@ -768,7 +775,7 @@ class MagmaBaseTest(StorageBase):
                                 ops_rate=self.read_ops_rate,
                                 process_concurrency=self.read_process_concurrency)
             read_start = read_end
-            read_end = min(read_end + validate_batch_size, num_docs_to_validate)
+            read_end = min(read_end + validate_batch_size, read_limit)
             self.sleep(30, "Wait after reading the current batch")
 
 

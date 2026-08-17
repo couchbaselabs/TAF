@@ -56,6 +56,11 @@ class FusionBase(BaseTestCase):
 
         self.s3_run_prefix = None
 
+        # Oldest still-live doc key. Workloads that retire a prefix of the
+        # keyspace (see run_continuous_workload) advance this so read/validate
+        # helpers skip the deleted docs instead of reporting them as misses.
+        self.deleted_upto = 0
+
         if self.fusion_test:
             self.nfs_server_ip = self.input.param("nfs_server_ip", "172.23.219.42")
             self.nfs_server_path = self.input.param("nfs_server_path", "/data/nfs/share/buckets")
@@ -1605,9 +1610,10 @@ class FusionBase(BaseTestCase):
                 return node
 
 
-    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None, mutate=0, target_vbs=None, monitor_ops=False):
+    def perform_workload(self, start, end, doc_op="create", wait=True, buckets=None, ops_rate=None, mutate=0, target_vbs=None, monitor_ops=False, process_concurrency=None):
 
         ops_rate = ops_rate if ops_rate is not None else 20000
+        process_concurrency = process_concurrency if process_concurrency is not None else self.process_concurrency
 
         self.reset_doc_params(doc_ops=doc_op)
         if doc_op == "create":
@@ -1631,7 +1637,8 @@ class FusionBase(BaseTestCase):
                                                     monitor_ops=False,
                                                     buckets=buckets,
                                                     mutate=mutate,
-                                                    target_vbs=target_vbs)
+                                                    target_vbs=target_vbs,
+                                                    process_concurrency=process_concurrency)
         if wait:
             for task in doc_loading_tasks:
                 self.doc_loading_tm.get_task_result(task)
@@ -1718,7 +1725,8 @@ class FusionBase(BaseTestCase):
         self.log.info("Validating data by reading back documents")
         docs_to_validate = min(self.num_items, 1000000)
         self.perform_batch_reads(num_docs_to_validate=docs_to_validate,
-                                 batch_size=500000, validate_docs=True)
+                                 batch_size=500000, validate_docs=True,
+                                 start=self.deleted_upto)
 
         self.log.info("Checking for migration/sync/read failures on all nodes")
         for node in self.cluster.servers:

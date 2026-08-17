@@ -66,13 +66,8 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             self.sync_stats_th.join()
 
 
-    def test_fusion_data_lifecycle(self):
-
-        aggressive_variant = self.input.param("aggressive_variant", False)
-        self.validate_reupload = self.input.param("validate_reupload", False)
-
-        self.log.info("Running Fusion Data Lifecycle Test")
-
+    def start_optional_monitor_threads(self):
+        # Shared by test_fusion_data_lifecycle and test_fusion_longevity
         if self.monitor_log_store:
             self.monitor_threads = self.start_monitor_dir()
 
@@ -84,9 +79,29 @@ class FusionSanity(MagmaBaseTest, FusionBase):
             self.sync_stats_th = threading.Thread(target=self.get_fusion_sync_stats_continuously)
             self.sync_stats_th.start()
 
+    def test_fusion_data_lifecycle(self):
+
+        self.log.info("Running Fusion Data Lifecycle Test")
+
+        self.start_optional_monitor_threads()
+
         self.initial_load()
         sleep_time = 120 + self.fusion_upload_interval + 30
         self.sleep(sleep_time, "Sleep after data loading")
+
+        self.run_fusion_rebalance_cycle()
+
+        stat_file_path = os.path.join(self.fusion_output_dir, "kvstore_stats.json")
+        with open(stat_file_path, "w") as f:
+            json.dump(self.kvstore_stats, f, indent=4)
+
+    def run_fusion_rebalance_cycle(self):
+        aggressive_variant = self.input.param("aggressive_variant", False)
+        self.validate_reupload = self.input.param("validate_reupload", False)
+
+        self.num_nodes_to_rebalance_in = self.input.param("num_nodes_to_rebalance_in", 0)
+        self.num_nodes_to_rebalance_out = self.input.param("num_nodes_to_rebalance_out", 0)
+        self.num_nodes_to_swap_rebalance = self.input.param("num_nodes_to_swap_rebalance", 0)
 
         num_rebalances_to_perform = 2 * (len(self.cluster.servers) - self.nodes_init)
         num_rebalance_count = 1
@@ -99,14 +114,16 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 while num_upsert_iterations > 0:
                     self.log.info(f"Performing update workload iteration: {self.upsert_iterations - num_upsert_iterations + 1}")
                     num_upsert_iterations -= 1
-                    self.perform_workload(0, self.num_items, doc_op="update")
+                    self.perform_workload(self.deleted_upto,
+                                          self.deleted_upto + self.num_items,
+                                          doc_op="update")
                     self.sleep(30, "Wait after update workload")
 
                 sleep_time = 120 + self.fusion_upload_interval + 30
                 self.sleep(sleep_time, "Sleep after update workload")
 
                 # Perform reads while log cleaning is happening
-                self.perform_batch_reads()
+                self.perform_batch_reads(start=self.deleted_upto)
                 self.capture_fusion_stats()
 
                 # Set Migration Rate Limit to 0 so that extent migration doesn't take place
@@ -115,9 +132,12 @@ class FusionSanity(MagmaBaseTest, FusionBase):
 
                 # Perform a data workload in parallel when rebalance is taking place
                 self.log.info("Performing data load during rebalance")
-                doc_loading_tasks = self.perform_workload(self.num_items,
-                                                        self.num_items + self.rebalance_num_docs,
-                                                        wait=False, ops_rate=10000)
+                live_before = self.num_items
+                doc_loading_tasks = self.perform_workload(
+                                                self.deleted_upto + self.num_items,
+                                                self.deleted_upto + self.num_items + self.rebalance_num_docs,
+                                                wait=False, ops_rate=10000)
+                self.num_items = live_before + self.rebalance_num_docs
 
             if self.validate_reupload:
                 # Get Uploader info before rebalance
@@ -142,7 +162,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                     self.doc_loading_tm.get_task_result(task)
 
                 # Perform reads when no extent migration has taken place yet
-                self.perform_batch_reads()
+                self.perform_batch_reads(start=self.deleted_upto)
                 self.capture_fusion_stats()
 
                 # Update Migration Rate Limit so that extent migration process starts
@@ -175,7 +195,7 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 self.capture_fusion_stats()
 
                 self.log.info("Performing a read workload post extent migration")
-                self.perform_batch_reads()
+                self.perform_batch_reads(start=self.deleted_upto)
                 self.capture_fusion_stats()
 
             if self.validate_reupload:
@@ -204,9 +224,87 @@ class FusionSanity(MagmaBaseTest, FusionBase):
                 self.num_nodes_to_rebalance_out = 1
                 self.num_nodes_to_rebalance_in = 0
 
+
+    def run_continuous_workload(self, duration, batch_size=None, ops_rate=None, process_concurrency=None, batch_sleep=30):
+        # Create and retire (update -> read -> delete) equal-sized batches so
+        # self.num_items stays flat instead of drifting over a long run.
+        batch_size = batch_size or self.input.param("workload_batch_size", 100000)
+        ops_rate = ops_rate or self.ops_rate
+        process_concurrency = process_concurrency or self.process_concurrency
+
+        end_time = time.time() + duration
+
+        self.log.info(f"Starting continuous steady-state workload for {duration:.0f}s "
+                      f"(batch_size={batch_size}, ops_rate={ops_rate}, "
+                      f"process_concurrency={process_concurrency})")
+
+        while time.time() < end_time:
+            # Keys in flight are [deleted_upto, deleted_upto + num_items), so
+            # the next free key is the sum, not num_items on its own.
+            live_before = self.num_items
+            create_start = self.deleted_upto + self.num_items
+            create_end = create_start + batch_size
+            self.perform_workload(create_start, create_end, doc_op="create", ops_rate=ops_rate, process_concurrency=process_concurrency)
+            # perform_workload sets num_items to the absolute create_end;
+            # restore the invariant that num_items is the live doc count.
+            self.num_items = live_before + batch_size
+
+            # self.deleted_upto is the oldest still-live key and persists
+            # across weeks, so a later week does not retire a range that an
+            # earlier one already deleted.
+            live_end = min(self.deleted_upto + batch_size,
+                           self.deleted_upto + self.num_items)
+            if live_end > self.deleted_upto:
+                self.perform_workload(self.deleted_upto, live_end, doc_op="update", ops_rate=ops_rate, process_concurrency=process_concurrency)
+                self.perform_workload(self.deleted_upto, live_end, doc_op="read", ops_rate=ops_rate, process_concurrency=process_concurrency)
+                self.perform_workload(self.deleted_upto, live_end, doc_op="delete", ops_rate=ops_rate, process_concurrency=process_concurrency)
+                self.deleted_upto = live_end
+
+            self.sleep(batch_sleep, "Wait between continuous workload batches")
+
+        self.log.info("Continuous steady-state workload complete")
+
+
+    def test_fusion_longevity(self):
+        # One run_fusion_rebalance_cycle() per week, steady load the rest of
+        # the week -- normal operations, not a back-to-back stress loop.
+        num_weeks = self.input.param("num_weeks", 4)
+        week_duration_seconds = self.input.param("week_duration_seconds", 7 * 24 * 3600)
+
+        self.log.info(f"Running Fusion Longevity Test for {num_weeks} weeks "
+                      f"({week_duration_seconds}s/week)")
+
+        self.start_optional_monitor_threads()
+
+        self.initial_load()
+        sleep_time = 120 + self.fusion_upload_interval + 30
+        self.sleep(sleep_time, "Sleep after data loading")
+
+        for week in range(1, num_weeks + 1):
+            self.log.info(f"===== Longevity week {week}/{num_weeks}: rebalance cycle =====")
+            cycle_start = time.time()
+            self.run_fusion_rebalance_cycle()
+            cycle_duration = time.time() - cycle_start
+
+            remaining = week_duration_seconds - cycle_duration
+            if remaining > 0:
+                self.log.info(f"===== Longevity week {week}/{num_weeks}: "
+                              f"steady load for {remaining:.0f}s =====")
+                self.run_continuous_workload(duration=remaining)
+            else:
+                self.log.warning(f"Rebalance cycle for week {week} took "
+                                 f"{cycle_duration:.0f}s, longer than "
+                                 f"week_duration_seconds={week_duration_seconds}; "
+                                 f"skipping the steady-load phase for this week")
+
+        self.log.info("Fusion Longevity Test: final health check")
+        self.validate_fusion_health()
+
         stat_file_path = os.path.join(self.fusion_output_dir, "kvstore_stats.json")
         with open(stat_file_path, "w") as f:
             json.dump(self.kvstore_stats, f, indent=4)
+
+        self.log.info("Fusion Longevity Test complete")
 
 
     def validate_migrated_log_files(self, nodes_to_monitor, rebalance_count):
