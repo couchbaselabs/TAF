@@ -38,6 +38,7 @@ class FusionLogCleaning(MagmaBaseTest, FusionBase):
 
         monitor_du_threads = list()
         monitor_cbstats_threads = list()
+        self.monitor_stats = True
         for bucket in self.cluster.buckets:
             th = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True, 30])
             monitor_du_threads.append(th)
@@ -118,6 +119,7 @@ class FusionLogCleaning(MagmaBaseTest, FusionBase):
             update_th = threading.Thread(target=self.perform_multiple_updates, args=[1, 90, self.ops_rate])
             update_th.start()
 
+            self.monitor_stats = True
             for bucket in self.cluster.buckets:
                 th = threading.Thread(target=self.monitor_fusion_du, args=[bucket])
                 monitor_du_threads.append(th)
@@ -169,6 +171,7 @@ class FusionLogCleaning(MagmaBaseTest, FusionBase):
 
         monitor_du_threads = list()
         monitor_cbstats_threads = list()
+        self.monitor_stats = True
         for bucket in self.cluster.buckets:
             th = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True])
             monitor_du_threads.append(th)
@@ -309,6 +312,7 @@ class FusionLogCleaning(MagmaBaseTest, FusionBase):
 
         monitor_du_threads = list()
         monitor_cbstats_threads = list()
+        self.monitor_stats = True
         for bucket in self.cluster.buckets:
             th1 = threading.Thread(target=self.monitor_fusion_du, args=[bucket, True, 30])
             monitor_du_threads.append(th1)

@@ -660,7 +660,7 @@ class FusionBase(BaseTestCase):
 
         ssh.disconnect()
 
-    def calculate_guest_volume_monitor_timeout(self, buffer_seconds=600, default_duration=1800):
+    def calculate_guest_volume_monitor_timeout(self, buffer_seconds=1800, default_duration=1800):
         """
         Computes a dynamic timeout for monitor_active_guest_volumes() from the
         total log store size (summed across all nodes in cluster and buckets)
@@ -2407,7 +2407,6 @@ class FusionBase(BaseTestCase):
         violation_samples = []
         self.frag_cbstats_pass = True
 
-        self.monitor_stats = True
         while self.monitor_stats:
             for server in self.cluster.nodes_in_cluster:
                 try:

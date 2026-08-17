@@ -434,6 +434,7 @@ class FusionSyncManager(MagmaBaseTest, FusionBase):
 
         update_load_start_time = time.time()
 
+        self.monitor_stats = True
         frag_th = threading.Thread(target=self.monitor_fusion_du, args=[self.cluster.buckets[0], True, 30])
         frag_th.start()
         cbstats_frag_th = threading.Thread(target=self.monitor_log_store_stats, args=[self.cluster.buckets[0], 30, True])

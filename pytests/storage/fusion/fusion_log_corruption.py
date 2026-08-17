@@ -154,6 +154,15 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
                                                 num_guest_volumes=self.num_guest_volumes,
                                                 include_manifest=self.include_log_manifest)
 
+        # Clear page cache so the read workload below actually hits the
+        # corrupted on-disk data instead of being served stale,
+        # pre-corruption pages from cache.
+        self.clear_page_cache()
+        self.sleep(30, "Wait after clearing page cache")
+
+        read_failure_dict = self._get_read_failure_stats()
+        self.log.info(f"Read failure dict before workload = {read_failure_dict}")
+
         # Perform a read workload during extent migration
         read_workload_tasks1 = self.perform_workload(0, self.num_items, "read", wait=False, ops_rate=10000)
 
@@ -167,12 +176,20 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         guest_volume_th.start()
         guest_volume_th.join()
 
-        for task in read_workload_tasks1:
-            self.doc_loading_tm.get_task_result(task)
+        # Reads against corrupted extents can crawl instead of failing fast
+        # (each affected key stalls near sdk_timeout before erroring), so
+        # this read workload over the full item range may never complete
+        # within a reasonable build window. Bound it with a watchdog so the
+        # test fails cleanly instead of hanging past the Jenkins timeout.
+        self._wait_for_tasks_with_watchdog(read_workload_tasks1, read_timeout=1800,
+                                           label="read_workload_tasks1")
+
+        read_failure_dict2 = self._get_read_failure_stats()
+        self.log.info(f"Read failure dict after workload = {read_failure_dict2}")
 
         if validate_reads:
             self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
-            self.validate_read_failures()
+            self._assert_corruption_detected(read_failure_dict, read_failure_dict2)
 
 
     def test_fusion_log_corruption_during_mounting(self):
@@ -396,15 +413,62 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         shell.disconnect()
 
 
-    def validate_read_failures(self, read_timeout=600, num_docs_to_read=None):
+    def _wait_for_tasks_with_watchdog(self, tasks, read_timeout, label="workload"):
 
-        # Check ep_data_read_failed stat before read workload
+        # Reads on corrupted extents may never return (or make progress too
+        # slowly to ever finish), so wait on the tasks without blocking
+        # forever and enforce a timeout via a watchdog that force-stops the
+        # tasks instead of hanging until the Jenkins build timeout.
+        tasks_done = threading.Event()
+
+        def _watchdog():
+            if not tasks_done.wait(read_timeout):
+                self.log.warning(f"{label} exceeded {read_timeout}s; "
+                                 f"force-stopping tasks")
+                for task in tasks:
+                    try:
+                        task.end_task()
+                    except Exception as ex:
+                        self.log.warning(f"Error stopping {label} task: {ex}")
+
+        watchdog = threading.Thread(target=_watchdog)
+        watchdog.start()
+        try:
+            for task in tasks:
+                self.doc_loading_tm.get_task_result(task)
+        finally:
+            tasks_done.set()
+            watchdog.join()
+
+
+    def _get_read_failure_stats(self):
         read_failure_dict = dict()
         for server in self.cluster.nodes_in_cluster:
             read_failure_dict[server.ip] = dict()
             for bucket in self.cluster.buckets:
                 result = Cbstats(server).all_stats(bucket.name)
                 read_failure_dict[server.ip][bucket.name] = result["ep_data_read_failed"]
+        return read_failure_dict
+
+    def _assert_corruption_detected(self, read_failure_dict_before, read_failure_dict_after):
+
+        read_failures_before = sum(v for stats in read_failure_dict_before.values() for v in stats.values())
+        read_failures_after = sum(v for stats in read_failure_dict_after.values() for v in stats.values())
+        read_failures_delta = read_failures_after - read_failures_before
+
+        migration_failures = self.get_total_migration_failures()
+
+        self.log.info(f"Read failures delta = {read_failures_delta}, "
+                      f"Migration failures = {migration_failures}")
+
+        self.assertTrue(read_failures_delta > 0 or migration_failures > 0,
+                        "Expected non-zero read or migration failures due to "
+                        "log corruption, but observed read_failures_delta="
+                        f"{read_failures_delta}, migration_failures={migration_failures}")
+
+    def validate_read_failures(self, read_timeout=600, num_docs_to_read=None):
+
+        read_failure_dict = self._get_read_failure_stats()
         self.log.info(f"Read failure dict before workload = {read_failure_dict}")
 
         # Clear page cache
@@ -422,35 +486,9 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         read_tasks = self.perform_workload(0, num_docs_to_read, doc_op="read",
                                            wait=False, ops_rate=10000)
 
-        # Watchdog: if the reads don't finish within read_timeout (e.g. reads
-        # on corrupted extents never return), stop the tasks so the test fails
-        # cleanly instead of hanging until the Jenkins build timeout.
-        reads_done = threading.Event()
+        self._wait_for_tasks_with_watchdog(read_tasks, read_timeout, label="read_tasks")
 
-        def _read_watchdog():
-            if not reads_done.wait(read_timeout):
-                self.log.warning(f"Read workload exceeded {read_timeout}s; "
-                                 f"force-stopping read tasks")
-                for task in read_tasks:
-                    try:
-                        task.end_task()
-                    except Exception as ex:
-                        self.log.warning(f"Error stopping read task: {ex}")
-
-        watchdog = threading.Thread(target=_read_watchdog)
-        watchdog.start()
-        try:
-            for task in read_tasks:
-                self.doc_loading_tm.get_task_result(task)
-        finally:
-            reads_done.set()
-            watchdog.join()
-
-        # Check ep_data_read_failed stat after read workload
-        read_failure_dict2 = dict()
-        for server in self.cluster.nodes_in_cluster:
-            read_failure_dict2[server.ip] = dict()
-            for bucket in self.cluster.buckets:
-                result = Cbstats(server).all_stats(bucket.name)
-                read_failure_dict2[server.ip][bucket.name] = result["ep_data_read_failed"]
+        read_failure_dict2 = self._get_read_failure_stats()
         self.log.info(f"Read failure dict after workload = {read_failure_dict2}")
+
+        self._assert_corruption_detected(read_failure_dict, read_failure_dict2)

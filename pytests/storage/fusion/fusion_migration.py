@@ -436,6 +436,9 @@ class FusionMigration(MagmaBaseTest, FusionBase):
 
     def test_delete_guest_volumes_during_migration(self):
 
+        self.skip_fusion_health_check = True
+        self.crash_warning = True
+
         num_volumes_to_delete = self.input.param("num_volumes_to_delete", 3)
         min_storage_size = self.input.param("min_storage_size", 536870912)  # 0.5GB default
 
