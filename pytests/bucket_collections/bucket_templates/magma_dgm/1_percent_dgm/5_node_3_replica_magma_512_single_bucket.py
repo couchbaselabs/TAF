@@ -24,8 +24,8 @@ spec = {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 2,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 6553600,
-            Bucket.ramQuotaMB: 512,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 1250000,
+            Bucket.ramQuotaMB: 256,
             Bucket.priority: Bucket.Priority.HIGH
         }
     }
