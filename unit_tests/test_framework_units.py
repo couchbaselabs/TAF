@@ -677,5 +677,85 @@ class TestRebalanceHelper(unittest.TestCase):
         self.assertGreater(unique_vbuckets, 100)  # Should hit many vbuckets
 
 
+class TestFilterFields(unittest.TestCase):
+    """
+    Tests for HelperLib.filter_fields() in lib/framework_lib/framework.py,
+    used to strip this run's own global '-p' fields off test names recycled
+    from a previous run's report (-d failed=<url>/passed=<url>).
+
+    framework.py itself can't be imported in this lightweight env (it pulls
+    in platform_constants/couchbase SDK), so the function body is inlined
+    here, matching this file's existing pattern for such modules.
+
+    Regression coverage for: recycling a failed test via '-d failed=<url>'
+    while a GROUP filter is also active as a global '-p' param used to
+    strip the recycled test's own GROUP tag, since it shares a field name
+    with the global param, even though it is not a value the global run
+    overrides - it's per-test selector metadata that testrunner.py's own
+    group-filter check (testrunner.py's "GROUP" not in params branch)
+    requires be present on each individual test, causing every recycled
+    test to be skipped with "group requested but test has no group" and
+    zero tests to ever rerun.
+    """
+
+    @staticmethod
+    def filter_fields(testname, run_params=""):
+        run_param_fields = [param.split("=")[0].strip()
+                            for param in run_params.split(",") if param
+                            and param.split("=")[0].strip()
+                            not in ("GROUP", "EXCLUDE_GROUP")]
+        testwords = testname.split(",")
+        line = []
+        for fw in testwords:
+            if not fw.startswith("logs_folder=") \
+                    and not fw.startswith("conf_file=") \
+                    and not fw.startswith("cluster_name=") \
+                    and not fw.startswith("ini=") \
+                    and not fw.startswith("case_number=") \
+                    and not fw.startswith("num_nodes=") \
+                    and not fw.startswith("spec=")\
+                    and not fw.startswith("get-cbcollect-info=") \
+                    and not fw.startswith("infra_log_level=") \
+                    and not fw.startswith("log_level=") \
+                    and not any(fw.startswith(rp + "=")
+                                for rp in run_param_fields):
+                line.append(fw)
+        return ",".join(line)
+
+    def test_group_field_survives_when_also_a_global_param(self):
+        """A recycled test's own GROUP tag must not be stripped just
+        because this run's global '-p' also carries a GROUP filter."""
+        testname = "nodes_init=3,doc_ops=update,GROUP=P0;my_group"
+        run_params = "GROUP=P0;my_group,upgrade_version=8.1.0-2680"
+        result = self.filter_fields(testname, run_params)
+        self.assertIn("GROUP=P0;my_group", result.split(","))
+
+    def test_exclude_group_field_survives_when_also_a_global_param(self):
+        testname = "nodes_init=3,EXCLUDE_GROUP=P0;skip_me"
+        run_params = "EXCLUDE_GROUP=P0;skip_me,ini=some.ini"
+        result = self.filter_fields(testname, run_params)
+        self.assertIn("EXCLUDE_GROUP=P0;skip_me", result.split(","))
+
+    def test_other_global_fields_are_still_stripped(self):
+        """Only GROUP/EXCLUDE_GROUP are exempt - fields that genuinely
+        are this run's own override values must still be dropped so they
+        aren't left stale/duplicated on the recycled test name."""
+        testname = "nodes_init=3,ini=old.ini,upgrade_version=8.1.0-2679," \
+                   "GROUP=P0;my_group"
+        run_params = "ini=new.ini,upgrade_version=8.1.0-2680,GROUP=P0;my_group"
+        result = self.filter_fields(testname, run_params).split(",")
+        self.assertIn("GROUP=P0;my_group", result)
+        self.assertNotIn("ini=old.ini", result)
+        self.assertNotIn("upgrade_version=8.1.0-2679", result)
+
+    def test_no_group_filter_active_unaffected(self):
+        """Without a GROUP filter in run_params, behavior for a test with
+        no GROUP tag of its own is unchanged (nothing to strip either way)."""
+        testname = "nodes_init=3,doc_ops=update"
+        run_params = "upgrade_version=8.1.0-2680"
+        result = self.filter_fields(testname, run_params)
+        self.assertEqual(result, testname)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

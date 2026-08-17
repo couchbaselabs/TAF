@@ -333,8 +333,18 @@ class HelperLib(object):
         # current run's own global values aren't duplicated/left stale
         # alongside them, which otherwise desyncs merge_reports.py's
         # dedup key between rerun generations.
+        # GROUP/EXCLUDE_GROUP are excluded from that stripping: unlike
+        # e.g. ini/cluster_name, they aren't a value that's the same for
+        # every test - they're per-test selector tags that testrunner.py
+        # itself later checks are present on each individual test's own
+        # params before running it. Stripping them here because the
+        # global -p also carries a GROUP= filter left every recycled
+        # test with none, so testrunner.py skipped it as "group
+        # requested but test has no group" and 0 tests ever reran.
         run_param_fields = [param.split("=")[0].strip()
-                            for param in run_params.split(",") if param]
+                            for param in run_params.split(",") if param
+                            and param.split("=")[0].strip()
+                            not in ("GROUP", "EXCLUDE_GROUP")]
         if "logs_folder:" in testname:
             testwords = testname.split(",")
             line = ""
