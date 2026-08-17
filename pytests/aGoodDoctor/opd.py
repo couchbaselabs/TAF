@@ -8,6 +8,7 @@ import json
 from BucketLib.bucket import Bucket
 import os
 import random
+import uuid
 from BucketLib.BucketOperations import BucketHelper
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from Jython_tasks.task_manager import TaskManager
@@ -26,8 +27,10 @@ from threading import Thread
 import threading
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from couchbase_utils.backup_utils.backup_utils import BackupLocation, \
-    BackupMgrUtil, ContinuousBackupUtil
+    BackupMgrUtil, CLOUD_PROVIDER_CLASSES, ContinuousBackupUtil
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
+from couchbase_utils.security_utils.credential_store_utils import \
+    CredentialStoreUtils
 from TestInput import TestInputServer, TestInputSingleton
 from gsiLib.gsiHelper import GsiHelper
 from cb_server_rest_util.query.query_api import QueryRestAPI
@@ -119,7 +122,7 @@ class OPD:
         params = bucket_helper.create_secret_params(
             secret_type="cb-server-managed-aes-key-256",
             name="VolumeTestBucketEncryptionKey",
-            usage=["bucket-encryption-*"],
+            usage=["bucket-encryption"],
             autoRotation=True,
             rotationIntervalInSeconds=self.rotationIntervalInSeconds,
             port=None)
@@ -136,6 +139,11 @@ class OPD:
             self.fail("Encryption at rest key created on %s but no id was "
                       "returned: %s" % (cluster.master.ip, response))
         cluster.encryption_at_rest_id = secret_id
+        # Only keys this run created are torn down, so record them as they are
+        # made (see _delete_bucket_encryption_secrets).
+        if getattr(self, "created_encryption_keys", None) is None:
+            self.created_encryption_keys = list()
+        self.created_encryption_keys.append((cluster, secret_id))
         self.log.info("Created secret ID=%s on %s"
                       % (secret_id, cluster.master.ip))
         return secret_id
@@ -1830,6 +1838,185 @@ class OPD:
                 description="Credential store for continuous backup "
                             "volume tests")
 
+    def setup_backup_encryption(self):
+        """
+        Opt in to encryption-at-rest for the backup tools, per `ear_bk`
+        (cbbackupmgr archive) and `ear_contbk` (cbcontbk), both default False.
+
+        Provisions an external KMS key and uploads its credentials to the
+        Credential Store, so the backup service can reach the key. The
+        provider itself is attached to the CLI wrappers later, in
+        setup_backup_tools(), which is where they are built.
+
+        Runs after setup_backup_locations() -- it grants the backup service
+        the continuous-backup credential alongside the KMS one -- and before
+        create_encryption_at_rest_key(), because bucket-level EaR is a
+        prerequisite for continuous-backup EaR and the buckets are created
+        straight after. teardown_backup_encryption() reverses all of it.
+        """
+        self.ear_bk = False
+        self.ear_contbk = False
+        self.kms_provider = None
+        self.km_cred_store_id = None
+
+        if not self.cont_bkp_test:
+            return
+
+        self.ear_bk = self.input.param("ear_bk", False)
+        self.ear_contbk = self.input.param("ear_contbk", False)
+        if not (self.ear_bk or self.ear_contbk):
+            return
+
+        # Bucket-level EaR is a PREREQUISITE for continuous-backup EaR. Unlike
+        # collections_base, which silently turns it on, a volume run has to be
+        # told explicitly -- flipping it here would create buckets that differ
+        # from what the run was asked for.
+        if self.ear_contbk and self.enable_encryption_at_rest is not True:
+            self.fail("ear_contbk=True needs bucket-level encryption at rest; "
+                      "pass enable_encryption_at_rest=True as well")
+
+        km_provider_name = self.input.param("km_provider", "AWS")
+        if km_provider_name not in CLOUD_PROVIDER_CLASSES:
+            self.fail(f"Invalid km_provider {km_provider_name!r}. Expected "
+                      f"one of {list(CLOUD_PROVIDER_CLASSES)}.")
+        self.kms_provider = CLOUD_PROVIDER_CLASSES[km_provider_name](
+            log=self.log)
+        self.kms_provider.create_kms_key(
+            alias=self.input.param("km_key_alias", None))
+        self.log.info(f"KMS key provisioned for EaR: "
+                      f"{self.kms_provider.km_key_url}")
+
+        rest = RestConnection(self.cluster.master)
+        self.km_cred_store_id = f"km_cred_{uuid.uuid4()}"
+        self.kms_provider.create_kms_credential_store(
+            rest, cred_id=self.km_cred_store_id,
+            description="KMS credential for volume test EaR")
+        self.log.info(f"Created credential store for KMS with ID: "
+                      f"{self.km_cred_store_id}")
+
+        roles = [f"credential_consumer[{self.km_cred_store_id}]"]
+        if self.cont_bkp_credential_store_id:
+            roles.append(
+                f"credential_consumer[{self.cont_bkp_credential_store_id}]")
+        CredentialStoreUtils().put_service_roles(
+            rest, service_name="backup", roles=roles)
+
+    def attach_kms_to_backup_tools(self):
+        """
+        Hand the KMS provider to whichever CLI wrapper asked for it.
+
+        Separate from setup_backup_encryption() because the wrappers are built
+        in setup_backup_tools(), which runs well after the key is provisioned
+        (the backup node has to join the cluster first).
+
+        BackupMgrUtil is a CbBackupMgr, so it takes the provider directly;
+        ContinuousBackupUtil only holds them, so its cbcontbk and cbbackupmgr
+        wrappers are set individually -- cbcontbk reads the archive too.
+        """
+        if getattr(self, "kms_provider", None) is None:
+            return
+        if self.ear_bk and self.drBackup is not None:
+            self.drBackup.kms_provider = self.kms_provider
+        if self.ear_contbk and self.drContBackup is not None:
+            self.drContBackup.cont_bk_mgr.kms_provider = self.kms_provider
+            self.drContBackup.backup_mgr.kms_provider = self.kms_provider
+        self.log.info("Attached KMS provider to backup tools: "
+                      "ear_bk=%s, ear_contbk=%s"
+                      % (self.ear_bk, self.ear_contbk))
+
+    def teardown_backup_encryption(self):
+        """
+        Reverse setup_backup_encryption(): drop the KMS key, its Credential
+        Store entry, and the bucket-encryption secrets.
+
+        Runs on both the success and failure paths -- cloud KMS keys carry
+        ongoing cost and must never be left orphaned. On failure everything a
+        human needs to find the key in the provider's console is logged first:
+        the scheduled-delete window (AWS: 7 days pending; Azure: 90-day soft
+        delete; GCP: destroys versions only) gives investigators time to
+        cancel deletion if the key is still needed for post-mortem.
+
+        Every step swallows its own exceptions so one failure cannot strand
+        the resources after it.
+        """
+        if not (getattr(self, "ear_bk", False)
+                or getattr(self, "ear_contbk", False)):
+            self._delete_bucket_encryption_secrets()
+            return
+
+        if self.is_test_failed() and self.kms_provider is not None:
+            key_details = {
+                "provider": type(self.kms_provider).__name__,
+                "km_key_url": self.kms_provider.km_key_url,
+                # AWS uses (_km_key_id, _km_alias_name); GCP/Azure use
+                # _km_key_name. Read via getattr so the log line is
+                # provider-agnostic.
+                "km_key_id": getattr(self.kms_provider, "_km_key_id", None),
+                "km_alias_name": getattr(
+                    self.kms_provider, "_km_alias_name", None),
+                "km_key_name": getattr(
+                    self.kms_provider, "_km_key_name", None),
+                "km_created_by_this_run": getattr(
+                    self.kms_provider, "_km_created_by_us", None),
+                "km_cred_store_id": self.km_cred_store_id,
+            }
+            self.log.warning(f"EaR test failed — KMS resources scheduled for "
+                             f"deletion below. Details for post-mortem "
+                             f"lookup: {key_details}")
+
+        if self.kms_provider is not None:
+            try:
+                self.kms_provider.delete_kms_key()
+            except Exception as e:
+                self.log.warning(
+                    f"Failed to delete KMS key during teardown: {e}")
+
+        if self.km_cred_store_id is not None:
+            try:
+                CredentialStoreUtils().delete_credential(
+                    RestConnection(self.cluster.master),
+                    self.km_cred_store_id)
+            except Exception as e:
+                self.log.error(f"Exception while deleting KMS credential "
+                               f"store entry: {e}")
+
+        self._delete_bucket_encryption_secrets()
+
+    def _delete_bucket_encryption_secrets(self):
+        """
+        Delete the server-managed ns_server secrets created by
+        create_encryption_at_rest_key().
+
+        Only keys this run created are dropped -- an id passed in through
+        encryption_at_rest_id belongs to whoever created it.
+
+        ns_server rejects delete_secret while any bucket still references the
+        secret via encryptionAtRestKeyId, and BaseTestCase.tearDown() -- which
+        drops the buckets -- runs after this. So unbind every bucket first by
+        setting encryptionAtRestKeyId=-1.
+        """
+        for cluster, secret_id in getattr(self, "created_encryption_keys",
+                                          None) or []:
+            bucket_helper = BucketHelper(cluster.master)
+            for bucket in cluster.buckets:
+                try:
+                    bucket_helper.change_bucket_props(
+                        bucket, encryptionAtRestKeyId=-1)
+                except Exception as e:
+                    self.log.warning(
+                        f"Failed to unbind bucket '{bucket.name}' from EaR "
+                        f"secret id={secret_id} before delete: {e}")
+
+            try:
+                status, response = RestConnection(
+                    cluster.master).delete_secret(secret_id)
+                if not status:
+                    self.log.warning(f"Failed to delete EaR bucket secret "
+                                     f"id={secret_id}: {response}")
+            except Exception as e:
+                self.log.warning(f"Exception deleting EaR bucket secret "
+                                 f"id={secret_id}: {e}")
+
     def setup_backup_tools(self, backup_cluster_host):
         """
         Build the cbbackupmgr/cbcontbk wrappers -- which run on the backup
@@ -1864,11 +2051,16 @@ class OPD:
                 backupmgr_obj_staging_dir=self.backup_location.obj_staging_dir,
                 contbk_obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
 
+        # The wrappers only exist now, so this is the first point at which the
+        # KMS key provisioned in setup_backup_encryption() can be handed over.
+        self.attach_kms_to_backup_tools()
+
         # configure_backup() wipes the archive before creating the repo, so it
         # subsumes provisioning for every backing store.
         self.drBackup.cleanup_archive(self.backup_archive)
         self.drBackup.configure_backup(self.backup_archive, self.backup_repo,
-                                       [], [])
+                                       [], [],
+                                       encrypted=self.ear_bk)
 
     def enable_continuous_backup_on_buckets(self):
         """
@@ -1883,6 +2075,13 @@ class OPD:
             continuous_backup_location=self.continuous_backup_location,
             continuous_backup_interval=self.continuous_backup_interval,
             continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
+            # Encryption at rest for the continuous backup itself: without
+            # these the KMS key from setup_backup_encryption() would only
+            # reach the CLI, and the buckets would keep streaming plaintext.
+            continuous_backup_km_key_url=(
+                self.kms_provider.km_key_url if self.ear_contbk else None),
+            continuous_backup_km_cred_id=(
+                self.km_cred_store_id if self.ear_contbk else None),
             default_history_retention_seconds=self.input.param(
                 "history_retention_seconds", 86400),
             default_history_retention_bytes=self.input.param(

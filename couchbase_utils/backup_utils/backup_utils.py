@@ -579,7 +579,7 @@ class BackupMgrUtil(CbBackupMgr):
                          obj_staging_dir=obj_staging_dir)
 
     def configure_backup(self, archive, repo, exclude=None, include=None,
-                         obj_staging_dir=None):
+                         obj_staging_dir=None, encrypted=False):
         """Delete previous archive dir, then create backup repo."""
         if not archive or archive == "/":
             raise ValueError("archive must be a non-empty, non-root path")
@@ -593,7 +593,8 @@ class BackupMgrUtil(CbBackupMgr):
             self.shellConn.execute_command(f"rm -rf -- {archive}")
         stdout, stderr = super().create_repo(archive, repo,
                                              exclude=exclude, include=include,
-                                             obj_staging_dir=obj_staging_dir)
+                                             obj_staging_dir=obj_staging_dir,
+                                             encrypted=encrypted)
         if self.cloud_provider is None:
             self.shellConn.execute_command(
                 f"chown -R couchbase:couchbase {archive}")

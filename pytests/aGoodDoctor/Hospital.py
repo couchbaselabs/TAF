@@ -225,9 +225,13 @@ class Murphy(BaseTestCase, OPD):
         if self.num_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
                                                 self.num_buckets)
+        # Provision the KMS key for backup EaR before any bucket work: it
+        # validates the ear_* / enable_encryption_at_rest combination, and the
+        # backup tools need the key whether or not the buckets are new.
+        self.setup_backup_encryption()
         if not self.skip_init:
-            # The encryption key has to exist before the buckets that
-            # reference it are created.
+            # The bucket key has to exist before the buckets that reference it
+            # are created.
             self.create_encryption_at_rest_key(self.cluster)
             self.create_required_buckets(self.cluster)
         else:
@@ -455,6 +459,9 @@ class Murphy(BaseTestCase, OPD):
             task.stop_query_load()
 
         self.teardown_backup_locations()
+        # Before BaseTestCase.tearDown() drops the buckets: ns_server refuses
+        # to delete a secret while a bucket still references it.
+        self.teardown_backup_encryption()
 
         BaseTestCase.tearDown(self)
 
