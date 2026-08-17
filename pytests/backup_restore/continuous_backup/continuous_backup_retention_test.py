@@ -52,7 +52,16 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
                 load_using=self.load_docs_using)
         if doc_loading_task.result is False:
             self.fail("Initial doc_loading failed")
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
+        # Match CollectionBase.load_data_from_spec_file's settling: the plain
+        # default-timeout wait below returns once cursors have drained, but
+        # doesn't confirm every collection's count actually reflects the
+        # load spec yet, so a caller capturing item count right after this
+        # can grab a stale, still-climbing number.
+        self.log.info("Wait for ep_queue_size to drain")
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets, timeout=1200)
+        self.bucket_util.validate_docs_per_collections_all_buckets(
+            self.cluster, timeout=2400)
         return doc_loading_task
 
     # 3.1 Configuration & Scheduling Tests
@@ -266,9 +275,13 @@ class ContinuousBackupRetentionTest(ContinuousBackupBase):
         # 2. Load additional docs
         mutation_time = time.time()
         self._load_data_and_get_task(self.data_spec_name)
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
-        count_with_new_docs = self.bucket_util.get_buckets_item_count(
-            self.cluster, self.bucket.name)
+        # get_buckets_item_count() (REST bucket stats) can still lag the
+        # SDK-tracked total right after a load -- get_expected_total_num_items
+        # is the same ground truth validate_docs_per_collections_all_buckets
+        # already trusts, and _verify_doc_count polls REST stats against it
+        # instead of taking a single possibly-stale snapshot.
+        count_with_new_docs = self.bucket_util.get_expected_total_num_items(self.bucket)
+        self._verify_doc_count(count_with_new_docs)
         self.log.info(f"Doc count after loading new docs: {count_with_new_docs}")
         self.assertGreater(count_with_new_docs - original_count, 0,
                            "No new docs were added; check the data spec")

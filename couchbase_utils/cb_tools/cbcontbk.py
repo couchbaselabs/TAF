@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import uuid
 
 from cb_tools.cb_tools_base import CbCmdBase
 import logging
@@ -68,7 +69,8 @@ class CbContBk(CbCmdBase):
             cmd += " %s" % self.kms_provider.get_km_flags(self.shellConn)
         return cmd
 
-    def _append_obj_store_flags(self, cmd, obj_staging_dir=None):
+    def _append_obj_store_flags(self, cmd, obj_staging_dir=None,
+                                includes_archive_path=True):
         """
         Append the object-store flags for whichever half of the command needs
         them, plus `--obj-staging-dir`.
@@ -76,6 +78,15 @@ class CbContBk(CbCmdBase):
         `cbcontbk_cloud_provider` wins when both are set: __init__ has already
         guaranteed they are the same provider type, so its flags cover the
         archive too.
+
+        The `backup_cloud_provider` fallback only makes sense when `cmd` also
+        carries an `-a <archive_path>` for those flags to apply to (i.e.
+        `restore`). `info`/`collect_logs` pass only `-l <location>`, so
+        falling back to the archive's provider there attaches cloud
+        credentials to a command with no cloud-schemed path at all --
+        cbcontbk then rejects it with "cloud arguments provided without the
+        cloud scheme prefix". `includes_archive_path=False` skips that
+        fallback for those callers.
 
         The staging dir comes from `obj_staging_dir` if given, else the
         instance default from __init__.
@@ -86,7 +97,7 @@ class CbContBk(CbCmdBase):
 
         if self.cbcontbk_cloud_provider is not None:
             cmd += f" {self.cbcontbk_cloud_provider.get_cbconbk_flags(self.shellConn)}"
-        elif self.backup_cloud_provider is not None:
+        elif includes_archive_path and self.backup_cloud_provider is not None:
             cmd += f" {self.backup_cloud_provider.get_cbbackupmgr_flags(self.shellConn)}"
 
         return cmd
@@ -134,6 +145,27 @@ class CbContBk(CbCmdBase):
 
         return output[0].strip()
 
+    def _make_unique_temp_dir(self, temp_dir):
+        """
+        Create and return a fresh, uuid-suffixed subdirectory of `temp_dir`
+        for this restore() call. A shared literal path here let stale
+        staging state from an earlier restore poison a later one (CI:
+        "a required backup has been removed, please retry with '--purge'"
+        against backups that were actually still healthy on disk).
+        Never cleaned up -- a unique dir can't collide with a future
+        restore, so there's nothing to gain from deleting it and forensic
+        value in keeping it.
+        """
+        if not temp_dir or not temp_dir.strip("/"):
+            raise ValueError(f"Refusing to use unsafe temp_dir {temp_dir!r}")
+        unique_dir = f"{temp_dir.rstrip('/')}/restore_{uuid.uuid4().hex}"
+        cmd = f"mkdir -p {unique_dir}"
+        self.log.debug(f"Creating restore temp dir: {cmd}")
+        _, error = self._execute_cmd(cmd)
+        if error:
+            self.log.warning(f"Failed to create temp dir {unique_dir}: {error}")
+        return unique_dir
+
     def restore(self, archive_path, repo_name,
                 location, temp_dir, cluster_host=None, threads=8, timestamp=None,
                 include_data=None, map_data=None, obj_staging_dir=None):
@@ -142,7 +174,8 @@ class CbContBk(CbCmdBase):
         :param archive_path: Path to the traditional backup location
         :param repo_name: Name of the backup repository (e.g., "repo1")
         :param location: Location of the continuous backup
-        :param temp_dir: Temporary directory for restore operations
+        :param temp_dir: Parent directory for this call's staging dir
+                         (see _make_unique_temp_dir).
         :param cluster_host: Cluster address (e.g., "localhost:8091")
         :param threads: Number of threads to use for the restore (default: 8)
         :param timestamp: Timestamp in UTC for the point-in-time recovery.
@@ -163,9 +196,11 @@ class CbContBk(CbCmdBase):
         if timestamp is None:
             timestamp = "everything"
 
+        restore_temp_dir = self._make_unique_temp_dir(temp_dir)
+
         cmd = (f"{self.cbstatCmd} restore -a {archive_path} -r {repo_name} "
                f"-c {cluster_host} -u {self.username} -p {self.password} "
-               f"-t {threads} -l {location} -d {temp_dir} -T {timestamp}")
+               f"-t {threads} -l {location} -d {restore_temp_dir} -T {timestamp}")
 
         if include_data:
             cmd += f" --include-data {include_data}"
@@ -207,7 +242,7 @@ class CbContBk(CbCmdBase):
         """
         cmd = f"{self.cbstatCmd} info -l {location} --json"
         cmd += self.cli_flags
-        cmd = self._append_obj_store_flags(cmd)
+        cmd = self._append_obj_store_flags(cmd, includes_archive_path=False)
 
         self.log.info(f"Executing command: {cmd}")
 
@@ -243,7 +278,8 @@ class CbContBk(CbCmdBase):
 
         cmd += self.cli_flags
 
-        cmd = self._append_obj_store_flags(cmd, obj_staging_dir)
+        cmd = self._append_obj_store_flags(cmd, obj_staging_dir,
+                                           includes_archive_path=False)
 
         cmd = self._append_km_flags(cmd)
 

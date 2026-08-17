@@ -158,6 +158,17 @@ class CollectionBase(ClusterSetup, FusionBase):
             self.cluster_util.set_file_based_rebalance(
                 cluster_node, enabled=False)
 
+    def _assert_cbbackupmgr_succeeded(self, output, error, action_desc):
+        """CbBackupMgr.create_repo()/backup() only log failures and return
+        (output, error), so an unchecked call lets a failed/silent repo
+        creation or backup surface much later as a confusing restore
+        failure. Fail here instead, with the cbbackupmgr output."""
+        error_lines = [line for line in (output or [])
+                       if line.strip().lower().startswith("error")]
+        if error or not output or error_lines:
+            self.fail(f"cbbackupmgr {action_desc} failed. "
+                      f"stdout: {output}, stderr: {error}")
+
     def setup_backup_locations(self):
         """
         Resolve `cbbackup_test` / `cont_bkp_test` into the cbbackupmgr archive
@@ -636,12 +647,16 @@ class CollectionBase(ClusterSetup, FusionBase):
                 if self.input.param("initial_load", True):
                     self.log.info("Creating backup repository")
                     # obj_staging_dir comes from the CbBackupMgr instance
-                    self.backup_mgr.create_repo(self.backup_archive_dir,
-                                                self.backup_repo_name,
-                                                encrypted=self.ear_bk)
+                    output, error = self.backup_mgr.create_repo(
+                        self.backup_archive_dir, self.backup_repo_name,
+                        encrypted=self.ear_bk)
+                    self._assert_cbbackupmgr_succeeded(
+                        output, error, "create_repo")
                     self.log.info("Performing initial backup")
-                    self.backup_mgr.backup(self.backup_archive_dir,
-                                           self.backup_repo_name)
+                    output, error = self.backup_mgr.backup(
+                        self.backup_archive_dir, self.backup_repo_name)
+                    self._assert_cbbackupmgr_succeeded(
+                        output, error, "backup")
 
         if isinstance(self.range_scan_collections, int) \
                 and self.range_scan_collections > 0:

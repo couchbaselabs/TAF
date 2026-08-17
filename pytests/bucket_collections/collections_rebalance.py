@@ -1400,7 +1400,11 @@ class CollectionsRebalance(CollectionBase):
             self.data_validation_collection()
 
             known_nodes = self.cluster.servers[:self.nodes_init + self.nodes_in]
-            remove_nodes = known_nodes[-self.nodes_in:]
+            # known_nodes[-self.nodes_in:] silently returns the WHOLE list
+            # when nodes_in=0 (Python's -0 == 0, so this is [0:], not "last
+            # zero elements"), attempting to rebalance out every node in the
+            # cluster -- ns_server rejects that with a 400.
+            remove_nodes = known_nodes[-self.nodes_in:] if self.nodes_in else []
             operation = self.task.async_rebalance(
                 self.cluster, [], remove_nodes,
                 retry_get_process_num=self.retry_get_process_num)

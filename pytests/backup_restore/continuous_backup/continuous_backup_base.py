@@ -131,6 +131,14 @@ class ContinuousBackupBase(CollectionBase):
                             f">= since={since_dt.isoformat()}, unchanged "
                             f"for {quiet_period}s ({quiet_checkpoints} "
                             f"checkpoint cycles)")
+                        # range.end settling isn't sufficient on its own --
+                        # a restore right after can still come back short
+                        # (observed: expected=20000, actual=19300). One more
+                        # interval gives the underlying data time to land.
+                        self.sleep(
+                            self.continuous_backup_interval * 60,
+                            "Buffering one more backup interval after "
+                            "catch-up settled, before trusting it")
                         return
             self.sleep(
                 poll_interval,

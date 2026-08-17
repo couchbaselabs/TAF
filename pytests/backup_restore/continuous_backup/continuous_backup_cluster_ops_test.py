@@ -121,8 +121,29 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         self._assert_restore_succeeded(output, error, timestamp)
 
     def _load_data_and_get_count(self, mutation_num=0):
-        """Load data from spec and return the resulting item count."""
-        CollectionBase.load_data_from_spec_file(self, self.data_spec_name)
+        """Load data from spec and return the resulting item count.
+
+        Skips per-collection doc-count validation: these tests only care
+        about the actual item count after loading (used as the PITR
+        restore-target count), not whether it matches the spec's planned
+        distribution -- a disruptive op (failover/quorum-loss) between loads
+        can legitimately leave collections uneven.
+
+        Returns a raw get_buckets_item_count() snapshot rather than blocking
+        on _verify_doc_count(get_expected_total_num_items(...)) -- the latter
+        was tried and reverted: it hard-fails if the live count never reaches
+        the SDK-tracked "expected" total within its timeout, but an *unsafe*
+        failover (quorum loss) legitimately sacrifices some unreplicated
+        writes to restore availability, so actual can permanently fall short
+        of expected there -- not a timing issue no amount of polling fixes.
+        Observed in CI: expected=400000, actual=365600 after the full 300s
+        timeout, on a load that runs right after an unsafe failover. Every
+        caller in this file also either discards this return value or
+        captures its own T1/T2/T3 count separately, so nothing depends on
+        the stricter behavior anyway.
+        """
+        CollectionBase.load_data_from_spec_file(
+            self, self.data_spec_name, validate_docs=False)
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets)
         return self.bucket_util.get_buckets_item_count(
@@ -194,8 +215,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-rebalance-in): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=self.obj_staging_dir_cbbackup)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # cbcontbk's "-T everything" (latest) restore requires the continuous
         # log to have data newer than this traditional backup snapshot, or it
@@ -260,8 +283,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-rebalance-out): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=self.obj_staging_dir_cbbackup)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # cbcontbk's "-T everything" (latest) restore requires the continuous
         # log to have data newer than this traditional backup snapshot, or it
@@ -327,8 +352,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-swap): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=self.obj_staging_dir_cbbackup)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # cbcontbk's "-T everything" (latest) restore requires the continuous
         # log to have data newer than this traditional backup snapshot, or it
@@ -371,9 +398,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
 
         Note: PITR is supported only on Magma buckets.
         """
+        # A fixed one-interval sleep isn't reliably long enough here: the
+        # failover right after this disrupts the DCP stream continuous
+        # backup relies on, so a mutation that's merely "old enough" by
+        # wall-clock time can still not be durably captured yet when the
+        # failover hits. Poll the log's own range.end instead (see
+        # test_pitr_timestamps_across_quorum_loss for the same fix and the
+        # observed short-restore failure this prevents).
+        mutation_time = time.time()
         self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval before graceful failover")
+        self._wait_for_continuous_backup_catchup(mutation_time)
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
         count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-failover): {ts_t1}, count: {count_c1}")
@@ -401,8 +435,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-failover): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=self.obj_staging_dir_cbbackup)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # cbcontbk's "-T everything" (latest) restore requires the continuous
         # log to have data newer than this traditional backup snapshot, or it
@@ -446,9 +482,16 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
 
         Note: PITR is supported only on Magma buckets.
         """
+        # A fixed one-interval sleep isn't reliably long enough here: the
+        # hard failover right after this disrupts the DCP stream continuous
+        # backup relies on, so a mutation that's merely "old enough" by
+        # wall-clock time can still not be durably captured yet when the
+        # failover hits. Poll the log's own range.end instead (see
+        # test_pitr_timestamps_across_quorum_loss for the same fix and the
+        # observed short-restore failure this prevents).
+        mutation_time = time.time()
         self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval before hard failover")
+        self._wait_for_continuous_backup_catchup(mutation_time)
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
         count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-hard-failover): {ts_t1}, count: {count_c1}")
@@ -476,8 +519,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-hard-failover): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=self.obj_staging_dir_cbbackup)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # cbcontbk's "-T everything" (latest) restore requires the continuous
         # log to have data newer than this traditional backup snapshot, or it
@@ -529,9 +574,19 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
                 "Quorum loss test requires at least 4 KV nodes; "
                 f"cluster has {len(self.cluster.kv_nodes)}")
 
+        # A fixed one-interval sleep isn't reliably long enough here: the
+        # unsafe failover right after this is far more disruptive to the DCP
+        # stream continuous backup relies on than the gentler operations in
+        # the sibling tests (rebalance, graceful failover), so a mutation
+        # that's merely "old enough" by wall-clock time can still not be
+        # durably captured yet when the failover severs the connection.
+        # Poll the log's own range.end instead of assuming one interval was
+        # enough, so ts_t1/count_c1 only get captured once the log has
+        # actually caught up -- otherwise the later restore-to-T1 comes back
+        # short (observed: expected=200000, actual as low as ~191000).
+        mutation_time = time.time()
         self._load_data_and_get_count()
-        self.sleep(self.continuous_backup_interval * 60,
-                   "Waiting for backup interval before quorum loss")
+        self._wait_for_continuous_backup_catchup(mutation_time)
         ts_t1 = self.cont_bk_mgr.get_cluster_timestamp()
         count_c1 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T1 (pre-quorum-loss): {ts_t1}, count: {count_c1}")
@@ -572,8 +627,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-quorum-loss): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=self.obj_staging_dir_cbbackup)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # cbcontbk's "-T everything" (latest) restore requires the continuous
         # log to have data newer than this traditional backup snapshot, or it
@@ -661,8 +718,10 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         count_c2 = self.bucket_util.get_buckets_item_count(self.cluster, self.bucket.name)
         self.log.info(f"T2 (post-KV-restart): {ts_t2}, count: {count_c2}")
 
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
-                               obj_staging_dir=self.obj_staging_dir_cbbackup)
+        output, error = self.backup_mgr.backup(
+            self.backup_archive_dir, self.backup_repo_name,
+            obj_staging_dir=self.obj_staging_dir_cbbackup)
+        self._assert_cbbackupmgr_succeeded(output, error, "backup")
 
         # cbcontbk's "-T everything" (latest) restore requires the continuous
         # log to have data newer than this traditional backup snapshot, or it
