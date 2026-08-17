@@ -1,9 +1,11 @@
+import base64
 import concurrent.futures
 import datetime
 import time
 import uuid
 
 import requests
+from cryptography.x509.oid import ExtendedKeyUsageOID
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 from couchbase_utils.security_utils.crl_utils import (
@@ -1818,3 +1820,272 @@ class CRLTest(CRLBase):
             "not after some caching delay",
         )
         self.log.info("Live role downgrade took effect immediately, no staleness")
+
+    def test_crl_cert_chain_usage_encoding(self):
+        """CRL checks across chain depth (root-direct, intermediate-issued),
+        a fully untrusted chain rejected at chain validation before
+        revocation is even considered, EKU-agnostic checking (server-auth
+        and unsupported EKUs behave like any other cert), PEM vs
+        base64-DER encoding, a multi-cert PEM chain evaluated as separate
+        results, malformed cert input, and AKI/SKI disambiguation between
+        two trusted CAs sharing the same subject name.
+
+        Note: a multi-level chain where revoking the intermediate cert
+        itself propagates to the leaf (checkIntermediateCerts) is already
+        covered by test_crl_settings_scope_independence_and_ingestion;
+        every leaf cert generated throughout this suite already carries
+        the CLIENT_AUTH EKU used for real mTLS -- neither is re-tested
+        here.
+        """
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+
+        # A cert issued directly by a (root) CA is revoked via that CA's
+        # own CRL -- the baseline every other test in this suite already
+        # relies on, asserted explicitly here for completeness.
+        root_leaf_cert, root_leaf_key, root_leaf_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "chainRootDirect"
+        )
+        root_leaf_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(root_leaf_cert))
+        root_leaf_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(root_leaf_key))
+        filename = "cert_chain_root_direct.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [root_leaf_serial], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Root-direct revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(root_leaf_cert_path, root_leaf_key_path),
+            "A cert issued directly by a root CA should be rejected via "
+            "that CA's own CRL",
+        )
+        self.log.info("Root-direct cert correctly revoked via the root's own CRL")
+
+        # A cert issued by an intermediate CA is revoked via a CRL issued
+        # by that intermediate -- CRL-issuer trust doesn't chain through
+        # the hierarchy, so the intermediate must be separately, explicitly
+        # trusted even though its own cert chains to an already-trusted
+        # root.
+        intermediate_cert, intermediate_key, _ = self.crl_utils.generate_intermediate_ca(
+            self.ca_cert, self.ca_key, "ChainIntermediateCA"
+        )
+        self._trust_ca_on_cluster(intermediate_cert)
+        intermediate_leaf_cert, intermediate_leaf_key, intermediate_leaf_serial = (
+            self.crl_utils.generate_leaf_cert(
+                intermediate_cert, intermediate_key, "chainIntermediateLeaf"
+            )
+        )
+        # Client presents the full chain (leaf then its issuing
+        # intermediate), not just the leaf alone.
+        chain_bundle = (
+            self.crl_utils.cert_to_pem(intermediate_leaf_cert)
+            + self.crl_utils.cert_to_pem(intermediate_cert)
+        )
+        chain_leaf_cert_path = self._write_temp_pem(chain_bundle)
+        chain_leaf_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(intermediate_leaf_key)
+        )
+        filename = "cert_chain_intermediate_issued.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, intermediate_cert, intermediate_key, [intermediate_leaf_serial],
+            filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Intermediate-issued revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(chain_leaf_cert_path, chain_leaf_key_path),
+            "A cert issued by an intermediate CA should be rejected via a "
+            "CRL issued by that intermediate",
+        )
+        self.log.info(
+            "Intermediate-issued cert correctly revoked via the "
+            "intermediate's own CRL"
+        )
+
+        # A chain rooted in a completely untrusted CA is rejected at chain
+        # validation -- before revocation is even considered, and
+        # distinguishably so (a different TLS alert than a revocation).
+        untrusted_ca_cert, untrusted_ca_key = self.crl_utils.generate_ca("ChainUntrustedCA")
+        untrusted_leaf_cert, untrusted_leaf_key, _ = self.crl_utils.generate_leaf_cert(
+            untrusted_ca_cert, untrusted_ca_key, "chainUntrustedLeaf"
+        )
+        untrusted_leaf_cert_path = self._write_temp_pem(
+            self.crl_utils.cert_to_pem(untrusted_leaf_cert)
+        )
+        untrusted_leaf_key_path = self._write_temp_pem(
+            self.crl_utils.key_to_pem(untrusted_leaf_key)
+        )
+        status, content = self.crl_utils.upload_file(
+            self.rest, "cert_chain_untrusted.pem",
+            self.crl_utils.build_crl(untrusted_ca_cert, untrusted_ca_key, crl_number=1),
+        )
+        self.assertFalse(status, f"CRL from an untrusted CA should be rejected, got: {content}")
+        try:
+            self.crl_utils.perform_mtls_handshake(
+                self.cluster.master.ip, self.MGMT_PORT,
+                untrusted_leaf_cert_path, untrusted_leaf_key_path,
+            )
+            self.fail("Handshake with an untrusted-CA cert should be rejected")
+        except requests.exceptions.SSLError as exc:
+            self.assertIn(
+                "unknown ca", str(exc).lower(),
+                f"Expected an unknown-CA chain-validation alert, distinct "
+                f"from a revocation rejection, got: {exc}",
+            )
+        self.log.info(
+            "Untrusted-CA chain rejected at chain validation, distinctly "
+            "from a revocation rejection"
+        )
+
+        # CRL checks apply to server-auth-EKU certs too, via the admin
+        # diagnostic endpoint (EKU-agnostic by design).
+        server_eku_cert, _, server_eku_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "chainServerEku",
+            extended_key_usage=[ExtendedKeyUsageOID.SERVER_AUTH],
+        )
+        filename = "cert_chain_server_eku.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [server_eku_serial], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Server-EKU revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require",
+            certs=[self.crl_utils.cert_to_pem(server_eku_cert).decode()],
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(content["results"][0]["status"], "revoked")
+        self.log.info("Server-auth-EKU cert correctly checked via diagnostics/validate")
+
+        # A cert with an EKU the CRL check doesn't specifically recognize
+        # (neither client- nor server-auth) is still checked identically
+        # -- there is no distinct "unsupported EKU" status; the check is
+        # EKU-agnostic by design.
+        odd_eku_cert, _, odd_eku_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "chainOddEku",
+            extended_key_usage=[ExtendedKeyUsageOID.EMAIL_PROTECTION],
+        )
+        filename = "cert_chain_odd_eku.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [odd_eku_serial], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Odd-EKU revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require",
+            certs=[self.crl_utils.cert_to_pem(odd_eku_cert).decode()],
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(
+            content["results"][0]["status"], "revoked",
+            "An unsupported EKU should not change or suppress the "
+            "revocation status",
+        )
+        self.log.info("Cert with an unsupported EKU checked identically to any other cert")
+
+        # PEM and base64-DER encodings of the same cert are accepted and
+        # evaluated identically.
+        pem_form = self.crl_utils.cert_to_pem(server_eku_cert).decode()
+        der_b64_form = base64.b64encode(self.crl_utils.cert_to_der(server_eku_cert)).decode()
+        status, content_pem = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[pem_form]
+        )
+        self.assertTrue(status, f"diagnostics/validate (PEM) failed: {content_pem}")
+        status, content_der = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[der_b64_form]
+        )
+        self.assertTrue(status, f"diagnostics/validate (base64-DER) failed: {content_der}")
+        self.assertEqual(
+            content_pem["results"], content_der["results"],
+            "PEM and base64-DER of the same cert should evaluate identically",
+        )
+        self.log.info("PEM and base64-DER encodings evaluate identically")
+
+        # A multi-block PEM chain (leaf + its issuing intermediate
+        # concatenated) supplied as one certs[] entry is parsed and
+        # evaluated as two separate results.
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[chain_bundle.decode()]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(
+            len(content["results"]), 2,
+            f"A concatenated leaf+intermediate PEM should evaluate as 2 "
+            f"separate results, got: {content['results']}",
+        )
+        self.log.info("Multi-block PEM chain parsed and evaluated as separate results")
+
+        # Malformed certificate input is rejected with a clear error --
+        # two distinct shapes depending on whether the string is even
+        # valid base64. A PEM-shaped but truncated block (e.g. "MIIB") is
+        # still valid base64 as far as that check is concerned, so it
+        # falls through to the same per-cert "failed" path as any other
+        # well-formed-but-not-a-real-certificate input -- only a string
+        # that isn't valid base64 at all trips the request-level check.
+        garbage_b64 = base64.b64encode(b"not a real certificate, just bytes").decode()
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[garbage_b64]
+        )
+        self.assertTrue(
+            status, f"Garbage-but-valid-base64 input should still get a 200: {content}"
+        )
+        self.assertEqual(content["results"][0]["status"], "failed")
+
+        not_base64_at_all = "!!!not-base64-at-all###"
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[not_base64_at_all]
+        )
+        self.assertFalse(
+            status, f"A string that isn't valid base64 at all should be rejected, got: {content}"
+        )
+        self.log.info("Malformed cert input rejected with two distinct, clear error shapes")
+
+        # AKI/SKI disambiguates between two trusted CAs that share the
+        # same subject name -- the right CA's CRL applies only to its own
+        # certs, not the name-colliding one.
+        colliding_cn = "ChainCollidingCA"
+        ca_a_cert, ca_a_key = self.crl_utils.generate_ca(colliding_cn)
+        ca_b_cert, ca_b_key = self.crl_utils.generate_ca(colliding_cn)
+        self._trust_ca_on_cluster(ca_a_cert)
+        self._trust_ca_on_cluster(ca_b_cert)
+        leaf_a_cert, leaf_a_key, leaf_a_serial = self.crl_utils.generate_leaf_cert(
+            ca_a_cert, ca_a_key, "chainCollidingLeafA"
+        )
+        leaf_a_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(leaf_a_cert))
+        leaf_a_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(leaf_a_key))
+        leaf_b_cert, leaf_b_key, _ = self.crl_utils.generate_leaf_cert(
+            ca_b_cert, ca_b_key, "chainCollidingLeafB"
+        )
+        leaf_b_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(leaf_b_cert))
+        leaf_b_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(leaf_b_key))
+
+        filename = "cert_chain_colliding_ca.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename,
+            self.crl_utils.build_crl(
+                ca_a_cert, ca_a_key, revoked_serials=[leaf_a_serial], crl_number=1,
+                add_authority_key_id=True,
+            ),
+        )
+        self.assertTrue(status, f"Colliding-CA CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(leaf_a_cert_path, leaf_a_key_path),
+            "leafA (revoked under CA-A) should be rejected",
+        )
+        self.assertTrue(
+            self._handshake_ok(leaf_b_cert_path, leaf_b_key_path),
+            "leafB (issued by a different CA that merely shares CA-A's "
+            "subject name, not itself revoked) should connect -- AKI/SKI "
+            "must disambiguate rather than misapplying CA-A's CRL",
+        )
+        self.log.info(
+            "AKI/SKI correctly disambiguates two trusted CAs sharing a "
+            "subject name"
+        )

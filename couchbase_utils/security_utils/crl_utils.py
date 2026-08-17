@@ -306,7 +306,8 @@ class CRLUtils:
 
     @staticmethod
     def build_crl(ca_cert, ca_key, revoked_serials=None, this_update=None,
-                  next_update=None, crl_number=None, expired=False):
+                  next_update=None, crl_number=None, expired=False,
+                  add_authority_key_id=False):
         """
         Build and sign a CRL for ca_cert/ca_key.
 
@@ -316,8 +317,13 @@ class CRLUtils:
             crl_number: optional int, adds a CRLNumber extension
             expired: if True and next_update not given, sets next_update to
                 30 days in the past (server rejects genuinely-expired CRLs at
-                upload time unless allow_expired_crls is set — see
-                CRL_MANUAL_VALIDATIONS.md Test 2)
+                upload time unless allow_expired_crls is set)
+            add_authority_key_id: if True, adds an AuthorityKeyIdentifier
+                extension derived from ca_key. Needed only when two trusted
+                CAs share the same subject name -- the server falls back to
+                AKI/SKI matching to tell them apart, and without it a
+                same-subject collision correctly reports every candidate as
+                undetermined rather than guessing which CA a CRL belongs to.
 
         Returns:
             bytes: PEM-encoded CRL
@@ -350,6 +356,11 @@ class CRLUtils:
             builder = builder.add_extension(
                 x509.CRLNumber(crl_number), critical=False
             )
+        if add_authority_key_id:
+            builder = builder.add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+                critical=False,
+            )
         crl = builder.sign(private_key=ca_key, algorithm=hashes.SHA256())
         return crl.public_bytes(serialization.Encoding.PEM)
 
@@ -362,6 +373,10 @@ class CRLUtils:
     @staticmethod
     def cert_to_pem(cert):
         return cert.public_bytes(serialization.Encoding.PEM)
+
+    @staticmethod
+    def cert_to_der(cert):
+        return cert.public_bytes(serialization.Encoding.DER)
 
     @staticmethod
     def key_to_pem(key):
