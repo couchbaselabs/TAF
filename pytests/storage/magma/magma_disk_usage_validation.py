@@ -205,6 +205,7 @@ class MagmaDiskUsageValidation(MagmaBaseTest):
                         ops=self.ops_rate,
                         mutate=mutate_val,
                         value_type=self.val_type,
+                        suppress_error_table=self.suppress_error_table,
                         track_failures=self.track_failures,
                     ))
         return kwargs_list

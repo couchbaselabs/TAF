@@ -447,7 +447,9 @@ class MagmaLowDiskConfigTests(MagmaBaseTest):
                         process_concurrency=self.process_concurrency,
                         validate_docs=False,
                         ops=self.ops_rate,
-                        mutate=0
+                        mutate=0,
+                        suppress_error_table=self.suppress_error_table,
+                        track_failures=self.track_failures
                     )
                     loader.create_doc_load_task()
                     doc_loading_tm.add_new_task(loader)
@@ -516,7 +518,9 @@ class MagmaLowDiskConfigTests(MagmaBaseTest):
                             process_concurrency=self.process_concurrency,
                             validate_docs=False,
                             ops=self.update_ops_rate,
-                            mutate=1
+                            mutate=1,
+                            suppress_error_table=self.suppress_error_table,
+                            track_failures=self.track_failures
                         )
                         loader.create_doc_load_task()
                         update_tm.add_new_task(loader)

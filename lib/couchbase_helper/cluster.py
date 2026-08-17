@@ -605,7 +605,8 @@ class ServerTasks(object):
                 timeout=timeout_secs,
                 process_concurrency=process_concurrency,
                 validate_docs=True,
-                validate_deleted_docs=validate_deleted_docs)
+                validate_deleted_docs=validate_deleted_docs,
+                suppress_error_table=suppress_error_table)
             _task.create_doc_load_task()
         else:
             clients = list()

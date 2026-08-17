@@ -3040,6 +3040,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                 durability=self.durability,
                 timeout=self.timeout_secs,
                 process_concurrency=self.process_concurrency,
+                suppress_error_table=self.suppress_error_table,
+                track_failures=self.track_failures,
                 iterations=1)
             task.create_doc_load_task()
             self.task_manager.add_new_task(task)
@@ -5437,6 +5439,8 @@ class MutateDocsFromSpecTask(Task):
                 timeout=op_data["sdk_timeout"],
                 process_concurrency=self.process_concurrency,
                 iterations=iterations,
+                suppress_error_table=op_data["suppress_error_table"],
+                track_failures=track_failures,
                 ops=self.ops_rate)
             load_task.create_doc_load_task()
             self.cont_load_gen_tasks.append(load_task)
