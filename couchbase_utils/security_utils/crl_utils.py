@@ -24,6 +24,10 @@ from couchbase_utils.security_utils.jwt_utils import (
     remote_write_file_b64,
     start_remote_http_server,
 )
+# Aliased: StatsLib.StatsOperations also exports a *different* StatsHelper
+# (cbstats-based, not Prometheus/REST) -- this is specifically the /metrics
+# one (StatsOperations_Rest.get_all_metrics()).
+from StatsLib.StatsOperations_Rest import StatsHelper as PrometheusStatsHelper
 
 __all__ = [
     "CRLUtils",
@@ -465,6 +469,38 @@ class CRLUtils:
         )
         return rest.diag_eval(code)
 
+    @staticmethod
+    def get_all_metrics_text(server):
+        """Returns the full /metrics (Prometheus text) response from
+        `server` as one string, for simple substring/presence checks."""
+        return "\n".join(PrometheusStatsHelper(server).get_all_metrics())
+
+    @staticmethod
+    def get_metric_value(server, metric_name, labels=None):
+        """
+        Reads /metrics (Prometheus text) from `server` (a TestInputServer,
+        not a rest connection -- PrometheusStatsHelper builds its own) and
+        returns the numeric value of the first line matching `metric_name`
+        and, if given, every key/value pair in `labels`.
+
+        Returns None if no matching line is found (e.g. the metric doesn't
+        exist at all -- distinguish that from "found but 0").
+        """
+        lines = PrometheusStatsHelper(server).get_all_metrics()
+        for line in lines:
+            if not (line.startswith(metric_name + "{")
+                    or line.startswith(metric_name + " ")):
+                continue
+            if labels and not all(
+                f'{k}="{v}"' in line for k, v in labels.items()
+            ):
+                continue
+            try:
+                return float(line.rsplit(" ", 1)[1])
+            except (IndexError, ValueError):
+                continue
+        return None
+
     # ── mTLS handshake helper ────────────────────────────────────────────────
 
     @staticmethod
@@ -565,6 +601,25 @@ class CRLUtils:
 # unreliability over a non-interactive SSH channel (see that function's own
 # docstring); CRL's retry loop needs killing-by-port specifically, since a
 # failed attempt must not leave a listener behind on the port before retrying.
+
+def tail_remote_log(shell_conn, log_path, lines=200):
+    """Returns the last `lines` lines of a remote log file as a single
+    string (empty string if the file doesn't exist or is empty)."""
+    out, _ = shell_conn.execute_command(f"tail -n {int(lines)} {log_path}")
+    return "\n".join(out) if out else ""
+
+
+def grep_remote_log(shell_conn, log_path, pattern, lines=20):
+    """Returns the last `lines` lines matching the literal string `pattern`
+    in a remote log file. Use this instead of tail_remote_log whenever
+    checking for a specific event's log line -- a plain tail can miss it
+    entirely if enough unrelated log volume (e.g. a config push, an RBAC
+    cache rebuild) happens between the event and when the log is read."""
+    out, _ = shell_conn.execute_command(
+        f"grep -aF '{pattern}' {log_path} | tail -n {int(lines)}"
+    )
+    return "\n".join(out) if out else ""
+
 
 def stop_process_on_port(shell_conn, port):
     """
