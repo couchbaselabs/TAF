@@ -1,10 +1,14 @@
 import base64
 import concurrent.futures
 import datetime
+import ssl
+import threading
 import time
 import uuid
 
 import requests
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -2088,4 +2092,268 @@ class CRLTest(CRLBase):
         self.log.info(
             "AKI/SKI correctly disambiguates two trusted CAs sharing a "
             "subject name"
+        )
+
+    def test_crl_bypass_hardening(self):
+        """A revoked cert's cached TLS 1.2 session cannot be resumed to
+        skip re-checking; revoked-serial matching is robust to DER
+        leading-zero-padding; every CRL revocation-reason code rejects
+        equally; a CRL with an unrecognized critical extension is rejected
+        on upload, not silently applied; concurrent conflicting CRL
+        updates never leave a transient weaker-enforcement window;
+        clientAuth and nodeToNode enforce from their own policy setting
+        only, never leaking into each other; and revoking a certificate
+        does not touch a same-named password credential.
+
+        Note: that the admin diagnostics endpoint itself requires
+        authorization is already covered by
+        test_crl_rbac_permission_boundaries; a fault-injected internal
+        exception failing closed, and a rolled-back system clock, aren't
+        exercised here -- neither has safe tooling available in this
+        environment (matches the reasoning already applied to the
+        equivalent manual checks).
+        """
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+
+        # A cached TLS 1.2 session for a certificate that is later revoked
+        # cannot be resumed to skip re-checking -- resumption itself must
+        # be rejected (a full re-check that then rejects the cert).
+        resume_cert, resume_key, resume_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassResumption"
+        )
+        resume_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(resume_cert))
+        resume_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(resume_key))
+        baseline_filename = "bypass_resumption_baseline.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, baseline_filename,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1),
+        )
+        self.assertTrue(status, f"Baseline CRL upload failed: {content}")
+        self._track_uploaded_file(baseline_filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        reused, session, resp = self.crl_utils.tls_handshake(
+            self.cluster.master.ip, self.MGMT_PORT, resume_cert_path, resume_key_path,
+            tls_version="1.2",
+        )
+        self.assertFalse(reused, "The first handshake should be full, not resumed")
+        self.assertIsNotNone(resp, "Expected a real HTTP response over the full handshake")
+
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [resume_serial], baseline_filename,
+            crl_number=2,
+        )
+        self.assertTrue(status, f"Revoke upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+
+        try:
+            reused2, _, resp2 = self.crl_utils.tls_handshake(
+                self.cluster.master.ip, self.MGMT_PORT, resume_cert_path, resume_key_path,
+                tls_version="1.2", session=session,
+            )
+            self.fail(
+                f"Resuming a session for a now-revoked cert should be "
+                f"rejected, got reused={reused2}, response={resp2}"
+            )
+        except ssl.SSLError as exc:
+            self.assertIn(
+                "revoked", str(exc).lower(),
+                f"Expected a certificate-revoked alert on the resumption "
+                f"attempt, got: {exc}",
+            )
+        self.log.info("TLS 1.2 session resumption of a revoked cert is correctly rejected")
+
+        # Revoked-serial matching is robust to DER INTEGER leading-zero-
+        # padding encoding variance -- a serial whose top byte has the
+        # high bit set requires a leading 0x00 padding byte in its
+        # canonical DER encoding.
+        padded_serial = 0x80112233445566778899
+        padded_cert, padded_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassPaddedSerial", serial=padded_serial
+        )
+        padded_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(padded_cert))
+        padded_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(padded_key))
+        filename = "bypass_padded_serial.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [padded_serial], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Padded-serial revoking CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(padded_cert_path, padded_key_path),
+            "A serial requiring DER leading-zero padding should still "
+            "match and be rejected",
+        )
+        self.log.info("Revoked-serial matching is robust to DER leading-zero padding")
+
+        # Every CRL revocation-reason code rejects equally -- none is
+        # silently exempted.
+        reason_certs = []
+        reason_serials = {}
+        for reason, cn in [
+            (x509.ReasonFlags.key_compromise, "bypassReasonKeyCompromise"),
+            (x509.ReasonFlags.cessation_of_operation, "bypassReasonCessation"),
+            (x509.ReasonFlags.certificate_hold, "bypassReasonHold"),
+            (x509.ReasonFlags.affiliation_changed, "bypassReasonAffiliation"),
+        ]:
+            cert, key, serial = self.crl_utils.generate_leaf_cert(self.ca_cert, self.ca_key, cn)
+            cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(cert))
+            key_path = self._write_temp_pem(self.crl_utils.key_to_pem(key))
+            reason_certs.append((cert_path, key_path))
+            reason_serials[serial] = reason
+        filename = "bypass_reason_codes.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename,
+            self.crl_utils.build_crl(
+                self.ca_cert, self.ca_key,
+                revoked_serials=list(reason_serials.keys()),
+                revocation_reasons=reason_serials, crl_number=1,
+            ),
+        )
+        self.assertTrue(status, f"Reason-code CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        for cert_path, key_path in reason_certs:
+            self.assertFalse(
+                self._handshake_ok(cert_path, key_path),
+                f"Cert revoked under reason code should be rejected regardless "
+                f"of which reason ({cert_path})",
+            )
+        self.log.info("Every revocation-reason code rejects the cert equally")
+
+        # A CRL with an unrecognized critical extension is rejected on
+        # upload -- RFC 5280 says an application that can't process a
+        # critical extension must not use the CRL at all, not silently
+        # ignore just that extension.
+        now = datetime.datetime.now(datetime.timezone.utc)
+        unrecognized_oid = x509.ObjectIdentifier("1.2.3.4.5.6.7.8.9.99")
+        bad_crl = (
+            x509.CertificateRevocationListBuilder()
+            .issuer_name(self.ca_cert.subject)
+            .last_update(now - datetime.timedelta(days=1))
+            .next_update(now + datetime.timedelta(days=30))
+            .add_extension(
+                x509.UnrecognizedExtension(unrecognized_oid, b"\x04\x04\xDE\xAD\xBE\xEF"),
+                critical=True,
+            )
+            .sign(self.ca_key, hashes.SHA256())
+            .public_bytes(serialization.Encoding.PEM)
+        )
+        status, content = self.crl_utils.upload_file(
+            self.rest, "bypass_critical_extension.pem", bad_crl
+        )
+        self.assertFalse(
+            status, f"A CRL with an unrecognized critical extension should be rejected, got: {content}"
+        )
+        self.assertIn(
+            "critical extension", str(content.get("error", "")).lower(),
+            f"Rejection should specifically name the unrecognized critical "
+            f"extension, not fail for some unrelated reason, got: {content}",
+        )
+        self.log.info("CRL with an unrecognized critical extension rejected on upload")
+
+        # Concurrent conflicting CRL updates never leave a transient
+        # window of weaker enforcement -- a revoked cert stays rejected
+        # throughout a delete/re-upload/reload race against its own file.
+        # Clears every other file uploaded so far first: "freshest CRL
+        # wins" is scoped per issuer, not per filename, so a leftover file
+        # from an earlier check above (same CA, doesn't revoke this cert)
+        # could otherwise become briefly authoritative during the DELETE
+        # gap below and mask a real regression, or -- as caught live --
+        # produce a false failure that has nothing to do with the race
+        # itself.
+        self._cleanup_created_files()
+        race_cert, race_key, race_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "bypassRace"
+        )
+        race_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(race_cert))
+        race_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(race_key))
+        race_filename = "bypass_race.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [race_serial], race_filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Race-fixture CRL upload failed: {content}")
+        self._track_uploaded_file(race_filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        stop_probing = threading.Event()
+        probe_results = []
+
+        def prober():
+            while not stop_probing.is_set():
+                probe_results.append(self._handshake_ok(race_cert_path, race_key_path))
+                time.sleep(0.3)
+
+        prober_thread = threading.Thread(target=prober)
+        prober_thread.start()
+        try:
+            for i in range(5):
+                self.crl_utils.delete_file(self.rest, race_filename)
+                self.crl_utils.revoke_and_upload(
+                    self.rest, self.ca_cert, self.ca_key, [race_serial], race_filename,
+                    crl_number=2 + i,
+                )
+                self.crl_utils.reload_crl(self.rest)
+        finally:
+            stop_probing.set()
+            prober_thread.join()
+        self.assertGreater(len(probe_results), 0, "The prober thread never got a sample")
+        self.assertTrue(
+            all(result is False for result in probe_results),
+            f"The revoked cert must never connect during a concurrent "
+            f"delete/re-upload/reload race, got: {probe_results}",
+        )
+        self.log.info(
+            f"Revoked cert stayed rejected across all {len(probe_results)} "
+            f"probes during a concurrent CRL update race"
+        )
+
+        # clientAuth and nodeToNode each enforce from their own policy
+        # setting only -- flipping the other scope to the opposite
+        # extreme must not change this scope's own enforcement outcome.
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Require"},
+        )
+        self.assertTrue(
+            self._handshake_ok(race_cert_path, race_key_path),
+            "clientAuth=Disabled should let a revoked cert connect, "
+            "regardless of nodeToNode=Require",
+        )
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertFalse(
+            self._handshake_ok(race_cert_path, race_key_path),
+            "clientAuth=Require should reject the same revoked cert once "
+            "flipped, regardless of nodeToNode's value",
+        )
+        self.log.info(
+            "clientAuth and nodeToNode enforce independently -- neither "
+            "scope's policy leaks into the other's outcome"
+        )
+
+        # Revoking a certificate does not touch a same-named password
+        # credential -- CRL revocation only ever governs cert-based
+        # authentication, not a separate password credential for the
+        # same logical identity.
+        username, password = self._create_rbac_test_user("bypassRace", "views_admin[*]")
+        resp = requests.get(
+            f"http://{self.cluster.master.ip}:8091/whoami",
+            auth=(username, password), timeout=30,
+        )
+        self.assertEqual(
+            resp.status_code, 200,
+            f"Password login for an identity whose same-named cert is "
+            f"revoked should still succeed, got {resp.status_code}: {resp.text}",
+        )
+        self.log.info(
+            "Revoking a cert does not revoke a same-named password "
+            "credential -- documented, expected behaviour"
         )

@@ -1,6 +1,8 @@
 import datetime
 import ipaddress
 import json
+import socket
+import ssl
 import uuid
 
 import requests
@@ -307,7 +309,7 @@ class CRLUtils:
     @staticmethod
     def build_crl(ca_cert, ca_key, revoked_serials=None, this_update=None,
                   next_update=None, crl_number=None, expired=False,
-                  add_authority_key_id=False):
+                  add_authority_key_id=False, revocation_reasons=None):
         """
         Build and sign a CRL for ca_cert/ca_key.
 
@@ -324,6 +326,10 @@ class CRLUtils:
                 AKI/SKI matching to tell them apart, and without it a
                 same-subject collision correctly reports every candidate as
                 undetermined rather than guessing which CA a CRL belongs to.
+            revocation_reasons: optional {serial: x509.ReasonFlags} -- adds
+                a CRLReason extension to that entry. Serials not present
+                here (or when this is omitted) get no reason code, which
+                is the common case.
 
         Returns:
             bytes: PEM-encoded CRL
@@ -344,14 +350,18 @@ class CRLUtils:
         builder = x509.CertificateRevocationListBuilder().issuer_name(
             ca_cert.subject
         ).last_update(this_update).next_update(next_update)
+        revocation_reasons = revocation_reasons or {}
         for serial in (revoked_serials or []):
-            revoked = (
+            entry_builder = (
                 x509.RevokedCertificateBuilder()
                 .serial_number(serial)
                 .revocation_date(now)
-                .build()
             )
-            builder = builder.add_revoked_certificate(revoked)
+            if serial in revocation_reasons:
+                entry_builder = entry_builder.add_extension(
+                    x509.CRLReason(revocation_reasons[serial]), critical=False
+                )
+            builder = builder.add_revoked_certificate(entry_builder.build())
         if crl_number is not None:
             builder = builder.add_extension(
                 x509.CRLNumber(crl_number), critical=False
@@ -516,7 +526,62 @@ class CRLUtils:
                 continue
         return None
 
-    # ── mTLS handshake helper ────────────────────────────────────────────────
+    # ── mTLS handshake helpers ───────────────────────────────────────────────
+
+    # ssl.SSLSession objects can only be reused against the exact
+    # SSLContext instance that produced them -- a fresh context per call
+    # would make session resumption impossible. Cached per (cert, key,
+    # version) so repeated calls with the same identity share one context.
+    _TLS_CONTEXT_CACHE = {}
+
+    @classmethod
+    def tls_handshake(cls, host, port, cert_path, key_path, tls_version="1.2",
+                      session=None, timeout=10):
+        """
+        Raw TLS handshake pinned to a specific version, with direct control
+        over session resumption -- `requests` (perform_mtls_handshake) has
+        no way to request or observe session reuse, which this needs.
+
+        Pass the `session` this returns on a later call to attempt
+        resumption instead of a full handshake.
+
+        Returns:
+            (session_reused: bool, session: ssl.SSLSession,
+             response_status_line: str or None)
+
+        Raises:
+            ssl.SSLError: if the handshake/resumption itself is rejected
+                (e.g. a revoked certificate).
+        """
+        cache_key = (cert_path, key_path, tls_version)
+        ctx = cls._TLS_CONTEXT_CACHE.get(cache_key)
+        if ctx is None:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            ctx.load_cert_chain(cert_path, key_path)
+            version = ssl.TLSVersion.TLSv1_2 if tls_version == "1.2" else ssl.TLSVersion.TLSv1_3
+            ctx.minimum_version = version
+            ctx.maximum_version = version
+            cls._TLS_CONTEXT_CACHE[cache_key] = ctx
+
+        sock = socket.create_connection((host, int(port)), timeout=timeout)
+        ssock = ctx.wrap_socket(sock, server_hostname=host, session=session)
+        try:
+            ssock.sendall(b"GET /pools/default HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            data = b""
+            try:
+                while True:
+                    chunk = ssock.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+            except (ssl.SSLError, OSError):
+                data = data or b""
+            response_line = data.split(b"\r\n")[0].decode(errors="replace") if data else None
+            return ssock.session_reused, ssock.session, response_line
+        finally:
+            ssock.close()
 
     @staticmethod
     def perform_mtls_handshake(host, port, client_cert_path, client_key_path,
