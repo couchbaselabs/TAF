@@ -138,7 +138,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
             override_token = None
 
         self.pod = Pod("https://%s" % url,
-                       self.input.capella.get("override_token", None) or override_token,
+                       override_token or self.input.capella.get("override_token", None),
                        self.input.capella.get("signup_token", None),
                        self.input.capella.get("override_key", None)
                        )
