@@ -506,13 +506,24 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.completed = True
         return self._make_task_request(self.task_ids, "cancel_task")
 
-    def _raise_stall(self, stalled_task_id, stalled_for, last_ops, reason):
+    @staticmethod
+    def _pool_state_str(pool_state):
+        if not pool_state:
+            return ""
+        return (", loader pool: active=%s queued=%s workers=%s"
+                % (pool_state.get("active_tasks"),
+                   pool_state.get("queued_tasks"),
+                   pool_state.get("pool_workers")))
+
+    def _raise_stall(self, stalled_task_id, stalled_for, group_ops, reason,
+                     pool_state=None):
         log = global_vars.logger.get("test")
         log.critical(
-            "%s stalled (%s): no progress for %.0fs (stall_timeout=%ss), "
-            "last known completed_ops=%s. Stopping sibling tasks: %s"
+            "%s stalled (%s): no progress from it or any sibling for %.0fs "
+            "(stall_timeout=%ss), completed_ops across the group=%s%s. "
+            "Stopping sibling tasks: %s"
             % (stalled_task_id, reason, stalled_for, self.stall_timeout,
-               last_ops, self.task_ids))
+               group_ops, self._pool_state_str(pool_state), self.task_ids))
         ok, _ = self._make_task_request(self.task_ids, "stop_task", timeout=30)
         if not ok:
             log.critical("stop_task failed for %s, attempting cancel_task"
@@ -520,19 +531,27 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             self._make_task_request(self.task_ids, "cancel_task", timeout=30)
         self.completed = True
         raise Exception(
-            "Sirius task %s stalled (%s): no completed_ops progress for "
-            "%.0fs (stall_timeout=%ss), last known completed_ops=%s. "
-            "Sibling tasks %s have been sent stop/cancel."
+            "Sirius task %s stalled (%s): no completed_ops progress from it "
+            "or any sibling for %.0fs (stall_timeout=%ss), completed_ops "
+            "across the group=%s%s. Sibling tasks %s have been sent "
+            "stop/cancel."
             % (stalled_task_id, reason, stalled_for, self.stall_timeout,
-               last_ops, self.task_ids))
+               group_ops, self._pool_state_str(pool_state), self.task_ids))
 
     def _wait_for_completion_or_stall(self):
         """
         Poll the non-blocking /get_task_progress endpoint instead of jumping
-        straight to the blocking /get_task_result call. A task_id's stall
-        clock resets on any observed advance in completed_ops, so this is
-        scale-safe (many collections/tasks progressing steadily never trips
-        it) - it only fires when a task genuinely stops making progress.
+        straight to the blocking /get_task_result call.
+
+        The clock is kept for the task group as a whole, not per task_id. The
+        workers of one load share a document generator, and the Java loader
+        deliberately schedules every load's first worker ahead of any load's
+        second one, so on a wide run the high-index workers of a load sit at
+        completed_ops=0 until a thread frees up - by design, while their
+        siblings drain the generator. Timing each worker separately reports
+        that as a stall and kills a load that was progressing fine. What
+        actually indicates a hung load is *no* worker in the group advancing,
+        so any sibling advancing (or finishing) resets the clock.
         """
 
         if self.stall_timeout == -1 or self.progress_poll_interval == -1:
@@ -543,9 +562,12 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         max_transient_failures = 3
 
         last_ops = dict.fromkeys(self.task_ids, 0)
-        last_change_ts = dict.fromkeys(self.task_ids, time.time())
+        # One clock for the whole group - see the note above on why per-task
+        # clocks misread a deliberately unscheduled worker as a hang.
+        group_last_change_ts = time.time()
         transient_failures = dict.fromkeys(self.task_ids, 0)
         pending = set(self.task_ids)
+        pool_state = None
 
         while pending:
             for task_id in list(pending):
@@ -569,26 +591,41 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                     if transient_failures[task_id] < max_transient_failures:
                         continue
                     self._raise_stall(
-                        task_id, now - last_change_ts[task_id],
-                        last_ops[task_id],
-                        reason="get_task_progress unreachable")
+                        task_id, now - group_last_change_ts,
+                        sum(last_ops.values()),
+                        reason="get_task_progress unreachable",
+                        pool_state=pool_state)
 
                 transient_failures[task_id] = 0
                 completed_ops = resp.get("completed_ops", 0)
                 is_running = resp.get("is_running", False)
+                # Present only on DocLoader builds that report pool occupancy;
+                # kept for the stall message so a report says whether the
+                # loader was starved of threads or genuinely wedged.
+                if "pool_workers" in resp:
+                    pool_state = {
+                        "active_tasks": resp.get("active_tasks"),
+                        "queued_tasks": resp.get("queued_tasks"),
+                        "pool_workers": resp.get("pool_workers")}
 
                 if completed_ops > last_ops[task_id]:
                     last_ops[task_id] = completed_ops
-                    last_change_ts[task_id] = now
+                    group_last_change_ts = now
 
                 if not is_running:
                     pending.discard(task_id)
+                    # A worker finishing is forward progress for the load even
+                    # if it recorded no ops of its own - its siblings had
+                    # already drained the generator it would have worked on.
+                    group_last_change_ts = now
                     continue
 
-                stalled_for = now - last_change_ts[task_id]
+                stalled_for = now - group_last_change_ts
                 if stalled_for >= self.stall_timeout:
-                    self._raise_stall(task_id, stalled_for, last_ops[task_id],
-                                     reason="no forward progress")
+                    self._raise_stall(task_id, stalled_for,
+                                      sum(last_ops.values()),
+                                      reason="no forward progress",
+                                      pool_state=pool_state)
 
             if pending:
                 log.debug("Waiting for Sirius tasks %s to make progress"
