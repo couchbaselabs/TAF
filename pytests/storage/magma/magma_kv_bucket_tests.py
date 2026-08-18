@@ -73,6 +73,10 @@ class MagmaKVTests(MagmaBaseTest):
                         self.cluster.master, self.cluster.master.rest_username,
                         self.cluster.master.rest_password,
                         bucket.name, req_clients=1)
+                    self.cluster.sdk_client_pool.create_clients(
+                        self.cluster, bucket,
+                        req_clients=1,
+                        compression_settings=self.sdk_compression)
 
         self.log.info("Loading data into all buckets...")
         self.key = "new_docs"
@@ -125,6 +129,10 @@ class MagmaKVTests(MagmaBaseTest):
                         self.cluster.master, self.cluster.master.rest_username,
                         self.cluster.master.rest_password,
                         bucket.name, req_clients=1)
+                    self.cluster.sdk_client_pool.create_clients(
+                        self.cluster, bucket,
+                        req_clients=1,
+                        compression_settings=self.sdk_compression)
 
         self.log.info("Loading data into all buckets...")
         self.key = "new_test_docs"

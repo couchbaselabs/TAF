@@ -105,6 +105,16 @@ class MagmaBaseTest(StorageBase):
                     self.cluster.master.rest_password,
                     bucket.name,
                     clients_per_bucket)
+            # Python-side clients are needed regardless of loader:
+            # validate_crud_task_per_collection() (post-load retry
+            # validation) always fetches its client from
+            # cluster.sdk_client_pool.
+            self.cluster.sdk_client_pool = SDKClientPool()
+            for bucket in self.cluster.buckets:
+                self.cluster.sdk_client_pool.create_clients(
+                    self.cluster, bucket, [self.cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
         # Initial Data Load
         self.loader_dict = None
         self.init_loading = self.input.param("init_loading", True)
