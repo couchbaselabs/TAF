@@ -11,9 +11,8 @@ from cb_tools.cbcontbk import CbContBk
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
+from couchbase_utils.backup_utils.backup_utils import BackupLocation
 from couchbase_utils.nfs_utils.nfs_utils import NfsUtil
-from lib.testconstants import PITR_NFS_SERVER
-from platform_utils.ssh_util.install_util.test_input import TestInputServer
 from pytests.ns_server.enforce_tls import EnforceTls
 from BucketLib.bucket import Collection, Scope
 from BucketLib.BucketOperations import BucketHelper
@@ -33,7 +32,38 @@ from TestInput import TestInputSingleton
 
 
 class UpgradeBase(BaseTestCase):
+    # Object-store destinations for cbbackup_test/cont_bkp_test. AWS/Azure/GCP
+    # share one pre-provisioned bucket ("test-backup-taf") and rely on
+    # cleanup_for_bkrs() to prefix-delete a unique subdir per test.
+    # localstack's cleanup_for_bkrs() instead creates/deletes the whole
+    # bucket, so it needs a unique bucket name per test, not a shared one.
+    BACKUP_URL_TEMPLATES = {
+        "AWS": "s3://test-backup-taf/backups/{uid}",
+        "Azure": "az://test-backup-taf/backups/{uid}",
+        "GCP": "gs://test-backup-taf/backups/{uid}",
+        "localstack": "s3://{uid}",
+    }
+    CONT_BKP_URL_TEMPLATES = {
+        "AWS": "s3://test-backup-taf/cont_bkp/{uid}",
+        "Azure": "az://test-backup-taf/cont_bkp/{uid}",
+        "GCP": "gs://test-backup-taf/cont_bkp/{uid}",
+        "localstack": "s3://{uid}",
+    }
+
     def setUp(self):
+        # Backup/PITR destinations are provisioned by setup_backup_locations()
+        # at the point the test actually enables continuous backup (post
+        # upgrade), not here -- so a run that never gets that far provisions
+        # nothing, and teardown_backup_locations() has nothing to undo. These
+        # stay None until then, which is exactly how teardown tells the two
+        # cases apart; they are set before anything that can fail so tearDown
+        # can always read them.
+        self.backup_location = None
+        self.cont_bkp_location = None
+        self.backup_mgr = None
+        self.cont_bk_mgr = None
+        self.cont_bkp_credential_store_id = None
+
         # Set enterprise_edition=False before super().setUp() so that
         # OnPremBaseTest detects CE correctly and skips EE-only service quotas
         # during node provisioning (cbasMemoryQuota, eventingMemoryQuota).
@@ -377,94 +407,142 @@ class UpgradeBase(BaseTestCase):
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem,
                  CbServer.Settings.INDEX_MEM_QUOTA: self.index_quota_mem})
 
-        # NFS setup for continuous backup tests
-        if self.cont_bkp_test == "NFS":
-            self.setup_nfs_for_continuous_backup()
-
         self.retry_rebalance_util = RetryRebalanceUtil()
 
-    def setup_nfs_for_continuous_backup(self):
+    def setup_backup_locations(self):
         """
+        Resolve `cbbackup_test` / `cont_bkp_test` into the cbbackupmgr archive
+        and the continuous-backup location, provision both, and build the
+        cbbackupmgr/cbcontbk wrappers that talk to them.
+
+        Supported backing stores for either param: None (a local path from
+        archive_dir/continuous_backup_location), NFS, AWS, Azure, GCP,
+        localstack.
+
+        Every backing store gets a destination unique to this test, so
+        concurrent runs against a shared NFS export or object-store bucket
+        cannot see each other's data.
+
+        Called from the point the test enables continuous backup rather than
+        from setUp, so nothing is provisioned on a run that never reaches it.
+        Idempotent: a second call is a no-op, so the PITR flow can call it
+        without caring whether an earlier step already did.
+
         NFS setup requirements:
         - Server: /data directory exported with appropriate permissions
-        - Client: Mount NFS export at /mnt/nfs_data
-        - Validation: Ensure server export and client mount are working
-        - Cleanup: Unique subdirectory created under mount point and removed after test
+        - Client: NFS export mounted at NfsUtil.MOUNT_POINT
         Scripts to setup NFS Server: https://github.com/couchbaselabs/test_infra_runner/tree/master/scripts/pitr_scripts
         """
-        self.nfs_server = TestInputServer()
-        self.nfs_server.ip = PITR_NFS_SERVER
-        self.nfs_server.ssh_username = "root"
-        self.nfs_server.ssh_password = "couchbase"
+        if self.backup_location is not None:
+            return
 
-        self.nfs_util = NfsUtil(self.nfs_server)
+        if "NFS" in (self.cbbackup_test, self.cont_bkp_test):
+            self.nfs_util = NfsUtil.for_pitr_tests(self.input)
+            self.nfs_server = self.nfs_util.nfs_server_node
+            self.nfs_util.ensure_nfs_clients(self.cluster.servers)
 
-        self.log.info(f"Validating NFS server at {self.nfs_server.ip}")
-        self.nfs_util.validate_nfs_server()
+        # A cbbackup_test/cont_bkp_test of None leaves the archive and
+        # continuous-backup paths at whatever OnPremBaseTest resolved from the
+        # archive_dir/continuous_backup_location params.
+        if self.cbbackup_test is not None:
+            self.backup_repo_name = self.input.param("repo_name",
+                                                     f"test_{uuid.uuid4()}")
+        self.backup_location = BackupLocation.build(
+            self.cbbackup_test, "backup archive",
+            local_path=f"{NfsUtil.MOUNT_POINT}/test_{uuid.uuid4()}"
+            if self.cbbackup_test == "NFS" else self.backup_archive_dir,
+            url_templates=self.BACKUP_URL_TEMPLATES,
+            template_args={"uid": f"test-{uuid.uuid4()}"},
+            obj_staging_dir=self.obj_staging_dir_cbbackup, log=self.log)
+        self.backup_archive_dir = self.backup_location.path
 
-        for node in self.cluster.servers:
-            self.log.info(f"Validating NFS client at {node.ip} connected to server {self.nfs_server.ip}")
-            try:
-                self.nfs_util.validate_nfs_client(node)
-            except Exception as e:
-                self.log.warning(f"NFS client validation failed: {e}. Attempting to set up NFS client.")
-                self.nfs_util.setup_nfs_client(node, "/data", "/mnt/nfs_data")
-                self.nfs_util.validate_nfs_client(node)
+        self.cont_bkp_location = BackupLocation.build(
+            self.cont_bkp_test, "continuous backup location",
+            local_path=f"{NfsUtil.MOUNT_POINT}/test_{uuid.uuid4()}"
+            if self.cont_bkp_test == "NFS" else self.continuous_backup_location,
+            url_templates=self.CONT_BKP_URL_TEMPLATES,
+            template_args={"uid": f"test-{uuid.uuid4()}"},
+            obj_staging_dir=self.obj_staging_dir_cont_bkp, log=self.log)
+        self.continuous_backup_location = self.cont_bkp_location.path
 
         shell = RemoteMachineShellConnection(self.cluster.master)
-        # Create continuous backup folder on NFS server
-        self.continuous_backup_location = f"/mnt/nfs_data/test_{uuid.uuid4()}"
-        output, error = shell.execute_command(f"mkdir -p {self.continuous_backup_location}")
-        if error:
-            self.fail("Error creating continuous backup folder: %s" % error)
-        else:
-            self.log.info("Created continuous backup folder: %s" % self.continuous_backup_location)
-            # Set permissions for couchbase user
-            output, error = shell.execute_command(f"chmod 777 {self.continuous_backup_location}")
-            if error:
-                self.fail("Error setting permissions on continuous backup folder: %s" % error)
-            else:
-                self.log.info("Set permissions on continuous backup folder")
+        self.backup_location.provision(shell)
+        self.cont_bkp_location.provision(shell)
 
-        self.backup_mgr = CbBackupMgr(shell,
-                                      username=self.cluster.master.rest_username,
-                                      password=self.cluster.master.rest_password,
-                                      log=self.log)
-        self.cont_bk_mgr = CbContBk(shell,
-                                    username=self.cluster.master.rest_username,
-                                    password=self.cluster.master.rest_password,
-                                    log=self.log)
+        # The backup service reads the object store itself, so it needs the
+        # credentials in the cluster's Credential Store rather than on the CLI.
+        self.cont_bkp_credential_store_id = \
+            self.cont_bkp_location.create_credential_store(
+                RestConnection(self.cluster.master), cred_id="cont_bkp_cred",
+                description="Credential store for continuous backup "
+                            "upgrade tests")
+
+        self.backup_mgr = CbBackupMgr(
+            shell,
+            username=self.cluster.master.rest_username,
+            password=self.cluster.master.rest_password,
+            log=self.log,
+            cloud_provider=self.backup_location.cloud_provider,
+            obj_staging_dir=self.backup_location.obj_staging_dir)
+        if self.cont_bkp_test:
+            # cbcontbk reads both the archive and the continuous backup
+            # location, so it needs both providers
+            self.cont_bk_mgr = CbContBk(
+                shell,
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password,
+                log=self.log,
+                cbcontbk_cloud_provider=self.cont_bkp_location.cloud_provider,
+                backup_cloud_provider=self.backup_location.cloud_provider,
+                obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
+
+    def teardown_backup_locations(self):
+        """
+        Collect cbbackupmgr/cbcontbk logs when the test failed -- leaving the
+        backup data in place for investigation -- and otherwise remove
+        everything the run wrote.
+
+        A no-op unless setup_backup_locations() ran, which is how a run that
+        never reached the PITR flow avoids touching any backing store.
+        """
+        locations = [location
+                     for location in (self.backup_location,
+                                      self.cont_bkp_location)
+                     if location is not None and location.enabled]
+        if not locations:
+            return
+
+        if self.is_test_failed():
+            for location in locations:
+                self.log.warning(
+                    "Test failed, skipping cleanup of %s to preserve data "
+                    "for investigation: %s" % (location.label, location.path))
+            if self.get_cbcollect_info:
+                self._collect_backup_logs_on_failure()
+            return
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            for location in locations:
+                location.cleanup(shell)
+
+            # The traditional-backup repo lives under the archive dir. On an
+            # object-store archive the prefix delete above already took it; on
+            # a local archive it may sit outside any path this test created,
+            # since archive_dir defaults to /tmp/backups when cbbackup_test is
+            # unset.
+            if self.backup_repo_name and not self.backup_location.is_cloud:
+                self.log.info("Removing backup repository")
+                shell.execute_command(
+                    f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}",
+                    timeout=BackupLocation.CLEANUP_TIMEOUT)
+        except Exception as e:
+            self.log.warning(f"Exception during backup cleanup: {e}")
+        finally:
+            shell.disconnect()
 
     def tearDown(self):
-        # Clean up continuous backup folder for NFS tests
-        if self.cont_bkp_test == "NFS":
-            if self.is_test_failed():
-                self.log.warning("Test failed, skipping cleanup of continuous backup folder "
-                                 "to preserve data for investigation: %s"
-                                 % self.continuous_backup_location)
-                if self.get_cbcollect_info:
-                    self._collect_backup_logs_on_failure()
-            else:
-                shell = RemoteMachineShellConnection(self.cluster.master)
-                try:
-                    self.log.info("Removing continuous backup folder: %s"
-                                  % self.continuous_backup_location)
-                    output, error = shell.execute_command(
-                        f"rm -rf {self.continuous_backup_location}")
-                    if error:
-                        self.log.warning("Error removing continuous backup folder: %s" % error)
-                except Exception as e:
-                    self.log.warning("Exception during cleanup: %s" % str(e))
-
-                # Clean up backup folders
-                try:
-                    if hasattr(self, 'backup_repo_name') and self.backup_repo_name:
-                        self.log.info("Removing backup repository")
-                        shell.execute_command(f"rm -rf {self.backup_archive_dir}/{self.backup_repo_name}")
-                except Exception as e:
-                    self.log.warning(f"Exception during cleanup: {e}")
-                finally:
-                    shell.disconnect()
+        self.teardown_backup_locations()
 
         super(UpgradeBase, self).tearDown()
 
@@ -478,16 +556,23 @@ class UpgradeBase(BaseTestCase):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
         remote_tmp_dir = "/data/tmp"
 
+        # collect-logs against an object-store archive/location needs the
+        # staging dir, exactly like every other cbbackupmgr/cbcontbk call.
         collectors = [
             ("cbbackupmgr", self.backup_mgr,
-             lambda mgr, tmp: mgr.collect_logs(archive_dir=self.backup_archive_dir,
-                                               output_dir=tmp)),
+             lambda mgr, tmp: mgr.collect_logs(
+                 archive_dir=self.backup_archive_dir, output_dir=tmp,
+                 obj_staging_dir=self.backup_location.obj_staging_dir)),
             ("cbcontbk", self.cont_bk_mgr,
-             lambda mgr, tmp: mgr.collect_logs(location=self.continuous_backup_location,
-                                               temp_dir=tmp)),
+             lambda mgr, tmp: mgr.collect_logs(
+                 location=self.continuous_backup_location, temp_dir=tmp,
+                 obj_staging_dir=self.cont_bkp_location.obj_staging_dir)),
         ]
 
         for name, mgr, collect_fn in collectors:
+            # cont_bk_mgr stays None when the run has no continuous backup.
+            if mgr is None:
+                continue
             try:
                 shell = mgr.shellConn
                 os_info = shell.extract_remote_info()

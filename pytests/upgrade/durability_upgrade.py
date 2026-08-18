@@ -593,14 +593,15 @@ class UpgradeTests(UpgradeBase):
         ### Also capture timestamps and item counts if continuous backup is enabled ###
         if self.rebalance_op != "None":
             self.PrintStep("Starting rebalance/failover tasks post upgrade...")
-            if self.cont_bkp_test == "NFS":
+            if self.cont_bkp_test:
                 self._enable_continuous_backup_and_capture_initial_state()
 
-            # Run tasks_post_upgrade (will capture timestamps/item counts if NFS enabled)
+            # Run tasks_post_upgrade (will capture timestamps/item counts if
+            # continuous backup is enabled)
             self.tasks_post_upgrade()
 
         ### Continuous backup verification: disable, flush, and restore ###
-        if self.cont_bkp_test == "NFS" and len(self.pitr_timestamps) > 0:
+        if self.cont_bkp_test and len(self.pitr_timestamps) > 0:
             self._verify_continuous_backup_restore()
 
         # Perform final collection/doc_count validation
@@ -1455,7 +1456,9 @@ class UpgradeTests(UpgradeBase):
              the key.
           3. Attach the KMS provider to whichever CLI wrapper asked for it.
 
-        Runs before continuous backup is switched on, since the bucket-level
+        Runs after setup_backup_locations() -- which owns the CLI wrappers and
+        the continuous-backup credential granted alongside the KMS one -- and
+        before continuous backup is switched on, since the bucket-level
         continuousBackupKm* settings reference the key created here. Unlike
         the volume tests, `ear_contbk` is mandatory rather than opt-in: this
         path exists only to exercise encrypted continuous backup.
@@ -1488,13 +1491,13 @@ class UpgradeTests(UpgradeBase):
         self.log.info(f"Created credential store for KMS with ID: "
                       f"{self.km_cred_store_id}")
 
-        # The continuous backup location here is NFS, so there is no
-        # object-store credential to grant alongside the KMS one -- read it
-        # via getattr in case an object-store backing is added later.
+        # Grant the object-store credential alongside the KMS one when the
+        # continuous backup location is on a cloud provider; a local/NFS
+        # location has no credential to grant, so the id stays None.
         roles = [f"credential_consumer[{self.km_cred_store_id}]"]
-        cont_bkp_cred_id = getattr(self, "cont_bkp_credential_store_id", None)
-        if cont_bkp_cred_id:
-            roles.append(f"credential_consumer[{cont_bkp_cred_id}]")
+        if self.cont_bkp_credential_store_id:
+            roles.append(
+                f"credential_consumer[{self.cont_bkp_credential_store_id}]")
         CredentialStoreUtils().put_service_roles(
             rest, service_name="backup", roles=roles)
 
@@ -1603,7 +1606,15 @@ class UpgradeTests(UpgradeBase):
         """
         Enable continuous backup on all Magma buckets, create backup repository,
         perform initial backup, and capture initial timestamp/item counts.
+
+        Provisions the archive/continuous-backup destinations first, so the
+        buckets stream into a location that already exists and whose
+        object-store credentials the cluster already knows. Everything
+        provisioned here is undone by teardown_backup_locations().
         """
+        # Resolve and provision cbbackup_test/cont_bkp_test (None/NFS/AWS/
+        # Azure/GCP/localstack) and build the CLI wrappers.
+        self.setup_backup_locations()
         # The buckets reference the KMS key below, so it has to exist first.
         self.setup_backup_encryption()
 
@@ -1612,8 +1623,7 @@ class UpgradeTests(UpgradeBase):
             self.bucket_util, self.cluster, self.cluster.buckets,
             continuous_backup_location=self.continuous_backup_location,
             continuous_backup_interval=self.continuous_backup_interval,
-            continuous_backup_cloud_storage_cred_id=getattr(
-                self, "cont_bkp_credential_store_id", None),
+            continuous_backup_cloud_storage_cred_id=self.cont_bkp_credential_store_id,
             continuous_backup_retention_period=self.continuous_backup_retention_period,
             continuous_backup_km_key_url=(
                 self.kms_provider.km_key_url if self.ear_contbk else None),
@@ -1628,11 +1638,17 @@ class UpgradeTests(UpgradeBase):
         self.sleep(self.continuous_backup_interval * 60,
                    f"Waiting for {self.continuous_backup_interval} minutes after enabling continuous backup")
 
-        # Create backup repository and perform initial backup
-        self.log.info("Creating backup repository")
-        self.backup_mgr.create_repo(self.backup_archive_dir, self.backup_repo_name)
+        # Create backup repository and perform initial backup. The staging dir
+        # is what makes these work against an object-store archive; it is None
+        # for a local/NFS archive, where the flag is simply not appended.
+        obj_staging_dir = self.backup_location.obj_staging_dir
+        self.log.info("Creating backup repository in %s" % self.backup_archive_dir)
+        self.backup_mgr.create_repo(self.backup_archive_dir,
+                                    self.backup_repo_name,
+                                    obj_staging_dir=obj_staging_dir)
         self.log.info("Performing initial backup using CbBackupMgr")
-        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name)
+        self.backup_mgr.backup(self.backup_archive_dir, self.backup_repo_name,
+                               obj_staging_dir=obj_staging_dir)
 
         self.sleep(self.continuous_backup_interval * 60,
                    f"Waiting for {self.continuous_backup_interval} minutes after initial backup")
@@ -1677,7 +1693,9 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Restoring from timestamp %d: %s (expected items: %s)"
                           % (i + 1, timestamp, bucket_item_counts))
 
-            # Restore using cbcontbk for each bucket
+            # Restore using cbcontbk for each bucket. cbcontbk reads the
+            # continuous backup location and the traditional archive, so an
+            # object-store backing needs the staging dir here too.
             for bucket in self.cluster.buckets:
                 if bucket.storageBackend == Bucket.StorageBackend.magma:
                     self.cont_bk_mgr.restore(
@@ -1685,7 +1703,8 @@ class UpgradeTests(UpgradeBase):
                         location=self.continuous_backup_location,
                         temp_dir="/data/tmp",
                         timestamp=timestamp,
-                        map_data=f"{bucket.name}={bucket.name}")
+                        map_data=f"{bucket.name}={bucket.name}",
+                        obj_staging_dir=self.cont_bkp_location.obj_staging_dir)
 
             # Wait for stats and verify item count
             self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
@@ -1933,8 +1952,12 @@ class UpgradeTests(UpgradeBase):
             if rebalance_data_load is not None:
                 self.task_manager.get_task_result(rebalance_data_load)
 
-            # Capture timestamp and item count after each rebalance task if continuous backup enabled
-            if self.cont_bkp_test == "NFS":
+            # Capture timestamp and item count after each rebalance task if
+            # continuous backup enabled. cont_bk_mgr is None unless
+            # _enable_continuous_backup_and_capture_initial_state() ran, and
+            # other tests reach tasks_post_upgrade() without it -- a timestamp
+            # is meaningless when nothing is being backed up.
+            if self.cont_bkp_test and self.cont_bk_mgr is not None:
                 self.sleep(self.continuous_backup_interval * 60,
                            f"Waiting for {self.continuous_backup_interval} minutes for continuous backup")
                 self.bucket_util._wait_for_stats_all_buckets(self.cluster, self.cluster.buckets)
