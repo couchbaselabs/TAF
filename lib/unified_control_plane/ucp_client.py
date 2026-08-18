@@ -273,6 +273,81 @@ class UnifiedControlPlaneClient(BaseRestConnection):
         status, content, header = self._http_request(api, 'PUT', body,
                                                      headers=headers)
         return status, content, header
+    def upload_entitlements(self, document, etag,
+                           filename='entitlements.bson',
+                           part_content_type='application/octet-stream'):
+        """PUT /api/v1/entitlements as multipart/form-data
+
+        Live-probed 2026-08-18 against the QE lab portal:
+          - PUT with a JSON body            -> 422 "cannot read multipart
+            form: request Content-Type isn't multipart/form-data". This is
+            why update_entitlements() below no longer works on this build.
+          - PUT multipart, file part 'file' -> reaches the file decoder, so
+            'file' is the field name the server wants.
+          - POST /api/v1/entitlements/import and .../import/preview -> 404.
+            Those paths do not exist here; do not reach for them.
+
+        The accepted file ENCODING is still unknown: plain JSON, a '.bson'
+        filename, application/octet-stream, a bare JSON array, gzipped JSON,
+        real BSON and base64 JSON all return 400 "Failed to decode uploaded
+        file.". Until the product tells us the format, this method reaches the
+        decoder and stops there -- so it cannot yet be used to seed a SKU.
+
+        Args:
+            document: dict to serialize as the uploaded document, or an
+                      already-encoded byte/str payload. Pass a pre-encoded
+                      value once the real format is known.
+            etag:     value for If-Match, required by this endpoint.
+            filename: name advertised for the file part.
+            part_content_type: Content-Type of the file part.
+
+        Returns:
+            Tuple (status, content, header)
+        """
+        api = self.baseUrl + 'api/v1/entitlements'
+        if isinstance(document, (dict, list)):
+            file_content = json.dumps(document)
+        else:
+            file_content = document
+        boundary, body = self._build_multipart_body(
+            'file', filename, file_content,
+            part_content_type=part_content_type)
+        headers = self._json_headers()
+        headers['Content-Type'] = ('multipart/form-data; boundary=%s'
+                                   % boundary)
+        headers['If-Match'] = etag
+        status, content, header = self._http_request(api, 'PUT', body,
+                                                    headers=headers)
+        return status, content, header
+
+    @staticmethod
+    def _build_multipart_body(field_name, filename, file_content,
+                             part_content_type='application/json'):
+        """
+        Hand-build a single-part multipart/form-data body.
+
+        RestConnection's _urllib_request passes the body straight through as
+        requests' `data=`, so there is no files= hook to use; the body bytes
+        and the boundary in the Content-Type header have to be produced here.
+        The boundary is fixed rather than random: it keeps requests
+        reproducible in logs, and a JSON document can never contain it.
+
+        Returns:
+            Tuple (boundary, body_string)
+        """
+        boundary = '----UCPFormBoundaryEntitlementImport'
+        lines = [
+            '--' + boundary,
+            'Content-Disposition: form-data; name="%s"; filename="%s"'
+            % (field_name, filename),
+            'Content-Type: %s' % part_content_type,
+            '',
+            file_content,
+            '--' + boundary + '--',
+            '',
+        ]
+        return boundary, '\r\n'.join(lines)
+
     def get_entitlement_usage(self):
         """GET /api/v1/entitlements/usage"""
         api = self.baseUrl + 'api/v1/entitlements/usage'
