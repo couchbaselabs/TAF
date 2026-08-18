@@ -14,6 +14,7 @@ from shell_util.remote_connection import RemoteMachineShellConnection
 
 from couchbase_utils.security_utils.crl_utils import (
     cleanup_url_poll_crl_env,
+    find_remote_pid,
     grep_remote_log,
     setup_url_poll_crl_env,
     tail_remote_log,
@@ -2357,3 +2358,223 @@ class CRLTest(CRLBase):
             "Revoking a cert does not revoke a same-named password "
             "credential -- documented, expected behaviour"
         )
+
+    def test_crl_restart_persistence(self):
+        """CRL config and uploaded files survive process restarts, and
+        enforcement resumes immediately afterward with zero observed
+        window where a revoked cert is let through -- across three
+        restart mechanisms: a graceful full-node restart, a kill of just
+        the ns_server child process (other components unaffected), and a
+        kill -9 of the top-level babysitter simulating an unclean crash.
+        """
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        revoked_cert, revoked_key, revoked_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "restartRevoked"
+        )
+        revoked_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(revoked_cert))
+        revoked_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(revoked_key))
+        valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "restartValid"
+        )
+        valid_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(valid_cert))
+        valid_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(valid_key))
+
+        filename = "restart_persistence.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [revoked_serial], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"Baseline CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        def probe_state(cert_path, key_path):
+            # Three states, not two: a plain True/False can't tell "the
+            # cert was rejected" apart from "the whole node is down",
+            # which is exactly the distinction a restart test needs.
+            try:
+                self.crl_utils.perform_mtls_handshake(
+                    self.cluster.master.ip, self.MGMT_PORT, cert_path, key_path, timeout=5,
+                )
+                return "connected"
+            except requests.exceptions.SSLError:
+                return "rejected"
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                return "down"
+
+        self.assertEqual(probe_state(revoked_cert_path, revoked_key_path), "rejected")
+        self.assertEqual(probe_state(valid_cert_path, valid_key_path), "connected")
+        self.log.info("Baseline: revoked cert rejected, valid cert connects")
+
+        def probe_across_outage(trigger, max_wait=180):
+            # Probes continuously through the whole outage and recovery,
+            # not just before/after -- the point is to catch a transient
+            # window, which a before/after check can't see at all.
+            stop = threading.Event()
+            recovered = threading.Event()
+            revoked_states, valid_states = [], []
+
+            def prober():
+                while not stop.is_set():
+                    revoked_states.append(probe_state(revoked_cert_path, revoked_key_path))
+                    valid_states.append(probe_state(valid_cert_path, valid_key_path))
+                    if valid_states[-1] == "connected":
+                        recovered.set()
+                    time.sleep(1)
+
+            prober_thread = threading.Thread(target=prober)
+            prober_thread.start()
+            try:
+                trigger()
+                recovered.wait(timeout=max_wait)
+                time.sleep(3)
+            finally:
+                stop.set()
+                prober_thread.join()
+            self.assertTrue(
+                recovered.is_set(),
+                f"Node never recovered within {max_wait}s -- can't tell "
+                f"whether enforcement resumed at all",
+            )
+            return revoked_states, valid_states
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            # Config + uploaded files survive a full restart.
+            status, settings_before = self.crl_utils.get_settings(self.rest)
+            self.assertTrue(status)
+            status, files_before = self.crl_utils.list_files(self.rest)
+            self.assertTrue(status)
+
+            # Continuous probing across a graceful full restart --
+            # enforcement must be correct immediately on recovery, with
+            # zero window where the revoked cert is ever let through,
+            # including throughout the outage itself.
+            def graceful_restart():
+                shell.stop_couchbase()
+                shell.start_couchbase()
+
+            revoked_states, _ = probe_across_outage(graceful_restart)
+            self.assertNotIn(
+                "connected", revoked_states,
+                f"Revoked cert must never connect, including during/around "
+                f"a full restart, got: {revoked_states}",
+            )
+            self.log.info(
+                f"Full restart: revoked cert never connected across "
+                f"{len(revoked_states)} probes; valid cert correctly recovered"
+            )
+
+            status, settings_after = self.crl_utils.get_settings(self.rest)
+            self.assertTrue(status, "Node should be fully functional again post-restart")
+            self.assertEqual(
+                settings_before.get("policyPerScope"), settings_after.get("policyPerScope"),
+                "policyPerScope should survive a full restart unchanged",
+            )
+            status, files_after = self.crl_utils.list_files(self.rest)
+            self.assertTrue(status)
+            checksum_before = next(
+                f["checksum"] for f in files_before if f["filename"] == filename
+            )
+            checksum_after = next(
+                f["checksum"] for f in files_after if f["filename"] == filename
+            )
+            self.assertEqual(
+                checksum_before, checksum_after,
+                "The uploaded CRL file's checksum should survive a full "
+                "restart unchanged",
+            )
+            # Confirm the node is fully functional again, not just
+            # superficially back up. This still has to revoke the same
+            # serial -- an empty/non-revoking CRL for the same CA would
+            # become the freshest CRL for that issuer and silently
+            # un-revoke revoked_cert for every probe from here on
+            # ("freshest CRL wins per issuer", not a union of all files).
+            post_restart_filename = "restart_post_restart_upload.pem"
+            status, content = self.crl_utils.revoke_and_upload(
+                self.rest, self.ca_cert, self.ca_key, [revoked_serial],
+                post_restart_filename, crl_number=2,
+            )
+            self.assertTrue(status, f"Post-restart upload should succeed: {content}")
+            self._track_uploaded_file(post_restart_filename)
+            self.crl_utils.reload_crl(self.rest)
+            self.log.info("CRL config and uploaded files survive a full restart unchanged")
+
+            # Killing only the ns_server child process (not memcached, not
+            # the babysitter) restarts that component alone, with no
+            # stale pre-restart CRL state and no effect on its siblings.
+            memcached_pid_before = find_remote_pid(shell, "/opt/couchbase/bin/memcached ")
+            ns_server_pid_before = find_remote_pid(shell, "child_start ns_bootstrap")
+            self.assertIsNotNone(ns_server_pid_before, "Could not find the ns_server child PID")
+            self.assertIsNotNone(memcached_pid_before, "Could not find the memcached PID")
+
+            def kill_ns_server_child():
+                shell.execute_command(f"kill -9 {ns_server_pid_before}")
+
+            revoked_states, _ = probe_across_outage(kill_ns_server_child)
+            self.assertNotIn(
+                "connected", revoked_states,
+                f"Revoked cert must never connect across an ns_server-child "
+                f"restart, got: {revoked_states}",
+            )
+            memcached_pid_after = find_remote_pid(shell, "/opt/couchbase/bin/memcached ")
+            ns_server_pid_after = find_remote_pid(shell, "child_start ns_bootstrap")
+            self.assertEqual(
+                memcached_pid_before, memcached_pid_after,
+                "memcached should be completely unaffected by an "
+                "ns_server-only restart",
+            )
+            self.assertNotEqual(
+                ns_server_pid_before, ns_server_pid_after,
+                "ns_server should have actually gotten a new PID -- a real "
+                "restart, not a no-op",
+            )
+            self.log.info(
+                "ns_server-only restart: memcached untouched, ns_server "
+                "got a new PID, zero enforcement gap"
+            )
+
+            # An unclean crash of the whole node (kill -9 the top-level
+            # babysitter, no graceful signal first) recovers automatically
+            # via systemd, with the same zero-gap guarantee and correct
+            # discrimination (not just failing everything closed by
+            # accident of a broken state).
+            babysitter_pid_before = find_remote_pid(shell, "run ns_babysitter_bootstrap")
+            self.assertIsNotNone(babysitter_pid_before, "Could not find the babysitter PID")
+
+            def kill_babysitter():
+                shell.execute_command(f"kill -9 {babysitter_pid_before}")
+
+            revoked_states, _ = probe_across_outage(kill_babysitter)
+            self.assertNotIn(
+                "connected", revoked_states,
+                f"Revoked cert must never connect across an unclean crash, "
+                f"got: {revoked_states}",
+            )
+            babysitter_pid_after = find_remote_pid(shell, "run ns_babysitter_bootstrap")
+            self.assertNotEqual(
+                babysitter_pid_before, babysitter_pid_after,
+                "systemd should have restarted the whole service with a "
+                "new babysitter PID",
+            )
+            status, settings_final = self.crl_utils.get_settings(self.rest)
+            self.assertTrue(status)
+            self.assertEqual(
+                settings_before.get("policyPerScope"), settings_final.get("policyPerScope"),
+                "policyPerScope should also survive an unclean crash unchanged",
+            )
+            self.assertEqual(
+                probe_state(valid_cert_path, valid_key_path), "connected",
+                "A valid cert should still connect post-recovery -- confirms "
+                "correct discrimination, not an accidental fail-everything state",
+            )
+            self.log.info(
+                "Unclean crash: systemd auto-recovered with a new "
+                "babysitter PID, zero enforcement gap, config intact, "
+                "correct discrimination"
+            )
+        finally:
+            shell.disconnect()

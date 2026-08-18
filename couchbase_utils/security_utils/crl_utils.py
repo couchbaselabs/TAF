@@ -682,6 +682,16 @@ class CRLUtils:
 # docstring); CRL's retry loop needs killing-by-port specifically, since a
 # failed attempt must not leave a listener behind on the port before retrying.
 
+def find_remote_pid(shell_conn, pattern):
+    """Returns the PID (str) of the first process whose command line
+    contains the literal `pattern`, or None if no such process exists."""
+    out, _ = shell_conn.execute_command(
+        f"ps -eo pid,args | grep -F '{pattern}' | grep -v grep | awk '{{print $1}}' | head -1"
+    )
+    pid = out[0].strip() if out else ""
+    return pid if pid else None
+
+
 def tail_remote_log(shell_conn, log_path, lines=200):
     """Returns the last `lines` lines of a remote log file as a single
     string (empty string if the file doesn't exist or is empty)."""
