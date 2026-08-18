@@ -730,6 +730,13 @@ class basic_ops(ClusterSetup):
         """
         total_gets = 0
         max_gets = 2500000000
+        # Soak window (in seconds) for the read-loop below. 'max_gets' is
+        # not reachable within any sane CI budget, so this bound is what
+        # actually ends a healthy run
+        test_timeout = self.input.param("test_timeout", 1800)
+        # Consecutive checks tolerated without any increase in 'ops_get'
+        # before treating the reads as stuck
+        max_stagnant_checks = self.input.param("max_stagnant_checks", 5)
         bucket = self.cluster.buckets[0]
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 doc_size=0,
@@ -750,8 +757,13 @@ class basic_ops(ClusterSetup):
             self.cluster, bucket, doc_gen,
             op_type=DocLoading.Bucket.DocOps.READ, batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.sleep(60, "Wait for read task to start")
+        stop_time = time.time() + test_timeout
+        prev_gets = -1
+        stagnant_checks = 0
+
         while total_gets < max_gets:
             total_gets = 0
             for node in kv_nodes:
@@ -775,8 +787,32 @@ class basic_ops(ClusterSetup):
                     total_gets += int(vb_stats["ops_get"])
             if self.test_failure:
                 break
+
+            if total_gets > prev_gets:
+                prev_gets = total_gets
+                stagnant_checks = 0
+            else:
+                stagnant_checks += 1
+                if stagnant_checks >= max_stagnant_checks:
+                    self.log_failure(
+                        "ops_get stuck at %s across %s consecutive checks. "
+                        "Reads are not reaching the server"
+                        % (total_gets, stagnant_checks))
+                    break
+
+            if time.time() >= stop_time:
+                # Soak window elapsed without hitting the condition under
+                # test. That is the expected outcome for this regression
+                # test, so stop cleanly instead of running until the CI
+                # job's own timeout kills the build
+                self.log.info("Soak window of %s seconds elapsed. "
+                              "total_gets=%s" % (test_timeout, total_gets))
+                break
+
+            # 'itr_count' exists only on the default_loader's task object
+            itr_count = getattr(read_task, "itr_count", "NA")
             self.sleep(120, "Total_gets: %s, itr: %s" % (total_gets,
-                                                         read_task.itr_count))
+                                                         itr_count))
 
         for node in kv_nodes:
             cbstat[node].disconnect()
@@ -830,6 +866,13 @@ class basic_ops(ClusterSetup):
         total_gets = 0
         max_gets = 50000000
         stop_thread = False
+        # Soak window (in seconds) for the read-loop below. 'max_gets' is
+        # not reachable within any sane CI budget, so this bound is what
+        # actually ends a healthy run
+        test_timeout = self.input.param("test_timeout", 1800)
+        # Consecutive checks tolerated without any increase in 'ops_get'
+        # before treating the reads as stuck
+        max_stagnant_checks = self.input.param("max_stagnant_checks", 5)
         bucket = self.cluster.buckets[0]
         cb_stat_obj = dict()
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
@@ -854,7 +897,12 @@ class basic_ops(ClusterSetup):
             op_type=DocLoading.Bucket.DocOps.READ,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
+
+        stop_time = time.time() + test_timeout
+        prev_gets = -1
+        stagnant_checks = 0
 
         while total_gets < max_gets:
             total_gets = 0
@@ -874,6 +922,27 @@ class basic_ops(ClusterSetup):
                 self.log_failure("Cb_logs validation failed")
                 break
             elif self.test_failure:
+                break
+
+            if total_gets > prev_gets:
+                prev_gets = total_gets
+                stagnant_checks = 0
+            else:
+                stagnant_checks += 1
+                if stagnant_checks >= max_stagnant_checks:
+                    self.log_failure(
+                        "ops_get stuck at %s across %s consecutive checks. "
+                        "Reads are not reaching the server"
+                        % (total_gets, stagnant_checks))
+                    break
+
+            if time.time() >= stop_time:
+                # Soak window elapsed without hitting the condition under
+                # test. That is the expected outcome for this regression
+                # test, so stop cleanly instead of running until the CI
+                # job's own timeout kills the build
+                self.log.info("Soak window of %s seconds elapsed. "
+                              "total_gets=%s" % (test_timeout, total_gets))
                 break
 
             self.sleep(60, "Wait before next check")
