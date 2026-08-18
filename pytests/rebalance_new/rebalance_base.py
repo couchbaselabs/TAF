@@ -220,12 +220,14 @@ class RebalanceBaseTest(BaseTestCase):
                     self.cluster.master.rest_username,
                     self.cluster.master.rest_password,
                     bucket.name, req_clients=clients_per_bucket)
-        else:
-            for bucket in self.cluster.buckets:
-                self.cluster.sdk_client_pool.create_clients(
-                    self.cluster, bucket,
-                    req_clients=clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+        # Python-side clients are needed regardless of which loader does the
+        # bulk load: validate_crud_task_per_collection() (post-load retry
+        # validation) always fetches its client from cluster.sdk_client_pool.
+        for bucket in self.cluster.buckets:
+            self.cluster.sdk_client_pool.create_clients(
+                self.cluster, bucket,
+                req_clients=clients_per_bucket,
+                compression_settings=self.sdk_compression)
 
         CollectionBase.load_data_from_spec_file(self, "initial_load")
 
