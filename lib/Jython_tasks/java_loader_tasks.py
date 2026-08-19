@@ -184,7 +184,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                  model=None, mockVector=False, dim=128, base64=False,
                  num_vbuckets=CbServer.total_vbuckets,
                  target_vbuckets=None,
-                 stall_timeout=600, progress_poll_interval=60):
+                 stall_timeout=600, progress_poll_interval=60,
+                 never_started_timeout=1800):
         """
         Gateway to start doc loading using Java SDK.
         Have common params for both storage_tests and regular test.
@@ -235,6 +236,15 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         # Setting either of these value=-1 will disable this feature
         self.stall_timeout = stall_timeout
         self.progress_poll_interval = progress_poll_interval
+        # Upper bound on how long a task may sit queued without ever being
+        # dequeued. The has_started bypass below deliberately keeps the stall
+        # clock off a worker the pool has not started, but without a bound of
+        # its own that hands the loader the power to hang the test forever:
+        # a task stuck in the executor queue reports is_running=True and
+        # has_started=False on every poll, so nothing ever trips. Longer than
+        # stall_timeout because waiting for a thread is normal on a wide run,
+        # while making no progress once running is not. -1 disables it.
+        self.never_started_timeout = never_started_timeout
 
         # Key / Doc properties
         self.key_type = key_type
@@ -516,13 +526,16 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                    pool_state.get("pool_workers")))
 
     def _raise_stall(self, stalled_task_id, stalled_for, group_ops, reason,
-                     pool_state=None):
+                     pool_state=None, timeout=None):
         log = global_vars.logger.get("test")
+        # Which bound was breached depends on the caller: no forward progress
+        # trips stall_timeout, never being dequeued trips never_started_timeout.
+        timeout = self.stall_timeout if timeout is None else timeout
         log.critical(
             "%s stalled (%s): no progress from it or any sibling for %.0fs "
-            "(stall_timeout=%ss), completed_ops across the group=%s%s. "
+            "(timeout=%ss), completed_ops across the group=%s%s. "
             "Stopping sibling tasks: %s"
-            % (stalled_task_id, reason, stalled_for, self.stall_timeout,
+            % (stalled_task_id, reason, stalled_for, timeout,
                group_ops, self._pool_state_str(pool_state), self.task_ids))
         ok, _ = self._make_task_request(self.task_ids, "stop_task", timeout=30)
         if not ok:
@@ -532,10 +545,10 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         self.completed = True
         raise Exception(
             "Sirius task %s stalled (%s): no completed_ops progress from it "
-            "or any sibling for %.0fs (stall_timeout=%ss), completed_ops "
+            "or any sibling for %.0fs (timeout=%ss), completed_ops "
             "across the group=%s%s. Sibling tasks %s have been sent "
             "stop/cancel."
-            % (stalled_task_id, reason, stalled_for, self.stall_timeout,
+            % (stalled_task_id, reason, stalled_for, timeout,
                group_ops, self._pool_state_str(pool_state), self.task_ids))
 
     def _wait_for_completion_or_stall(self):
@@ -568,6 +581,10 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
         transient_failures = dict.fromkeys(self.task_ids, 0)
         pending = set(self.task_ids)
         pool_state = None
+        # First poll at which each task was seen still queued. Bounds the
+        # has_started bypass so a task the pool never dequeues fails instead
+        # of holding the caller here indefinitely.
+        unstarted_since = dict()
 
         while pending:
             for task_id in list(pending):
@@ -608,6 +625,11 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                         "queued_tasks": resp.get("queued_tasks"),
                         "pool_workers": resp.get("pool_workers")}
 
+                # Absent on older DocLoader builds, where every polled task is
+                # assumed started - i.e. exactly the behaviour before this field
+                # existed.
+                has_started = resp.get("has_started", True)
+
                 if completed_ops > last_ops[task_id]:
                     last_ops[task_id] = completed_ops
                     group_last_change_ts = now
@@ -619,6 +641,28 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
                     # already drained the generator it would have worked on.
                     group_last_change_ts = now
                     continue
+
+                if not has_started:
+                    # Still queued for a thread. On a wide run the loader holds
+                    # thousands of workers behind a fixed pool, and a worker that
+                    # has never been dequeued cannot be making progress or
+                    # failing to - it is waiting its turn. Timing it out reports
+                    # a healthy loader as hung and stops the whole group.
+                    # Bounded, though: "waiting its turn" that never ends is a
+                    # wedged loader, and the group clock cannot catch it because
+                    # this branch skips the check on every poll.
+                    queued_since = unstarted_since.setdefault(task_id, now)
+                    if self.never_started_timeout != -1 \
+                            and now - queued_since >= self.never_started_timeout:
+                        self._raise_stall(
+                            task_id, now - queued_since,
+                            sum(last_ops.values()),
+                            reason="queued but never scheduled by the loader",
+                            pool_state=pool_state,
+                            timeout=self.never_started_timeout)
+                    continue
+
+                unstarted_since.pop(task_id, None)
 
                 stalled_for = now - group_last_change_ts
                 if stalled_for >= self.stall_timeout:

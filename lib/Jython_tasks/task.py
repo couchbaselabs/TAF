@@ -5224,7 +5224,14 @@ class MutateDocsFromSpecTask(Task):
                 try:
                     self.task_manager.get_task_result(task)
                 except Exception as e:
+                    # A stall aborts the load: _raise_stall() has already sent
+                    # stop_task to every worker in the group, so whatever was
+                    # left unwritten stays unwritten. task.fail is empty in that
+                    # case, so without this the group scores clean and the test
+                    # carries on against a silently truncated dataset.
                     self.test_log.error(e)
+                    self.result = False
+                    self.set_exception(e)
                 finally:
                     bucket = task.bucket
                     scope = task.scope

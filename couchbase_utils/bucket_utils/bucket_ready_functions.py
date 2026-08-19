@@ -15,6 +15,7 @@ import re
 import string
 import threading
 import time
+import traceback
 import zlib
 from collections import defaultdict
 from random import sample, choice, randint
@@ -405,6 +406,26 @@ class JavaDocLoaderUtils(object):
 
 class DocLoaderUtils(object):
     log = logger.get("test")
+
+    # Ordered most-specific first: a Java SDK exception name, else the leading
+    # word of whatever the error is.
+    exception_patterns = [r".*(com\.[a-zA-Z0-9\.]+)", r"([a-zA-Z0-9]+)"]
+
+    @staticmethod
+    def get_exception_name(error):
+        """
+        Best-effort short name for an error, for use in report tables.
+
+        Never raises. The retry error is not the same string as the exception
+        that caused the retry, so a pattern that matched one is not guaranteed
+        to match the other - matching must not be assumed to succeed.
+        """
+        error = str(error)
+        for pattern in DocLoaderUtils.exception_patterns:
+            pattern_match = re.match(pattern, error)
+            if pattern_match:
+                return pattern_match.group(1)
+        return error[:120]
 
     @staticmethod
     def check_if_exception_exists(received_exception, expected_exceptions):
@@ -897,8 +918,6 @@ class DocLoaderUtils(object):
         unwanted_retry_succeeded_table.set_headers(table_headers)
         unwanted_retry_failed_table.set_headers(failure_table_header)
 
-        exception_patterns = [".*(com\.[a-zA-Z0-9\.]+)", "([a-zA-Z0-9]+)"]
-
         # Fetch client for retry operations
         client = cluster.sdk_client_pool.get_client_for_bucket(
             bucket, scope_name, collection_name)
@@ -908,185 +927,192 @@ class DocLoaderUtils(object):
                 "skipping retry validation for %s.%s"
                 % (bucket.name, scope_name, collection_name))
             return
-        doc_data = dict()
-        subdoc_data = dict()
-        for op_type, op_data in c_data.items():
-            if op_type in DocLoading.Bucket.DOC_OPS:
-                doc_data[op_type] = op_data
-            else:
-                subdoc_data[op_type] = op_data
-        for data in [doc_data, subdoc_data]:
-            for op_type, op_data in data.items():
-                failed_keys = list(op_data["fail"].keys())
+        try:
+            doc_data = dict()
+            subdoc_data = dict()
+            for op_type, op_data in c_data.items():
+                if op_type in DocLoading.Bucket.DOC_OPS:
+                    doc_data[op_type] = op_data
+                else:
+                    subdoc_data[op_type] = op_data
+            for data in [doc_data, subdoc_data]:
+                for op_type, op_data in data.items():
+                    failed_keys = list(op_data["fail"].keys())
 
-                # New dicts to filter failures based on retry strategy
-                op_data["unwanted"] = dict()
-                op_data["retried"] = dict()
-                op_data["unwanted"]["fail"] = dict()
-                op_data["unwanted"]["success"] = dict()
-                op_data["retried"]["fail"] = dict()
-                op_data["retried"]["success"] = dict()
+                    # New dicts to filter failures based on retry strategy
+                    op_data["unwanted"] = dict()
+                    op_data["retried"] = dict()
+                    op_data["unwanted"]["fail"] = dict()
+                    op_data["unwanted"]["success"] = dict()
+                    op_data["retried"]["fail"] = dict()
+                    op_data["retried"]["success"] = dict()
 
-                if failed_keys:
-                    keys_to_remove = []
-                    for key, failed_doc in op_data["fail"].items():
-                        is_key_to_ignore = False
-                        initial_exception = ""
-                        exception = failed_doc["error"]
-                        for exception_pattern in exception_patterns:
-                            pattern_match = re.match(exception_pattern,
-                                                     str(exception))
-                            if pattern_match:
-                                initial_exception = pattern_match.group(1)
-                                break
+                    if failed_keys:
+                        keys_to_remove = []
+                        for key, failed_doc in op_data["fail"].items():
+                            is_key_to_ignore = False
+                            exception = failed_doc["error"]
+                            initial_exception = \
+                                DocLoaderUtils.get_exception_name(exception)
 
-                        break_loop = False
-                        for tem_exception in op_data["ignore_exceptions"]:
-                            if not isinstance(tem_exception, list):
-                                tem_exception = [tem_exception]
-                            for t_exception in tem_exception:
-                                if str(exception).find(t_exception) != -1:
-                                    if op_type == DocLoading.Bucket.DocOps.CREATE:
-                                        bucket.scopes[scope_name] \
-                                            .collections[collection_name].num_items \
-                                            -= 1
-                                    elif op_type == DocLoading.Bucket.DocOps.DELETE:
-                                        bucket.scopes[scope_name] \
-                                            .collections[collection_name].num_items \
-                                            += 1
-                                    is_key_to_ignore = True
-                                    break_loop = True
+                            break_loop = False
+                            for tem_exception in op_data["ignore_exceptions"]:
+                                if not isinstance(tem_exception, list):
+                                    tem_exception = [tem_exception]
+                                for t_exception in tem_exception:
+                                    if str(exception).find(t_exception) != -1:
+                                        if op_type == DocLoading.Bucket.DocOps.CREATE:
+                                            bucket.scopes[scope_name] \
+                                                .collections[collection_name].num_items \
+                                                -= 1
+                                        elif op_type == DocLoading.Bucket.DocOps.DELETE:
+                                            bucket.scopes[scope_name] \
+                                                .collections[collection_name].num_items \
+                                                += 1
+                                        is_key_to_ignore = True
+                                        break_loop = True
+                                        break
+                                if break_loop:
                                     break
-                            if break_loop:
-                                break
 
-                        if is_key_to_ignore:
-                            keys_to_remove.append(key)
-                            ignored_keys_table.add_row([initial_exception, key])
-                            continue
+                            if is_key_to_ignore:
+                                keys_to_remove.append(key)
+                                ignored_keys_table.add_row([initial_exception, key])
+                                continue
 
-                        ambiguous_state = False
-                        exceptions_to_check = [
-                            SDKException.DurabilityAmbiguousException,
-                            SDKException.AuthenticationException,
-                            SDKException.TimeoutException,
-                        ]
-                        for tem_exception in exceptions_to_check:
-                            if SDKException.check_if_exception_exists(
-                                    tem_exception, str(exception)):
-                                ambiguous_state = True
-                                break
-                        else:
-                            if "CHANNEL_CLOSED_WHILE_IN_FLIGHT" \
-                                    in str(exception):
-                                ambiguous_state = True
+                            ambiguous_state = False
+                            exceptions_to_check = [
+                                SDKException.DurabilityAmbiguousException,
+                                SDKException.AuthenticationException,
+                                SDKException.TimeoutException,
+                            ]
+                            for tem_exception in exceptions_to_check:
+                                if SDKException.check_if_exception_exists(
+                                        tem_exception, str(exception)):
+                                    ambiguous_state = True
+                                    break
+                            else:
+                                if "CHANNEL_CLOSED_WHILE_IN_FLIGHT" \
+                                        in str(exception):
+                                    ambiguous_state = True
 
-                        if op_type in DocLoading.Bucket.DOC_OPS:
-                            result = client.crud(
-                                op_type, key, failed_doc.get("value", None),
-                                exp=op_data["doc_ttl"],
-                                durability=op_data["durability_level"],
-                                timeout=op_data["sdk_timeout"],
-                                time_unit=op_data["sdk_timeout_unit"])
-                        else:
-                            result = dict()
-                            result['status'] = True
-                            for tup in failed_doc.get("path_val", []):
-                                if op_type in [DocLoading.Bucket.SubDocOps.LOOKUP,
-                                               DocLoading.Bucket.SubDocOps.REMOVE]:
-                                    tup = tup[0]
-                                ind_result = client.crud(
-                                    op_type, key, tup,
+                            if op_type in DocLoading.Bucket.DOC_OPS:
+                                result = client.crud(
+                                    op_type, key, failed_doc.get("value", None),
                                     exp=op_data["doc_ttl"],
                                     durability=op_data["durability_level"],
                                     timeout=op_data["sdk_timeout"],
-                                    time_unit=op_data["sdk_timeout_unit"],
-                                    xattr=op_data["xattr_test"])
-                                fail = ind_result[1]
-                                if not fail:
-                                    continue
+                                    time_unit=op_data["sdk_timeout_unit"])
+                            else:
+                                result = dict()
+                                result['status'] = True
+                                for tup in failed_doc.get("path_val", []):
+                                    if op_type in [DocLoading.Bucket.SubDocOps.LOOKUP,
+                                                   DocLoading.Bucket.SubDocOps.REMOVE]:
+                                        tup = tup[0]
+                                    ind_result = client.crud(
+                                        op_type, key, tup,
+                                        exp=op_data["doc_ttl"],
+                                        durability=op_data["durability_level"],
+                                        timeout=op_data["sdk_timeout"],
+                                        time_unit=op_data["sdk_timeout_unit"],
+                                        xattr=op_data["xattr_test"])
+                                    fail = ind_result[1]
+                                    if not fail:
+                                        continue
+                                    else:
+                                        result['status'] = False
+                                        result['error'] = fail[key]["error"]
+                                        break
+
+                            retry_strategy = "unwanted"
+                            for ex in op_data["retry_exceptions"]:
+                                if not isinstance(ex, list):
+                                    ex = [ex]
+                                for t_ex in ex:
+                                    if str(exception).find(t_ex) != -1:
+                                        retry_strategy = "retried"
+                                        break
                                 else:
-                                    result['status'] = False
-                                    result['error'] = fail[key]["error"]
-                                    break
+                                    continue
+                                break
 
-                        retry_strategy = "unwanted"
-                        for ex in op_data["retry_exceptions"]:
-                            if not isinstance(ex, list):
-                                ex = [ex]
-                            for t_ex in ex:
-                                if str(exception).find(t_ex) != -1:
-                                    retry_strategy = "retried"
-                                    break
+                            if result["status"] \
+                                    or (ambiguous_state
+                                        and SDKException.check_if_exception_exists(
+                                            SDKException.DocumentExistsException, str(result["error"]))
+                                        and op_type in ["create", "update"]) \
+                                    or (ambiguous_state
+                                        and SDKException.check_if_exception_exists(
+                                            SDKException.PathExistsException, str(result["error"]))
+                                        and op_type in [DocLoading.Bucket.SubDocOps.INSERT]) \
+                                    or (ambiguous_state
+                                        and SDKException.check_if_exception_exists(
+                                            SDKException.DocumentNotFoundException, str(result["error"]))
+                                        and op_type == "delete") \
+                                    or (ambiguous_state
+                                        and SDKException.check_if_exception_exists(
+                                            SDKException.PathNotFoundException, str(result["error"]))
+                                        and op_type == DocLoading.Bucket.SubDocOps.REMOVE):
+                                op_data[retry_strategy]["success"][key] = \
+                                    result
+                                DocLoaderUtils.log.info(
+                                    "Key %s confirmed successful (retry_strategy=%s)"
+                                    % (key, retry_strategy))
+                                keys_to_remove.append(key)
+                                if retry_strategy == "retried":
+                                    target_tbl = retry_succeeded_table
+                                else:
+                                    target_tbl = unwanted_retry_succeeded_table
+                                tbl_row = [initial_exception, key]
                             else:
-                                continue
-                            break
-
-                        if result["status"] \
-                                or (ambiguous_state
-                                    and SDKException.check_if_exception_exists(
-                                        SDKException.DocumentExistsException, str(result["error"]))
-                                    and op_type in ["create", "update"]) \
-                                or (ambiguous_state
-                                    and SDKException.check_if_exception_exists(
-                                        SDKException.PathExistsException, str(result["error"]))
-                                    and op_type in [DocLoading.Bucket.SubDocOps.INSERT]) \
-                                or (ambiguous_state
-                                    and SDKException.check_if_exception_exists(
-                                        SDKException.DocumentNotFoundException, str(result["error"]))
-                                    and op_type == "delete") \
-                                or (ambiguous_state
-                                    and SDKException.check_if_exception_exists(
-                                        SDKException.PathNotFoundException, str(result["error"]))
-                                    and op_type == DocLoading.Bucket.SubDocOps.REMOVE):
-                            op_data[retry_strategy]["success"][key] = \
-                                result
-                            DocLoaderUtils.log.info(
-                                "Key %s confirmed successful (retry_strategy=%s)"
-                                % (key, retry_strategy))
-                            keys_to_remove.append(key)
-                            if retry_strategy == "retried":
-                                target_tbl = retry_succeeded_table
-                            else:
-                                target_tbl = unwanted_retry_succeeded_table
-                            tbl_row = [initial_exception, key]
-                        else:
-                            if op_type == DocLoading.Bucket.DocOps.CREATE:
-                                bucket.scopes[scope_name] \
-                                    .collections[collection_name].num_items \
-                                    -= 1
-                            elif op_type == DocLoading.Bucket.DocOps.DELETE:
-                                bucket.scopes[scope_name] \
-                                    .collections[collection_name].num_items \
-                                    += 1
-                            op_data[retry_strategy]["fail"][key] = result
-                            if retry_strategy == "retried":
-                                target_tbl = retry_failed_table
-                            else:
-                                target_tbl = unwanted_retry_failed_table
-                            retry_exception = re.match(
-                                exception_pattern, str(result["error"])).group(1)
-                            tbl_row = [initial_exception, key, retry_exception]
-                        target_tbl.add_row(tbl_row)
-                    # Remove keys that should be ignored or succeeded in retry after iteration
-                    for key in keys_to_remove:
-                        op_data["fail"].pop(key)
-                    gen_str = "%s:%s:%s - %s" \
-                              % (bucket.name, scope_name, collection_name,
-                                 op_type)
-                    #                 ignored_keys_table.display(
-                    #                     "%s keys ignored from retry" % gen_str)
-                    #                 retry_succeeded_table.display(
-                    #                     "%s keys succeeded after expected retry" % gen_str)
-                    retry_failed_table.display(
-                        "%s keys failed after expected retry" % gen_str)
-                    unwanted_retry_succeeded_table.display(
-                        "%s unwanted exception keys succeeded in retry" % gen_str)
-                    unwanted_retry_failed_table.display(
-                        "%s unwanted exception keys failed in retry" % gen_str)
-
-        # Release the acquired client
-        cluster.sdk_client_pool.release_client(client)
+                                if op_type == DocLoading.Bucket.DocOps.CREATE:
+                                    bucket.scopes[scope_name] \
+                                        .collections[collection_name].num_items \
+                                        -= 1
+                                elif op_type == DocLoading.Bucket.DocOps.DELETE:
+                                    bucket.scopes[scope_name] \
+                                        .collections[collection_name].num_items \
+                                        += 1
+                                op_data[retry_strategy]["fail"][key] = result
+                                if retry_strategy == "retried":
+                                    target_tbl = retry_failed_table
+                                else:
+                                    target_tbl = unwanted_retry_failed_table
+                                retry_exception = \
+                                    DocLoaderUtils.get_exception_name(
+                                        result["error"])
+                                tbl_row = [initial_exception, key, retry_exception]
+                            target_tbl.add_row(tbl_row)
+                        # Remove keys that should be ignored or succeeded in retry after iteration
+                        for key in keys_to_remove:
+                            op_data["fail"].pop(key)
+                        gen_str = "%s:%s:%s - %s" \
+                                  % (bucket.name, scope_name, collection_name,
+                                     op_type)
+                        #                 ignored_keys_table.display(
+                        #                     "%s keys ignored from retry" % gen_str)
+                        #                 retry_succeeded_table.display(
+                        #                     "%s keys succeeded after expected retry" % gen_str)
+                        retry_failed_table.display(
+                            "%s keys failed after expected retry" % gen_str)
+                        unwanted_retry_succeeded_table.display(
+                            "%s unwanted exception keys succeeded in retry" % gen_str)
+                        unwanted_retry_failed_table.display(
+                            "%s unwanted exception keys failed in retry" % gen_str)
+        except Exception as retry_err:
+            # A validator that dies takes its collection's failures with it:
+            # validate_doc_loading_results() only joins these threads, so the
+            # keys stay in op_data["fail"] with no indication of why. Say what
+            # broke, then let the caller record the collection as failed.
+            DocLoaderUtils.log.critical(
+                "Retry validation failed for %s:%s:%s - %s\n%s"
+                % (bucket.name, scope_name, collection_name, retry_err,
+                   traceback.format_exc()))
+            raise
+        finally:
+            # Release the acquired client
+            cluster.sdk_client_pool.release_client(client)
 
     @staticmethod
     def validate_doc_loading_results(cluster, doc_loading_task):
@@ -1097,13 +1123,27 @@ class DocLoaderUtils(object):
         :return:
         """
         c_validation_threads = list()
+        # A thread that dies leaves its collection's failures untouched, which
+        # is indistinguishable from a collection whose retries all passed.
+        # Capture the exception so the verdict below can account for it.
+        validation_errors = dict()
         crud_validation_function = \
             DocLoaderUtils.validate_crud_task_per_collection
+
+        def run_validation(t_cluster, t_bucket, t_scope, t_collection,
+                           t_data, t_load_using):
+            try:
+                crud_validation_function(t_cluster, t_bucket, t_scope,
+                                         t_collection, t_data, t_load_using)
+            except Exception as validation_err:
+                validation_errors[(t_bucket.name, t_scope, t_collection)] = \
+                    validation_err
+
         for bucket_obj, scope_dict in doc_loading_task.loader_spec.items():
             for s_name, collection_dict in scope_dict["scopes"].items():
                 for c_name, c_dict in collection_dict["collections"].items():
                     c_thread = threading.Thread(
-                        target=crud_validation_function,
+                        target=run_validation,
                         args=[cluster, bucket_obj, s_name, c_name, c_dict,
                               doc_loading_task.load_using])
                     c_thread.start()
@@ -1122,6 +1162,13 @@ class DocLoaderUtils(object):
                         if op_data["fail"]:
                             doc_loading_task.result = False
                             break
+
+        if validation_errors:
+            for target, validation_err in validation_errors.items():
+                DocLoaderUtils.log.critical(
+                    "Retry validation did not complete for %s:%s:%s - %s"
+                    % (target[0], target[1], target[2], validation_err))
+            doc_loading_task.result = False
 
     @staticmethod
     def update_num_items_based_on_expired_docs(buckets, doc_loading_task,
