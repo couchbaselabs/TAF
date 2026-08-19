@@ -222,6 +222,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.continuous_backup_enabled = self.input.param("continuous_backup_enabled", False)
         self.continuous_backup_interval = self.input.param("continuous_backup_interval", 5)
         self.continuous_backup_retention_period = self.input.param("continuous_backup_retention_period", 1440)
+        continuous_backup_temp_dir = "/data/tmp"
         # Location where continuous backup files will be stored. This can be local path or NFS mount depending on the test configuration
         # Will be overriden in collection base if NFS is being used as the continuous backup location for the test
         self.continuous_backup_location = self.input.param(
@@ -233,6 +234,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             shell = RemoteMachineShellConnection(server)
             shell.execute_command(f"rm -rf {self.continuous_backup_location}/*")
             shell.execute_command(f"rm -rf {self.backup_archive_dir}/*")
+            shell.execute_command(f"rm -rf {continuous_backup_temp_dir}/*")
+            shell.execute_command(f"mkdir -p {continuous_backup_temp_dir}/*")
             if self.obj_staging_dir_cbbackup:
                 shell.execute_command(f"rm -rf {self.obj_staging_dir_cbbackup}")
                 shell.execute_command(f"mkdir -p {self.obj_staging_dir_cbbackup}")
