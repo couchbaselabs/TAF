@@ -2578,3 +2578,293 @@ class CRLTest(CRLBase):
             )
         finally:
             shell.disconnect()
+
+    def test_crl_hot_reload_and_node_scoping(self):
+        """An explicit reloadCrl applies a newly revoking CRL on the very
+        next connection attempt with no restart; reloadCrl and a locally
+        directory-polled CRL file are genuinely per-node (unlike uploaded
+        CRL content, which replicates cluster-wide via chronicle regardless
+        of reloadCrl); and removing a revoking CRL then reloading restores
+        access once the resulting missing-CRL state is itself tolerated."""
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+
+        # -- Upload a newly revoking CRL, explicitly reload, confirm
+        # rejection on the very next attempt -- no restart. --
+        leaf_cert, leaf_key, leaf_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "hotReloadLeaf"
+        )
+        leaf_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(leaf_cert))
+        leaf_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(leaf_key))
+
+        filename = "hot_reload_revoking.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=1),
+        )
+        self.assertTrue(status, f"Baseline (empty) CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertTrue(
+            self._handshake_ok(leaf_cert_path, leaf_key_path),
+            "Cert should connect before its serial is revoked",
+        )
+
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [leaf_serial], filename, crl_number=2,
+        )
+        self.assertTrue(status, f"Revoking CRL re-upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(leaf_cert_path, leaf_key_path),
+            "Cert must be rejected on the very next attempt after an "
+            "explicit reloadCrl, with no restart",
+        )
+        self.log.info("Newly revoking CRL applied immediately via reloadCrl, no restart")
+
+        # -- reloadCrl is a per-node REST call (whichever
+        # node's mgmt port receives it), and a directory-polled file only
+        # exists on the node it was actually written to -- unlike an
+        # uploaded CRL's *content*, which chronicle replicates cluster-wide
+        # near-instantly regardless of reloadCrl. self.rest is bound to
+        # master, so writing the file to master's disk and calling
+        # self.crl_utils.reload_crl(self.rest) only ever reloads master. --
+        second = next(
+            s for s in self.cluster.servers[:self.nodes_init]
+            if s.ip != self.cluster.master.ip
+        )
+        master_key = f"{self.cluster.master.ip}:8091"
+        second_key = f"{second.ip}:8091"
+        poll_dir = f"/tmp/taf_crl_hot_reload_{uuid.uuid4().hex[:8]}"
+        status, content = self.crl_utils.set_settings(
+            self.rest, directory=poll_dir, dirPollIntervalMs=60000,
+        )
+        self.assertTrue(status, f"Directory setting update failed: {content}")
+        dir_filename = "hot_reload_dir_poll.pem"
+        dir_crl_pem = self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=3)
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        try:
+            shell.execute_command(f"mkdir -p {poll_dir}")
+            remote_write_file_b64(
+                shell, f"{poll_dir}/{dir_filename}", dir_crl_pem.decode("utf-8")
+            )
+            self.crl_utils.reload_crl(self.rest)
+
+            status, content = self.crl_utils.diagnostics_status(self.rest)
+            self.assertTrue(status, f"diagnostics/status failed: {content}")
+            master_files = {f["filename"] for f in content[master_key]["crlFiles"]}
+            second_files = {f["filename"] for f in content[second_key]["crlFiles"]}
+            self.assertIn(
+                dir_filename, master_files,
+                "Master should see the directory-dropped file after its "
+                "own reloadCrl",
+            )
+            self.assertNotIn(
+                dir_filename, second_files,
+                "Second node never had this file written to its own disk "
+                "and was never told to reload -- it must not see it",
+            )
+        finally:
+            try:
+                shell.execute_command(f"rm -rf {poll_dir}")
+            except Exception as exc:
+                self.log.warning(f"Failed to clean up {poll_dir}: {exc}")
+            shell.disconnect()
+        self.log.info(
+            "reloadCrl and directory-polled files are per-node -- "
+            "second node saw neither the file nor its effect"
+        )
+
+        # -- Removing the (only) revoking CRL and reloading
+        # restores access, under a policy that tolerates the resulting
+        # missing-CRL state (Permissive) -- otherwise a missing CRL is
+        # itself a rejection and would mask whether removal took effect. --
+        status, content = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Permissive", "nodeToNode": "Disabled"},
+            directory="/opt/couchbase/var/lib/couchbase/inbox/crls",
+        )
+        self.assertTrue(status, f"Policy/directory reset failed: {content}")
+        self.assertFalse(
+            self._handshake_ok(leaf_cert_path, leaf_key_path),
+            "Cert should still be rejected -- its revoking CRL hasn't been "
+            "removed yet",
+        )
+        status, content = self.crl_utils.delete_file(self.rest, filename)
+        self.assertTrue(status, f"Deleting the revoking CRL failed: {content}")
+        self._created_files.remove(filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertTrue(
+            self._handshake_ok(leaf_cert_path, leaf_key_path),
+            "Cert should connect again once its only revoking CRL is "
+            "removed and reloaded, under a policy that tolerates a "
+            "missing CRL",
+        )
+        self.log.info(
+            "Removing the revoking CRL and reloading restores access "
+            "under Permissive"
+        )
+
+    def test_crl_health_warnings(self):
+        """A 'crl_expires_soon' health warning fires proactively for a CRL
+        that hasn't expired yet but has already dropped inside its own
+        proportional warning window (min(the configured 3-day window, 1/4
+        of the CRL's own total validity period) -- confirmed from
+        cb_crl_manager/menelaus_web_alerts_srv source, not assumed), the
+        same CRL later flips to a distinctly-worded 'crl_expired' warning
+        once it genuinely expires, and -- a known gap -- a CRL whose
+        issuing CA becomes untrusted after being loaded is correctly
+        detected by diagnostics/status but produces no health warning at
+        all, since only these two alert types exist."""
+        server = self.cluster.master
+        node_key = f"{self.cluster.master.ip}:8091"
+
+        # -- One short-lived CRL, observed through both real state
+        # transitions in sequence -- proactively inside its warning window
+        # first, then genuinely expired -- with zero extra uploads. --
+        now = datetime.datetime.now(datetime.timezone.utc)
+        this_update = now - datetime.timedelta(seconds=1000)
+        next_update = now + datetime.timedelta(seconds=90)
+        # Total validity 1090s -> proportional warning window = 1090/4 =
+        # 272s, comfortably wider than the 90s actually remaining -- so
+        # this is already inside the warning window at upload time, no
+        # need to wait out a separate real-time countdown just to reach it.
+        soon_filename = "health_warning_lifecycle.pem"
+        expires_soon_baseline = self.crl_utils.get_crl_alert_count(
+            server, "crl_expires_soon"
+        )
+        expired_baseline = self.crl_utils.get_crl_alert_count(server, "crl_expired")
+        status, content = self.crl_utils.upload_file(
+            self.rest, soon_filename,
+            self.crl_utils.build_crl(
+                self.ca_cert, self.ca_key,
+                this_update=this_update, next_update=next_update, crl_number=1,
+            ),
+        )
+        self.assertTrue(status, f"Short-validity CRL upload failed: {content}")
+        self._track_uploaded_file(soon_filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        self.assertTrue(
+            self.crl_utils.wait_for_crl_alert_increment(
+                server, "crl_expires_soon", expires_soon_baseline, max_wait=100,
+            ),
+            "Expected 'crl_expires_soon' to fire for a CRL already inside "
+            "its own proportional warning window, before actual expiry",
+        )
+        alert_msgs = self.crl_utils.get_alert_messages(self.rest)
+        self.assertTrue(
+            any("will expire at" in m and "TestCA1" in m for m in alert_msgs),
+            "Expected a human-readable 'will expire at ...' alert naming "
+            f"the issuing CA, got: {alert_msgs}",
+        )
+        self.log.info(
+            "'crl_expires_soon' fired proactively, before actual "
+            "expiry, with correct human-readable text"
+        )
+
+        self.assertTrue(
+            self.crl_utils.wait_for_crl_alert_increment(
+                server, "crl_expired", expired_baseline, max_wait=150,
+            ),
+            "Expected the same CRL to later trigger 'crl_expired', "
+            "distinct from 'crl_expires_soon', once it genuinely expired",
+        )
+        alert_msgs = self.crl_utils.get_alert_messages(self.rest)
+        self.assertTrue(
+            any("has expired" in m and "TestCA1" in m for m in alert_msgs),
+            "Expected a distinctly-worded 'has expired' alert naming the "
+            f"issuing CA, got: {alert_msgs}",
+        )
+        self.log.info(
+            "The same CRL later triggered a distinctly-worded "
+            "'crl_expired' once it genuinely expired"
+        )
+
+        # The now-expired CRL above must be removed before the untrusted
+        # sub-case below: the 'alerts_triggered' counter increments on
+        # every ~60s check tick for as long as ANY CRL remains in the
+        # expired state (confirmed from source -- the metric notification
+        # is unconditional, only the human-readable alert message itself
+        # is deduped), not just once per new alert. Left loaded, it would
+        # keep re-incrementing 'crl_expired' independent of the untrust
+        # action below and produce a false failure of that known-gap check.
+        status, content = self.crl_utils.delete_file(self.rest, soon_filename)
+        self.assertTrue(status, f"Deleting the expired CRL failed: {content}")
+        self._created_files.remove(soon_filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        # -- A separate, currently-valid, non-expiring CRL -- reusing the
+        # just-expired one here would confound "no alert because
+        # untrusted" with "no alert because it's already expired anyway". --
+        untrusted_filename = "health_warning_untrusted.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, untrusted_filename,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=2),
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(untrusted_filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        def _file_entry(diag_content, filename):
+            return next(
+                (f for f in diag_content[node_key]["crlFiles"]
+                 if f["filename"] == filename),
+                None,
+            )
+
+        status, content = self.crl_utils.diagnostics_status(self.rest)
+        self.assertTrue(status, f"diagnostics/status failed: {content}")
+        entry = _file_entry(content, untrusted_filename)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["cacheStatus"], "active")
+
+        untrusted_soon_baseline = self.crl_utils.get_crl_alert_count(
+            server, "crl_expires_soon"
+        )
+        untrusted_expired_baseline = self.crl_utils.get_crl_alert_count(
+            server, "crl_expired"
+        )
+        status, content = self.crl_utils.untrust_ca_by_cn(self.rest, "TestCA1")
+        self.assertTrue(status, f"Untrust-by-CN diag/eval failed: {content}")
+        try:
+            status, content = self.crl_utils.diagnostics_status(self.rest)
+            self.assertTrue(status)
+            entry = _file_entry(content, untrusted_filename)
+            self.assertIsNotNone(entry)
+            self.assertEqual(
+                entry["cacheStatus"], "untrusted",
+                "CRL's issuing CA is no longer trusted -- diagnostics/status "
+                "should flip to reflect it",
+            )
+            # A generous wait -- long enough for at least one alert-check
+            # tick to have genuinely run and found nothing, not merely "not
+            # checked yet".
+            self.assertFalse(
+                self.crl_utils.wait_for_crl_alert_increment(
+                    server, "crl_expired", untrusted_expired_baseline, max_wait=90,
+                ),
+                "Known gap: no health warning exists for a CRL whose "
+                "issuing CA became untrusted after load, even though "
+                "diagnostics/status correctly detects it. If this now "
+                "fails, the gap has been fixed -- flip to assertTrue and "
+                "assert on the new alert's text.",
+            )
+            self.assertEqual(
+                self.crl_utils.get_crl_alert_count(server, "crl_expires_soon"),
+                untrusted_soon_baseline,
+                "Known gap: an untrusted-CA CRL should not trigger "
+                "'crl_expires_soon' either -- only 'crl_expired'/"
+                "'crl_expires_soon' alert types exist at all, neither "
+                "covers 'untrusted'",
+            )
+        finally:
+            self._trust_ca_on_cluster(self.ca_cert)
+        self.log.info(
+            "Known gap: diagnostics/status correctly flips to 'untrusted', "
+            "but no health warning of either type fires for it"
+        )

@@ -3,6 +3,7 @@ import ipaddress
 import json
 import socket
 import ssl
+import time
 import uuid
 
 import requests
@@ -525,6 +526,46 @@ class CRLUtils:
             except (IndexError, ValueError):
                 continue
         return None
+
+    @classmethod
+    def get_crl_alert_count(cls, server, alert_type):
+        """
+        Current value of cm_alerts_triggered_total{type=<alert_type>} on
+        `server`, or 0 if the metric doesn't exist yet (e.g. no CRL alert
+        of that type has ever fired on this node).
+        """
+        return cls.get_metric_value(
+            server, "cm_alerts_triggered_total", {"type": alert_type},
+        ) or 0
+
+    @classmethod
+    def wait_for_crl_alert_increment(cls, server, alert_type, baseline,
+                                     max_wait, interval=10):
+        """
+        Poll cm_alerts_triggered_total{type=<alert_type>} on `server` until
+        it rises above `baseline` or `max_wait` seconds pass. The CRL
+        alert checker only re-evaluates on its own periodic tick
+        (invalidated but not immediately rechecked on upload/reload), so
+        this needs to poll rather than sleep a fixed amount.
+
+        Returns True if the metric incremented within the window, False on
+        timeout -- callers use False both for "waited too long" failures
+        and for deliberate "confirm this genuinely does not fire" checks.
+        """
+        deadline = (
+            datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(seconds=max_wait)
+        )
+        while datetime.datetime.now(datetime.timezone.utc) < deadline:
+            if cls.get_crl_alert_count(server, alert_type) > baseline:
+                return True
+            time.sleep(interval)
+        return False
+
+    @staticmethod
+    def get_alert_messages(rest):
+        """The 'msg' text of every current /pools/default alert."""
+        return [a.get("msg", "") for a in (rest.get_alerts() or [])]
 
     # ── mTLS handshake helpers ───────────────────────────────────────────────
 
