@@ -266,7 +266,12 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
 
         if validate_reads:
             self.log_store_rebalance_cleanup(nodes=nodes_to_monitor)
-            self.validate_read_failures()
+            # Corruption here only ever touched the incoming guest volumes of
+            # the failed/reverted mount attempt, not the original cluster's
+            # data - so no read or migration failures are expected once we're
+            # back on the original nodes (the mount failure itself is already
+            # verified by the assertFalse(rebalance_result, ...) above).
+            self.validate_read_failures(expect_failures=False)
 
 
     def corrupt_log_files_on_log_store(self, corruption_type, num_kvstores, num_log_files, sleep_time, rebalance_count, include_manifest=False):
@@ -447,10 +452,10 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
             read_failure_dict[server.ip] = dict()
             for bucket in self.cluster.buckets:
                 result = Cbstats(server).all_stats(bucket.name)
-                read_failure_dict[server.ip][bucket.name] = result["ep_data_read_failed"]
+                read_failure_dict[server.ip][bucket.name] = int(result["ep_data_read_failed"])
         return read_failure_dict
 
-    def _assert_corruption_detected(self, read_failure_dict_before, read_failure_dict_after):
+    def _assert_corruption_detected(self, read_failure_dict_before, read_failure_dict_after, expect_failures=True):
 
         read_failures_before = sum(v for stats in read_failure_dict_before.values() for v in stats.values())
         read_failures_after = sum(v for stats in read_failure_dict_after.values() for v in stats.values())
@@ -461,12 +466,20 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         self.log.info(f"Read failures delta = {read_failures_delta}, "
                       f"Migration failures = {migration_failures}")
 
-        self.assertTrue(read_failures_delta > 0 or migration_failures > 0,
-                        "Expected non-zero read or migration failures due to "
-                        "log corruption, but observed read_failures_delta="
-                        f"{read_failures_delta}, migration_failures={migration_failures}")
+        has_failures = read_failures_delta > 0 or migration_failures > 0
+        if expect_failures:
+            self.assertTrue(has_failures,
+                            "Expected non-zero read or migration failures due to "
+                            "log corruption, but observed read_failures_delta="
+                            f"{read_failures_delta}, migration_failures={migration_failures}")
+        else:
+            self.assertFalse(has_failures,
+                             "Expected no read or migration failures (corruption was "
+                             "confined to the failed/reverted mount attempt), but "
+                             f"observed read_failures_delta={read_failures_delta}, "
+                             f"migration_failures={migration_failures}")
 
-    def validate_read_failures(self, read_timeout=600, num_docs_to_read=None):
+    def validate_read_failures(self, read_timeout=600, num_docs_to_read=None, expect_failures=True):
 
         read_failure_dict = self._get_read_failure_stats()
         self.log.info(f"Read failure dict before workload = {read_failure_dict}")
@@ -491,4 +504,4 @@ class FusionLogCorruption(MagmaBaseTest, FusionBase):
         read_failure_dict2 = self._get_read_failure_stats()
         self.log.info(f"Read failure dict after workload = {read_failure_dict2}")
 
-        self._assert_corruption_detected(read_failure_dict, read_failure_dict2)
+        self._assert_corruption_detected(read_failure_dict, read_failure_dict2, expect_failures=expect_failures)
