@@ -520,17 +520,27 @@ class CollectionBase(ClusterSetup, FusionBase):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
         remote_tmp_dir = "/var/tmp/taf_backup_collectinfo"
 
+        # ContinuousBackupBase.setUp() creates restore_temp_dir once per test
+        # and never wipes it after a failed restore, specifically so it's
+        # still there to inspect. Point cbcontbk's own collect-logs -d at
+        # that same directory (instead of the generic scratch dir below) so
+        # a failed restore's partial/resume state ends up in this bundle
+        # automatically -- without this, nobody looks at that directory
+        # unless they manually rerun cbcontbk collect-logs against the path
+        # logged at setup.
+        cbcontbk_tmp_dir = getattr(self, "restore_temp_dir", None) or remote_tmp_dir
+
         # cont_bk_mgr only exists when the test exercises continuous backup
         collectors = [
-            ("cbbackupmgr", self.backup_mgr,
+            ("cbbackupmgr", self.backup_mgr, remote_tmp_dir,
              lambda mgr, tmp: mgr.collect_logs(archive_dir=self.backup_archive_dir,
                                                output_dir=tmp)),
-            ("cbcontbk", getattr(self, "cont_bk_mgr", None),
+            ("cbcontbk", getattr(self, "cont_bk_mgr", None), cbcontbk_tmp_dir,
              lambda mgr, tmp: mgr.collect_logs(location=self.continuous_backup_location,
                                                temp_dir=tmp)),
         ]
 
-        for name, mgr, collect_fn in collectors:
+        for name, mgr, tmp_dir, collect_fn in collectors:
             if mgr is None:
                 continue
             shell = None
@@ -542,24 +552,26 @@ class CollectionBase(ClusterSetup, FusionBase):
                     continue
 
                 self.log.info(f"Collecting {name} logs for investigation")
-                shell.execute_command(f"mkdir -p {remote_tmp_dir}")
-                collect_fn(mgr, remote_tmp_dir)
+                shell.execute_command(f"mkdir -p {tmp_dir}")
+                collect_fn(mgr, tmp_dir)
 
-                output, _ = shell.execute_command(f"ls {remote_tmp_dir}/*.zip 2>/dev/null")
+                output, _ = shell.execute_command(f"ls {tmp_dir}/*.zip 2>/dev/null")
                 for log_file in output:
                     log_file = log_file.strip()
                     if log_file:
                         self.log.info(f"Copying {log_file} to {log_path}")
-                        shell.get_file(remote_tmp_dir, log_file.split("/")[-1], log_path)
+                        shell.get_file(tmp_dir, log_file.split("/")[-1], log_path)
             except Exception as e:
                 self.log.error(f"Exception during {name} log collection: {e}")
             finally:
-                if shell is not None:
+                # restore_temp_dir's lifecycle belongs to _clean_temp_dir /
+                # restore() (see cbcontbk.py) -- don't remove it here.
+                if shell is not None and tmp_dir != getattr(self, "restore_temp_dir", None):
                     try:
-                        shell.execute_command(f"rm -rf {remote_tmp_dir}")
+                        shell.execute_command(f"rm -rf {tmp_dir}")
                     except Exception as cleanup_err:
                         self.log.warning(
-                            f"Failed to clean up {remote_tmp_dir} on remote "
+                            f"Failed to clean up {tmp_dir} on remote "
                             f"node: {cleanup_err}")
 
     def collection_setup(self):

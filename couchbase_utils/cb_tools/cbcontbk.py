@@ -1,7 +1,6 @@
 import json
 import threading
 import time
-import uuid
 
 from cb_tools.cb_tools_base import CbCmdBase
 import logging
@@ -145,26 +144,26 @@ class CbContBk(CbCmdBase):
 
         return output[0].strip()
 
-    def _make_unique_temp_dir(self, temp_dir):
+    def _ensure_temp_dir(self, temp_dir):
         """
-        Create and return a fresh, uuid-suffixed subdirectory of `temp_dir`
-        for this restore() call. A shared literal path here let stale
-        staging state from an earlier restore poison a later one (CI:
-        "a required backup has been removed, please retry with '--purge'"
-        against backups that were actually still healthy on disk).
-        Never cleaned up -- a unique dir can't collide with a future
-        restore, so there's nothing to gain from deleting it and forensic
-        value in keeping it.
+        Create `temp_dir` (cbcontbk's `-d` restore staging dir) if it
+        doesn't already exist. Never wiped, before or after: the original
+        bug this guarded against was a *literal* temp_dir shared across
+        different tests (even different Jenkins builds reusing the same
+        node), where stale staging state from an unrelated earlier restore
+        poisoned a later one. Callers now pass a directory created once per
+        test in setUp() (and logged there), so within a single test,
+        multiple sequential restores sharing it is expected and safe --
+        wiping between them would just destroy an earlier restore's
+        evidence for no benefit.
         """
         if not temp_dir or not temp_dir.strip("/"):
             raise ValueError(f"Refusing to use unsafe temp_dir {temp_dir!r}")
-        unique_dir = f"{temp_dir.rstrip('/')}/restore_{uuid.uuid4().hex}"
-        cmd = f"mkdir -p {unique_dir}"
-        self.log.debug(f"Creating restore temp dir: {cmd}")
+        cmd = f"mkdir -p {temp_dir}"
+        self.log.debug(f"Ensuring restore temp dir exists: {cmd}")
         _, error = self._execute_cmd(cmd)
         if error:
-            self.log.warning(f"Failed to create temp dir {unique_dir}: {error}")
-        return unique_dir
+            self.log.warning(f"Failed to create temp dir {temp_dir}: {error}")
 
     def restore(self, archive_path, repo_name,
                 location, temp_dir, cluster_host=None, threads=8, timestamp=None,
@@ -174,8 +173,12 @@ class CbContBk(CbCmdBase):
         :param archive_path: Path to the traditional backup location
         :param repo_name: Name of the backup repository (e.g., "repo1")
         :param location: Location of the continuous backup
-        :param temp_dir: Parent directory for this call's staging dir
-                         (see _make_unique_temp_dir).
+        :param temp_dir: Restore staging dir (cbcontbk's `-d`). Callers
+                         should pass a directory created once at test setup
+                         (and logged there) rather than a fresh path per
+                         call -- see _ensure_temp_dir. Never wiped, so every
+                         restore in the test (pass or fail) leaves its
+                         state behind for investigation.
         :param cluster_host: Cluster address (e.g., "localhost:8091")
         :param threads: Number of threads to use for the restore (default: 8)
         :param timestamp: Timestamp in UTC for the point-in-time recovery.
@@ -196,11 +199,11 @@ class CbContBk(CbCmdBase):
         if timestamp is None:
             timestamp = "everything"
 
-        restore_temp_dir = self._make_unique_temp_dir(temp_dir)
+        self._ensure_temp_dir(temp_dir)
 
         cmd = (f"{self.cbstatCmd} restore -a {archive_path} -r {repo_name} "
                f"-c {cluster_host} -u {self.username} -p {self.password} "
-               f"-t {threads} -l {location} -d {restore_temp_dir} -T {timestamp}")
+               f"-t {threads} -l {location} -d {temp_dir} -T {timestamp}")
 
         if include_data:
             cmd += f" --include-data {include_data}"

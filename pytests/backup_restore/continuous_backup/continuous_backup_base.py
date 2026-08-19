@@ -1,5 +1,6 @@
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 
 from BucketLib.bucket import Bucket
@@ -28,6 +29,21 @@ class ContinuousBackupBase(CollectionBase):
         self.bucket = self.cluster.buckets[0]
         self.bucket_name = self.bucket.name
         self.shell = RemoteMachineShellConnection(self.cluster.master)
+
+        # cbcontbk restore's -d staging dir, created once here rather than
+        # per restore() call: a fixed literal path shared across every test
+        # let stale state from an earlier restore poison a later one (CI:
+        # "a required backup has been removed, please retry with '--purge'"
+        # against backups that were actually still healthy on disk), but a
+        # fresh uuid per restore call made a failed restore's staging state
+        # undiscoverable afterwards -- nothing logs where it went, so
+        # investigating it means rerunning the job. One directory per test,
+        # logged here, gives every restore in this test a stable, known
+        # path that a human can point `cbcontbk collect-logs -d` at after
+        # a failure without rerunning anything.
+        self.restore_temp_dir = f"/data/tmp/restore_{uuid.uuid4().hex}"
+        self.log.info(f"cbcontbk restore staging dir for this test: "
+                      f"{self.restore_temp_dir}")
 
         # Verify the on-disk encryption state of both backup locations matches
         # what ear_bk / ear_contbk declared. CollectionBase.collection_setup()
@@ -201,7 +217,7 @@ class ContinuousBackupBase(CollectionBase):
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
-            temp_dir="/data/tmp",
+            temp_dir=self.restore_temp_dir,
             timestamp=timestamp,
             include_data=include_data,
             map_data=map_data,

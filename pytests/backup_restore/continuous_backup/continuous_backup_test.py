@@ -85,7 +85,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
-            temp_dir="/data/tmp",
+            temp_dir=self.restore_temp_dir,
             timestamp=timestamp,
             map_data=map_data,
             obj_staging_dir=self.obj_staging_dir_cont_bkp
@@ -882,7 +882,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
 
             restore_future = executor.submit(
                 self.cont_bk_mgr.restore, self.backup_archive_dir, self.backup_repo_name,
-                location=self.continuous_backup_location, temp_dir="/tmp",
+                location=self.continuous_backup_location, temp_dir=self.restore_temp_dir,
                 timestamp=ts_valid, map_data=f"{self.bucket.name}={restore_bucket_name}",
                 obj_staging_dir=self.obj_staging_dir_cont_bkp
             )
@@ -902,7 +902,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
                           "retrying now that the backup has released the lock")
             restore_output, restore_error = self.cont_bk_mgr.restore(
                 self.backup_archive_dir, self.backup_repo_name,
-                location=self.continuous_backup_location, temp_dir="/tmp",
+                location=self.continuous_backup_location, temp_dir=self.restore_temp_dir,
                 timestamp=ts_valid, map_data=f"{self.bucket.name}={restore_bucket_name}",
                 obj_staging_dir=self.obj_staging_dir_cont_bkp)
 
@@ -1550,7 +1550,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
-            temp_dir="/data/tmp",
+            temp_dir=self.restore_temp_dir,
             timestamp=ts_t1,
             map_data=f"{self.bucket.name}={restore_bucket_name}",
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
@@ -2269,7 +2269,7 @@ class ContinuousBackupTest(ContinuousBackupBase):
             output, error = self.cont_bk_mgr.restore(
                 self.backup_archive_dir, self.backup_repo_name,
                 location=self.continuous_backup_location,
-                temp_dir="/data/tmp",
+                temp_dir=self.restore_temp_dir,
                 timestamp=ts_value,
                 map_data=f"{self.bucket.name}={restore_bucket_name}",
                 obj_staging_dir=self.obj_staging_dir_cont_bkp)

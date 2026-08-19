@@ -114,7 +114,7 @@ class ContinuousBackupClusterOpsTest(ContinuousBackupBase):
         output, error = self.cont_bk_mgr.restore(
             self.backup_archive_dir, self.backup_repo_name,
             location=self.continuous_backup_location,
-            temp_dir="/data/tmp",
+            temp_dir=self.restore_temp_dir,
             timestamp=timestamp,
             map_data=f"{self.bucket.name}={restore_bucket_name}",
             obj_staging_dir=self.obj_staging_dir_cont_bkp)
