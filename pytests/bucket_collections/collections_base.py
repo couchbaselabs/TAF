@@ -455,9 +455,12 @@ class CollectionBase(ClusterSetup, FusionBase):
                     self.kms_provider, "_km_created_by_us", None),
                 "km_cred_store_id": self.km_cred_store_id,
             }
-            self.log.warning(f"EaR test failed — KMS resources scheduled for "
-                             f"deletion below. Details for post-mortem "
+            self.log.warning(f"EaR test failed. Leaving the KMS keys in the same state"
+                             " — Details for post-mortem "
                              f"lookup: {key_details}")
+
+        if self.is_test_failed():
+            return
 
         if self.kms_provider is not None:
             try:
