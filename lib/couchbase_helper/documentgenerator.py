@@ -30,12 +30,14 @@ def doc_generator(key, start, end,
                   randomize_doc_size=False, randomize_value=False,
                   randomize=False,
                   deep_copy=False,
-                  load_using="default_loader"):
+                  load_using="default_loader",
+                  key_type="SimpleKey"):
     key_size = get_valid_key_size(key, key_size)
     if load_using == "sirius_java_sdk":
         return SiriusJavaDocGen(start=start, end=end,
                                 key_prefix=key, key_size=key_size,
-                                doc_size=doc_size, mutate=mutate)
+                                doc_size=doc_size, mutate=mutate,
+                                key_type=key_type)
 
     # Defaults to JSON doc_type
     if doc_size == 0:
@@ -46,9 +48,15 @@ def doc_generator(key, start, end,
                         "name": "james",
                         "mutation_type": mutation_type,
                         "body": ""}
-        doc_size -= len(str(template_obj))
+        template_overhead = len(str(template_obj))
+        doc_size -= template_overhead
         if doc_size <= 0:
-            raise ValueError("doc_size must be positive")
+            raise ValueError(
+                "doc_size=%s is not larger than the %s bytes of JSON "
+                "scaffolding every generated doc carries. Pass doc_size>%s "
+                "or doc_size=0 for an empty body"
+                % (doc_size + template_overhead, template_overhead,
+                   template_overhead))
     return DocumentGenerator(key, template_obj,
                              start=start, end=end,
                              key_size=key_size, mix_key_size=mix_key_size,

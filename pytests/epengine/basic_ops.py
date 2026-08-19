@@ -128,6 +128,25 @@ class basic_ops(ClusterSetup):
     def tearDown(self):
         super(basic_ops, self).tearDown()
 
+    def continuous_op_key_type(self):
+        """
+        Key generator class to use when the same doc range is first loaded
+        and then driven by an 'async_continuous_doc_ops' task.
+
+        Sirius runs continuous ops with iterations=-1, which forces its
+        'CircularKey' generator. CircularKey derives from RandomKey, so its
+        keys ('<rand>-<idx>') do not match the default SimpleKey layout
+        ('<prefix><padding><idx>'). Loading with SimpleKey and then reading
+        circularly silently addresses a different key namespace, so every
+        read misses and server-side get counters never move. Load with
+        RandomKey so both halves share one namespace.
+
+        The in-built loader has no such split, so leave it untouched.
+        """
+        if self.load_docs_using == "sirius_java_sdk":
+            return "RandomKey"
+        return "SimpleKey"
+
     def do_basic_ops(self):
         key = 'key1'
         tombstone_key = 'key2'
@@ -734,13 +753,16 @@ class basic_ops(ClusterSetup):
         # not reachable within any sane CI budget, so this bound is what
         # actually ends a healthy run
         test_timeout = self.input.param("test_timeout", 1800)
-        # Consecutive checks tolerated without any increase in 'ops_get'
-        # before treating the reads as stuck
+        # Consecutive checks tolerated with 'ops_get' flat at zero before
+        # treating the reads as stuck. Only a sustained zero counts: this
+        # test resets memcached stats in parallel, so the counter is
+        # expected to jump around and even go backwards on a healthy run
         max_stagnant_checks = self.input.param("max_stagnant_checks", 5)
         bucket = self.cluster.buckets[0]
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 doc_size=0,
-                                load_using=self.load_docs_using)
+                                load_using=self.load_docs_using,
+                                key_type=self.continuous_op_key_type())
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=self.process_concurrency,
@@ -761,7 +783,6 @@ class basic_ops(ClusterSetup):
             load_using=self.load_docs_using)
         self.sleep(60, "Wait for read task to start")
         stop_time = time.time() + test_timeout
-        prev_gets = -1
         stagnant_checks = 0
 
         while total_gets < max_gets:
@@ -788,16 +809,15 @@ class basic_ops(ClusterSetup):
             if self.test_failure:
                 break
 
-            if total_gets > prev_gets:
-                prev_gets = total_gets
+            if total_gets > 0:
                 stagnant_checks = 0
             else:
                 stagnant_checks += 1
                 if stagnant_checks >= max_stagnant_checks:
                     self.log_failure(
-                        "ops_get stuck at %s across %s consecutive checks. "
+                        "ops_get stuck at 0 across %s consecutive checks. "
                         "Reads are not reaching the server"
-                        % (total_gets, stagnant_checks))
+                        % stagnant_checks)
                     break
 
             if time.time() >= stop_time:
@@ -870,8 +890,10 @@ class basic_ops(ClusterSetup):
         # not reachable within any sane CI budget, so this bound is what
         # actually ends a healthy run
         test_timeout = self.input.param("test_timeout", 1800)
-        # Consecutive checks tolerated without any increase in 'ops_get'
-        # before treating the reads as stuck
+        # Consecutive checks tolerated with 'ops_get' flat at zero before
+        # treating the reads as stuck. Only a sustained zero counts: this
+        # test resets memcached stats in parallel, so the counter is
+        # expected to jump around and even go backwards on a healthy run
         max_stagnant_checks = self.input.param("max_stagnant_checks", 5)
         bucket = self.cluster.buckets[0]
         cb_stat_obj = dict()
@@ -880,7 +902,8 @@ class basic_ops(ClusterSetup):
             cb_stat_obj[node] = Cbstats(node)
 
         doc_gen = doc_generator(self.key, 0, self.num_items, doc_size=1,
-                                load_using=self.load_docs_using)
+                                load_using=self.load_docs_using,
+                                key_type=self.continuous_op_key_type())
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=500, process_concurrency=self.process_concurrency,
@@ -901,7 +924,6 @@ class basic_ops(ClusterSetup):
             load_using=self.load_docs_using)
 
         stop_time = time.time() + test_timeout
-        prev_gets = -1
         stagnant_checks = 0
 
         while total_gets < max_gets:
@@ -924,16 +946,15 @@ class basic_ops(ClusterSetup):
             elif self.test_failure:
                 break
 
-            if total_gets > prev_gets:
-                prev_gets = total_gets
+            if total_gets > 0:
                 stagnant_checks = 0
             else:
                 stagnant_checks += 1
                 if stagnant_checks >= max_stagnant_checks:
                     self.log_failure(
-                        "ops_get stuck at %s across %s consecutive checks. "
+                        "ops_get stuck at 0 across %s consecutive checks. "
                         "Reads are not reaching the server"
-                        % (total_gets, stagnant_checks))
+                        % stagnant_checks)
                     break
 
             if time.time() >= stop_time:
@@ -1222,12 +1243,40 @@ class basic_ops(ClusterSetup):
                 self.fail(
                     "%s op did not complete within %ss - load task "
                     "appears stalled" % (op_type, doc_op_timeout))
+            # The watermark loops below only observe 'mem_used'. A rejected
+            # write leaves it flat, so without this the loops just spin
+            # until their timeout with no clue why
+            if getattr(doc_op_task, "fail", None):
+                sample = list(doc_op_task.fail.items())[:3]
+                self.fail("%s op failed for %s of %s docs. Sample: %s"
+                          % (op_type, len(doc_op_task.fail), load_batch,
+                             sample))
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
             if op_type == DocLoading.Bucket.DocOps.CREATE:
                 self.num_items += load_batch
             elif op_type == DocLoading.Bucket.DocOps.DELETE:
                 self.del_items += load_batch
+
+        def actual_nonio_thread_count(t_node):
+            """
+            Real size of the NonIO executor pool, which is what decides
+            whether the ItemPager can run. This is not the same thing as the
+            configured 'num_nonio_threads' value, and 'cbstats all' does not
+            carry it - all_stats() cannot even parse the 'ep_workload:<key>'
+            lines, so read 'cbstats workload' directly
+            """
+            try:
+                output, _ = nodes_data[t_node]["cbstat"].get_stats(
+                    bucket.name, "workload", field_to_grep="num_nonio")
+                if isinstance(output, str):
+                    output = output.split("\n")
+                for line in output:
+                    if "num_nonio" in line:
+                        return line.split(":")[-1].strip()
+            except Exception as err:
+                self.log.warning("Could not read NonIO pool size: %s" % err)
+            return "n/a"
 
         def display_bucket_water_mark_values(t_node):
             wm_tbl.rows = list()
@@ -1256,6 +1305,8 @@ class basic_ops(ClusterSetup):
         mem_buffer_gap = 10000
         low_wm_reached = False
         high_wm_reached = False
+        # 'ep_num_pager_runs' at the moment num_nonio_threads was set to 0
+        pager_runs_at_freeze = 0
         wm_tbl = TableView(self.log.info)
         bucket = self.cluster.buckets[0]
 
@@ -1297,6 +1348,10 @@ class basic_ops(ClusterSetup):
                     self.log.info("Setting num_nonio_threads=0")
                     cbepctl.set(bucket.name,
                                 "flush_param", "num_nonio_threads", 0)
+                    pager_runs_at_freeze = int(stats["ep_num_pager_runs"])
+                    nonio_threads = actual_nonio_thread_count(target_node)
+                    self.log.info("NonIO pool size after the change: %s"
+                                  % nonio_threads)
 
         load_batch = 1
         self.log.info("Loading docs till high_water_mark is reached")
@@ -1305,10 +1360,35 @@ class basic_ops(ClusterSetup):
             if time.time() - loop_start_time > wm_wait_timeout:
                 self.fail(
                     "Failed to reach high_water_mark within %ss "
-                    "(loaded %s docs so far)"
-                    % (wm_wait_timeout, self.num_items))
+                    "(loaded %s docs so far, mem_used=%s, high_wm=%s)"
+                    % (wm_wait_timeout, self.num_items,
+                       stats["mem_used"], stats["ep_mem_high_wat"]))
             perform_doc_op(DocLoading.Bucket.DocOps.CREATE)
             stats = nodes_data[target_node]["cbstat"].all_stats(bucket.name)
+            self.log.debug("docs=%s mem_used=%s high_wm=%s pager_runs=%s"
+                           % (self.num_items, stats["mem_used"],
+                              stats["ep_mem_high_wat"],
+                              stats["ep_num_pager_runs"]))
+            if int(stats["ep_num_pager_runs"]) != pager_runs_at_freeze:
+                # Steps 3-7 all assume the ItemPager cannot run while
+                # num_nonio_threads=0. If it runs anyway it evicts memory
+                # back down, high_wm is never crossed, and the loop above
+                # just burns its timeout. Note that on kv_engine
+                # ThreadPoolConfig::NonIoThreadCount::Default == 0, i.e. a
+                # configured 0 can mean "auto-size the NonIO pool" rather
+                # than "no NonIO threads" - in which case this test has no
+                # way to set up its precondition and needs a supported
+                # mechanism to freeze the pager
+                self.fail(
+                    "ItemPager kept running after num_nonio_threads=0: "
+                    "ep_num_pager_runs %s -> %s after %s docs "
+                    "(mem_used=%s, low_wm=%s, high_wm=%s). NonIO pool "
+                    "still has %s thread(s), so the pager is not frozen and "
+                    "steps 3-7 of this test cannot be exercised"
+                    % (pager_runs_at_freeze, stats["ep_num_pager_runs"],
+                       self.num_items, stats["mem_used"],
+                       stats["ep_mem_low_wat"], stats["ep_mem_high_wat"],
+                       actual_nonio_thread_count(target_node)))
             if int(stats["mem_used"]) > int(stats["ep_mem_high_wat"]):
                 display_bucket_water_mark_values(target_node)
                 self.log.info("High water_mark reached")
@@ -1619,37 +1699,55 @@ class basic_ops(ClusterSetup):
             print_ops_rate=False,
             load_using=self.load_docs_using)
 
-        retry = 0
+        # Baseline is collected *before* any kill. 'cbstats vbucket-details'
+        # over 1024 vbuckets takes a couple of seconds over SSH, and doing
+        # that between "warmup started" and the second kill was enough for
+        # warmup to finish, which made step 5 unreachable
         before_stats = None
-        warmup_running = False
+        while before_stats is None:
+            before_stats = cb_stat.vbucket_details(bucket.name)
+
+        retry = 0
+        read_task_started = False
+        killed_during_warmup = False
+        max_retries = self.input.param("mc_kill_retries", 20)
         # Kill memcached during ttl load
         cb_error.create(CouchbaseError.KILL_MEMCACHED)
-        while not warmup_running and retry < 10:
+        while not killed_during_warmup and retry < max_retries:
             try:
                 warmup_stats = cb_stat.warmup_stats(bucket.name)
                 self.log.info("Current warmup state %s:%s"
                               % (warmup_stats["ep_warmup_thread"],
                                  warmup_stats["ep_warmup_state"]))
                 if warmup_stats["ep_warmup_thread"] != "complete":
-                    warmup_running = True
-                    while before_stats is None:
-                        before_stats = cb_stat.vbucket_details(bucket.name)
-                    self.log.info("Starting read task to trigger purger")
-                    self.task_manager.add_new_task(load_task)
+                    if not read_task_started:
+                        self.log.info("Starting read task to trigger purger")
+                        self.task_manager.add_new_task(load_task)
+                        read_task_started = True
+                    # Re-read as late as possible: this is the state the
+                    # kill below actually lands on
                     warmup_stats = cb_stat.warmup_stats(bucket.name)
                     cb_error.create(CouchbaseError.KILL_MEMCACHED)
                     self.log.info("Warmup state during mc_kill %s:%s"
                                   % (warmup_stats["ep_warmup_thread"],
                                      warmup_stats["ep_warmup_state"]))
-                    if warmup_stats["ep_warmup_thread"] == "complete":
-                        self.log_failure("Can't trust the outcome, "
-                                         "bucket warmed_up before mc_kill")
-                    self.task_manager.get_task_result(load_task)
+                    # Warmup can finish in the gap between the two reads. That
+                    # is a missed window, not a product issue - the kill above
+                    # restarts warmup, so loop round and try to land inside it
+                    if warmup_stats["ep_warmup_thread"] != "complete":
+                        killed_during_warmup = True
             except Exception:
                 pass
             finally:
                 retry += 1
                 self.sleep(0.3)
+
+        if read_task_started:
+            self.task_manager.get_task_result(load_task)
+        if not killed_during_warmup:
+            self.log_failure("Can't trust the outcome, could not kill "
+                             "memcached while the bucket was warming up "
+                             "within %s attempts" % max_retries)
         while True:
             try:
                 after_stats = cb_stat.vbucket_details(bucket.name)
@@ -1983,9 +2081,13 @@ class basic_ops(ClusterSetup):
             self.bucket_util.is_warmup_complete(self.cluster.buckets)
 
             warmup_stat_keys = ["ep_warmup_estimated_key_count",
-                                "ep_warmup_estimated_value_count",
                                 "ep_warmup_key_count",
                                 "ep_warmup_value_count"]
+            # 'ep_warmup_estimated_value_count' is only populated when
+            # warmup goes through the access-log phase. The access scanner
+            # has not run on a freshly created bucket, so the stat stays
+            # 'unknown' - validate it only when the server reports a number
+            optional_stat_keys = ["ep_warmup_estimated_value_count"]
             # Warmup stats can briefly report 'unknown' right after
             # is_warmup_complete() returns, so poll until they settle
             # into numeric values instead of failing with a ValueError.
@@ -2002,6 +2104,14 @@ class basic_ops(ClusterSetup):
                 self.assertTrue(warmup_stats[key].isdigit(),
                                 "%s never settled to a numeric value: %s"
                                 % (key, warmup_stats[key]))
+                self.assertFalse(int(warmup_stats[key]) != total_docs,
+                                 "Value mismatch. %s = %s"
+                                 % (key, warmup_stats[key]))
+            for key in optional_stat_keys:
+                if not warmup_stats[key].isdigit():
+                    self.log.info("%s not reported by the server: %s"
+                                  % (key, warmup_stats[key]))
+                    continue
                 self.assertFalse(int(warmup_stats[key]) != total_docs,
                                  "Value mismatch. %s = %s"
                                  % (key, warmup_stats[key]))
@@ -2192,11 +2302,15 @@ class basic_ops(ClusterSetup):
         client.close()
 
         client = SDKClient(self.cluster, bucket, username=user)
-        result = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP, key,
-                             "$XTOC", xattr=True)
+        success, fail = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP, key,
+                                    "$XTOC", xattr=True)
         client.close()
-        result = str(result[0][key]['value'])
-        self.assertEqual('[[]]', result, "Value mismatch: %s" % result)
+        self.assertIn(key, success, "$XTOC lookup failed: %s" % fail)
+        # crud() returns the lookup result keyed by the requested path.
+        # A data_reader must not see the system xattr, so $XTOC has to come
+        # back as an empty list
+        xtoc = success[key]['value']['$XTOC']
+        self.assertEqual([], xtoc, "Value mismatch: %s" % xtoc)
 
     def test_defragmenter_sleep_time(self):
         """
@@ -2482,25 +2596,33 @@ class basic_ops(ClusterSetup):
             else:
                 set_and_validate_dcp_oso_backfill(kv_node, "auto")
 
+        # Index build is deliberately slowed down (indexerThreads=1 +
+        # 256M index quota) to create the DCP pause/resume this test needs,
+        # so allow it a few minutes to come online
+        index_timeout = self.input.param("index_timeout", 600)
+
         self.log.info("Creating GSI index on collection 'c1'")
         client = SDKClient(self.cluster, bucket)
-        _ = client.run_query(
+        # QueryResult is lazy - the statement is only sent to the server once
+        # the rows are consumed. Without the list() the DDL is never executed
+        # and the index simply never appears
+        list(client.run_query(
             "CREATE INDEX `c1` ON `{}`.`_default`.`c1`(body) USING GSI"
-            .format(bucket.name), timeout=300)
+            .format(bucket.name), timeout=index_timeout))
         query = "SELECT state FROM system:indexes WHERE name='c1'"
         state = None
-        retry = 0
-        while retry < 30:
+        stop_time = time.time() + index_timeout
+        while time.time() < stop_time:
             rows = list(client.cluster.query(query))
             if rows:
                 state = rows[0].get("state")
                 if state == "online":
                     break
-            retry += 1
             self.sleep(2, "Waiting for index 'c1' to come online")
         client.close()
         if state != "online":
-            self.fail("Create index timed out")
+            self.fail("Index 'c1' not online within %ss (state=%s)"
+                      % (index_timeout, state))
         self.log.info("Index created")
         self.sleep((c_dict["c1"] * 2) / 10000,
                    "Wait before fetching index stats")
@@ -2849,26 +2971,74 @@ class basic_ops(ClusterSetup):
         3. Make sure the num_items remain the same
         """
         def validate_item_count():
+            item_count = None
             retry = 10
             while retry > 0:
                 _, b_info = b_rest.get_bucket_info(bucket.name)
-                if self.num_items == int(b_info["basicStats"]["itemCount"]):
+                item_count = int(b_info["basicStats"]["itemCount"])
+                if self.num_items == item_count:
                     break
                 retry -= 1
                 self.sleep(2, "Wait before next check")
             else:
-                self.fail("Bucket item_count mismatch")
+                self.fail("Bucket item_count mismatch: expected %s, got %s"
+                          % (self.num_items, item_count))
+
+        def max_mem_pct_of_low_wm():
+            """Highest mem_used, as a % of low_wm, across the KV nodes"""
+            worst = 0
+            for t_node in self.cluster.nodes_in_cluster:
+                t_stats = node_info[t_node.ip]["cbstat"].all_stats(bucket.name)
+                pct = int(int(t_stats["mem_used"]) * 100
+                          / int(t_stats["ep_mem_low_wat"]))
+                self.log.info("%s - Low wm: %s, Mem used: %s (%s%%)"
+                              % (t_node.ip, t_stats["ep_mem_low_wat"],
+                                 t_stats["mem_used"], pct))
+                worst = max(worst, pct)
+            return worst
 
         node_info = dict()
         bucket = self.cluster.buckets[0]
-        load_gen = doc_generator("docs", 0, self.num_items,
-                                 key_size=20, doc_size=2048)
+        doc_size = self.input.param("doc_size", 2048)
+        # The premise is 'data sits just below the low watermark'. Per-item
+        # memory cost depends on bucket type, compression and quota, so a
+        # hard-coded (bucket_size, num_items) pair silently tips over the
+        # watermark whenever either changes - and on an nruEviction bucket
+        # crossing it auto-deletes items, which shows up as a doc_count
+        # mismatch rather than as 'too much data'. Load in batches and stop
+        # on the measured watermark instead, treating num_items as a cap
+        load_batch = self.input.param("load_batch", 50000)
+        low_wm_pct = self.input.param("low_wm_pct", 85)
+
+        for node in self.cluster.nodes_in_cluster:
+            node_info[node.ip] = {"cbstat": Cbstats(node)}
+
         self.log.info("Loading documents into the bucket")
-        load_task = self.task.async_load_gen_docs(
-            self.cluster, bucket, load_gen, DocLoading.Bucket.DocOps.CREATE,
-            batch_size=200, process_concurrency=4, print_ops_rate=False,
-            skip_read_on_error=True)
-        self.task_manager.get_task_result(load_task)
+        loaded = 0
+        while loaded < self.num_items:
+            batch = min(load_batch, self.num_items - loaded)
+            load_gen = doc_generator("docs", loaded, loaded + batch,
+                                     key_size=20, doc_size=doc_size)
+            load_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, load_gen,
+                DocLoading.Bucket.DocOps.CREATE,
+                batch_size=200, process_concurrency=4, print_ops_rate=False,
+                skip_read_on_error=True)
+            self.task_manager.get_task_result(load_task)
+            if load_task.fail:
+                self.fail("Load failed for %s of %s docs. Sample: %s"
+                          % (len(load_task.fail), batch,
+                             list(load_task.fail.items())[:3]))
+            loaded += batch
+            mem_pct = max_mem_pct_of_low_wm()
+            if mem_pct >= low_wm_pct:
+                self.log.info("Stopping load at %s docs - mem_used is at "
+                              "%s%% of low_wm (cap %s%%)"
+                              % (loaded, mem_pct, low_wm_pct))
+                break
+        # Everything downstream compares against what actually got loaded
+        self.num_items = loaded
+        self.log.info("Loaded %s docs" % self.num_items)
 
         self.log.info("Validation doc_count")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
@@ -2877,13 +3047,7 @@ class basic_ops(ClusterSetup):
         validate_item_count()
 
         self.log.info("Fetching cb_stats")
-        for node in self.cluster.nodes_in_cluster:
-            node_info[node.ip] = dict()
-            node_info[node.ip]["cbstat"] = Cbstats(node)
-            cbstat = node_info[node.ip]["cbstat"].all_stats(bucket.name)
-            self.log.info("%s - Low wm: %s, Mem used: %s"
-                          % (node.ip, cbstat["ep_mem_low_wat"],
-                             cbstat["mem_used"]))
+        max_mem_pct_of_low_wm()
 
         otp_node = "ns_1@%s" % self.cluster.servers[1].ip
         self.log.info("Performing graceful failover of %s" % otp_node)
@@ -2936,8 +3100,9 @@ class basic_ops(ClusterSetup):
              for 3 separate batches — confirming pager is throttled.
           6. Sleep 60 s with pager stuck.
           7. SIGCONT node2 — replica DCP drains, pager resumes.
-          8. Wait up to 120 s for mem_used to fall within 10 % of low_wm.
-          9. Assert total active items on node1 > 100,000 (no over-deletion).
+          8. Wait up to 120 s for mem_used to fall back under low_wm.
+          9. Assert total active items on node1 > min_curr_items
+             (default 100,000) - i.e. the pager did not over-delete.
         """
         if self.nodes_init < 2:
             self.fail("test_ephemeral_auto_delete_pager_throttle requires "
@@ -2954,6 +3119,7 @@ class basic_ops(ClusterSetup):
         err_sim = CouchbaseError(self.log, shell2, node=node2)
 
         low_wm_hit = False
+        peak_active_items = 0
         doc_size = 1024
         load_batch = 50000       # docs per incremental round (node1 VBs only)
         max_load_batches = 100   # safety cap to avoid infinite loop
@@ -3013,6 +3179,7 @@ class basic_ops(ClusterSetup):
                     self.log.info("Low watermark level hit")
                     load_batch = 20000
                 active_items = int(a_stats.get("vb_active_curr_items", 0))
+                peak_active_items = max(peak_active_items, active_items)
                 self.log.info(
                     "Batch %d: mem_used=%dMB high_wm=%dMB low_wm=%dMB "
                     "vb_active_curr_items=%d pager_throttled=%s"
@@ -3032,8 +3199,14 @@ class basic_ops(ClusterSetup):
             # ---- Wait with pager stuck ----
             self.sleep(60, "Wait for eviction to complete")
 
-            # ---- Wait for memory to normalize (within 20 % of low_wm) ----
-            deadline = time.time() + 120
+            # ---- Wait for memory to come back under low_wm ----
+            # Only an upper bound is asserted. Once the replica DCP cursor
+            # is released the pager frees whatever it had already queued, so
+            # mem_used settling *below* low_wm is the expected outcome - the
+            # earlier '+/-20% of low_wm' window failed every healthy run that
+            # drained past that band
+            normalize_timeout = self.input.param("normalize_timeout", 120)
+            deadline = time.time() + normalize_timeout
             normalized = False
             while time.time() < deadline:
                 a_stats = cbstat1.all_stats(bucket.name)
@@ -3043,7 +3216,7 @@ class basic_ops(ClusterSetup):
                     "Waiting for normalization: mem_used=%dMB "
                     "(%d%% of low_wm=%dMB)"
                     % (mem_used >> 20, mem_pct, low_wm >> 20))
-                if abs(mem_used - low_wm) * 100 <= low_wm * 20:
+                if mem_used <= low_wm:
                     self.log.info(
                         "Memory normalized: mem_used=%dMB (%d%% of low_wm=%dMB)"
                         % (mem_used >> 20, mem_pct, low_wm >> 20))
@@ -3055,17 +3228,27 @@ class basic_ops(ClusterSetup):
                 final_mem = int(a_stats["mem_used"])
                 final_pct = int(final_mem * 100 / low_wm)
                 self.log_failure(
-                    "mem_used did not reach low_wm ±20%% within 120 s after "
-                    "SIGCONT: mem_used=%dMB (%d%% of low_wm=%dMB)"
-                    % (final_mem >> 20, final_pct, low_wm >> 20))
+                    "mem_used did not fall back under low_wm within %ss "
+                    "after SIGCONT: mem_used=%dMB (%d%% of low_wm=%dMB)"
+                    % (normalize_timeout, final_mem >> 20, final_pct,
+                       low_wm >> 20))
 
             # ---- Validate item count ----
+            min_curr_items = self.input.param("min_curr_items", 100000)
             curr_items = int(
                 cbstat1.all_stats(bucket.name).get("curr_items", 0))
             self.log.info(f"Final curr_items on node1: {curr_items}")
-            if curr_items < 100000:
+            if curr_items < min_curr_items:
+                final_stats = cbstat1.all_stats(bucket.name)
                 self.log_failure(
-                    f"Pager over-deleted: curr_items={curr_items} after test")
+                    "Pager over-deleted: curr_items=%s after test (expected "
+                    ">= %s). Peak vb_active_curr_items during load was %s, "
+                    "mem_used=%dMB low_wm=%dMB high_wm=%dMB "
+                    "pager_throttled=%s"
+                    % (curr_items, min_curr_items, peak_active_items,
+                       int(final_stats["mem_used"]) >> 20, low_wm >> 20,
+                       high_wm >> 20,
+                       final_stats.get("pager_throttled", "n/a")))
         finally:
             err_sim.revert(CouchbaseError.STOP_MEMCACHED)
             cbstat1.disconnect()

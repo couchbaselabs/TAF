@@ -15,7 +15,7 @@ class SiriusJavaDocGen(object):
 
     def __init__(self, start=0, end=1,
                  key_prefix="test_doc-", key_size=10,
-                 doc_size=64, mutate=0):
+                 doc_size=64, mutate=0, key_type="SimpleKey"):
         self.itr = 0
         self.name = key_prefix
         self.keys_len = end - start
@@ -26,6 +26,11 @@ class SiriusJavaDocGen(object):
         self.start = start
         self.end = end
         self.mutate = mutate
+        # Name of the Java key-generator class Sirius uses for this range.
+        # It defines the key *namespace*, so every task addressing the same
+        # docs has to agree on it. See the CircularKey note in
+        # SiriusCouchbaseLoader.create_doc_load_task()
+        self.key_type = key_type
         # Fetch keys lazily on first iteration; range-based loaders never
         # iterate, so the full range is not materialized in memory for them.
         self.keys = None
@@ -38,7 +43,7 @@ class SiriusJavaDocGen(object):
             raise StopIteration
         if self.keys is None:
             self.keys = SiriusCouchbaseLoader.get_keys_from_sirius(
-                self.key_prefix, self.key_size, "RandomKey",
+                self.key_prefix, self.key_size, self.key_type,
                 self.start, self.end, self.mutate)
         key = self.keys[self.itr]
         self.itr += 1
@@ -322,6 +327,8 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
             self.doc_size = generator.doc_size
             self.key_size = generator.key_size
             self.key_prefix = generator.name
+            if getattr(generator, "key_type", None):
+                self.key_type = generator.key_type
 
             if hasattr(generator, "vbuckets"):
                 self.vbuckets = generator.vbuckets
@@ -398,6 +405,22 @@ class SiriusCouchbaseLoader(BaseSiriusLoader):
 
     def create_doc_load_task(self):
         if self.iterations != 1:
+            # Only CircularKey knows how to wrap the index range, so a
+            # non-single-iteration load has to use it. CircularKey extends
+            # RandomKey, meaning its keys look like '<rand>-<index>' and NOT
+            # like SimpleKey's '<prefix><padding><index>'. Docs the circular
+            # task has to address therefore must have been created with
+            # key_type='RandomKey' (or 'CircularKey'); loading them as
+            # SimpleKey and reading them back circularly silently targets a
+            # different key namespace and every op misses
+            if self.key_type not in ("RandomKey", "CircularKey"):
+                log = global_vars.logger.get("test")
+                log.warning(
+                    "Sirius task on %s: iterations=%s forces key_type "
+                    "'CircularKey' (a RandomKey), overriding '%s'. Docs "
+                    "loaded as '%s' will not be found by this task"
+                    % (self.bucket.name if self.bucket else "?",
+                       self.iterations, self.key_type, self.key_type))
             self.key_type = "CircularKey"
         if self.subdoc_percent != 0:
             self.value_type = "SimpleSubDocValue"
