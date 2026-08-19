@@ -110,10 +110,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -154,10 +154,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -174,10 +174,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -197,10 +197,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -227,10 +227,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -333,10 +333,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -369,10 +369,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -405,10 +405,10 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -437,9 +437,9 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -466,9 +466,9 @@ class CbBackupMgr(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
@@ -493,10 +493,10 @@ class CbBackupMgr(CbCmdBase):
         if output_dir:
             cmd += " --output-dir %s" % output_dir
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")

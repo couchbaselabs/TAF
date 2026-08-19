@@ -122,7 +122,7 @@ class CbContBk(CbCmdBase):
         """
         cmd = "date -u +'%Y-%m-%dT%H:%M:%SZ'"
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
 
         output, error = self._execute_cmd(cmd)
 
@@ -130,7 +130,7 @@ class CbContBk(CbCmdBase):
             self.log.error(f"Failed to get cluster timestamp: {error}")
             return None
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         return output[0].strip()
 
@@ -178,11 +178,11 @@ class CbContBk(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
 
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Continuous backup restore failed with: {error}")
@@ -209,11 +209,11 @@ class CbContBk(CbCmdBase):
         cmd += self.cli_flags
         cmd = self._append_obj_store_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
 
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if error or not output:
             self.log.error(f"cbcontbk info failed: {error}")
@@ -247,11 +247,11 @@ class CbContBk(CbCmdBase):
 
         cmd = self._append_km_flags(cmd)
 
-        self.log.debug(f"Executing command: {cmd}")
+        self.log.info(f"Executing command: {cmd}")
 
         output, error = self._execute_cmd(cmd)
 
-        self.log.debug(f"Command output: {output}")
+        self.log.info(f"Command output: {output}")
 
         if not output or error:
             self.log.error(f"Command failed with error: {error}")
