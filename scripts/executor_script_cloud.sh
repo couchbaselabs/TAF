@@ -98,16 +98,16 @@ if [ "$server_type" = "PROVISIONED_ONCLOUD" ]; then
   #echo ${py_executable} signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region
   #cluster_info=`${py_executable} signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region`
   if [ -n "$capella_dataplane_id" ]; then
-    cluster_info=`echo $cluster_info | sed s/}/,\ \"dataplane_id\":\ \"$capella_dataplane_id\"}/`
+    cluster_info="${cluster_info%\}}, \"dataplane_id\": \"$capella_dataplane_id\"}"
   fi
   if [ -n "$cbs_image" ]; then
-	cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
+    cluster_info="${cluster_info%\}}, \"cb_image\": \"$cbs_image\"}"
   fi
   if [ -n "$access_key" ]; then
-    cluster_info=`echo $cluster_info | sed s/}/,\ \"access_key\":\ \"$access_key\"}/`
+    cluster_info="${cluster_info%\}}, \"access_key\": \"$access_key\"}"
   fi
   if [ -n "$secret_key" ]; then
-    cluster_info=`echo $cluster_info | sed s/}/,\ \"secret_key\":\ \"$secret_key\"}/`
+    cluster_info="${cluster_info%\}}, \"secret_key\": \"$secret_key\"}"
   fi
   echo $cluster_info
   servers="None"
@@ -119,16 +119,16 @@ if [ "$server_type" = "SERVERLESS_ONCLOUD" ]; then
   echo ${py_executable} signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region
   cluster_info=`${py_executable} signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region`
   if [ -n "$capella_dataplane_id" ]; then
-    cluster_info=`echo $cluster_info | sed s/}/,\ \"dataplane_id\":\ \"$capella_dataplane_id\"}/`
+    cluster_info="${cluster_info%\}}, \"dataplane_id\": \"$capella_dataplane_id\"}"
   fi
   if [ -n "$cbs_image" ]; then
-	cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
+    cluster_info="${cluster_info%\}}, \"cb_image\": \"$cbs_image\"}"
   fi
   if [ -n "$access_key" ]; then
-    cluster_info=`echo $cluster_info | sed s/}/,\ \"access_key\":\ \"$access_key\"}/`
+    cluster_info="${cluster_info%\}}, \"access_key\": \"$access_key\"}"
   fi
   if [ -n "$secret_key" ]; then
-    cluster_info=`echo $cluster_info | sed s/}/,\ \"secret_key\":\ \"$secret_key\"}/`
+    cluster_info="${cluster_info%\}}, \"secret_key\": \"$secret_key\"}"
   fi
   echo $cluster_info
   servers="None"
