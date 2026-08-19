@@ -27,6 +27,7 @@ class CRLTest(CRLBase):
     """Consolidated CRL (Certificate Revocation List) test suite."""
 
     MGMT_PORT = 18091
+    KV_SSL_PORT = 11207
     AUDIT_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/current-audit.log"
     DEBUG_LOG_PATH = "/opt/couchbase/var/lib/couchbase/logs/debug.log"
 
@@ -2867,4 +2868,73 @@ class CRLTest(CRLBase):
         self.log.info(
             "Known gap: diagnostics/status correctly flips to 'untrusted', "
             "but no health warning of either type fires for it"
+        )
+
+    def test_crl_cross_service_kv_vs_ns_server_consistency(self):
+        """The KV service (memcached's own SSL listener) and ns_server's
+        mgmt HTTPS listener -- two independently-implemented enforcement
+        paths that only share the same CRL configuration, not the same
+        code -- reach the same accept/reject outcome for both a revoked
+        and a valid cert. KV accepts the handshake optimistically and
+        closes it asynchronously (~1s later) with the same "certificate
+        revoked" TLS alert once its own async revocation check completes,
+        unlike ns_server's mgmt listener, which rejects synchronously
+        inside the handshake itself -- tls_handshake_ok() accounts for
+        this, so both sides are compared on final outcome, not timing."""
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        revoked_cert, revoked_key, revoked_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "crossServiceRevoked"
+        )
+        valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "crossServiceValid"
+        )
+        revoked_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(revoked_cert))
+        revoked_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(revoked_key))
+        valid_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(valid_cert))
+        valid_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(valid_key))
+
+        filename = "cross_service_consistency.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [revoked_serial], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        host = self.cluster.master.ip
+        revoked_kv_ok = self.crl_utils.tls_handshake_ok(
+            host, self.KV_SSL_PORT, revoked_cert_path, revoked_key_path,
+        )
+        revoked_mgmt_ok = self.crl_utils.tls_handshake_ok(
+            host, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+        )
+        self.assertFalse(revoked_kv_ok, "KV service should reject the revoked cert")
+        self.assertFalse(revoked_mgmt_ok, "ns_server mgmt should reject the revoked cert")
+        self.assertEqual(
+            revoked_kv_ok, revoked_mgmt_ok,
+            "KV and ns_server mgmt must reach the same outcome for the "
+            "same revoked cert",
+        )
+
+        valid_kv_ok = self.crl_utils.tls_handshake_ok(
+            host, self.KV_SSL_PORT, valid_cert_path, valid_key_path,
+        )
+        valid_mgmt_ok = self.crl_utils.tls_handshake_ok(
+            host, self.MGMT_PORT, valid_cert_path, valid_key_path,
+        )
+        self.assertTrue(valid_kv_ok, "KV service should accept the valid cert")
+        self.assertTrue(valid_mgmt_ok, "ns_server mgmt should accept the valid cert")
+        self.assertEqual(
+            valid_kv_ok, valid_mgmt_ok,
+            "KV and ns_server mgmt must reach the same outcome for the "
+            "same valid cert",
+        )
+        self.log.info(
+            "KV service (memcached SSL) and ns_server mgmt HTTPS reach "
+            "identical accept/reject outcomes for both a revoked and a "
+            "valid cert"
         )

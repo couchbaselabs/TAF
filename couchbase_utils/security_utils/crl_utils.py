@@ -663,6 +663,41 @@ class CRLUtils:
             headers={"Connection": "close"}
         )
 
+    @staticmethod
+    def tls_handshake_ok(host, port, cert_path, key_path, timeout=10, grace_period=3):
+        """
+        True if a raw TLS handshake with the given client cert is accepted
+        by host:port and stays accepted, False if rejected at the TLS
+        layer -- either synchronously during the handshake itself (e.g.
+        ns_server's mgmt listener, whose CRL check runs inside the
+        handshake's verify callback) or asynchronously just after it (e.g.
+        KV's memcached listener, which completes the handshake
+        optimistically and then closes with the same "certificate
+        revoked" TLS alert roughly a second later, after an async
+        revocation check -- confirmed by direct observation, not
+        assumption). `grace_period` is how long to wait for that async
+        rejection signal before concluding the connection was genuinely
+        accepted. Sends no application data -- protocol-agnostic, unlike
+        perform_mtls_handshake/tls_handshake (both HTTP-shaped), so this
+        also works against a binary-protocol listener like KV's SSL port.
+        """
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.load_cert_chain(cert_path, key_path)
+        try:
+            with socket.create_connection((host, int(port)), timeout=timeout) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                    ssock.settimeout(grace_period)
+                    try:
+                        return bool(ssock.recv(16))
+                    except socket.timeout:
+                        return True
+                    except ssl.SSLError:
+                        return False
+        except ssl.SSLError:
+            return False
+
     @classmethod
     def get_identity_via_mtls(cls, host, port, client_cert_path, client_key_path,
                               timeout=30):
