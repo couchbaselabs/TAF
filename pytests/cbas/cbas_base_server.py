@@ -228,10 +228,17 @@ class CBASBaseTest(BaseTestCase):
             cluster_info = self.cluster_util.get_nodes_self(cluster.master)
 
             for service in cluster_services:
-                if service != "n1ql":
-                    property_name = self.service_mem_dict[service][0]
-                    service_mem_in_cluster = cluster_info.__getattribute__(property_name)
-                    self.service_mem_dict[service][2] = service_mem_in_cluster
+                # n1ql has no memory quota of its own, and service_mem_dict
+                # only carries the services this class sizes (kv/fts/index/
+                # cbas). Skip anything else rather than KeyError on it: a node
+                # provisioned with, say, the backup or eventing service is
+                # perfectly usable for Analytics tests, but indexing the dict
+                # blindly made setUp fail before any test ran.
+                if service == "n1ql" or service not in self.service_mem_dict:
+                    continue
+                property_name = self.service_mem_dict[service][0]
+                service_mem_in_cluster = cluster_info.__getattribute__(property_name)
+                self.service_mem_dict[service][2] = service_mem_in_cluster
 
             j = 1
             for server in cluster.servers:
