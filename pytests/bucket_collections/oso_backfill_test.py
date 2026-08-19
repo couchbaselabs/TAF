@@ -52,7 +52,11 @@ class KvOsoBackfillTests(CollectionBase):
                             '{{ "defer_build": true, "num_replica": 1 }};' \
                             .format(bucket.name, s_name, c_name)
                     self.log.debug("Creating index {}".format(query))
-                    sdk_client.cluster.query(query)
+                    result = sdk_client.cluster.query(query)
+                    # Python SDK executes the query lazily. Rows must be
+                    # consumed for the DDL statement to actually run
+                    for _ in result.rows():
+                        pass
 
         self.log.info("Building created indexes...")
         for bucket in self.cluster.buckets:
@@ -62,10 +66,13 @@ class KvOsoBackfillTests(CollectionBase):
                             "(`{0}_{1}_{2}_index`) USING GSI" \
                             .format(bucket.name, s_name, c_name)
                     try:
-                        sdk_client.cluster.query(query)
-                    except InternalServerFailureException as e:
-                        if "Build Already In Progress" in str(e):
+                        result = sdk_client.cluster.query(query)
+                        for _ in result.rows():
                             pass
+                    except Exception as e:
+                        if "Build Already In Progress" not in str(e):
+                            self.fail("Build index failed for {0}.{1}.{2}: {3}"
+                                      .format(bucket.name, s_name, c_name, e))
 
         if err_pattern:
             self.log.info("Simulating error")
@@ -89,7 +96,7 @@ class KvOsoBackfillTests(CollectionBase):
                                                         c_name)
                     query = "SELECT state FROM system:all_indexes WHERE " \
                             "name='{}'".format(i_name)
-                    retry = 300
+                    retry = 90
                     while retry > 0:
                         result = sdk_client.cluster.query(query)
                         rows = list(result.rows())
@@ -99,7 +106,8 @@ class KvOsoBackfillTests(CollectionBase):
                             state = None
                         if state == "online":
                             break
-                        self.sleep(15, "Sleep before checking status for '{}'"
+                        retry -= 1
+                        self.sleep(10, "Sleep before checking status for '{}'"
                                    .format(i_name))
                     else:
                         self.fail("{} - creation timed out".format(i_name))
