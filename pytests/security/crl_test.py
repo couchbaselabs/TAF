@@ -2670,8 +2670,13 @@ class CRLTest(CRLBase):
         next connection attempt with no restart; reloadCrl and a locally
         directory-polled CRL file are genuinely per-node (unlike uploaded
         CRL content, which replicates cluster-wide via chronicle regardless
-        of reloadCrl); and removing a revoking CRL then reloading restores
-        access once the resulting missing-CRL state is itself tolerated."""
+        of reloadCrl); removing a revoking CRL then reloading restores
+        access once the resulting missing-CRL state is itself tolerated;
+        and re-issuing a newer CRL from the same issuer that simply omits
+        a previously-revoked serial also restores access, under Require,
+        without deleting the file or needing a missing-CRL-tolerant
+        policy -- with identity mapping confirmed still working
+        afterward, not just the TLS/CRL gate."""
         self._enable_client_cert_auth(state="enable")
         self.crl_utils.set_settings(
             self.rest,
@@ -2793,6 +2798,69 @@ class CRLTest(CRLBase):
         self.log.info(
             "Removing the revoking CRL and reloading restores access "
             "under Permissive"
+        )
+
+        # -- Restoring access via a newer CRL that simply omits the
+        # previously-revoked serial, rather than deleting the file
+        # entirely -- the more realistic real-world pattern, since a CA
+        # typically re-issues an updated CRL rather than removing it
+        # outright. Back to Require: unlike the delete case above,
+        # there's still an applicable (just non-revoking) CRL here, so
+        # Permissive tolerance isn't needed. --
+        status, content = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Policy reset failed: {content}")
+        reissue_user, _ = self._create_rbac_test_user(
+            "hotReloadReissueUser", "ro_security_admin"
+        )
+        reissue_cert, reissue_key, reissue_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, reissue_user
+        )
+        reissue_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(reissue_cert))
+        reissue_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(reissue_key))
+
+        reissue_filename = "hot_reload_reissue.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [reissue_serial], reissue_filename,
+            crl_number=4,
+        )
+        self.assertTrue(status, f"Revoking CRL upload failed: {content}")
+        self._track_uploaded_file(reissue_filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.assertFalse(
+            self._handshake_ok(reissue_cert_path, reissue_key_path),
+            "Cert should be rejected while its serial is revoked",
+        )
+
+        # The CA re-issues a newer CRL (higher crl_number) that simply no
+        # longer lists this serial -- "freshest CRL wins per issuer"
+        # means this newer, non-revoking version becomes authoritative.
+        status, content = self.crl_utils.upload_file(
+            self.rest, reissue_filename,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=5),
+        )
+        self.assertTrue(status, f"Reissued CRL upload failed: {content}")
+        self.crl_utils.reload_crl(self.rest)
+        self.assertTrue(
+            self._handshake_ok(reissue_cert_path, reissue_key_path),
+            "Cert should connect again once a newer, non-revoking CRL "
+            "from the same issuer supersedes the one that revoked it -- "
+            "no file deletion or missing-CRL-tolerant policy needed",
+        )
+        whoami = self.crl_utils.get_identity_via_mtls(
+            self.cluster.master.ip, self.MGMT_PORT, reissue_cert_path, reissue_key_path,
+        )
+        self.assertEqual(
+            whoami.get("id"), reissue_user,
+            f"Restored access should still go through identity mapping, "
+            f"not just the TLS/CRL gate -- got whoami={whoami}",
+        )
+        self.log.info(
+            "Re-issuing a newer CRL that omits a serial restores access "
+            "under Require, without deleting the file -- identity "
+            "mapping still works"
         )
 
     def test_crl_health_warnings(self):
@@ -3166,17 +3234,21 @@ class CRLTest(CRLBase):
         )
 
     def test_crl_rebalance_and_failover_enforcement_continuity(self):
-        """CRL enforcement survives a rebalance-out/rebalance-in cycle and
-        an auto-failover event with zero observed gap on existing/
-        surviving cluster members, using a ~1.5s probe cadence matching
-        the validated manual QA methodology for these rows. (A
-        separately-tracked, disputed finding describes a much narrower,
-        sub-second-only-detectable CRL enforcement gap specific to a
-        node's first ~0.5-7s immediately after joining a cluster -- that
-        is out of scope here pending resolution; this test intentionally
-        checks the rejoined node's enforcement only once rebalance has
-        completed, not via continuous sub-second probing of it during
-        the join itself.)"""
+        """A deleted CRL file propagates to every cluster node, not just
+        the one it was deleted from; CRL enforcement survives a
+        rebalance-out/rebalance-in cycle and an auto-failover event with
+        zero observed gap on existing/surviving cluster members, using a
+        ~1.5s probe cadence matching the validated manual QA methodology
+        for these rows. (A separately-tracked, disputed finding describes
+        a much narrower, sub-second-only-detectable CRL enforcement gap
+        specific to a node's first ~0.5-7s immediately after joining a
+        cluster -- that is out of scope here pending resolution; this
+        test intentionally checks the rejoined node's enforcement only
+        once rebalance has completed, not via continuous sub-second
+        probing of it during the join itself. A separate, confirmed
+        finding that a rebalanced-*out* node resets its own CRL policy
+        to Disabled -- rather than retaining it -- is also out of scope
+        here pending a decision on filing/tracking it.)"""
         self._enable_client_cert_auth(state="enable")
         self.crl_utils.set_settings(
             self.rest,
@@ -3210,6 +3282,45 @@ class CRLTest(CRLBase):
             if s.ip != target_server.ip
         ]
         stable_ips = [s.ip for s in stable_servers]
+
+        # -- Delete propagation: a CRL file deleted via one node
+        # disappears from every other node's view too, not just the
+        # issuing one -- a separate fixture from `filename` above, since
+        # that one needs to stay loaded (and revoking) for the rest of
+        # this test. --
+        delete_propagation_filename = "topology_delete_propagation.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, delete_propagation_filename,
+            self.crl_utils.build_crl(self.ca_cert, self.ca_key, crl_number=2),
+        )
+        self.assertTrue(status, f"Delete-propagation fixture upload failed: {content}")
+        for server in stable_servers:
+            rest_n = RestConnection(server)
+            status, files = self.crl_utils.list_files(rest_n)
+            self.assertTrue(status, f"list_files failed on {server.ip}: {files}")
+            self.assertIn(
+                delete_propagation_filename, {f["filename"] for f in files},
+                f"Fixture file missing on {server.ip} before delete",
+            )
+        status, content = self.crl_utils.delete_file(self.rest, delete_propagation_filename)
+        self.assertTrue(status, f"Delete failed: {content}")
+        for server in stable_servers:
+            rest_n = RestConnection(server)
+            status, files = self.crl_utils.list_files(rest_n)
+            self.assertTrue(status, f"list_files failed on {server.ip}: {files}")
+            self.assertNotIn(
+                delete_propagation_filename, {f["filename"] for f in files},
+                f"Deleted CRL file still present on {server.ip} -- delete did not propagate",
+            )
+            status, diag = self.crl_utils.diagnostics_status(rest_n)
+            self.assertTrue(status, f"diagnostics_status failed on {server.ip}: {diag}")
+            node_key = f"{server.ip}:8091"
+            self.assertNotIn(
+                delete_propagation_filename,
+                {f["filename"] for f in diag.get(node_key, {}).get("crlFiles", [])},
+                f"Deleted CRL file still present in {server.ip}'s diagnostics/status",
+            )
+        self.log.info("CRL delete propagates to every cluster node, not just the issuing one")
 
         # -- Rebalance-out: cluster-wide CRL config/files survive
         # unchanged on the remaining nodes. --
