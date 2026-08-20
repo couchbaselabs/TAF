@@ -1146,15 +1146,17 @@ class CRLTest(CRLBase):
         per-node behaviour when one node is down, and diagnostics/validate
         (real 4-value enum, untrusted-issuer, policy override, cert-count
         boundary, no-certs cluster-cert mode, CA untrusted after its CRL
-        was already loaded)."""
+        was already loaded, an expired-vs-missing CRL distinction, and a
+        parity check against a real live mTLS handshake for the same
+        certs)."""
         self.crl_utils.set_settings(
             self.rest,
             policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
         )
-        revoked_cert, _, revoked_serial = self.crl_utils.generate_leaf_cert(
+        revoked_cert, revoked_key, revoked_serial = self.crl_utils.generate_leaf_cert(
             self.ca_cert, self.ca_key, "diagRevoked"
         )
-        valid_cert, _, _ = self.crl_utils.generate_leaf_cert(
+        valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
             self.ca_cert, self.ca_key, "diagValid"
         )
         valid_pem = self.crl_utils.cert_to_pem(valid_cert).decode()
@@ -1305,6 +1307,120 @@ class CRLTest(CRLBase):
         self.log.info(
             "CA untrusted after CRL load: cacheStatus flips to 'untrusted', "
             "diagnostics/validate details distinguish rejected-CRL from missing-CRL"
+        )
+
+        # -- diagnostics/validate distinguishes an expired CRL from a
+        # genuinely missing one, via the same "expired CRLs: ..." detail
+        # text already confirmed for the runtime enforcement path.
+        # Clears every other file for this CA first: "freshest CRL wins
+        # per issuer" doesn't mean "only the single freshest one counts
+        # for everything" -- with the earlier diag_endpoint.pem (still
+        # active, non-expired) also loaded for the same issuer, the
+        # system falls back to it once the newer one expires, and
+        # expired_cert (revoked by neither file) came back "valid"
+        # instead of "undetermined" -- caught live, not assumed. --
+        self._cleanup_created_files()
+        expired_cert, _, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "diagExpiredLeaf"
+        )
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expired_filename = "diag_expired.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, expired_filename,
+            self.crl_utils.build_crl(
+                self.ca_cert, self.ca_key,
+                this_update=now - datetime.timedelta(seconds=3),
+                next_update=now + datetime.timedelta(seconds=6),
+                crl_number=2,
+            ),
+        )
+        self.assertTrue(status, f"Short-lived CRL upload failed: {content}")
+        self._track_uploaded_file(expired_filename)
+        self.crl_utils.reload_crl(self.rest)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            status, diag = self.crl_utils.diagnostics_status(self.rest)
+            entry = next(
+                (f for f in diag.get(node_key, {}).get("crlFiles", [])
+                 if f["filename"] == expired_filename),
+                None,
+            )
+            if entry and entry.get("cacheStatus") == "expired":
+                break
+            time.sleep(2)
+        else:
+            self.fail(f"{expired_filename} never reported cacheStatus=expired")
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require",
+            certs=[self.crl_utils.cert_to_pem(expired_cert).decode()],
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        result = content["results"][0]
+        self.assertEqual(result["status"], "undetermined")
+        self.assertIn(
+            "expired crls", result.get("details", "").lower(),
+            f"Expected details to distinguish an expired CRL from a "
+            f"genuinely missing one, got: {result}",
+        )
+        self.log.info(
+            "diagnostics/validate distinguishes an expired CRL from a "
+            "genuinely missing one via the 'expired CRLs: ...' detail text"
+        )
+
+        # -- diagnostics/validate's verdict for a cert matches what a real
+        # live mTLS handshake with that same cert actually does, once the
+        # cluster's real policy is set to match what's passed to
+        # diagnostics/validate -- every other diagnostics/validate check
+        # in this test uses the policy *parameter* only, independent of
+        # the cluster's actually-configured (Disabled) policy. --
+        self._enable_client_cert_auth(state="enable")
+        status, content = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Policy change failed: {content}")
+        # The earlier _cleanup_created_files() (for the expired-CRL
+        # sub-case above) also removed diag_endpoint.pem, so revoked_pem
+        # is no longer actually revoked by any loaded CRL -- re-establish
+        # the revocation under a fresh filename/crl_number before using
+        # revoked_pem/revoked_cert as "known revoked" below.
+        parity_filename = "diag_parity.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [revoked_serial],
+            parity_filename, crl_number=3,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(parity_filename)
+        self.crl_utils.reload_crl(self.rest)
+        revoked_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(revoked_cert))
+        revoked_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(revoked_key))
+        valid_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(valid_cert))
+        valid_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(valid_key))
+
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[revoked_pem]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(content["results"][0]["status"], "revoked")
+        self.assertFalse(
+            self._handshake_ok(revoked_cert_path, revoked_key_path),
+            "A live handshake with the same cert diagnostics/validate "
+            "calls 'revoked' must also actually be rejected",
+        )
+
+        status, content = self.crl_utils.diagnostics_validate(
+            self.rest, policy="Require", certs=[valid_pem]
+        )
+        self.assertTrue(status, f"diagnostics/validate failed: {content}")
+        self.assertEqual(content["results"][0]["status"], "valid")
+        self.assertTrue(
+            self._handshake_ok(valid_cert_path, valid_key_path),
+            "A live handshake with the same cert diagnostics/validate "
+            "calls 'valid' must also actually connect",
+        )
+        self.log.info(
+            "diagnostics/validate's verdict matches a real live mTLS "
+            "handshake outcome for the same certs"
         )
 
         # Per-node behaviour when one node is down: explicit `nodes` list
