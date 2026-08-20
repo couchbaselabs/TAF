@@ -235,7 +235,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
             shell.execute_command(f"rm -rf {self.continuous_backup_location}/*")
             shell.execute_command(f"rm -rf {self.backup_archive_dir}/*")
             shell.execute_command(f"rm -rf {continuous_backup_temp_dir}/*")
-            shell.execute_command(f"mkdir -p {continuous_backup_temp_dir}/*")
+            # No trailing glob here: with the dir empty or absent the shell
+            # leaves '*' unexpanded and root creates a directory literally
+            # named '*'. Anything root-owned under the data path is taken for
+            # a stale bucket dir, and ns_server (running as couchbase) cannot
+            # unlink it, so every later rebalance dies with
+            # {buckets_cleanup_failed,...} / {error,eacces}.
+            shell.execute_command(f"mkdir -p {continuous_backup_temp_dir}")
             if self.obj_staging_dir_cbbackup:
                 shell.execute_command(f"rm -rf {self.obj_staging_dir_cbbackup}")
                 shell.execute_command(f"mkdir -p {self.obj_staging_dir_cbbackup}")
