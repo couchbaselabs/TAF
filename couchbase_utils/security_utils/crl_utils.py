@@ -698,6 +698,24 @@ class CRLUtils:
         except ssl.SSLError:
             return False
 
+    @staticmethod
+    def time_tls_handshake(host, port, cert_path, key_path, timeout=10):
+        """
+        Wall-clock seconds for a single raw TLS handshake (connect +
+        wrap) with the given client cert against host:port. A pure
+        timing primitive, not an accept/reject check -- no post-handshake
+        grace-period read like tls_handshake_ok, since that would swamp
+        a latency measurement with an artificial multi-second wait.
+        """
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.load_cert_chain(cert_path, key_path)
+        start = time.perf_counter()
+        with socket.create_connection((host, int(port)), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host):
+                return time.perf_counter() - start
+
     @classmethod
     def get_identity_via_mtls(cls, host, port, client_cert_path, client_key_path,
                               timeout=30):

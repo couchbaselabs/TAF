@@ -2,6 +2,7 @@ import base64
 import concurrent.futures
 import datetime
 import ssl
+import statistics
 import threading
 import time
 import uuid
@@ -1573,8 +1574,8 @@ class CRLTest(CRLBase):
             self.assertTrue(status, f"Short-lived CRL upload failed: {content}")
             self._track_uploaded_file(expired_filename)
             self.crl_utils.reload_crl(self.rest)
-            deadline = time.time() + 30
-            while time.time() < deadline:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
                 status, content = self.crl_utils.diagnostics_status(self.rest)
                 entry = next(
                     (f for f in content.get(f"{server.ip}:8091", {}).get("crlFiles", [])
@@ -2937,4 +2938,145 @@ class CRLTest(CRLBase):
             "KV service (memcached SSL) and ns_server mgmt HTTPS reach "
             "identical accept/reject outcomes for both a revoked and a "
             "valid cert"
+        )
+
+    def test_crl_performance_upload_timeout_and_handshake_overhead(self):
+        """A large CRL upload honors a client-configured timeout --
+        failing cleanly with no corrupted/partial server state when
+        given too little time, and succeeding normally on retry with an
+        adequate one -- and a populated CRL set does not measurably
+        worsen mTLS handshake latency under Require vs Disabled. (KV-side
+        CRUD latency under CRL enforcement is explicitly out of scope
+        here -- that's KV-owned, not ns_server's.)"""
+        # -- Upload timeout/retry: a 10k-entry CRL takes roughly 13-15s
+        # to validate server-side (measured live against this cluster,
+        # consistent with the existing manual QA pass's ~40s for a
+        # 30k-entry upload) -- a 3s timeout is nowhere near enough time,
+        # a 60s one comfortably is. --
+        large_serials = list(range(1, 10001))
+        large_pem = self.crl_utils.build_crl(
+            self.ca_cert, self.ca_key, revoked_serials=large_serials, crl_number=1,
+        )
+        filename = "perf_large_upload.pem"
+
+        start = time.monotonic()
+        with self.assertRaises(Exception):
+            self.crl_utils.upload_file(self.rest, filename, large_pem, timeout=3)
+        elapsed = time.monotonic() - start
+        self.assertLess(
+            elapsed, 30,
+            f"A too-short upload timeout should fail promptly, not hang "
+            f"indefinitely -- took {elapsed:.1f}s",
+        )
+        self.log.info(
+            f"Too-short (3s) timeout for a 10k-entry CRL failed cleanly "
+            f"after {elapsed:.1f}s"
+        )
+
+        status, content = self.crl_utils.list_files(self.rest)
+        self.assertTrue(status)
+        self.assertNotIn(
+            filename, {f["filename"] for f in content},
+            "A timed-out upload must leave no partial/corrupted file entry",
+        )
+        self.log.info("No partial entry left behind after the timed-out upload attempt")
+
+        status, content = self.crl_utils.upload_file(
+            self.rest, filename, large_pem, timeout=60,
+        )
+        self.assertTrue(status, f"Retry with an adequate timeout should succeed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        sample_cert, sample_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "perfLargeSample", serial=large_serials[0],
+        )
+        sample_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(sample_cert))
+        sample_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(sample_key))
+        self.assertFalse(
+            self._handshake_ok(sample_cert_path, sample_key_path),
+            "The retried upload should be genuinely functional -- a cert "
+            "matching one of the 10k revoked serials must be rejected, "
+            "not just accepted at upload time",
+        )
+        self.log.info(
+            "Retried upload is genuinely functional: a sample revoked "
+            "serial from the 10k-entry CRL is correctly enforced"
+        )
+
+        # -- Handshake latency overhead: Disabled vs Require with a
+        # populated (5k-entry) CRL set, using a valid (never-revoked)
+        # cert throughout -- so any difference reflects CRL-check
+        # overhead itself, not a rejection. --
+        overhead_cert, overhead_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "perfOverheadValid"
+        )
+        overhead_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(overhead_cert))
+        overhead_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(overhead_key))
+        host = self.cluster.master.ip
+        sample_count = 15
+
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Disabled", "nodeToNode": "Disabled"},
+        )
+        disabled_timings = [
+            self.crl_utils.time_tls_handshake(
+                host, self.MGMT_PORT, overhead_cert_path, overhead_key_path,
+            )
+            for _ in range(sample_count)
+        ]
+        disabled_median = statistics.median(disabled_timings)
+
+        populated_filename = "perf_handshake_overhead.pem"
+        status, content = self.crl_utils.upload_file(
+            self.rest, populated_filename,
+            self.crl_utils.build_crl(
+                self.ca_cert, self.ca_key,
+                revoked_serials=list(range(1, 5001)), crl_number=2,
+            ),
+            timeout=60,
+        )
+        self.assertTrue(status, f"5k-entry CRL upload failed: {content}")
+        self._track_uploaded_file(populated_filename)
+        self.crl_utils.reload_crl(self.rest)
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(
+            self._handshake_ok(overhead_cert_path, overhead_key_path),
+            "The valid cert must still connect under Require with the "
+            "populated CRL loaded -- otherwise the timings below would "
+            "be measuring a rejection path, not an accepted one",
+        )
+        require_timings = [
+            self.crl_utils.time_tls_handshake(
+                host, self.MGMT_PORT, overhead_cert_path, overhead_key_path,
+            )
+            for _ in range(sample_count)
+        ]
+        require_median = statistics.median(require_timings)
+
+        self.log.info(
+            f"Handshake latency medians -- Disabled: "
+            f"{disabled_median * 1000:.1f}ms, Require+5k-entry-CRL: "
+            f"{require_median * 1000:.1f}ms (Disabled samples: "
+            f"{[round(t * 1000, 1) for t in disabled_timings]}, Require "
+            f"samples: {[round(t * 1000, 1) for t in require_timings]})"
+        )
+        # Generous bounds -- this is a "no unexpected multi-fold
+        # regression" sanity check on shared lab infrastructure, not a
+        # tight perf benchmark. The existing manual QA pass found medians
+        # statistically indistinguishable across a 7x CRL-size range.
+        self.assertLess(
+            require_median, max(disabled_median * 5, 0.5),
+            f"Require+populated-CRL handshake latency ({require_median * 1000:.1f}ms) "
+            f"is an unexpected multi-fold regression vs Disabled "
+            f"({disabled_median * 1000:.1f}ms)",
         )
