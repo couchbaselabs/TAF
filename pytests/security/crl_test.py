@@ -11,11 +11,14 @@ import requests
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID
+from membase.api.rest_client import RestConnection
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 from couchbase_utils.security_utils.crl_utils import (
+    audit_keyword_count,
     cleanup_url_poll_crl_env,
     find_remote_pid,
+    get_audit_event,
     grep_remote_log,
     setup_url_poll_crl_env,
     tail_remote_log,
@@ -68,6 +71,41 @@ class CRLTest(CRLBase):
             time.sleep(interval)
         self.fail(
             f"Handshake did not reach expect_ok={expect_ok} before deadline {deadline}"
+        )
+
+    def _assert_audit_event_shape(self, event, event_id):
+        """
+        Common actor/timestamp/network-envelope assertions shared by every
+        CRL audit event (8307-8310) -- see crl_utils.get_audit_event(). The
+        actor is hardcoded to the Administrator REST user since that's the
+        only identity every admin-API call in this suite ever authenticates
+        as; live-verified (not just source-derived) that a plain Basic-Auth
+        REST call has no sessionid/authenticated_userid and that the
+        'admin' domain is reported as "builtin" in the actual log line.
+        """
+        self.assertIsNotNone(
+            event, f"No audit event with id={event_id} found in the audit log"
+        )
+        self.assertEqual(
+            event.get("real_userid"), {"domain": "builtin", "user": "Administrator"},
+            f"Unexpected actor for audit event {event_id}: {event}",
+        )
+        self.assertNotIn(
+            "sessionid", event,
+            f"Unexpected sessionid on a plain Basic-Auth REST call (event {event_id})",
+        )
+        for key in ("remote", "local"):
+            self.assertIn(key, event, f"Missing '{key}' in audit event {event_id}")
+            self.assertIn("ip", event[key])
+            self.assertIn("port", event[key])
+        timestamp = event.get("timestamp")
+        self.assertIsNotNone(timestamp, f"Missing timestamp in audit event {event_id}")
+        parsed = datetime.datetime.fromisoformat(timestamp)
+        delta = abs((datetime.datetime.now(datetime.timezone.utc) - parsed).total_seconds())
+        self.assertLess(
+            delta, 120,
+            f"Audit event {event_id} timestamp {timestamp!r} is not close "
+            f"to wall-clock time (delta={delta:.1f}s)",
         )
 
     # ── Tests ────────────────────────────────────────────────────────────────
@@ -1395,21 +1433,9 @@ class CRLTest(CRLBase):
 
         shell = RemoteMachineShellConnection(self.cluster.master)
         try:
-            def audit_count(keyword):
-                tail = tail_remote_log(shell, self.AUDIT_LOG_PATH, lines=1000)
-                return tail.lower().count(keyword.lower())
-
-            def crl_log_lines(lines=5):
-                # Greps for cb_crl's own log lines specifically, rather
-                # than a plain tail -- unrelated ns_server activity
-                # (memcached config pushes, RBAC/roles-cache rebuilds) can
-                # easily push the actual CRL-check line out of a small
-                # fixed-size tail before it's ever read.
-                return grep_remote_log(shell, self.DEBUG_LOG_PATH, "(CRL)", lines=lines)
-
             # Each admin-API action (upload, delete, settings change,
             # reload) should add its own audit entry.
-            before = audit_count("upload crl file")
+            before = audit_keyword_count(shell, self.AUDIT_LOG_PATH, "upload crl file")
             filename = "audit_admin_actions.pem"
             status, content = self.crl_utils.upload_file(
                 self.rest, filename,
@@ -1418,51 +1444,101 @@ class CRLTest(CRLBase):
             self.assertTrue(status, f"Upload failed: {content}")
             self._track_uploaded_file(filename)
             self.assertGreater(
-                audit_count("upload crl file"), before,
+                audit_keyword_count(shell, self.AUDIT_LOG_PATH, "upload crl file"), before,
                 "Expected a new upload crl file audit entry",
             )
+            upload_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8308)
+            self._assert_audit_event_shape(upload_event, 8308)
+            self.assertEqual(
+                upload_event["filename"], filename,
+                "Audited filename does not match the uploaded file",
+            )
 
-            before = audit_count("delete crl file")
+            before = audit_keyword_count(shell, self.AUDIT_LOG_PATH, "delete crl file")
             status, content = self.crl_utils.delete_file(self.rest, filename)
             self.assertTrue(status, f"Delete failed: {content}")
             self._created_files.remove(filename)
             self.assertGreater(
-                audit_count("delete crl file"), before,
+                audit_keyword_count(shell, self.AUDIT_LOG_PATH, "delete crl file"), before,
                 "Expected a new delete crl file audit entry",
             )
+            delete_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8309)
+            self._assert_audit_event_shape(delete_event, 8309)
+            self.assertEqual(
+                delete_event["filename"], filename,
+                "Audited filename does not match the deleted file",
+            )
 
-            before = audit_count("crl settings")
+            before = audit_keyword_count(shell, self.AUDIT_LOG_PATH, "crl settings")
             status, content = self.crl_utils.set_settings(
                 self.rest,
                 policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
             )
             self.assertTrue(status, f"Settings change failed: {content}")
             self.assertGreater(
-                audit_count("crl settings"), before,
+                audit_keyword_count(shell, self.AUDIT_LOG_PATH, "crl settings"), before,
                 "Expected a new crl settings audit entry",
             )
+            settings_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8307)
+            self._assert_audit_event_shape(settings_event, 8307)
+            self.assertEqual(
+                settings_event["settings"], content,
+                "Audited settings payload does not match the merged config "
+                "the API itself returned",
+            )
+            # Known product gap (menelaus_web_crl.erl:handle_post_settings):
+            # the pre-change config is never read before the new one is
+            # written, so this event has no architectural way to capture
+            # what the policy *was* before this change -- confirmed live,
+            # not just from source. This pins today's behavior so a future
+            # fix that adds an old-value field is caught here as a
+            # passing-test signal to flip into a positive assertion.
+            for legacy_key in ("previousSettings", "old_policy", "oldSettings"):
+                self.assertNotIn(
+                    legacy_key, settings_event,
+                    f"Unexpected '{legacy_key}' key in the crl settings audit "
+                    f"event -- if the old-policy-value gap has been fixed, "
+                    f"update this test to assert on its actual value instead "
+                    f"of its absence",
+                )
 
-            before = audit_count("reload crl")
+            before = audit_keyword_count(shell, self.AUDIT_LOG_PATH, "reload crl")
             status, content = self.crl_utils.reload_crl(self.rest)
             self.assertTrue(status, f"Reload failed: {content}")
             self.assertGreater(
-                audit_count("reload crl"), before,
+                audit_keyword_count(shell, self.AUDIT_LOG_PATH, "reload crl"), before,
                 "Expected a new reload crl audit entry",
             )
+            # Event 8310 carries no CRL-specific payload field at all (per
+            # audit_descriptor.json) -- only the shared actor/timestamp
+            # envelope is asserted here, intentionally.
+            reload_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8310)
+            self._assert_audit_event_shape(reload_event, 8310)
             self.log.info(
-                "Admin-API audit events present for upload/delete/settings/reload"
+                "Admin-API audit events present for upload/delete/settings/"
+                "reload, each with the correct actor/timestamp/payload"
             )
 
             # A rejected (invalid value) settings change must not add a
             # new audit entry.
-            before = audit_count("crl settings")
+            before = audit_keyword_count(shell, self.AUDIT_LOG_PATH, "crl settings")
+            before_settings_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8307)
             status, content = self.crl_utils.set_settings(
                 self.rest, policyPerScope={"clientAuth": "NotARealPolicy"},
             )
             self.assertFalse(status, f"Invalid policy value should be rejected, got: {content}")
             self.assertEqual(
-                audit_count("crl settings"), before,
+                audit_keyword_count(shell, self.AUDIT_LOG_PATH, "crl settings"), before,
                 "A rejected settings POST should not itself add a crl settings entry",
+            )
+            # Stronger, corroborating proof of the same thing: not just "the
+            # keyword count didn't change" but "the specific event's own
+            # timestamp is identical before and after" -- no new 8307 line
+            # was appended at all.
+            after_settings_event = get_audit_event(shell, self.AUDIT_LOG_PATH, 8307)
+            self.assertEqual(
+                before_settings_event["timestamp"], after_settings_event["timestamp"],
+                "A rejected settings POST must not append a new crl settings audit entry",
             )
             self.log.info("Rejected (400) settings change does not add a new audit entry")
 
@@ -1477,13 +1553,13 @@ class CRLTest(CRLBase):
             )
             self.assertTrue(status, f"Revoke upload failed: {content}")
             self.crl_utils.reload_crl(self.rest)
-            before = audit_count("revok")
+            before = audit_keyword_count(shell, self.AUDIT_LOG_PATH, "revok")
             self.assertFalse(
                 self._handshake_ok(revoked_cert_path, revoked_key_path),
                 "Cert should now be rejected as revoked",
             )
             self.assertGreater(
-                audit_count("revok"), before,
+                audit_keyword_count(shell, self.AUDIT_LOG_PATH, "revok"), before,
                 "Expected a new audit entry mentioning the revocation "
                 "(a generic authentication-failure event, not CRL-specific)",
             )
@@ -1493,8 +1569,12 @@ class CRLTest(CRLBase):
             )
 
             # No raw serial number or PEM/DER bytes should leak into the
-            # rejection log line.
-            recent = crl_log_lines(lines=3)
+            # rejection log line. Greps for cb_crl's own log lines
+            # specifically, rather than a plain tail -- unrelated
+            # ns_server activity (memcached config pushes, RBAC/roles-
+            # cache rebuilds) can easily push the actual CRL-check line
+            # out of a small fixed-size tail before it's ever read.
+            recent = grep_remote_log(shell, self.DEBUG_LOG_PATH, "(CRL)", lines=3)
             self.assertIn(
                 "<ud>", recent,
                 "Expected redaction tags around the cert subject in the "
@@ -1511,6 +1591,25 @@ class CRLTest(CRLBase):
             )
             self.log.info("No raw serial number or PEM content found in the rejection log line")
 
+            # The same leakage check, but against the audit log
+            # specifically -- current-audit.log carries admin-action
+            # payloads (filenames, full settings JSON) that debug.log
+            # doesn't, so it needs its own check rather than assuming
+            # debug.log's check covers it. The <ud> redaction-tag check
+            # above doesn't have an audit-log equivalent: these fields are
+            # structured JSON values (filenames, actor identity), not
+            # free-text log lines needing redaction tags in the same sense.
+            audit_tail = tail_remote_log(shell, self.AUDIT_LOG_PATH, lines=1000)
+            self.assertNotIn(
+                serial_hex, audit_tail,
+                "Raw serial number must not appear in the audit log",
+            )
+            self.assertNotIn(
+                "BEGIN CERTIFICATE", audit_tail,
+                "Raw PEM content must not leak into the audit log",
+            )
+            self.log.info("No raw serial number or PEM content found in the audit log")
+
             # Revoked, missing, and expired CRL should each produce
             # distinguishable log text. Revoked's line is already in
             # `recent` above ("Certificate revoked ...").
@@ -1521,7 +1620,7 @@ class CRLTest(CRLBase):
             low_priv_user, low_priv_pass = self._create_rbac_test_user(
                 "audit_low_priv_user", "views_admin[*]"
             )
-            before = audit_count("access forbidden")
+            before = audit_keyword_count(shell, self.AUDIT_LOG_PATH, "access forbidden")
             resp = requests.post(
                 f"http://{server.ip}:8091/settings/crl",
                 auth=(low_priv_user, low_priv_pass),
@@ -1534,7 +1633,7 @@ class CRLTest(CRLBase):
                 f"Low-privilege user should get 403, got {resp.status_code}: {resp.text}",
             )
             self.assertGreater(
-                audit_count("access forbidden"), before,
+                audit_keyword_count(shell, self.AUDIT_LOG_PATH, "access forbidden"), before,
                 "Expected a new generic access-forbidden audit entry",
             )
             self.log.info(
@@ -1550,13 +1649,11 @@ class CRLTest(CRLBase):
             )
             missing_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(missing_cert))
             missing_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(missing_key))
-            self.assertFalse(
-                self._handshake_ok(missing_cert_path, missing_key_path),
-                "Require + no applicable CRL should reject",
+            self.crl_utils.wait_for_crl_log_text(
+                shell, self.DEBUG_LOG_PATH, self.cluster.master.ip, self.MGMT_PORT,
+                missing_cert_path, missing_key_path,
+                ["undetermined", "no usable crl"],
             )
-            missing_log = crl_log_lines(lines=3)
-            self.assertIn("undetermined", missing_log.lower())
-            self.assertIn("no usable crl", missing_log.lower())
 
             # Expired: a short-lived CRL, uploaded valid, waited past its
             # own next_update via real wall-clock time.
@@ -1587,17 +1684,13 @@ class CRLTest(CRLBase):
                 time.sleep(2)
             else:
                 self.fail(f"{expired_filename} never reported cacheStatus=expired")
-            self.assertFalse(
-                self._handshake_ok(missing_cert_path, missing_key_path),
-                "Require + only an expired applicable CRL should reject",
-            )
-            expired_log = crl_log_lines(lines=3)
-            self.assertIn("undetermined", expired_log.lower())
-            self.assertIn(
-                "expired", expired_log.lower(),
-                "Expired-CRL rejection should be distinguishable from a "
-                "genuinely missing CRL -- if this fails, the two wordings "
-                "have collapsed back together.",
+            # Expired-CRL rejection should be distinguishable from a
+            # genuinely missing CRL -- if "expired" stops appearing, the
+            # two wordings have collapsed back together.
+            self.crl_utils.wait_for_crl_log_text(
+                shell, self.DEBUG_LOG_PATH, self.cluster.master.ip, self.MGMT_PORT,
+                missing_cert_path, missing_key_path,
+                ["undetermined", "expired"],
             )
             self.log.info(
                 "Revoked/missing/expired CRL rejections all produce "
@@ -2394,18 +2487,9 @@ class CRLTest(CRLBase):
         self.crl_utils.reload_crl(self.rest)
 
         def probe_state(cert_path, key_path):
-            # Three states, not two: a plain True/False can't tell "the
-            # cert was rejected" apart from "the whole node is down",
-            # which is exactly the distinction a restart test needs.
-            try:
-                self.crl_utils.perform_mtls_handshake(
-                    self.cluster.master.ip, self.MGMT_PORT, cert_path, key_path, timeout=5,
-                )
-                return "connected"
-            except requests.exceptions.SSLError:
-                return "rejected"
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-                return "down"
+            return self.crl_utils.probe_mtls_state(
+                self.cluster.master.ip, self.MGMT_PORT, cert_path, key_path,
+            )
 
         self.assertEqual(probe_state(revoked_cert_path, revoked_key_path), "rejected")
         self.assertEqual(probe_state(valid_cert_path, valid_key_path), "connected")
@@ -3079,4 +3163,185 @@ class CRLTest(CRLBase):
             f"Require+populated-CRL handshake latency ({require_median * 1000:.1f}ms) "
             f"is an unexpected multi-fold regression vs Disabled "
             f"({disabled_median * 1000:.1f}ms)",
+        )
+
+    def test_crl_rebalance_and_failover_enforcement_continuity(self):
+        """CRL enforcement survives a rebalance-out/rebalance-in cycle and
+        an auto-failover event with zero observed gap on existing/
+        surviving cluster members, using a ~1.5s probe cadence matching
+        the validated manual QA methodology for these rows. (A
+        separately-tracked, disputed finding describes a much narrower,
+        sub-second-only-detectable CRL enforcement gap specific to a
+        node's first ~0.5-7s immediately after joining a cluster -- that
+        is out of scope here pending resolution; this test intentionally
+        checks the rejoined node's enforcement only once rebalance has
+        completed, not via continuous sub-second probing of it during
+        the join itself.)"""
+        self._enable_client_cert_auth(state="enable")
+        self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        revoked_cert, revoked_key, revoked_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "topologyRevoked"
+        )
+        valid_cert, valid_key, _ = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "topologyValid"
+        )
+        revoked_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(revoked_cert))
+        revoked_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(revoked_key))
+        valid_cert_path = self._write_temp_pem(self.crl_utils.cert_to_pem(valid_cert))
+        valid_key_path = self._write_temp_pem(self.crl_utils.key_to_pem(valid_key))
+
+        filename = "topology_continuity.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [revoked_serial], filename, crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        # target_server is never the master -- self.rest (bound to master)
+        # stays usable for every admin/bookkeeping call throughout, and
+        # _handshake_ok/_wait_until_handshake (hardcoded to master) stay valid.
+        target_server = self.cluster.servers[self.nodes_init - 1]
+        stable_servers = [
+            s for s in self.cluster.servers[:self.nodes_init]
+            if s.ip != target_server.ip
+        ]
+        stable_ips = [s.ip for s in stable_servers]
+
+        # -- Rebalance-out: cluster-wide CRL config/files survive
+        # unchanged on the remaining nodes. --
+        self.assertTrue(
+            self.task.rebalance(self.cluster, to_add=[], to_remove=[target_server]),
+            "Rebalance-out failed",
+        )
+        for server in stable_servers:
+            rest_n = RestConnection(server)
+            status, settings = self.crl_utils.get_settings(rest_n)
+            self.assertTrue(status, f"get_settings failed on {server.ip}: {settings}")
+            self.crl_utils.assert_settings_equal(
+                settings,
+                {"policyPerScope": {"clientAuth": "Require", "nodeToNode": "Disabled"}},
+            )
+            status, files = self.crl_utils.list_files(rest_n)
+            self.assertTrue(status, f"list_files failed on {server.ip}: {files}")
+            self.assertIn(
+                filename, {f["filename"] for f in files},
+                f"Uploaded CRL file missing on {server.ip} after rebalance-out",
+            )
+        self.log.info(
+            "Rebalance-out: CRL config/files unchanged on both remaining nodes"
+        )
+
+        # -- Rebalance back in, probing the existing members throughout. --
+        states = self.crl_utils.probe_during(
+            lambda: self.task.rebalance(self.cluster, to_add=[target_server], to_remove=[]),
+            stable_ips, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+        )
+        for ip, samples in states.items():
+            self.assertNotIn(
+                "connected", samples,
+                f"Revoked cert must never connect on {ip} throughout "
+                f"rebalance-in, got: {samples}",
+            )
+        self.log.info(
+            f"Rebalance-in: zero enforcement gap on existing members "
+            f"throughout ({sum(len(s) for s in states.values())} total samples)"
+        )
+        self.assertEqual(
+            self.crl_utils.probe_mtls_state(
+                target_server.ip, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+            ),
+            "rejected",
+            f"Rejoined node {target_server.ip} should enforce CRL "
+            f"identically to existing members once rebalance completes",
+        )
+        self.log.info("Rejoined node enforces CRL correctly once rebalance completed")
+
+        # -- Auto-failover: capture original settings to restore
+        # afterward -- don't assume a disabled default. --
+        orig_af = self.rest.get_autofailover_settings()
+        self.assertIsNotNone(orig_af, "Failed to read original autoFailover settings")
+        self.assertTrue(self.rest.reset_autofailover())
+        self.assertTrue(
+            self.rest.update_autofailover_settings(True, 10, maxCount=10),
+            "Enabling autoFailover failed",
+        )
+
+        shell = RemoteMachineShellConnection(target_server)
+        try:
+            states = self.crl_utils.probe_during(
+                shell.stop_couchbase, stable_ips, self.MGMT_PORT,
+                revoked_cert_path, revoked_key_path,
+            )
+            self.assertTrue(
+                self.crl_utils.wait_for_failover_count(
+                    self.cluster_util, self.cluster.master, 1, timeout=240,
+                ),
+                "Expected 1 failed-over node within 240s",
+            )
+            for ip, samples in states.items():
+                self.assertNotIn(
+                    "connected", samples,
+                    f"Revoked cert must never connect on {ip} throughout "
+                    f"the failover trigger window, got: {samples}",
+                )
+            self.log.info(
+                "Auto-failover triggered correctly; zero enforcement gap "
+                "on survivors during the trigger window"
+            )
+
+            # No stale cached state post-failover.
+            for ip in stable_ips:
+                self.assertEqual(
+                    self.crl_utils.probe_mtls_state(
+                        ip, self.MGMT_PORT, revoked_cert_path, revoked_key_path,
+                    ),
+                    "rejected",
+                    f"{ip} should still reject the revoked cert post-failover",
+                )
+                self.assertEqual(
+                    self.crl_utils.probe_mtls_state(
+                        ip, self.MGMT_PORT, valid_cert_path, valid_key_path,
+                    ),
+                    "connected",
+                    f"{ip} should still accept the valid cert post-failover",
+                )
+            self.log.info(
+                "Post-failover: survivors correctly reject the revoked "
+                "cert and accept the valid cert -- no stale cached state"
+            )
+        finally:
+            shell.start_couchbase()
+            deadline = time.monotonic() + 90
+            target_back_up = False
+            while time.monotonic() < deadline:
+                if self.crl_utils.probe_mtls_state(
+                    target_server.ip, self.MGMT_PORT, valid_cert_path, valid_key_path,
+                ) != "down":
+                    target_back_up = True
+                    break
+                time.sleep(5)
+            self.assertTrue(
+                target_back_up,
+                f"{target_server.ip} never became reachable again after start_couchbase()",
+            )
+            otp_id = f"ns_1@{target_server.ip}"
+            self.rest.add_back_node(otp_id)
+            self.rest.set_recovery_type(otpNode=otp_id, recoveryType="full")
+            self.assertTrue(
+                self.cluster_util.rebalance(
+                    self.cluster, wait_for_completion=True, ejected_nodes=[],
+                    validate_bucket_ranking=False,
+                ),
+                "Failback rebalance failed",
+            )
+            shell.disconnect()
+            self.rest.update_autofailover_settings(
+                orig_af.enabled, orig_af.timeout, maxCount=orig_af.maxCount,
+            )
+        self.log.info(
+            "Cluster restored to 3 healthy members; autoFailover settings restored"
         )

@@ -3,6 +3,7 @@ import ipaddress
 import json
 import socket
 import ssl
+import threading
 import time
 import uuid
 
@@ -663,6 +664,114 @@ class CRLUtils:
             headers={"Connection": "close"}
         )
 
+    @classmethod
+    def probe_mtls_state(cls, ip, port, cert_path, key_path, timeout=5):
+        """
+        Three states, not two: a plain True/False can't tell "the cert
+        was rejected" apart from "the whole node is down", which is
+        exactly the distinction a restart/rebalance/failover test needs.
+        """
+        try:
+            cls.perform_mtls_handshake(ip, port, cert_path, key_path, timeout=timeout)
+            return "connected"
+        except requests.exceptions.SSLError:
+            return "rejected"
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            return "down"
+
+    @classmethod
+    def probe_during(cls, trigger, target_ips, port, cert_path, key_path,
+                     interval=1.5, settle_time=None):
+        """
+        Runs `trigger()` (expected to block until some disruption --
+        rebalance, failover, etc. -- completes) while a background
+        thread repeatedly probes probe_mtls_state against every IP in
+        target_ips using cert_path/key_path, every `interval` seconds.
+        Probing continues for `settle_time` (default 2x interval) after
+        `trigger()` returns, to also catch a delayed effect.
+
+        Returns {ip: [state, state, ...]} covering the whole window.
+        """
+        if settle_time is None:
+            settle_time = interval * 2
+        stop = threading.Event()
+        states = {ip: [] for ip in target_ips}
+
+        def prober():
+            while not stop.is_set():
+                for ip in target_ips:
+                    states[ip].append(cls.probe_mtls_state(ip, port, cert_path, key_path))
+                time.sleep(interval)
+
+        prober_thread = threading.Thread(target=prober)
+        prober_thread.start()
+        try:
+            trigger()
+            time.sleep(settle_time)
+        finally:
+            stop.set()
+            prober_thread.join()
+        return states
+
+    @staticmethod
+    def wait_for_failover_count(cluster_util, master, expected_count, timeout,
+                                poll_interval=5):
+        """
+        Poll cluster_util.get_nodes(master, active=False,
+        inactive_failed=True) until its length reaches expected_count or
+        timeout elapses. Returns True if reached, False on timeout --
+        the caller asserts on the result.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            actual = len(cluster_util.get_nodes(
+                master, active=False, inactive_failed=True,
+            ))
+            if actual == expected_count:
+                return True
+            time.sleep(poll_interval)
+        return False
+
+    @classmethod
+    def wait_for_crl_log_text(cls, shell_conn, debug_log_path, ip, port,
+                              cert_path, key_path, expected_substrings,
+                              max_wait=30, interval=3):
+        """
+        Repeatedly probes ip:port with cert_path/key_path (expecting
+        rejection) and greps debug_log_path's "(CRL)" lines, until every
+        string in expected_substrings appears. Needed because the exact
+        wording a live rejection gets (e.g. an "expired CRLs: ..."
+        annotation) can lag several seconds behind a per-file status
+        transition visible elsewhere (e.g. diagnostics/status reporting
+        cacheStatus=expired) -- a single-shot check can catch the older,
+        unannotated wording.
+
+        Raises AssertionError if the cert stops being rejected mid-poll,
+        or if expected_substrings never all appear within max_wait.
+        Returns the matched log text on success.
+        """
+        deadline = time.monotonic() + max_wait
+        log_text = ""
+        while time.monotonic() < deadline:
+            state = cls.probe_mtls_state(ip, port, cert_path, key_path)
+            if state != "rejected":
+                raise AssertionError(
+                    f"Cert should stay rejected while polling for the "
+                    f"expected log wording, got state={state!r}"
+                )
+            log_text = grep_remote_log(
+                shell_conn, debug_log_path, "(CRL)", lines=3
+            ).lower()
+            if all(s.lower() in log_text for s in expected_substrings):
+                return log_text
+            time.sleep(interval)
+        missing = [s for s in expected_substrings if s.lower() not in log_text]
+        raise AssertionError(
+            f"Expected {expected_substrings} in the CRL rejection log "
+            f"within {max_wait}s -- still missing {missing} after "
+            f"polling, last seen: {log_text!r}"
+        )
+
     @staticmethod
     def tls_handshake_ok(host, port, cert_path, key_path, timeout=10, grace_period=3):
         """
@@ -803,6 +912,38 @@ def grep_remote_log(shell_conn, log_path, pattern, lines=20):
         f"grep -aF '{pattern}' {log_path} | tail -n {int(lines)}"
     )
     return "\n".join(out) if out else ""
+
+
+def get_audit_event(shell_conn, log_path, event_id, lines=1000):
+    """
+    Returns the last audit-log entry (parsed dict) whose "id" matches
+    event_id within the last `lines` of log_path, or None if not found.
+
+    Parses current-audit.log directly rather than going through TAF's
+    existing audit_ready_functions.audit -- that utility reads the
+    node's audit.json for its descriptor path, which is encrypted at
+    rest on this server version, breaking it before any event can be read.
+    """
+    tail = grep_remote_log(shell_conn, log_path, f'"id":{event_id},', lines=lines)
+    match = None
+    for line in tail.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("id") == event_id:
+            match = event
+    return match
+
+
+def audit_keyword_count(shell_conn, log_path, keyword, lines=1000):
+    """Case-insensitive count of `keyword` occurrences in the last
+    `lines` of an audit/log file."""
+    tail = tail_remote_log(shell_conn, log_path, lines=lines)
+    return tail.lower().count(keyword.lower())
 
 
 def stop_process_on_port(shell_conn, port):
