@@ -1,3 +1,4 @@
+import base64
 import datetime
 import ipaddress
 import json
@@ -389,6 +390,12 @@ class CRLUtils:
     @staticmethod
     def cert_to_der(cert):
         return cert.public_bytes(serialization.Encoding.DER)
+
+    @staticmethod
+    def cert_to_der_b64(cert):
+        """Base64-encoded DER -- the cert format /_cbauth/crlsValidate and
+        diagnostics/validate's base64-DER mode both expect."""
+        return base64.b64encode(cert.public_bytes(serialization.Encoding.DER)).decode()
 
     @staticmethod
     def key_to_pem(key):

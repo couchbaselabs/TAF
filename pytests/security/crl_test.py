@@ -2037,6 +2037,151 @@ class CRLTest(CRLBase):
         )
         self.log.info("Live role downgrade took effect immediately, no staleness")
 
+    def test_crl_cbauth_crls_validate(self):
+        """POST /_cbauth/crlsValidate -- ns_server's actual contract with
+        cbauth-registered GO services (Query/FTS/Analytics/Indexer/XDCR).
+        Unlike diagnostics/validate, it has no policy override param: it
+        always honors the cluster's real configured policy per scope, and
+        (per menelaus_cbauth:handle_crls_validate_post/1) requires
+        {[admin,internal], all} -- a strictly narrower RBAC grant than
+        every other CRL endpoint, which only need {[admin,security], *}."""
+
+        revoked_cert, revoked_key, revoked_serial = self.crl_utils.generate_leaf_cert(
+            self.ca_cert, self.ca_key, "cbauthRevoked"
+        )
+        revoked_b64 = self.crl_utils.cert_to_der_b64(revoked_cert)
+        garbage_b64 = base64.b64encode(b"not a real der cert").decode()
+
+        filename = "cbauth_crls_validate.pem"
+        status, content = self.crl_utils.revoke_and_upload(
+            self.rest, self.ca_cert, self.ca_key, [revoked_serial], filename,
+            crl_number=1,
+        )
+        self.assertTrue(status, f"CRL upload failed: {content}")
+        self._track_uploaded_file(filename)
+        self.crl_utils.reload_crl(self.rest)
+
+        # -- Real policy honored per scope, independently -- no override
+        # param exists here, unlike diagnostics/validate. --
+        status, content = self.crl_utils.set_settings(
+            self.rest,
+            policyPerScope={"clientAuth": "Require", "nodeToNode": "Disabled"},
+        )
+        self.assertTrue(status, f"Policy change failed: {content}")
+
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [revoked_b64], "clientAuth"
+        )
+        self.assertTrue(status, f"crlsValidate failed: {content}")
+        self.assertEqual(content["statuses"][0]["status"], "revoked")
+
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [revoked_b64], "nodeToNode"
+        )
+        self.assertTrue(status)
+        self.assertEqual(
+            content["statuses"][0]["status"], "valid",
+            "nodeToNode is Disabled -- same revoked cert must not be "
+            "affected by clientAuth's Require policy",
+        )
+        self.log.info(
+            "crlsValidate honors the real per-scope policy, independently "
+            "(no override param, unlike diagnostics/validate)"
+        )
+
+        # -- Malformed-but-valid-base64 input: decode is only attempted
+        # (and only then can fail) when the scope's policy actually
+        # enforces -- under Disabled the verdict short-circuits to "valid"
+        # before ever touching the bytes. Confirmed live, not assumed. --
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [garbage_b64], "clientAuth"
+        )
+        self.assertTrue(status)
+        self.assertEqual(content["statuses"][0]["status"], "failed")
+        self.assertIn("decode", content["statuses"][0].get("details", "").lower())
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [garbage_b64], "nodeToNode"
+        )
+        self.assertTrue(status)
+        self.assertEqual(
+            content["statuses"][0]["status"], "valid",
+            "Disabled scope must short-circuit before attempting to "
+            "decode the cert at all",
+        )
+        self.log.info(
+            "Undecodable cert: 'failed' under an enforcing policy, "
+            "'valid' (short-circuited) under Disabled"
+        )
+
+        # -- Chain ordering: response preserves input order, leaf first --
+        status, content = self.crl_utils.cbauth_crls_validate(
+            self.rest, [revoked_b64, self.crl_utils.cert_to_der_b64(self.ca_cert)], "clientAuth"
+        )
+        self.assertTrue(status)
+        statuses = [r["status"] for r in content["statuses"]]
+        self.assertEqual(
+            statuses, ["revoked", "valid"],
+            "Response order must match input order (leaf, then CA); the "
+            "root CA itself is never CRL-checked",
+        )
+        self.log.info("Multi-cert chain response preserves input order")
+
+        # -- Validation edge cases --
+        base_url = f"http://{self.cluster.master.ip}:8091/_cbauth/crlsValidate"
+        auth = (self.rest.username, self.rest.password)
+
+        def post(body):
+            resp = requests.post(
+                base_url, auth=auth, headers={"Content-Type": "application/json"},
+                json=body, timeout=30,
+            )
+            return resp.status_code
+
+        self.assertEqual(post({"certs": [], "scope": "clientAuth"}), 400)
+        self.assertEqual(post({"certs": [revoked_b64], "scope": "bogusScope"}), 400)
+        self.assertEqual(post({"certs": ["not valid base64 !!!"], "scope": "clientAuth"}), 400)
+        self.assertEqual(
+            post({"certs": [revoked_b64], "scope": "clientAuth", "policy": "Require"}), 400,
+            "Unlike diagnostics/validate, there is no policy override param "
+            "-- supplying one must be rejected, not silently ignored",
+        )
+        self.assertEqual(post({"certs": [revoked_b64] * 100, "scope": "clientAuth"}), 200)
+        self.assertEqual(post({"certs": [revoked_b64] * 101, "scope": "clientAuth"}), 400)
+        self.log.info("Validation edge cases (empty/bad-scope/bad-base64/"
+                       "unsupported-field/cert-count boundary) all correct")
+
+        # -- RBAC: strictly narrower than every other CRL endpoint. A
+        # security_admin role has full access to /settings/crl itself but
+        # is cleanly denied here -- this endpoint alone requires
+        # {[admin,internal], all}. --
+        sec_user, sec_pass = self._create_rbac_test_user(
+            "cbauth_crls_secadmin", "security_admin"
+        )
+        code = requests.post(
+            base_url, auth=(sec_user, sec_pass),
+            headers={"Content-Type": "application/json"},
+            json={"certs": [revoked_b64], "scope": "clientAuth"}, timeout=30,
+        ).status_code
+        self.assertEqual(
+            code, 403,
+            "security_admin has full /settings/crl access but must still "
+            "be denied on crlsValidate -- it needs [admin,internal], a "
+            "strictly narrower grant than every other CRL endpoint",
+        )
+        code = requests.get(
+            f"http://{self.cluster.master.ip}:8091/settings/crl",
+            auth=(sec_user, sec_pass), timeout=30,
+        ).status_code
+        self.assertEqual(
+            code, 200,
+            "Contrast check: the same role has normal access to the "
+            "regular admin CRL endpoints",
+        )
+        self.log.info(
+            "crlsValidate correctly requires [admin,internal] -- strictly "
+            "narrower than every other CRL endpoint's [admin,security]"
+        )
+
     def test_crl_cert_chain_usage_encoding(self):
         """CRL checks across chain depth (root-direct, intermediate-issued),
         a fully untrusted chain rejected at chain validation before
@@ -2207,7 +2352,7 @@ class CRLTest(CRLBase):
         # PEM and base64-DER encodings of the same cert are accepted and
         # evaluated identically.
         pem_form = self.crl_utils.cert_to_pem(server_eku_cert).decode()
-        der_b64_form = base64.b64encode(self.crl_utils.cert_to_der(server_eku_cert)).decode()
+        der_b64_form = self.crl_utils.cert_to_der_b64(server_eku_cert)
         status, content_pem = self.crl_utils.diagnostics_validate(
             self.rest, policy="Require", certs=[pem_form]
         )
