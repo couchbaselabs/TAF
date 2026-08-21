@@ -1496,7 +1496,7 @@ class UpgradeBase(BaseTestCase):
     def verify_and_configure_fbr(self):
         """
         Verify and configure FBR (File-Based Rebalance).
-        Assumes version >= 8.1 (caller should check version before calling).
+        Assumes version >= 8.5 (caller should check version before calling).
         """
         status, content = self.rest.set_internal_settings()
         if not status:
@@ -1507,7 +1507,7 @@ class UpgradeBase(BaseTestCase):
         if 'dataServiceFileBasedRebalanceEnabled' in content:
             file_based_backfill_enabled = content.get('dataServiceFileBasedRebalanceEnabled', False)
             self.assertTrue(file_based_backfill_enabled,
-                           "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.1+")
+                           "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.5+")
             self.log.info("FBR (dataServiceFileBasedRebalanceEnabled) is enabled as expected")
 
             if self.disable_file_based_rebalance:

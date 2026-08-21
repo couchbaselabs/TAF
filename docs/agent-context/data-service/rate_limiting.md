@@ -2,7 +2,7 @@
 
 ## 🏗SYSTEM CONTEXT
 - **Feature:** Per-bucket throttling for KV Data Service.
-- **Version:** Available in Couchbase Server 8.1.0+ (Totoro).
+- **Version:** Available in Couchbase Server 8.5.0+ (Totoro).
 - **Scope:** Enterprise Edition Only.
 - **Topology:** Per-node configuration with global capacity pool.
 
@@ -114,7 +114,7 @@ Goal: Validate the "Soft vs. Hard" limit mechanics and back-pressure.
 ### 3. Resilience & Cluster Operations [P1]
 Goal: Integrate into existing high-availability test suites.
 - **Rebalance/Failover**: Add rate-limiting plugin tests to `pytests/rebalance_new/` and `pytests/failover/`. Perform rebalance/failover while buckets are actively being throttled. Verify limits persist on destination nodes.
-- **Upgrade Path**: Mixed Mode (8.0/8.1): Verify feature reports as "Disabled" on 8.1 nodes until cluster-wide upgrade.
+- **Upgrade Path**: Mixed Mode (8.0/8.5): Verify feature reports as "Disabled" on 8.5 nodes until cluster-wide upgrade.
   - Verify config persistence post-upgrade.
 - **Migration**: Test Couchstore ↔ Magma migration under active throttling.
 
@@ -134,7 +134,7 @@ Goal: Protect internal traffic from user-defined limits.
 | Dedicated Throttling Tests | `pytests/epengine/rate_limiting_tests.py` | **NEW FILE**: Complete rate-limiting test suite (P0/P1 requirements) |
 | Rebalance Tests | `pytests/rebalance_new/` | Add rate-limiting plugin tests to existing rebalance test files |
 | Failover Tests | `pytests/failover/` | Add rate-limiting plugin tests to existing failover test files |
-| Upgrade Tests | `pytests/upgrade/kv_upgrade_tests.py` | Add 8.1 feature-gate checks to existing upgrade tests |
+| Upgrade Tests | `pytests/upgrade/kv_upgrade_tests.py` | Add 8.5 feature-gate checks to existing upgrade tests |
 
 ## 📊 VALIDATION CHECKLIST
 

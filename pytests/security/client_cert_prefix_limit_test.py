@@ -34,7 +34,7 @@ class ClientCertPrefixLimitTest(OnPremBaseTest):
         Test client certificate configuration with maximum allowed prefixes (50).
 
         Steps:
-        1. Generate client cert auth configuration with 50 prefixes (max for 8.1.x and later)
+        1. Generate client cert auth configuration with 50 prefixes (max for 8.5.x and later)
         2. Upload configuration via /settings/clientCertAuth REST endpoint
         3. Verify configuration is accepted (success status, no errors)
         4. Verify GET /settings/clientCertAuth returns configuration with correct number of prefixes

@@ -32,7 +32,7 @@ class CreateBucketTests(ClusterSetup):
         self.assertTrue(status, "Could not get internalSettings: %s" % content)
         self.assertIsInstance(content, dict, "Expected dict from internalSettings")
         self.assertIn('dataServiceFileBasedRebalanceEnabled', content,
-                      "dataServiceFileBasedRebalanceEnabled not available (expect 8.1+)")
+                      "dataServiceFileBasedRebalanceEnabled not available (expect 8.5+)")
         original_value = content.get('dataServiceFileBasedRebalanceEnabled')
         set_status, set_content = rest.set_internal_settings(
             'dataServiceFileBasedRebalanceEnabled', 'invalid_value')

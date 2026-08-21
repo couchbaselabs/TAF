@@ -475,7 +475,7 @@ class KVRateLimitingTests(ClusterSetup):
 
 class RateLimitingUpgradeTests(UpgradeBase):
     """
-    Upgrade-time tests for KV rate limiting (gated to 8.1).
+    Upgrade-time tests for KV rate limiting (gated to 8.5).
     """
     def setUp(self):
         super(RateLimitingUpgradeTests, self).setUp()
@@ -525,7 +525,7 @@ class RateLimitingUpgradeTests(UpgradeBase):
 
     def test_rate_limit_in_mixed_mode_cluster(self):
         """
-        With one node upgraded to 8.1 and others on the initial pre-8.1
+        With one node upgraded to 8.5 and others on the initial pre-8.5
         version, rate-limit edits must be rejected.
         """
         self.upgrade_version = self.upgrade_chain[-1]
@@ -542,7 +542,7 @@ class RateLimitingUpgradeTests(UpgradeBase):
                 status,
                 f"Rate limit edit should be rejected in mixed-mode: {content}")
         finally:
-            # Finish upgrading remaining nodes so cluster ends uniform 8.1;
+            # Finish upgrading remaining nodes so cluster ends uniform 8.5;
             # otherwise bucket deletes fail in mixed-mode tearDown.
             for node in list(self.cluster.nodes_in_cluster):
                 if node.ip == first_node.ip:
@@ -555,7 +555,7 @@ class RateLimitingUpgradeTests(UpgradeBase):
 
     def test_rate_limit_after_full_upgrade(self):
         """
-        After full upgrade to 8.1+, rate-limit edits must succeed and
+        After full upgrade to 8.5+, rate-limit edits must succeed and
         values persist via REST.
         """
         self.upgrade_version = self.upgrade_chain[-1]

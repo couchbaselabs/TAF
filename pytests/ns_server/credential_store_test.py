@@ -152,7 +152,7 @@ _ID_MATRIX = [
 
 class CredentialStoreTest(CredentialStoreBase):
     """
-    P0 automation suite for the Credential Store feature (CB 8.1+ Enterprise).
+    P0 automation suite for the Credential Store feature (CB 8.5+ Enterprise).
 
     All setUp/tearDown/helpers live in CredentialStoreBase.
     This class contains only test_* methods mapped to the five P0 scenarios

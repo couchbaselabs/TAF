@@ -1,7 +1,7 @@
 ---
 name: credential-store-test-agent
 description: >
-  Credential Store P0/P1 tests for Couchbase Server 8.1+ Enterprise.
+  Credential Store P0/P1 tests for Couchbase Server 8.5+ Enterprise.
   Covers admin CRUD, secret redaction, Pattern A/B consume paths, guardrail
   enforcement, prerequisite overrides, credential expiry, Chronicle cross-node
   replication, node failure resilience, all 8 credential type smoke tests,
@@ -22,7 +22,7 @@ model: inherit
 
 ## Purpose
 
-Validates Couchbase Server's Credential Store subsystem (8.1+ Enterprise only).
+Validates Couchbase Server's Credential Store subsystem (8.5+ Enterprise only).
 Tests cover: admin CRUD with secret redaction, Pattern A end-user consume via
 `@cbq-engine`, guardrail enforcement (`allowedServices`), Pattern B service-identity
 consume, prerequisite enforcement (n2n encryption / override settings), credential
@@ -243,7 +243,7 @@ Authorization: Basic @cbq-engine:<cbauth_service_password>
 ### cbauth error format
 
 ```python
-# Nested dict (actual format returned by CB 8.1):
+# Nested dict (actual format returned by CB 8.5):
 {"error": {"code": "INSUFFICIENT_PERMISSIONS", "reason": "..."}}
 
 # Flat string (legacy format):
@@ -260,7 +260,7 @@ Server returns parameterized roles in two possible shapes; both must be accepted
 # Bracket notation (some paths):
 {"role": "credential_consumer[p0-s3-c1]"}
 
-# Separate-field notation (most paths in 8.1):
+# Separate-field notation (most paths in 8.5):
 {"role": "credential_consumer", "credential_id": "p0-s3-c1"}
 ```
 
@@ -606,7 +606,7 @@ unique (`p0-s2-c1`, `p0-s3-c1`, etc.).
 
 **Cause:** `get_cbauth_error_code()` failed to parse the nested error format.
 
-**Expected format (CB 8.1):**
+**Expected format (CB 8.5):**
 ```json
 {"error": {"code": "INSUFFICIENT_PERMISSIONS", "reason": "..."}}
 ```
@@ -638,10 +638,10 @@ When n2n is ON, warnings should always be `[]` regardless of override state.
 
 ### Error: "PUT strict settings expected 200" (S5) or "Strict create should return 400"
 
-**Cause:** Cluster does not support the `/settings/credentialStore` endpoint (not 8.1+
+**Cause:** Cluster does not support the `/settings/credentialStore` endpoint (not 8.5+
 Enterprise), or n2n was silently ON.
 
-**Fix:** Verify the cluster is 8.1+ Enterprise. `cluster_has_n2n` logic adapts
+**Fix:** Verify the cluster is 8.5+ Enterprise. `cluster_has_n2n` logic adapts
 automatically to n2n=ON clusters — check `[STRICT-BRANCH: n2n=ON/OFF]` in logs.
 
 ### Error: "expiresAt=360s should return 201" (S5) but got 400

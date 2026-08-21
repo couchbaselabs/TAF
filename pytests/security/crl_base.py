@@ -160,7 +160,7 @@ class CRLBase(ClusterSetup):
         """Fail immediately if the cluster can't run CRL tests — EE-only per
         CRL_API_Contract.md's assert_supported/0 gate. Compat version isn't
         checked here; this suite assumes it always runs against Totoro+
-        (8.1+) clusters."""
+        (8.5+) clusters."""
         if not self.cluster_util.is_enterprise_edition(self.cluster):
             self.fail("CRL support requires an Enterprise Edition cluster.")
 

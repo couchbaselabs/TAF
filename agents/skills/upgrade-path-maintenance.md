@@ -7,7 +7,7 @@ description: Runbook for wiring up a new Couchbase Server release's supported up
 
 ## Purpose
 
-Every new Couchbase Server release publishes an official upgrade-path diagram (e.g. "Upgrading to 8.1 | Upgrade Paths") that says which base versions can upgrade **directly** to the new target and which need one or more **intermediate hops**. TAF has to mirror that topology in four places, and they drift independently if only some are updated. This skill is the checklist for updating all four together.
+Every new Couchbase Server release publishes an official upgrade-path diagram (e.g. "Upgrading to 8.5 | Upgrade Paths") that says which base versions can upgrade **directly** to the new target and which need one or more **intermediate hops**. TAF has to mirror that topology in four places, and they drift independently if only some are updated. This skill is the checklist for updating all four together.
 
 ## The four places that must stay in sync
 

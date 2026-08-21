@@ -22,7 +22,7 @@ ALLOWED_SERVICES = ("n1ql", "backup", "index", "xdcr", "fts", "eventing", "cbas"
 
 class CredentialStoreAPI(CBRestConnection):
     """
-    Credential Store admin REST API for Couchbase Server 8.1+ Enterprise.
+    Credential Store admin REST API for Couchbase Server 8.5+ Enterprise.
 
     Wraps /settings/credentials, /settings/credentialStore, and
     /settings/rbac/services endpoints.

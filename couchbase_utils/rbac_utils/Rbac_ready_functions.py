@@ -52,7 +52,7 @@ class RbacUtils():
         in `bucket:scope` except `excluded_collection`, then creates a new
         local user assigned to that role.
 
-        Permission format verified on CB 8.1.0:
+        Permission format verified on CB 8.5.0:
           cluster.collection[b:s:.]        -> "all"   (wildcard: every collection)
           cluster.collection[b:s:col_name] -> "none"  (explicit deny on one collection)
 

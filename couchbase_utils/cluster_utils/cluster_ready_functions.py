@@ -769,7 +769,7 @@ class ClusterUtils:
         rest = ClusterRestAPI(cluster_node)
         setting_value = 'true' if enabled else 'false'
 
-        # First check if the setting is available (only supported in 8.1+)
+        # First check if the setting is available (only supported in 8.5+)
         get_status, get_content = rest.set_internal_settings()
         if not get_status or not isinstance(get_content, dict):
             self.log.warning(f"Could not retrieve internal settings to check dataServiceFileBasedRebalanceEnabled support: {get_content}")
@@ -778,7 +778,7 @@ class ClusterUtils:
         # Check if the setting exists in the response
         if 'dataServiceFileBasedRebalanceEnabled' not in get_content:
             self.log.warning(f"dataServiceFileBasedRebalanceEnabled setting is not available in this cluster version. "
-                           f"Skipping setting update. (Setting is only available in Couchbase 8.1+)")
+                           f"Skipping setting update. (Setting is only available in Couchbase 8.5+)")
             return True, {"message": "Setting not available in this version"}
 
         self.log.info(f"Setting dataServiceFileBasedRebalanceEnabled to {setting_value}")

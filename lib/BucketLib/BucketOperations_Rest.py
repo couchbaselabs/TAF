@@ -401,7 +401,7 @@ class BucketHelper(BucketRestApi):
             Bucket.encryptionAtRestDekLifetime: bucket_params.get(Bucket.encryptionAtRestDekLifetime),
             Bucket.throttleEnabled: bucket_params.get(Bucket.throttleEnabled, False)}
         # Only include throttle limits when explicitly set — sending UINT64_MAX as a
-        # default causes the per-node sum check in CB Server 8.1.0+ to reject creation.
+        # default causes the per-node sum check in CB Server 8.5.0+ to reject creation.
         _throttle_reserved = bucket_params.get(Bucket.throttleReserved)
         if _throttle_reserved is not None:
             init_params[Bucket.throttleReserved] = _throttle_reserved

@@ -76,7 +76,7 @@ unittest.TestCase
 | `load_data_cbc_pillowfight(server, bucket, items, doc_size)` | SSH cbc-pillowfight load |
 | `check_resident_ratio(cluster)` | Prometheus query for per-bucket RR across kv_nodes |
 | `create_bucket_for_large_doc_upgrades()` | Creates bucket for large-doc tests (skips spec file) |
-| `verify_and_configure_fbr()` | Checks `dataServiceFileBasedRebalanceEnabled` for 8.1+ |
+| `verify_and_configure_fbr()` | Checks `dataServiceFileBasedRebalanceEnabled` for 8.5+ |
 | `enable_verify_tls(master_node, level)` | Enables TLS + verifies enforcement level |
 | `add_system_scope_to_all_buckets()` | Adds `_system` scope/collections to bucket objects (needed post-7.6 upgrade) |
 | `PrintStep(msg)` | Prints visual separator in logs |
@@ -440,5 +440,5 @@ While upgrading from 6.5→7.2, `cluster_features` does **not** include `"collec
 | `validate_encryption_operations` assertion fails | Called with `expected_to_fail=True` during upgrade (mixed-mode blocks AES-256 key creation) and `expected_to_fail=False` after full upgrade. Uses `rest.create_secret()` + `bucket_helper.change_bucket_props(encryptionAtRestKeyId=...)`. If timing is off, cluster may not be fully upgraded yet. |
 | `add_system_scope_to_all_buckets()` called unexpectedly | Triggered by `float(upgrade_version[:3]) >= 7.6 and float(initial_version[:3]) < 7.6`. 7.6 added `_system` scope (`_query`, `_mobile` collections) — must be mirrored in local bucket objects for downstream validation to match. |
 | `attempt_10k_collection_creation()` wrong result | Returns `True` only on 8.5+ clusters. Asserted `False` during upgrade, `True` after. Failure = cluster not fully at 8.5+ when checked. |
-| FBR check fails | `verify_and_configure_fbr()` only called when `float(upgrade_version[:3]) >= 8.1`. Checks `internalSettings.dataServiceFileBasedRebalanceEnabled == True`. On older versions the key is absent — guarded by `if 'dataServiceFileBasedRebalanceEnabled' in content`. |
+| FBR check fails | `verify_and_configure_fbr()` only called when `float(upgrade_version[:3]) >= 8.5`. Checks `internalSettings.dataServiceFileBasedRebalanceEnabled == True`. On older versions the key is absent — guarded by `if 'dataServiceFileBasedRebalanceEnabled' in content`. |
 | `if "feature" in self.cluster_features` check seems redundant but must not be removed | `cluster_features` reflects the **current** cluster version at each step of the loop, not the final target. If `upgrade_chain` starts from a base version that predates the feature (e.g. chain `["6.5", "7.2", "8.0"] + "8.5"`), the guard is necessary during the 6.5→7.2 phase even though the target supports the feature. See "WARNING" block in Upgrade Chain Configuration for the full guard table. |

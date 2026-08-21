@@ -18,14 +18,14 @@ from pytests.onPrem_basetestcase import ClusterSetup
 
 class CredentialStoreBase(ClusterSetup):
     """
-    Base class for Credential Store tests against Couchbase Server 8.1+ Enterprise.
+    Base class for Credential Store tests against Couchbase Server 8.5+ Enterprise.
 
     Provides setUp/tearDown, test-user provisioning, store-settings management,
     and shared helpers.  Test classes extend this and implement test_* methods.
 
     Credential store prerequisites:
-    - Enterprise Edition 8.1+
-    - Config encryption ON (default in 8.1)
+    - Enterprise Edition 8.5+
+    - Config encryption ON (default in 8.5)
     - n2n encryption ON, OR n2nEncryptionOverride=true
 
     By default setUp sets n2nEncryptionOverride=true so that tests work on
@@ -186,7 +186,7 @@ class CredentialStoreBase(ClusterSetup):
                 "ns_config_auth:get_password(special).",
             ),
             (
-                "cbauth service token (8.1+)",
+                "cbauth service token (8.5+)",
                 'case ns_config:search(ns_config:latest(), '
                 '{cbauth_service_password, "@cbq-engine"}) of '
                 '{value, P} when is_binary(P) -> binary_to_list(P); '
@@ -238,7 +238,7 @@ class CredentialStoreBase(ClusterSetup):
         """
         Enable n2nEncryptionOverride so credential CRUD works on clusters
         that do not have n2n encryption enabled.  configEncryptionOverride stays
-        false (config encryption is ON by default in 8.1).
+        false (config encryption is ON by default in 8.5).
         """
         status, content = self.cs_utils.put_store_settings(
             self.rest,

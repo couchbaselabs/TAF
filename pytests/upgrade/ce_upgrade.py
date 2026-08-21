@@ -20,16 +20,16 @@ class CEUpgradeTests(CEBaseTest):
         super(CEUpgradeTests, self).tearDown()
 
     # ------------------------------------------------------------------ #
-    # Gap 2: CE restriction enforcement — 8.1 node-limit                  #
+    # Gap 2: CE restriction enforcement — 8.5 node-limit                  #
     # ------------------------------------------------------------------ #
 
     def test_ce_node_limit_rebalance_in_blocked(self):
         """
-        Rebalance-in of a 6th CE node into a 5-node 8.1 CE cluster must
+        Rebalance-in of a 6th CE node into a 5-node 8.5 CE cluster must
         fail with the CE node-limit error.
 
         Validates:
-        1. Version guard — skip on pre-8.1 builds where the limit is absent
+        1. Version guard — skip on pre-8.5 builds where the limit is absent
         2. Adding a pending CE node is accepted by addNode
         3. Triggering rebalance is rejected with the CE restriction message
         4. Ejecting the pending node recovers the cluster to exactly 5 nodes
@@ -102,7 +102,7 @@ class CEUpgradeTests(CEBaseTest):
         eject is supplied → KeepNodes=6 → rejected.
 
         Validates:
-        1. Version guard — skip on pre-8.1 builds
+        1. Version guard — skip on pre-8.5 builds
         2. 6th CE node accepted in pending state
         3. Swap rebalance (add + eject) succeeds without CE error
         4. Cluster settles at 5 active nodes
@@ -185,7 +185,7 @@ class CEUpgradeTests(CEBaseTest):
         confirming mixed-mode entry is allowed.
 
         Validates:
-        1. Version guard — skip on pre-8.1 builds
+        1. Version guard — skip on pre-8.5 builds
         2. 6th EE node can be added and rebalanced into a CE cluster
         3. Resulting 6-node mixed cluster has intact data
         """
@@ -252,7 +252,7 @@ class CEUpgradeTests(CEBaseTest):
         fully lifted — a 6th node can be rebalanced in without error.
 
         Validates:
-        1. Version guard — skip on pre-8.1 builds
+        1. Version guard — skip on pre-8.5 builds
         2. All 5 CE nodes swap-upgrade to EE
         3. 6th EE node rebalances in successfully (restriction lifted)
         4. Final 6-node all-EE cluster has intact data
@@ -330,23 +330,23 @@ class CEUpgradeTests(CEBaseTest):
 
     def test_ce_6node_upgrade_restriction_and_ee_resolution(self):
         """
-        Validates CE 8.1 node-limit behaviour on a 6-node pre-8.1 CE cluster.
+        Validates CE 8.5 node-limit behaviour on a 6-node pre-8.5 CE cluster.
 
         Real-world scenario: a customer had a valid 6-node CE 7.6.x cluster
-        (no limit pre-8.1), then started an offline upgrade to CE 8.1.
+        (no limit pre-8.5), then started an offline upgrade to CE 8.5.
         The restriction activates as soon as the FIRST node is upgraded —
-        not after all six are on 8.1.
+        not after all six are on 8.5.
 
         Stage 1 — Baseline: 6-node CE 7.6.x rebalances freely.
-        Stage 2 — Restriction trigger: offline-upgrade ONE node to CE 8.1;
+        Stage 2 — Restriction trigger: offline-upgrade ONE node to CE 8.5;
                   the next rebalance attempt is rejected by the CE limit.
-        Stage 3 — CE→EE resolution: swap-upgrade all 6 nodes to EE 8.1.
+        Stage 3 — CE→EE resolution: swap-upgrade all 6 nodes to EE 8.5.
                   Each swap ejects one CE node so the resulting CE count
                   never exceeds 5, allowing the rebalance to proceed.
         Stage 4 — Post-EE: 6-node EE cluster rebalances freely; data intact.
 
         Requires nodes_init=6 and a 7th spare node in node.ini.
-        Set initial_ce_version=7.6.2 so setUp installs the pre-8.1 baseline.
+        Set initial_ce_version=7.6.2 so setUp installs the pre-8.5 baseline.
         """
         self.assertEqual(len(self.cluster.nodes_in_cluster), 6,
                          "Requires exactly 6-node CE cluster, found %d"
@@ -358,7 +358,7 @@ class CEUpgradeTests(CEBaseTest):
 
         # ── Stage 1: Baseline — 6-node CE 7.6.x, no restriction ────────── #
         self.PrintStep("Stage 1: Verify 6-node CE 7.6.x rebalances freely "
-                       "(no restriction pre-8.1)")
+                       "(no restriction pre-8.5)")
         nodes = ClusterUtils.get_nodes(self.cluster.master)
         known_nodes = [n.id for n in nodes]
         status, _ = rest.rebalance(known_nodes=known_nodes, eject_nodes=[])
@@ -367,8 +367,8 @@ class CEUpgradeTests(CEBaseTest):
         self.log.info("Stage 1 passed — 6-node CE 7.6.x rebalances without "
                       "restriction")
 
-        # ── Stage 2: Offline-upgrade one node to CE 8.1 — restriction ──── #
-        self.PrintStep("Stage 2: Offline-upgrade one node to CE 8.1 — "
+        # ── Stage 2: Offline-upgrade one node to CE 8.5 — restriction ──── #
+        self.PrintStep("Stage 2: Offline-upgrade one node to CE 8.5 — "
                        "restriction fires immediately")
 
         # Pick a non-master node to upgrade offline
@@ -382,30 +382,30 @@ class CEUpgradeTests(CEBaseTest):
         self.sleep(15, "Allow cluster to stabilize after offline node upgrade "
                    "before triggering rebalance")
 
-        self.log.info("One node upgraded to CE 8.1; cluster is now "
-                      "5×7.6.x + 1×8.1 CE — restriction should be active")
+        self.log.info("One node upgraded to CE 8.5; cluster is now "
+                      "5×7.6.x + 1×8.5 CE — restriction should be active")
 
         nodes = ClusterUtils.get_nodes(self.cluster.master, inactive_added=True)
         known_nodes = [n.id for n in nodes]
         # check_ce_message=False: in a mixed-version cluster (master on 7.6.2,
-        # one node on 8.1 CE), the CE restriction fires but is re-raised by
+        # one node on 8.5 CE), the CE restriction fires but is re-raised by
         # the 7.6.2 orchestrator as a generic 500 rather than the clean
-        # "Cannot rebalance with more than 5" message seen in all-8.1 clusters.
+        # "Cannot rebalance with more than 5" message seen in all-8.5 clusters.
         # The proof is Stage 1 (7.6.2 only) passing + Stage 2 failing.
         self._attempt_rebalance_expect_ce_failure(rest, known_nodes,
                                                   check_ce_message=False)
-        self.log.info("Stage 2 passed — CE restriction fires on first CE 8.1 "
+        self.log.info("Stage 2 passed — CE restriction fires on first CE 8.5 "
                       "node, not after all 6 are upgraded")
 
         # ── Stage 3: CE→EE swap resolves the stuck cluster ──────────────── #
-        self.PrintStep("Stage 3: CE→EE swap-upgrade all 6 nodes to EE 8.1 "
+        self.PrintStep("Stage 3: CE→EE swap-upgrade all 6 nodes to EE 8.5 "
                        "using 7th node as spare")
         self._online_swap_all_nodes(edition="enterprise")
 
         self.assertTrue(
             self.cluster_util.is_enterprise_edition(self.cluster),
             "Stage 3: Expected all-EE cluster after CE→EE swap upgrade")
-        self.log.info("Stage 3 passed — all 6 nodes on EE 8.1, "
+        self.log.info("Stage 3 passed — all 6 nodes on EE 8.5, "
                       "CE restriction resolved")
 
         # ── Stage 4: Post-EE — 6-node EE cluster works freely ───────────── #

@@ -19,7 +19,7 @@ class CEBaseTest(UpgradeBase):
 
     CE_NODE_LIMIT = 5
     CE_REBALANCE_ERROR = "Cannot rebalance with more than 5"
-    # CE node-limit and service restrictions are enforced from 8.1.0 onwards.
+    # CE node-limit and service restrictions are enforced from 8.5.0 onwards.
     ENFORCED_CE_MIN_VERSION = (8, 1, 0)
 
     def setUp(self):
@@ -48,7 +48,7 @@ class CEBaseTest(UpgradeBase):
 
         Uses a proper integer-tuple comparison so two-digit minor/patch
         versions (e.g. 8.10.0) are never miscompared by string ordering.
-        CE node-limit and service restrictions are only enforced from 8.1+.
+        CE node-limit and service restrictions are only enforced from 8.5+.
         """
         status, info = ClusterRestAPI(server).node_details()
         if not status:

@@ -7,7 +7,7 @@ CB_VERSION_NAME = {"0.0": "master",
                    "7.6": "trinity",
                    "7.7": "cypher",
                    "8.0": "morpheus",
-                   "8.1": "totoro"}
+                   "8.1": "totoro", "8.5": "totoro"}
 
 
 COLUMNAR_VERSION_NAME = {

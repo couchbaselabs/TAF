@@ -441,7 +441,7 @@ class CommunityEditionRestrictions(ClusterSetup):
 
         Tests cbas, eventing, backup — all EE-only services.
         Requires one spare node in node.ini.
-        Note: --services on node-init requires Couchbase Server 8.1+.
+        Note: --services on node-init requires Couchbase Server 8.5+.
         """
         spare = self._get_available_node()
         ee_services = ["cbas", "eventing", "backup"]

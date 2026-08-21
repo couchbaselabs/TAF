@@ -255,8 +255,8 @@ class CollectionsQuorumLoss(CollectionBase):
         """
         Validates if manifest, scope, coll uids are bumped by a known epoch
         after QF. The epoch is a fixed constant in ns_server:
-        - Pre-8.1.0: 4096 (?EPOCH_PRE_TOTORO = 16#1000)
-        - 8.1.0+: 65536 (?EPOCH = 16#10000)
+        - Pre-8.5.0: 4096 (?EPOCH_PRE_TOTORO = 16#1000)
+        - 8.5.0+: 65536 (?EPOCH = 16#10000)
         """
         self.log.info("Validating UIDs after QF")
         valid_epochs = (4096, 65536)

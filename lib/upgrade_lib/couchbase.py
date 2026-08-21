@@ -34,7 +34,7 @@ upgrade_chains = {
     # Ref: https://docs.couchbase.com/server/current/install/upgrade.html
     # Older versions require intermediate hops through 7.2.3 → 7.2.9 (latest 7.2.x).
 
-    # 7.0.x → 7.2.3 → 7.2.9 → 8.1
+    # 7.0.x → 7.2.3 → 7.2.9 → 8.5
     "7.0.0_7.2.3_7.2.9": ["7.0.0", "7.2.3", "7.2.9"],
 
     # 7.1.x → 7.2.3 → 7.2.9 → 8.5

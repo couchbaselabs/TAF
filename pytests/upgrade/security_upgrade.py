@@ -6,10 +6,10 @@ from upgrade.upgrade_base import UpgradeBase
 
 class SecurityUpgradeTests(UpgradeBase):
 
-    # Roles that implied UI access pre-8.1 (totoro). On upgrade, ns_server
+    # Roles that implied UI access pre-8.5 (totoro). On upgrade, ns_server
     # backfills 'ui_access' onto any existing local user holding at least one
     # of these, since each of them now explicitly denies UI ({[ui], none}) in
-    # 8.1+ and previously didn't need a separate grant.
+    # 8.5+ and previously didn't need a separate grant.
     # Ref: ns_server menelaus_old_roles:pre_totoro_ui_roles/0
     # and menelaus_users:maybe_add_ui_access_role/1
     PRE_TOTORO_UI_ROLES = {

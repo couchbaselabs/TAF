@@ -561,7 +561,7 @@ class N1qlBase(CollectionBase):
         count = 0
         # Query transaction errors have appeared in two shapes across server
         # versions: a legacy nested form {"cause": {"cause": ...}} and a flat
-        # form {"code": ..., "msg": ...} (8.1.0+). Extract defensively so a
+        # form {"code": ..., "msg": ...} (8.5.0+). Extract defensively so a
         # missing "cause" key does not raise KeyError and get mis-reported as
         # an unexpected thread failure (masking an expected conflict such as a
         # duplicate-key commit).

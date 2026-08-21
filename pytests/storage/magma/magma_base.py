@@ -31,7 +31,7 @@ class MagmaBaseTest(StorageBase):
             self.fail(f"Expected dict from internalSettings, got {type(content)}")
         file_based_backfill_enabled = content.get('dataServiceFileBasedRebalanceEnabled', False)
         self.assertTrue(file_based_backfill_enabled,
-                       "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.1")
+                       "dataServiceFileBasedRebalanceEnabled should be True by default in Couchbase 8.5")
         self.log.info("FBR (dataServiceFileBasedRebalanceEnabled) is enabled as expected")
 
         # Check if FBR should be disabled for DCP fallback testing

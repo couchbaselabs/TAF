@@ -73,7 +73,7 @@ class JWTTokenTest(OnPremBaseTest):
             algorithm=self.algorithm, key_size=self.key_size
         )
 
-        # Developer Preview mode is not required for JWT authentication in version 8.1.x and later
+        # Developer Preview mode is not required for JWT authentication in version 8.5.x and later
         # Commenting out the following call as it is no longer needed
         # self._enable_dev_preview()
 

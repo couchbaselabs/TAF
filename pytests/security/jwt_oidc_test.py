@@ -1029,7 +1029,7 @@ class JWTOIDCTest(JWTOIDCBase):
             if int(status_whoami or 0) in [401, 403]:
                 self.fail(
                     f"JIT provisioning not supported for Bearer token auth on this build "
-                    f"(status={status_whoami}). Verified working on CB 8.1.0+. "
+                    f"(status={status_whoami}). Verified working on CB 8.5.0+. "
                     "On older builds, jitProvisioning may only apply to the browser OIDC flow."
                 )
 
@@ -1158,7 +1158,7 @@ class JWTOIDCTest(JWTOIDCBase):
             if int(status_whoami or 0) in [401, 403]:
                 self.fail(
                     f"JIT provisioning not supported for Bearer token auth on this build "
-                    f"(status={status_whoami}). Verified working on CB 8.1.0+. "
+                    f"(status={status_whoami}). Verified working on CB 8.5.0+. "
                     "On older builds, jitProvisioning may only apply to the browser OIDC flow."
                 )
 
