@@ -62,9 +62,11 @@ Run with the AWS profile that reaches the CP account (cbc-db default:
 dbaas-test-0005-temp).
 """
 
+import json
 import logging
 import os
 import re
+import socket
 import time
 
 from TestInput import TestInputSingleton
@@ -143,19 +145,32 @@ class FusionBillingTest(FusionBackupRestoreBase):
         inp.test_params.setdefault("preserve_clusters", True)
         inp.test_params.setdefault("reuse_clusters", True)
 
-        # 8.1.0 + fusion must be enabled on the TENANT *before* the cluster is
-        # deployed — otherwise Capella rejects the deploy with "requested version
-        # 8.1.0 is not supported" (only 7.x is offered until enable-eight-one-zero
-        # flips the version gate). The base applies the `feature_flags` param via
-        # the v2 tenant-feature-flag API during its setUp (BEFORE we deploy here),
-        # so inject the required flags into that param now.
-        required_ff = ("enable-eight-one-zero:true,fusion-rebalances:true,"
-                       "fusion-fallback-replace:true")
-        existing_ff = inp.test_params.get("feature_flags", "")
-        inp.test_params["feature_flags"] = (
-            "%s,%s" % (existing_ff, required_ff) if existing_ff else required_ff)
-        _LOG.info("Pre-deploy tenant feature_flags = %s"
-                  % inp.test_params["feature_flags"])
+        # Deploy-gating tenant feature flags are NOT hardcoded here — the
+        # pipeline supplies them via the ff_to_update/feature_flags param,
+        # which the base applies (before we deploy) in its setUp. Hardcoding
+        # them here made this suite break every time the product renamed or
+        # retired one: enable-eight-one-zero was renamed to
+        # enable-eight-five-zero, and fusion-fallback-replace was removed
+        # outright (AV-140819, fallback replacement is now unconditional), and
+        # each change meant a TAF edit plus a run failing on
+        # FeatureFlagMissingGlobal for a flag that no longer exists globally.
+        #
+        # The pipeline must therefore pass at least:
+        #   ff_to_update=fusion-rebalances:true;enable-eight-five-zero:true
+        # fusion-rebalances has to be on at setUp time because provisioning
+        # enables fusion on the cluster before any test body runs;
+        # enable-eight-five-zero lifts the 8.x version gate, without which the
+        # deploy is rejected with ErrVersionsUnsupportedVersion. The only flag
+        # this suite manages itself is fusion-rebalances, and only because
+        # test_fusion_disable_reenable_billing deliberately toggles it off/on
+        # (see _set_fusion_billing_enabled).
+        if not (inp.test_params.get("ff_to_update")
+                or inp.test_params.get("feature_flags")):
+            _LOG.warning(
+                "No ff_to_update/feature_flags passed — this suite no longer "
+                "hardcodes the deploy-gating flags, so the deploy will likely "
+                "fail. Pass ff_to_update=fusion-rebalances:true;"
+                "enable-eight-five-zero:true")
 
         # APIBase deploy-nothing + attrs/token/tenant-feature-flags/AWS creds.
         super(FusionBillingTest, self).setUp()
@@ -379,6 +394,62 @@ class FusionBillingTest(FusionBackupRestoreBase):
             "Accelerator CSP Uplift - %s %s"
             % (provider, region or self.aws_region))
 
+    @staticmethod
+    def _is_host_unresolvable(exc):
+        """True when `exc` (or anything it wraps) is a DNS resolution failure.
+
+        Used by _poll to distinguish "the sandbox is gone" from a genuine
+        transient blip. Matches on the message rather than the exception type
+        because the failure surfaces wrapped several layers deep — requests'
+        ConnectionError around urllib3's NameResolutionError around a
+        socket.gaierror — and TAF's CbcAPIError re-wraps it again as a
+        string."""
+        text = "%s %s" % (type(exc).__name__, exc)
+        return ("NameResolutionError" in text
+                or "Failed to resolve" in text
+                or "No address associated with hostname" in text
+                or "nodename nor servname provided" in text)
+
+    def _sandbox_dns_is_dead(self, attempts=3, gap=10):
+        """True only when the pod hostname fails to resolve on EVERY attempt.
+
+        The exception-text check alone is not enough: when a sandbox goes away
+        mid-run the symptom that reaches _poll is often indirect. In the run
+        that motivated this, the polled call died with
+        RuntimeError("CP db credentials unavailable") — kubectl could not
+        reach the EKS cluster — and carried no DNS wording at all, while the
+        real NameResolutionErrors surfaced elsewhere in _trigger_billing_job's
+        warnings. So probe DNS directly rather than trusting the message.
+
+        Deliberately requires the failure to PERSIST across `attempts` spaced
+        `gap` seconds apart. A single failed lookup does not prove the sandbox
+        is gone: the resolver on the CI agent can blip, and these are internal
+        zone names, so a momentary resolver/VPN problem looks identical to a
+        deleted DNS record from here. Aborting a healthy multi-hour run on one
+        bad lookup would be a worse failure than the wasted retries this is
+        meant to avoid, so a record that is genuinely deleted (stays
+        unresolvable) is what trips it, not a transient hiccup.
+
+        Returns False on any unexpected error so the probe can never itself
+        abort a run."""
+        host = self.url or ""
+        if not host:
+            return False
+        for i in range(attempts):
+            try:
+                socket.getaddrinfo(host, 443)
+                return False          # resolved once -> not dead
+            except socket.gaierror:
+                if i < attempts - 1:
+                    time.sleep(gap)
+            except Exception:
+                return False
+        self.log.warning(
+            "[dns-probe] %s failed to resolve on %s consecutive attempts "
+            "%ss apart — treating the sandbox as gone"
+            % (host, attempts, gap))
+        return True
+
     def _poll(self, fn, what, interval=120, timeout=None):
         """Poll fn() until it returns truthy or `timeout` elapses.
 
@@ -401,6 +472,20 @@ class FusionBillingTest(FusionBackupRestoreBase):
             try:
                 result = fn()
             except Exception as exc:
+                # A DNS failure for the pod host is NOT transient: the sandbox
+                # itself has been torn down or recycled, so every remaining
+                # retry is guaranteed to fail the same way. Bail immediately
+                # rather than burning the whole budget — a real run spent 2.6
+                # hours here doing 40 pointless retries against a sandbox
+                # whose hostnames had stopped resolving mid-run.
+                if self._is_host_unresolvable(exc) or (
+                        cp_errors >= 2 and self._sandbox_dns_is_dead()):
+                    self.fail(
+                        "Sandbox appears to be gone — DNS no longer resolves "
+                        "for pod host %s while polling for %s. Not retrying, "
+                        "since this cannot recover within the run. Underlying "
+                        "error: %s: %s"
+                        % (self.url, what, type(exc).__name__, exc))
                 cp_errors += 1
                 if cp_errors >= self._cp_error_limit:
                     self.fail(
@@ -452,7 +537,33 @@ class FusionBillingTest(FusionBackupRestoreBase):
         (BillPagerTasks) jobs so records appear in ~seconds instead of at the top of
         the hour. No-op by default. Called before each record query so 'wait for a
         fresh hour' loops resolve fast. Payloads per couchbase-cloud: ClusterBilling
-        accepts serviceIds to bill only this cluster; scheduled=false = manual."""
+        accepts serviceIds to bill only this cluster; scheduled=false = manual.
+
+        WHAT TRIGGERING CAN AND CANNOT DO — confirmed by the billing team
+        (Tom Tonner, 2026-08-31), do not re-derive this by experiment:
+
+          "It will no-op as the phonehome record will now be a hourly billing
+           record - and so it won't be found to be billed for"
+
+        i.e. re-triggering ClusterBilling for an hour that has ALREADY been
+        billed does nothing. Billing consumes the phonehome record and turns
+        it INTO the HourlyBillingRecord, so on a second run there is no
+        phonehome left to find. Two consequences that keep biting:
+
+          1. An already-written record is NEVER revised. A state change (flag
+             off, express scaling disabled, cluster turned off) cannot alter
+             a record that already exists — it only affects records written
+             from LATER phonehomes. So never assert that an existing value
+             drops to 0 or otherwise moves; assert that it stopped GROWING,
+             or read a later period. Four separate assertion bugs in this
+             file came from getting that backwards.
+          2. Hour boundaries are irreducible. Every phonehome inside one
+             clock hour maps to the same billingPeriod (phonehome + 1h), and
+             a billed hour cannot be re-billed, so a test needing to observe
+             a state change costs one wall-clock hour per transition no
+             matter how often this is called. Triggering only accelerates
+             the CURRENT, not-yet-billed hour; for any earlier hour these
+             calls are deliberate no-ops."""
         if not getattr(self, "trigger_billing_jobs", False):
             return
         # Bill the period the data is in: the fixed biller bills a clock HOUR, the
@@ -556,36 +667,47 @@ class FusionBillingTest(FusionBackupRestoreBase):
         error — found and fixed for the global-flag case; same fix
         applies here.
 
-        DELETE-then-CREATE, not create-then-update-on-conflict: a live run
-        proved the update (PUT) path on this control plane doesn't actually
-        change an existing flag's value — it returns the same
-        FeatureFlagAlreadyExists conflict create does, and a follow-up
-        readback confirmed the value never moved (asked for False, stayed
-        True). Deleting the tenant-level override first (no-op if it's
-        already absent) means the following create() never has an existing
-        key to conflict with, so it never touches the broken update path at
-        all. The update fallback is kept as a last resort only in case
-        delete itself doesn't take effect in time (eventual consistency) —
-        the readback-verify below is what actually decides pass/fail either
-        way."""
+        CREATE, then UPDATE (PUT) on a FeatureFlagAlreadyExists conflict.
+        Deliberately NOT delete-then-create: deleting the override first
+        means a failed create leaves the tenant with nothing, silently
+        falling back to the global value (which may be false, disabling
+        fusion for the rest of the run). PUT does correctly change an
+        existing flag's value — an earlier version of this method deleted
+        first on the belief that PUT always 409s, which was wrong
+        (AV-141104, closed not-a-bug; the 409 observed there came from the
+        create call, not the PUT). Each call's outcome is logged separately
+        below so a later failure is never ambiguous about which one produced
+        it, and the readback-verify is what actually decides pass/fail."""
         v2 = self._v2_api()
         payload = {"value": bool(value)}
-        del_resp = v2.delete_tenant_feature_flag(
-            self.organisation_id, self.FUSION_BILLING_FLAG)
-        self.log.info("[flag] delete-before-create %s -> %s"
-                      % (self.FUSION_BILLING_FLAG, del_resp.status_code))
         resp = v2.create_tenant_feature_flag(
             self.organisation_id, self.FUSION_BILLING_FLAG, payload)
+        self.log.info("[flag] create %s=%s -> %s%s"
+                      % (self.FUSION_BILLING_FLAG, value, resp.status_code,
+                         "" if resp.status_code in [200, 201, 204]
+                         else ": %s" % resp.content))
         if resp.status_code not in [200, 201, 204]:
+            # Catch only real body-parsing failures (JSONDecodeError is a
+            # ValueError). A bare `except Exception` here silently swallowed a
+            # NameError for years' worth of runs -- `json` was never imported
+            # in this module -- so err_type was always "", the
+            # FeatureFlagAlreadyExists branch never ran, the PUT was never
+            # issued, and the flag never actually changed. That is what made
+            # the toggle look like a control-plane bug (AV-140972/AV-141104,
+            # both closed not-a-bug). Keep this narrow so the next coding
+            # error fails loudly instead of degrading into a no-op.
             try:
                 err_type = json.loads(resp.content).get("errorType", "")
-            except Exception:
+            except (ValueError, TypeError):
                 err_type = ""
             if err_type == "FeatureFlagAlreadyExists":
-                # Known-unreliable fallback (see docstring) — last resort
-                # only; the readback-verify below is the real judge.
                 resp = v2.update_tenant_feature_flag(
                     self.organisation_id, self.FUSION_BILLING_FLAG, payload)
+                self.log.info("[flag] update %s=%s -> %s%s"
+                              % (self.FUSION_BILLING_FLAG, value,
+                                 resp.status_code,
+                                 "" if resp.status_code in [200, 201, 204]
+                                 else ": %s" % resp.content))
         if resp.status_code not in [200, 201, 204]:
             # Don't fail on this status code alone — on a long-lived shared
             # tenant the flag is very likely already sitting at the value
@@ -621,6 +743,21 @@ class FusionBillingTest(FusionBackupRestoreBase):
                    verify_resp.status_code, verify_resp.content, actual))
         self.log.info("Tenant feature flag %s set to %s (verified)"
                       % (self.FUSION_BILLING_FLAG, value))
+
+    def _read_fusion_billing_flag(self):
+        """Current value of the tenant-level fusion-rebalances flag, or None if
+        it can't be read. Read-only — used to tell "billing ignored the flag"
+        apart from "something re-enabled the flag underneath us" when a
+        flag-off assertion fails."""
+        try:
+            resp = self._v2_api().list_tenant_feature_flags_internal_specific(
+                self.organisation_id, self.FUSION_BILLING_FLAG)
+            if resp.status_code != 200:
+                return None
+            return (resp.json() or {}).get(self.FUSION_BILLING_FLAG)
+        except Exception as exc:
+            self.log.warning("[flag] readback failed: %s" % exc)
+            return None
 
     # ------------------------------------------------------------------
     # Workload driver: create buckets -> enable fusion -> load -> rebalance
@@ -976,6 +1113,54 @@ class FusionBillingTest(FusionBackupRestoreBase):
         self._verify_credits_decomposition(records)     # EXACT total-credits equation
         self._test_succeeded = True
 
+    def test_region_ssd_pricing(self):
+        """Cheap, focused: the fixed SSD charge uses the CLUSTER REGION's disk
+        price rather than a hardcoded default. Pin the expected price with
+        expected_ebs_price=<n> and set region=<aws-region>.
+
+        Deliberately does NOT call _setup_fusion_workload(). This replaced a
+        SECOND full test_fusion_billing_e2e run whose only unique purpose was
+        this one region assertion — it re-proved the SSD formula, bucket
+        charge, variable cost, no-dupes, continuity and credits
+        decomposition that the first e2e entry already proves, and paid a
+        ~24 GB doc load plus a rebalance to do it (~100 min). What
+        _verify_region_pricing actually reads is hourly records carrying
+        fusionCosts.ebsListPrice, which exist as soon as fusion is enabled on
+        the cluster (setUp does that) because the SSD charge is derived from
+        the node's disk size, not from any data on it. Buckets, the load and
+        the rebalance exist to produce bucket charges and pagerTasks, neither
+        of which this test looks at.
+
+        Polls for a record whose ebsListPrice is actually populated rather
+        than asserting on the first record found: a freshly fusion-enabled
+        cluster can emit records with the fusion costs still zeroed (the
+        AV-140399 shape), and failing on that would be a timing artefact
+        rather than a region-pricing bug."""
+        def _priced_records():
+            rows = [r for r in (self._hourly_records() or [])
+                    if r.get("fusionEnabled")
+                    and float((r.get("fusionCosts") or {})
+                              .get("ebsListPrice") or 0) > 0]
+            return rows or None
+
+        records = self._poll(
+            _priced_records,
+            "an hourly record with a populated fusionCosts.ebsListPrice for "
+            "region %s" % self.aws_region)
+        self.assertTrue(
+            records,
+            "No fusion-enabled hourly record with a non-zero ebsListPrice for "
+            "cluster %s in region %s — cannot check region pricing. A record "
+            "with the fusion costs still zeroed is the AV-140399 shape; a "
+            "total absence of records points at the biller not enumerating "
+            "this cluster at all." % (self.cluster_id, self.aws_region))
+        self._verify_region_pricing(records)
+        self.log.info(
+            "[region-pricing] verified region %s disk pricing on %s record(s) "
+            "without a doc load or rebalance"
+            % (self.aws_region, len(records)))
+        self._test_succeeded = True
+
     def _verify_no_duplicates(self, records):
         """Integrity: at most ONE SSD record per (node, billingPeriod) and ONE
         per-cluster bucket doc per period (no double-billing); and the per-node SSD
@@ -1044,11 +1229,15 @@ class FusionBillingTest(FusionBackupRestoreBase):
              its window to max(existing records), so a trailing gap could
              never be detected — the loop ended at the last record that DID
              exist and reported success.
-          c) ZERO-COST hour — a record EXISTS but carries fusionSSDCost <= 0.
-             This is the AV-140399 signature. The previous implementation
-             FILTERED these out before computing the window, so a zero-cost
-             PREFIX (the common AV-140399 shape: first N hours after enable
-             are all zero) was silently dropped and the check passed.
+          c) ZERO-COST hour — a record EXISTS but carries fusionSSDCost <= 0,
+             AFTER this node has already been charged at least once. A
+             contiguous zero-cost PREFIX is deliberately NOT flagged: that is
+             the AV-140399 shape (the first hours after fusion enable carry no
+             SSD cost) and it was closed As Designed, so failing on it would
+             fail every run on expected behaviour. A node that is NEVER
+             charged in the whole window is still reported — that is the
+             AV-140399 fleet symptom rather than a slow start, and
+             test_fleet_fusion_ssd_cost_coverage proves it at scale.
 
         The trailing-gap check needs a grace window: the fixed biller runs at
         :15 past the hour FOR THE PREVIOUS HOUR (cmd/cp-scheduler cron
@@ -1085,8 +1274,25 @@ class FusionBillingTest(FusionBackupRestoreBase):
             pset = {datetime.strptime(p, fmt) for p in periods}
             lo, hi = min(pset), max(pset)
 
+            # Cap the scan at expected_latest — the SAME grace this method
+            # already applies to the trailing check, and for the same reason
+            # spelled out in the docstring: the current hour and the one just
+            # ended are legitimately unbilled, because the fixed biller runs
+            # at :15 past the hour FOR THE PREVIOUS HOUR.
+            #
+            # Without the cap this produced a false "lost billing hour". The
+            # on-biller stamps BillingPeriod = phonehome + 1h (clustersbiller
+            # "We bill the following hour to the node phone home time"), so a
+            # manual ClusterBilling trigger — which this suite fires
+            # constantly — immediately writes a record for the NEXT hour
+            # boundary. That future-dated record became `hi`, dragging the
+            # scan across the current hour, whose scheduled :15 run had not
+            # happened yet. Observed live: triggered at 10:05Z, an 11:00Z
+            # record appeared at once, and 10:00Z was reported as an interior
+            # gap ~10 minutes before it was ever due to be written.
+            scan_hi = min(hi, expected_latest)
             missing, t = [], lo
-            while t <= hi:
+            while t <= scan_hi:
                 if t not in pset:
                     missing.append(t.strftime(fmt))
                 t += timedelta(hours=1)
@@ -1099,10 +1305,28 @@ class FusionBillingTest(FusionBackupRestoreBase):
                 gap_h = int((expected_latest - hi).total_seconds() // 3600) + 1
                 trailing[node] = (hi.strftime(fmt), gap_h)
 
-            # (c) hours that exist but were never charged.
-            unpaid = sorted(p.strftime(fmt)
-                            for p in pset
-                            if p.strftime(fmt) not in paid_hours.get(node, set()))
+            # (c) hours that exist but were never charged — EXCLUDING a
+            # contiguous zero-cost PREFIX. AV-140399 reported exactly that
+            # shape (the first hours after fusion enable carry no SSD cost)
+            # and was closed As Designed, so flagging it would fail every run
+            # on expected behaviour. What is still worth catching is a
+            # zero-cost hour AFTER billing has demonstrably started for this
+            # node: that is a charge going missing mid-series, not a slow
+            # start. Anchor on the node's first PAID hour and only judge from
+            # there.
+            paid = paid_hours.get(node, set())
+            first_paid = min((p for p in pset if p.strftime(fmt) in paid),
+                             default=None)
+            if first_paid is None:
+                # Never charged at all in this window — that is not a "slow
+                # start", it is the AV-140399 fleet symptom, and
+                # test_fleet_fusion_ssd_cost_coverage owns proving it at
+                # scale. Report it here too rather than silently passing.
+                zero_cost[node] = sorted(p.strftime(fmt) for p in pset)
+                continue
+            unpaid = sorted(p.strftime(fmt) for p in pset
+                            if p >= first_paid
+                            and p.strftime(fmt) not in paid)
             if unpaid:
                 zero_cost[node] = unpaid
 
@@ -1638,65 +1862,168 @@ class FusionBillingTest(FusionBackupRestoreBase):
                           % self.FUSION_BILLING_FLAG)
             self._set_fusion_billing_enabled(False)
 
+            # Track WHY each attempt failed. Returning a bare None for both
+            # "no fresh record yet" and "fresh records still carry a charge"
+            # made the failure message unable to tell those apart, even though
+            # they are completely different causes (waiting on the next hour
+            # boundary vs billing genuinely not honouring the flag).
+            diag = {"rows": 0, "charged": []}
+
             def _flag_off_zeroed():
                 rows = [r for r in self._hourly_records()
                         if (r.get("billingPeriod") or "") > latest]
+                diag["rows"] = len(rows)
                 if not rows:
                     return None
-                ok = all(
-                    float((r.get("fusionCosts") or {}).get("fusionSSDCost") or 0) == 0
-                    and float((r.get("bucketCosts") or {}).get("credits") or 0) == 0
-                    for r in rows)
-                return rows if ok else None
+                charged = [
+                    (r.get("nodeId"), r.get("billingPeriod"),
+                     float((r.get("fusionCosts") or {}).get("fusionSSDCost") or 0),
+                     float((r.get("bucketCosts") or {}).get("credits") or 0))
+                    for r in rows
+                    if float((r.get("fusionCosts") or {}).get("fusionSSDCost") or 0) != 0
+                    or float((r.get("bucketCosts") or {}).get("credits") or 0) != 0]
+                diag["charged"] = charged[:5]
+                return rows if not charged else None
             off = self._poll(
                 _flag_off_zeroed,
                 "a fresh hour with SSD AND bucket zeroed (billing flag off)")
-            self.assertTrue(
-                off,
-                "OVER-BILLING: with %s disabled, no fresh hour came back with "
-                "BOTH fusionSSDCost=0 and bucket credits=0 for cluster %s"
-                % (self.FUSION_BILLING_FLAG, self.cluster_id))
+            if not off:
+                # Before calling this over-billing, confirm the flag is STILL
+                # off. fusion-rebalances is TENANT-scoped, so any other run
+                # sharing this tenant re-enables it just by starting a test
+                # (_setup_fusion_workload calls _set_fusion_billing_enabled(
+                # True) unconditionally). Running the two billing GROUPS in
+                # parallel does exactly that, and the symptom is identical to
+                # a real over-billing bug — fresh records keep carrying a
+                # charge — so distinguish them here instead of filing the
+                # wrong bug.
+                still_off = self._read_fusion_billing_flag()
+                self.assertTrue(
+                    off,
+                    "with %s disabled, no fresh hour came back with BOTH "
+                    "fusionSSDCost=0 and bucket credits=0 for cluster %s. "
+                    "Flag value read back at failure: %r (False = still "
+                    "disabled as intended). Fresh records seen: %s. Still "
+                    "charged (nodeId, period, ssd, bucket): %s. If the flag "
+                    "read back True, something else re-enabled it mid-poll — "
+                    "almost certainly another run on the same TENANT (the two "
+                    "billing groups in parallel), NOT an over-billing bug. If "
+                    "it read back False and records above still carry a "
+                    "charge, that is a genuine over-billing finding. If zero "
+                    "fresh records appeared at all, this is a timing problem "
+                    "(the baseline watermark can be an hour in the future, "
+                    "since a manual trigger stamps billingPeriod = phonehome "
+                    "+ 1h), not a billing correctness problem."
+                    % (self.FUSION_BILLING_FLAG, self.cluster_id, still_off,
+                       diag["rows"], diag["charged"]))
+            # Variable (pager-priced) billing must not ACCRUE while the flag
+            # is off — it must not drop to 0, which is a different claim and
+            # the one this check used to make (wrongly).
+            #
+            # The pager biller does gate on this flag per task
+            # (internal/billing/biller/variable/billers/fusion/biller.go,
+            # BoolVariationWithTenant(... FusionRebalances ...) -> continue,
+            # added by AV-140520). But with every task skipped, `agg` stays
+            # empty, so the loop that calls variableWriter.Put() never runs at
+            # all: the flag stops NEW charges being written, it does not erase
+            # a charge already on record. And GetVariableId keys the record by
+            # DAY (record.go, date.Format(time.DateOnly)), so the record
+            # written during this test's own baseline — while the flag was
+            # still on — survives untouched for the rest of the day.
+            #
+            # Expecting 0 therefore asserted something the product will never
+            # do, and failed every run (observed: 0.1726712463237345,
+            # unchanged from baseline). AV-141104's repro confirms the same
+            # shape from the other side: it had to delete the existing
+            # billing.variable doc by hand before re-running with the flag
+            # off, which is exactly why no doc came back.
+            #
+            # The real over-billing property, and what this now checks, is
+            # that the charge did not GROW while the flag was off.
             variable_off = self._current_fusion_variable_credits(force_trigger=True)
-            self.assertEqual(
-                variable_off, 0,
-                "OVER-BILLING: Fusion 2 variable credits still %s after "
-                "disabling %s — pager-priced variable billing does not track "
-                "the flag the way fixed SSD/bucket billing does. Worth "
-                "confirming with #capella-billing whether that is deliberate "
-                "before treating it as a defect."
-                % (variable_off, self.FUSION_BILLING_FLAG))
+            self.assertAlmostEqual(
+                variable_off, variable_before, delta=self.credit_tolerance,
+                msg="OVER-BILLING: Fusion 2 variable credits moved from %s to "
+                    "%s while %s was disabled on cluster %s. With the flag off "
+                    "the pager biller skips every task, so nothing should be "
+                    "written and the day's existing record should be exactly "
+                    "as it was at baseline. A HIGHER value means new variable "
+                    "charges accrued despite the flag — that is the real "
+                    "over-billing finding. (It should NOT be 0: the flag "
+                    "stops new writes, it does not erase the day's record.)"
+                    % (variable_before, variable_off,
+                       self.FUSION_BILLING_FLAG, self.cluster_id))
             flag_off_latest = max((r.get("billingPeriod") or "") for r in off)
             self.log.info(
                 "[phase-A] flag off -> SSD=0, bucket=0 across %s record(s), "
-                "variable=0" % len(off))
+                "variable unchanged at %s (baseline %s)"
+                % (len(off), variable_off, variable_before))
 
             # ---- PHASE B: flag back ON, charges must RESUME --------------
             self.log.info("[phase-B] re-enabling tenant billing flag %s"
                           % self.FUSION_BILLING_FLAG)
             self._set_fusion_billing_enabled(True)
 
+            # SSD and bucket costs live on DIFFERENT documents: the per-node
+            # records carry debug.fusionCosts and no bucketCosts, while the
+            # bucket charge is a single per-CLUSTER doc per period with an
+            # empty nodeId and no fusionCosts (see _verify_no_duplicates and
+            # the nodeId="" skips in _verify_billing_continuity /
+            # _verify_credits_decomposition). Requiring ssd > 0 AND
+            # bucket > 0 on the SAME row was therefore unsatisfiable, and
+            # this phase could never pass — it failed identically on two
+            # separate clusters, including a run with no parallel group to
+            # blame. Check the two independently instead, and report which
+            # one is missing so a genuine one-sided failure stays visible.
+            resumed = {"ssd": [], "bucket": []}
+
             def _flag_on_resumed():
-                rows = [r for r in self._hourly_records()
-                        if (r.get("billingPeriod") or "") > flag_off_latest
-                        and float((r.get("fusionCosts") or {})
-                                  .get("fusionSSDCost") or 0) > 0
-                        and float((r.get("bucketCosts") or {})
-                                  .get("credits") or 0) > 0]
-                return rows or None
+                fresh = [r for r in self._hourly_records()
+                         if (r.get("billingPeriod") or "") > flag_off_latest]
+                resumed["ssd"] = [
+                    r for r in fresh
+                    if float((r.get("fusionCosts") or {})
+                             .get("fusionSSDCost") or 0) > 0]
+                resumed["bucket"] = [
+                    r for r in fresh
+                    if float((r.get("bucketCosts") or {})
+                             .get("credits") or 0) > 0]
+                if resumed["ssd"] and resumed["bucket"]:
+                    return resumed["ssd"] + resumed["bucket"]
+                return None
             back = self._poll(
                 _flag_on_resumed,
-                "a fresh hour with SSD AND bucket resumed (billing flag on)")
+                "a fresh hour with SSD and bucket both resumed (billing flag "
+                "on)")
             self.assertTrue(
                 back,
-                "UNDER-BILLING: fusion SSD and/or bucket charges did NOT "
-                "resume on cluster %s after re-enabling %s — once disabled, "
-                "billing never recovered" % (self.cluster_id,
-                                             self.FUSION_BILLING_FLAG))
+                "UNDER-BILLING: fusion charges did not fully resume on "
+                "cluster %s after re-enabling %s. Fresh records with a "
+                "non-zero SSD charge: %s. Fresh records with a non-zero "
+                "bucket charge: %s. Both must be present — they are separate "
+                "documents (per-node SSD vs one per-cluster bucket doc). If "
+                "only one is 0, that side did not recover; if both are 0, "
+                "either no new billing period has closed yet or billing did "
+                "not restart at all."
+                % (self.cluster_id, self.FUSION_BILLING_FLAG,
+                   len(resumed["ssd"]), len(resumed["bucket"])))
+            # Sanity only — NOT proof that variable billing resumed. The day's
+            # record is never erased (see the phase-A note), so this is always
+            # >= the baseline value and cannot go to 0; it would pass even if
+            # re-enabling did nothing. Proving resumption needs a FRESH
+            # rebalance while the flag is back on, so that new pager tasks
+            # exist to be priced — this test does not do one, and adding it
+            # would cost another rebalance plus hour boundary. The fixed
+            # SSD/bucket resumption asserted just above is the real
+            # recovery signal here.
             variable_back = self._current_fusion_variable_credits(force_trigger=True)
-            self.assertGreater(
-                variable_back, 0,
-                "UNDER-BILLING: Fusion 2 variable credits still 0 after "
-                "re-enabling %s" % self.FUSION_BILLING_FLAG)
+            self.assertGreaterEqual(
+                variable_back, variable_off - self.credit_tolerance,
+                "Fusion 2 variable credits DROPPED from %s to %s after "
+                "re-enabling %s — the day's record should never decrease, so "
+                "this points at the record being rewritten downward or "
+                "replaced rather than at a flag problem."
+                % (variable_off, variable_back, self.FUSION_BILLING_FLAG))
             resumed_latest = max((r.get("billingPeriod") or "") for r in back)
             self.log.info(
                 "[phase-B] flag on -> SSD>0 and bucket>0 across %s record(s), "
@@ -1719,52 +2046,134 @@ class FusionBillingTest(FusionBackupRestoreBase):
             self._ensure_fusion_disabled(
                 self.cluster_id, self.project_id, label="billing cluster")
 
-            def _fresh_after_cluster_disable():
+            # Snapshot pagerTasks again now that the disable has converged.
+            # Anything already present at this point (including tasks the
+            # teardown rebalance itself wrote) is not a violation; only tasks
+            # appearing AFTER this line are. See the assertion below.
+            pager_at_disable = {(p.get("nodeID"), p.get("planUUID"))
+                                for p in (self._completed_pager_tasks() or [])}
+
+            # Wait for the SETTLED disabled state, exactly as phase A waits for
+            # the settled flag-off state — do not assert on the first fresh
+            # batch. The hour in which express scaling is switched off
+            # legitimately still carries a fusion charge: the on-biller stamps
+            # billingPeriod = phonehome + 1h, so a phonehome taken while the
+            # accelerator still existed (or was mid-teardown, which the guest
+            # volume and S3 log-store convergence makes slow) produces a
+            # charged record labelled an hour AHEAD. Billing the hour the
+            # accelerator was partly alive is arguably correct, so failing on
+            # it is wrong. Observed: this asserted on a record for 11:00Z at
+            # 10:00Z wall clock — the transition boundary itself.
+            #
+            # What must be true is that the charge STOPS, so poll until a
+            # fresh record past the disable carries neither a fusion SSD nor a
+            # bucket charge, and only fail if that never happens.
+            # Judge by the record's OWN fusionEnabled flag, not by clock
+            # arithmetic. Waiting for a period that is provably past the
+            # transition needs TWO hour boundaries (a period is
+            # phonehome + 1h, so only period hour(disable)+2h is guaranteed to
+            # come from a post-disable phonehome) — that is ~2h of dead
+            # waiting, and manual triggering cannot shorten it because every
+            # phonehome inside one hour maps to the same period.
+            #
+            # The records already carry the answer. The biller sets
+            # fusionEnabled and computes the fusion cost from the same node
+            # state, so a record it marked fusion-DISABLED must carry no
+            # fusion charge, while a record still marked enabled belongs to
+            # the transition hour and legitimately may. That needs only ONE
+            # new period, and it tests the actual invariant instead of
+            # inferring it from timestamps.
+            disable_diag = {"rows": 0, "enabled_rows": 0, "disabled_rows": 0,
+                            "ssd": [], "bucket": []}
+
+            def _settled_after_cluster_disable():
                 rows = [r for r in self._hourly_records()
-                        if (r.get("billingPeriod") or "") > resumed_latest
-                        and r.get("nodeId")]
-                return rows or None
+                        if (r.get("billingPeriod") or "") > resumed_latest]
+                disable_diag["rows"] = len(rows)
+                if not rows:
+                    return None
+                dis = [r for r in rows if not r.get("fusionEnabled")]
+                disable_diag["disabled_rows"] = len(dis)
+                disable_diag["enabled_rows"] = len(rows) - len(dis)
+                if not dis:
+                    # Disable has not reached billing yet — every fresh record
+                    # is still marked fusion-enabled. Keep waiting.
+                    return None
+                disable_diag["ssd"] = [
+                    (r.get("nodeId"), r.get("billingPeriod"),
+                     float((r.get("fusionCosts") or {})
+                           .get("fusionSSDCost") or 0))
+                    for r in dis
+                    if float((r.get("fusionCosts") or {})
+                             .get("fusionSSDCost") or 0) > 0]
+                disable_diag["bucket"] = [
+                    (r.get("billingPeriod"),
+                     float((r.get("bucketCosts") or {}).get("credits") or 0))
+                    for r in dis
+                    if float((r.get("bucketCosts") or {})
+                             .get("credits") or 0) > 0]
+                if disable_diag["ssd"] or disable_diag["bucket"]:
+                    # A record the biller itself marked fusion-disabled is
+                    # carrying a fusion charge. That is not a transition
+                    # artefact — stop polling and report it.
+                    return "CHARGED_WHILE_DISABLED"
+                return [r for r in dis if r.get("nodeId")] or None
+
             post = self._poll(
-                _fresh_after_cluster_disable,
-                "a fresh hourly record after CLUSTER-LEVEL fusion disable")
+                _settled_after_cluster_disable,
+                "a fresh hourly record marked fusionEnabled=false after "
+                "CLUSTER-LEVEL fusion disable")
+            self.assertNotEqual(
+                post, "CHARGED_WHILE_DISABLED",
+                "OVER-BILLING: cluster %s has records the biller itself marked "
+                "fusionEnabled=false, yet they still carry a fusion charge. "
+                "The biller sets that flag and computes the fusion cost from "
+                "the same node state, so this is inconsistent rather than a "
+                "transition artefact. Still charged SSD (nodeId, period, "
+                "cost): %s. Still charged bucket (period, credits): %s."
+                % (self.cluster_id, disable_diag["ssd"][:5],
+                   disable_diag["bucket"][:5]))
             self.assertTrue(
                 post,
-                "No hourly record at all after disabling express scaling on "
-                "%s — cannot tell 'fusion correctly not charged' apart from "
-                "'billing stopped entirely'" % self.cluster_id)
+                "No hourly record marked fusionEnabled=false appeared for "
+                "cluster %s after disabling express scaling. Fresh records "
+                "seen: %s (still marked enabled: %s, marked disabled: %s). "
+                "All-enabled means the disable had not reached billing within "
+                "the wait — a timing problem, not over-billing; zero fresh "
+                "records means no new billing period closed at all."
+                % (self.cluster_id, disable_diag["rows"],
+                   disable_diag["enabled_rows"],
+                   disable_diag["disabled_rows"]))
 
-            charged_ssd = [
-                (r.get("nodeId"), r.get("billingPeriod"),
-                 float((r.get("fusionCosts") or {}).get("fusionSSDCost") or 0))
-                for r in post
-                if float((r.get("fusionCosts") or {}).get("fusionSSDCost") or 0) > 0]
-            self.assertFalse(
-                charged_ssd,
-                "OVER-BILLING: cluster %s has express scaling DISABLED (no "
-                "accelerator, no guest volumes) yet is still charged a fusion "
-                "SSD cost (nodeId, period, fusionSSDCost): %s"
-                % (self.cluster_id, charged_ssd[:5]))
-
-            charged_bucket = [
-                (r.get("billingPeriod"),
-                 float((r.get("bucketCosts") or {}).get("credits") or 0))
-                for r in post
-                if float((r.get("bucketCosts") or {}).get("credits") or 0) > 0]
-            self.assertFalse(
-                charged_bucket,
-                "OVER-BILLING: cluster %s has express scaling DISABLED yet is "
-                "still charged a fusion BUCKET cost (period, credits): %s"
-                % (self.cluster_id, charged_bucket[:5]))
-
+            # Compare against the set as it stood once the disable had
+            # CONVERGED (pager_at_disable), not the pre-disable set. Disabling
+            # express scaling itself triggers a rebalance — the log shows the
+            # cluster going through 'rebalancing' — and a rebalance that
+            # begins while fusion is still on can legitimately move
+            # accelerator data and write a pagerTask. Diffing against the
+            # pre-disable snapshot counts that teardown task as a violation,
+            # the same transition-boundary mistake the SSD/bucket check above
+            # made. The property that actually matters is that a settled,
+            # fusion-free cluster accrues NO FURTHER tasks.
             pager_after = {(p.get("nodeID"), p.get("planUUID"))
                            for p in (self._completed_pager_tasks() or [])}
+            during_disable = pager_at_disable - pager_before
+            if during_disable:
+                self.log.info(
+                    "[phase-C] %s pagerTask(s) appeared while the disable was "
+                    "converging (expected — the teardown rebalance can still "
+                    "move accelerator data): %s"
+                    % (len(during_disable), sorted(during_disable)[:5]))
             self.assertFalse(
-                pager_after - pager_before,
+                pager_after - pager_at_disable,
                 "OVER-BILLING: new pagerTask(s) %s appeared for cluster %s "
-                "AFTER express scaling was disabled — a fusion-free cluster "
-                "moves no accelerator data and must accrue no new variable "
-                "charge" % (sorted(pager_after - pager_before)[:5],
-                            self.cluster_id))
+                "AFTER express scaling was disabled AND had converged — a "
+                "fusion-free cluster moves no accelerator data and must "
+                "accrue no new variable charge. (Tasks written during the "
+                "teardown rebalance itself are excluded; those are logged "
+                "above and are not counted here.)"
+                % (sorted(pager_after - pager_at_disable)[:5],
+                   self.cluster_id))
 
             # The cluster must still be billed for what it DOES use —
             # otherwise every check above would pass just as well if billing
@@ -1917,49 +2326,12 @@ class FusionBillingTest(FusionBackupRestoreBase):
             ["healthy"], "cluster %s to return to 'healthy'" % cid,
             timeout=timeout)
 
-    def _real_accelerator_volume_gib(self, cluster_id=None):
-        """Sum the REAL AWS EBS size (GiB) of the fusion accelerator guest
-        volume(s) attached to this cluster, read directly from AWS via the
-        Layer-1 EC2Lib (never raw boto3) — bypassing the billing proxy
-        entirely. Tag filter mirrors
-        fusion_accelerator_lifecycle_test.py's _accelerator_volume_filters
-        (~L1166): couchbase-cloud-cluster-id + couchbase-cloud-function=
-        fusion-accelerator + couchbase-cloud-fusion-guest-volume=true. The
-        guest-volume tag is required — it excludes each accelerator
-        instance's ROOT volume, which has unrelated size/IOPS and would
-        pollute the sum."""
-        if not self.fusion_aws_util:
-            self.fail(
-                "AWS access not available — cannot read the real fusion "
-                "accelerator/guest-volume EBS size (set aws_access_key/"
-                "aws_secret_key, or account_id in the ini, to assume "
-                "jenkins-cp-cli).")
-        cid = cluster_id or self.cluster_id
-        filters = {
-            "couchbase-cloud-cluster-id": cid,
-            "couchbase-cloud-function": "fusion-accelerator",
-            "couchbase-cloud-fusion-guest-volume": "true",
-        }
-        volumes = self.fusion_aws_util.ec2.list_volumes_by_cluster_id(
-            filters=filters)
-        sizes = [int(v.get("Size") or 0) for v in volumes if v.get("Size")]
-        total = sum(sizes)
-        self.log.info(
-            "[accelerator-volume] cluster %s: %s guest volume(s), sizes=%s "
-            "GiB, total=%s GiB" % (cid, len(volumes), sizes, total))
-        return total, sizes
-
     def test_fusion_uplift_during_turnoff_after_scale(self):
         """Off-cluster fusion billing after a scale-up: does turning a
-        cluster OFF zero out (or otherwise drop) the fusion SSD charge, and
-        does the charge reflect the REAL scaled-up accelerator EBS volume
-        while off?
+        cluster OFF zero out (or otherwise drop) the fusion SSD charge?
 
         Lifecycle (slow): run the workload -> scale UP a couple of KV nodes
-        (grows the fusion accelerator/guest volume measurably) -> switch the
-        cluster OFF (v4 activationState) -> READ THE REAL AWS ACCELERATOR/
-        GUEST-VOLUME SIZE (only now — see the real_gib comment below for why
-        this must happen after turning off, not before) -> trigger the
+        -> switch the cluster OFF (v4 activationState) -> trigger the
         off-state fixed biller (OffClusterBilling) on demand -> read a fresh
         isOff=true hourly record -> switch the cluster back ON (in a
         finally, before _test_succeeded is set) so tearDown's
@@ -2078,7 +2450,6 @@ class FusionBillingTest(FusionBackupRestoreBase):
                         for r in self._hourly_records()) or ""
 
         turned_on = False
-        real_gib, real_sizes = 0, []
         try:
             # ---- turn the cluster OFF ----
             turned_off = self._turn_cluster_off_and_wait(timeout=900)
@@ -2086,29 +2457,24 @@ class FusionBillingTest(FusionBackupRestoreBase):
                 turned_off, "Cluster %s did not reach 'turnedOff' state"
                            % self.cluster_id)
 
-            # Read the REAL accelerator/guest-volume size only NOW, while the
-            # cluster is off — NOT right after the scale-up rebalance, which
-            # is where an earlier version of this test checked it and
-            # consistently found 0 volumes on AWS despite billing correctly
-            # reflecting the scaled-up node count. couchbase-cloud's own
-            # fusion teardown logic (internal/clusters/fusion/accelerator/
-            # accelerator.go:2856-2864) only preserves the guest volume while
-            # cluster.Config.IntendedState == TurnedOff (or turning off);
-            # the DEFAULT path, while a cluster is healthy/on, allows normal
-            # teardown to proceed once the volume is no longer needed for an
-            # active rebalance. Checking right after the rebalance settled —
-            # while still on — had no such guarantee, so the volume could
-            # legitimately already be gone by then. Off is the one state the
-            # source promises it survives, so that is where this asserts it.
-            real_gib, real_sizes = self._real_accelerator_volume_gib()
-            self.assertGreater(
-                real_gib, 0,
-                "No real fusion accelerator/guest volume found on AWS while "
-                "cluster %s is OFF, after scaling %s -> %s nodes — "
-                "couchbase-cloud's own teardown logic guarantees this volume "
-                "is preserved while off (accelerator.go:2856-2864), so "
-                "finding none here is unexpected and worth filing"
-                % (self.cluster_id, before_nodes, target_nodes))
+            # NOT checking the real AWS guest-volume size here (an earlier
+            # version of this test did, "while off", on the theory that
+            # accelerator.go:2856-2864 preserves it specifically in that
+            # state). Traced live via Datadog (cluster 5a370553...,
+            # 2026-08-19 14:38-14:49 UTC): the scale-up rebalance's own guest
+            # volumes are mounted, migrate, and get queued for destruction
+            # the moment "guest volume background migration is complete" —
+            # "all accelerator nodes destroyed, tear down complete" fires
+            # ~14:49:48, entirely driven by the rebalance settling, with NO
+            # off-transition log anywhere near it. By the time this test
+            # reaches turn-off, the volume is already gone through normal,
+            # correct completion — off-state preservation never had a
+            # window to matter here, because the rebalance (and therefore
+            # its own teardown) always finishes before the off-command is
+            # even sent. Checking for it was chasing something structurally
+            # unreachable by this test's own sequencing, not a product gap
+            # (see AV-141031). The off-state fixed-billing checks below are
+            # the real, reachable verification for this scenario.
 
             # Off-state fixed billing job — OffClusterBilling, NOT the
             # on-cluster ClusterBilling _maybe_trigger_billing_jobs fires.
@@ -2165,7 +2531,7 @@ class FusionBillingTest(FusionBackupRestoreBase):
             self.assertGreater(billed_ssd, 0,
                                "Off-state fusionSSDCost should be > 0")
 
-            # ---- check 2: INFORMATIONAL gap (logged only, no assertion) ----
+            # ---- check 2: INFORMATIONAL note (logged only, no assertion) ----
             rec = fusion_off_records[ssd_costs.index(billed_ssd)]
             fc = rec.get("fusionCosts") or {}
             ebs_price = float(fc.get("ebsListPrice") or 0)
@@ -2173,17 +2539,16 @@ class FusionBillingTest(FusionBackupRestoreBase):
             if ebs_price and uplift:
                 implied_disk_gib = (
                     billed_ssd * self.HOURS_PER_MONTH / (ebs_price * uplift))
-                delta_pct = (((implied_disk_gib - real_gib) / real_gib) * 100
-                            if real_gib else float("nan"))
                 self.log.info(
-                    "[fusion-off-uplift-gap] billed-basis=%.1f GiB vs "
-                    "actual-accelerator-volume=%.1f GiB (delta=%.1f%%) — "
-                    "off-billing prices the base KV/index node disk, NOT the "
-                    "real accelerator volume; the same proxy gap exists "
-                    "on-cluster too (deliberate, pre-existing design per "
-                    "fusiondiskbiller/fixed.go:65 — NOT an off-specific "
+                    "[fusion-off-uplift-gap] billed-basis=%.1f GiB — off-"
+                    "billing prices the base KV/index node disk, NOT the "
+                    "real accelerator volume (which is torn down as soon as "
+                    "its rebalance's migration completes, well before any "
+                    "off-transition — see AV-141031); the same proxy gap "
+                    "exists on-cluster too (deliberate, pre-existing design "
+                    "per fusiondiskbiller/fixed.go:65 — not an off-specific "
                     "defect, no assertion on this delta)"
-                    % (implied_disk_gib, real_gib, delta_pct))
+                    % implied_disk_gib)
             else:
                 self.log.warning(
                     "[fusion-off-uplift-gap] off-state record missing "
@@ -2235,50 +2600,19 @@ class FusionBillingTest(FusionBackupRestoreBase):
             self.fail("Cluster %s did not return to 'healthy' after turning "
                       "it back on" % self.cluster_id)
 
-        # ---- EMPIRICAL PROBE: does the off/on transition hour get billed
-        # TWICE? couchbase-cloud's off biller writes its HourlyBillingRecord
-        # under a DIFFERENT doc key than the on biller — fixed/service.go:
-        # 296-298 appends ":Y:M:D:H" to the nodeID when isG2Off=true, while
-        # the on path uses the bare (phone-home) nodeID. The comment at
-        # offclustersbiller/offbilling.go:254 asserts "the normal
-        # clustersbiller will overwrite said written HBR"; with different
-        # keys it provably cannot. Both records can therefore survive on the
-        # same billingPeriod, each carrying its own fusionSSDCost -> the
-        # transition hour is charged twice (OVER-billing).
-        #
-        # _verify_no_duplicates cannot see this: it groups by
-        # (nodeId, billingPeriod), and the two records carry different
-        # nodeIds by construction. Whether the two actually land on the SAME
-        # period depends on timing (off uses createdAt.Truncate(hour); on
-        # uses createdAt.Add(1h).Truncate(hour)), so this is measured, not
-        # assumed — a clean run here is a genuine negative result for that
-        # hypothesis, not a vacuous pass. ----
-        overlap = self._n1ql(
-            "SELECT b.billingPeriod, "
-            "COUNT(CASE WHEN b.isOff = true THEN 1 ELSE NULL END) AS off_recs, "
-            "COUNT(CASE WHEN b.isOff = true THEN NULL ELSE 1 END) AS on_recs "
-            "FROM %s AS b WHERE b.`_type` = \"%s\" AND b.databaseId = \"%s\" "
-            "AND b.fusionEnabled = true "
-            "AND b.debug.fusionCosts.fusionSSDCost > 0 "
-            "GROUP BY b.billingPeriod "
-            "HAVING COUNT(CASE WHEN b.isOff = true THEN 1 ELSE NULL END) > 0 "
-            "AND COUNT(CASE WHEN b.isOff = true THEN NULL ELSE 1 END) > 0"
-            % (self.KS, self.TYPE_HOURLY, self.cluster_id))
-        self.assertFalse(
-            overlap,
-            "DOUBLE-BILLED transition hour(s) on cluster %s: the same "
-            "billingPeriod carries BOTH off-state (isOff=true) and "
-            "on-state (isOff=false) records with a non-zero fusionSSDCost, "
-            "so that hour's fusion SSD charge is applied twice "
-            "(period, off_recs, on_recs): %s. offbilling.go:254 claims the "
-            "on-biller overwrites the off record, but fixed/service.go:"
-            "296-298 gives the off record a different doc key "
-            "(nodeID + ':Y:M:D:H'), so no overwrite can occur."
-            % (self.cluster_id, overlap))
-        self.log.info(
-            "[off/on-overlap] no billingPeriod carries both an off-state and "
-            "an on-state fusion SSD charge on %s — transition hour not "
-            "double-billed in this run" % self.cluster_id)
+        # Not checking for an off/on transition-hour "double bill" here. An
+        # earlier version of this test compared the off-biller's and
+        # on-biller's KeyFromNode calls in isolation and concluded a same-
+        # period overlap (isOff=true and isOff=false records both non-zero
+        # for one billingPeriod) meant the hour was charged twice. Per the
+        # billing team (AV-141132): the on-biller's record id already
+        # carries the previous hour's date/hour via the phonehome record
+        # itself, the transition is reconciled at the phonehome point (that
+        # hour's HBR becomes a phonehome, then becomes an HBR again the
+        # following hour), and a same-period overlap like this is expected,
+        # correct behavior, not a double charge. Filed and closed as
+        # As Designed — checking for it here would just be reasserting a
+        # wrong premise.
         self._test_succeeded = True
 
     def _aggregate(self, variable, day):

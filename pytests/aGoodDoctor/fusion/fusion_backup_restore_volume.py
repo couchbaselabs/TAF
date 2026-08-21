@@ -1088,8 +1088,10 @@ class FusionBackupRestoreVolumeTest(VolumeTest):
         tenant = self.primary_tenant
         primary = self.primary_cluster
 
+        # fusion-fallback-replace is no longer set: removed from the product in
+        # AV-140819 (fallback replacement is unconditional now), so it doesn't
+        # exist globally and setting it just errors.
         CapellaAPI.update_feature_flag_globally(self.pod, tenant, "fusion-rebalances", True)
-        CapellaAPI.update_feature_flag_globally(self.pod, tenant, "fusion-fallback-replace", True)
 
         # Enable fusion on primary
         self.fusion_monitor.set_admin_credentials(primary)

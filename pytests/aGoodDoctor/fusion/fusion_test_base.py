@@ -329,20 +329,22 @@ class _FusionTestBase(BaseTestCase, hostedOPD):
         )
 
     def _enable_fusion_feature_flags(self, tenant, cluster_id=None):
-        # Set GLOBALLY (env-wide), not per-tenant. These were previously set
-        # at the TENANT level (AV-136926, closed as designed for
-        # enable-eight-one-zero/fusion-rebalances), but fusion-fallback-replace
-        # does not take effect at tenant scope — confirmed by testing. Rather
-        # than split scope per-flag, all three are set globally for
-        # consistency. cluster_id is kept for caller compatibility and unused.
-        # enable-eight-one-zero gates 8.1.0 features; fusion is only available
-        # on 8.1.0 clusters, so it must be on for fusion to engage.
+        # Set GLOBALLY (env-wide), not per-tenant — the tenant-level route was
+        # AV-136926, closed as designed. cluster_id is kept for caller
+        # compatibility and unused.
+        #
+        # enable-eight-five-zero gates 8.x features; fusion is only available
+        # on 8.x clusters, so it must be on for fusion to engage. (It replaces
+        # the renamed enable-eight-one-zero.)
+        #
+        # fusion-fallback-replace is deliberately NOT set here any more: the
+        # flag was removed from the product in AV-140819 (fallback replacement
+        # is now unconditional), so it no longer exists globally and setting it
+        # just errors.
         CapellaAPI.set_global_feature_flag(
-            self.pod, tenant, "enable-eight-one-zero", True)
+            self.pod, tenant, "enable-eight-five-zero", True)
         CapellaAPI.set_global_feature_flag(
             self.pod, tenant, "fusion-rebalances", True)
-        CapellaAPI.set_global_feature_flag(
-            self.pod, tenant, "fusion-fallback-replace", True)
 
     def _ensure_fusion_state(self, tenant, cluster, target):
         """Idempotently transition fusion to target state ('enabled' or 'disabled').

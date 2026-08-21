@@ -674,17 +674,17 @@ class FusionEnableDisableTests(_FusionTestBase):
         - Rebalance completes successfully via DCP despite fusion being enabled
         """
         # Fusion feature flags are honored at the TENANT level, not the
-        # cluster level (AV-136926, closed as designed). Set them to False on
-        # the tenant and restore True on exit — even on failure — since the
-        # tenant is shared by every other test.
+        # cluster level (AV-136926, closed as designed). Set to False on the
+        # tenant and restore True on exit — even on failure — since the tenant
+        # is shared by every other test.
+        #
+        # Only fusion-rebalances is toggled: fusion-fallback-replace was
+        # removed from the product in AV-140819 (fallback replacement is
+        # unconditional now), so it no longer exists to toggle.
         CapellaAPI.create_tenant_feature_flag(
             self.pod, self.tenant, "fusion-rebalances", False)
-        CapellaAPI.create_tenant_feature_flag(
-            self.pod, self.tenant, "fusion-fallback-replace", False)
         self.addCleanup(CapellaAPI.create_tenant_feature_flag,
                         self.pod, self.tenant, "fusion-rebalances", True)
-        self.addCleanup(CapellaAPI.create_tenant_feature_flag,
-                        self.pod, self.tenant, "fusion-fallback-replace", True)
         self.log.info(f"Ensuring fusion state is 'enabled' on cluster {self.cluster.id}")
         self._ensure_fusion_state(self.tenant, self.cluster, "enabled")
         self.log.info(f"Loading {self.input.param('num_items', 0)} items into cluster {self.cluster.id}")

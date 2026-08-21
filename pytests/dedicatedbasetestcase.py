@@ -248,7 +248,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
 
         # Create tenant-scoped feature flags from test params.
         # Usage: feature_flags=flagName:value,anotherFlag:value
-        # Example: feature_flags=fusion-rebalances:true,fusion-fallback-replace:true
+        # Example: feature_flags=fusion-rebalances:true,enable-eight-five-zero:true
         feature_flags_param = self.input.test_params.get("feature_flags", None)
         if feature_flags_param:
             for tenant in self.tenants:

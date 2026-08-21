@@ -239,6 +239,10 @@ class FusionBackupRestoreBase(APIBase):
             or self.project_id)
 
         self._db_users_to_cleanup = {}
+        # cluster_id -> (conn_str, username, password), so the DocLoader access
+        # setup (CIDR + DB user + its 60s propagation wait) happens ONCE per
+        # cluster instead of once per bucket. See _setup_cluster_access.
+        self._cluster_access_cache = {}
         self._clusters_created = []
         # Clusters provisioned fresh for THIS test only (never pooled/reused):
         # every target, plus the source of a guest-volume test (its per-test
@@ -1114,17 +1118,19 @@ class FusionBackupRestoreBase(APIBase):
     def _apply_tenant_feature_flag(self, v2, ff, value):
         """Create-or-update a single tenant feature flag to `value`.
 
-        DELETE-then-CREATE, not create-then-update-on-conflict: confirmed
-        live (fusion_billing_test._set_fusion_billing_enabled) that this
-        control plane's update (PUT) path doesn't actually change an
-        existing flag's value -- it returns the same FeatureFlagAlreadyExists
-        conflict create does. Deleting the tenant-level override first
-        (no-op if absent) means create() never has an existing key to
-        conflict with. This call site has so far only ever set flags to
-        `true` (deploy-gating), which happened to mask the bug -- it stays
-        here so the next caller that needs to flip an existing flag doesn't
-        silently no-op the way the old create-then-update pattern did."""
-        v2.delete_tenant_feature_flag(self.organisation_id, ff)
+        CREATE, then UPDATE (PUT) on a FeatureFlagAlreadyExists conflict.
+        Deliberately NOT delete-then-create: deleting first means a failed
+        create leaves the tenant with no override at all, silently falling
+        back to the global value (which for fusion-rebalances may be false,
+        disabling fusion for the whole run). PUT does correctly change an
+        existing flag's value -- an earlier version of this method avoided it
+        on the belief that it always 409s, which was wrong (AV-141104, closed
+        not-a-bug; the 409 seen there came from the create call, not the PUT).
+
+        A flag that no longer exists globally (e.g. one removed from the
+        product) fails here with FeatureFlagMissingGlobal, which is logged as
+        a warning rather than raised -- a stale entry in the pipeline's
+        ff_to_update shouldn't abort an otherwise valid run."""
         resp = v2.create_tenant_feature_flag(
             self.organisation_id, ff, {"value": value})
         if resp.status_code in [200, 201, 204]:
@@ -1135,9 +1141,11 @@ class FusionBackupRestoreBase(APIBase):
         except Exception:
             err_type = ""
         if err_type == "FeatureFlagAlreadyExists":
-            # Known-unreliable fallback, kept only as a last resort.
             resp = v2.update_tenant_feature_flag(
                 self.organisation_id, ff, {"value": value})
+            if resp.status_code in [200, 201, 204]:
+                self.log.info("Feature flag {} updated to {}".format(ff, value))
+                return
         if resp.status_code not in [200, 201, 204]:
             self.log.warning("Feature flag {}={} returned {}: {}".format(
                 ff, value, resp.status_code, resp.content))
@@ -1145,7 +1153,11 @@ class FusionBackupRestoreBase(APIBase):
     def _apply_feature_flags_from_param(self):
         """Apply tenant feature flags passed by the pipeline via ``ff_to_update``
         (a.k.a. ``feature_flags``), e.g.
-        ff_to_update=fusion-rebalances=true;fusion-fallback-replace=true;enable-eight-one-zero=true
+        ff_to_update=fusion-rebalances=true;enable-eight-five-zero=true
+        (enable-eight-five-zero replaces the renamed enable-eight-one-zero;
+        fusion-fallback-replace was removed from the product in AV-140819 and
+        must NOT be passed any more — it no longer exists globally, so setting
+        it fails with FeatureFlagMissingGlobal.)
         Pass it as ONE token (';' or ',' separators, '=' or ':' delimiters). No
         flag is set unless passed — the test hardcodes none."""
         raw = (self.input.param("ff_to_update", None)
@@ -1245,17 +1257,50 @@ class FusionBackupRestoreBase(APIBase):
 
         This is for the cluster-reuse path — fresh deployments are provisioned
         with the correct fusion state by acquire_cluster.
+
+        Only an EXPLICIT 'disabled' short-circuits. get_fusion_state returns
+        None for a network error, ANY non-200 (a 401 from the internal-support
+        endpoint included), an unparseable body, and a genuinely absent state
+        — so treating None as 'already disabled' turned "we could not read the
+        state" into "no action needed" and made this a silent no-op. That is
+        exactly what happened on a live run: fusion/status returned 401, this
+        returned immediately without disabling anything, and the caller then
+        spent an hour waiting for billing records to show fusion off on a
+        cluster where fusion was never switched off. _wait_for_fusion_disabled
+        already documents the rule this violated — "A 401/None from
+        fusion/status is NEVER treated as 'disabled'".
+
+        On an unknown state, attempt the disable and let the fusion-free
+        assertion be the source of truth. That is correct either way: if
+        fusion really was off (or never on) the disable is a harmless no-op
+        and the assertion passes; if it was on, the disable does its job.
         """
         state = self.get_fusion_state(cluster_id)
-        if state in ("disabled", None):
+        if state == "disabled":
             self.log.info(
                 "{} {} already fusion-disabled (state={!r}) — no action "
                 "needed".format(label, cluster_id, state))
             return
-        self.log.info(
-            "{} {} is fusion state={!r} — explicitly disabling".format(
-                label, cluster_id, state))
-        self.disable_fusion_on_cluster(cluster_id, project_id)
+        if state is None:
+            self.log.warning(
+                "{} {} fusion state is UNKNOWN (fusion/status unreadable — "
+                "401/error/empty). NOT assuming disabled: attempting the "
+                "disable anyway and verifying with the fusion-free "
+                "assertion.".format(label, cluster_id))
+        else:
+            self.log.info(
+                "{} {} is fusion state={!r} — explicitly disabling".format(
+                    label, cluster_id, state))
+        try:
+            self.disable_fusion_on_cluster(cluster_id, project_id)
+        except BaseException as exc:
+            # Tolerated only because the assertion below is what actually
+            # decides: a cluster that never had fusion enabled can legitimately
+            # reject the disable call.
+            self.log.warning(
+                "{} {} disable_fusion_on_cluster raised {} — continuing to "
+                "the fusion-free check, which is authoritative".format(
+                    label, cluster_id, exc))
         self.assert_fusion_free_after_restore(
             cluster_id, project_id=project_id,
             timeout=int(self.input.param("fusion_free_timeout", 1800)))
@@ -2198,8 +2243,27 @@ class FusionBackupRestoreBase(APIBase):
 
         Returns (connection_string, username, password).
         User ID is stored in _db_users_to_cleanup for tearDown.
-        """
+
+        Cached per cluster. This is called once PER BUCKET by
+        load_documents, and the work here is per-CLUSTER: the CIDR entry, the
+        DB user (data_reader/data_writer, not bucket-scoped, so one user
+        covers every bucket), the cluster-info fetch, and above all the 60s
+        user-propagation sleep. Re-running it per bucket cost 60s of pure
+        sleep each time — with num_buckets=12 that was 12 minutes per
+        bucket-loading test, the single largest avoidable delay in the
+        suite. It also leaked users: _db_users_to_cleanup is keyed by
+        cluster_id, so each new user overwrote the previous entry and
+        tearDown only ever deleted the last one, stranding the other 11 on
+        the cluster."""
         project_id = project_id or self.project_id
+
+        cached = self._cluster_access_cache.get(cluster_id)
+        if cached:
+            self.log.info(
+                "Reusing DocLoader access for cluster {} (user={}) — skipping "
+                "CIDR/user setup and the 60s propagation wait".format(
+                    cluster_id, cached[1]))
+            return cached
 
         self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(
             self.organisation_id, project_id, cluster_id,
@@ -2256,6 +2320,7 @@ class FusionBackupRestoreBase(APIBase):
         self.log.info(
             "Cluster {} access: conn_str={}, user={}".format(
                 cluster_id, conn_str, username))
+        self._cluster_access_cache[cluster_id] = (conn_str, username, password)
         return conn_str, username, password
 
     def load_documents(self, cluster_id, bucket_name, num_docs=None,
@@ -2269,6 +2334,25 @@ class FusionBackupRestoreBase(APIBase):
         >= create_end_index (or num_docs when not specified).
         """
         project_id = project_id or self.project_id
+
+        # Never bulk-insert into a cluster that is not healthy. During a
+        # rebalance vbuckets migrate between nodes, so in-flight ops die with
+        # CHANNEL_CLOSED_WHILE_IN_FLIGHT and endpoints report
+        # ENDPOINT_NOT_WRITABLE — which surfaces as a pile of DocLoader insert
+        # failures ("DocLoader reported N failures loading bucket ...") rather
+        # than as a clear "cluster is busy" signal, sending whoever reads the
+        # log after the SDK error instead of the cluster state. Observed: 356
+        # insert failures against svc-d-node-002 on a pooled cluster that
+        # tearDown then reported as state='rebalancing'.
+        #
+        # Checked per bucket, not once per test, deliberately: the failure
+        # above hit the SECOND bucket, so the rebalance began after the first
+        # had loaded. A single check before the sequence would have missed it.
+        # Cheap when healthy — one state read that returns immediately.
+        self._wait_for_cluster_healthy(
+            cluster_id, project_id,
+            timeout=int(self.input.param("load_health_timeout", 1800)))
+
         num_docs = num_docs or self.num_docs
         start_idx = 0 if create_start_index is None else create_start_index
         end_idx = num_docs if create_end_index is None else create_end_index
